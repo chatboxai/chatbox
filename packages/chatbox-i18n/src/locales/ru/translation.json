@@ -1738,6 +1738,7 @@
   "Used to automatically generate conversation titles. Choose a model with fast responses.": "Автоматически создаёт названия бесед. Выберите модель с быстрым откликом.",
   "Page Screenshot": "Снимок страницы",
   "Run Browser JavaScript": "Выполнить JavaScript в браузере",
+  "Open in external browser": "Открыть во внешнем браузере",
   "Clear current page and history": "Очистить текущую страницу и историю",
   "Clear all pages and website data": "Очистить все страницы и данные сайтов",
   "Clear all pages and sign out of websites?": "Очистить все страницы и выйти из аккаунтов на сайтах?",

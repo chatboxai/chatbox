@@ -1738,6 +1738,7 @@
   "Used to automatically generate conversation titles. Choose a model with fast responses.": "会話のタイトルを自動生成します。応答の速いモデルを選択してください。",
   "Page Screenshot": "ページのスクリーンショット",
   "Run Browser JavaScript": "ブラウザーで JavaScript を実行",
+  "Open in external browser": "外部ブラウザーで開く",
   "Clear current page and history": "現在のページと履歴を消去",
   "Clear all pages and website data": "すべてのページとサイトデータを消去",
   "Clear all pages and sign out of websites?": "すべてのページを消去し、サイトからログアウトしますか？",

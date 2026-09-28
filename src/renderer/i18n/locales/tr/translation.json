@@ -1734,6 +1734,7 @@
   "Used to automatically generate conversation titles. Choose a model with fast responses.": "Sohbet başlıklarını otomatik oluşturur. Hızlı yanıt veren bir model seçin.",
   "Page Screenshot": "Sayfa ekran görüntüsü",
   "Run Browser JavaScript": "Tarayıcıda JavaScript Çalıştır",
+  "Open in external browser": "Harici tarayıcıda aç",
   "Clear current page and history": "Geçerli sayfayı ve geçmişi temizle",
   "Clear all pages and website data": "Tüm sayfaları ve site verilerini temizle",
   "Clear all pages and sign out of websites?": "Tüm sayfalar temizlensin ve sitelerden çıkış yapılsın mı?",

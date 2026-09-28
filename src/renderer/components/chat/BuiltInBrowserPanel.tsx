@@ -4,11 +4,21 @@ import {
   type BuiltInBrowserState,
   EMPTY_BUILT_IN_BROWSER_STATE,
 } from '@shared/built-in-browser'
-import { IconArrowLeft, IconArrowRight, IconDots, IconRefresh, IconTrash, IconWorld, IconX } from '@tabler/icons-react'
+import {
+  IconArrowLeft,
+  IconArrowRight,
+  IconDots,
+  IconExternalLink,
+  IconRefresh,
+  IconTrash,
+  IconWorld,
+  IconX,
+} from '@tabler/icons-react'
 import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ActionMenu } from '@/components/ActionMenu'
 import { ICON_SIZE, IconButton } from '@/components/common/IconButton'
+import platform from '@/platform'
 import type { BuiltInBrowser } from '@/platform/interfaces'
 import * as toastActions from '@/stores/toastActions'
 import { useUIStore } from '@/stores/uiStore'
@@ -253,6 +263,12 @@ function BuiltInBrowserPanel({
         <ActionMenu
           position="bottom-end"
           items={[
+            {
+              text: t('Open in external browser'),
+              icon: IconExternalLink,
+              disabled: !hasPage,
+              onClick: () => void platform.openLink(state.url).catch(reportError),
+            },
             {
               text: t('Clear current page and history'),
               icon: IconTrash,

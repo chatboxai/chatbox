@@ -1738,6 +1738,7 @@
   "Used to automatically generate conversation titles. Choose a model with fast responses.": "Används för att automatiskt skapa samtalstitlar. Välj en modell som svarar snabbt.",
   "Page Screenshot": "Skärmbild av sida",
   "Run Browser JavaScript": "Kör JavaScript i webbläsaren",
+  "Open in external browser": "Öppna i extern webbläsare",
   "Clear current page and history": "Rensa aktuell sida och historik",
   "Clear all pages and website data": "Rensa alla sidor och webbplatsdata",
   "Clear all pages and sign out of websites?": "Rensa alla sidor och logga ut från webbplatser?",

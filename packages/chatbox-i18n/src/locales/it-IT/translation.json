@@ -1738,6 +1738,7 @@
   "Used to automatically generate conversation titles. Choose a model with fast responses.": "Genera automaticamente i titoli delle conversazioni. Scegli un modello con risposte rapide.",
   "Page Screenshot": "Screenshot della pagina",
   "Run Browser JavaScript": "Esegui JavaScript nel browser",
+  "Open in external browser": "Apri in un browser esterno",
   "Clear current page and history": "Cancella la pagina corrente e la cronologia",
   "Clear all pages and website data": "Cancella tutte le pagine e i dati dei siti",
   "Clear all pages and sign out of websites?": "Cancellare tutte le pagine e disconnettersi dai siti?",

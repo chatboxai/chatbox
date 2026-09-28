@@ -1738,6 +1738,7 @@
   "Used to automatically generate conversation titles. Choose a model with fast responses.": "대화 제목을 자동으로 생성합니다. 응답이 빠른 모델을 선택하세요.",
   "Page Screenshot": "페이지 스크린샷",
   "Run Browser JavaScript": "브라우저 JavaScript 실행",
+  "Open in external browser": "외부 브라우저에서 열기",
   "Clear current page and history": "현재 페이지 및 방문 기록 지우기",
   "Clear all pages and website data": "모든 페이지 및 사이트 데이터 지우기",
   "Clear all pages and sign out of websites?": "모든 페이지를 지우고 사이트에서 로그아웃할까요?",

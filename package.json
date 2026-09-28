@@ -41,7 +41,7 @@
     "serve:web": "npx serve ./release/app/dist/renderer",
     "test": "vitest run",
     "test:unit": "vitest run --exclude 'test/integration/**' --exclude '**/migration.test.ts' --exclude '**/analyzer.test.ts' --exclude '**/context-tokens.integration.test.ts'",
-    "test:windows": "vitest run src/main/sandbox/manager.windows.test.ts src/main/skills/user-exec-runner.windows.test.ts",
+    "test:windows": "vitest run src/main/sandbox/manager.windows.test.ts src/main/skills/user-exec-runner.windows.test.ts src/main/workspace-instructions.windows.test.ts",
     "test:ui": "vitest --ui",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

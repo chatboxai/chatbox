@@ -1,9 +1,15 @@
-import { lstatSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { lstatSync, mkdirSync, mkdtempSync, rmSync, type Stats, symlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterEach, describe, expect, test } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import { WORKSPACE_INSTRUCTIONS_MAX_CHARS } from '../shared/types/workspace-instructions'
-import { loadWorkspaceInstructions } from './workspace-instructions'
+import { isSameFileIdentity, loadWorkspaceInstructions } from './workspace-instructions'
+
+vi.mock('electron-log/main', () => ({ default: { warn: vi.fn() } }))
+
+function fileIdentity(dev: number, ino: number): Stats {
+  return { dev, ino } as Stats
+}
 
 const temporaryRoots: string[] = []
 
@@ -112,5 +118,27 @@ describe('loadWorkspaceInstructions', () => {
     expect(result.directories).toEqual([])
     expect(result.files).toEqual([])
     expect(result.skippedDirectoryCount).toBe(1)
+  })
+})
+
+describe('isSameFileIdentity', () => {
+  test('matches a Windows path stat with st_dev 0 against the handle stat of the same file', () => {
+    expect(
+      isSameFileIdentity(fileIdentity(0, 34058472181999096), fileIdentity(752017921, 34058472181999096), 'win32')
+    ).toBe(true)
+  })
+
+  test('rejects a different file ID on Windows', () => {
+    expect(isSameFileIdentity(fileIdentity(0, 1), fileIdentity(752017921, 2), 'win32')).toBe(false)
+  })
+
+  test('rejects a missing file ID on Windows', () => {
+    expect(isSameFileIdentity(fileIdentity(0, 0), fileIdentity(752017921, 0), 'win32')).toBe(false)
+  })
+
+  test('requires both device and inode to match on POSIX platforms', () => {
+    expect(isSameFileIdentity(fileIdentity(1, 42), fileIdentity(1, 42), 'darwin')).toBe(true)
+    expect(isSameFileIdentity(fileIdentity(1, 42), fileIdentity(2, 42), 'linux')).toBe(false)
+    expect(isSameFileIdentity(fileIdentity(1, 42), fileIdentity(1, 43), 'darwin')).toBe(false)
   })
 })

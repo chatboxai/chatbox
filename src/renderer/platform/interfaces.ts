@@ -7,6 +7,7 @@ import type { AnalyticsEventParams } from '@shared/analytics'
 import type {
   BuiltInBrowserClearScope,
   BuiltInBrowserPage,
+  BuiltInBrowserSnapshotRequest,
   BuiltInBrowserState,
   BuiltInBrowserUploadRequest,
   BuiltInBrowserViewRequest,
@@ -48,6 +49,7 @@ export interface BuiltInBrowser {
     screenshot?: boolean
     script?: { code: string; page: string; downloadDirectory?: string }
     upload?: BuiltInBrowserUploadRequest
+    snapshot?: BuiltInBrowserSnapshotRequest
     signal?: AbortSignal
   }): Promise<BuiltInBrowserPage>
   navigate(url: string): Promise<void>

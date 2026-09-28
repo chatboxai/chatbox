@@ -1745,5 +1745,6 @@
   "Current page and history cleared. Website sign-ins kept.": "現在のページと履歴を消去しました。サイトへのログインは保持されます。",
   "All browser pages and website data cleared": "すべてのブラウザページとサイトデータを消去しました",
   "Clearing browser data…": "ブラウザデータを消去中…",
-  "Upload Files to Page": "ページにファイルをアップロード"
+  "Upload Files to Page": "ページにファイルをアップロード",
+  "Inspect Page Controls": "ページの操作要素を確認"
 }

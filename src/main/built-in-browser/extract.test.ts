@@ -35,6 +35,6 @@ describe('extractReadableContent', () => {
       url: 'https://example.com/',
       visibleText: 'Result one\n\n\n\nResult two',
     })
-    expect(result).toEqual({ content: 'Result one\n\nResult two' })
+    expect(result).toEqual({ content: 'Result one\n\nResult two', mode: 'text' })
   })
 })

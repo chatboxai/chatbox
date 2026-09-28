@@ -83,6 +83,7 @@ export function articleHtmlToText(html: string): string {
 export function extractReadableContent(params: { html: string; url: string; visibleText: string }): {
   title?: string
   content: string
+  mode: 'article' | 'text'
 } {
   const visibleText = params.visibleText.replace(/\n{3,}/g, '\n\n').trim()
   try {
@@ -94,10 +95,10 @@ export function extractReadableContent(params: { html: string; url: string; visi
     const articleText = article?.content ? articleHtmlToText(article.content) : ''
     // Readability occasionally keeps only a teaser; prefer visible text when it clearly holds more.
     if (articleText && articleText.length * 3 >= Math.min(visibleText.length, 20_000)) {
-      return { title: article?.title || undefined, content: articleText }
+      return { title: article?.title || undefined, content: articleText, mode: 'article' }
     }
   } catch {
     // Malformed markup: visible text is still a faithful reading of the page.
   }
-  return { content: visibleText }
+  return { content: visibleText, mode: 'text' }
 }

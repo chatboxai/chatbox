@@ -8,6 +8,7 @@ import {
   type BuiltInBrowserUploadFile,
 } from '@shared/built-in-browser'
 import type { PageDebugger } from './page-debugger'
+import { PAGE_REFS_SOURCE, SNAPSHOT_REF_PATTERN } from './page-snapshot'
 
 type Cdp = Pick<PageDebugger, 'send' | 'nextEvent' | 'reset'>
 
@@ -101,10 +102,11 @@ export type HandFilesOutcome =
   | { kind: 'failed'; code: BuiltInBrowserUploadErrorCode; message: string }
 
 // Called on the target: the file input it is, the one a label controls, or the only one inside it.
+// Targets from a same-origin frame belong to that frame's realm, so elements are told apart by tag.
 const FIND_FILE_INPUT = `function () {
-  const isFileInput = (element) => element instanceof HTMLInputElement && element.type === 'file';
+  const isFileInput = (element) => !!element && element.localName === 'input' && element.type === 'file';
   if (isFileInput(this)) return this;
-  if (this instanceof HTMLLabelElement && isFileInput(this.control)) return this.control;
+  if (this.localName === 'label' && isFileInput(this.control)) return this.control;
   const inside = this.querySelectorAll('input[type="file"]');
   return inside.length === 1 ? inside[0] : null;
 }`
@@ -121,8 +123,26 @@ interface RemoteObject {
   subtype?: string
 }
 
-/** Returns true when the page element `this` and the file input argument belong to the same document. */
-const SAME_DOCUMENT = 'function (input) { return input.ownerDocument === this.ownerDocument }'
+const OWNER_DOCUMENT = 'function () { return this.ownerDocument }'
+
+/**
+ * The document node an element belongs to, as a backend node id. Ids are comparable across the
+ * JavaScript contexts of frames, unlike the elements themselves.
+ */
+async function documentNodeOf(page: Cdp, objectId: string, signal: AbortSignal): Promise<number | undefined> {
+  const owner = await page.send<{ result: RemoteObject }>(
+    'Runtime.callFunctionOn',
+    { objectId, functionDeclaration: OWNER_DOCUMENT, objectGroup: OBJECT_GROUP },
+    signal
+  )
+  if (!owner.result.objectId) return undefined
+  const described = await page.send<{ node: { backendNodeId?: number } }>(
+    'DOM.describeNode',
+    { objectId: owner.result.objectId },
+    signal
+  )
+  return described.node.backendNodeId
+}
 
 /**
  * Hands `files` to the page's file input through the browser, the way a file picker does: the site
@@ -145,9 +165,13 @@ export async function handFilesToPage(
     ['Runtime.releaseObjectGroup', { objectGroup: OBJECT_GROUP }],
   ]
   try {
+    const isRef = SNAPSHOT_REF_PATTERN.test(target)
+    const expression = isRef
+      ? `${PAGE_REFS_SOURCE}.elementFor(${JSON.stringify(target)})`
+      : `document.querySelector(${JSON.stringify(target)})`
     const found = await page.send<{ result: RemoteObject; exceptionDetails?: unknown }>(
       'Runtime.evaluate',
-      { expression: `document.querySelector(${JSON.stringify(target)})`, objectGroup: OBJECT_GROUP },
+      { expression, objectGroup: OBJECT_GROUP },
       signal
     )
     const pageChanged: HandFilesOutcome = {
@@ -160,7 +184,12 @@ export async function handFilesToPage(
       return { kind: 'refused', code: 'target_not_found', message: `Invalid selector: ${target}` }
     }
     const element = found.result.objectId
-    if (!element) return { kind: 'refused', code: 'target_not_found', message: `No element matches ${target}` }
+    if (!element) {
+      const message = isRef
+        ? `Reference ${target} is not on the page anymore. Take a new snapshot.`
+        : `No element matches ${target}`
+      return { kind: 'refused', code: 'target_not_found', message }
+    }
 
     const input = await page.send<{ result: RemoteObject }>(
       'Runtime.callFunctionOn',
@@ -237,26 +266,17 @@ export async function handFilesToPage(
     )
     const chooserInput = resolved.object.objectId
     // An input of another document, such as one a navigation after the click brought, fails here.
+    // The target and the input may live in different frames' contexts, so their documents are
+    // compared by node id rather than by passing one element to a function of the other.
     const sameDocument =
       !!chooserInput &&
-      (await page
-        .send<{ result: { value?: unknown } }>(
-          'Runtime.callFunctionOn',
-          {
-            objectId: element,
-            functionDeclaration: SAME_DOCUMENT,
-            arguments: [{ objectId: chooserInput }],
-            returnByValue: true,
-          },
-          signal
-        )
-        .then(
-          (answer) => answer.result.value === true,
-          () => {
-            signal.throwIfAborted()
-            return false
-          }
-        ))
+      (await Promise.all([documentNodeOf(page, element, signal), documentNodeOf(page, chooserInput, signal)]).then(
+        ([targetDocument, inputDocument]) => targetDocument !== undefined && targetDocument === inputDocument,
+        () => {
+          signal.throwIfAborted()
+          return false
+        }
+      ))
     if (!sameDocument || !hooks.isSameDocument()) {
       return {
         kind: 'failed',

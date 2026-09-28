@@ -1745,5 +1745,6 @@
   "Current page and history cleared. Website sign-ins kept.": "تم مسح الصفحة الحالية وسجلها. تم الاحتفاظ بتسجيل الدخول إلى المواقع.",
   "All browser pages and website data cleared": "تم مسح جميع صفحات المتصفح وبيانات المواقع",
   "Clearing browser data…": "جارٍ مسح بيانات المتصفح…",
-  "Upload Files to Page": "رفع الملفات إلى الصفحة"
+  "Upload Files to Page": "رفع الملفات إلى الصفحة",
+  "Inspect Page Controls": "فحص عناصر التحكم في الصفحة"
 }

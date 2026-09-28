@@ -44,14 +44,18 @@ function getChatboxCliToolName(input: unknown): string {
 export function getToolName(toolName: string, input?: unknown): string {
   if (toolName === 'chatbox_cli') return getChatboxCliToolName(input)
   if (toolName === BUILT_IN_BROWSER_TOOL_NAME) {
-    const command = builtInBrowserCommandOf(input)
-    return command === 'run'
-      ? t('Run Browser JavaScript')
-      : command === 'upload'
-        ? t('Upload Files to Page')
-        : command === 'screenshot'
-          ? t('Page Screenshot')
-          : t('Browse Page')
+    switch (builtInBrowserCommandOf(input)) {
+      case 'run':
+        return t('Run Browser JavaScript')
+      case 'upload':
+        return t('Upload Files to Page')
+      case 'snapshot':
+        return t('Inspect Page Controls')
+      case 'screenshot':
+        return t('Page Screenshot')
+      default:
+        return t('Browse Page')
+    }
   }
   if (toolName === KNOWLEDGE_BASE_TOOL_NAME) {
     const command = knowledgeBaseCommandOf(input)

@@ -1745,5 +1745,6 @@
   "Current page and history cleared. Website sign-ins kept.": "Página atual e histórico limpos. As sessões nos sites foram mantidas.",
   "All browser pages and website data cleared": "Todas as páginas e dados dos sites foram limpos",
   "Clearing browser data…": "A limpar dados do navegador…",
-  "Upload Files to Page": "Carregar ficheiros para a página"
+  "Upload Files to Page": "Carregar ficheiros para a página",
+  "Inspect Page Controls": "Inspecionar controlos da página"
 }

@@ -1,3 +1,5 @@
+import { PAGE_REFS_SOURCE, REF_PATTERN_SOURCE } from './page-snapshot'
+
 /**
  * Declares `browser`, the helper object available to scripts run by the browser tool's run command. It is
  * evaluated in the page's main world right before the script body, as a local of the wrapper, so
@@ -11,6 +13,8 @@
  */
 export function pageHelpersSource(operation: string): string {
   return `const browser = ((operation) => {
+  const refs = ${PAGE_REFS_SOURCE};
+  const isRef = (target) => typeof target === 'string' && ${REF_PATTERN_SOURCE}.test(target);
   const INTERACTIVE = 'a[href], button, input:not([type="hidden"]), textarea, select, summary, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [role="menuitem"], [role="option"], [role="combobox"], [role="textbox"], [contenteditable=""], [contenteditable="true"], [onclick], [tabindex]:not([tabindex="-1"])';
   const checkCancelled = () => {
     if (operation.cancelled) throw new Error('The run was stopped because the browser tool stopped waiting for it.');
@@ -21,8 +25,14 @@ export function pageHelpersSource(operation: string): string {
     checkCancelled();
   };
   const resolve = (target) => {
-    if (target instanceof Element) return target;
-    if (typeof target !== 'string') throw new Error('Expected a CSS selector or an element.');
+    // Elements of a same-origin frame belong to that frame's realm, so they are not instances of this Element.
+    if (target && target.nodeType === 1) return target;
+    if (isRef(target)) {
+      const element = refs.elementFor(target);
+      if (!element) throw new Error('Reference ' + target + ' is not on the page anymore. Take a new snapshot.');
+      return element;
+    }
+    if (typeof target !== 'string') throw new Error('Expected a snapshot reference, a CSS selector or an element.');
     const element = document.querySelector(target);
     if (!element) throw new Error('No element matches ' + target);
     return element;
@@ -40,7 +50,12 @@ export function pageHelpersSource(operation: string): string {
       return false;
     }
   };
+  // A selector is resolved against this document, so elements of frames and shadow roots have none.
+  const hasSelector = (element) => element.getRootNode() === document;
+  // Names an element in an error message; elements of frames and shadow roots have no page selector.
+  const nameForError = (element) => (hasSelector(element) ? selectorFor(element) : '<' + element.localName + '> ' + refs.refFor(element));
   const selectorFor = (element) => {
+    if (!hasSelector(element)) throw new Error('This element is inside a frame or shadow root and has no page selector; use its snapshot reference.');
     if (element.id && isUnique('#' + CSS.escape(element.id))) return '#' + CSS.escape(element.id);
     for (const attribute of ['data-testid', 'data-test', 'data-qa', 'name', 'aria-label', 'placeholder']) {
       const value = element.getAttribute(attribute);
@@ -68,7 +83,7 @@ export function pageHelpersSource(operation: string): string {
   const labelFor = (element) => {
     const labelledBy = element.getAttribute('aria-labelledby');
     const labelled = labelledBy
-      ? labelledBy.split(/\\s+/).map((id) => document.getElementById(id)?.innerText ?? '').join(' ')
+      ? labelledBy.split(/\\s+/).map((id) => element.ownerDocument.getElementById(id)?.innerText ?? '').join(' ')
       : '';
     const text =
       element.getAttribute('aria-label') ||
@@ -93,6 +108,18 @@ export function pageHelpersSource(operation: string): string {
       : new MouseEvent(type, options);
     return element.dispatchEvent(event);
   };
+  // The element with focus, followed into same-origin frames and open shadow roots.
+  const focusedElement = () => {
+    let element = document.activeElement || document.body;
+    for (;;) {
+      let inner = null;
+      try {
+        inner = element.localName === 'iframe' ? element.contentDocument?.activeElement : element.shadowRoot?.activeElement;
+      } catch {}
+      if (!inner || inner === element) return element;
+      element = inner;
+    }
+  };
   const scrollableArea = () => {
     const root = document.scrollingElement || document.documentElement;
     if (root.scrollHeight > root.clientHeight + 1) return root;
@@ -116,11 +143,13 @@ export function pageHelpersSource(operation: string): string {
     cancelled: () => operation.cancelled === true,
     selector: (target) => selectorFor(resolve(target)),
     elements: ({ limit = 80, within } = {}) => {
-      const root = within ? resolve(within) : document;
+      // A frame's reference searches the document it shows.
+      const container = within ? resolve(within) : document;
+      const root = container.localName === 'iframe' && container.contentDocument ? container.contentDocument : container;
       const visible = Array.from(root.querySelectorAll(INTERACTIVE)).filter(isVisible);
       const items = visible.slice(0, Math.max(1, limit)).map((element) => {
         const rect = element.getBoundingClientRect();
-        const item = { selector: selectorFor(element), tag: element.localName, text: labelFor(element) };
+        const item = { ref: refs.refFor(element), ...(hasSelector(element) ? { selector: selectorFor(element) } : {}), tag: element.localName, text: labelFor(element) };
         const role = element.getAttribute('role');
         if (role) item.role = role;
         if (element.type && element.localName === 'input') item.type = element.type;
@@ -129,7 +158,7 @@ export function pageHelpersSource(operation: string): string {
           item.value = element.value.slice(0, 80);
         if (element.checked) item.checked = true;
         if (element.disabled || element.getAttribute('aria-disabled') === 'true') item.disabled = true;
-        if (rect.bottom < 0 || rect.top > innerHeight) item.offscreen = true;
+        if (rect.bottom < 0 || rect.top > (element.ownerDocument.defaultView || window).innerHeight) item.offscreen = true;
         return item;
       });
       return { total: visible.length, items };
@@ -152,48 +181,55 @@ export function pageHelpersSource(operation: string): string {
       checkCancelled();
       const element = resolve(target);
       const value = String(text);
+      // A same-origin frame's elements come from that frame's realm and document.
+      const frame = element.ownerDocument.defaultView || window;
+      const frameDocument = element.ownerDocument;
       element.scrollIntoView({ block: 'center' });
       if (typeof element.focus === 'function') element.focus({ preventScroll: true });
-      if (element instanceof HTMLSelectElement) {
+      if (element instanceof frame.HTMLSelectElement) {
         const option = Array.from(element.options).find((item) => item.value === value || item.text.trim() === value);
-        if (!option) throw new Error('No option ' + value + ' in ' + selectorFor(element));
+        if (!option) throw new Error('No option ' + value + ' in ' + nameForError(element));
         element.value = option.value;
-      } else if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-        const prototype = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      } else if (element instanceof frame.HTMLInputElement || element instanceof frame.HTMLTextAreaElement) {
+        const prototype = element instanceof frame.HTMLTextAreaElement ? frame.HTMLTextAreaElement.prototype : frame.HTMLInputElement.prototype;
         Object.getOwnPropertyDescriptor(prototype, 'value').set.call(element, value);
       } else if (element.isContentEditable) {
-        const selection = getSelection();
-        const range = document.createRange();
+        const selection = frame.getSelection();
+        const range = frameDocument.createRange();
         range.selectNodeContents(element);
         selection.removeAllRanges();
         selection.addRange(range);
-        if (!document.execCommand('insertText', false, value)) {
+        if (!frameDocument.execCommand('insertText', false, value)) {
           element.textContent = value;
-          element.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: value }));
+          element.dispatchEvent(new frame.InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: value }));
         }
         return element.innerText;
       } else {
-        throw new Error(selectorFor(element) + ' is not a text field, select or editable element.');
+        throw new Error(nameForError(element) + ' is not a text field, select or editable element.');
       }
-      element.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: value }));
-      element.dispatchEvent(new Event('change', { bubbles: true }));
+      element.dispatchEvent(new frame.InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: value }));
+      element.dispatchEvent(new frame.Event('change', { bubbles: true }));
       return element.value;
     },
     press: (key, target) => {
       checkCancelled();
-      const element = target ? resolve(target) : document.activeElement || document.body;
+      const element = target ? resolve(target) : focusedElement();
       const init = { key, bubbles: true, cancelable: true, composed: true };
+      const KeyEvent = (element.ownerDocument.defaultView || window).KeyboardEvent;
       // As in a browser, a canceled keydown suppresses keypress, and either one cancels the default action.
-      let proceed = element.dispatchEvent(new KeyboardEvent('keydown', init));
-      if (proceed && (key.length === 1 || key === 'Enter')) proceed = element.dispatchEvent(new KeyboardEvent('keypress', init));
-      element.dispatchEvent(new KeyboardEvent('keyup', init));
-      if (proceed && key === 'Enter' && element instanceof HTMLInputElement && element.form) element.form.requestSubmit();
+      let proceed = element.dispatchEvent(new KeyEvent('keydown', init));
+      if (proceed && (key.length === 1 || key === 'Enter')) proceed = element.dispatchEvent(new KeyEvent('keypress', init));
+      element.dispatchEvent(new KeyEvent('keyup', init));
+      if (proceed && key === 'Enter' && element.localName === 'input' && element.form) element.form.requestSubmit();
     },
     scroll: (amount, within) => {
       checkCancelled();
-      const area = within ? resolve(within) : scrollableArea();
-      const isRoot = area === document.scrollingElement || area === document.documentElement;
-      const viewport = isRoot ? innerHeight : area.clientHeight;
+      let area = within ? resolve(within) : scrollableArea();
+      // A frame's reference scrolls the document it shows.
+      if (area.localName === 'iframe' && area.contentDocument) area = area.contentDocument.scrollingElement || area.contentDocument.documentElement;
+      const areaDocument = area.ownerDocument;
+      const isRoot = area === areaDocument.scrollingElement || area === areaDocument.documentElement;
+      const viewport = isRoot ? (areaDocument.defaultView || window).innerHeight : area.clientHeight;
       area.scrollBy({ top: amount ?? Math.round(viewport * 0.8), behavior: 'instant' });
       return {
         top: Math.round(area.scrollTop),
@@ -210,7 +246,7 @@ export function pageHelpersSource(operation: string): string {
           const value = await target();
           if (value) return value;
         } else {
-          const element = document.querySelector(target);
+          const element = isRef(target) ? resolve(target) : document.querySelector(target);
           if (element && isVisible(element)) return element;
         }
         if (Date.now() >= deadline) throw new Error('Timed out after ' + timeoutMs + 'ms waiting for ' + (typeof target === 'function' ? 'the condition' : target));

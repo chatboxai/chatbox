@@ -25,6 +25,8 @@ import { remapPhantomHomePathForProvider } from './sandbox-paths'
 import type { ImageToolResults } from './view-image'
 
 const DEFAULT_READ_MAX_CHARS = 12_000
+const INTERACTIVE_PAGE_HINT =
+  'This page was read as its visible text rather than an article. The snapshot command outlines its controls, fields and links with references to act on.'
 const DEFAULT_RUN_TIMEOUT_MS = 5_000
 const UPLOAD_TIMEOUT_MS = 20_000
 /** Folder of the working directory that receives the files runs download. */
@@ -37,6 +39,9 @@ interface BrowserToolInput {
   code?: string
   maxLength?: number
   timeoutMs?: number
+  scope?: string
+  query?: string
+  cursor?: string
   download?: boolean
   target?: string
   files?: string[]
@@ -86,7 +91,11 @@ function formatReadOutput(output: unknown): string {
   const content = stringField(record, 'content') ?? ''
   const originalLength = numberField(record, 'originalLength')
   const truncated = record?.truncated === true
-  const header = [...pageLines(record), ...(content ? ['Content:'] : [])].join('\n')
+  const header = [
+    ...pageLines(record),
+    ...(record?.readMode === 'text' ? [`Hint: ${INTERACTIVE_PAGE_HINT}`] : []),
+    ...(content ? ['Content:'] : []),
+  ].join('\n')
   const truncationHint =
     truncated && originalLength !== undefined
       ? `\n\n[Content truncated. Showing ${content.length} of ${originalLength} characters.]`
@@ -94,7 +103,34 @@ function formatReadOutput(output: unknown): string {
   return `${header ? `${header}\n` : ''}${content}${truncationHint}`
 }
 
+function formatSnapshotOutput(output: unknown): string {
+  const record = asRecord(output)
+  const error = stringField(record, 'error')
+  if (error) return [`Error: ${error}`, ...pageLines(record)].join('\n')
+  const content = stringField(record, 'content') ?? ''
+  const totalLines = numberField(record, 'totalLines') ?? 0
+  const shownLines = content ? content.split('\n').length : 0
+  const nextCursor = stringField(record, 'nextCursor')
+  return [
+    ...pageLines(record),
+    record?.modal ? 'Snapshot of the open modal dialog; the rest of the page is inert until it closes:' : 'Snapshot:',
+    content || '(no elements)',
+    ...(record?.restarted
+      ? ['[The cursor was for another page, query or scope, so this starts from the first line.]']
+      : []),
+    ...(nextCursor
+      ? [
+          `[Showing ${shownLines} of ${totalLines} lines. Pass cursor "${nextCursor}" with the same query and scope to continue.]`,
+        ]
+      : []),
+    ...(record?.truncated
+      ? ['[The page has more elements than one snapshot outlines; narrow it with scope or query.]']
+      : []),
+  ].join('\n')
+}
+
 const readModelOutput = toTextModelOutput(formatReadOutput)
+const snapshotModelOutput = toTextModelOutput(formatSnapshotOutput)
 const jsonModelOutput = toTextModelOutput((output) => JSON.stringify(output))
 
 function isWindowsRenderer(): boolean {
@@ -154,8 +190,9 @@ function describeTool(options: { hasParseLink: boolean; screenshot: boolean }): 
   return `Chatbox's built-in browser, shown to the user in the sidebar. Runs page JavaScript, reaches local addresses, and has the user's sign-ins.${whenToUse}
 Commands:
 - read: return the rendered text of url, or of the current page when url is omitted.
+- snapshot: outline the controls, fields, links and structure of url or the current page, each control with a reference such as e12. Use it before interacting; filter with query, focus on a part with scope.
 - run: run code, an async function body, on \`page\` from the latest result that has one; returns its status and value. To click, type or scroll, load the ${BUILT_IN_BROWSER_SKILL_NAME} skill first. With download, files the run downloads are saved to the working directory.
-- upload: hand local files to a file input on \`page\`; the site uploads them itself.${screenshot}
+- upload: hand local files to target, a file input or the control that opens the file picker, on \`page\`; the site uploads them itself.${screenshot}
 If a page needs sign-in or a check only the user can do, ask them to do it in the sidebar, then read again.`
 }
 
@@ -166,6 +203,31 @@ function pageEvents(page: BuiltInBrowserPage, currentDownloads: BuiltInBrowserDo
     ...(downloads.length ? { downloads } : {}),
     ...(page.userInteracted ? { note: USER_INTERACTED_NOTE } : {}),
     ...(page.settledOperations?.length ? { settledOperations: page.settledOperations } : {}),
+  }
+}
+
+async function snapshotPage(builtInBrowser: BuiltInBrowser, input: BrowserToolInput, signal?: AbortSignal) {
+  const page = await builtInBrowser.readPage({
+    url: input.url,
+    snapshot: {
+      ...(input.scope ? { scope: input.scope } : {}),
+      ...(input.query ? { query: input.query } : {}),
+      ...(input.cursor ? { cursor: input.cursor } : {}),
+      ...(input.maxLength ? { maxChars: input.maxLength } : {}),
+    },
+    signal,
+  })
+  const { totalLines = 0, nextCursor, restarted, modal, truncated, error } = page.snapshot ?? {}
+  return {
+    url: page.url,
+    title: page.title,
+    ...(page.page ? { page: page.page } : {}),
+    ...pageEvents(page),
+    ...(error ? { error } : { content: page.content, totalLines }),
+    ...(nextCursor ? { nextCursor } : {}),
+    ...(restarted ? { restarted } : {}),
+    ...(modal ? { modal } : {}),
+    ...(truncated ? { truncated } : {}),
   }
 }
 
@@ -182,6 +244,7 @@ async function readPage(builtInBrowser: BuiltInBrowser, input: BrowserToolInput,
     content: shown,
     originalLength: content.length,
     truncated: content.length > shown.length,
+    ...(page.readMode === 'text' ? { readMode: page.readMode } : {}),
   }
 }
 
@@ -321,8 +384,8 @@ export function getBuiltInBrowserToolSet(
   if (!builtInBrowser) return null
   const { imageResults, fileAccess } = options
   const commands: BuiltInBrowserCommand[] = imageResults
-    ? ['read', 'run', 'upload', 'screenshot']
-    : ['read', 'run', 'upload']
+    ? ['read', 'snapshot', 'run', 'upload', 'screenshot']
+    : ['read', 'snapshot', 'run', 'upload']
   const tool: ToolSet[string] = {
     description: describeTool({ hasParseLink: options.hasParseLink, screenshot: !!imageResults }),
     inputSchema: validatedToolSchema({
@@ -332,7 +395,7 @@ export function getBuiltInBrowserToolSet(
         url: {
           type: 'string',
           format: 'uri',
-          description: 'read/screenshot: page to open; omit for the current page.',
+          description: 'read/snapshot/screenshot: page to open; omit for the current page.',
         },
         page: {
           type: 'string',
@@ -344,7 +407,21 @@ export function getBuiltInBrowserToolSet(
           maxLength: 20_000,
           description: 'run: e.g. return document.title',
         },
-        maxLength: { type: 'integer', minimum: 500, maximum: 50_000, description: 'read: maximum characters.' },
+        maxLength: {
+          type: 'integer',
+          minimum: 500,
+          maximum: 50_000,
+          description: 'read/snapshot: maximum characters.',
+        },
+        scope: { type: 'string', description: 'snapshot: reference of the part to outline, such as e12.' },
+        query: {
+          type: 'string',
+          description: 'snapshot: keep only lines containing this text, with their containers.',
+        },
+        cursor: {
+          type: 'string',
+          description: 'snapshot: nextCursor of the previous snapshot, with the same query and scope, to continue it.',
+        },
         timeoutMs: {
           type: 'integer',
           minimum: 1000,
@@ -358,7 +435,8 @@ export function getBuiltInBrowserToolSet(
         target: {
           type: 'string',
           minLength: 1,
-          description: 'upload: CSS selector of the file input, or of the control that opens the file picker.',
+          description:
+            'upload: reference or CSS selector of the file input, or of the control that opens the file picker.',
         },
         files: {
           type: 'array',
@@ -380,6 +458,7 @@ export function getBuiltInBrowserToolSet(
           Pick<ToolCallOptions, 'approved' | 'approvalDetails'>
         return uploadFiles(builtInBrowser, input, fileAccess, { abortSignal, toolCallId, approved, approvalDetails })
       }
+      if (input.command === 'snapshot') return snapshotPage(builtInBrowser, input, abortSignal)
       if (input.command !== 'screenshot') return readPage(builtInBrowser, input, abortSignal)
       if (!imageResults) return { error: 'Screenshots are not available for this model.' }
       imageResults.reserve(messages)
@@ -398,6 +477,7 @@ export function getBuiltInBrowserToolSet(
       if (command === 'screenshot' && imageResults && !stringField(asRecord(options.output), 'error')) {
         return imageResults.toModelOutput(options)
       }
+      if (command === 'snapshot') return snapshotModelOutput(options)
       return command === 'run' || command === 'upload' ? jsonModelOutput(options) : readModelOutput(options)
     },
   }

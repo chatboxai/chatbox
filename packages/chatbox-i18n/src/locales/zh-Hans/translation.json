@@ -1745,5 +1745,6 @@
   "Current page and history cleared. Website sign-ins kept.": "已清空当前页面和历史，网站登录已保留。",
   "All browser pages and website data cleared": "已清除所有浏览器页面和网站数据",
   "Clearing browser data…": "正在清除浏览器数据…",
-  "Upload Files to Page": "上传文件到页面"
+  "Upload Files to Page": "上传文件到页面",
+  "Inspect Page Controls": "查看页面控件"
 }

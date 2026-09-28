@@ -1745,5 +1745,6 @@
   "Current page and history cleared. Website sign-ins kept.": "Gjeldende side og historikk er tømt. Innlogginger på nettsteder beholdes.",
   "All browser pages and website data cleared": "Alle nettlesersider og nettstedsdata er slettet",
   "Clearing browser data…": "Sletter nettleserdata…",
-  "Upload Files to Page": "Last opp filer til siden"
+  "Upload Files to Page": "Last opp filer til siden",
+  "Inspect Page Controls": "Inspiser sidens kontroller"
 }

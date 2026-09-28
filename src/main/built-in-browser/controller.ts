@@ -10,6 +10,7 @@ import {
   type BuiltInBrowserRunErrorCode,
   type BuiltInBrowserRunResult,
   type BuiltInBrowserScreenshot,
+  type BuiltInBrowserSnapshotRequest,
   type BuiltInBrowserState,
   type BuiltInBrowserUploadRequest,
   type BuiltInBrowserUploadResult,
@@ -21,6 +22,7 @@ import { extractReadableContent } from './extract'
 import { DebuggerUnavailableError, PageDebugger } from './page-debugger'
 import { routeDownload } from './page-downloads'
 import { PageRun, reportFailedRequest } from './page-run'
+import { type PageSnapshotOutcome, pageOfLines, pageSnapshotSource } from './page-snapshot'
 import { BUSY_WINDOW_MS, type PageRef, PageTracker } from './page-tracker'
 import { handFilesToPage, inspectUploadFiles } from './page-upload'
 import { scriptSyntaxError } from './script-run'
@@ -30,20 +32,20 @@ import { normalizeBrowserUrl } from './url'
 export const BUILT_IN_BROWSER_PARTITION = 'persist:chatbox-built-in-browser'
 
 const MAX_HTML_CHARS = 3_000_000
+const SNAPSHOT_DEFAULT_CHARS = 12_000
+const SNAPSHOT_MAX_CHARS = 50_000
 const RENDER_SETTLE_MAX_MS = 8_000
 
-// Resolves once the page's visible text stops growing, so client-rendered pages are read
-// after their content arrives instead of at the first paint.
-const SNAPSHOT_SCRIPT = `new Promise((resolve) => {
+/**
+ * Resolves to `collect`, evaluated once the page's visible text stops growing, so client-rendered
+ * pages are observed after their content arrives instead of at the first paint.
+ */
+function settledSource(collect: string): string {
+  return `new Promise((resolve) => {
   const started = Date.now();
   let lastLength = -1;
   let stableTicks = 0;
-  const snapshot = () => resolve({
-    url: location.href,
-    title: document.title || '',
-    html: document.documentElement ? document.documentElement.outerHTML.slice(0, ${MAX_HTML_CHARS}) : '',
-    text: document.body ? document.body.innerText : '',
-  });
+  const snapshot = () => resolve(${collect});
   const tick = () => {
     const length = document.body ? document.body.innerText.length : 0;
     stableTicks = length > 0 && length === lastLength ? stableTicks + 1 : 0;
@@ -53,6 +55,14 @@ const SNAPSHOT_SCRIPT = `new Promise((resolve) => {
   };
   tick();
 })`
+}
+
+const READ_SOURCE = settledSource(`({
+    url: location.href,
+    title: document.title || '',
+    html: document.documentElement ? document.documentElement.outerHTML.slice(0, ${MAX_HTML_CHARS}) : '',
+    text: document.body ? document.body.innerText : '',
+  })`)
 
 interface PageSnapshot {
   url: string
@@ -303,6 +313,10 @@ export class BuiltInBrowserController {
             if (!contents.isDestroyed() && !contents.isLoading()) page.loadEnded()
           })
         }
+        if (request.snapshot) {
+          if (request.screenshot) throw new Error('A snapshot cannot capture a screenshot.')
+          return await this.snapshotPage(contents, page, request.snapshot, signal)
+        }
         const snapshot = await snapshotSettled(contents, signal, page)
         const extracted = extractReadableContent({ html: snapshot.html, url: snapshot.url, visibleText: snapshot.text })
         const fields = { url: snapshot.url, title: snapshot.title || extracted.title || '', content: extracted.content }
@@ -311,7 +325,12 @@ export class BuiltInBrowserController {
           // reference nor page events; both stay for the next read or run.
           return { ...fields, screenshot: await this.captureScreenshot(contents, signal) }
         }
-        return { ...(page.ref ? { page: page.ref.id } : {}), ...fields, ...page.takeEvents() }
+        return {
+          ...(page.ref ? { page: page.ref.id } : {}),
+          ...fields,
+          readMode: extracted.mode,
+          ...page.takeEvents(),
+        }
       } finally {
         clearTimeout(timer)
       }
@@ -588,6 +607,55 @@ export class BuiltInBrowserController {
     return this.uploadResultPage(result, {}, page.document === document, signal)
   }
 
+  /**
+   * Outlines the current document once it settles, like a read. References in it name elements of
+   * this document and stay the same in later snapshots of it.
+   */
+  private async snapshotPage(
+    contents: WebContents,
+    page: PageTracker,
+    request: BuiltInBrowserSnapshotRequest,
+    signal: AbortSignal
+  ): Promise<BuiltInBrowserPage> {
+    const { scope, query, cursor } = request
+    const observed = await observeSettled(
+      contents,
+      signal,
+      page,
+      settledSource(`({
+    url: location.href,
+    title: document.title || '',
+    tree: ${pageSnapshotSource({ ...(scope ? { scope } : {}), ...(query ? { query } : {}) })},
+  })`)
+    )
+    const tree = (observed.tree ?? {}) as Partial<PageSnapshotOutcome>
+    const reference = page.ref?.id
+    const fields = {
+      ...(reference ? { page: reference } : {}),
+      url: String(observed.url ?? contents.getURL()),
+      title: String(observed.title ?? ''),
+    }
+    if (typeof tree.error === 'string' || !Array.isArray(tree.lines)) {
+      const error = typeof tree.error === 'string' ? tree.error : 'The page returned no snapshot.'
+      return { ...fields, content: '', snapshot: { totalLines: 0, error }, ...page.takeEvents() }
+    }
+    const maxChars = Math.min(Math.max(request.maxChars ?? SNAPSHOT_DEFAULT_CHARS, 1_000), SNAPSHOT_MAX_CHARS)
+    const lines = tree.lines.map((line) => String(line))
+    const shown = pageOfLines(lines, { page: reference ?? '', scope, query, cursor, maxChars })
+    return {
+      ...fields,
+      content: shown.content,
+      snapshot: {
+        totalLines: shown.totalLines,
+        ...(shown.nextCursor ? { nextCursor: shown.nextCursor } : {}),
+        ...(shown.restarted ? { restarted: true as const } : {}),
+        ...(tree.modal ? { modal: true as const } : {}),
+        ...(tree.truncated ? { truncated: true as const } : {}),
+      },
+      ...page.takeEvents(),
+    }
+  }
+
   private debuggerOf(contents: WebContents): PageDebugger {
     let pageDebugger = this.debuggers.get(contents)
     if (!pageDebugger) {
@@ -793,6 +861,17 @@ function pageToActOn(
   return ref
 }
 
+/** Reads the current document's text once it settles; see {@link observeSettled}. */
+async function snapshotSettled(contents: WebContents, signal: AbortSignal, page: PageTracker): Promise<PageSnapshot> {
+  const snapshot = await observeSettled(contents, signal, page, READ_SOURCE)
+  return {
+    url: String(snapshot.url ?? contents.getURL()),
+    title: String(snapshot.title ?? ''),
+    html: String(snapshot.html ?? ''),
+    text: String(snapshot.text ?? ''),
+  }
+}
+
 const MAX_SNAPSHOT_ATTEMPTS = 4
 const SCREENSHOT_JPEG_QUALITY = 80
 
@@ -851,11 +930,16 @@ function waitForNavigation(contents: WebContents, signal: AbortSignal): Promise<
 }
 
 /**
- * Snapshots the current document once it is ready and its text settles. A client-side redirect
- * or a navigation by the user replaces the document while the snapshot is running, so it
+ * Evaluates `source`, a {@link settledSource}, on the current document once it is ready. A
+ * client-side redirect or a navigation by the user replaces the document while it runs, so it
  * restarts on the new one. Pages may never finish loading, so DOM ready is enough to start.
  */
-async function snapshotSettled(contents: WebContents, signal: AbortSignal, page: PageTracker): Promise<PageSnapshot> {
+async function observeSettled(
+  contents: WebContents,
+  signal: AbortSignal,
+  page: PageTracker,
+  source: string
+): Promise<Record<string, unknown>> {
   for (let attempt = 1; ; attempt += 1) {
     await page.whenReadable(signal)
     const attemptDone = new AbortController()
@@ -863,19 +947,11 @@ async function snapshotSettled(contents: WebContents, signal: AbortSignal, page:
     signal.addEventListener('abort', stopAttempt, { once: true })
     try {
       const outcome = await Promise.race([
-        contents.executeJavaScript(SNAPSHOT_SCRIPT, true).then((snapshot: PageSnapshot) => ({ snapshot })),
-        waitForNavigation(contents, attemptDone.signal).then(() => ({ snapshot: null })),
+        contents.executeJavaScript(source, true).then((observed: unknown) => ({ observed })),
+        waitForNavigation(contents, attemptDone.signal).then(() => ({ observed: null })),
       ])
       signal.throwIfAborted()
-      if (outcome.snapshot) {
-        const { snapshot } = outcome
-        return {
-          url: String(snapshot.url ?? contents.getURL()),
-          title: String(snapshot.title ?? ''),
-          html: String(snapshot.html ?? ''),
-          text: String(snapshot.text ?? ''),
-        }
-      }
+      if (outcome.observed && typeof outcome.observed === 'object') return outcome.observed as Record<string, unknown>
     } catch (error) {
       signal.throwIfAborted()
       if (attempt >= MAX_SNAPSHOT_ATTEMPTS || contents.isDestroyed()) throw error

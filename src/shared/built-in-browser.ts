@@ -47,6 +47,32 @@ export interface BuiltInBrowserReadRequest {
   script?: { code: string; page: string; downloadDirectory?: string }
   /** Hand local files to a file input of the page `page` refers to, instead of extracting page text. */
   upload?: BuiltInBrowserUploadRequest
+  /** Outline the page's controls, fields and structure with element references instead of extracting its text. */
+  snapshot?: BuiltInBrowserSnapshotRequest
+}
+
+export interface BuiltInBrowserSnapshotRequest {
+  /** Reference of the element whose subtree to outline. */
+  scope?: string
+  /** Case-insensitive text; only matching lines and the lines containing them are kept. */
+  query?: string
+  /** `nextCursor` of the previous snapshot of the same page, sent with the same `scope` and `query`. */
+  cursor?: string
+  maxChars?: number
+}
+
+export interface BuiltInBrowserSnapshotInfo {
+  /** Lines of the whole snapshot; `content` holds the part that fits. */
+  totalLines: number
+  nextCursor?: string
+  /** `cursor` was for another page, scope or query, so the outline starts over. */
+  restarted?: true
+  /** Only the open native modal dialog is outlined, since the rest of the page is inert. */
+  modal?: true
+  /** The page has more elements than a snapshot outlines; narrow it with `scope` or `query`. */
+  truncated?: true
+  /** The snapshot could not be taken, such as when `scope` names an element that is gone. */
+  error?: string
 }
 
 /** Most files one upload hands to a page, and the largest file it accepts. */
@@ -220,6 +246,10 @@ export interface BuiltInBrowserPage {
   screenshot?: BuiltInBrowserScreenshot
   scriptResult?: BuiltInBrowserRunResult
   uploadResult?: BuiltInBrowserUploadResult
+  /** Present on a snapshot, whose outline is `content`. */
+  snapshot?: BuiltInBrowserSnapshotInfo
+  /** How `content` of a read was extracted: an article, or the visible text of a page without one. */
+  readMode?: 'article' | 'text'
   /** Latest main-frame navigation, when a script was refused because the page changed. */
   lastNavigation?: BuiltInBrowserNavigation
   /** The user clicked, typed or scrolled in the page since the previous result. */
@@ -268,10 +298,11 @@ export type BuiltInBrowserViewRequest =
 export const BUILT_IN_BROWSER_TOOL_NAME = 'browser'
 
 /**
- * `read` opens or reads a page, `run` executes a script on it, `upload` hands local files to its
- * file input, `screenshot` captures its viewport.
+ * `read` opens or reads a page, `snapshot` outlines its controls with element references, `run`
+ * executes a script on it, `upload` hands local files to its file input, `screenshot` captures its
+ * viewport.
  */
-export const BUILT_IN_BROWSER_COMMANDS = ['read', 'run', 'upload', 'screenshot'] as const
+export const BUILT_IN_BROWSER_COMMANDS = ['read', 'snapshot', 'run', 'upload', 'screenshot'] as const
 export type BuiltInBrowserCommand = (typeof BUILT_IN_BROWSER_COMMANDS)[number]
 
 /** The command of a `browser` tool call, when its input names a known one. */

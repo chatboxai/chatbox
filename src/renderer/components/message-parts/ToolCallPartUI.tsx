@@ -28,6 +28,7 @@ import {
   IconFileSearch,
   IconFolderSearch,
   IconInfoCircle,
+  IconListSearch,
   IconLoader,
   IconPackage,
   IconPhoto,
@@ -93,6 +94,8 @@ const APPROVAL_PAYLOAD_MAX_HEIGHT = 'min(240px, 35vh)'
 const WRAPPABLE_TEXT_STYLE = { overflowWrap: 'anywhere' } as const
 const PREFORMATTED_OVERFLOW_STYLE = { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' } as const
 const PRELINE_OVERFLOW_STYLE = { whiteSpace: 'pre-line', lineHeight: 1.5, overflowWrap: 'anywhere' } as const
+/** A page snapshot is an outline whose indentation shows what contains what. */
+const OUTLINE_OVERFLOW_STYLE = { ...PRELINE_OVERFLOW_STYLE, whiteSpace: 'pre-wrap' } as const
 const GIT_BASH_DOWNLOAD_URL = 'https://git-scm.com/downloads/win'
 const WSL_INSTALL_URL = 'https://learn.microsoft.com/windows/wsl/install'
 
@@ -262,7 +265,13 @@ const toolIconMap: Record<string, React.ElementType> = {
   view_image: IconPhoto,
 }
 
-const browserCommandIconMap = { read: IconBrowser, run: IconCode, upload: IconUpload, screenshot: IconPhoto }
+const browserCommandIconMap = {
+  read: IconBrowser,
+  snapshot: IconListSearch,
+  run: IconCode,
+  upload: IconUpload,
+  screenshot: IconPhoto,
+}
 
 const knowledgeBaseCommandIconMap = { search: IconDatabase, read: IconFile, list: IconFileSearch }
 
@@ -273,10 +282,22 @@ const getToolIcon = (toolName: string, args?: unknown) =>
       ? knowledgeBaseCommandIconMap[knowledgeBaseCommandOf(args) ?? 'search']
       : toolIconMap[toolName] || IconCode
 
-/** parse_link and the browser's read command both return a page's text. */
-const isPageReadPart = (part: MessageToolCallPart) =>
-  part.toolName === 'parse_link' ||
-  (part.toolName === BUILT_IN_BROWSER_TOOL_NAME && builtInBrowserCommandOf(part.args) === 'read')
+const pageTextStyle = (part: MessageToolCallPart) =>
+  part.toolName === BUILT_IN_BROWSER_TOOL_NAME && builtInBrowserCommandOf(part.args) === 'snapshot'
+    ? OUTLINE_OVERFLOW_STYLE
+    : PRELINE_OVERFLOW_STYLE
+
+/**
+ * parse_link and the browser's read and snapshot commands return a page as text. A snapshot that
+ * failed returns its error as a result, which the general view shows.
+ */
+const isPageReadPart = (part: MessageToolCallPart) => {
+  if (part.toolName === 'parse_link') return true
+  if (part.toolName !== BUILT_IN_BROWSER_TOOL_NAME) return false
+  const command = builtInBrowserCommandOf(part.args)
+  if (command === 'snapshot') return !getFirstStringValue(part.result, ['error'])
+  return command === 'read'
+}
 
 // ─── Pill Header (shared) ───────────────────────────────────────────
 
@@ -640,7 +661,7 @@ const ParseLinkUI: FC<{ part: MessageToolCallPart }> = ({ part }) => {
           {isError ? (
             <ToolCallErrorDetails part={part} />
           ) : (
-            <Text size="sm" c="chatbox-tertiary" style={PRELINE_OVERFLOW_STYLE}>
+            <Text size="sm" c="chatbox-tertiary" style={pageTextStyle(part)}>
               {content}
             </Text>
           )}
@@ -667,7 +688,7 @@ const ParseLinkDetails: FC<{ part: MessageToolCallPart }> = ({ part }) => {
         <ToolCallErrorDetails part={part} />
       ) : (
         content && (
-          <Text size="sm" c="chatbox-tertiary" style={PRELINE_OVERFLOW_STYLE}>
+          <Text size="sm" c="chatbox-tertiary" style={pageTextStyle(part)}>
             {content}
           </Text>
         )

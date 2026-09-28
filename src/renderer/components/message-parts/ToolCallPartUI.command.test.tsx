@@ -221,6 +221,32 @@ describe('command execution timeline', () => {
     expect(screen.queryByText(/Failed/)).toBeNull()
   })
 
+  it('shows the error of a failed browser snapshot instead of an empty page', () => {
+    render(
+      <MantineProvider>
+        <StepTimelineUI
+          parts={[
+            commandPart({
+              toolName: 'browser',
+              args: { command: 'snapshot', scope: 'e9' },
+              state: 'result',
+              result: {
+                url: 'https://example.com/',
+                title: 'Example',
+                page: 'p-1',
+                error: 'Reference e9 is not on the page anymore.',
+              },
+              duration: 1_000,
+            }),
+          ]}
+        />
+      </MantineProvider>
+    )
+
+    fireEvent.click(screen.getByText(/Inspect Page Controls/).closest('button') as HTMLButtonElement)
+    expect(screen.getByText(/Reference e9 is not on the page anymore/)).toBeTruthy()
+  })
+
   it('still renders a genuine non-command tool error as Failed', () => {
     render(
       <MantineProvider>

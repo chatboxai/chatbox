@@ -186,6 +186,16 @@ describe('handFilesToPage', () => {
     expect(hooks.onTouch).not.toHaveBeenCalled()
   })
 
+  it('finds a target by its snapshot reference', async () => {
+    const { page, calls } = fakePage({ 'Runtime.evaluate': () => ({ result: { subtype: 'null' } }) })
+    expect(await handFilesToPage(page, 'e12', files, new AbortController().signal, onPage())).toEqual({
+      kind: 'refused',
+      code: 'target_not_found',
+      message: 'Reference e12 is not on the page anymore. Take a new snapshot.',
+    })
+    expect(String(calls[0]?.params?.expression)).toContain('elementFor("e12")')
+  })
+
   it('refuses a selector that matches nothing or is invalid', async () => {
     const signal = new AbortController().signal
     const missing = fakePage({ 'Runtime.evaluate': () => ({ result: { subtype: 'null' } }) }).page
@@ -238,9 +248,12 @@ describe('handFilesToPage', () => {
         'Runtime.evaluate': () => element,
         'Runtime.callFunctionOn': (params) =>
           String(params?.functionDeclaration).includes('ownerDocument')
-            ? { result: { value: true } }
+            ? { result: { objectId: `document-of-${params?.objectId}` } }
             : noInputInside(params),
         'DOM.resolveNode': () => ({ object: { objectId: 'hidden-input' } }),
+        // The target and the picker's input share a document; in a frame they share it through
+        // different JavaScript contexts, which only node ids can compare.
+        'DOM.describeNode': () => ({ node: { backendNodeId: 1 } }),
       },
       { mode: 'selectSingle', backendNodeId: 7 }
     )
@@ -265,10 +278,11 @@ describe('handFilesToPage', () => {
         'Runtime.callFunctionOn': (params) => {
           if (String(params?.functionDeclaration).includes('this.click()')) clicked = true
           return String(params?.functionDeclaration).includes('ownerDocument')
-            ? { result: { value: true } }
+            ? { result: { objectId: `document-of-${params?.objectId}` } }
             : noInputInside(params)
         },
         'DOM.resolveNode': () => ({ object: { objectId: 'hidden-input' } }),
+        'DOM.describeNode': () => ({ node: { backendNodeId: 1 } }),
       },
       { mode: 'selectSingle', backendNodeId: 7 }
     )
@@ -283,13 +297,14 @@ describe('handFilesToPage', () => {
     const { page, calls } = fakePage(
       {
         'Runtime.evaluate': () => element,
-        'Runtime.callFunctionOn': (params) => {
-          if (String(params?.functionDeclaration).includes('ownerDocument')) {
-            throw new Error('Argument should belong to the same JavaScript world as target object')
-          }
-          return noInputInside(params)
-        },
+        'Runtime.callFunctionOn': (params) =>
+          String(params?.functionDeclaration).includes('ownerDocument')
+            ? { result: { objectId: `document-of-${params?.objectId}` } }
+            : noInputInside(params),
         'DOM.resolveNode': () => ({ object: { objectId: 'other-input' } }),
+        'DOM.describeNode': (params) => ({
+          node: { backendNodeId: params?.objectId === 'document-of-other-input' ? 2 : 1 },
+        }),
       },
       { mode: 'selectSingle', backendNodeId: 7 }
     )

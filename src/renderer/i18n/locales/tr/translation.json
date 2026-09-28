@@ -1741,5 +1741,6 @@
   "Current page and history cleared. Website sign-ins kept.": "Geçerli sayfa ve geçmiş temizlendi. Site oturumları korundu.",
   "All browser pages and website data cleared": "Tüm tarayıcı sayfaları ve site verileri temizlendi",
   "Clearing browser data…": "Tarayıcı verileri temizleniyor…",
-  "Upload Files to Page": "Sayfaya Dosya Yükle"
+  "Upload Files to Page": "Sayfaya Dosya Yükle",
+  "Inspect Page Controls": "Sayfa Denetimlerini İncele"
 }

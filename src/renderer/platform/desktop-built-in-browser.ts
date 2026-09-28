@@ -2,6 +2,7 @@ import {
   BUILT_IN_BROWSER_CHANNELS,
   type BuiltInBrowserClearScope,
   type BuiltInBrowserPage,
+  type BuiltInBrowserSnapshotRequest,
   type BuiltInBrowserState,
   type BuiltInBrowserUploadRequest,
   type BuiltInBrowserViewRequest,
@@ -31,6 +32,7 @@ export class DesktopBuiltInBrowser implements BuiltInBrowser {
     screenshot?: boolean
     script?: { code: string; page: string; downloadDirectory?: string }
     upload?: BuiltInBrowserUploadRequest
+    snapshot?: BuiltInBrowserSnapshotRequest
     signal?: AbortSignal
   }): Promise<BuiltInBrowserPage> {
     const { signal } = params
@@ -48,6 +50,7 @@ export class DesktopBuiltInBrowser implements BuiltInBrowser {
         screenshot: params.screenshot,
         script: params.script,
         upload: params.upload,
+        snapshot: params.snapshot,
       })
     } finally {
       signal?.removeEventListener('abort', onAbort)

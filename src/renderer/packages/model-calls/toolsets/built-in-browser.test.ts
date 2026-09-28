@@ -73,9 +73,20 @@ describe('browser tool', () => {
     const vision = browserTool(browser, { imageResults: createImageResults() })
 
     expect(Object.keys(textOnly?.tools ?? {})).toEqual(['browser'])
-    expect(browserTool(browser).inputSchema.jsonSchema.properties.command.enum).toEqual(['read', 'run', 'upload'])
+    expect(browserTool(browser).inputSchema.jsonSchema.properties.command.enum).toEqual([
+      'read',
+      'snapshot',
+      'run',
+      'upload',
+    ])
     expect(browserTool(browser).description).not.toContain('screenshot')
-    expect(vision.inputSchema.jsonSchema.properties.command.enum).toEqual(['read', 'run', 'upload', 'screenshot'])
+    expect(vision.inputSchema.jsonSchema.properties.command.enum).toEqual([
+      'read',
+      'snapshot',
+      'run',
+      'upload',
+      'screenshot',
+    ])
   })
 
   it('puts parse_link first only when it is available, points to the skill and hands sign-in to the user', () => {
@@ -326,6 +337,102 @@ describe('browser download events', () => {
 
     expect(result.downloads).toEqual([...events, current])
     expect(JSON.parse(output.value).downloads).toEqual([...events, current])
+  })
+})
+
+describe('browser snapshot command', () => {
+  it('outlines the page with its filters and tells the model how to continue', async () => {
+    const browser = createBrowser('')
+    vi.mocked(browser.readPage).mockResolvedValue({
+      page: 'p-1',
+      url: 'https://github.com/o/r/pulls',
+      title: 'Pull requests',
+      content: '- link "Fix login" [e2] url=/o/r/pull/12',
+      snapshot: { totalLines: 40, nextCursor: 'p-1@1' },
+    })
+    const tool = browserTool(browser)
+    const input = { command: 'snapshot', query: 'login', scope: 'e1', cursor: 'p-1@0', maxLength: 2000 }
+
+    const result = await tool.execute(input, {})
+    const output = tool.toModelOutput({ toolCallId: 'call', input, output: result }) as { value: string }
+
+    expect(browser.readPage).toHaveBeenCalledWith({
+      url: undefined,
+      snapshot: { scope: 'e1', query: 'login', cursor: 'p-1@0', maxChars: 2000 },
+      signal: undefined,
+    })
+    expect(output.value).toBe(
+      [
+        'Title: Pull requests',
+        'URL: https://github.com/o/r/pulls',
+        'Page: p-1',
+        'Snapshot:',
+        '- link "Fix login" [e2] url=/o/r/pull/12',
+        '[Showing 1 of 40 lines. Pass cursor "p-1@1" with the same query and scope to continue.]',
+      ].join('\n')
+    )
+  })
+
+  it('says when only a modal dialog is shown and reports a scope that is gone', async () => {
+    const browser = createBrowser('')
+    vi.mocked(browser.readPage)
+      .mockResolvedValueOnce({
+        page: 'p-1',
+        url: 'https://example.com/',
+        title: 'Example',
+        content: '- dialog "Confirm"',
+        snapshot: { totalLines: 1, modal: true },
+      })
+      .mockResolvedValueOnce({
+        page: 'p-1',
+        url: 'https://example.com/',
+        title: 'Example',
+        content: '',
+        snapshot: { totalLines: 0, error: 'Reference e9 is not on the page anymore.' },
+      })
+    const tool = browserTool(browser)
+    const input = { command: 'snapshot' }
+    const modal = await tool.execute(input, {})
+    const gone = await tool.execute({ ...input, scope: 'e9' }, {})
+
+    expect((tool.toModelOutput({ toolCallId: 'a', input, output: modal }) as { value: string }).value).toContain(
+      'Snapshot of the open modal dialog'
+    )
+    expect(gone).toMatchObject({ error: 'Reference e9 is not on the page anymore.', page: 'p-1' })
+  })
+
+  it('says when a cursor did not match and the outline started over', async () => {
+    const browser = createBrowser('')
+    vi.mocked(browser.readPage).mockResolvedValue({
+      page: 'p-1',
+      url: 'https://example.com/',
+      title: 'Example',
+      content: '- button "A" [e1]',
+      snapshot: { totalLines: 1, restarted: true },
+    })
+    const tool = browserTool(browser)
+    const input = { command: 'snapshot', cursor: 'p-0~x@4' }
+    const output = tool.toModelOutput({ toolCallId: 'a', input, output: await tool.execute(input, {}) }) as {
+      value: string
+    }
+    expect(output.value).toContain('starts from the first line')
+  })
+
+  it('points reads of pages without an article to the snapshot command', async () => {
+    const browser = createBrowser('')
+    vi.mocked(browser.readPage).mockResolvedValue({
+      page: 'p-1',
+      url: 'https://example.com/',
+      title: 'Dashboard',
+      content: 'Settings',
+      readMode: 'text',
+    })
+    const tool = browserTool(browser)
+    const input = { command: 'read' }
+    const output = tool.toModelOutput({ toolCallId: 'a', input, output: await tool.execute(input, {}) }) as {
+      value: string
+    }
+    expect(output.value).toContain('Hint: This page was read as its visible text')
   })
 })
 

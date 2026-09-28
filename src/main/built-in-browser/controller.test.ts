@@ -300,6 +300,30 @@ describe('BuiltInBrowserController reads', () => {
     expect(contents.executeJavaScript).toHaveBeenCalledTimes(1)
   })
 
+  it('outlines the page in parts that fit and hands out its reference', async () => {
+    const { contents, page } = await openPage()
+    const lines = Array.from({ length: 400 }, (_, index) => `- button "Action ${index}" [e${index + 1}]`)
+    const snapshot = (cursor?: string) => {
+      const read = controller.readPage(host as unknown as Host, 1, {
+        requestId: `snapshot-${++openCount}`,
+        snapshot: { query: 'Action', ...(cursor ? { cursor } : {}), maxChars: 1000 },
+      })
+      return flush().then(() => {
+        const source = String((contents.executeJavaScript.mock.calls.at(-1) as unknown[] | undefined)?.[0])
+        expect(source).toContain('"query":"Action"')
+        contents.snapshots.shift()?.({ url: contents.url, title: 'Title', tree: { lines } })
+        return read
+      })
+    }
+
+    const first = await snapshot()
+    expect(first).toMatchObject({ page, snapshot: { totalLines: 400, nextCursor: expect.stringMatching(/@\d+$/) } })
+    expect(first.content.length).toBeLessThanOrEqual(1000)
+    expect(first.content.startsWith('- button "Action 0" [e1]')).toBe(true)
+    const next = await snapshot(first.snapshot?.nextCursor)
+    expect(next.content).not.toContain('"Action 0"')
+  })
+
   it('refuses uploads to a changed page or of unusable files before touching the page', async () => {
     const { contents, page } = await openPage()
     const upload = (request: { page: string; files: string[] }) =>

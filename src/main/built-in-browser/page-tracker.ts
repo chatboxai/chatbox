@@ -252,7 +252,8 @@ export class PageTracker {
       status: status === 'not_started' ? 'unknown' : status,
       ...(code ? { code } : {}),
       ...(message ? { message } : {}),
-      ...(value !== undefined ? { value, truncated: truncated === true } : {}),
+      ...(value !== undefined ? { value } : {}),
+      ...(truncated ? { truncated } : {}),
       ...(diagnostics ? { diagnostics } : {}),
     })
   }

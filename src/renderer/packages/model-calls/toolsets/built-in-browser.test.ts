@@ -117,7 +117,7 @@ describe('browser tool', () => {
       title: 'Example',
       content: 'Body',
       userInteracted: true,
-      settledOperations: [{ operationId: 'op_1', status: 'completed', value: 'ok', truncated: false }],
+      settledOperations: [{ operationId: 'op_1', status: 'completed', value: 'ok' }],
     })
     const tool = browserTool(browser)
     const input = { command: 'read' }
@@ -147,7 +147,7 @@ describe('browser run command', () => {
       url: 'https://example.com/final',
       title: 'Example',
       content: '',
-      scriptResult: { operationId: 'op_1', status: 'completed', value: 'Example', truncated: false },
+      scriptResult: { operationId: 'op_1', status: 'completed', value: 'Example' },
     })
     const tool = browserTool(browser)
     const result = await tool.execute(input, { toolCallId: 'script' })
@@ -155,8 +155,6 @@ describe('browser run command', () => {
     expect(result).toEqual({
       status: 'completed',
       value: 'Example',
-      truncated: false,
-      operationId: 'op_1',
       page: 'p-1',
       url: 'https://example.com/final',
     })
@@ -168,6 +166,23 @@ describe('browser run command', () => {
     expect(tool.toModelOutput({ toolCallId: 'script', input, output: result })).toEqual({
       type: 'text',
       value: JSON.stringify(result),
+    })
+  })
+
+  it('keeps the operation id only for an outcome reported again later', async () => {
+    const browser = createBrowser('')
+    vi.mocked(browser.readPage).mockResolvedValue({
+      url: 'https://example.com/',
+      title: 'Example',
+      content: '',
+      scriptResult: { operationId: 'op_9', status: 'unknown', code: 'timeout', message: 'Still running.' },
+    })
+    expect(await browserTool(browser).execute(input, {})).toEqual({
+      status: 'unknown',
+      code: 'timeout',
+      message: 'Still running.',
+      operationId: 'op_9',
+      url: 'https://example.com/',
     })
   })
 
@@ -187,7 +202,7 @@ describe('browser run command', () => {
       url: 'https://example.com/next',
       title: 'Next',
       content: '',
-      scriptResult: { operationId: 'op_2', status: 'completed', value: 'Next', truncated: false, navigated: true },
+      scriptResult: { operationId: 'op_2', status: 'completed', value: 'Next', navigated: true },
     })
     const output = await browserTool(browser).execute(input, {})
     expect(output).toMatchObject({
@@ -201,7 +216,6 @@ describe('browser run command', () => {
   it('passes on a refused run with the navigation that changed the page', async () => {
     const browser = createBrowser('')
     vi.mocked(browser.readPage).mockResolvedValue({
-      page: 'p-3',
       url: 'https://github.com/o/r/issues/new',
       title: 'New issue',
       content: '',
@@ -213,11 +227,8 @@ describe('browser run command', () => {
       status: 'not_started',
       code: 'page_changed',
       message: 'Read it again.',
-      operationId: 'op_3',
-      page: 'p-3',
       url: 'https://github.com/o/r/issues/new',
       lastNavigation: { source: 'user', url: 'https://github.com/o/r/issues/new' },
-      userInteracted: true,
       note: expect.stringContaining('take priority'),
     })
   })

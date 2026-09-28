@@ -141,12 +141,13 @@ export class PageRun {
       }
     }
     const diagnostics = diagnosticsOf(redactViolations(outcome?.violations), this.failedRequests)
-    const extra = { ...(this.navigated ? { navigated: true } : {}), ...(diagnostics ? { diagnostics } : {}) }
+    const extra = { ...(this.navigated ? { navigated: true as const } : {}), ...(diagnostics ? { diagnostics } : {}) }
     if (outcome?.kind === 'value') {
-      return { operationId, status: 'completed', value: outcome.value, truncated: outcome.truncated, ...extra }
+      const truncated = outcome.truncated ? { truncated: true as const } : {}
+      return { operationId, status: 'completed', value: outcome.value, ...truncated, ...extra }
     }
     if (outcome?.kind === 'error') {
-      return { operationId, status: 'failed', code: 'script_error', message: outcome.message, ...extra }
+      return { operationId, status: 'failed', message: outcome.message, ...extra }
     }
     if (this.lost || this.navigated || this.contents.isDestroyed()) {
       return {

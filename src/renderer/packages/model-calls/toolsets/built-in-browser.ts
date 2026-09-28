@@ -37,7 +37,7 @@ function pageLines(record: Record<string, unknown> | null): string[] {
     title ? `Title: ${title}` : undefined,
     url ? `URL: ${url}` : undefined,
     page ? `Page: ${page}` : undefined,
-    record?.userInteracted === true ? `Note: ${USER_INTERACTED_NOTE}` : undefined,
+    record?.note === USER_INTERACTED_NOTE ? `Note: ${USER_INTERACTED_NOTE}` : undefined,
     Array.isArray(settled) && settled.length ? `Earlier runs finished: ${JSON.stringify(settled)}` : undefined,
   ].filter((line): line is string => line !== undefined)
 }
@@ -70,14 +70,14 @@ function describeTool(options: { hasParseLink: boolean; screenshot: boolean }): 
   return `Chatbox's built-in browser, shown to the user in the sidebar. Runs page JavaScript, reaches local addresses, and has the user's sign-ins.${whenToUse}
 Commands:
 - read: return the rendered text of url, or of the current page when url is omitted.
-- run: run code, an async function body, on the page named by page, the reference from the latest read or run result that has one, and return its status and return value. To click, type or scroll, load the ${BUILT_IN_BROWSER_SKILL_NAME} skill first.${screenshot}
+- run: run code, an async function body, on \`page\` from the latest result that has one; returns its status and value. To click, type or scroll, load the ${BUILT_IN_BROWSER_SKILL_NAME} skill first.${screenshot}
 If a page needs sign-in or a check only the user can do, ask them to do it in the sidebar, then read again.`
 }
 
 /** What happened on the page since the previous result, for the model to account for. */
 function pageEvents(page: BuiltInBrowserPage) {
   return {
-    ...(page.userInteracted ? { userInteracted: true, note: USER_INTERACTED_NOTE } : {}),
+    ...(page.userInteracted ? { note: USER_INTERACTED_NOTE } : {}),
     ...(page.settledOperations?.length ? { settledOperations: page.settledOperations } : {}),
   }
 }
@@ -90,7 +90,7 @@ async function readPage(builtInBrowser: BuiltInBrowser, input: BrowserToolInput,
   return {
     url: page.url,
     title: page.title,
-    page: page.page,
+    ...(page.page ? { page: page.page } : {}),
     ...pageEvents(page),
     content: shown,
     originalLength: content.length,
@@ -120,7 +120,8 @@ async function runScript(builtInBrowser: BuiltInBrowser, input: BrowserToolInput
   const { operationId, ...outcome } = result
   return {
     ...outcome,
-    operationId,
+    // Only an unknown outcome is reported again later, in settledOperations, under this id.
+    ...(result.status === 'unknown' ? { operationId } : {}),
     ...(page.page ? { page: page.page } : {}),
     url: page.url,
     ...(page.lastNavigation ? { lastNavigation: page.lastNavigation } : {}),
@@ -156,7 +157,7 @@ export function getBuiltInBrowserToolSet(
         },
         page: {
           type: 'string',
-          description: 'run: the page reference from the latest read or run result that has one.',
+          description: 'run: page from the latest result that has one.',
         },
         code: {
           type: 'string',

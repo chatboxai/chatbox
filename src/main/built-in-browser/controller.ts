@@ -284,9 +284,9 @@ export class BuiltInBrowserController {
         if (request.screenshot) {
           // A screenshot reaches the model as exactly its image, so it hands out neither the page
           // reference nor page events; both stay for the next read or run.
-          return { page: '', ...fields, screenshot: await this.captureScreenshot(contents, signal) }
+          return { ...fields, screenshot: await this.captureScreenshot(contents, signal) }
         }
-        return { page: page.ref?.id ?? '', ...fields, ...page.takeEvents() }
+        return { ...(page.ref ? { page: page.ref.id } : {}), ...fields, ...page.takeEvents() }
       } finally {
         clearTimeout(timer)
       }
@@ -428,7 +428,7 @@ export class BuiltInBrowserController {
     const page = this.page
     const observed = sameDocument && (scriptResult.status === 'completed' || scriptResult.status === 'failed')
     return {
-      page: observed ? (page?.ref?.id ?? '') : '',
+      ...(observed && page?.ref ? { page: page.ref.id } : {}),
       url: live?.getURL() ?? '',
       title: live?.getTitle() ?? '',
       content: '',

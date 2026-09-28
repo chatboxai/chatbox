@@ -129,6 +129,12 @@ const { BUSY_WINDOW_MS } = await import('./page-tracker')
 const VIEW_NAVIGATION_LISTENERS = 1
 type Host = Parameters<InstanceType<typeof BuiltInBrowserController>['readPage']>[0]
 
+/** The page reference a result hands out; a test that needs one fails when it is missing. */
+function referenceOf(result: { page?: string }): string {
+  if (!result.page) throw new Error('The result carries no page reference.')
+  return result.page
+}
+
 function flush() {
   return new Promise((resolve) => setTimeout(resolve, 0))
 }
@@ -172,7 +178,7 @@ describe('BuiltInBrowserController reads', () => {
     const opened = controller.readPage(host as unknown as Host, 1, { requestId: 'open' })
     await flush()
     contents.finishSnapshot('Loaded.')
-    const { page } = await opened
+    const page = referenceOf(await opened)
     const read = controller.readPage(host as unknown as Host, 1, {
       requestId: 'pending-script',
       script: { page, code: 'await new Promise(() => {})' },
@@ -220,7 +226,7 @@ describe('BuiltInBrowserController reads', () => {
     const read = controller.readPage(host as unknown as Host, 1, { requestId: `open-${++openCount}` })
     await flush()
     contents.finishSnapshot('Loaded.')
-    const { page } = await read
+    const page = referenceOf(await read)
     contents.executeJavaScript.mockClear()
     return { contents, page }
   }
@@ -241,17 +247,16 @@ describe('BuiltInBrowserController reads', () => {
     expect(result).toMatchObject({
       page,
       url: 'https://example.com/',
-      scriptResult: { status: 'completed', value: 'data', truncated: false },
+      scriptResult: { status: 'completed', value: 'data' },
     })
     expect(result.scriptResult?.operationId).toMatch(/^op_[0-9a-f]{8}$/)
     const source = String((contents.executeJavaScript.mock.calls[0] as unknown[])[0])
     expect(source).toContain('return document.title')
     expect(source).toContain(JSON.stringify('https://example.com/'))
 
-    await expect(run('other-1')).resolves.toMatchObject({
-      page: '',
-      scriptResult: { status: 'not_started', code: 'page_changed' },
-    })
+    const refused = await run('other-1')
+    expect(refused).not.toHaveProperty('page')
+    expect(refused.scriptResult).toMatchObject({ status: 'not_started', code: 'page_changed' })
     expect(contents.executeJavaScript).toHaveBeenCalledTimes(1)
   })
 
@@ -265,8 +270,9 @@ describe('BuiltInBrowserController reads', () => {
     })
     contents.emit('did-navigate')
     contents.emit('dom-ready')
-    await expect(run(page)).resolves.toMatchObject({
-      page: '',
+    const refused = await run(page)
+    expect(refused).not.toHaveProperty('page')
+    expect(refused).toMatchObject({
       url: 'https://example.com/',
       scriptResult: { status: 'not_started', code: 'page_changed' },
       lastNavigation: { source: 'unknown', url: 'https://example.com/' },
@@ -275,7 +281,7 @@ describe('BuiltInBrowserController reads', () => {
     const read = controller.readPage(host as unknown as Host, 1, { requestId: 'reread' })
     await flush()
     contents.finishSnapshot('Reloaded.')
-    const current = (await read).page
+    const current = referenceOf(await read)
     expect(current).not.toBe(page)
     contents.executeJavaScript.mockClear()
     contents.url = 'https://example.com/#details'
@@ -300,8 +306,9 @@ describe('BuiltInBrowserController reads', () => {
       url: contents.url,
       initiator: null,
     })
-    await expect(run(page)).resolves.toMatchObject({
-      page: '',
+    const loading = await run(page)
+    expect(loading).not.toHaveProperty('page')
+    expect(loading).toMatchObject({
       scriptResult: { status: 'not_started', code: 'page_changed', message: expect.stringContaining('loading') },
       lastNavigation: { source: 'user' },
     })
@@ -372,7 +379,6 @@ describe('BuiltInBrowserController reads', () => {
     await expect(run(page)).resolves.toMatchObject({
       scriptResult: {
         status: 'failed',
-        code: 'script_error',
         message: 'Failed to fetch',
         diagnostics: {
           cspViolations: [
@@ -471,11 +477,11 @@ describe('BuiltInBrowserController reads', () => {
           operationId,
           status: 'completed',
           value: 'submitted',
-          truncated: false,
           diagnostics: { failedRequests: [{ method: 'POST', url: 'https://example.com/api', status: 403 }] },
         },
       ],
     })
+    expect(next.settledOperations?.[0]).not.toHaveProperty('truncated')
     contents.executeJavaScript.mockResolvedValueOnce({ kind: 'value', value: 'again', truncated: false })
     expect((await run(page)).settledOperations).toBeUndefined()
   })
@@ -602,10 +608,9 @@ describe('BuiltInBrowserController reads', () => {
     })
     contents.emit('did-navigate')
 
-    await expect(pending).resolves.toMatchObject({
-      page: '',
-      scriptResult: { status: 'unknown', code: 'page_unloaded', navigated: true },
-    })
+    const unloaded = await pending
+    expect(unloaded).not.toHaveProperty('page')
+    expect(unloaded).toMatchObject({ scriptResult: { status: 'unknown', code: 'page_unloaded', navigated: true } })
     expect(contents.listenerCount('did-navigate')).toBe(listeners)
     expect(contents.listenerCount('did-start-navigation')).toBe(VIEW_NAVIGATION_LISTENERS)
   })
@@ -732,10 +737,9 @@ describe('BuiltInBrowserController reads', () => {
     contents.emit('dom-ready')
     await flush()
     contents.finishSnapshot('Recovered.')
-    const recovered = await reread
-    expect(recovered.page).not.toBe('')
+    const recovered = referenceOf(await reread)
     contents.executeJavaScript.mockResolvedValueOnce({ kind: 'value', value: '1', truncated: false })
-    await expect(run(recovered.page)).resolves.toMatchObject({ scriptResult: { status: 'completed' } })
+    await expect(run(recovered)).resolves.toMatchObject({ scriptResult: { status: 'completed' } })
   })
 
   it('attributes a navigation to the page when the user touched it during a run', async () => {
@@ -1036,7 +1040,7 @@ describe('BuiltInBrowserController reads', () => {
     await flush()
     contents.captures.shift()?.(fakeImage(800, 600))
     const shot = await read
-    expect(shot.page).toBe('')
+    expect(shot).not.toHaveProperty('page')
     expect(shot.userInteracted).toBeUndefined()
 
     const next = controller.readPage(host as unknown as Host, 1, { requestId: 'b' })

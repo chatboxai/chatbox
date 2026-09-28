@@ -83,7 +83,6 @@ export type BuiltInBrowserRunErrorCode =
   | 'busy'
   | 'timeout'
   | 'cancelled'
-  | 'script_error'
   /** The page's document went away before the script returned. */
   | 'page_unloaded'
 
@@ -98,34 +97,30 @@ export interface BuiltInBrowserDiagnostics {
 export interface BuiltInBrowserRunResult {
   operationId: string
   status: BuiltInBrowserRunStatus
+  /** Why the run did not complete, except for a script that threw, whose `message` says why. */
   code?: BuiltInBrowserRunErrorCode
   message?: string
   /** The script's serialized return value, when it completed. */
   value?: string
-  truncated?: boolean
+  /** Set when `value` was cut to the size limit. */
+  truncated?: true
   /** The main frame started loading another document while the script ran. */
-  navigated?: boolean
+  navigated?: true
   diagnostics?: BuiltInBrowserDiagnostics
 }
 
 /** Final outcome of a run that was reported as `unknown` and finished afterwards. */
-export interface BuiltInBrowserSettledOperation {
-  operationId: string
+export type BuiltInBrowserSettledOperation = Omit<BuiltInBrowserRunResult, 'status' | 'navigated'> & {
   status: Exclude<BuiltInBrowserRunStatus, 'not_started'>
-  code?: BuiltInBrowserRunErrorCode
-  message?: string
-  value?: string
-  truncated?: boolean
-  diagnostics?: BuiltInBrowserDiagnostics
 }
 
 export interface BuiltInBrowserPage {
   /**
    * Opaque reference to the page this result describes. It changes whenever the main frame loads
    * a document or changes its URL, including a reload of the same URL, and scripts only run on
-   * the page it names. Empty when the result did not observe the page, such as a refused run.
+   * the page it names. Absent when the result did not observe the page, such as a refused run.
    */
-  page: string
+  page?: string
   /** Final URL after redirects. */
   url: string
   title: string

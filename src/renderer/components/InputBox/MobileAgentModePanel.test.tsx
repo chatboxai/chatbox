@@ -171,6 +171,17 @@ describe('Mobile Agent Mode capabilities', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Device services' }))
     expect(screen.getByRole('switch', { name: 'Calendar' })).toBeDisabled()
   })
+  test('keeps the current mode visibly selected while generation runs', () => {
+    mocks.active = true
+    renderPanel('existing')
+    const work = screen.getByRole('button', { name: 'Work Mode' })
+    expect(work).toBeEnabled()
+    expect(work).toHaveAttribute('aria-pressed', 'true')
+    expect(work).toHaveAttribute('data-variant', 'filled')
+    expect(screen.getByRole('button', { name: 'Chat Mode' })).toBeDisabled()
+    fireEvent.click(work)
+    expect(mocks.saveMode).not.toHaveBeenCalled()
+  })
   test('returns from device services to the main menu', () => {
     renderPanel()
     fireEvent.click(screen.getByRole('button', { name: 'Device services' }))

@@ -22,8 +22,8 @@ import { setSessionAgentMode, useSessionAgentMode } from '@/stores/session/agent
 import { useSettingsStore } from '@/stores/settingsStore'
 import * as toastActions from '@/stores/toastActions'
 import { useUIStore } from '@/stores/uiStore'
-import type { AgentModePanelHandle, AgentModePanelProps } from './AgentModePanel'
 import { AgentMemorySettingsContent, useAgentMemorySettings } from './AgentMemorySettings'
+import type { AgentModePanelHandle, AgentModePanelProps } from './AgentModePanel'
 import AgentModeStatusIcon from './AgentModeStatusIcon'
 
 export function isMobileWorkCapabilityAvailable(id: LocalWorkCapabilityId): boolean {
@@ -232,29 +232,34 @@ const MobileAgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProp
         {t('Mode')}
       </Text>
       <Group grow wrap="nowrap">
-        {(['off', 'on'] as const).map((mode) => (
-          <Button
-            key={mode}
-            data-testid={mode === 'on' ? TestId.agent.modeWork : TestId.agent.modeChat}
-            variant={resolveSessionMode(entry.value) === resolveSessionMode(mode) ? 'filled' : 'default'}
-            leftSection={<AgentModeStatusIcon mode={mode} size={16} />}
-            disabled={
-              saving ||
-              busy ||
-              loading ||
-              (mode === 'on' && !modelSupportsAgentMode) ||
-              (entry.locked && mode !== 'on') ||
-              Boolean(
-                (conversationStarted || hasDraftAttachments) &&
-                  resolveSessionMode(entry.value) !== resolveSessionMode(mode)
-              )
-            }
-            onClick={() => void saveMode(mode)}
-            styles={{ root: { height: 'auto', minHeight: 40 }, label: { whiteSpace: 'normal', paddingBlock: 6 } }}
-          >
-            {mode === 'on' ? t('Work Mode') : t('Chat Mode')}
-          </Button>
-        ))}
+        {(['off', 'on'] as const).map((mode) => {
+          const isCurrent = resolveSessionMode(entry.value) === resolveSessionMode(mode)
+          const unavailable =
+            saving ||
+            busy ||
+            loading ||
+            (mode === 'on' && !modelSupportsAgentMode) ||
+            (entry.locked && mode !== 'on') ||
+            Boolean((conversationStarted || hasDraftAttachments) && !isCurrent)
+          return (
+            <Button
+              key={mode}
+              data-testid={mode === 'on' ? TestId.agent.modeWork : TestId.agent.modeChat}
+              variant={isCurrent ? 'filled' : 'default'}
+              leftSection={<AgentModeStatusIcon mode={mode} size={16} />}
+              // A disabled Mantine button drops its filled variant, so the current mode stays
+              // enabled (its click guarded instead) to keep the selection visible while locked.
+              disabled={unavailable && !isCurrent}
+              aria-pressed={isCurrent}
+              onClick={() => {
+                if (!unavailable) void saveMode(mode)
+              }}
+              styles={{ root: { height: 'auto', minHeight: 40 }, label: { whiteSpace: 'normal', paddingBlock: 6 } }}
+            >
+              {mode === 'on' ? t('Work Mode') : t('Chat Mode')}
+            </Button>
+          )
+        })}
       </Group>
       {hasDraftAttachments && !conversationStarted && (
         <Text size="xs" c="dimmed">

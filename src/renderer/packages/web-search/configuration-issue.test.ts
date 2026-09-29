@@ -13,5 +13,7 @@ describe('getWebSearchConfigurationIssue', () => {
     expect(getWebSearchConfigurationIssue({ provider: 'bocha' })).toBe('bocha-api-key')
     expect(getWebSearchConfigurationIssue({ provider: 'querit' })).toBe('querit-api-key')
     expect(getWebSearchConfigurationIssue({ provider: 'searxng', searxngBaseUrl: '  ' })).toBe('searxng-instance')
+    expect(getWebSearchConfigurationIssue({ provider: 'firecrawl' })).toBe('firecrawl-api-key')
+    expect(getWebSearchConfigurationIssue({ provider: 'firecrawl', firecrawlApiKey: 'fc-key' })).toBeNull()
   })
 })

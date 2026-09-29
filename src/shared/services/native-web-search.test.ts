@@ -21,6 +21,8 @@ describe('native web search', () => {
     expect(hasNativeWebSearchConfiguration({ provider: 'searxng', apiKey: '', apiHost: 'https://search.test' })).toBe(
       true
     )
+    expect(hasNativeWebSearchConfiguration({ provider: 'firecrawl', apiKey: '' })).toBe(false)
+    expect(hasNativeWebSearchConfiguration({ provider: 'firecrawl', apiKey: 'fc-key' })).toBe(true)
   })
 
   it('searches through the chatbox build-in endpoint with the license key and injected headers', async () => {
@@ -117,6 +119,53 @@ describe('native web search', () => {
   it('throws on non-ok responses', async () => {
     const fetchFn = mockFetchResponse({}, false, 401)
     await expect(searchNativeWeb('q', { apiKey: 'bad', fetchFn })).rejects.toThrow('status 401')
+  })
+
+  it('searches through Firecrawl v2 with the key, plain snippets and the chatbox origin', async () => {
+    const fetchFn = mockFetchResponse({
+      success: true,
+      data: {
+        web: [
+          { url: 'https://one.test', title: 'One', description: 'first snippet', position: 1 },
+          { title: 'No link', description: 'dropped', position: 2 },
+          { url: 'https://two.test', title: 'Two', description: 'second snippet', position: 3 },
+        ],
+      },
+    })
+    const items = await searchNativeWeb('chatbox', { provider: 'firecrawl', apiKey: 'fc-key', fetchFn })
+    expect(items).toEqual([
+      { title: 'One', link: 'https://one.test', snippet: 'first snippet' },
+      { title: 'Two', link: 'https://two.test', snippet: 'second snippet' },
+    ])
+    const [url, init] = (fetchFn as unknown as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect(url).toBe('https://api.firecrawl.dev/v2/search')
+    expect((init as RequestInit).headers).toMatchObject({ Authorization: 'Bearer fc-key' })
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+      query: 'chatbox',
+      sources: ['web'],
+      highlights: false,
+      origin: 'chatbox',
+    })
+  })
+
+  it('passes limit to Firecrawl when maxResults is set', async () => {
+    const fetchFn = mockFetchResponse({ success: true, data: { web: [] } })
+    await searchNativeWeb('chatbox', { provider: 'firecrawl', apiKey: 'fc-key', maxResults: 3, fetchFn })
+    const [, init] = (fetchFn as unknown as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect(JSON.parse((init as RequestInit).body as string).limit).toBe(3)
+  })
+
+  it('throws the Firecrawl error message on failed responses', async () => {
+    await expect(
+      searchNativeWeb('q', {
+        provider: 'firecrawl',
+        apiKey: 'bad',
+        fetchFn: mockFetchResponse({ success: false, error: 'Unauthorized: Invalid token' }, false, 401),
+      })
+    ).rejects.toThrow('Unauthorized: Invalid token')
+    await expect(
+      searchNativeWeb('q', { provider: 'firecrawl', apiKey: 'fc-key', fetchFn: mockFetchResponse(null, false, 502) })
+    ).rejects.toThrow('status 502')
   })
 
   it('formats the search context block', () => {

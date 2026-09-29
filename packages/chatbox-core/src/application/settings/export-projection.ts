@@ -40,6 +40,7 @@ export function projectSettingsForExport(settings: Settings, includeCredentials:
         delete webSearch.tavilyApiKey
         delete webSearch.bochaApiKey
         delete webSearch.queritApiKey
+        delete webSearch.firecrawlApiKey
         extension.webSearch = webSearch
       }
       if (settings.extension.documentParser?.mineru) {

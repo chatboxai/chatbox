@@ -47,6 +47,57 @@ async function setup(count = 3, messageIdPrefix = '') {
 }
 
 describe('SQL source-bound numerical text results', () => {
+  it('keeps cached and cold SQL context equal across streaming, appends and token updates', async () => {
+    const h = await setup()
+    const assertContext = async () => {
+      h.database.reset()
+      const warm = await h.repo.getSessionContextSource({ sessionId: 's' })
+      expect(h.database.executed.filter((sql) => /FROM session_message_payload_chunks/i.test(sql))).toEqual([])
+      const coldRepo = new RowBackedSessionRepository({ rows: h.rows, records: h.records })
+      const cold = await coldRepo.getSessionContextSource({ sessionId: 's' })
+      expect(h.database.executed.some((sql) => /FROM session_message_payload_chunks/i.test(sql))).toBe(true)
+      expect(warm).toStrictEqual(cold)
+      return warm
+    }
+    let current = (await h.repo.getSession('s'))!
+    for (const text of ['first chunk', 'second chunk']) {
+      const next: Session = {
+        ...current,
+        messages: current.messages.map((message) =>
+          message.id === 'm2' ? { ...message, contentParts: [{ type: 'text', text }] } : message
+        ),
+      }
+      await h.repo.setSession(next, { baseSession: current, changedMessageId: 'm2' })
+      await assertContext()
+      current = next
+    }
+    const appended: Session = {
+      ...current,
+      messages: [
+        ...current.messages,
+        { id: 'm3', role: 'assistant', timestamp: 2, contentParts: [{ type: 'text', text: 'reply' }] },
+      ],
+    }
+    await h.repo.setSession(appended, { baseSession: current })
+    const context = await assertContext()
+    const results: SessionTextTokenResult[] = Object.values(context?.textTokens?.sources ?? {}).map((source) => ({
+      source,
+      value: { tokenizerType: 'default', sourceDigest: source.textDigest, tokens: 17, calculatedAt: 200 },
+    }))
+    expect(results).toHaveLength(4)
+    await h.repo.acceptSessionTextTokenResults('s', results)
+    await assertContext()
+    current = (await h.repo.getSession('s'))!
+    const final: Session = {
+      ...current,
+      messages: current.messages.map((message) =>
+        message.id === 'm3' ? { ...message, contentParts: [{ type: 'text', text: 'complete reply' }] } : message
+      ),
+    }
+    await h.repo.setSession(final, { baseSession: current, changedMessageId: 'm3' })
+    await assertContext()
+  })
+
   it.each([false, true])(
     'checks restored V1 content across token migration (concurrent edit: %s)',
     async (concurrentEdit) => {

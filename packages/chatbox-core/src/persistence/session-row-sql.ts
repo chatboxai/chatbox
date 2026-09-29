@@ -1079,17 +1079,24 @@ export class SqlSessionRowStore implements SessionRowStorePort {
     })
   }
 
-  async readContext(request: SessionContextRequest): Promise<SessionContextRows | null> {
+  async readContext(
+    request: SessionContextRequest,
+    knownSnapshot?: Pick<SessionRowSnapshot, 'rows' | 'revision'>
+  ): Promise<SessionContextRows | null> {
     return this.run('read-context', request.sessionId, async () => {
       validateSessionContextRequest(request)
       return this.readSelectedSnapshot(request, async (commit, threads) => {
         const sources: Record<string, SessionTextTokenSource> = Object.create(null)
+        const knownMessages =
+          knownSnapshot?.rows.sessionId === request.sessionId && knownSnapshot.revision === commit.revision
+            ? new Map(knownSnapshot.rows.messages.map((row) => [row.messageId, row.message]))
+            : undefined
         const selectedThread = threads.find(
           (thread) => thread.threadId === (request.threadId ?? commit.record.activeThreadId)
         )
         const targetId = request.targetMessageId ?? selectedThread?.activeLeafMessageId
         const targetRecords = targetId ? await this.readMessageRecordsByIds(request.sessionId, [targetId]) : []
-        const target = (await this.readMessageRows(targetRecords, sources))[0]
+        const target = (await this.readMessageRows(targetRecords, sources, knownMessages))[0]
         let plan = planSessionContextRead(request, commit, threads, target)
         const readPlan = async (current: SessionContextReadPlan) => {
           const traversal = new SessionContextPathTraversal(request.sessionId, current)
@@ -1143,7 +1150,8 @@ export class SqlSessionRowStore implements SessionRowStorePort {
                 message,
               }),
               sources,
-              request.sessionId
+              request.sessionId,
+              knownMessages
             )
           ).reverse()
           const extras = current.checkpoint
@@ -1156,7 +1164,11 @@ export class SqlSessionRowStore implements SessionRowStorePort {
             commit,
             current,
             path,
-            await this.readMessageRows(await this.readMessageRecordsByIds(request.sessionId, extras), sources)
+            await this.readMessageRows(
+              await this.readMessageRecordsByIds(request.sessionId, extras),
+              sources,
+              knownMessages
+            )
           )
           return result ? { ...result, textTokens: await this.readTokenSnapshot(sources) } : result
         }
@@ -1579,9 +1591,10 @@ export class SqlSessionRowStore implements SessionRowStorePort {
 
   private async readMessageRows(
     records: MessageRecord[],
-    sources: Record<string, SessionTextTokenSource>
+    sources: Record<string, SessionTextTokenSource>,
+    knownMessages?: ReadonlyMap<string, Message>
   ): Promise<MessageRow[]> {
-    return this.readMessagePayloads(records, toMessageRow, sources, records[0]?.session_id ?? '')
+    return this.readMessagePayloads(records, toMessageRow, sources, records[0]?.session_id ?? '', knownMessages)
   }
 
   private async readLargePayloadChunks(record: MessagePayloadRecord): Promise<PayloadChunkRecord[]> {
@@ -1615,23 +1628,25 @@ export class SqlSessionRowStore implements SessionRowStorePort {
     records: Record[],
     project: (record: Record, message: Message) => Result,
     sources: { [messageId: string]: SessionTextTokenSource },
-    sessionId: string
+    sessionId: string,
+    knownMessages?: ReadonlyMap<string, Message>
   ): Promise<Result[]> {
+    const missing = knownMessages ? records.filter((record) => !knownMessages.has(record.message_id)) : records
     const payloads = new Map<string, PayloadChunkRecord[]>()
     let mode: 'sampling' | 'sampled' | 'conservative' = 'sampling'
     let observedExpansion = 2
     let cursor = 0
 
-    while (cursor < records.length) {
-      const firstIdBytes = textEncoder.encode(JSON.stringify(records[cursor].payload_id)).byteLength + 1
+    while (cursor < missing.length) {
+      const firstIdBytes = textEncoder.encode(JSON.stringify(missing[cursor].payload_id)).byteLength + 1
       const ascii: boolean =
         mode === 'sampled' && ASCII_PAYLOAD_ID_REQUEST_OVERHEAD + firstIdBytes <= PAYLOAD_READ_REQUEST_BUDGET
       const batch: Record[] = []
       let batchBytes = 0
       let requestBytes = ascii ? ASCII_PAYLOAD_ID_REQUEST_OVERHEAD : PAYLOAD_ID_REQUEST_OVERHEAD
 
-      for (let index = cursor; index < records.length && batch.length < PAYLOAD_READ_BATCH_MESSAGES; index += 1) {
-        const record = records[index]
+      for (let index = cursor; index < missing.length && batch.length < PAYLOAD_READ_BATCH_MESSAGES; index += 1) {
+        const record = missing[index]
         const { chunkCount, expectedLength } = this.validatePayloadManifest(record)
         const idRequestBytes = textEncoder.encode(JSON.stringify(record.payload_id)).byteLength + 1
         if (PAYLOAD_ID_REQUEST_OVERHEAD + idRequestBytes > PAYLOAD_READ_REQUEST_BUDGET) {
@@ -1653,7 +1668,7 @@ export class SqlSessionRowStore implements SessionRowStorePort {
       }
 
       if (batch.length === 0) {
-        const record = records[cursor]
+        const record = missing[cursor]
         payloads.set(record.payload_id, await this.readLargePayloadChunks(record))
         cursor += 1
         continue
@@ -1716,7 +1731,10 @@ export class SqlSessionRowStore implements SessionRowStorePort {
     }
 
     return records.map((record) => {
-      const message = this.parseMessagePayload(record, payloads.get(record.payload_id) ?? [])
+      const known = knownMessages?.get(record.message_id)
+      const message = known
+        ? structuredClone(known)
+        : this.parseMessagePayload(record, payloads.get(record.payload_id) ?? [])
       const source = createTextTokenSource(sessionId, message, record.payload_id)
       if (source) sources[record.message_id] = source
       return project(record, message)

@@ -151,7 +151,11 @@ export interface SessionRowStorePort extends Partial<SessionTextTokenStorePort> 
   readThreadsPage?(request: SessionThreadPageRequest): Promise<SessionThreadPage | null>
   /** Returns rows in deduplicated request order, across active, archived and fork paths. */
   readMessages(request: SessionMessagesRequest): Promise<SessionMessagesSnapshot | null>
-  readContext(request: SessionContextRequest): Promise<SessionContextRows | null>
+  /** Reuse committed payloads only when their session and revision match the selected snapshot. */
+  readContext(
+    request: SessionContextRequest,
+    knownSnapshot?: Pick<SessionRowSnapshot, 'rows' | 'revision'>
+  ): Promise<SessionContextRows | null>
   /** Replaces rows and commit metadata atomically. Callers keep the snapshot immutable until the write settles. */
   writeRows(snapshot: SessionRowSnapshot, expectedRevision?: number | null): Promise<void>
   /** Applies a diff and publishes its commit metadata atomically. */

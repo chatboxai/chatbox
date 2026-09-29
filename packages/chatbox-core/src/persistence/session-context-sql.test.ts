@@ -367,3 +367,94 @@ describe('SQL context ancestry response planning on real SQLite', () => {
     expect([...payloadIds].sort()).toEqual(['boundary', 'question', 'summary', 'system', 'target'])
   })
 })
+
+describe('committed context payload reuse', () => {
+  it.each([false, true])('matches cold context including token sources (includeTarget=%s)', async (includeTarget) => {
+    const snapshot = contextSnapshot()
+    const { reader, payloadIds } = await measuredStore(snapshot)
+    const request = { sessionId: snapshot.rows.sessionId, targetMessageId: 'target', includeTarget }
+    const expected = await reader.readContext(request)
+    payloadIds.clear()
+    expect(await reader.readContext(request, snapshot)).toEqual(expected)
+    expect(payloadIds.size).toBe(0)
+    const cachedRead = (await reader.readContext(request, snapshot))!
+    cachedRead.messages[0].message.contentParts = [{ type: 'text', text: 'Consumer mutation' }]
+    expect(await reader.readContext(request, snapshot)).toEqual(expected)
+  })
+
+  it('refreshes token results without changing the cached content revision', async () => {
+    const snapshot = contextSnapshot()
+    const { reader, writer } = await measuredStore(snapshot)
+    const request = { sessionId: snapshot.rows.sessionId, targetMessageId: 'target' }
+    const before = (await reader.readContext(request, snapshot))!
+    const source = before.textTokens!.sources.question
+    await writer.acceptTextTokenResults([
+      {
+        source,
+        value: {
+          tokenizerType: 'default',
+          sourceDigest: source.textDigest,
+          tokens: 123,
+          calculatedAt: 456,
+          approximate: false,
+        },
+      },
+    ])
+    const after = (await reader.readContext(request, snapshot))!
+    expect(after.revision).toBe(before.revision)
+    expect(after.textTokens?.results).toContainEqual({
+      source,
+      value: {
+        tokenizerType: 'default',
+        sourceDigest: source.textDigest,
+        tokens: 123,
+        calculatedAt: 456,
+        approximate: false,
+      },
+    })
+    expect(after).toEqual(await writer.readContext(request))
+  })
+
+  it('reads missing cached payloads and ignores another session or revision', async () => {
+    const snapshot = contextSnapshot()
+    const { reader, payloadIds } = await measuredStore(snapshot)
+    const request = { sessionId: snapshot.rows.sessionId, targetMessageId: 'target' }
+    const expected = await reader.readContext(request)
+    payloadIds.clear()
+    const partial = {
+      ...snapshot,
+      rows: { ...snapshot.rows, messages: snapshot.rows.messages.filter((row) => row.messageId !== 'question') },
+    }
+    expect(await reader.readContext(request, partial)).toEqual(expected)
+    expect([...payloadIds]).toEqual(['question'])
+    for (const invalid of [
+      { ...snapshot, revision: snapshot.revision + 1 },
+      { ...snapshot, rows: { ...snapshot.rows, sessionId: 'other' } },
+    ]) {
+      payloadIds.clear()
+      expect(await reader.readContext(request, invalid)).toEqual(expected)
+      expect(payloadIds.size).toBeGreaterThan(0)
+    }
+  })
+
+  it('retries with fresh payloads after a concurrent write changes the revision', async () => {
+    const snapshot = contextSnapshot()
+    let changed = false
+    const next = structuredClone(snapshot)
+    next.revision += 1
+    next.rows.messages.find((row) => row.messageId === 'question')!.message.contentParts = [
+      { type: 'text', text: 'Changed by another writer' },
+    ]
+    const { reader, writer } = await measuredStore(snapshot, async (sql, _params, writer) => {
+      if (!changed && sql.startsWith('WITH RECURSIVE path AS')) {
+        changed = true
+        await writer.writeRows(next, snapshot.revision)
+      }
+    })
+    const request = { sessionId: snapshot.rows.sessionId, targetMessageId: 'target' }
+    const actual = await reader.readContext(request, snapshot)
+    expect(changed).toBe(true)
+    expect(actual).toEqual(await writer.readContext(request))
+    expect(actual?.revision).toBe(next.revision)
+  })
+})

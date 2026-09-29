@@ -162,9 +162,9 @@ function findLastIndex<Item>(items: Item[], match: (item: Item) => boolean): num
 }
 
 interface SingleMessageWrite {
-  row: MessageRow
   rows: SessionRows
-  previousMessage: Session['messages'][number]
+  record: SessionRowSnapshot['record']
+  diff: ReturnType<typeof diffSessionRows>
 }
 
 /**
@@ -221,7 +221,18 @@ function planSingleMessageWrite(
   }
   const messages = [...baseline.rows.messages]
   messages[rowIndex] = row
-  return { row, rows: { ...baseline.rows, messages }, previousMessage: previous.messages[index] }
+  return {
+    rows: { ...baseline.rows, messages },
+    record: deriveSessionRecord(next, next.id, {
+      record: baseline.record,
+      before: previous.messages[index],
+      after: message,
+    }),
+    diff: diffSessionRows(
+      { ...baseline.rows, threads: [], messages: [baseRow] },
+      { ...baseline.rows, threads: [], messages: [row] }
+    ),
+  }
 }
 
 function toSessionRows(tree: SessionTree): SessionRows {
@@ -326,7 +337,8 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
       validateSessionContextRequest(request)
       if (!marker) return null
       if (isRowsSessionRecord(marker)) {
-        const context = await this.rows.readContext(request)
+        const baseline = this.baselines.get(request.sessionId)
+        const context = await this.rows.readContext(request, baseline)
         if (!context) throw new Error(`session ${request.sessionId} is stored as rows but has none`)
         return contextSourceFromRows(context)
       }
@@ -625,13 +637,16 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     const cached = this.baselines.get(id)
     if (
       cached &&
-      session.messages.length > cached.session.messages.length &&
+      (session.messages.length > cached.session.messages.length || options.changedMessageId) &&
       options.baseSession &&
       isAppendBase(cached.session, options.baseSession, Boolean(this.rows.acceptTextTokenResults))
     ) {
       const candidate = this.rows.acceptTextTokenResults ? restorePersistedTextTokens(session, cached.session) : session
-      const append = planSessionAppend(cached.session, candidate, cached.rows)
-      if (append) {
+      const single = options.changedMessageId
+        ? planSingleMessageWrite(cached, candidate, options.changedMessageId)
+        : null
+      const plannedWrite = single ?? planSessionAppend(cached.session, candidate, cached.rows)
+      if (plannedWrite) {
         const marker = await this.records.getRecord(id)
         if (
           marker &&
@@ -639,7 +654,13 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
           !hasReleasedClientContent(marker) &&
           (await this.rows.getRevision(id)) === cached.revision
         ) {
-          const snapshot = await this.commitDiff(id, append.diff, append.record, cached.revision, append.rows)
+          const snapshot = await this.commitDiff(
+            id,
+            plannedWrite.diff,
+            plannedWrite.record,
+            cached.revision,
+            plannedWrite.rows
+          )
           return this.rememberSnapshot(id, snapshot, candidate, true)
         }
       }
@@ -653,13 +674,7 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     if (baseline && options.changedMessageId) {
       const planned = planSingleMessageWrite(baseline, session, options.changedMessageId)
       if (planned) {
-        const record = deriveSessionRecord(session, id, {
-          record: baseline.record,
-          before: planned.previousMessage,
-          after: planned.row.message,
-        })
-        const diff = diffSessionRows(baseline.rows, planned.rows)
-        const snapshot = await this.commitDiff(id, diff, record, baseline.revision, planned.rows)
+        const snapshot = await this.commitDiff(id, planned.diff, planned.record, baseline.revision, planned.rows)
         return this.rememberSnapshot(id, snapshot, session)
       }
     }

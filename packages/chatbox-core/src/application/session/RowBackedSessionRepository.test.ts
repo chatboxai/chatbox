@@ -469,6 +469,32 @@ describe('RowBackedSessionRepository', () => {
     )
   })
 
+  test('updates a streamed tail without hashing history and rejects an external revision change', async () => {
+    const { repository, rows } = await createHarness()
+    const session = createPlainSession()
+    await repository.setSession(session)
+    const original = (await repository.getSession(session.id))!
+    const fingerprint = vi.spyOn(SessionPersistenceProtocol.prototype, 'fingerprint')
+    const write = vi.spyOn(rows, 'applyDiff')
+    const next = {
+      ...original,
+      messages: original.messages.map((message, index) =>
+        index === original.messages.length - 1
+          ? { ...message, generating: true, contentParts: [{ type: 'text' as const, text: 'Stream output' }] }
+          : message
+      ),
+    }
+    await repository.setSession(next, { baseSession: original, changedMessageId: 'assistant-1' })
+    expect(fingerprint).not.toHaveBeenCalled()
+    expect(write.mock.calls[0][0].messages.upsert.map((row) => row.messageId)).toEqual(['assistant-1'])
+    const persisted = (await rows.readSnapshot(session.id))!
+    await rows.writeRows({ ...persisted, revision: persisted.revision + 1 }, persisted.revision)
+    await expect(
+      repository.setSession({ ...next, name: 'Changed' }, { baseSession: next, changedMessageId: 'assistant-1' })
+    ).rejects.toMatchObject({ name: 'SessionWriteConflictError' })
+    fingerprint.mockRestore()
+  })
+
   test('appends consecutive messages without encoding or hashing history and still rejects stale bases', async () => {
     const { repository, rows } = await createHarness()
     const session = createPlainSession()

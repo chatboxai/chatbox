@@ -560,8 +560,11 @@ export class SQLiteSessionRowStore implements SessionRowStorePort {
     return this.store.readMessages(request)
   }
 
-  readContext(request: SessionContextRequest): Promise<SessionContextRows | null> {
-    return this.store.readContext(request)
+  readContext(
+    request: SessionContextRequest,
+    knownSnapshot?: Pick<SessionRowSnapshot, 'rows' | 'revision'>
+  ): Promise<SessionContextRows | null> {
+    return this.store.readContext(request, knownSnapshot)
   }
 
   writeRows(snapshot: SessionRowSnapshot, expectedRevision?: number | null): Promise<void> {

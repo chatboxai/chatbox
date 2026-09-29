@@ -1,4 +1,7 @@
 import { EventEmitter } from 'node:events'
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { BUILT_IN_BROWSER_CHANNELS as channels } from '@shared/built-in-browser'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -20,6 +23,12 @@ vi.mock('electron', () => ({
   ipcMain: {
     handle: (channel: string, handler: (...args: unknown[]) => unknown) => mocks.handlers.set(channel, handler),
   },
+}))
+const downloadRoot = mkdtempSync(path.join(tmpdir(), 'browser-ipc-downloads-'))
+const downloadsOf = (sessionId: string) => path.join(downloadRoot, 'browser-downloads', sessionId)
+vi.mock('./page-downloads', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./page-downloads')>()),
+  downloadLocationOf: (sessionId: string) => ({ root: downloadRoot, directory: downloadsOf(sessionId) }),
 }))
 vi.mock('./controller', () => ({
   BuiltInBrowserController: class {
@@ -63,18 +72,24 @@ describe('browser IPC conversation ownership', () => {
     expect(mocks.controllers[1].navigate).toHaveBeenCalledWith(mocks.host, 'https://b.example')
     expect(() => invoke(channels.getState, event, '')).toThrow('conversation is required')
   })
-  it('releases deleted conversations across windows without recreating pages during late cleanup', () => {
+  it('releases deleted conversations and their downloads across windows without recreating pages during late cleanup', async () => {
     const event = owner(1)
     const other = owner(2)
+    for (const sessionId of ['a', 'b']) {
+      mkdirSync(downloadsOf(sessionId), { recursive: true })
+      writeFileSync(path.join(downloadsOf(sessionId), 'report.csv'), 'data')
+    }
     invoke(channels.navigate, event, 'a', 'https://a.example')
     invoke(channels.navigate, event, 'b', 'https://b.example')
     invoke(channels.navigate, other, 'a', 'https://a.example')
-    invoke(channels.dispose, event, 'a')
+    await invoke(channels.dispose, event, 'a')
     expect(mocks.controllers[0].dispose).toHaveBeenCalledOnce()
     expect(mocks.controllers[2].dispose).toHaveBeenCalledOnce()
     expect(mocks.controllers[1].dispose).not.toHaveBeenCalled()
-    invoke(channels.dispose, event, 'a')
-    invoke(channels.cancelRead, event, 'a', 'late-abort')
+    expect(existsSync(downloadsOf('a'))).toBe(false)
+    expect(existsSync(path.join(downloadsOf('b'), 'report.csv'))).toBe(true)
+    await invoke(channels.dispose, event, 'a')
+    invoke(channels.cancel, event, 'a', 'late-abort')
     invoke(channels.setView, event, 'a', { visible: false })
     expect(mocks.controllers).toHaveLength(3)
     event.sender.emit('destroyed')
@@ -112,7 +127,7 @@ describe('browser IPC conversation ownership', () => {
       mocks.clearData.mock.invocationCallOrder[0]
     )
     expect(() => invoke(channels.navigate, event, 'a', 'https://example.com')).toThrow('being cleared')
-    expect(() => invoke(channels.readPage, event, 'a', { requestId: 'blocked' })).toThrow('being cleared')
+    expect(() => invoke(channels.request, event, 'a', { kind: 'read', requestId: 'blocked' })).toThrow('being cleared')
     const repeated = invoke(channels.clearData, event, 'a', 'all')
     finish?.()
     await Promise.all([clearing, repeated])

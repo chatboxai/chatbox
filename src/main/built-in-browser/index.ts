@@ -1,11 +1,12 @@
 import {
   BUILT_IN_BROWSER_CHANNELS,
+  type BuiltInBrowserCall,
   type BuiltInBrowserClearScope,
-  type BuiltInBrowserReadRequest,
   type BuiltInBrowserViewRequest,
 } from '@shared/built-in-browser'
 import { BrowserWindow, type IpcMainInvokeEvent, ipcMain } from 'electron'
 import { BuiltInBrowserController } from './controller'
+import { downloadLocationOf, removeDownloads } from './page-downloads'
 
 // All conversation views use the same persistent website login profile and proxy.
 export const builtInBrowser = new BuiltInBrowserController()
@@ -57,20 +58,22 @@ export function registerBuiltInBrowserHandlers(): void {
     return browserOf(event, sessionId)
   }
 
-  ipcMain.handle(BUILT_IN_BROWSER_CHANNELS.readPage, (event, sessionId: string, request: BuiltInBrowserReadRequest) =>
-    pageBrowserOf(event, sessionId).readPage(hostOf(event), event.sender.id, request)
+  ipcMain.handle(BUILT_IN_BROWSER_CHANNELS.request, (event, sessionId: string, call: BuiltInBrowserCall) =>
+    pageBrowserOf(event, sessionId).request(hostOf(event), event.sender.id, call)
   )
-  ipcMain.handle(BUILT_IN_BROWSER_CHANNELS.cancelRead, (event, sessionId: string, requestId: string) => {
+  ipcMain.handle(BUILT_IN_BROWSER_CHANNELS.cancel, (event, sessionId: string, requestId: string) => {
     validate(event, sessionId)
-    owners.get(event.sender.id)?.get(sessionId)?.cancelRead(event.sender.id, requestId)
+    owners.get(event.sender.id)?.get(sessionId)?.cancel(event.sender.id, requestId)
   })
-  ipcMain.handle(BUILT_IN_BROWSER_CHANNELS.dispose, (event, sessionId: string) => {
+  ipcMain.handle(BUILT_IN_BROWSER_CHANNELS.dispose, async (event, sessionId: string) => {
     validate(event, sessionId)
     // Session deletion applies across windows, unlike ordinary page operations.
     for (const browsers of owners.values()) {
       browsers.get(sessionId)?.dispose()
       browsers.delete(sessionId)
     }
+    // The conversation's downloads go with it.
+    await removeDownloads(downloadLocationOf(sessionId))
   })
   ipcMain.handle(BUILT_IN_BROWSER_CHANNELS.navigate, (event, sessionId: string, url: string) =>
     pageBrowserOf(event, sessionId).navigate(hostOf(event), url)

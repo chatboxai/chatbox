@@ -9,8 +9,8 @@
  */
 
 export const BUILT_IN_BROWSER_CHANNELS = {
-  readPage: 'built-in-browser:read-page',
-  cancelRead: 'built-in-browser:cancel-read',
+  request: 'built-in-browser:request',
+  cancel: 'built-in-browser:cancel',
   navigate: 'built-in-browser:navigate',
   goBack: 'built-in-browser:go-back',
   goForward: 'built-in-browser:go-forward',
@@ -33,23 +33,23 @@ export const BUILT_IN_BROWSER_DEFAULT_VIEWPORT = { width: 1024, height: 768 } as
 export const BUILT_IN_BROWSER_DEFAULT_READ_TIMEOUT_MS = 25_000
 export const BUILT_IN_BROWSER_MAX_READ_TIMEOUT_MS = 60_000
 
-export interface BuiltInBrowserReadRequest {
-  requestId: string
-  /** Page to open. Without it the page currently shown in the browser is read. */
-  url?: string
-  timeoutMs?: number
-  /** Also capture the visible viewport once the page has settled. */
-  screenshot?: boolean
-  /**
-   * Execute a script on the page `page` refers to instead of extracting page text. With
-   * `downloadDirectory`, files the run downloads are saved there instead of being blocked.
-   */
-  script?: { code: string; page: string; downloadDirectory?: string }
-  /** Hand local files to a file input of the page `page` refers to, instead of extracting page text. */
-  upload?: BuiltInBrowserUploadRequest
-  /** Outline the page's controls, fields and structure with element references instead of extracting its text. */
-  snapshot?: BuiltInBrowserSnapshotRequest
-}
+/**
+ * One operation on a conversation's page, selected by `kind`. `read`, `snapshot` and `screenshot`
+ * observe `url`, or the page shown when it is omitted; `run` and `upload` act on the page `page`
+ * names.
+ */
+export type BuiltInBrowserRequest =
+  | { kind: 'read'; url?: string }
+  | { kind: 'screenshot'; url?: string }
+  | ({ kind: 'snapshot'; url?: string } & BuiltInBrowserSnapshotRequest)
+  /** With `download`, files the run downloads are saved to the conversation's download folder. */
+  | { kind: 'run'; page: string; code: string; download?: boolean }
+  | ({ kind: 'upload' } & BuiltInBrowserUploadRequest)
+
+export type BuiltInBrowserRequestKind = BuiltInBrowserRequest['kind']
+
+/** A request as it crosses IPC: with the id that cancels it and the longest wait for it. */
+export type BuiltInBrowserCall = BuiltInBrowserRequest & { requestId: string; timeoutMs?: number }
 
 export interface BuiltInBrowserSnapshotRequest {
   /** Reference of the element whose subtree to outline. */
@@ -218,7 +218,7 @@ export const BUILT_IN_BROWSER_MAX_DOWNLOADS_PER_RUN = 10
 export interface BuiltInBrowserDownload {
   name: string
   status: 'saved' | 'in_progress' | 'failed' | 'too_large' | 'blocked' | 'over_limit'
-  /** Where the file is saved; absent for blocked downloads. */
+  /** Where the file is saved, in the conversation's download folder; absent for blocked downloads. */
   path?: string
   /** Bytes received so far. */
   size?: number
@@ -231,33 +231,67 @@ export type BuiltInBrowserSettledOperation = Omit<BuiltInBrowserRunResult, 'stat
   status: Exclude<BuiltInBrowserRunStatus, 'not_started'>
 }
 
-export interface BuiltInBrowserPage {
+/** What happened on the page since the previous result; each event is handed out once. */
+export interface BuiltInBrowserPageEvents {
+  /** The user clicked, typed or scrolled in the page. */
+  userInteracted?: boolean
+  /** Runs reported as `unknown` that finished since. */
+  settledOperations?: BuiltInBrowserSettledOperation[]
+  /** Downloads that were blocked, or finished after the result of the run that started them. */
+  downloads?: BuiltInBrowserDownload[]
+}
+
+/** The page a result describes, and what happened on it since the previous result. */
+export interface BuiltInBrowserPageView extends BuiltInBrowserPageEvents {
   /**
-   * Opaque reference to the page this result describes. It changes whenever the main frame loads
-   * a document or changes its URL, including a reload of the same URL, and scripts only run on
-   * the page it names. Absent when the result did not observe the page, such as a refused run.
+   * Opaque reference to the page this result observed. It changes whenever the main frame loads
+   * a document or changes its URL, including a reload of the same URL, and runs and uploads act
+   * only on the page it names. Absent when the result did not observe the page, such as a refusal.
    */
   page?: string
   /** Final URL after redirects. */
   url: string
   title: string
+}
+
+export interface BuiltInBrowserReadResult extends BuiltInBrowserPageView {
   content: string
-  /** Present when the read requested a screenshot. */
-  screenshot?: BuiltInBrowserScreenshot
-  scriptResult?: BuiltInBrowserRunResult
-  uploadResult?: BuiltInBrowserUploadResult
-  /** Present on a snapshot, whose outline is `content`. */
-  snapshot?: BuiltInBrowserSnapshotInfo
-  /** How `content` of a read was extracted: an article, or the visible text of a page without one. */
-  readMode?: 'article' | 'text'
-  /** Latest main-frame navigation, when a script was refused because the page changed. */
+  /** How `content` was extracted: an article, or the visible text of a page without one. */
+  readMode: 'article' | 'text'
+}
+
+/** Reaches the model as exactly its image, so it hands out neither a page reference nor page events. */
+export interface BuiltInBrowserScreenshotResult {
+  url: string
+  title: string
+  screenshot: BuiltInBrowserScreenshot
+}
+
+export interface BuiltInBrowserSnapshotResult extends BuiltInBrowserPageView {
+  /** The outline, or the part of it that fits. */
+  content: string
+  snapshot: BuiltInBrowserSnapshotInfo
+}
+
+export interface BuiltInBrowserRunPage extends BuiltInBrowserPageView {
+  run: BuiltInBrowserRunResult
+  /** Latest main-frame navigation, when the run was refused because the page changed. */
   lastNavigation?: BuiltInBrowserNavigation
-  /** The user clicked, typed or scrolled in the page since the previous result. */
-  userInteracted?: boolean
-  /** Runs reported as `unknown` that finished since the previous result. */
-  settledOperations?: BuiltInBrowserSettledOperation[]
-  /** Downloads that were blocked, or finished after the result of the run that started them. */
-  downloads?: BuiltInBrowserDownload[]
+}
+
+export interface BuiltInBrowserUploadPage extends BuiltInBrowserPageView {
+  upload: BuiltInBrowserUploadResult
+  /** Latest main-frame navigation, when the upload was refused because the page changed. */
+  lastNavigation?: BuiltInBrowserNavigation
+}
+
+/** The result of each kind of request. */
+export interface BuiltInBrowserResults {
+  read: BuiltInBrowserReadResult
+  screenshot: BuiltInBrowserScreenshotResult
+  snapshot: BuiltInBrowserSnapshotResult
+  run: BuiltInBrowserRunPage
+  upload: BuiltInBrowserUploadPage
 }
 
 export interface BuiltInBrowserState {

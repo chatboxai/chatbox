@@ -1,12 +1,13 @@
-import { lstatSync, realpathSync } from 'node:fs'
-import { lstat, mkdir, realpath } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { lstatSync, mkdirSync } from 'node:fs'
+import { lstat, mkdir, rm } from 'node:fs/promises'
 import path from 'node:path'
 import {
   BUILT_IN_BROWSER_MAX_DOWNLOAD_BYTES,
   BUILT_IN_BROWSER_MAX_DOWNLOADS_PER_RUN,
   type BuiltInBrowserDownload,
 } from '@shared/built-in-browser'
-import type { DownloadItem, Event, WebContents } from 'electron'
+import { app, type DownloadItem, type Event, type WebContents } from 'electron'
 import { MAX_DIAGNOSTIC_ENTRIES, redactUrl } from './script-run'
 
 /** How long a run accepts new downloads after its script returned, even if earlier downloads finish. */
@@ -18,6 +19,103 @@ export const DOWNLOAD_START_GRACE_MS = 5_000
  */
 function reservationKey(filePath: string): string {
   return process.platform === 'darwin' || process.platform === 'win32' ? filePath.toLowerCase() : filePath
+}
+
+/** A folder for downloads and the trusted directory it must lie in, with no link between them. */
+export interface DownloadLocation {
+  root: string
+  directory: string
+}
+
+/**
+ * Where the runs of a conversation save downloads: a folder of Chatbox's own data, named by a hash
+ * of the conversation id so every conversation has its own. Where the sandbox runtime confines
+ * agent commands they cannot write there; elsewhere the folder is checked for links before use.
+ */
+export function downloadLocationOf(sessionId: string): DownloadLocation {
+  const root = app.getPath('userData')
+  const key = createHash('sha256').update(sessionId).digest('hex').slice(0, 32)
+  return { root, directory: path.join(root, 'browser-downloads', key) }
+}
+
+/**
+ * The paths from just below `location.root` down to `location.directory`, outermost first; none
+ * when the folder is the root itself, which is trusted.
+ */
+function levelsOf(location: DownloadLocation): string[] {
+  const relative = path.relative(location.root, location.directory)
+  if (!relative) return []
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error('The download folder must lie inside Chatbox data.')
+  }
+  const parts = relative.split(path.sep)
+  return parts.map((_, index) => path.join(location.root, ...parts.slice(0, index + 1)))
+}
+
+function isMissing(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && error.code === 'ENOENT'
+}
+
+/**
+ * Whether every level from the root down to `location.directory` is a directory and none is a link,
+ * creating missing levels one at a time when `create` is set. Nothing is created beyond a link.
+ */
+export async function isOwnDirectory(location: DownloadLocation, create = false): Promise<boolean> {
+  try {
+    for (const level of levelsOf(location)) {
+      const entry = await lstat(level).catch((error: unknown) => {
+        if (!create || !isMissing(error)) throw error
+        return null
+      })
+      if (!entry) {
+        await mkdir(level).catch((error: unknown) => {
+          if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error
+        })
+        if (!(await lstat(level)).isDirectory()) return false
+      } else if (!entry.isDirectory()) {
+        return false
+      }
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
+function isOwnDirectorySync(location: DownloadLocation): boolean {
+  try {
+    for (const level of levelsOf(location)) {
+      let entry: ReturnType<typeof lstatSync> | null = null
+      try {
+        entry = lstatSync(level)
+      } catch (error) {
+        if (!isMissing(error)) throw error
+      }
+      if (!entry) {
+        try {
+          mkdirSync(level)
+        } catch (error) {
+          if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error
+        }
+        entry = lstatSync(level)
+      }
+      if (!entry.isDirectory()) return false
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Removes a conversation's download folder when every level above it is a real directory in
+ * Chatbox data at the start. A link in the folder's place is removed, not followed. Retries
+ * outlast a download that still holds a file open on Windows.
+ */
+export async function removeDownloads(location: DownloadLocation): Promise<void> {
+  const parent = { root: location.root, directory: path.dirname(location.directory) }
+  if (!(await isOwnDirectory(parent))) return
+  await rm(location.directory, { recursive: true, force: true, maxRetries: 5 })
 }
 
 /** Download handlers by page; the browser profile has one will-download listener, which routes here. */
@@ -74,7 +172,7 @@ interface Tracked {
 }
 
 export interface DownloadCapture {
-  readonly directory: string
+  readonly location: DownloadLocation
   readonly tracked: Tracked[]
   /** The run already returned its result; the capture waits only for its script's late downloads. */
   lingering?: boolean
@@ -117,21 +215,12 @@ export class PageDownloads {
     if (this.capture?.lingering) this.releaseToEvents(this.capture)
   }
 
-  /** Starts saving downloads into `directory`, until {@link release}. */
-  async start(directory: string): Promise<DownloadCapture> {
-    // The existing session working directory is the trusted root. Resolve its aliases before
-    // creating the download folder, and never recursively create through unverified ancestors.
-    const parent = await realpath(path.dirname(directory))
-    const destination = path.join(parent, path.basename(directory))
-    await mkdir(destination).catch((error: unknown) => {
-      if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error
-    })
-    const entry = await lstat(destination)
-    const canonical = await realpath(destination)
-    if (!entry.isDirectory() || entry.isSymbolicLink() || path.dirname(canonical) !== parent) {
-      throw new Error('The download directory must be a real directory inside the session working directory.')
+  /** Starts saving downloads into `location.directory`, until {@link release}. */
+  async start(location: DownloadLocation): Promise<DownloadCapture> {
+    if (!(await isOwnDirectory(location, true))) {
+      throw new Error('The download folder is not a real directory in Chatbox data.')
     }
-    const capture = { directory: canonical, tracked: [] }
+    const capture = { location, tracked: [] }
     this.capture = capture
     return capture
   }
@@ -215,13 +304,11 @@ export class PageDownloads {
       this.pushEvent({ name, url, status: 'over_limit' })
       return
     }
-    // Recheck when the response arrives: the folder may have changed since capture began.
     let filePath: string
     try {
-      if (!lstatSync(capture.directory).isDirectory() || realpathSync.native(capture.directory) !== capture.directory) {
-        throw new Error('The download directory changed.')
-      }
-      filePath = this.uniquePath(capture.directory, name)
+      // The folder may have been removed or replaced since the capture began.
+      if (!isOwnDirectorySync(capture.location)) throw new Error('The download folder changed.')
+      filePath = this.uniquePath(capture.location.directory, name)
     } catch {
       event.preventDefault()
       this.pushEvent({ name, url, status: 'blocked' })

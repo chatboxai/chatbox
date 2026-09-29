@@ -3,7 +3,8 @@ import {
   BUILT_IN_BROWSER_TOOL_NAME,
   type BuiltInBrowserCommand,
   type BuiltInBrowserDownload,
-  type BuiltInBrowserPage,
+  type BuiltInBrowserPageEvents,
+  type BuiltInBrowserRunPage,
   type BuiltInBrowserUploadFile,
   builtInBrowserCommandOf,
 } from '@shared/built-in-browser'
@@ -12,7 +13,6 @@ import { TASK_SANDBOX_EXTRA_WRITE_PATHS } from '@shared/task-sandbox'
 import { VIEW_IMAGE_MAX_NORMALIZED_LENGTH } from '@shared/tools/view-image-batch'
 import type { AppActionApprovalDetails } from '@shared/types'
 import { formatFileSize } from '@shared/utils'
-import { isWindowsAbsolutePath } from '@shared/utils/windows-path'
 import { validatedToolSchema } from '@shared/validated-tool-schema'
 import type { ToolSet } from 'ai'
 import { trackAgentModeFullAccessBypass } from '@/analytics/agent-mode'
@@ -29,8 +29,6 @@ const INTERACTIVE_PAGE_HINT =
   'This page was read as its visible text rather than an article. The snapshot command outlines its controls, fields and links with references to act on.'
 const DEFAULT_RUN_TIMEOUT_MS = 5_000
 const UPLOAD_TIMEOUT_MS = 20_000
-/** Folder of the working directory that receives the files runs download. */
-const DOWNLOADS_FOLDER = 'downloads'
 
 interface BrowserToolInput {
   command: BuiltInBrowserCommand
@@ -47,7 +45,7 @@ interface BrowserToolInput {
   files?: string[]
 }
 
-/** The session's files the browser may hand to pages or save downloads to. */
+/** The session's files the browser may hand to pages. */
 export interface BrowserFileAccess {
   sessionId?: string
   provider?: SandboxProvider
@@ -138,9 +136,9 @@ function isWindowsRenderer(): boolean {
 }
 
 /**
- * The host directory of the session's local sandbox, where relative paths resolve and downloads
- * land, and the directories an upload may read without approval: that directory, the directories
- * the user granted, and the sandbox's temp directory.
+ * The host directory of the session's local sandbox, where relative paths resolve, and the
+ * directories an upload may read without approval: that directory, the directories the user
+ * granted, and the sandbox's temp directory.
  */
 async function fileScopeOf(
   access: BrowserFileAccess | undefined
@@ -191,13 +189,13 @@ function describeTool(options: { hasParseLink: boolean; screenshot: boolean }): 
 Commands:
 - read: return the rendered text of url, or of the current page when url is omitted.
 - snapshot: outline the controls, fields, links and structure of url or the current page, each control with a reference such as e12. Use it before interacting; filter with query, focus on a part with scope.
-- run: run code, an async function body, on \`page\` from the latest result that has one; returns its status and value. To click, type or scroll, load the ${BUILT_IN_BROWSER_SKILL_NAME} skill first. With download, files the run downloads are saved to the working directory.
+- run: run code, an async function body, on \`page\` from the latest result that has one; returns its status and value. To click, type or scroll, load the ${BUILT_IN_BROWSER_SKILL_NAME} skill first. With download, files the run downloads are saved to this conversation's download folder; their paths come back in the result, to read or copy with file tools.
 - upload: hand local files to target, a file input or the control that opens the file picker, on \`page\`; the site uploads them itself.${screenshot}
 If a page needs sign-in or a check only the user can do, ask them to do it in the sidebar, then read again.`
 }
 
 /** What happened on the page since the previous result, for the model to account for. */
-function pageEvents(page: BuiltInBrowserPage, currentDownloads: BuiltInBrowserDownload[] = []) {
+function pageEvents(page: BuiltInBrowserPageEvents, currentDownloads: BuiltInBrowserDownload[] = []) {
   const downloads = [...(page.downloads ?? []), ...currentDownloads]
   return {
     ...(downloads.length ? { downloads } : {}),
@@ -207,17 +205,18 @@ function pageEvents(page: BuiltInBrowserPage, currentDownloads: BuiltInBrowserDo
 }
 
 async function snapshotPage(builtInBrowser: BuiltInBrowser, input: BrowserToolInput, signal?: AbortSignal) {
-  const page = await builtInBrowser.readPage({
-    url: input.url,
-    snapshot: {
+  const page = await builtInBrowser.request(
+    {
+      kind: 'snapshot',
+      url: input.url,
       ...(input.scope ? { scope: input.scope } : {}),
       ...(input.query ? { query: input.query } : {}),
       ...(input.cursor ? { cursor: input.cursor } : {}),
       ...(input.maxLength ? { maxChars: input.maxLength } : {}),
     },
-    signal,
-  })
-  const { totalLines = 0, nextCursor, restarted, modal, truncated, error } = page.snapshot ?? {}
+    { signal }
+  )
+  const { totalLines, nextCursor, restarted, modal, truncated, error } = page.snapshot
   return {
     url: page.url,
     title: page.title,
@@ -233,7 +232,7 @@ async function snapshotPage(builtInBrowser: BuiltInBrowser, input: BrowserToolIn
 
 async function readPage(builtInBrowser: BuiltInBrowser, input: BrowserToolInput, signal?: AbortSignal) {
   const limit = Math.min(Math.max(input.maxLength ?? DEFAULT_READ_MAX_CHARS, 500), 50_000)
-  const page = await builtInBrowser.readPage({ url: input.url, signal })
+  const page = await builtInBrowser.request({ kind: 'read', url: input.url }, { signal })
   const content = page.content.trim()
   const shown = content.slice(0, limit)
   return {
@@ -248,40 +247,23 @@ async function readPage(builtInBrowser: BuiltInBrowser, input: BrowserToolInput,
   }
 }
 
-async function runScript(
-  builtInBrowser: BuiltInBrowser,
-  input: BrowserToolInput,
-  fileAccess: BrowserFileAccess | undefined,
-  signal?: AbortSignal
-) {
+async function runScript(builtInBrowser: BuiltInBrowser, input: BrowserToolInput, signal?: AbortSignal) {
   if (!input.page || !input.code) {
     return { status: 'not_started', error: 'The run command needs page, from the latest browser result, and code.' }
   }
   signal?.throwIfAborted()
-  let downloadDirectory: string | undefined
-  if (input.download) {
-    const { workingDirectory } = await fileScopeOf(fileAccess)
-    if (!workingDirectory) {
-      return { status: 'not_started', error: 'Downloads need the session working directory, which is unavailable.' }
-    }
-    downloadDirectory = isWindowsAbsolutePath(workingDirectory)
-      ? `${workingDirectory.replace(/\\+$/, '')}\\${DOWNLOADS_FOLDER}`
-      : `${workingDirectory.replace(/\/+$/, '')}/${DOWNLOADS_FOLDER}`
-  }
-  let page: BuiltInBrowserPage
+  let page: BuiltInBrowserRunPage
   try {
-    page = await builtInBrowser.readPage({
-      script: { code: input.code, page: input.page, ...(downloadDirectory ? { downloadDirectory } : {}) },
-      timeoutMs: input.timeoutMs ?? DEFAULT_RUN_TIMEOUT_MS,
-      signal,
-    })
+    page = await builtInBrowser.request(
+      { kind: 'run', page: input.page, code: input.code, ...(input.download ? { download: true } : {}) },
+      { timeoutMs: input.timeoutMs ?? DEFAULT_RUN_TIMEOUT_MS, signal }
+    )
   } catch (error) {
     signal?.throwIfAborted()
     // The browser reports every outcome of a script it handed to the page; a thrown error means it never started.
     return { status: 'not_started', error: error instanceof Error ? error.message : String(error) }
   }
-  const result = page.scriptResult
-  if (!result) return { status: 'unknown', error: 'The browser did not return a script result.', ...pageEvents(page) }
+  const result = page.run
   const { operationId, downloads, ...outcome } = result
   return {
     ...outcome,
@@ -322,8 +304,9 @@ async function uploadFiles(
     )
   )
   const upload = (approvedVersion: string | undefined) =>
-    builtInBrowser.readPage({
-      upload: {
+    builtInBrowser.request(
+      {
+        kind: 'upload',
         page: input.page as string,
         target: input.target as string,
         files,
@@ -331,14 +314,13 @@ async function uploadFiles(
         allowedRoots: roots,
         ...(approvedVersion ? { approvedVersion } : {}),
       },
-      timeoutMs: UPLOAD_TIMEOUT_MS,
-      signal,
-    })
+      { timeoutMs: UPLOAD_TIMEOUT_MS, signal }
+    )
   const approvedDetails = options.approved ? options.approvalDetails : undefined
   let page = await upload(approvedDetails?.type === 'browser_upload' ? approvedDetails.version : undefined)
   const downloadEvents = [...(page.downloads ?? [])]
-  const pending = page.uploadResult
-  if (pending?.code === 'approval_required' && pending.files && pending.approvalVersion) {
+  const pending = page.upload
+  if (pending.code === 'approval_required' && pending.files && pending.approvalVersion) {
     if (fileAccess?.fullAccess) {
       trackAgentModeFullAccessBypass({ tool: 'browser_upload' })
     } else {
@@ -356,8 +338,7 @@ async function uploadFiles(
     downloadEvents.push(...(page.downloads ?? []))
   }
   page = { ...page, downloads: downloadEvents }
-  const result = page.uploadResult
-  if (!result) return { status: 'unknown', error: 'The browser did not return an upload result.', ...pageEvents(page) }
+  const result = page.upload
   // An upload is never reported again later, so its operation id has no use to the model.
   const { operationId: _operationId, files: handed, ...outcome } = result
   return {
@@ -430,7 +411,7 @@ export function getBuiltInBrowserToolSet(
         },
         download: {
           type: 'boolean',
-          description: `run: save files the script downloads to ${DOWNLOADS_FOLDER}/ in the working directory.`,
+          description: "run: save files the script downloads to this conversation's download folder.",
         },
         target: {
           type: 'string',
@@ -452,7 +433,7 @@ export function getBuiltInBrowserToolSet(
     execute: async (rawInput, toolOptions) => {
       const { abortSignal, toolCallId, messages } = toolOptions
       const input = rawInput as BrowserToolInput
-      if (input.command === 'run') return runScript(builtInBrowser, input, fileAccess, abortSignal)
+      if (input.command === 'run') return runScript(builtInBrowser, input, abortSignal)
       if (input.command === 'upload') {
         const { approved, approvalDetails } = toolOptions as typeof toolOptions &
           Pick<ToolCallOptions, 'approved' | 'approvalDetails'>
@@ -462,9 +443,8 @@ export function getBuiltInBrowserToolSet(
       if (input.command !== 'screenshot') return readPage(builtInBrowser, input, abortSignal)
       if (!imageResults) return { error: 'Screenshots are not available for this model.' }
       imageResults.reserve(messages)
-      const page = await builtInBrowser.readPage({ url: input.url, screenshot: true, signal: abortSignal })
-      const screenshot = page.screenshot
-      if (!screenshot) return { error: 'The built-in browser did not return a screenshot.' }
+      const page = await builtInBrowser.request({ kind: 'screenshot', url: input.url }, { signal: abortSignal })
+      const { screenshot } = page
       const dataUrl = `data:${screenshot.mediaType};base64,${screenshot.base64Data}`
       if (dataUrl.length > VIEW_IMAGE_MAX_NORMALIZED_LENGTH) {
         return { error: 'The screenshot exceeds the request image limit.' }

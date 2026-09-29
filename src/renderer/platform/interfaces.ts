@@ -6,10 +6,9 @@ import type { LocalMemoryScanResult } from '@shared/agent-persona/memory-import'
 import type { AnalyticsEventParams } from '@shared/analytics'
 import type {
   BuiltInBrowserClearScope,
-  BuiltInBrowserPage,
-  BuiltInBrowserSnapshotRequest,
+  BuiltInBrowserRequest,
+  BuiltInBrowserResults,
   BuiltInBrowserState,
-  BuiltInBrowserUploadRequest,
   BuiltInBrowserViewRequest,
 } from '@shared/built-in-browser'
 import type { PlatformType as SharedPlatformType } from '@shared/platform'
@@ -42,16 +41,11 @@ export interface Storage {
 
 /** Desktop-only browser with its own persistent profile for reading rendered or signed-in pages. */
 export interface BuiltInBrowser {
-  /** Reads `url`, or the page currently shown when `url` is omitted; `screenshot` also captures the viewport. */
-  readPage(params: {
-    url?: string
-    timeoutMs?: number
-    screenshot?: boolean
-    script?: { code: string; page: string; downloadDirectory?: string }
-    upload?: BuiltInBrowserUploadRequest
-    snapshot?: BuiltInBrowserSnapshotRequest
-    signal?: AbortSignal
-  }): Promise<BuiltInBrowserPage>
+  /** Performs one request on the conversation's page; aborting `signal` cancels it. */
+  request<Request extends BuiltInBrowserRequest>(
+    request: Request,
+    options?: { timeoutMs?: number; signal?: AbortSignal }
+  ): Promise<BuiltInBrowserResults[Request['kind']]>
   navigate(url: string): Promise<void>
   goBack(): Promise<void>
   goForward(): Promise<void>
@@ -62,6 +56,7 @@ export interface BuiltInBrowser {
   getState(): Promise<BuiltInBrowserState>
   onStateChange(callback: (state: BuiltInBrowserState) => void): () => void
   clearData(scope: BuiltInBrowserClearScope): Promise<void>
+  /** Removes the conversation's page and the files its runs downloaded. */
   dispose(): Promise<void>
 }
 

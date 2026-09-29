@@ -1,18 +1,24 @@
-import { randomBytes } from 'node:crypto'
 import {
   BUILT_IN_BROWSER_CHANNELS,
   BUILT_IN_BROWSER_DEFAULT_READ_TIMEOUT_MS,
   BUILT_IN_BROWSER_DEFAULT_VIEWPORT,
   BUILT_IN_BROWSER_MAX_READ_TIMEOUT_MS,
   BUILT_IN_BROWSER_SCREENSHOT_MAX_DIMENSION,
-  type BuiltInBrowserPage,
-  type BuiltInBrowserReadRequest,
+  type BuiltInBrowserCall,
+  type BuiltInBrowserNavigation,
+  type BuiltInBrowserPageView,
+  type BuiltInBrowserReadResult,
+  type BuiltInBrowserRequestKind,
+  type BuiltInBrowserResults,
   type BuiltInBrowserRunErrorCode,
+  type BuiltInBrowserRunPage,
   type BuiltInBrowserRunResult,
   type BuiltInBrowserScreenshot,
+  type BuiltInBrowserScreenshotResult,
   type BuiltInBrowserSnapshotRequest,
+  type BuiltInBrowserSnapshotResult,
   type BuiltInBrowserState,
-  type BuiltInBrowserUploadRequest,
+  type BuiltInBrowserUploadPage,
   type BuiltInBrowserUploadResult,
   type BuiltInBrowserViewRequest,
   EMPTY_BUILT_IN_BROWSER_STATE,
@@ -20,10 +26,11 @@ import {
 import { BrowserWindow, type NativeImage, type Session, session, type WebContents, WebContentsView } from 'electron'
 import { extractReadableContent } from './extract'
 import { DebuggerUnavailableError, PageDebugger } from './page-debugger'
-import { routeDownload } from './page-downloads'
+import { type DownloadLocation, downloadLocationOf, isOwnDirectory, routeDownload } from './page-downloads'
+import { PageOperation, type PageRefusal, pageToActOn, ReadTimeoutError } from './page-operation'
 import { PageRun, reportFailedRequest } from './page-run'
 import { type PageSnapshotOutcome, pageOfLines, pageSnapshotSource } from './page-snapshot'
-import { BUSY_WINDOW_MS, type PageRef, PageTracker } from './page-tracker'
+import { PageTracker } from './page-tracker'
 import { handFilesToPage, inspectUploadFiles } from './page-upload'
 import { scriptSyntaxError } from './script-run'
 import { normalizeBrowserUrl } from './url'
@@ -72,16 +79,21 @@ interface PageSnapshot {
 }
 
 const SNAPSHOT_TIMEOUT_MS = 200
-/** The reason a read is aborted when it runs out of time, as opposed to a cancellation. */
-class ReadTimeoutError extends Error {}
 
-/** The caller cancelled the call, so its result never reaches the model. A timeout is still delivered. */
-function wasCancelled(signal: AbortSignal | undefined): boolean {
-  return !!signal?.aborted && !(signal.reason instanceof ReadTimeoutError)
+/** Hands `result` to the caller in place of the operation's own, which then reaches no one. */
+function answered<Result>(operation: PageOperation, result: Result): Result {
+  operation.answer()
+  return result
 }
 
-function newOperationId(): string {
-  return `op_${randomBytes(4).toString('hex')}`
+/** What a queued request works with once it starts. */
+interface RequestContext {
+  contents: WebContents
+  page: PageTracker
+  signal: AbortSignal
+  /** The normalized url an observing request opens. */
+  url?: string
+  timeoutMs: number
 }
 
 function captureWithin(contents: WebContents, timeoutMs: number): Promise<NativeImage | null> {
@@ -113,8 +125,8 @@ export class BuiltInBrowserController {
   /** State of the page `view` shows; created and dropped together with it. */
   private page: PageTracker | null = null
   private host: BrowserWindow | null = null
-  private readonly activeReads = new Map<string, { ownerId: number; cancel: () => void }>()
-  private readQueue: Promise<unknown> = Promise.resolve()
+  private readonly activeRequests = new Map<string, { ownerId: number; cancel: () => void }>()
+  private requestQueue: Promise<unknown> = Promise.resolve()
   /** Orders view requests, so a hide that waits on a snapshot never undoes a later placement. */
   private viewGeneration = 0
   private restoreCapture: (() => void) | null = null
@@ -128,8 +140,8 @@ export class BuiltInBrowserController {
   dispose(): void {
     this.restoreCapture?.()
     ++this.viewGeneration
-    for (const active of this.activeReads.values()) active.cancel()
-    this.activeReads.clear()
+    for (const active of this.activeRequests.values()) active.cancel()
+    this.activeRequests.clear()
     if (this.host) {
       if (this.view && !this.host.isDestroyed()) this.host.contentView.removeChildView(this.view)
       this.releaseHost(this.host)
@@ -252,131 +264,54 @@ export class BuiltInBrowserController {
   }
 
   /**
-   * Reads one page at a time; the page stays open in the sidebar for the user afterwards.
-   * Cancelling or timing out settles the caller at once and stops the read's waits.
+   * Handles one request at a time; the page stays open in the sidebar for the user afterwards.
+   * Cancelling or timing out settles the caller at once and stops the request's waits.
    */
-  readPage(host: BrowserWindow, ownerId: number, request: BuiltInBrowserReadRequest): Promise<BuiltInBrowserPage> {
-    if (this.activeReads.has(request.requestId)) {
-      return Promise.reject(new Error(`Built-in browser read already exists: ${request.requestId}`))
-    }
-    const abort = new AbortController()
-    const { signal } = abort
-    /** Set once an operation touches the page; from then on only the operation itself reports how it ended. */
-    let operationStarted = false
-    const markStarted = () => {
-      operationStarted = true
-    }
-    this.activeReads.set(request.requestId, {
-      ownerId,
-      cancel: () => abort.abort(new Error('Built-in browser read was cancelled')),
-    })
-    this.pushState()
-
-    const run = async (): Promise<BuiltInBrowserPage> => {
-      signal.throwIfAborted()
-      const { view, page } = this.ensureView(host)
-      const contents = view.webContents
-      // Downloads are saved only for the run that asked for them, so every operation ends what an
-      // earlier timed out run left capturing.
-      page.downloads.endEarlierCapture()
-      // The host may have changed since the read was queued; tell it a read is running.
-      this.pushState()
-      const url = request.url ? normalizeBrowserUrl(request.url) : undefined
-      const timeoutMs = Math.min(
-        Math.max(request.timeoutMs ?? BUILT_IN_BROWSER_DEFAULT_READ_TIMEOUT_MS, 1_000),
-        BUILT_IN_BROWSER_MAX_READ_TIMEOUT_MS
-      )
-      const timer = setTimeout(
-        () =>
-          abort.abort(
-            new ReadTimeoutError(`Built-in browser timed out after ${timeoutMs}ms: ${url ?? contents.getURL()}`)
-          ),
-        timeoutMs
-      )
-      try {
-        if (request.upload) {
-          if (url || request.screenshot || request.script) {
-            throw new Error('An upload cannot navigate, capture a screenshot or run a script.')
-          }
-          return await this.uploadFiles(contents, page, request.upload, signal, markStarted)
-        }
-        if (request.script) {
-          if (url || request.screenshot) throw new Error('Script execution cannot navigate or capture a screenshot.')
-          return await this.runScript(contents, page, request.script, signal, timeoutMs, markStarted)
-        }
-        if (!url && !this.getState().url) throw new Error('The built-in browser has no page open; pass a url.')
-        // The page already open and loaded is read as it is; reloading it would discard what was done
-        // on it. A pending navigation, a failed load or a crashed page is loaded again.
-        if (url && !(url === contents.getURL() && page.readable)) {
-          page.expectLoad('agent')
-          contents.loadURL(url).catch(() => {
-            if (!contents.isDestroyed() && !contents.isLoading()) page.loadEnded()
-          })
-        }
-        if (request.snapshot) {
-          if (request.screenshot) throw new Error('A snapshot cannot capture a screenshot.')
-          return await this.snapshotPage(contents, page, request.snapshot, signal)
-        }
-        const snapshot = await snapshotSettled(contents, signal, page)
-        const extracted = extractReadableContent({ html: snapshot.html, url: snapshot.url, visibleText: snapshot.text })
-        const fields = { url: snapshot.url, title: snapshot.title || extracted.title || '', content: extracted.content }
-        if (request.screenshot) {
-          // A screenshot reaches the model as exactly its image, so it hands out neither the page
-          // reference nor page events; both stay for the next read or run.
-          return { ...fields, screenshot: await this.captureScreenshot(contents, signal) }
-        }
-        return {
-          ...(page.ref ? { page: page.ref.id } : {}),
-          ...fields,
-          readMode: extracted.mode,
-          ...page.takeEvents(),
-        }
-      } finally {
-        clearTimeout(timer)
-      }
-    }
-
-    const queued = this.readQueue.then(run, run)
-    this.readQueue = queued.catch(() => undefined)
-    const stopped = new Promise<BuiltInBrowserPage>((resolve, reject) => {
-      const stop = () => {
-        if (!request.script && !request.upload) {
-          reject(signal.reason)
-          return
-        }
-        // An operation that never reached the page did not happen; a started one reports its own outcome.
-        if (operationStarted) return
-        // Waiting behind a busy page can use up the time before the operation starts.
-        const timedOut = signal.reason instanceof ReadTimeoutError
-        const stoppedEarly = {
-          operationId: newOperationId(),
-          status: 'not_started' as const,
-          code: timedOut ? ('timeout' as const) : ('cancelled' as const),
-        }
-        const why = timedOut ? 'timed out' : 'was cancelled'
-        resolve(
-          request.upload
-            ? this.uploadResultPage({ ...stoppedEarly, message: `The upload ${why} before the page was touched.` })
-            : this.scriptResultPage({ ...stoppedEarly, message: `The run ${why} before the page received it.` })
-        )
-      }
-      if (signal.aborted) stop()
-      else signal.addEventListener('abort', stop, { once: true })
-    })
-    return Promise.race([queued, stopped]).finally(() => {
-      this.activeReads.delete(request.requestId)
-      this.pushState()
-    })
+  request<Call extends BuiltInBrowserCall>(
+    host: BrowserWindow,
+    ownerId: number,
+    call: Call
+  ): Promise<BuiltInBrowserResults[Call['kind']]> {
+    // Each branch resolves to its kind's result, which the switch cannot relate to `Call`.
+    return this.perform(host, ownerId, call) as Promise<BuiltInBrowserResults[Call['kind']]>
   }
 
-  cancelRead(ownerId: number, requestId: string): void {
-    const active = this.activeReads.get(requestId)
+  cancel(ownerId: number, requestId: string): void {
+    const active = this.activeRequests.get(requestId)
     if (active && active.ownerId === ownerId) active.cancel()
   }
 
-  cancelReadsOwnedBy(ownerId: number): void {
-    for (const active of this.activeReads.values()) {
-      if (active.ownerId === ownerId) active.cancel()
+  private perform(
+    host: BrowserWindow,
+    ownerId: number,
+    call: BuiltInBrowserCall
+  ): Promise<BuiltInBrowserResults[BuiltInBrowserRequestKind]> {
+    const abort = new AbortController()
+    switch (call.kind) {
+      case 'run': {
+        const operation = new PageOperation(abort.signal, 'run')
+        return this.enqueue(host, ownerId, call, abort, (context) => this.runScript(context, operation, call), {
+          onStop: () =>
+            operation.touched ? null : answered(operation, this.runPage(operation, operation.stoppedBeforeTouch())),
+        })
+      }
+      case 'upload': {
+        const operation = new PageOperation(abort.signal, 'upload')
+        return this.enqueue(host, ownerId, call, abort, (context) => this.uploadFiles(context, operation, call), {
+          onStop: () =>
+            operation.touched ? null : answered(operation, this.uploadPage(operation, operation.stoppedBeforeTouch())),
+        })
+      }
+      case 'read':
+      case 'screenshot':
+      case 'snapshot':
+        return this.enqueue(host, ownerId, call, abort, (context) => this.observe(context, call))
+      default: {
+        // Requests arrive over IPC, so their kind is checked at run time too.
+        const unknown: never = call
+        const { kind } = unknown as { kind?: unknown }
+        return Promise.reject(new Error(`Unknown built-in browser request: ${String(kind)}`))
+      }
     }
   }
 
@@ -400,44 +335,155 @@ export class BuiltInBrowserController {
   }
 
   /**
-   * Runs a script on the page `script.page` names. Refusals before the page receives the script
+   * Queues `perform` behind earlier requests and bounds it by the call's timeout. When the call is
+   * cancelled or times out, `onStop` settles the caller at once with its result, or returns null
+   * to let an operation that touched the page report its own outcome. Without `onStop` the caller
+   * receives the abort reason.
+   */
+  private enqueue<Result>(
+    host: BrowserWindow,
+    ownerId: number,
+    call: BuiltInBrowserCall,
+    abort: AbortController,
+    perform: (context: RequestContext) => Promise<Result>,
+    options: { onStop?: () => Result | null } = {}
+  ): Promise<Result> {
+    if (this.activeRequests.has(call.requestId)) {
+      return Promise.reject(new Error(`Built-in browser request already exists: ${call.requestId}`))
+    }
+    const { signal } = abort
+    this.activeRequests.set(call.requestId, {
+      ownerId,
+      cancel: () => abort.abort(new Error('Built-in browser request was cancelled')),
+    })
+    this.pushState()
+
+    const run = async (): Promise<Result> => {
+      signal.throwIfAborted()
+      const { view, page } = this.ensureView(host)
+      const contents = view.webContents
+      // Downloads are saved only for the run that asked for them, so every request ends what an
+      // earlier timed out run left capturing.
+      page.downloads.endEarlierCapture()
+      // The host may have changed since the request was queued; tell it a request is running.
+      this.pushState()
+      const url = 'url' in call && call.url ? normalizeBrowserUrl(call.url) : undefined
+      const timeoutMs = Math.min(
+        Math.max(call.timeoutMs ?? BUILT_IN_BROWSER_DEFAULT_READ_TIMEOUT_MS, 1_000),
+        BUILT_IN_BROWSER_MAX_READ_TIMEOUT_MS
+      )
+      const timer = setTimeout(
+        () =>
+          abort.abort(
+            new ReadTimeoutError(`Built-in browser timed out after ${timeoutMs}ms: ${url ?? contents.getURL()}`)
+          ),
+        timeoutMs
+      )
+      try {
+        return await perform({ contents, page, signal, url, timeoutMs })
+      } finally {
+        clearTimeout(timer)
+      }
+    }
+
+    const queued = this.requestQueue.then(run, run)
+    this.requestQueue = queued.catch(() => undefined)
+    const stopped = new Promise<Result>((resolve, reject) => {
+      const stop = () => {
+        if (!options.onStop) {
+          reject(signal.reason)
+          return
+        }
+        const result = options.onStop()
+        if (result) resolve(result)
+      }
+      if (signal.aborted) stop()
+      else signal.addEventListener('abort', stop, { once: true })
+    })
+    return Promise.race([queued, stopped]).finally(() => {
+      this.activeRequests.delete(call.requestId)
+      this.pushState()
+    })
+  }
+
+  /** Reads, outlines or captures `url`, or the page shown when it is omitted, once it settles. */
+  private async observe(
+    context: RequestContext,
+    call: Extract<BuiltInBrowserCall, { kind: 'read' | 'screenshot' | 'snapshot' }>
+  ): Promise<BuiltInBrowserReadResult | BuiltInBrowserScreenshotResult | BuiltInBrowserSnapshotResult> {
+    const { contents, page, signal, url } = context
+    if (!url && !this.getState().url) throw new Error('The built-in browser has no page open; pass a url.')
+    // The page already open and loaded is observed as it is; reloading it would discard what was
+    // done on it. A pending navigation, a failed load or a crashed page is loaded again.
+    if (url && !(url === contents.getURL() && page.readable)) {
+      page.expectLoad('agent')
+      contents.loadURL(url).catch(() => {
+        if (!contents.isDestroyed() && !contents.isLoading()) page.loadEnded()
+      })
+    }
+    if (call.kind === 'snapshot') return this.snapshotPage(contents, page, call, signal)
+    const snapshot = await snapshotSettled(contents, signal, page)
+    const extracted = extractReadableContent({ html: snapshot.html, url: snapshot.url, visibleText: snapshot.text })
+    const fields = { url: snapshot.url, title: snapshot.title || extracted.title || '' }
+    if (call.kind === 'screenshot') {
+      // A screenshot reaches the model as exactly its image, so it hands out neither the page
+      // reference nor page events; both stay for the next result.
+      return { ...fields, screenshot: await this.captureScreenshot(contents, signal) }
+    }
+    return {
+      ...(page.ref ? { page: page.ref.id } : {}),
+      ...fields,
+      content: extracted.content,
+      readMode: extracted.mode,
+      ...page.takeEvents(),
+    }
+  }
+
+  /** The conversation's download folder in Chatbox data. */
+  private downloadLocation(): DownloadLocation {
+    if (!this.sessionId) throw new Error('Downloads are saved only for a conversation.')
+    return downloadLocationOf(this.sessionId)
+  }
+
+  /**
+   * Runs a script on the page `call.page` names. Refusals before the page receives the script
    * report `not_started`; once it is handed over, a timeout or cancellation asks it to stop at its
    * next helper call and reports `unknown`, and its final outcome is delivered with a later result.
+   *
+   * With `download`, files the run downloads are saved to the conversation's download folder. The
+   * run waits a moment for them after its script returns; downloads that begin later, while the
+   * script goes on after a timeout or a slow server prepares a file, are saved until the next
+   * request, user input or a deadline, and reported with a later result.
    */
   private async runScript(
-    contents: WebContents,
-    page: PageTracker,
-    script: { code: string; page: string; downloadDirectory?: string },
-    signal: AbortSignal,
-    timeoutMs: number,
-    onStart: () => void
-  ): Promise<BuiltInBrowserPage> {
-    const operationId = newOperationId()
-    const ref = pageToActOn(page, script.page, 'running a script')
-    if ('code' in ref) {
-      const { lastNavigation, ...refusal } = ref
-      return this.scriptResultPage(
-        { operationId, status: 'not_started', ...refusal },
-        lastNavigation ? { lastNavigation } : {},
-        false,
-        signal
+    context: RequestContext,
+    operation: PageOperation,
+    call: Extract<BuiltInBrowserCall, { kind: 'run' }>
+  ): Promise<BuiltInBrowserRunPage> {
+    const { contents, page, signal, timeoutMs } = context
+    const refuse = (refusal: { code: BuiltInBrowserRunErrorCode; message: string } | PageRefusal) => {
+      const { lastNavigation, ...rest } = refusal as PageRefusal
+      return this.runPage(
+        operation,
+        { operationId: operation.id, status: 'not_started', ...rest },
+        lastNavigation ? { lastNavigation } : {}
       )
     }
-    const refuse = (code: BuiltInBrowserRunErrorCode, message: string) =>
-      this.scriptResultPage({ operationId, status: 'not_started', code, message }, {}, false, signal)
-    const syntaxError = scriptSyntaxError(script.code)
-    if (syntaxError) return refuse('syntax_error', syntaxError)
-    const capture = script.downloadDirectory ? await page.downloads.start(script.downloadDirectory) : null
+    const ref = pageToActOn(page, call.page, 'running a script')
+    if ('code' in ref) return refuse(ref)
+    const syntaxError = scriptSyntaxError(call.code)
+    if (syntaxError) return refuse({ code: 'syntax_error', message: syntaxError })
+    const capture = call.download ? await page.downloads.start(this.downloadLocation()) : null
     const withDownloads = async (result: BuiltInBrowserRunResult): Promise<BuiltInBrowserRunResult> => {
       if (!capture) return result
       if (result.status === 'completed') await page.downloads.settle(capture, signal)
       // A cancelled call's result never reaches the model, so its downloads go out with the next result.
-      if (wasCancelled(signal)) {
+      if (operation.cancelled) {
         page.downloads.releaseToEvents(capture)
         return result
       }
       // A download may begin later than the grace period, such as a slow export; while none has, the
-      // capture goes on like a timed out run's, until the next operation, user input or the deadline.
+      // capture goes on like a timed out run's, until the next request, user input or the deadline.
       if (result.status === 'completed' && capture.tracked.length === 0) {
         page.downloads.report(capture)
         const deadline = AbortSignal.timeout(BUILT_IN_BROWSER_MAX_READ_TIMEOUT_MS)
@@ -452,24 +498,19 @@ export class BuiltInBrowserController {
       signal.throwIfAborted()
     }
     if (capture) {
-      const current = pageToActOn(page, script.page, 'running a script')
+      // The page may have moved on while the download folder was prepared.
+      const current = pageToActOn(page, call.page, 'running a script')
       if ('code' in current) {
         page.downloads.release(capture)
-        const { lastNavigation, ...refusal } = current
-        return this.scriptResultPage(
-          { operationId, status: 'not_started', ...refusal },
-          lastNavigation ? { lastNavigation } : {},
-          false,
-          signal
-        )
+        return refuse(current)
       }
     }
 
     const document = page.document
     // Registered before the page receives the script, so navigations it starts count as the agent's.
-    const running = page.startScript(operationId)
-    onStart()
-    const pageRun = new PageRun(contents, operationId, script.code, ref.url)
+    const running = page.startScript(operation.id)
+    operation.touch()
+    const pageRun = new PageRun(contents, operation.id, call.code, ref.url)
     void pageRun.outcome.then((result) => page.finishScript(running, result))
 
     const aborted = new Promise<null>((resolve) => {
@@ -477,16 +518,14 @@ export class BuiltInBrowserController {
       else signal.addEventListener('abort', () => resolve(null), { once: true })
     })
     const finished = await Promise.race([pageRun.outcome, aborted])
-    if (finished) {
-      return this.scriptResultPage(await withDownloads(finished), {}, page.document === document, signal)
-    }
+    if (finished) return this.runPage(operation, await withDownloads(finished), {}, page.document === document)
 
     page.reportUnknown(running)
-    const stopped = await pageRun.stopWaiting(signal.reason instanceof ReadTimeoutError ? { timeoutMs } : 'cancelled')
-    if (capture && !wasCancelled(signal)) {
+    const stopped = await pageRun.stopWaiting(operation.timedOut ? { timeoutMs } : 'cancelled')
+    if (capture && !operation.cancelled) {
       // The script may still start the downloads it was run for; they are saved until it ends and
       // reported with later results. One deadline bounds it all, for a script that never ends, and
-      // the next operation on the page ends it sooner.
+      // the next request on the page ends it sooner.
       const downloads = page.downloads.report(capture)
       const deadline = AbortSignal.timeout(BUILT_IN_BROWSER_MAX_READ_TIMEOUT_MS)
       const scriptEnded = new Promise<unknown>((resolve) => {
@@ -496,40 +535,45 @@ export class BuiltInBrowserController {
       void scriptEnded
         .then(() => page.downloads.settle(capture, deadline))
         .then(() => page.downloads.releaseToEvents(capture))
-      return this.scriptResultPage(downloads.length ? { ...stopped, downloads } : stopped, {}, false, signal)
+      return this.runPage(operation, downloads.length ? { ...stopped, downloads } : stopped)
     }
-    return this.scriptResultPage(await withDownloads(stopped), {}, false, signal)
+    return this.runPage(operation, await withDownloads(stopped))
   }
 
   /**
-   * Hands local files to a file input of the page `upload.page` names. Refusals and file checks come
+   * Hands local files to a file input of the page `call.page` names. Refusals and file checks come
    * before the page is touched and report `not_started`; the files are handed over through the
    * browser, so the site receives and uploads them with its own code.
    */
   private async uploadFiles(
-    contents: WebContents,
-    page: PageTracker,
-    upload: BuiltInBrowserUploadRequest,
-    signal: AbortSignal,
-    onStart: () => void
-  ): Promise<BuiltInBrowserPage> {
-    const operationId = newOperationId()
+    context: RequestContext,
+    operation: PageOperation,
+    call: Extract<BuiltInBrowserCall, { kind: 'upload' }>
+  ): Promise<BuiltInBrowserUploadPage> {
+    const { contents, page, signal } = context
     const refuseFor = () => {
-      const ref = pageToActOn(page, upload.page, 'uploading')
+      const ref = pageToActOn(page, call.page, 'uploading')
       if (!('code' in ref)) return null
       const { lastNavigation, ...refusal } = ref
-      return this.uploadResultPage(
-        { operationId, status: 'not_started', ...refusal },
-        lastNavigation ? { lastNavigation } : {},
-        false,
-        signal
+      return this.uploadPage(
+        operation,
+        { operationId: operation.id, status: 'not_started', ...refusal },
+        lastNavigation ? { lastNavigation } : {}
       )
     }
     const refused = refuseFor()
     if (refused) return refused
-    const inspected = await inspectUploadFiles(upload)
+    // Files the conversation's runs downloaded are its own, like those of its working directory,
+    // while their folder is the real one in Chatbox data.
+    const { allowedRoots } = call
+    const downloads = allowedRoots && this.sessionId ? this.downloadLocation() : null
+    const inspected = await inspectUploadFiles(
+      allowedRoots && downloads && (await isOwnDirectory(downloads))
+        ? { ...call, allowedRoots: [...allowedRoots, downloads.directory] }
+        : call
+    )
     if ('code' in inspected) {
-      return this.uploadResultPage({ operationId, status: 'not_started', ...inspected }, {}, false, signal)
+      return this.uploadPage(operation, { operationId: operation.id, status: 'not_started', ...inspected })
     }
     signal.throwIfAborted()
     // The page may have moved on while the files were checked; they go only to the page that was read.
@@ -538,26 +582,22 @@ export class BuiltInBrowserController {
 
     const files = inspected.files
     const document = page.document
-    const running = page.startScript(operationId)
-    let touched = false
+    const running = page.startScript(operation.id)
     const result = await handFilesToPage(
       this.debuggerOf(contents),
-      upload.target,
+      call.target,
       files.map((file) => file.path),
       signal,
       {
-        isCurrent: () => page.document === document && !page.loading && page.ref?.id === upload.page,
+        isCurrent: () => page.document === document && !page.loading && page.ref?.id === call.page,
         isSameDocument: () => page.document === document && !page.loading,
-        onTouch: () => {
-          touched = true
-          onStart()
-        },
+        onTouch: () => operation.touch(),
       }
     ).then(
       (outcome): BuiltInBrowserUploadResult => {
         if (outcome.kind === 'handed') {
           return {
-            operationId,
+            operationId: operation.id,
             status: 'completed',
             message:
               "The files were handed to the page's file input. Check the page to confirm the site accepted them.",
@@ -565,15 +605,21 @@ export class BuiltInBrowserController {
           }
         }
         const { code, message } = outcome
-        return { operationId, status: outcome.kind === 'refused' ? 'not_started' : 'failed', code, message }
+        return {
+          operationId: operation.id,
+          status: outcome.kind === 'refused' ? 'not_started' : 'failed',
+          code,
+          message,
+        }
       },
       (error: unknown): BuiltInBrowserUploadResult => {
+        const { touched } = operation
+        const status = touched ? 'unknown' : 'not_started'
         if (signal.aborted) {
-          const timedOut = signal.reason instanceof ReadTimeoutError
           return {
-            operationId,
-            status: touched ? 'unknown' : 'not_started',
-            code: timedOut ? 'timeout' : 'cancelled',
+            operationId: operation.id,
+            status,
+            code: operation.timedOut ? 'timeout' : 'cancelled',
             message: touched
               ? 'The wait for the upload ended after the page was touched. Check the page before uploading again.'
               : 'The upload stopped before the page was touched.',
@@ -581,8 +627,8 @@ export class BuiltInBrowserController {
         }
         if (error instanceof DebuggerUnavailableError) {
           return {
-            operationId,
-            status: touched ? 'unknown' : 'not_started',
+            operationId: operation.id,
+            status,
             code: 'debugger_unavailable',
             message: touched
               ? `${error.message} The page was already touched; check it before uploading again.`
@@ -591,8 +637,8 @@ export class BuiltInBrowserController {
         }
         if (page.document !== document) {
           return {
-            operationId,
-            status: touched ? 'unknown' : 'not_started',
+            operationId: operation.id,
+            status,
             code: 'page_unloaded',
             message: touched
               ? 'The page left its document during the upload. Read it to see what happened.'
@@ -600,11 +646,11 @@ export class BuiltInBrowserController {
           }
         }
         const message = (error instanceof Error ? error.message : String(error)).slice(0, 500)
-        return { operationId, status: touched ? 'failed' : 'not_started', message }
+        return { operationId: operation.id, status: touched ? 'failed' : 'not_started', message }
       }
     )
-    page.finishScript(running, { operationId, status: result.status })
-    return this.uploadResultPage(result, {}, page.document === document, signal)
+    page.finishScript(running, { operationId: operation.id, status: result.status })
+    return this.uploadPage(operation, result, {}, page.document === document)
   }
 
   /**
@@ -616,7 +662,7 @@ export class BuiltInBrowserController {
     page: PageTracker,
     request: BuiltInBrowserSnapshotRequest,
     signal: AbortSignal
-  ): Promise<BuiltInBrowserPage> {
+  ): Promise<BuiltInBrowserSnapshotResult> {
     const { scope, query, cursor } = request
     const observed = await observeSettled(
       contents,
@@ -665,38 +711,36 @@ export class BuiltInBrowserController {
     return pageDebugger
   }
 
+  /** A run result with the page shown now; see {@link operationView}. */
+  private runPage(
+    operation: PageOperation,
+    run: BuiltInBrowserRunResult,
+    extra: { lastNavigation?: BuiltInBrowserNavigation } = {},
+    sameDocument = false
+  ): BuiltInBrowserRunPage {
+    return { ...this.operationView(operation, run, sameDocument), run, ...extra }
+  }
+
+  /** An upload result with the page shown now; see {@link operationView}. */
+  private uploadPage(
+    operation: PageOperation,
+    upload: BuiltInBrowserUploadResult,
+    extra: { lastNavigation?: BuiltInBrowserNavigation } = {},
+    sameDocument = false
+  ): BuiltInBrowserUploadPage {
+    return { ...this.operationView(operation, upload, sameDocument), upload, ...extra }
+  }
+
   /**
-   * A run result with the page shown now. Only a run that returned on the document it started on
+   * The page shown after an operation. Only an operation that ended on the document it started on
    * observed that page, so only then does the result hand out its reference; any other result
-   * sends the caller back to read it. Page events are handed out only with a result the caller
-   * receives, so a cancelled run leaves them for the next one.
+   * sends the caller back to read it. Page events go out only with a result the model receives.
    */
-  private scriptResultPage(
-    scriptResult: BuiltInBrowserRunResult,
-    extra: Pick<BuiltInBrowserPage, 'lastNavigation'> = {},
-    sameDocument = false,
-    signal?: AbortSignal
-  ): BuiltInBrowserPage {
-    return this.operationResultPage({ scriptResult }, scriptResult, extra, sameDocument, signal)
-  }
-
-  /** An upload result with the page shown now, handed out like a {@link scriptResultPage}. */
-  private uploadResultPage(
-    uploadResult: BuiltInBrowserUploadResult,
-    extra: Pick<BuiltInBrowserPage, 'lastNavigation'> = {},
-    sameDocument = false,
-    signal?: AbortSignal
-  ): BuiltInBrowserPage {
-    return this.operationResultPage({ uploadResult }, uploadResult, extra, sameDocument, signal)
-  }
-
-  private operationResultPage(
-    result: Pick<BuiltInBrowserPage, 'scriptResult' | 'uploadResult'>,
+  private operationView(
+    operation: PageOperation,
     outcome: { status: BuiltInBrowserRunResult['status']; code?: string },
-    extra: Pick<BuiltInBrowserPage, 'lastNavigation'>,
-    sameDocument: boolean,
-    signal?: AbortSignal
-  ): BuiltInBrowserPage {
+    sameDocument: boolean
+  ): BuiltInBrowserPageView {
     const contents = this.view?.webContents
     const live = contents && !contents.isDestroyed() ? contents : null
     const page = this.page
@@ -705,12 +749,7 @@ export class BuiltInBrowserController {
       ...(observed && page?.ref ? { page: page.ref.id } : {}),
       url: live?.getURL() ?? '',
       title: live?.getTitle() ?? '',
-      content: '',
-      ...result,
-      ...extra,
-      ...(page && outcome.code !== 'cancelled' && outcome.code !== 'approval_required' && !wasCancelled(signal)
-        ? page.takeEvents()
-        : {}),
+      ...(page && operation.deliversEvents(outcome.code) ? page.takeEvents() : {}),
     }
   }
 
@@ -754,7 +793,7 @@ export class BuiltInBrowserController {
   }
 
   private isReading(): boolean {
-    return this.activeReads.size > 0
+    return this.activeRequests.size > 0
   }
 
   private ensureView(host: BrowserWindow): { view: WebContentsView; page: PageTracker } {
@@ -773,12 +812,12 @@ export class BuiltInBrowserController {
     return { view: this.view, page: this.page }
   }
 
-  /** A closed window takes the page with it; reads waiting on that page are cancelled. */
+  /** A closed window takes the page with it; requests waiting on that page are cancelled. */
   private releaseHost(host: BrowserWindow): void {
     if (this.host !== host) return
     this.restoreCapture?.()
     this.host = null
-    for (const active of this.activeReads.values()) active.cancel()
+    for (const active of this.activeRequests.values()) active.cancel()
     const view = this.view
     this.view = null
     this.page = null
@@ -821,46 +860,6 @@ export class BuiltInBrowserController {
   }
 }
 
-/**
- * The page `requested` names, when an operation may act on it now; otherwise why not: the page
- * failed, changed since it was read, is loading, or is still busy with an earlier run.
- */
-function pageToActOn(
-  page: PageTracker,
-  requested: string,
-  action: string
-):
-  | PageRef
-  | {
-      code: 'no_page' | 'page_changed' | 'busy'
-      message: string
-      lastNavigation?: BuiltInBrowserPage['lastNavigation']
-    } {
-  const failure = page.failed
-  if (failure) return { code: 'no_page', message: `${failure}. Read its url again to reload it.` }
-  const ref = page.ref
-  if (!ref) return { code: 'no_page', message: 'The built-in browser has no page open; read a url first.' }
-  if (requested !== ref.id || page.loading) {
-    const navigation = page.lastNavigation
-    return {
-      code: 'page_changed',
-      message:
-        requested === ref.id
-          ? `The page is loading another document. Read it again before ${action}.`
-          : `The page changed since it was read. Read it again before ${action}.`,
-      ...(navigation ? { lastNavigation: navigation } : {}),
-    }
-  }
-  const earlier = page.busyWith()
-  if (earlier) {
-    return {
-      code: 'busy',
-      message: `Run ${earlier} on this page has not finished. Check the page for its effects, then retry; runs are allowed again once it finishes, the page reloads, or ${BUSY_WINDOW_MS / 1000} seconds after it was reported.`,
-    }
-  }
-  return ref
-}
-
 /** Reads the current document's text once it settles; see {@link observeSettled}. */
 async function snapshotSettled(contents: WebContents, signal: AbortSignal, page: PageTracker): Promise<PageSnapshot> {
   const snapshot = await observeSettled(contents, signal, page, READ_SOURCE)
@@ -877,7 +876,7 @@ const SCREENSHOT_JPEG_QUALITY = 80
 
 /** Captures the visible viewport, downscaled so its longest side fits a model image. */
 async function captureViewport(contents: WebContents, signal: AbortSignal): Promise<BuiltInBrowserScreenshot> {
-  // A capture that never settles must not hold the read queue after the read is cancelled.
+  // A capture that never settles must not hold the request queue after the request is cancelled.
   const captured = await new Promise<NativeImage>((resolve, reject) => {
     const onAbort = () => reject(signal.reason)
     if (signal.aborted) {

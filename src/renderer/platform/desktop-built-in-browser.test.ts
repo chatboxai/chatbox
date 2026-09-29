@@ -56,15 +56,15 @@ describe('conversation-scoped built-in browser', () => {
       [BUILT_IN_BROWSER_CHANNELS.setView, 'b', { visible: false }],
     ])
     const abort = new AbortController()
-    const read = a.readPage({ signal: abort.signal })
+    const read = a.request({ kind: 'read' }, { signal: abort.signal })
     abort.abort()
     await read
     expect(ipc.invoke).toHaveBeenCalledWith(
-      BUILT_IN_BROWSER_CHANNELS.readPage,
+      BUILT_IN_BROWSER_CHANNELS.request,
       'a',
-      expect.objectContaining({ requestId: expect.any(String) })
+      expect.objectContaining({ kind: 'read', requestId: expect.any(String) })
     )
-    expect(ipc.invoke).toHaveBeenCalledWith(BUILT_IN_BROWSER_CHANNELS.cancelRead, 'a', expect.any(String))
+    expect(ipc.invoke).toHaveBeenCalledWith(BUILT_IN_BROWSER_CHANNELS.cancel, 'a', expect.any(String))
     expect(() => browser.navigate('https://example.com')).toThrow('conversation is required')
   })
 

@@ -27,7 +27,13 @@ type BrowserTool = {
 
 function createBrowser(content: string): BuiltInBrowser {
   return {
-    readPage: vi.fn().mockResolvedValue({ page: 'p-1', url: 'https://example.com/final', title: 'Example', content }),
+    request: vi.fn().mockResolvedValue({
+      page: 'p-1',
+      url: 'https://example.com/final',
+      title: 'Example',
+      content,
+      readMode: 'article',
+    }),
     navigate: vi.fn(),
     goBack: vi.fn(),
     goForward: vi.fn(),
@@ -106,7 +112,10 @@ describe('browser tool', () => {
       { abortSignal: controller.signal }
     )
 
-    expect(browser.readPage).toHaveBeenCalledWith({ url: 'https://example.com', signal: controller.signal })
+    expect(browser.request).toHaveBeenCalledWith(
+      { kind: 'read', url: 'https://example.com' },
+      { signal: controller.signal }
+    )
     expect(result).toEqual({
       url: 'https://example.com/final',
       title: 'Example',
@@ -132,11 +141,12 @@ describe('browser tool', () => {
 
   it('tells the model once the user acted on the page and which earlier runs finished', async () => {
     const browser = createBrowser('Body')
-    vi.mocked(browser.readPage).mockResolvedValue({
+    vi.mocked(browser.request).mockResolvedValue({
       page: 'p-2',
       url: 'https://example.com/',
       title: 'Example',
       content: 'Body',
+      readMode: 'article',
       userInteracted: true,
       settledOperations: [{ operationId: 'op_1', status: 'completed', value: 'ok' }],
     })
@@ -154,7 +164,7 @@ describe('browser tool', () => {
 
     await browserTool(browser).execute({ command: 'read' }, {})
 
-    expect(browser.readPage).toHaveBeenCalledWith({ url: undefined, signal: undefined })
+    expect(browser.request).toHaveBeenCalledWith({ kind: 'read', url: undefined }, { signal: undefined })
   })
 })
 
@@ -163,12 +173,11 @@ describe('browser run command', () => {
 
   it('runs code on the referenced page with a bounded wait and returns its status', async () => {
     const browser = createBrowser('')
-    vi.mocked(browser.readPage).mockResolvedValue({
+    vi.mocked(browser.request).mockResolvedValue({
       page: 'p-1',
       url: 'https://example.com/final',
       title: 'Example',
-      content: '',
-      scriptResult: { operationId: 'op_1', status: 'completed', value: 'Example' },
+      run: { operationId: 'op_1', status: 'completed', value: 'Example' },
     })
     const tool = browserTool(browser)
     const result = await tool.execute(input, { toolCallId: 'script' })
@@ -179,11 +188,10 @@ describe('browser run command', () => {
       page: 'p-1',
       url: 'https://example.com/final',
     })
-    expect(browser.readPage).toHaveBeenCalledWith({
-      script: { code: input.code, page: 'p-1' },
-      timeoutMs: 5000,
-      signal: undefined,
-    })
+    expect(browser.request).toHaveBeenCalledWith(
+      { kind: 'run', page: 'p-1', code: input.code },
+      { timeoutMs: 5000, signal: undefined }
+    )
     expect(tool.toModelOutput({ toolCallId: 'script', input, output: result })).toEqual({
       type: 'text',
       value: JSON.stringify(result),
@@ -192,11 +200,10 @@ describe('browser run command', () => {
 
   it('keeps the operation id only for an outcome reported again later', async () => {
     const browser = createBrowser('')
-    vi.mocked(browser.readPage).mockResolvedValue({
+    vi.mocked(browser.request).mockResolvedValue({
       url: 'https://example.com/',
       title: 'Example',
-      content: '',
-      scriptResult: { operationId: 'op_9', status: 'unknown', code: 'timeout', message: 'Still running.' },
+      run: { operationId: 'op_9', status: 'unknown', code: 'timeout', message: 'Still running.' },
     })
     expect(await browserTool(browser).execute(input, {})).toEqual({
       status: 'unknown',
@@ -213,17 +220,16 @@ describe('browser run command', () => {
       status: 'not_started',
       error: expect.stringContaining('needs page'),
     })
-    expect(browser.readPage).not.toHaveBeenCalled()
+    expect(browser.request).not.toHaveBeenCalled()
   })
 
   it('tells the model to read the page again after the script navigated', async () => {
     const browser = createBrowser('')
-    vi.mocked(browser.readPage).mockResolvedValue({
+    vi.mocked(browser.request).mockResolvedValue({
       page: '',
       url: 'https://example.com/next',
       title: 'Next',
-      content: '',
-      scriptResult: { operationId: 'op_2', status: 'completed', value: 'Next', navigated: true },
+      run: { operationId: 'op_2', status: 'completed', value: 'Next', navigated: true },
     })
     const output = await browserTool(browser).execute(input, {})
     expect(output).toMatchObject({
@@ -236,11 +242,10 @@ describe('browser run command', () => {
 
   it('passes on a refused run with the navigation that changed the page', async () => {
     const browser = createBrowser('')
-    vi.mocked(browser.readPage).mockResolvedValue({
+    vi.mocked(browser.request).mockResolvedValue({
       url: 'https://github.com/o/r/issues/new',
       title: 'New issue',
-      content: '',
-      scriptResult: { operationId: 'op_3', status: 'not_started', code: 'page_changed', message: 'Read it again.' },
+      run: { operationId: 'op_3', status: 'not_started', code: 'page_changed', message: 'Read it again.' },
       lastNavigation: { source: 'user', url: 'https://github.com/o/r/issues/new' },
       userInteracted: true,
     })
@@ -256,7 +261,7 @@ describe('browser run command', () => {
 
   it('reports a request the browser rejected as not started', async () => {
     const browser = createBrowser('')
-    vi.mocked(browser.readPage).mockRejectedValue(new Error('Browser data is being cleared.'))
+    vi.mocked(browser.request).mockRejectedValue(new Error('Browser data is being cleared.'))
     expect(await browserTool(browser).execute(input, {})).toEqual({
       status: 'not_started',
       error: 'Browser data is being cleared.',
@@ -266,7 +271,7 @@ describe('browser run command', () => {
   it('does not execute an already cancelled request', async () => {
     const browser = createBrowser('')
     await expect(browserTool(browser).execute(input, { abortSignal: AbortSignal.abort() })).rejects.toThrow()
-    expect(browser.readPage).not.toHaveBeenCalled()
+    expect(browser.request).not.toHaveBeenCalled()
   })
 })
 
@@ -286,22 +291,22 @@ describe('browser download events', () => {
       name: 'slow.csv',
       url: 'https://example.com/slow',
       status: 'saved',
-      path: '/work/session/downloads/slow.csv',
+      path: '/data/browser-downloads/s1/slow.csv',
       size: 12,
     },
   ]
 
   it.each(['read', 'run', 'upload'] as const)('exposes queued download events in %s model output', async (command) => {
     const browser = createBrowser('Body')
-    vi.mocked(browser.readPage).mockResolvedValue({
+    vi.mocked(browser.request).mockResolvedValue({
       page: 'p-1',
       url: 'https://example.com/',
       title: 'Example',
-      content: 'Body',
       downloads: events,
-      scriptResult: { operationId: 'op_run', status: 'completed' },
-      uploadResult: { operationId: 'op_upload', status: 'completed' },
-    })
+      ...(command === 'read' ? { content: 'Body', readMode: 'article' as const } : {}),
+      ...(command === 'run' ? { run: { operationId: 'op_run', status: 'completed' as const } } : {}),
+      ...(command === 'upload' ? { upload: { operationId: 'op_upload', status: 'completed' as const } } : {}),
+    } as Awaited<ReturnType<BuiltInBrowser['request']>>)
     const tool = browserTool(browser)
     const input = { command, page: 'p-1', code: 'return 1', target: 'input[type=file]', files: ['shot.png'] }
 
@@ -319,17 +324,16 @@ describe('browser download events', () => {
       name: 'current.csv',
       url: 'https://example.com/current',
       status: 'saved',
-      path: '/work/session/downloads/current.csv',
+      path: '/data/browser-downloads/s1/current.csv',
     }
-    vi.mocked(browser.readPage).mockResolvedValue({
+    vi.mocked(browser.request).mockResolvedValue({
       page: 'p-1',
       url: 'https://example.com/',
       title: 'Example',
-      content: '',
       downloads: events,
-      scriptResult: { operationId: 'op_run', status: 'completed', downloads: [current] },
+      run: { operationId: 'op_run', status: 'completed', downloads: [current] },
     })
-    const tool = browserTool(browser, { fileAccess: { sessionId: 's1', provider: localSandbox() } })
+    const tool = browserTool(browser)
     const input = { command: 'run', page: 'p-1', code: 'return 1', download: true }
 
     const result = await tool.execute(input, {})
@@ -343,7 +347,7 @@ describe('browser download events', () => {
 describe('browser snapshot command', () => {
   it('outlines the page with its filters and tells the model how to continue', async () => {
     const browser = createBrowser('')
-    vi.mocked(browser.readPage).mockResolvedValue({
+    vi.mocked(browser.request).mockResolvedValue({
       page: 'p-1',
       url: 'https://github.com/o/r/pulls',
       title: 'Pull requests',
@@ -356,11 +360,10 @@ describe('browser snapshot command', () => {
     const result = await tool.execute(input, {})
     const output = tool.toModelOutput({ toolCallId: 'call', input, output: result }) as { value: string }
 
-    expect(browser.readPage).toHaveBeenCalledWith({
-      url: undefined,
-      snapshot: { scope: 'e1', query: 'login', cursor: 'p-1@0', maxChars: 2000 },
-      signal: undefined,
-    })
+    expect(browser.request).toHaveBeenCalledWith(
+      { kind: 'snapshot', url: undefined, scope: 'e1', query: 'login', cursor: 'p-1@0', maxChars: 2000 },
+      { signal: undefined }
+    )
     expect(output.value).toBe(
       [
         'Title: Pull requests',
@@ -375,7 +378,7 @@ describe('browser snapshot command', () => {
 
   it('says when only a modal dialog is shown and reports a scope that is gone', async () => {
     const browser = createBrowser('')
-    vi.mocked(browser.readPage)
+    vi.mocked(browser.request)
       .mockResolvedValueOnce({
         page: 'p-1',
         url: 'https://example.com/',
@@ -403,7 +406,7 @@ describe('browser snapshot command', () => {
 
   it('says when a cursor did not match and the outline started over', async () => {
     const browser = createBrowser('')
-    vi.mocked(browser.readPage).mockResolvedValue({
+    vi.mocked(browser.request).mockResolvedValue({
       page: 'p-1',
       url: 'https://example.com/',
       title: 'Example',
@@ -420,7 +423,7 @@ describe('browser snapshot command', () => {
 
   it('points reads of pages without an article to the snapshot command', async () => {
     const browser = createBrowser('')
-    vi.mocked(browser.readPage).mockResolvedValue({
+    vi.mocked(browser.request).mockResolvedValue({
       page: 'p-1',
       url: 'https://example.com/',
       title: 'Dashboard',
@@ -439,47 +442,37 @@ describe('browser snapshot command', () => {
 describe('browser run downloads', () => {
   const input = { command: 'run', page: 'p-1', code: 'document.querySelector("a").click()', download: true }
 
-  it('saves the downloads of a run into the working directory', async () => {
+  it("saves the downloads of a run to the conversation's download folder", async () => {
     const browser = createBrowser('')
-    vi.mocked(browser.readPage).mockResolvedValue({
+    vi.mocked(browser.request).mockResolvedValue({
       page: 'p-1',
       url: 'https://example.com/',
       title: 'Example',
-      content: '',
-      scriptResult: {
+      run: {
         operationId: 'op_1',
         status: 'completed',
         downloads: [
           {
             name: 'report.csv',
             status: 'saved',
-            path: '/work/session/downloads/report.csv',
+            path: '/data/browser-downloads/s1/report.csv',
             size: 12,
             url: 'https://example.com/report',
           },
         ],
       },
     })
-    const tool = browserTool(browser, { fileAccess: { sessionId: 's1', provider: localSandbox() } })
+    const tool = browserTool(browser)
 
     const result = await tool.execute(input, {})
 
-    expect(browser.readPage).toHaveBeenCalledWith({
-      script: { code: input.code, page: 'p-1', downloadDirectory: '/work/session/downloads' },
-      timeoutMs: 5000,
-      signal: undefined,
+    expect(browser.request).toHaveBeenCalledWith(
+      { kind: 'run', page: 'p-1', code: input.code, download: true },
+      { timeoutMs: 5000, signal: undefined }
+    )
+    expect(result).toMatchObject({
+      downloads: [{ name: 'report.csv', status: 'saved', path: '/data/browser-downloads/s1/report.csv' }],
     })
-    expect(result).toMatchObject({ downloads: [{ name: 'report.csv', status: 'saved' }] })
-  })
-
-  it('refuses downloads without a local working directory', async () => {
-    const browser = createBrowser('')
-    const tool = browserTool(browser, { fileAccess: { sessionId: 's1', provider: localSandbox(null) } })
-    expect(await tool.execute(input, {})).toEqual({
-      status: 'not_started',
-      error: expect.stringContaining('working directory'),
-    })
-    expect(browser.readPage).not.toHaveBeenCalled()
   })
 })
 
@@ -489,8 +482,7 @@ describe('browser upload command', () => {
     page: 'p-1',
     url: 'https://github.com/o/r/pull/1',
     title: 'PR',
-    content: '',
-    uploadResult: {
+    upload: {
       operationId: 'op_1',
       status: 'completed' as const,
       message: 'Handed over.',
@@ -500,7 +492,7 @@ describe('browser upload command', () => {
   const needsApproval = {
     ...handed,
     page: undefined,
-    uploadResult: {
+    upload: {
       operationId: 'op_0',
       status: 'not_started' as const,
       code: 'approval_required' as const,
@@ -514,22 +506,22 @@ describe('browser upload command', () => {
 
   it('hands files from the working directories to the page and names the site and files', async () => {
     const browser = createBrowser('')
-    vi.mocked(browser.readPage).mockResolvedValue(handed)
+    vi.mocked(browser.request).mockResolvedValue(handed)
     const tool = browserTool(browser, { fileAccess: { sessionId: 's1', provider: localSandbox() } })
 
     const result = await tool.execute(input, { toolCallId: 'up' })
 
-    expect(browser.readPage).toHaveBeenCalledWith({
-      upload: {
+    expect(browser.request).toHaveBeenCalledWith(
+      {
+        kind: 'upload',
         page: 'p-1',
         target: 'input[type=file]',
         files: ['shot.png'],
         baseDirectory: '/work/session',
         allowedRoots: ['/work/session', '/Users/me/project', '/tmp'],
       },
-      timeoutMs: 20000,
-      signal: undefined,
-    })
+      { timeoutMs: 20000, signal: undefined }
+    )
     expect(result).toEqual({
       status: 'completed',
       message: 'Handed over.',
@@ -542,7 +534,7 @@ describe('browser upload command', () => {
 
   it('asks the user before uploading files outside the working directories, showing their canonical paths', async () => {
     const browser = createBrowser('')
-    vi.mocked(browser.readPage).mockResolvedValue(needsApproval)
+    vi.mocked(browser.request).mockResolvedValue(needsApproval)
     const tool = browserTool(browser, { fileAccess: { sessionId: 's1', provider: localSandbox() } })
 
     const paused = tool.execute({ ...input, files: ['notes.txt'] }, { toolCallId: 'up' })
@@ -554,12 +546,12 @@ describe('browser upload command', () => {
       preview: 'Page: https://github.com/o/r/pull/1\n/Users/me/secret.txt (1 KB, requested as notes.txt)',
       details: { type: 'browser_upload', version: 'v1' },
     })
-    expect(browser.readPage).toHaveBeenCalledTimes(1)
+    expect(browser.request).toHaveBeenCalledTimes(1)
   })
 
   it('hands over approved files only while they are the files the user approved', async () => {
     const browser = createBrowser('')
-    vi.mocked(browser.readPage).mockResolvedValue(handed)
+    vi.mocked(browser.request).mockResolvedValue(handed)
     const tool = browserTool(browser, { fileAccess: { sessionId: 's1', provider: localSandbox() } })
     const approval = {
       toolCallId: 'up',
@@ -568,15 +560,15 @@ describe('browser upload command', () => {
     }
 
     await tool.execute(input, approval)
-    expect(vi.mocked(browser.readPage).mock.calls[0]?.[0].upload).toMatchObject({
+    expect(vi.mocked(browser.request).mock.calls[0]?.[0]).toMatchObject({
       allowedRoots: ['/work/session', '/Users/me/project', '/tmp'],
       approvedVersion: 'v1',
     })
 
     // The files changed after the approval: the user is asked again about them as they are now.
-    vi.mocked(browser.readPage).mockResolvedValue({
+    vi.mocked(browser.request).mockResolvedValue({
       ...needsApproval,
-      uploadResult: { ...needsApproval.uploadResult, approvalVersion: 'v2' },
+      upload: { ...needsApproval.upload, approvalVersion: 'v2' },
     })
     await expect(tool.execute(input, approval)).rejects.toMatchObject({
       details: { type: 'browser_upload', version: 'v2' },
@@ -585,13 +577,13 @@ describe('browser upload command', () => {
 
   it('lets Full Access skip the approval and records the bypass', async () => {
     const browser = createBrowser('')
-    vi.mocked(browser.readPage).mockResolvedValueOnce(needsApproval).mockResolvedValueOnce(handed)
+    vi.mocked(browser.request).mockResolvedValueOnce(needsApproval).mockResolvedValueOnce(handed)
     const tool = browserTool(browser, {
       fileAccess: { sessionId: 's1', provider: localSandbox(), fullAccess: true },
     })
 
     expect(await tool.execute(input, { toolCallId: 'up' })).toMatchObject({ status: 'completed' })
-    expect(vi.mocked(browser.readPage).mock.calls[1]?.[0].upload).toMatchObject({ approvedVersion: 'v1' })
+    expect(vi.mocked(browser.request).mock.calls[1]?.[0]).toMatchObject({ approvedVersion: 'v1' })
     expect(trackAgentModeFullAccessBypass).toHaveBeenCalledWith({ tool: 'browser_upload' })
   })
 
@@ -602,9 +594,9 @@ describe('browser upload command', () => {
       name: 'slow.csv',
       url: 'https://example.com/slow',
       status: 'saved',
-      path: '/work/session/downloads/slow.csv',
+      path: '/data/browser-downloads/s1/slow.csv',
     }
-    vi.mocked(browser.readPage)
+    vi.mocked(browser.request)
       .mockResolvedValueOnce({ ...needsApproval, downloads: [blocked] })
       .mockResolvedValueOnce({ ...handed, downloads: [saved] })
     const tool = browserTool(browser, {
@@ -620,18 +612,17 @@ describe('browser upload command', () => {
       status: 'not_started',
       error: expect.stringContaining('needs page'),
     })
-    expect(browser.readPage).not.toHaveBeenCalled()
+    expect(browser.request).not.toHaveBeenCalled()
   })
 })
 
 describe('browser screenshot command', () => {
   it('captures the page, records the image under its final url and returns it as an image', async () => {
     const browser = createBrowser('Body')
-    vi.mocked(browser.readPage).mockResolvedValue({
+    vi.mocked(browser.request).mockResolvedValue({
       page: 'p-1',
       url: 'https://example.com/final',
       title: 'Example',
-      content: 'Body',
       screenshot: { base64Data: 'SlBFRw==', mediaType: 'image/jpeg', width: 800, height: 600 },
     })
     const imageResults = createImageResults()
@@ -641,11 +632,10 @@ describe('browser screenshot command', () => {
 
     const result = await tool.execute(input, { abortSignal: controller.signal, toolCallId: 'call-1' })
 
-    expect(browser.readPage).toHaveBeenCalledWith({
-      url: 'https://example.com',
-      screenshot: true,
-      signal: controller.signal,
-    })
+    expect(browser.request).toHaveBeenCalledWith(
+      { kind: 'screenshot', url: 'https://example.com' },
+      { signal: controller.signal }
+    )
     expect(imageResults.record).toHaveBeenCalledWith({
       toolCallId: 'call-1',
       label: 'https://example.com/final',
@@ -664,26 +654,12 @@ describe('browser screenshot command', () => {
     expect(imageResults.toModelOutput).toHaveBeenCalledWith(expect.objectContaining({ toolCallId: 'call-1' }))
   })
 
-  it('reports a missing screenshot as text instead of recording an image', async () => {
-    const imageResults = createImageResults()
-    const tool = browserTool(createBrowser('Body'), { imageResults })
-    const input = { command: 'screenshot' }
-    const result = await tool.execute(input, { toolCallId: 'call-1' })
-
-    expect(result.error).toContain('did not return a screenshot')
-    expect(imageResults.record).not.toHaveBeenCalled()
-    expect(tool.toModelOutput({ toolCallId: 'call-1', input, output: result })).toEqual({
-      type: 'text',
-      value: expect.stringContaining('did not return a screenshot'),
-    })
-  })
-
   it('refuses screenshots without image results', async () => {
     const browser = createBrowser('Body')
     expect(await browserTool(browser).execute({ command: 'screenshot' }, {})).toEqual({
       error: 'Screenshots are not available for this model.',
     })
-    expect(browser.readPage).not.toHaveBeenCalled()
+    expect(browser.request).not.toHaveBeenCalled()
   })
 })
 

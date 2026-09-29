@@ -694,7 +694,7 @@ ${
     ? '- Relative paths resolve in the session sandbox working directory and can be written or edited without confirmation. Prefer them; phantom home paths such as /home/user or /root do not exist.'
     : '- No session sandbox is available, so these file tools reject relative paths. Use absolute paths.'
 }
-- Absolute paths access the user's real filesystem. Read, list, or search them only when the user provided or clearly requested the path. Writing or editing them requires user approval unless the path is inside a bound working directory or Full Access is enabled. Do not attempt destructive operations; file deletion is not available.
+- Absolute paths access the user's real filesystem. Read, list, or search them only when the user provided or clearly requested the path, or another tool returned it, such as a file the browser downloaded. Writing or editing them requires user approval unless the path is inside a bound working directory or Full Access is enabled. Do not attempt destructive operations; file deletion is not available.
 - Keep tool results small. For large generated outputs, write a file and return a path plus a short summary.${
       hasSandbox
         ? '\n- Writing a file does not deliver it. Call create_download, and never present sandbox paths (sandbox:, /mnt/data/, or raw file paths) as links in your reply.'

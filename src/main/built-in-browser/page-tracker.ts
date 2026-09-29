@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import type {
   BuiltInBrowserNavigation,
   BuiltInBrowserNavigationSource,
-  BuiltInBrowserPage,
+  BuiltInBrowserPageEvents,
   BuiltInBrowserRunResult,
   BuiltInBrowserSettledOperation,
 } from '@shared/built-in-browser'
@@ -263,7 +263,7 @@ export class PageTracker {
   }
 
   /** What happened on the page since the previous result; each event is handed out once. */
-  takeEvents(): Pick<BuiltInBrowserPage, 'userInteracted' | 'settledOperations' | 'downloads'> {
+  takeEvents(): BuiltInBrowserPageEvents {
     const { userInteracted, settled } = this
     const downloads = this.downloads.takeEvents()
     this.userInteracted = false

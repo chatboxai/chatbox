@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events'
-import { mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import {
@@ -8,7 +8,7 @@ import {
   EMPTY_BUILT_IN_BROWSER_STATE,
 } from '@shared/built-in-browser'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { PageDownloads, routeDownload } from './page-downloads'
+import { downloadLocationOf, PageDownloads, routeDownload } from './page-downloads'
 
 let nextContentsId = 1
 
@@ -111,6 +111,13 @@ const webRequest = vi.hoisted(() => ({
   failed: [] as Array<(details: RequestDetails) => void>,
 }))
 
+const userData = vi.hoisted(() => {
+  const { mkdtempSync } = require('node:fs') as typeof import('node:fs')
+  const { tmpdir } = require('node:os') as typeof import('node:os')
+  const path = require('node:path') as typeof import('node:path')
+  return mkdtempSync(path.join(tmpdir(), 'controller-user-data-'))
+})
+
 vi.mock('electron', () => {
   class BrowserWindow {
     destroyed = false
@@ -152,7 +159,12 @@ vi.mock('electron', () => {
       onErrorOccurred: (listener: (details: RequestDetails) => void) => webRequest.failed.push(listener),
     },
   }
-  return { BrowserWindow, WebContentsView, session: { fromPartition: () => fakeSession } }
+  return {
+    app: { getPath: () => userData },
+    BrowserWindow,
+    WebContentsView,
+    session: { fromPartition: () => fakeSession },
+  }
 })
 
 class FakeHost extends EventEmitter {
@@ -166,7 +178,7 @@ const { BUSY_WINDOW_MS } = await import('./page-tracker')
 
 /** Navigation listeners every view keeps: its page tracker's. */
 const VIEW_NAVIGATION_LISTENERS = 1
-type Host = Parameters<InstanceType<typeof BuiltInBrowserController>['readPage']>[0]
+type Host = Parameters<InstanceType<typeof BuiltInBrowserController>['request']>[0]
 
 /** The page reference a result hands out; a test that needs one fails when it is missing. */
 function referenceOf(result: { page?: string }): string {
@@ -184,7 +196,7 @@ describe('BuiltInBrowserController reads', () => {
 
   beforeEach(() => {
     views.length = 0
-    controller = new BuiltInBrowserController()
+    controller = new BuiltInBrowserController('conversation')
     host = new FakeHost()
   })
 
@@ -215,17 +227,19 @@ describe('BuiltInBrowserController reads', () => {
     controller.navigate(host as unknown as Host, 'https://example.com/')
     const contents = views[0].webContents
     contents.emit('dom-ready')
-    const opened = controller.readPage(host as unknown as Host, 1, { requestId: 'open' })
+    const opened = controller.request(host as unknown as Host, 1, { kind: 'read', requestId: 'open' })
     await flush()
     contents.finishSnapshot('Loaded.')
     const page = referenceOf(await opened)
-    const read = controller.readPage(host as unknown as Host, 1, {
+    const read = controller.request(host as unknown as Host, 1, {
+      kind: 'run',
       requestId: 'pending-script',
-      script: { page, code: 'await new Promise(() => {})' },
+      page,
+      code: 'await new Promise(() => {})',
     })
     await flush()
     controller.resetPage()
-    await expect(read).resolves.toMatchObject({ scriptResult: { status: 'unknown', code: 'cancelled' } })
+    await expect(read).resolves.toMatchObject({ run: { status: 'unknown', code: 'cancelled' } })
     expect(contents.closed).toBe(true)
     expect(controller.getState()).toEqual(EMPTY_BUILT_IN_BROWSER_STATE)
     expect(host.webContents.send).toHaveBeenCalledWith(BUILT_IN_BROWSER_CHANNELS.state, {
@@ -237,8 +251,20 @@ describe('BuiltInBrowserController reads', () => {
     expect(controller.getState().canGoBack).toBe(false)
   })
 
+  it('refuses a request of an unknown kind without opening a page', async () => {
+    const call = { kind: 'navigate', requestId: 'unknown' } as unknown as Parameters<typeof controller.request>[2]
+    await expect(controller.request(host as unknown as Host, 1, call)).rejects.toThrow(
+      'Unknown built-in browser request: navigate'
+    )
+    expect(views).toHaveLength(0)
+  })
+
   it('disposes queued reads before they create a page', async () => {
-    const read = controller.readPage(host as unknown as Host, 1, { requestId: 'queued', url: 'https://example.com/' })
+    const read = controller.request(host as unknown as Host, 1, {
+      kind: 'read',
+      requestId: 'queued',
+      url: 'https://example.com/',
+    })
     controller.dispose()
     await expect(read).rejects.toThrow('cancelled')
     expect(views).toHaveLength(0)
@@ -263,7 +289,7 @@ describe('BuiltInBrowserController reads', () => {
     controller.navigate(host as unknown as Host, url)
     const contents = views[views.length - 1].webContents
     contents.emit('dom-ready')
-    const read = controller.readPage(host as unknown as Host, 1, { requestId: `open-${++openCount}` })
+    const read = controller.request(host as unknown as Host, 1, { kind: 'read', requestId: `open-${++openCount}` })
     await flush()
     contents.finishSnapshot('Loaded.')
     const page = referenceOf(await read)
@@ -272,10 +298,12 @@ describe('BuiltInBrowserController reads', () => {
   }
 
   function run(page: string, code = 'return 1', extra: { timeoutMs?: number; requestId?: string } = {}) {
-    return controller.readPage(host as unknown as Host, 1, {
+    return controller.request(host as unknown as Host, 1, {
+      kind: 'run',
       requestId: extra.requestId ?? `run-${++openCount}`,
       timeoutMs: extra.timeoutMs,
-      script: { code, page },
+      code,
+      page,
     })
   }
 
@@ -287,16 +315,16 @@ describe('BuiltInBrowserController reads', () => {
     expect(result).toMatchObject({
       page,
       url: 'https://example.com/',
-      scriptResult: { status: 'completed', value: 'data' },
+      run: { status: 'completed', value: 'data' },
     })
-    expect(result.scriptResult?.operationId).toMatch(/^op_[0-9a-f]{8}$/)
+    expect(result.run?.operationId).toMatch(/^op_[0-9a-f]{8}$/)
     const source = String((contents.executeJavaScript.mock.calls[0] as unknown[])[0])
     expect(source).toContain('return document.title')
     expect(source).toContain(JSON.stringify('https://example.com/'))
 
     const refused = await run('other-1')
     expect(refused).not.toHaveProperty('page')
-    expect(refused.scriptResult).toMatchObject({ status: 'not_started', code: 'page_changed' })
+    expect(refused.run).toMatchObject({ status: 'not_started', code: 'page_changed' })
     expect(contents.executeJavaScript).toHaveBeenCalledTimes(1)
   })
 
@@ -304,9 +332,12 @@ describe('BuiltInBrowserController reads', () => {
     const { contents, page } = await openPage()
     const lines = Array.from({ length: 400 }, (_, index) => `- button "Action ${index}" [e${index + 1}]`)
     const snapshot = (cursor?: string) => {
-      const read = controller.readPage(host as unknown as Host, 1, {
+      const read = controller.request(host as unknown as Host, 1, {
+        kind: 'snapshot',
         requestId: `snapshot-${++openCount}`,
-        snapshot: { query: 'Action', ...(cursor ? { cursor } : {}), maxChars: 1000 },
+        query: 'Action',
+        ...(cursor ? { cursor } : {}),
+        maxChars: 1000,
       })
       return flush().then(() => {
         const source = String((contents.executeJavaScript.mock.calls.at(-1) as unknown[] | undefined)?.[0])
@@ -327,16 +358,18 @@ describe('BuiltInBrowserController reads', () => {
   it('refuses uploads to a changed page or of unusable files before touching the page', async () => {
     const { contents, page } = await openPage()
     const upload = (request: { page: string; files: string[] }) =>
-      controller.readPage(host as unknown as Host, 1, {
+      controller.request(host as unknown as Host, 1, {
+        kind: 'upload',
         requestId: `upload-${++openCount}`,
-        upload: { target: 'input', ...request },
+        target: 'input',
+        ...request,
       })
 
-    expect((await upload({ page: 'other-1', files: ['/tmp/a.png'] })).uploadResult).toMatchObject({
+    expect((await upload({ page: 'other-1', files: ['/tmp/a.png'] })).upload).toMatchObject({
       status: 'not_started',
       code: 'page_changed',
     })
-    expect((await upload({ page, files: ['relative.png'] })).uploadResult).toMatchObject({
+    expect((await upload({ page, files: ['relative.png'] })).upload).toMatchObject({
       status: 'not_started',
       code: 'file_unavailable',
     })
@@ -359,12 +392,17 @@ describe('BuiltInBrowserController reads', () => {
       return result
     })
 
-    const result = await controller.readPage(host as unknown as Host, 1, {
+    const result = await controller.request(host as unknown as Host, 1, {
+      kind: 'upload',
       requestId: 'upload-takeover',
-      upload: { page, target: 'input', files: ['shot.png'], baseDirectory: directory, allowedRoots: [directory] },
+      page,
+      target: 'input',
+      files: ['shot.png'],
+      baseDirectory: directory,
+      allowedRoots: [directory],
     })
 
-    expect(result.uploadResult).toMatchObject({ status: 'unknown', code: 'debugger_unavailable' })
+    expect(result.upload).toMatchObject({ status: 'unknown', code: 'debugger_unavailable' })
   })
 
   it('reports an upload whose page navigated before it was touched as not started', async () => {
@@ -377,12 +415,17 @@ describe('BuiltInBrowserController reads', () => {
       throw new Error('Execution context was destroyed.')
     })
 
-    const result = await controller.readPage(host as unknown as Host, 1, {
+    const result = await controller.request(host as unknown as Host, 1, {
+      kind: 'upload',
       requestId: 'upload-navigated',
-      upload: { page, target: 'input', files: ['shot.png'], baseDirectory: directory, allowedRoots: [directory] },
+      page,
+      target: 'input',
+      files: ['shot.png'],
+      baseDirectory: directory,
+      allowedRoots: [directory],
     })
 
-    expect(result.uploadResult).toMatchObject({ status: 'not_started', code: 'page_unloaded' })
+    expect(result.upload).toMatchObject({ status: 'not_started', code: 'page_unloaded' })
   })
 
   it('hands files to the page through its debugger and keeps the page reference', async () => {
@@ -390,21 +433,20 @@ describe('BuiltInBrowserController reads', () => {
     const directory = mkdtempSync(path.join(tmpdir(), 'controller-upload-'))
     writeFileSync(path.join(directory, 'shot.png'), 'png')
 
-    const result = await controller.readPage(host as unknown as Host, 1, {
+    const result = await controller.request(host as unknown as Host, 1, {
+      kind: 'upload',
       requestId: 'upload',
-      upload: {
-        page,
-        target: 'input[type=file]',
-        files: ['shot.png'],
-        baseDirectory: directory,
-        allowedRoots: [directory],
-      },
+      page,
+      target: 'input[type=file]',
+      files: ['shot.png'],
+      baseDirectory: directory,
+      allowedRoots: [directory],
     })
 
     const canonical = path.join(realpathSync(directory), 'shot.png')
     expect(result).toMatchObject({
       page,
-      uploadResult: {
+      upload: {
         status: 'completed',
         files: [{ name: 'shot.png', size: 3, path: canonical }],
       },
@@ -432,18 +474,21 @@ describe('BuiltInBrowserController reads', () => {
       contents.emit('dom-ready')
     }
 
-    const result = await controller.readPage(host as unknown as Host, 1, {
+    const result = await controller.request(host as unknown as Host, 1, {
+      kind: 'upload',
       requestId: 'upload',
-      upload: { page, target: 'input', files: [path.join(directory, 'shot.png')], allowedRoots: [directory] },
+      page,
+      target: 'input',
+      files: [path.join(directory, 'shot.png')],
+      allowedRoots: [directory],
     })
 
-    expect(result.uploadResult).toMatchObject({ status: 'not_started', code: 'page_changed' })
+    expect(result.upload).toMatchObject({ status: 'not_started', code: 'page_changed' })
     expect(contents.debugger.sendCommand).not.toHaveBeenCalled()
   })
 
   it('refuses a script when its page reloads while the download directory is prepared', async () => {
     const { contents, page } = await openPage()
-    const directory = mkdtempSync(path.join(tmpdir(), 'controller-download-reload-'))
     const start = PageDownloads.prototype.start
     vi.spyOn(PageDownloads.prototype, 'start').mockImplementationOnce(async function (
       this: PageDownloads,
@@ -461,11 +506,14 @@ describe('BuiltInBrowserController reads', () => {
       return capture
     })
     const release = vi.spyOn(PageDownloads.prototype, 'release')
-    const result = await controller.readPage(host as unknown as Host, 1, {
+    const result = await controller.request(host as unknown as Host, 1, {
+      kind: 'run',
       requestId: 'download-reload',
-      script: { page, code: 'document.querySelector("button").click()', downloadDirectory: directory },
+      page,
+      code: 'document.querySelector("button").click()',
+      download: true,
     })
-    expect(result.scriptResult).toMatchObject({ status: 'not_started', code: 'page_changed' })
+    expect(result.run).toMatchObject({ status: 'not_started', code: 'page_changed' })
     expect(contents.executeJavaScript).not.toHaveBeenCalled()
     expect(release).toHaveBeenCalledOnce()
   })
@@ -477,9 +525,14 @@ describe('BuiltInBrowserController reads', () => {
     const file = path.join(outside, 'report.txt')
     writeFileSync(file, 'v1')
     const upload = (approvedVersion?: string) =>
-      controller.readPage(host as unknown as Host, 1, {
+      controller.request(host as unknown as Host, 1, {
+        kind: 'upload',
         requestId: `upload-${++openCount}`,
-        upload: { page, target: 'input', files: [file], allowedRoots: [work], approvedVersion },
+        page,
+        target: 'input',
+        files: [file],
+        allowedRoots: [work],
+        approvedVersion,
       })
 
     routeDownload(
@@ -491,19 +544,19 @@ describe('BuiltInBrowserController reads', () => {
     )
     const waiting = await upload()
     expect(waiting.downloads).toBeUndefined()
-    const pending = waiting.uploadResult
+    const pending = waiting.upload
     expect(pending).toMatchObject({
       status: 'not_started',
       code: 'approval_required',
       files: [{ name: 'report.txt', path: realpathSync(file) }],
     })
     writeFileSync(file, 'changed')
-    expect((await upload(pending?.approvalVersion)).uploadResult).toMatchObject({ code: 'approval_required' })
+    expect((await upload(pending?.approvalVersion)).upload).toMatchObject({ code: 'approval_required' })
     expect(contents.debugger.sendCommand).not.toHaveBeenCalled()
 
-    const current = (await upload()).uploadResult?.approvalVersion
+    const current = (await upload()).upload?.approvalVersion
     const completed = await upload(current)
-    expect(completed.uploadResult).toMatchObject({ status: 'completed' })
+    expect(completed.upload).toMatchObject({ status: 'completed' })
     expect(completed.downloads).toEqual([
       { name: 'blocked.csv', status: 'blocked', url: 'https://example.com/blocked.csv' },
     ])
@@ -523,11 +576,11 @@ describe('BuiltInBrowserController reads', () => {
     expect(refused).not.toHaveProperty('page')
     expect(refused).toMatchObject({
       url: 'https://example.com/',
-      scriptResult: { status: 'not_started', code: 'page_changed' },
+      run: { status: 'not_started', code: 'page_changed' },
       lastNavigation: { source: 'unknown', url: 'https://example.com/' },
     })
 
-    const read = controller.readPage(host as unknown as Host, 1, { requestId: 'reread' })
+    const read = controller.request(host as unknown as Host, 1, { kind: 'read', requestId: 'reread' })
     await flush()
     contents.finishSnapshot('Reloaded.')
     const current = referenceOf(await read)
@@ -535,7 +588,7 @@ describe('BuiltInBrowserController reads', () => {
     contents.executeJavaScript.mockClear()
     contents.url = 'https://example.com/#details'
     contents.emit('did-navigate-in-page', {}, contents.url, true)
-    await expect(run(current)).resolves.toMatchObject({ scriptResult: { code: 'page_changed' } })
+    await expect(run(current)).resolves.toMatchObject({ run: { code: 'page_changed' } })
     expect(contents.executeJavaScript).not.toHaveBeenCalled()
   })
 
@@ -543,7 +596,7 @@ describe('BuiltInBrowserController reads', () => {
     const { contents, page } = await openPage()
     contents.emit('did-navigate-in-page', {}, contents.url, true)
     contents.executeJavaScript.mockResolvedValueOnce({ kind: 'value', value: '1', truncated: false })
-    await expect(run(page)).resolves.toMatchObject({ page, scriptResult: { status: 'completed' } })
+    await expect(run(page)).resolves.toMatchObject({ page, run: { status: 'completed' } })
   })
 
   it('refuses a run while the page is loading another document and reports who started it', async () => {
@@ -558,7 +611,7 @@ describe('BuiltInBrowserController reads', () => {
     const loading = await run(page)
     expect(loading).not.toHaveProperty('page')
     expect(loading).toMatchObject({
-      scriptResult: { status: 'not_started', code: 'page_changed', message: expect.stringContaining('loading') },
+      run: { status: 'not_started', code: 'page_changed', message: expect.stringContaining('loading') },
       lastNavigation: { source: 'user' },
     })
     contents.emit('did-navigate')
@@ -594,7 +647,7 @@ describe('BuiltInBrowserController reads', () => {
     expect(source.indexOf('const browser =')).toBeLessThan(source.indexOf("return browser.click('button')"))
     expect(result).toMatchObject({
       url: 'https://example.com/results',
-      scriptResult: { status: 'completed', value: 'Search', navigated: true },
+      run: { status: 'completed', value: 'Search', navigated: true },
     })
     expect(result.page).not.toBe(page)
     contents.emit('dom-ready')
@@ -605,17 +658,17 @@ describe('BuiltInBrowserController reads', () => {
   it('reports syntax errors without running them, bounds values and separates script errors', async () => {
     const { contents, page } = await openPage()
     await expect(run(page, '}); (async () => {')).resolves.toMatchObject({
-      scriptResult: { status: 'not_started', code: 'syntax_error', message: expect.stringContaining('syntax error') },
+      run: { status: 'not_started', code: 'syntax_error', message: expect.stringContaining('syntax error') },
     })
     expect(contents.executeJavaScript).not.toHaveBeenCalled()
 
     contents.executeJavaScript.mockResolvedValueOnce({ kind: 'value', value: 'x'.repeat(20_000), truncated: false })
     await expect(run(page)).resolves.toMatchObject({
-      scriptResult: { status: 'completed', value: 'x'.repeat(12_000), truncated: true },
+      run: { status: 'completed', value: 'x'.repeat(12_000), truncated: true },
     })
 
     contents.executeJavaScript.mockResolvedValueOnce({ kind: 'value', value: 42 })
-    await expect(run(page)).resolves.toMatchObject({ scriptResult: { status: 'unknown' } })
+    await expect(run(page)).resolves.toMatchObject({ run: { status: 'unknown' } })
 
     contents.executeJavaScript.mockResolvedValueOnce({
       kind: 'error',
@@ -626,7 +679,7 @@ describe('BuiltInBrowserController reads', () => {
       ],
     })
     await expect(run(page)).resolves.toMatchObject({
-      scriptResult: {
+      run: {
         status: 'failed',
         message: 'Failed to fetch',
         diagnostics: {
@@ -639,7 +692,7 @@ describe('BuiltInBrowserController reads', () => {
     })
 
     contents.executeJavaScript.mockResolvedValueOnce({ kind: 'page_changed' })
-    await expect(run(page)).resolves.toMatchObject({ scriptResult: { status: 'not_started', code: 'page_changed' } })
+    await expect(run(page)).resolves.toMatchObject({ run: { status: 'not_started', code: 'page_changed' } })
   })
 
   it('reports failed requests of the page during a run without query strings', async () => {
@@ -666,7 +719,7 @@ describe('BuiltInBrowserController reads', () => {
       return Promise.resolve({ kind: 'value', value: 'done', truncated: false })
     })
     const result = await run(page)
-    expect(result.scriptResult?.diagnostics).toEqual({
+    expect(result.run?.diagnostics).toEqual({
       failedRequests: [
         { method: 'POST', url: 'https://api.example/upload', status: 403 },
         { method: 'GET', url: 'https://down.example/a', error: 'net::ERR_NAME_NOT_RESOLVED' },
@@ -676,7 +729,7 @@ describe('BuiltInBrowserController reads', () => {
       listener({ webContentsId: contents.id, method: 'GET', url: 'https://late.example/', statusCode: 500 })
     }
     contents.executeJavaScript.mockResolvedValueOnce({ kind: 'value', value: 'quiet', truncated: false })
-    expect((await run(page)).scriptResult?.diagnostics).toBeUndefined()
+    expect((await run(page)).run?.diagnostics).toBeUndefined()
   })
 
   it('reports a timed out run as unknown, asks it to stop and delivers its final outcome later', async () => {
@@ -694,18 +747,18 @@ describe('BuiltInBrowserController reads', () => {
     const pending = run(page, 'await submit()', { timeoutMs: 1000 })
     await vi.advanceTimersByTimeAsync(1001)
     const timedOut = await pending
-    expect(timedOut.scriptResult).toMatchObject({
+    expect(timedOut.run).toMatchObject({
       status: 'unknown',
       code: 'timeout',
       diagnostics: { cspViolations: [{ directive: 'connect-src', blocked: 'https://blocked.example/x' }] },
     })
-    const operationId = timedOut.scriptResult?.operationId
+    const operationId = timedOut.run?.operationId
     const cancelSource = String((contents.executeJavaScript.mock.calls[1] as unknown[])[0])
     expect(cancelSource).toContain(`__chatboxRun_${operationId}`)
     expect(cancelSource).toContain('cancelled = true')
 
     await expect(run(page)).resolves.toMatchObject({
-      scriptResult: { status: 'not_started', code: 'busy', message: expect.stringContaining(String(operationId)) },
+      run: { status: 'not_started', code: 'busy', message: expect.stringContaining(String(operationId)) },
     })
     expect(contents.executeJavaScript).toHaveBeenCalledTimes(2)
 
@@ -720,7 +773,7 @@ describe('BuiltInBrowserController reads', () => {
     contents.executeJavaScript.mockResolvedValueOnce({ kind: 'value', value: 'next', truncated: false })
     const next = await run(page)
     expect(next).toMatchObject({
-      scriptResult: { status: 'completed', value: 'next' },
+      run: { status: 'completed', value: 'next' },
       settledOperations: [
         {
           operationId,
@@ -745,9 +798,9 @@ describe('BuiltInBrowserController reads', () => {
     const pending = run(page, 'await new Promise(() => {})', { timeoutMs: 1000 })
     await vi.advanceTimersByTimeAsync(1001)
     await pending
-    expect((await run(page)).scriptResult?.code).toBe('busy')
+    expect((await run(page)).run?.code).toBe('busy')
     await vi.advanceTimersByTimeAsync(BUSY_WINDOW_MS)
-    expect((await run(page)).scriptResult).toMatchObject({ status: 'completed', value: 'after' })
+    expect((await run(page)).run).toMatchObject({ status: 'completed', value: 'after' })
   })
 
   it('keeps collecting failed requests for a run that outlived its busy window', async () => {
@@ -771,7 +824,7 @@ describe('BuiltInBrowserController reads', () => {
     vi.useFakeTimers()
     const first = run(page, 'await slowUpload()', { timeoutMs: 1000 })
     await vi.advanceTimersByTimeAsync(1001)
-    const operationId = (await first).scriptResult?.operationId
+    const operationId = (await first).run?.operationId
     await vi.advanceTimersByTimeAsync(BUSY_WINDOW_MS)
     const second = run(page, 'return 2', { timeoutMs: 30_000 })
     await vi.advanceTimersByTimeAsync(0)
@@ -804,24 +857,22 @@ describe('BuiltInBrowserController reads', () => {
 
   it('saves a download that begins after a completed run returned and reports it with the next result', async () => {
     const { contents, page } = await openPage()
-    const directory = mkdtempSync(path.join(tmpdir(), 'controller-slow-export-'))
     contents.executeJavaScript.mockResolvedValueOnce({ kind: 'value', value: 'clicked', truncated: false })
-    const pending = controller.readPage(host as unknown as Host, 1, {
+    const pending = controller.request(host as unknown as Host, 1, {
+      kind: 'run',
       requestId: 'slow-export-run',
       timeoutMs: 20_000,
-      script: {
-        page,
-        code: 'browser.click("#export"); return "clicked"',
-        downloadDirectory: path.join(directory, 'downloads'),
-      },
+      page,
+      code: 'browser.click("#export"); return "clicked"',
+      download: true,
     })
     await vi.waitFor(() => expect(contents.executeJavaScript).toHaveBeenCalled())
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     await vi.advanceTimersByTimeAsync(5_001)
     vi.useRealTimers()
     const returned = await pending
-    expect(returned.scriptResult).toMatchObject({ status: 'completed' })
-    expect(returned.scriptResult).not.toHaveProperty('downloads')
+    expect(returned.run).toMatchObject({ status: 'completed' })
+    expect(returned.run).not.toHaveProperty('downloads')
 
     // The server finishes the export a moment later.
     const event = { preventDefault: vi.fn() }
@@ -839,9 +890,13 @@ describe('BuiltInBrowserController reads', () => {
       contents as unknown as Parameters<typeof routeDownload>[2]
     )
     expect(event.preventDefault).not.toHaveBeenCalled()
+    // Downloads land in the conversation's folder in Chatbox's own data.
+    const folder = downloadLocationOf('conversation').directory
+    expect(path.dirname(folder)).toBe(path.join(userData, 'browser-downloads'))
+    expect(item.setSavePath).toHaveBeenCalledWith(path.join(folder, 'export.csv'))
     item.emit('done', {}, 'completed')
 
-    const read = controller.readPage(host as unknown as Host, 1, { requestId: 'after-slow-export' })
+    const read = controller.request(host as unknown as Host, 1, { kind: 'read', requestId: 'after-slow-export' })
     await flush()
     contents.finishSnapshot('Loaded.')
     await expect(read).resolves.toMatchObject({ downloads: [{ name: 'export.csv', status: 'saved' }] })
@@ -850,20 +905,79 @@ describe('BuiltInBrowserController reads', () => {
   it('keeps page events for the next result when an upload is cancelled while its files are checked', async () => {
     const { contents, page } = await openPage()
     contents.emit('input-event', {}, { type: 'mouseDown' })
-    const pending = controller.readPage(host as unknown as Host, 1, {
+    const pending = controller.request(host as unknown as Host, 1, {
+      kind: 'upload',
       requestId: 'upload-missing-file',
-      upload: { page, target: 'input', files: ['/nowhere/missing.png'], allowedRoots: [] },
+      page,
+      target: 'input',
+      files: ['/nowhere/missing.png'],
+      allowedRoots: [],
     })
     // Microtasks let the queue start the upload; its file checks need I/O, which comes after them.
     for (let tick = 0; tick < 10; tick += 1) await Promise.resolve()
-    controller.cancelRead(1, 'upload-missing-file')
-    await expect(pending).resolves.toMatchObject({ uploadResult: { status: 'not_started', code: 'cancelled' } })
+    controller.cancel(1, 'upload-missing-file')
+    await expect(pending).resolves.toMatchObject({ upload: { status: 'not_started', code: 'cancelled' } })
     await flush()
 
-    const read = controller.readPage(host as unknown as Host, 1, { requestId: 'after-cancelled-upload' })
+    const read = controller.request(host as unknown as Host, 1, { kind: 'read', requestId: 'after-cancelled-upload' })
     await flush()
     contents.finishSnapshot('Loaded.')
     await expect(read).resolves.toMatchObject({ userInteracted: true })
+  })
+
+  it('leaves page events for the next result once a timed out upload was answered before its file checks ended', async () => {
+    const { contents, page } = await openPage()
+    contents.emit('input-event', {}, { type: 'mouseDown' })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    uploadHooks.duringFileCheck = () => {
+      // The wait runs out while the files are checked, and the user acts on the page after that answer.
+      vi.advanceTimersByTime(1_000)
+      contents.emit('input-event', {}, { type: 'keyDown' })
+    }
+    const answer = await controller.request(host as unknown as Host, 1, {
+      kind: 'upload',
+      requestId: 'upload-slow-check',
+      timeoutMs: 1000,
+      page,
+      target: 'input',
+      files: ['/nowhere/missing.png'],
+      allowedRoots: [],
+    })
+    vi.useRealTimers()
+    expect(answer).toMatchObject({ upload: { status: 'not_started', code: 'timeout' }, userInteracted: true })
+    await flush()
+
+    const read = controller.request(host as unknown as Host, 1, { kind: 'read', requestId: 'after-slow-check' })
+    await flush()
+    contents.finishSnapshot('Loaded.')
+    await expect(read).resolves.toMatchObject({ userInteracted: true })
+  })
+
+  it("uploads the conversation's downloads without approval only while their folder is its own", async () => {
+    const { page } = await openPage()
+    const { directory } = downloadLocationOf('conversation')
+    rmSync(directory, { recursive: true, force: true })
+    mkdirSync(directory, { recursive: true })
+    writeFileSync(path.join(directory, 'report.csv'), 'data')
+    const work = mkdtempSync(path.join(tmpdir(), 'controller-own-downloads-work-'))
+    const upload = (requestId: string) =>
+      controller.request(host as unknown as Host, 1, {
+        kind: 'upload',
+        requestId,
+        page,
+        target: 'input',
+        files: [path.join(directory, 'report.csv')],
+        allowedRoots: [work],
+      })
+
+    expect((await upload('own-downloads')).upload.code).not.toBe('approval_required')
+
+    const outside = mkdtempSync(path.join(tmpdir(), 'controller-own-downloads-outside-'))
+    writeFileSync(path.join(outside, 'report.csv'), 'secret')
+    rmSync(directory, { recursive: true })
+    symlinkSync(outside, directory, 'dir')
+    expect((await upload('linked-downloads')).upload).toMatchObject({ code: 'approval_required' })
+    rmSync(directory)
   })
 
   it('reports an upload that timed out before touching the page as a timeout', async () => {
@@ -873,21 +987,26 @@ describe('BuiltInBrowserController reads', () => {
     // A busy page does not answer the lookup of the target.
     contents.debugger.sendCommand.mockImplementationOnce(() => new Promise(() => undefined))
 
-    const result = await controller.readPage(host as unknown as Host, 1, {
+    const result = await controller.request(host as unknown as Host, 1, {
+      kind: 'upload',
       requestId: 'upload-busy-page',
       timeoutMs: 1000,
-      upload: { page, target: 'input', files: ['shot.png'], baseDirectory: directory, allowedRoots: [directory] },
+      page,
+      target: 'input',
+      files: ['shot.png'],
+      baseDirectory: directory,
+      allowedRoots: [directory],
     })
 
-    expect(result.uploadResult).toMatchObject({ status: 'not_started', code: 'timeout' })
+    expect(result.upload).toMatchObject({ status: 'not_started', code: 'timeout' })
   })
 
   it('reports a run cancelled while queued as not started', async () => {
     const { contents, page } = await openPage()
-    const read = controller.readPage(host as unknown as Host, 1, { requestId: 'slow-read' })
+    const read = controller.request(host as unknown as Host, 1, { kind: 'read', requestId: 'slow-read' })
     const queued = run(page, 'return 1', { requestId: 'queued-run' })
-    controller.cancelRead(1, 'queued-run')
-    await expect(queued).resolves.toMatchObject({ scriptResult: { status: 'not_started', code: 'cancelled' } })
+    controller.cancel(1, 'queued-run')
+    await expect(queued).resolves.toMatchObject({ run: { status: 'not_started', code: 'cancelled' } })
     await flush()
     contents.finishSnapshot('Loaded.')
     await read
@@ -907,7 +1026,6 @@ describe('BuiltInBrowserController reads', () => {
 
   it('saves the downloads a timed out run starts before its script ends and reports them later', async () => {
     const { contents, page } = await openPage()
-    const directory = mkdtempSync(path.join(tmpdir(), 'controller-timed-out-download-'))
     let finish: (value: unknown) => void = () => undefined
     contents.executeJavaScript
       .mockImplementationOnce(
@@ -917,17 +1035,16 @@ describe('BuiltInBrowserController reads', () => {
           })
       )
       .mockResolvedValueOnce([])
-    const pending = controller.readPage(host as unknown as Host, 1, {
+    const pending = controller.request(host as unknown as Host, 1, {
+      kind: 'run',
       requestId: 'slow-export',
       timeoutMs: 1000,
-      script: {
-        page,
-        code: 'await browser.waitFor(".ready", 8000); document.querySelector("a").click()',
-        downloadDirectory: path.join(directory, 'downloads'),
-      },
+      page,
+      code: 'await browser.waitFor(".ready", 8000); document.querySelector("a").click()',
+      download: true,
     })
     // The shortest run timeout passes in real time; the grace period after the script is faked.
-    expect((await pending).scriptResult).toMatchObject({ status: 'unknown', code: 'timeout' })
+    expect((await pending).run).toMatchObject({ status: 'unknown', code: 'timeout' })
     vi.useFakeTimers()
 
     // The script goes on and clicks the export link after the result was returned.
@@ -953,7 +1070,7 @@ describe('BuiltInBrowserController reads', () => {
     await vi.advanceTimersByTimeAsync(10_000)
     vi.useRealTimers()
 
-    const read = controller.readPage(host as unknown as Host, 1, { requestId: 'after-export' })
+    const read = controller.request(host as unknown as Host, 1, { kind: 'read', requestId: 'after-export' })
     await flush()
     contents.finishSnapshot('Loaded.')
     await expect(read).resolves.toMatchObject({ downloads: [{ name: 'export.csv', status: 'saved' }] })
@@ -961,14 +1078,16 @@ describe('BuiltInBrowserController reads', () => {
 
   it('leaves a download the user starts after a timed out run to the user', async () => {
     const { contents, page } = await openPage()
-    const directory = mkdtempSync(path.join(tmpdir(), 'controller-download-user-'))
     contents.executeJavaScript.mockImplementationOnce(() => new Promise(() => undefined)).mockResolvedValueOnce([])
-    const timedOut = await controller.readPage(host as unknown as Host, 1, {
+    const timedOut = await controller.request(host as unknown as Host, 1, {
+      kind: 'run',
       requestId: 'stuck-export',
       timeoutMs: 1000,
-      script: { page, code: 'await work()', downloadDirectory: path.join(directory, 'downloads') },
+      page,
+      code: 'await work()',
+      download: true,
     })
-    expect(timedOut.scriptResult).toMatchObject({ status: 'unknown', code: 'timeout' })
+    expect(timedOut.run).toMatchObject({ status: 'unknown', code: 'timeout' })
 
     // The user clicks a download link in the sidebar page.
     contents.emit('input-event', {}, { type: 'mouseDown' })
@@ -992,16 +1111,19 @@ describe('BuiltInBrowserController reads', () => {
 
   it('blocks a download that a later read opens while a timed out run still captures', async () => {
     const { contents, page } = await openPage()
-    const directory = mkdtempSync(path.join(tmpdir(), 'controller-download-read-'))
     contents.executeJavaScript.mockImplementationOnce(() => new Promise(() => undefined)).mockResolvedValueOnce([])
-    const timedOut = await controller.readPage(host as unknown as Host, 1, {
+    const timedOut = await controller.request(host as unknown as Host, 1, {
+      kind: 'run',
       requestId: 'stuck-download-run',
       timeoutMs: 1000,
-      script: { page, code: 'await work()', downloadDirectory: path.join(directory, 'downloads') },
+      page,
+      code: 'await work()',
+      download: true,
     })
-    expect(timedOut.scriptResult).toMatchObject({ status: 'unknown', code: 'timeout' })
+    expect(timedOut.run).toMatchObject({ status: 'unknown', code: 'timeout' })
 
-    const read = controller.readPage(host as unknown as Host, 1, {
+    const read = controller.request(host as unknown as Host, 1, {
+      kind: 'read',
       requestId: 'read-attachment',
       url: 'https://example.com/attachment',
     })
@@ -1030,7 +1152,6 @@ describe('BuiltInBrowserController reads', () => {
 
   it('blocks downloads of a later run that did not ask for them while a timed out run still captures', async () => {
     const { contents, page } = await openPage()
-    const directory = mkdtempSync(path.join(tmpdir(), 'controller-download-leak-'))
     let finish: (value: unknown) => void = () => undefined
     contents.executeJavaScript
       .mockImplementationOnce(
@@ -1040,20 +1161,25 @@ describe('BuiltInBrowserController reads', () => {
           })
       )
       .mockResolvedValueOnce([])
-    const timedOut = await controller.readPage(host as unknown as Host, 1, {
+    const timedOut = await controller.request(host as unknown as Host, 1, {
+      kind: 'run',
       requestId: 'slow-download-run',
       timeoutMs: 1000,
-      script: { page, code: 'await work()', downloadDirectory: path.join(directory, 'downloads') },
+      page,
+      code: 'await work()',
+      download: true,
     })
-    expect(timedOut.scriptResult).toMatchObject({ status: 'unknown', code: 'timeout' })
+    expect(timedOut.run).toMatchObject({ status: 'unknown', code: 'timeout' })
     // The script ends, so the page is free again while the capture still waits for late downloads.
     finish({ kind: 'value', value: 'done', truncated: false })
     await flush()
 
     contents.executeJavaScript.mockResolvedValueOnce({ kind: 'value', value: 'clicked', truncated: false })
-    await controller.readPage(host as unknown as Host, 1, {
+    await controller.request(host as unknown as Host, 1, {
+      kind: 'run',
       requestId: 'plain-run',
-      script: { page, code: 'document.querySelector("a").click()' },
+      page,
+      code: 'document.querySelector("a").click()',
     })
     const event = { preventDefault: vi.fn() }
     const item = Object.assign(new EventEmitter(), {
@@ -1075,12 +1201,14 @@ describe('BuiltInBrowserController reads', () => {
 
   it('reports a download of a run cancelled while it waits for downloads with the next result', async () => {
     const { contents, page } = await openPage()
-    const directory = mkdtempSync(path.join(tmpdir(), 'controller-cancelled-download-'))
     contents.executeJavaScript.mockResolvedValueOnce({ kind: 'value', value: 'clicked', truncated: false })
-    const pending = controller.readPage(host as unknown as Host, 1, {
+    const pending = controller.request(host as unknown as Host, 1, {
+      kind: 'run',
       requestId: 'download-then-cancel',
       timeoutMs: 20_000,
-      script: { page, code: 'return "clicked"', downloadDirectory: path.join(directory, 'downloads') },
+      page,
+      code: 'return "clicked"',
+      download: true,
     })
     // The script starts once the download folder is ready, so the capture is armed from then on.
     await vi.waitFor(() => expect(contents.executeJavaScript).toHaveBeenCalled())
@@ -1099,11 +1227,11 @@ describe('BuiltInBrowserController reads', () => {
       contents as unknown as Electron.WebContents
     )
     item.emit('done', {}, 'completed')
-    controller.cancelRead(1, 'download-then-cancel')
+    controller.cancel(1, 'download-then-cancel')
     const cancelled = await pending
     expect(cancelled.downloads).toBeUndefined()
 
-    const read = controller.readPage(host as unknown as Host, 1, { requestId: 'after-cancelled-download' })
+    const read = controller.request(host as unknown as Host, 1, { kind: 'read', requestId: 'after-cancelled-download' })
     await flush()
     contents.finishSnapshot('Loaded.')
     await expect(read).resolves.toMatchObject({ downloads: [{ name: 'report.csv', status: 'saved' }] })
@@ -1115,12 +1243,12 @@ describe('BuiltInBrowserController reads', () => {
     contents.emit('input-event', {}, { type: 'mouseDown' })
     const pending = run(page, 'await new Promise(() => {})', { requestId: 'cancelled-run' })
     await flush()
-    controller.cancelRead(1, 'cancelled-run')
+    controller.cancel(1, 'cancelled-run')
     const cancelled = await pending
-    expect(cancelled.scriptResult).toMatchObject({ status: 'unknown', code: 'cancelled' })
+    expect(cancelled.run).toMatchObject({ status: 'unknown', code: 'cancelled' })
     expect(cancelled.userInteracted).toBeUndefined()
 
-    const read = controller.readPage(host as unknown as Host, 1, { requestId: 'after-cancel' })
+    const read = controller.request(host as unknown as Host, 1, { kind: 'read', requestId: 'after-cancel' })
     await flush()
     contents.finishSnapshot('Loaded.')
     await expect(read).resolves.toMatchObject({ userInteracted: true })
@@ -1143,7 +1271,7 @@ describe('BuiltInBrowserController reads', () => {
 
     const unloaded = await pending
     expect(unloaded).not.toHaveProperty('page')
-    expect(unloaded).toMatchObject({ scriptResult: { status: 'unknown', code: 'page_unloaded', navigated: true } })
+    expect(unloaded).toMatchObject({ run: { status: 'unknown', code: 'page_unloaded', navigated: true } })
     expect(contents.listenerCount('did-navigate')).toBe(listeners)
     expect(contents.listenerCount('did-start-navigation')).toBe(VIEW_NAVIGATION_LISTENERS)
   })
@@ -1151,16 +1279,16 @@ describe('BuiltInBrowserController reads', () => {
   it('reports a result the page replaced with nothing as unknown and frees the page', async () => {
     const { contents, page } = await openPage()
     contents.executeJavaScript.mockResolvedValueOnce(undefined)
-    await expect(run(page)).resolves.toMatchObject({ scriptResult: { status: 'unknown' } })
+    await expect(run(page)).resolves.toMatchObject({ run: { status: 'unknown' } })
     contents.executeJavaScript.mockResolvedValueOnce({ kind: 'value', value: '1', truncated: false })
-    await expect(run(page)).resolves.toMatchObject({ scriptResult: { status: 'completed' } })
+    await expect(run(page)).resolves.toMatchObject({ run: { status: 'completed' } })
   })
 
   it('refuses runs on a page that failed to load', async () => {
     const { contents, page } = await openPage()
     contents.emit('did-fail-load', {}, -105, 'ERR_NAME_NOT_RESOLVED', contents.url, true)
     await expect(run(page)).resolves.toMatchObject({
-      scriptResult: {
+      run: {
         status: 'not_started',
         code: 'no_page',
         message: expect.stringContaining('Failed to load https://example.com/: ERR_NAME_NOT_RESOLVED'),
@@ -1178,7 +1306,7 @@ describe('BuiltInBrowserController reads', () => {
     })
     await run(page, "browser.click('a[target=_blank]')")
     await expect(run(page)).resolves.toMatchObject({
-      scriptResult: { code: 'page_changed' },
+      run: { code: 'page_changed' },
       lastNavigation: { source: 'agent', url: 'https://example.com/popup' },
     })
   })
@@ -1191,7 +1319,7 @@ describe('BuiltInBrowserController reads', () => {
       url: 'https://example.com/export.csv',
       initiator: {},
     })
-    const read = controller.readPage(host as unknown as Host, 1, { requestId: 'during-download' })
+    const read = controller.request(host as unknown as Host, 1, { kind: 'read', requestId: 'during-download' })
     await flush()
     contents.emit('did-stop-loading')
     await flush()
@@ -1199,7 +1327,7 @@ describe('BuiltInBrowserController reads', () => {
     await expect(read).resolves.toMatchObject({ page, content: 'Still here.' })
 
     contents.executeJavaScript.mockResolvedValueOnce({ kind: 'value', value: '1', truncated: false })
-    await expect(run(page)).resolves.toMatchObject({ page, scriptResult: { status: 'completed' } })
+    await expect(run(page)).resolves.toMatchObject({ page, run: { status: 'completed' } })
   })
 
   it('hands out the reference after a run whose navigation ended without a new document', async () => {
@@ -1216,7 +1344,7 @@ describe('BuiltInBrowserController reads', () => {
     })
     await expect(run(page, "await fetch('/ping', { method: 'POST' })")).resolves.toMatchObject({
       page,
-      scriptResult: { status: 'completed', navigated: true },
+      run: { status: 'completed', navigated: true },
     })
   })
 
@@ -1234,7 +1362,7 @@ describe('BuiltInBrowserController reads', () => {
     contents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: true, url: contents.url, initiator: {} })
     contents.emit('did-navigate-in-page', {}, contents.url, true)
     await expect(run(page)).resolves.toMatchObject({
-      scriptResult: { code: 'page_changed' },
+      run: { code: 'page_changed' },
       lastNavigation: { source: 'user' },
     })
   })
@@ -1251,7 +1379,7 @@ describe('BuiltInBrowserController reads', () => {
       initiator: {},
     })
     contents.emit('did-fail-load', {}, -102, 'ERR_CONNECTION_REFUSED', 'http://localhost:9/', true)
-    await expect(pending).resolves.toMatchObject({ scriptResult: { status: 'unknown', code: 'page_unloaded' } })
+    await expect(pending).resolves.toMatchObject({ run: { status: 'unknown', code: 'page_unloaded' } })
   })
 
   it('settles a run when the page crashes and refuses runs until another page loads', async () => {
@@ -1260,11 +1388,15 @@ describe('BuiltInBrowserController reads', () => {
     const pending = run(page, 'await work()', { timeoutMs: 30_000 })
     await flush()
     contents.emit('render-process-gone', {}, { reason: 'crashed' })
-    await expect(pending).resolves.toMatchObject({ scriptResult: { status: 'unknown', code: 'page_unloaded' } })
-    await expect(run(page)).resolves.toMatchObject({ scriptResult: { status: 'not_started', code: 'no_page' } })
+    await expect(pending).resolves.toMatchObject({ run: { status: 'unknown', code: 'page_unloaded' } })
+    await expect(run(page)).resolves.toMatchObject({ run: { status: 'not_started', code: 'no_page' } })
 
     contents.loadURL.mockClear()
-    const reread = controller.readPage(host as unknown as Host, 1, { requestId: 'after-crash', url: contents.url })
+    const reread = controller.request(host as unknown as Host, 1, {
+      kind: 'read',
+      requestId: 'after-crash',
+      url: contents.url,
+    })
     await flush()
     expect(contents.loadURL).toHaveBeenCalledWith(contents.url)
     contents.emit('dom-ready')
@@ -1272,7 +1404,7 @@ describe('BuiltInBrowserController reads', () => {
     contents.finishSnapshot('Recovered.')
     const recovered = referenceOf(await reread)
     contents.executeJavaScript.mockResolvedValueOnce({ kind: 'value', value: '1', truncated: false })
-    await expect(run(recovered)).resolves.toMatchObject({ scriptResult: { status: 'completed' } })
+    await expect(run(recovered)).resolves.toMatchObject({ run: { status: 'completed' } })
   })
 
   it('attributes a navigation to the page when the user touched it during a run', async () => {
@@ -1304,13 +1436,14 @@ describe('BuiltInBrowserController reads', () => {
       }
       return Promise.resolve({ kind: 'value', value: '1', truncated: false })
     })
-    expect((await run(page)).scriptResult?.diagnostics).toBeUndefined()
+    expect((await run(page)).run?.diagnostics).toBeUndefined()
   })
 
   it('reads the page still shown when a read of a url is cancelled before its navigation starts', async () => {
     const { contents, page } = await openPage()
     contents.loadURL.mockImplementationOnce(() => Promise.reject(new Error('ERR_ABORTED')))
-    const read = controller.readPage(host as unknown as Host, 1, {
+    const read = controller.request(host as unknown as Host, 1, {
+      kind: 'read',
       requestId: 'blocked-by-beforeunload',
       url: 'https://example.com/other',
     })
@@ -1318,7 +1451,7 @@ describe('BuiltInBrowserController reads', () => {
     contents.finishSnapshot('Unsaved form.')
     await expect(read).resolves.toMatchObject({ page, url: 'https://example.com/', content: 'Unsaved form.' })
     contents.executeJavaScript.mockResolvedValueOnce({ kind: 'value', value: '1', truncated: false })
-    await expect(run(page)).resolves.toMatchObject({ page, scriptResult: { status: 'completed' } })
+    await expect(run(page)).resolves.toMatchObject({ page, run: { status: 'completed' } })
   })
 
   it('keeps a failed page failed through a navigation that ends without a document', async () => {
@@ -1332,11 +1465,15 @@ describe('BuiltInBrowserController reads', () => {
     })
     contents.emit('did-stop-loading')
     await expect(run(page)).resolves.toMatchObject({
-      scriptResult: { code: 'no_page', message: expect.stringContaining('crashed') },
+      run: { code: 'no_page', message: expect.stringContaining('crashed') },
     })
 
     contents.loadURL.mockClear()
-    const reread = controller.readPage(host as unknown as Host, 1, { requestId: 'reload', url: contents.url })
+    const reread = controller.request(host as unknown as Host, 1, {
+      kind: 'read',
+      requestId: 'reload',
+      url: contents.url,
+    })
     await flush()
     expect(contents.loadURL).toHaveBeenCalledWith(contents.url)
     contents.emit('dom-ready')
@@ -1347,7 +1484,7 @@ describe('BuiltInBrowserController reads', () => {
 
   it('refuses a run with no page open as no_page', async () => {
     const result = await run('any-page')
-    expect(result.scriptResult).toMatchObject({ status: 'not_started', code: 'no_page' })
+    expect(result.run).toMatchObject({ status: 'not_started', code: 'no_page' })
   })
 
   it('attributes navigations of a timed out script that is still running to the agent', async () => {
@@ -1356,7 +1493,7 @@ describe('BuiltInBrowserController reads', () => {
     vi.useFakeTimers()
     const pending = run(page, 'await new Promise(() => {})', { timeoutMs: 1000 })
     await vi.advanceTimersByTimeAsync(1001)
-    expect((await pending).scriptResult?.status).toBe('unknown')
+    expect((await pending).run?.status).toBe('unknown')
 
     contents.emit('did-start-navigation', {
       isMainFrame: true,
@@ -1365,7 +1502,7 @@ describe('BuiltInBrowserController reads', () => {
       initiator: {},
     })
     await expect(run(page)).resolves.toMatchObject({
-      scriptResult: { code: 'page_changed' },
+      run: { code: 'page_changed' },
       lastNavigation: { source: 'agent', url: 'https://example.com/next' },
     })
 
@@ -1380,7 +1517,7 @@ describe('BuiltInBrowserController reads', () => {
   })
 
   async function startLoadedRead(requestId: string, url: string) {
-    const read = controller.readPage(host as unknown as Host, 1, { requestId, url })
+    const read = controller.request(host as unknown as Host, 1, { kind: 'read', requestId, url })
     await flush()
     const contents = views[0].webContents
     contents.emit('dom-ready')
@@ -1403,7 +1540,7 @@ describe('BuiltInBrowserController reads', () => {
     first.contents.finishSnapshot('First read.')
     await first.read
 
-    const current = controller.readPage(host as unknown as Host, 1, { requestId: 'b' })
+    const current = controller.request(host as unknown as Host, 1, { kind: 'read', requestId: 'b' })
     await flush()
     first.contents.finishSnapshot('Current page.')
 
@@ -1415,7 +1552,11 @@ describe('BuiltInBrowserController reads', () => {
     first.contents.finishSnapshot('Edited state.')
     await first.read
 
-    const again = controller.readPage(host as unknown as Host, 1, { requestId: 'b', url: 'https://example.com/app' })
+    const again = controller.request(host as unknown as Host, 1, {
+      kind: 'read',
+      requestId: 'b',
+      url: 'https://example.com/app',
+    })
     await flush()
     first.contents.finishSnapshot('Edited state.')
 
@@ -1430,7 +1571,11 @@ describe('BuiltInBrowserController reads', () => {
     const { contents } = first
 
     contents.emit('did-fail-load', {}, -102, 'ERR_CONNECTION_REFUSED', 'https://example.com/app', true)
-    const retry = controller.readPage(host as unknown as Host, 1, { requestId: 'b', url: 'https://example.com/app' })
+    const retry = controller.request(host as unknown as Host, 1, {
+      kind: 'read',
+      requestId: 'b',
+      url: 'https://example.com/app',
+    })
     await flush()
     expect(contents.loadURL).toHaveBeenCalledTimes(2)
     contents.emit('dom-ready')
@@ -1440,7 +1585,11 @@ describe('BuiltInBrowserController reads', () => {
 
     // A link the page followed is still loading while the old URL is requested.
     contents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false })
-    const back = controller.readPage(host as unknown as Host, 1, { requestId: 'c', url: 'https://example.com/app' })
+    const back = controller.request(host as unknown as Host, 1, {
+      kind: 'read',
+      requestId: 'c',
+      url: 'https://example.com/app',
+    })
     await flush()
     expect(contents.loadURL).toHaveBeenCalledTimes(3)
     contents.emit('dom-ready')
@@ -1454,18 +1603,18 @@ describe('BuiltInBrowserController reads', () => {
     contents.finishSnapshot('Loaded.')
     await read
 
-    const shot = controller.readPage(host as unknown as Host, 1, { requestId: 'shot', screenshot: true })
+    const shot = controller.request(host as unknown as Host, 1, { kind: 'screenshot', requestId: 'shot' })
     await flush()
     contents.finishSnapshot('Loaded.')
     await flush()
     expect(contents.capturePage).toHaveBeenCalled()
-    controller.cancelRead(1, 'shot')
+    controller.cancel(1, 'shot')
     await expect(shot).rejects.toThrow('cancelled')
     await flush()
     expect(captureHosts.at(-1)?.destroyed).toBe(true)
     expect(views[0].visible).toBe(false)
 
-    const next = controller.readPage(host as unknown as Host, 1, { requestId: 'next' })
+    const next = controller.request(host as unknown as Host, 1, { kind: 'read', requestId: 'next' })
     await flush()
     contents.finishSnapshot('Still responsive.')
     await expect(next).resolves.toMatchObject({ content: 'Still responsive.' })
@@ -1475,7 +1624,7 @@ describe('BuiltInBrowserController reads', () => {
     const { read, contents } = await startLoadedRead('a', 'https://example.com/')
     contents.finishSnapshot('Loaded.')
     await read
-    const shot = controller.readPage(host as unknown as Host, 1, { requestId: 'shot', screenshot: true })
+    const shot = controller.request(host as unknown as Host, 1, { kind: 'screenshot', requestId: 'shot' })
     await flush()
     contents.finishSnapshot('Loaded.')
     await flush()
@@ -1494,9 +1643,13 @@ describe('BuiltInBrowserController reads', () => {
 
   it('settles a cancelled queued read at once and skips it', async () => {
     const { read: slow, contents } = await startLoadedRead('a', 'https://example.com/slow')
-    const queued = controller.readPage(host as unknown as Host, 1, { requestId: 'b', url: 'https://example.com/b' })
+    const queued = controller.request(host as unknown as Host, 1, {
+      kind: 'read',
+      requestId: 'b',
+      url: 'https://example.com/b',
+    })
 
-    controller.cancelRead(1, 'b')
+    controller.cancel(1, 'b')
     await expect(queued).rejects.toThrow('cancelled')
 
     contents.finishSnapshot('Slow page.')
@@ -1507,7 +1660,8 @@ describe('BuiltInBrowserController reads', () => {
 
   it('times out, stops waiting for the document and frees the queue', async () => {
     vi.useFakeTimers()
-    const read = controller.readPage(host as unknown as Host, 1, {
+    const read = controller.request(host as unknown as Host, 1, {
+      kind: 'read',
       requestId: 'a',
       url: 'https://example.com/never',
       timeoutMs: 1_000,
@@ -1521,7 +1675,11 @@ describe('BuiltInBrowserController reads', () => {
     expect(contents.listenerCount('did-fail-load')).toBe(1)
     vi.useRealTimers()
 
-    const next = controller.readPage(host as unknown as Host, 1, { requestId: 'b', url: 'https://example.com/next' })
+    const next = controller.request(host as unknown as Host, 1, {
+      kind: 'read',
+      requestId: 'b',
+      url: 'https://example.com/next',
+    })
     await flush()
     contents.emit('dom-ready')
     await flush()
@@ -1530,10 +1688,10 @@ describe('BuiltInBrowserController reads', () => {
   })
 
   it('captures a downscaled viewport after the page settles when asked', async () => {
-    const read = controller.readPage(host as unknown as Host, 1, {
+    const read = controller.request(host as unknown as Host, 1, {
+      kind: 'screenshot',
       requestId: 'a',
       url: 'https://example.com/',
-      screenshot: true,
     })
     await flush()
     const contents = views[0].webContents
@@ -1544,7 +1702,7 @@ describe('BuiltInBrowserController reads', () => {
     contents.finishSnapshot('Visible page.')
 
     await expect(read).resolves.toMatchObject({
-      content: 'Visible page.',
+      url: 'https://example.com/',
       screenshot: {
         base64Data: Buffer.from('jpeg-1568x800').toString('base64'),
         mediaType: 'image/jpeg',
@@ -1559,10 +1717,10 @@ describe('BuiltInBrowserController reads', () => {
   })
 
   it('leaves the page reference and page events of a screenshot for the next read', async () => {
-    const read = controller.readPage(host as unknown as Host, 1, {
+    const read = controller.request(host as unknown as Host, 1, {
+      kind: 'screenshot',
       requestId: 'a',
       url: 'https://example.com/',
-      screenshot: true,
     })
     await flush()
     const contents = views[0].webContents
@@ -1574,9 +1732,9 @@ describe('BuiltInBrowserController reads', () => {
     contents.captures.shift()?.(fakeImage(800, 600))
     const shot = await read
     expect(shot).not.toHaveProperty('page')
-    expect(shot.userInteracted).toBeUndefined()
+    expect(shot).not.toHaveProperty('userInteracted')
 
-    const next = controller.readPage(host as unknown as Host, 1, { requestId: 'b' })
+    const next = controller.request(host as unknown as Host, 1, { kind: 'read', requestId: 'b' })
     await flush()
     contents.finishSnapshot('Visible page.')
     await expect(next).resolves.toMatchObject({ page: expect.any(String), userInteracted: true })
@@ -1589,7 +1747,7 @@ describe('BuiltInBrowserController reads', () => {
     await expect(read).resolves.not.toHaveProperty('screenshot')
 
     contents.capturePage.mockResolvedValueOnce(fakeImage(0, 0))
-    const blank = controller.readPage(host as unknown as Host, 1, { requestId: 'b', screenshot: true })
+    const blank = controller.request(host as unknown as Host, 1, { kind: 'screenshot', requestId: 'b' })
     await flush()
     contents.finishSnapshot('Hidden page.')
     await expect(blank).rejects.toThrow('cannot be captured')
@@ -1614,7 +1772,7 @@ describe('BuiltInBrowserController view', () => {
 
   beforeEach(() => {
     views.length = 0
-    controller = new BuiltInBrowserController()
+    controller = new BuiltInBrowserController('conversation')
     host = new FakeHost()
   })
 

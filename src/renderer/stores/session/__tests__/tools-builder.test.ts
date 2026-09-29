@@ -48,7 +48,7 @@ const {
   readWorkspaceInstructionsMock: vi.fn(),
   platformName: { current: 'darwin' },
   builtInBrowser: {
-    current: undefined as { readPage: () => Promise<unknown> } | undefined,
+    current: undefined as { request: () => Promise<unknown> } | undefined,
     sessionIds: [] as string[],
   },
 }))
@@ -951,7 +951,7 @@ describe('buildToolsForSession', () => {
   }
 
   test('Work Mode offers the built-in browser as one tool without a standing instruction section', async () => {
-    builtInBrowser.current = { readPage: vi.fn() }
+    builtInBrowser.current = { request: vi.fn() }
     const model = createMockModel()
 
     const result = await buildToolsForSession(model, {
@@ -978,7 +978,7 @@ describe('buildToolsForSession', () => {
     })
     expect(withoutBrowser.instructions).not.toContain('**built-in-browser**')
 
-    builtInBrowser.current = { readPage: vi.fn() }
+    builtInBrowser.current = { request: vi.fn() }
     const result = await buildToolsForSession(model, {
       sessionId: 'browser-session',
       webBrowsing: false,
@@ -994,7 +994,7 @@ describe('buildToolsForSession', () => {
   })
 
   test('the screenshot command and its skill section exist only for vision models', async () => {
-    builtInBrowser.current = { readPage: vi.fn() }
+    builtInBrowser.current = { request: vi.fn() }
 
     const vision = await buildToolsForSession(createMockModel(), {
       sessionId: 'browser-session',
@@ -1031,7 +1031,7 @@ describe('buildToolsForSession', () => {
     expect(withoutBrowser.tools.browser).toBeUndefined()
     expect(withoutBrowser.instructions).not.toContain('built-in-browser')
 
-    builtInBrowser.current = { readPage: vi.fn() }
+    builtInBrowser.current = { request: vi.fn() }
     const chatMode = await buildToolsForSession(model, {
       sessionId: 'browser-session',
       webBrowsing: true,
@@ -1043,7 +1043,7 @@ describe('buildToolsForSession', () => {
   })
 
   test('the browser is unavailable without a conversation identity', async () => {
-    builtInBrowser.current = { readPage: vi.fn() }
+    builtInBrowser.current = { request: vi.fn() }
     const result = await buildToolsForSession(createMockModel(), { webBrowsing: false, messages: [], agentMode: 'on' })
     expect(result.tools.browser).toBeUndefined()
     expect(builtInBrowser.sessionIds).toEqual([])

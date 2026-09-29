@@ -338,3 +338,24 @@ describe('pageOfLines', () => {
     expect(pageOfLines(lines, { page: 'p-2', maxChars: 1 })).toMatchObject({ content: '- a' })
   })
 })
+
+describe('page snapshot of stacked modal dialogs', () => {
+  it('outlines the modal dialog holding the focus, whatever the document order', () => {
+    document.body.innerHTML =
+      '<dialog open id="top"><p>Discard changes?</p><button>Discard</button></dialog>' +
+      '<dialog open id="below"><p>Editor</p><button>Save</button></dialog>'
+    const matches = Element.prototype.matches
+    const spy = vi.spyOn(Element.prototype, 'matches').mockImplementation(function (this: Element, selector: string) {
+      return selector === ':modal' ? this.localName === 'dialog' : matches.call(this, selector)
+    })
+    try {
+      document.querySelector<HTMLButtonElement>('#top button')?.focus()
+      const outline = snapshot()
+      expect(outline.modal).toBe(true)
+      expect(outline.lines.join('\n')).toContain('Discard')
+      expect(outline.lines.join('\n')).not.toContain('Save')
+    } finally {
+      spy.mockRestore()
+    }
+  })
+})

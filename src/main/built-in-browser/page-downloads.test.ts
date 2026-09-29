@@ -3,8 +3,8 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
-  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -14,7 +14,17 @@ import path from 'node:path'
 import { BUILT_IN_BROWSER_MAX_DOWNLOADS_PER_RUN } from '@shared/built-in-browser'
 import type { DownloadItem, Event, WebContents } from 'electron'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DOWNLOAD_START_GRACE_MS, PageDownloads, routeDownload, safeFileName } from './page-downloads'
+import {
+  DOWNLOAD_START_GRACE_MS,
+  downloadLocationOf,
+  PageDownloads,
+  removeDownloads,
+  routeDownload,
+  safeFileName,
+} from './page-downloads'
+
+const userData = path.join(tmpdir(), 'page-downloads-user-data')
+vi.mock('electron', () => ({ app: { getPath: () => userData } }))
 
 let nextId = 1
 
@@ -90,7 +100,7 @@ describe('page downloads', () => {
     const contents = fakeContents()
     const downloads = new PageDownloads(contents as unknown as WebContents)
     writeFileSync(path.join(directory, 'report.csv'), 'existing')
-    const capture = await downloads.start(directory)
+    const capture = await downloads.start({ root: directory, directory })
     const first = new FakeItem('report.csv')
     const second = new FakeItem('report.csv')
 
@@ -120,87 +130,90 @@ describe('page downloads', () => {
     expect(start(contents, new FakeItem('late.csv')).preventDefault).toHaveBeenCalled()
   })
 
-  it('rejects an existing download folder linked outside the working directory', async () => {
+  it('creates the conversation folder, and again when it was removed during a capture', async () => {
     const contents = fakeContents()
     const downloads = new PageDownloads(contents as unknown as WebContents)
-    const working = path.join(directory, 'session')
-    const outside = path.join(directory, 'outside')
-    mkdirSync(working)
-    mkdirSync(outside)
-    symlinkSync(outside, path.join(working, 'downloads'), 'dir')
-
-    await expect(downloads.start(path.join(working, 'downloads'))).rejects.toThrow('real directory')
+    const target = path.join(directory, 'browser-downloads', 'conversation')
+    const capture = await downloads.start({ root: directory, directory: target })
+    expect(existsSync(target)).toBe(true)
+    rmSync(path.join(directory, 'browser-downloads'), { recursive: true })
     const item = new FakeItem('report.csv')
-    expect(start(contents, item).preventDefault).toHaveBeenCalled()
-    expect(item.savePath).toBe('')
-    expect(existsSync(path.join(outside, 'report.csv'))).toBe(false)
-  })
 
-  it('uses the existing directory casing on case-insensitive filesystems', async ({ skip }) => {
-    const upper = path.join(directory, 'Downloads')
-    const lower = path.join(directory, 'downloads')
-    mkdirSync(upper)
-    if (!existsSync(lower)) skip()
-    const contents = fakeContents()
-    const downloads = new PageDownloads(contents as unknown as WebContents)
-    const capture = await downloads.start(lower)
-    const item = new FakeItem('report.csv')
     expect(start(contents, item).preventDefault).not.toHaveBeenCalled()
-    expect(capture.directory).toBe(realpathSync.native(upper))
-    expect(item.savePath).toBe(path.join(realpathSync.native(upper), 'report.csv'))
-    item.finish('completed')
+    expect(item.savePath).toBe(path.join(target, 'report.csv'))
+    expect(existsSync(target)).toBe(true)
     downloads.release(capture)
   })
 
-  it('anchors saves to the canonical working directory through an ancestor alias', async () => {
+  it('refuses a folder reached through a link out of its root, at the start and when a download arrives', async () => {
     const contents = fakeContents()
     const downloads = new PageDownloads(contents as unknown as WebContents)
-    const working = path.join(directory, 'session')
-    const alias = path.join(directory, 'alias')
-    mkdirSync(working)
-    symlinkSync(working, alias, 'dir')
-    const capture = await downloads.start(path.join(alias, 'downloads'))
-    rmSync(alias)
     const outside = path.join(directory, 'outside')
+    const root = path.join(directory, 'user-data')
     mkdirSync(outside)
-    symlinkSync(outside, alias, 'dir')
-    const item = new FakeItem('report.csv')
+    mkdirSync(path.join(root, 'browser-downloads'), { recursive: true })
+    symlinkSync(outside, path.join(root, 'browser-downloads', 'linked'), 'dir')
+    await expect(downloads.start({ root, directory: path.join(root, 'browser-downloads', 'linked') })).rejects.toThrow(
+      'not a real directory'
+    )
 
-    start(contents, item)
-
-    expect(item.savePath).toBe(path.join(working, 'downloads', 'report.csv'))
-    expect(existsSync(path.join(outside, 'downloads'))).toBe(false)
-    downloads.release(capture)
-  })
-
-  it('does not create missing working-directory ancestors', async () => {
-    const downloads = new PageDownloads(fakeContents() as unknown as WebContents)
-    await expect(downloads.start(path.join(directory, 'missing', 'downloads'))).rejects.toThrow()
-    expect(existsSync(path.join(directory, 'missing'))).toBe(false)
-  })
-
-  it('blocks a download when the destination is replaced by a directory link', async () => {
-    const contents = fakeContents()
-    const downloads = new PageDownloads(contents as unknown as WebContents)
-    const target = path.join(directory, 'downloads')
-    const capture = await downloads.start(target)
-    const outside = path.join(directory, 'outside')
-    mkdirSync(outside)
-    renameSync(target, path.join(directory, 'old-downloads'))
+    const target = path.join(root, 'browser-downloads', 'conversation')
+    const capture = await downloads.start({ root, directory: target })
+    rmSync(target, { recursive: true })
     symlinkSync(outside, target, 'dir')
     const item = new FakeItem('report.csv')
 
     expect(start(contents, item).preventDefault).toHaveBeenCalled()
     expect(item.savePath).toBe('')
-    expect(downloads.takeEvents()).toEqual([expect.objectContaining({ status: 'blocked' })])
+    expect(downloads.takeEvents()).toEqual([expect.objectContaining({ name: 'report.csv', status: 'blocked' })])
     downloads.release(capture)
+  })
+
+  it('creates nothing beyond a linked parent and removes nothing through one', async () => {
+    const downloads = new PageDownloads(fakeContents() as unknown as WebContents)
+    const outside = path.join(directory, 'outside')
+    const root = path.join(directory, 'user-data')
+    mkdirSync(path.join(outside, 'conversation'), { recursive: true })
+    writeFileSync(path.join(outside, 'conversation', 'keep.txt'), 'kept')
+    mkdirSync(root)
+    symlinkSync(outside, path.join(root, 'browser-downloads'), 'dir')
+    const location = { root, directory: path.join(root, 'browser-downloads', 'fresh') }
+
+    await expect(downloads.start(location)).rejects.toThrow('not a real directory')
+    expect(existsSync(path.join(outside, 'fresh'))).toBe(false)
+
+    await removeDownloads({ root, directory: path.join(root, 'browser-downloads', 'conversation') })
+    expect(readFileSync(path.join(outside, 'conversation', 'keep.txt'), 'utf8')).toBe('kept')
+  })
+
+  it('removes a conversation folder, or only the link standing in its place', async () => {
+    const root = path.join(directory, 'user-data')
+    const outside = path.join(directory, 'outside')
+    mkdirSync(path.join(root, 'browser-downloads', 'own'), { recursive: true })
+    writeFileSync(path.join(root, 'browser-downloads', 'own', 'report.csv'), 'data')
+    mkdirSync(outside)
+    writeFileSync(path.join(outside, 'keep.txt'), 'kept')
+    symlinkSync(outside, path.join(root, 'browser-downloads', 'linked'), 'dir')
+
+    await removeDownloads({ root, directory: path.join(root, 'browser-downloads', 'own') })
+    await removeDownloads({ root, directory: path.join(root, 'browser-downloads', 'linked') })
+
+    expect(existsSync(path.join(root, 'browser-downloads', 'own'))).toBe(false)
+    expect(existsSync(path.join(root, 'browser-downloads', 'linked'))).toBe(false)
+    expect(readFileSync(path.join(outside, 'keep.txt'), 'utf8')).toBe('kept')
+  })
+
+  it('gives every conversation its own folder, whatever its id', () => {
+    const folders = ['a', 'a.', 'a ', '..', 'A'].map((id) => downloadLocationOf(id).directory)
+    expect(new Set(folders).size).toBe(folders.length)
+    for (const folder of folders) expect(path.dirname(folder)).toBe(path.join(userData, 'browser-downloads'))
   })
 
   it('does not use a filename occupied by a dangling symbolic link', async () => {
     const contents = fakeContents()
     const downloads = new PageDownloads(contents as unknown as WebContents)
     symlinkSync(path.join(directory, 'missing-file'), path.join(directory, 'report.csv'))
-    const capture = await downloads.start(directory)
+    const capture = await downloads.start({ root: directory, directory })
     const item = new FakeItem('report.csv')
 
     start(contents, item)
@@ -213,7 +226,7 @@ describe('page downloads', () => {
     vi.useFakeTimers()
     const contents = fakeContents()
     const downloads = new PageDownloads(contents as unknown as WebContents)
-    const capture = await downloads.start(directory)
+    const capture = await downloads.start({ root: directory, directory })
     const first = new FakeItem('first.csv')
     start(contents, first)
     let done = false
@@ -240,7 +253,7 @@ describe('page downloads', () => {
     vi.useFakeTimers()
     const contents = fakeContents()
     const downloads = new PageDownloads(contents as unknown as WebContents)
-    const capture = await downloads.start(directory)
+    const capture = await downloads.start({ root: directory, directory })
     const item = new FakeItem('report.csv')
     start(contents, item)
     const settled = downloads.settle(capture, new AbortController().signal)
@@ -255,7 +268,7 @@ describe('page downloads', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const contents = fakeContents()
     const downloads = new PageDownloads(contents as unknown as WebContents)
-    const capture = await downloads.start(directory)
+    const capture = await downloads.start({ root: directory, directory })
     let done = false
     const settled = downloads.settle(capture, new AbortController().signal).then(() => {
       done = true
@@ -270,7 +283,7 @@ describe('page downloads', () => {
     vi.useFakeTimers()
     const contents = fakeContents()
     const downloads = new PageDownloads(contents as unknown as WebContents)
-    const capture = await downloads.start(directory)
+    const capture = await downloads.start({ root: directory, directory })
     let done = false
     const settled = downloads.settle(capture, new AbortController().signal).then(() => {
       done = true
@@ -286,7 +299,7 @@ describe('page downloads', () => {
   it('reports a download still running at release when it ends, and cancels one that is too large', async () => {
     const contents = fakeContents()
     const downloads = new PageDownloads(contents as unknown as WebContents)
-    const capture = await downloads.start(directory)
+    const capture = await downloads.start({ root: directory, directory })
     const slow = new FakeItem('slow.zip')
     const huge = new FakeItem('huge.iso', 600 * 1024 * 1024)
     start(contents, slow)
@@ -319,7 +332,7 @@ describe('page download limits', () => {
   it('saves at most the per-run number of files and reports every late outcome of the ones it saved', async () => {
     const contents = fakeContents()
     const downloads = new PageDownloads(contents as unknown as WebContents)
-    const capture = await downloads.start(directory)
+    const capture = await downloads.start({ root: directory, directory })
     const items = Array.from(
       { length: BUILT_IN_BROWSER_MAX_DOWNLOADS_PER_RUN + 3 },
       (_, index) => new FakeItem(`f${index}.bin`)
@@ -344,7 +357,7 @@ describe('page downloads of a run whose result is not delivered', () => {
     try {
       const contents = fakeContents()
       const downloads = new PageDownloads(contents as unknown as WebContents)
-      const capture = await downloads.start(directory)
+      const capture = await downloads.start({ root: directory, directory })
       const finished = new FakeItem('done.csv')
       const running = new FakeItem('later.csv')
       start(contents, finished)
@@ -367,7 +380,7 @@ describe('interrupted page downloads', () => {
     try {
       const contents = fakeContents()
       const downloads = new PageDownloads(contents as unknown as WebContents)
-      const capture = await downloads.start(directory)
+      const capture = await downloads.start({ root: directory, directory })
       const item = new FakeItem('export.csv')
       start(contents, item)
       item.received = 4
@@ -388,7 +401,7 @@ describe('page downloads released twice', () => {
     try {
       const contents = fakeContents()
       const downloads = new PageDownloads(contents as unknown as WebContents)
-      const capture = await downloads.start(directory)
+      const capture = await downloads.start({ root: directory, directory })
       const item = new FakeItem('report.csv')
       start(contents, item)
       item.finish('completed')
@@ -411,7 +424,7 @@ describe('page download names', () => {
       try {
         const contents = fakeContents()
         const downloads = new PageDownloads(contents as unknown as WebContents)
-        await downloads.start(directory)
+        await downloads.start({ root: directory, directory })
         const upper = new FakeItem('Report.pdf')
         const lower = new FakeItem('report.pdf')
         start(contents, upper)

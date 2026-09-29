@@ -1,10 +1,10 @@
 import {
   BUILT_IN_BROWSER_CHANNELS,
+  type BuiltInBrowserCall,
   type BuiltInBrowserClearScope,
-  type BuiltInBrowserPage,
-  type BuiltInBrowserSnapshotRequest,
+  type BuiltInBrowserRequest,
+  type BuiltInBrowserResults,
   type BuiltInBrowserState,
-  type BuiltInBrowserUploadRequest,
   type BuiltInBrowserViewRequest,
 } from '@shared/built-in-browser'
 import type { ElectronIPC } from '@shared/electron-types'
@@ -26,32 +26,20 @@ export class DesktopBuiltInBrowser implements BuiltInBrowser {
     return this.ipc.invoke(channel, this.sessionId, ...args)
   }
 
-  async readPage(params: {
-    url?: string
-    timeoutMs?: number
-    screenshot?: boolean
-    script?: { code: string; page: string; downloadDirectory?: string }
-    upload?: BuiltInBrowserUploadRequest
-    snapshot?: BuiltInBrowserSnapshotRequest
-    signal?: AbortSignal
-  }): Promise<BuiltInBrowserPage> {
-    const { signal } = params
+  async request<Request extends BuiltInBrowserRequest>(
+    request: Request,
+    options: { timeoutMs?: number; signal?: AbortSignal } = {}
+  ): Promise<BuiltInBrowserResults[Request['kind']]> {
+    const { signal } = options
     signal?.throwIfAborted()
-    const requestId = uuidv4()
+    const call: BuiltInBrowserCall = { ...request, requestId: uuidv4(), timeoutMs: options.timeoutMs }
     const onAbort = () => {
-      void this.invoke(BUILT_IN_BROWSER_CHANNELS.cancelRead, requestId)
+      void this.invoke(BUILT_IN_BROWSER_CHANNELS.cancel, call.requestId)
     }
     signal?.addEventListener('abort', onAbort, { once: true })
     try {
-      return await this.invoke(BUILT_IN_BROWSER_CHANNELS.readPage, {
-        requestId,
-        url: params.url,
-        timeoutMs: params.timeoutMs,
-        screenshot: params.screenshot,
-        script: params.script,
-        upload: params.upload,
-        snapshot: params.snapshot,
-      })
+      // The main process answers each kind of request with that kind's result.
+      return await this.invoke<BuiltInBrowserResults[Request['kind']]>(BUILT_IN_BROWSER_CHANNELS.request, call)
     } finally {
       signal?.removeEventListener('abort', onAbort)
     }

@@ -191,12 +191,17 @@ export function pageSnapshotSource(options: PageSnapshotOptions): string {
     );
     if (open.length) {
       // Several modal dialogs can be open; the one opened last is on top and receives the input,
-      // which document order does not tell. The one whose center is hit is on top.
-      const onTop = open.filter((element) => {
-        const box = element.getBoundingClientRect();
-        const hit = document.elementFromPoint?.(box.left + box.width / 2, box.top + box.height / 2);
-        return !!hit && element.contains(hit);
-      });
+      // which document order does not tell. The dialogs below it are inert, so it holds the focus;
+      // before anything is focused, the one whose center is hit is on top.
+      const focused = document.activeElement;
+      const holdingFocus = open.filter((element) => !!focused && element.contains(focused));
+      const onTop = holdingFocus.length
+        ? holdingFocus
+        : open.filter((element) => {
+            const box = element.getBoundingClientRect();
+            const hit = document.elementFromPoint?.(box.left + box.width / 2, box.top + box.height / 2);
+            return !!hit && element.contains(hit);
+          });
       const candidates = onTop.length ? onTop : open;
       root = candidates[candidates.length - 1];
       modal = true;

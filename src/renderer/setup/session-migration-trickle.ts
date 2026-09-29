@@ -3,11 +3,11 @@ import type { SessionMigrationOutcome } from '@chatbox/core/application/session'
 
 /** Delay before the first session of a run is touched, keeping startup clear. */
 const DEFAULT_INITIAL_DELAY_MS = 15 * 1000
-/** Delay between two sessions while migration stays cheap. */
+/** Minimum delay between two sessions. */
 const DEFAULT_INTERVAL_MS = 1000
-/** A migration slower than this makes the pass back off for the next session. */
-const SLOW_MIGRATION_MS = 200
-/** Upper bound of the backed-off delay. */
+/** The delay after a session is this multiple of its migration time, keeping the pass mostly idle. */
+const MIGRATION_TIME_TO_DELAY_RATIO = 2
+/** Upper bound of the delay after a slow session. */
 const MAX_INTERVAL_MS = 10 * 1000
 const DEFAULT_MAX_CONSECUTIVE_FAILURES = 3
 /** How long an idle slot is waited for once the delay has elapsed. */
@@ -219,7 +219,11 @@ export function startSessionMigrationTrickle(options: SessionMigrationTrickleOpt
       }
     }
 
-    delayMs = Date.now() - migrationStartedAt > SLOW_MIGRATION_MS ? Math.min(delayMs * 2, MAX_INTERVAL_MS) : intervalMs
+    // Migration time is mostly native storage I/O; pacing proportionally avoids idling at the upper bound.
+    delayMs = Math.min(
+      MAX_INTERVAL_MS,
+      Math.max(intervalMs, (Date.now() - migrationStartedAt) * MIGRATION_TIME_TO_DELAY_RATIO)
+    )
     if (stopped) return
     if (paused) {
       scheduleNext(delayMs, tick)

@@ -30,6 +30,8 @@ export type PlatformType = SharedPlatformType
 export interface Storage {
   copyStoreValue?(source: string, destination: string): Promise<boolean>
   openBackupValue?(key: string): Promise<import('@chatbox/core/backup').BackupFile | null>
+  /** Returns space freed by bulk rewrites, such as a backup restore, to the file system. */
+  compactStore?(): Promise<void>
   getStorageType(): string
   setStoreValue(key: string, value: any): Promise<void>
   getStoreValue(key: string): Promise<any>

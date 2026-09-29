@@ -91,6 +91,32 @@ it('reads values stored as many small chunks within the bridge budget', async ()
   expect(await text(await storage.openBackupValue('tiny'))).toBe(value)
   expect(Math.max(...bytes)).toBeLessThan(384 * 1024)
 })
+it('returns pages freed by removed values to the file system when compacted', async () => {
+  const { storage, db } = await fixture()
+  await storage.writeStream('staged', chunks('x'.repeat(12_000_000)))
+  await storage.removeItem('staged')
+  const freePages = async () =>
+    Number((await db.query<{ freelist_count: number }>('PRAGMA freelist_count'))[0]?.freelist_count)
+  expect(await freePages()).toBeGreaterThan(0)
+
+  await storage.compact()
+
+  expect(await freePages()).toBe(0)
+  expect((await db.query<{ temp_store: number }>('PRAGMA temp_store'))[0]?.temp_store).toBe(0)
+})
+it('leaves the database file alone when little of it is free', async () => {
+  const { storage, db } = await fixture()
+  await storage.writeStream('small', chunks('x'.repeat(200_000)))
+  await storage.removeItem('small')
+  const freePages = async () =>
+    Number((await db.query<{ freelist_count: number }>('PRAGMA freelist_count'))[0]?.freelist_count)
+  const before = await freePages()
+  expect(before).toBeGreaterThan(0)
+
+  await storage.compact()
+
+  expect(await freePages()).toBe(before)
+})
 it('retains the previous snapshot on transaction failure and cleans interrupted stream chunks', async () => {
   const { storage, db, failNext } = await fixture()
   await storage.writeStream('old', chunks('original'))

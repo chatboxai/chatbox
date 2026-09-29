@@ -285,11 +285,12 @@ describe('startSessionMigrationTrickle', () => {
     expect(repository.migrateSession).toHaveBeenCalledWith('a')
   })
 
-  test('doubles the interval after a slow migration and restores it afterwards', async () => {
+  test('paces the next session in proportion to the previous migration time', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
-    const repository = createRepository({ a: 'migrated', b: 'migrated', c: 'migrated' })
+    const durations: Record<string, number> = { a: 1500, b: 0, c: 8000, d: 0 }
+    const repository = createRepository({ a: 'migrated', b: 'migrated', c: 'migrated', d: 'migrated' })
     repository.migrateSession.mockImplementation((id: string) => {
-      if (id === 'a') vi.setSystemTime(Date.now() + 250)
+      vi.setSystemTime(Date.now() + durations[id])
       return Promise.resolve<SessionMigrationOutcome>('migrated')
     })
     const { scheduler } = start({ repository, intervalMs: 1000 })
@@ -298,10 +299,13 @@ describe('startSessionMigrationTrickle', () => {
     expect(scheduler.pending()?.delayMs).toBe(1000)
 
     await scheduler.run()
-    expect(scheduler.pending()?.delayMs).toBe(2000)
+    expect(scheduler.pending()?.delayMs).toBe(3000)
 
     await scheduler.run()
     expect(scheduler.pending()?.delayMs).toBe(1000)
+
+    await scheduler.run()
+    expect(scheduler.pending()?.delayMs).toBe(10_000)
   })
 
   test('stops after consecutive failures and leaves the rest of the queue alone', async () => {

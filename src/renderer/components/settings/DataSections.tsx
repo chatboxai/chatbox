@@ -13,7 +13,7 @@ import dayjs from 'dayjs'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { runRendererBackupOperation } from '@/app/backup-operations'
-import { refreshBackupState } from '@/app/backup-restore-state'
+import { compactStoreAfterRestore, refreshBackupState } from '@/app/backup-restore-state'
 import { exportRendererBackupArchive, importRendererLegacyJsonBackup } from '@/app/persona-backup'
 import { rendererApplication, sessionRepository } from '@/app/renderer-application'
 import { PopoverConfirm } from '@/components/common/PopoverConfirm'
@@ -378,6 +378,7 @@ export function BackupRestoreSections() {
               }
             }, signal)
           )
+          await compactStoreAfterRestore()
           const requiresRestart = await refreshBackupState(result.manifest)
           if (result.warnings.length > 0) {
             setImportTips(
@@ -416,6 +417,7 @@ export function BackupRestoreSections() {
               }
             }, signal)
           )
+          await compactStoreAfterRestore()
           await rendererApplication.settings.reloadFromStorage()
           await reloadCopilotState()
           await storage.flushPendingWrites()

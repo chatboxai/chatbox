@@ -1,8 +1,21 @@
 import type { BackupManifest, BackupManifestV3 } from '@chatbox/core/backup'
 import { QueryKeys } from '@chatbox/react/query'
 import { flushRendererStorageWrites } from '@/adapters/RendererStoragePersistence'
+import { getLogger } from '@/lib/utils'
+import platform from '@/platform'
 import { reloadCopilotState } from '@/stores/copilotStore'
 import { rendererApplication } from './renderer-application'
+
+const log = getLogger('backup-restore')
+
+/** Compaction only returns disk space, so a failure leaves the completed restore intact. */
+export async function compactStoreAfterRestore(): Promise<void> {
+  try {
+    await platform.compactStore?.()
+  } catch (error) {
+    log.warn('Failed to compact storage after restore', error)
+  }
+}
 
 /** Global entries can affect services initialized only at application startup. */
 export function backupRequiresRestart(manifest: Pick<BackupManifest | BackupManifestV3, 'data'>): boolean {

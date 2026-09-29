@@ -101,6 +101,9 @@ class SQLiteStorage {
   /** Escaped request bytes per transaction while streaming a backup resource, within the soft bridge budget. */
   private static readonly RESOURCE_WRITE_BYTES = 320 * 1024
   private static readonly MANIFEST_PEEK_LENGTH = 128
+  /** Compaction rewrites the whole file, so it runs only when enough of it is free. */
+  private static readonly COMPACT_MIN_FREE_BYTES = 8 * 1024 * 1024
+  private static readonly COMPACT_MIN_FREE_RATIO = 0.25
   // Even six-times JSON escaping keeps a complete small value below 100 KiB.
   private static readonly INLINE_READ_BYTES = 16 * 1024
   // hex() doubles the payload, so this keeps a 512 KiB bridge string — the same
@@ -342,6 +345,33 @@ class SQLiteStorage {
     )
   }
 
+  /** Rebuilds the database file when staged and rolled-back values left a large share of it free. */
+  async compact(): Promise<void> {
+    await this.ensureInitialized()
+    const pragma = async (name: string) => {
+      const row = (await this.database.query(`PRAGMA ${name};`)).values?.[0] as Record<string, unknown> | undefined
+      return Number(row?.[name])
+    }
+    const [pageCount, freePages, pageSize] = [
+      await pragma('page_count'),
+      await pragma('freelist_count'),
+      await pragma('page_size'),
+    ]
+    if (
+      !(freePages * pageSize >= SQLiteStorage.COMPACT_MIN_FREE_BYTES) ||
+      !(freePages >= pageCount * SQLiteStorage.COMPACT_MIN_FREE_RATIO)
+    )
+      return
+    // The mobile SQLite builds keep temporary databases in memory by default, and VACUUM copies the
+    // whole database into one; a file keeps that copy out of the app's memory.
+    await this.database.execute('PRAGMA temp_store = FILE;', false)
+    try {
+      await this.database.execute('VACUUM;', false)
+    } finally {
+      await this.database.execute('PRAGMA temp_store = DEFAULT;', false)
+    }
+  }
+
   async copyItem(source: string, destination: string): Promise<boolean> {
     await this.ensureInitialized()
     const copy = async () => {
@@ -572,6 +602,9 @@ export class MobileSQLiteStorage implements Storage {
   }
   public openBackupValue(key: string) {
     return this.sqliteStorage.openBackupValue(key)
+  }
+  public compactStore() {
+    return this.sqliteStorage.compact()
   }
   public get backupResourceStorage() {
     return this.sqliteStorage

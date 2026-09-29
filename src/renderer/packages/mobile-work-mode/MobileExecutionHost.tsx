@@ -21,16 +21,22 @@ export default function MobileExecutionHost() {
   }, [job])
 
   useEffect(() => {
-    let appActive = true
-    const update = () => capacitorExecution.setForeground(appActive && document.visibilityState === 'visible')
-    update()
-    document.addEventListener('visibilitychange', update)
+    let cancelled = false
+    let receivedState = false
+    // WebView visibility can lag behind the native resume event.
     const subscription = App.addListener('appStateChange', ({ isActive }) => {
-      appActive = isActive
-      update()
+      if (cancelled) return
+      receivedState = true
+      capacitorExecution.setForeground(isActive)
     })
+    void subscription
+      .then(() => App.getState())
+      .then(({ isActive }) => {
+        if (!cancelled && !receivedState) capacitorExecution.setForeground(isActive)
+      })
+      .catch((error) => console.warn('Failed to read execution app state:', error))
     return () => {
-      document.removeEventListener('visibilitychange', update)
+      cancelled = true
       void subscription.then((listener) => listener.remove()).catch(() => undefined)
       capacitorExecution.setForeground(false)
     }

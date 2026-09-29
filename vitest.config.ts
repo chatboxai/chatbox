@@ -16,6 +16,14 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [
+      {
+        name: 'resolve-generated-worker',
+        resolveId(id) {
+          // Allow an explicit vi.mock before the build generates this module.
+          const workerSource = path.resolve(__dirname, 'src/shared/mobile-work/generated/worker-source')
+          if (id === workerSource || id === `${workerSource}.ts`) return `${workerSource}.ts`
+        },
+      },
       TanStackRouterVite({
         target: 'react',
         autoCodeSplitting: true,

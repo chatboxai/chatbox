@@ -1833,5 +1833,13 @@
   "Work Mode uses the agent persona instead of a conversation prompt.": "작업 모드는 대화 프롬프트 대신 에이전트 페르소나를 사용합니다.",
   "jpg or png, up to 5MB. Each chat can set its own.": "jpg 또는 png, 최대 5MB. 채팅마다 따로 설정할 수 있습니다.",
   "{{count}} configured": "{{count}}개",
-  "{{count}} differ from global defaults": "{{count}}개가 전역 기본값과 다릅니다"
+  "{{count}} differ from global defaults": "{{count}}개가 전역 기본값과 다릅니다",
+  "The search service used when a model searches the web.": "모델이 웹을 검색할 때 사용하는 검색 서비스입니다.",
+  "How files attached to chats and knowledge bases are turned into text.": "채팅과 지식 베이스에 첨부한 파일을 텍스트로 변환하는 방식입니다.",
+  "Behavior": "동작",
+  "Tools from MCP servers are available to models that support tool use.": "MCP 서버의 도구는 도구 사용을 지원하는 모델에서 사용할 수 있습니다.",
+  "No custom servers yet. Add one manually, from the registry, or from JSON in your clipboard.": "아직 사용자 지정 서버가 없습니다. 직접 추가하거나 레지스트리 또는 클립보드의 JSON에서 추가하세요.",
+  "Documents the model can search when a knowledge base is attached to a chat.": "채팅에 지식 베이스를 연결하면 모델이 검색할 수 있는 문서입니다.",
+  "Connection": "연결",
+  "Website": "웹사이트"
 }

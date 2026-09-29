@@ -1,7 +1,7 @@
 import { Switch, Text, UnstyledButton } from '@mantine/core'
 import { IconArrowBackUp } from '@tabler/icons-react'
 import clsx from 'clsx'
-import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, type ReactNode, useContext, useEffect, useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { createStore, useStore } from 'zustand'
 import { ICON_STROKE_WIDTH } from '@/components/common/IconButton'
@@ -35,15 +35,22 @@ export const settingsHighlightStore = createStore<{ id: string | null; highlight
 export function SettingsPage({
   title,
   description,
+  action,
   children,
   className,
+  titleOnTouch,
 }: {
   title: ReactNode
   description?: ReactNode
+  /** Page-level action beside the title, such as adding an item. */
+  action?: ReactNode
   children: ReactNode
   className?: string
+  /** Keeps the title on small screens, for detail pages whose name the screen header does not show. */
+  titleOnTouch?: boolean
 }) {
   const density = useSettingsDensity()
+  const showTitle = density !== 'touch' || titleOnTouch
   return (
     <div
       className={clsx(
@@ -52,22 +59,30 @@ export function SettingsPage({
         className
       )}
     >
-      {density !== 'touch' && (
-        <div className="flex flex-col gap-1">
-          <Text component="h2" m={0} fz={20} fw={600} lh="28px">
-            {title}
-          </Text>
+      {showTitle && (
+        <div className="flex items-start gap-3">
+          <div className="flex flex-col gap-1 flex-1 min-w-0">
+            <Text component="h2" m={0} fz={20} fw={600} lh="28px">
+              {title}
+            </Text>
+            {description && (
+              <Text fz={13} c="chatbox-tertiary" lh="20px">
+                {description}
+              </Text>
+            )}
+          </div>
+          {action}
+        </div>
+      )}
+      {!showTitle && (description || action) && (
+        <div className="flex items-center gap-3 px-1">
           {description && (
-            <Text fz={13} c="chatbox-tertiary" lh="20px">
+            <Text fz={13} c="chatbox-tertiary" lh="20px" className="flex-1 min-w-0">
               {description}
             </Text>
           )}
+          {action && <div className="ms-auto">{action}</div>}
         </div>
-      )}
-      {density === 'touch' && description && (
-        <Text fz={13} c="chatbox-tertiary" lh="20px" px={4}>
-          {description}
-        </Text>
       )}
       {children}
     </div>
@@ -114,7 +129,7 @@ export function SettingsSection({
               </Text>
             )}
             {description && (
-              <Text fz={12} c="chatbox-tertiary" lh="18px">
+              <Text component="div" fz={12} c="chatbox-tertiary" lh="18px">
                 {description}
               </Text>
             )}
@@ -141,6 +156,10 @@ export function SettingsSection({
  * `inline` controls (switches, buttons, value chips) stay on the right at any width; `block`
  * controls (sliders, text areas, segmented controls) move under the label when the section is
  * narrower than 560px.
+ *
+ * A form field that the label names is passed as a function of the id to give it; the label is
+ * then tied to that field, so clicking the label focuses or toggles it. Buttons and groups of
+ * choices are passed as they are, since a label would operate the first button inside them.
  */
 export function SettingRow({
   id,
@@ -157,7 +176,7 @@ export function SettingRow({
   id?: string
   label: ReactNode
   description?: ReactNode
-  control?: ReactNode
+  control?: ReactNode | ((id: string) => ReactNode)
   controlLayout?: 'inline' | 'block'
   /** Inheritance state or value summary shown under the label. */
   status?: ReactNode
@@ -168,6 +187,9 @@ export function SettingRow({
 }) {
   const density = useSettingsDensity()
   const ref = useRef<HTMLDivElement>(null)
+  const fieldId = useId()
+  const labelFor = typeof control === 'function' ? fieldId : undefined
+  const renderedControl = typeof control === 'function' ? control(fieldId) : control
   const highlightedId = useStore(settingsHighlightStore, (s) => s.id)
   const [flash, setFlash] = useState(false)
 
@@ -198,19 +220,65 @@ export function SettingRow({
     >
       <div className="settings-row-main">
         <div className="settings-row-label flex flex-col gap-0.5 min-w-0">
-          <Text fz={density === 'compact' ? 13 : 14} fw={500} lh="20px" className="text-pretty">
-            {label}
-          </Text>
+          {labelFor ? (
+            <Text
+              component="label"
+              htmlFor={labelFor}
+              fz={density === 'compact' ? 13 : 14}
+              fw={500}
+              lh="20px"
+              className={clsx('text-pretty', !disabled && 'cursor-pointer')}
+            >
+              {label}
+            </Text>
+          ) : (
+            <Text component="div" fz={density === 'compact' ? 13 : 14} fw={500} lh="20px" className="text-pretty">
+              {label}
+            </Text>
+          )}
           {description && (
-            <Text fz={12} c="chatbox-tertiary" lh="18px" className="text-pretty">
+            <Text component="div" fz={12} c="chatbox-tertiary" lh="18px" className="text-pretty">
               {description}
             </Text>
           )}
           {status}
         </div>
-        {control && <div className="settings-row-control min-w-0">{control}</div>}
+        {renderedControl && <div className="settings-row-control min-w-0">{renderedControl}</div>}
       </div>
       {children}
+    </div>
+  )
+}
+
+/**
+ * One entry of a list inside a section, such as a saved memory or an installed server. It shares
+ * the row padding and hairline separators; the content lays itself out.
+ */
+export function SettingsListItem({
+  children,
+  testId,
+  className,
+  tint,
+}: {
+  children: ReactNode
+  testId?: string
+  className?: string
+  /** Background that sets the item apart, such as a group header or a notice; it follows the section's corners. */
+  tint?: 'secondary' | 'brand'
+}) {
+  const density = useSettingsDensity()
+  return (
+    <div
+      data-testid={testId}
+      data-density={density}
+      className={clsx(
+        'settings-row flex flex-col min-w-0',
+        tint && 'first:rounded-t-[inherit] last:rounded-b-[inherit]',
+        tint === 'secondary' && 'bg-chatbox-background-secondary',
+        tint === 'brand' && 'bg-chatbox-background-brand-secondary'
+      )}
+    >
+      <div className={clsx('settings-row-main', className)}>{children}</div>
     </div>
   )
 }
@@ -246,8 +314,9 @@ export function SettingSwitchRow({
       description={description && indent ? <span className="ps-5 block">{description}</span> : description}
       status={status}
       disabled={disabled}
-      control={
+      control={(fieldId) => (
         <Switch
+          id={fieldId}
           data-testid={switchTestId}
           size={density === 'touch' ? 'lg' : 'md'}
           checked={!!checked}
@@ -255,7 +324,7 @@ export function SettingSwitchRow({
           aria-label={typeof label === 'string' ? label : undefined}
           onChange={(event) => onChange(event.currentTarget.checked)}
         />
-      }
+      )}
     />
   )
 }

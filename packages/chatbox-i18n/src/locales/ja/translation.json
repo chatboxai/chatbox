@@ -1833,5 +1833,13 @@
   "Work Mode uses the agent persona instead of a conversation prompt.": "ワークモードでは会話のプロンプトの代わりにエージェントのペルソナを使います。",
   "jpg or png, up to 5MB. Each chat can set its own.": "jpg または png、5MB まで。チャットごとに個別に設定できます。",
   "{{count}} configured": "{{count}} 件",
-  "{{count}} differ from global defaults": "{{count}} 件が全体のデフォルトと異なります"
+  "{{count}} differ from global defaults": "{{count}} 件が全体のデフォルトと異なります",
+  "The search service used when a model searches the web.": "モデルがウェブ検索するときに使う検索サービスです。",
+  "How files attached to chats and knowledge bases are turned into text.": "チャットやナレッジベースに添付したファイルをテキストに変換する方法です。",
+  "Behavior": "動作",
+  "Tools from MCP servers are available to models that support tool use.": "MCP サーバーのツールは、ツール使用に対応したモデルで利用できます。",
+  "No custom servers yet. Add one manually, from the registry, or from JSON in your clipboard.": "カスタムサーバーはまだありません。手動、レジストリ、またはクリップボードの JSON から追加できます。",
+  "Documents the model can search when a knowledge base is attached to a chat.": "チャットにナレッジベースを添付すると、モデルがこれらのドキュメントを検索できます。",
+  "Connection": "接続",
+  "Website": "ウェブサイト"
 }

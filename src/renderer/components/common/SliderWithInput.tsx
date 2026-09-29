@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next'
 import { useFieldDraft } from '@/hooks/useFieldDraft'
 
 export type Props = {
+  /** Id of the value field, for a label that names it. */
+  inputId?: string
   value?: number
   onChange(value?: number): void
   min?: number
@@ -37,6 +39,7 @@ export default function SliderWithInput({
   scaleLabels,
   inputWidth = 64,
   clearable = true,
+  inputId,
 }: Props) {
   const { t } = useTranslation()
   const [tempSliderValue, setTempSliderValue] = useState<number>()
@@ -114,6 +117,7 @@ export default function SliderWithInput({
         )}
       </Flex>
       <TextInput
+        id={inputId}
         data-testid={inputTestId}
         w={inputWidth}
         size="sm"

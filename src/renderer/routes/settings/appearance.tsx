@@ -120,8 +120,9 @@ export function RouteComponent() {
           <SettingRow
             id="language"
             label={t('Language')}
-            control={
+            control={(fieldId) => (
               <AdaptiveSelect
+                id={fieldId}
                 comboboxProps={{ withinPortal: true }}
                 w={180}
                 size="xs"
@@ -132,7 +133,7 @@ export function RouteComponent() {
                   if (value) setSettings({ language: value as Language })
                 }}
               />
-            }
+            )}
           />
           <SettingRow
             id="theme-color"
@@ -289,15 +290,16 @@ export function RouteComponent() {
               id="background-image-opacity"
               label={t('Background Image Opacity')}
               controlLayout="block"
-              control={
+              control={(fieldId) => (
                 <SliderWithInput
+                  inputId={fieldId}
                   value={Math.round(settings.backgroundImageOpacity * 100)}
                   onChange={(value) => setSettings({ backgroundImageOpacity: (value ?? 16) / 100 })}
                   max={100}
                   step={1}
                   suffix="%"
                 />
-              }
+              )}
             />
           )}
         </SettingsSection>

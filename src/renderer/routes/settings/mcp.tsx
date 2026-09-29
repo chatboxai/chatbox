@@ -1,4 +1,3 @@
-import { Box, Text, Title } from '@mantine/core'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { zodValidator } from '@tanstack/zod-adapter'
 import { useEffect, useState } from 'react'
@@ -7,6 +6,7 @@ import { z } from 'zod'
 import { BuiltinServersSection } from '@/components/settings/mcp/BuiltinServersSection'
 import CustomServersSection from '@/components/settings/mcp/CustomServersSection'
 import { parseServerFromJson } from '@/components/settings/mcp/utils'
+import { SettingsPage } from '@/components/settings/SettingsLayout'
 import { prepareMobileMCPTools } from '@/packages/mcp/mobile-tools'
 import type { MCPServerConfig } from '@/packages/mcp/types'
 import platform from '@/platform'
@@ -59,19 +59,16 @@ export function RouteComponent() {
   }, [searchParams.install, navigate])
 
   return (
-    <Box p="md">
-      <Title order={5}>{t('MCP Settings')}</Title>
-      {platform.type === 'mobile' && (
-        <Text size="sm" c="dimmed" mt="xs">
-          {t('On mobile, connect remote HTTP servers using a URL and headers. OAuth sign-in is not available.')}
-        </Text>
-      )}
-      <Box className="mt-8">
-        <BuiltinServersSection />
-      </Box>
-      <Box className="mt-8">
-        <CustomServersSection installConfig={installConfig} />
-      </Box>
-    </Box>
+    <SettingsPage
+      title={t('MCP Settings')}
+      description={
+        platform.type === 'mobile'
+          ? t('On mobile, connect remote HTTP servers using a URL and headers. OAuth sign-in is not available.')
+          : t('Tools from MCP servers are available to models that support tool use.')
+      }
+    >
+      <BuiltinServersSection />
+      <CustomServersSection installConfig={installConfig} />
+    </SettingsPage>
   )
 }

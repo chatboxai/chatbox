@@ -1833,5 +1833,13 @@
   "Work Mode uses the agent persona instead of a conversation prompt.": "В рабочем режиме вместо инструкции разговора используется персона агента.",
   "jpg or png, up to 5MB. Each chat can set its own.": "jpg или png до 5 МБ. Для каждого чата можно задать свой.",
   "{{count}} configured": "Настроено: {{count}}",
-  "{{count}} differ from global defaults": "Отличается от общих: {{count}}"
+  "{{count}} differ from global defaults": "Отличается от общих: {{count}}",
+  "The search service used when a model searches the web.": "Поисковый сервис, который модель использует для поиска в интернете.",
+  "How files attached to chats and knowledge bases are turned into text.": "Как файлы, прикреплённые к чатам и базам знаний, преобразуются в текст.",
+  "Behavior": "Поведение",
+  "Tools from MCP servers are available to models that support tool use.": "Инструменты MCP-серверов доступны моделям, которые поддерживают вызов инструментов.",
+  "No custom servers yet. Add one manually, from the registry, or from JSON in your clipboard.": "Пользовательских серверов пока нет. Добавьте сервер вручную, из каталога или из JSON в буфере обмена.",
+  "Documents the model can search when a knowledge base is attached to a chat.": "Документы, в которых модель может искать, когда к чату подключена база знаний.",
+  "Connection": "Подключение",
+  "Website": "Сайт"
 }

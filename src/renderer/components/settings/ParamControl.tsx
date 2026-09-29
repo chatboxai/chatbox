@@ -3,13 +3,25 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import SliderWithInput from '@/components/common/SliderWithInput'
 import { useFieldDraft } from '@/hooks/useFieldDraft'
-import { useSettingsDensity } from './SettingsLayout'
+import { type SettingsDensity, useSettingsDensity } from './SettingsLayout'
 
 const TEMPERATURE_PRESETS = [
   { key: 'precise', label: 'Precise', value: 0.3 },
   { key: 'balanced', label: 'Balanced', value: 1 },
   { key: 'creative', label: 'Creative', value: 1.5 },
 ] as const
+
+function hasTouchPresets(density: SettingsDensity, kind: 'temperature' | 'topP') {
+  return density === 'touch' && kind === 'temperature'
+}
+
+/**
+ * Whether the control always shows its value field, so a row label can name it. Touch temperature
+ * leads with presets and shows the field only under Custom.
+ */
+export function useSamplingFieldShown(kind: 'temperature' | 'topP') {
+  return !hasTouchPresets(useSettingsDensity(), kind)
+}
 
 /**
  * Sampling parameter (temperature or top P). Wide layouts use a slider with a value field;
@@ -22,11 +34,14 @@ export function SamplingParamControl({
   onChange,
   inputTestId,
   clearable = true,
+  inputId,
 }: {
   kind: 'temperature' | 'topP'
   value?: number
   onChange(value?: number): void
   inputTestId?: string
+  /** Id of the value field, for a label that names it. */
+  inputId?: string
   /** Whether the value field offers a clear button; inherited values have nothing to clear. */
   clearable?: boolean
 }) {
@@ -42,6 +57,7 @@ export function SamplingParamControl({
 
   const slider = (
     <SliderWithInput
+      inputId={inputId}
       inputTestId={inputTestId}
       value={value}
       onChange={onChange}
@@ -57,11 +73,12 @@ export function SamplingParamControl({
     />
   )
 
-  if (density !== 'touch' || kind !== 'temperature') return slider
+  if (!hasTouchPresets(density, kind)) return slider
 
   return (
     <Stack gap="xs">
       <SegmentedControl
+        aria-label={t('Temperature') ?? undefined}
         fullWidth
         size="sm"
         radius="md"
@@ -101,10 +118,13 @@ export function ContextCountControl({
   value,
   onChange,
   inputTestId,
+  inputId,
 }: {
   value: number
   onChange(value: number): void
   inputTestId?: string
+  /** Id of the count field, for a label that names it. */
+  inputId?: string
 }) {
   const { t } = useTranslation()
   const density = useSettingsDensity()
@@ -129,6 +149,7 @@ export function ContextCountControl({
         data={steps.map((step) => ({ value: `${step}`, label: formatContextCount(step, t) }))}
       />
       <NumberInput
+        id={inputId}
         data-testid={inputTestId}
         w={density === 'touch' ? 96 : 72}
         size={density === 'touch' ? 'sm' : 'xs'}

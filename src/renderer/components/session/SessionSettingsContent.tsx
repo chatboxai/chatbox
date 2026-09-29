@@ -29,6 +29,7 @@ import {
   formatContextCount,
   NO_CONTEXT_LIMIT,
   SamplingParamControl,
+  useSamplingFieldShown,
 } from '@/components/settings/ParamControl'
 import {
   InheritState,
@@ -119,6 +120,17 @@ export function SessionSettingsContent({
   const systemPrompt = useCommittedText(getSessionSystemPrompt(session), (value) => onEdit({ systemPrompt: value }))
 
   const setParam = (patch: Partial<SessionSettings>) => onEdit({ settings: patch })
+  const temperatureFieldShown = useSamplingFieldShown('temperature')
+  const temperatureControl = (fieldId?: string) => (
+    <SamplingParamControl
+      inputId={fieldId}
+      kind="temperature"
+      clearable={settings?.temperature !== undefined}
+      inputTestId={TestId.settings.sessionTemperature}
+      value={settings?.temperature ?? global.temperature}
+      onChange={(value) => setParam({ temperature: value })}
+    />
+  )
   const restore = (key: SessionParameterKey) => setParam(restoreSessionParameters([key]))
   // Undo sits beside the action rather than in a toast: a modal sheet blocks taps outside itself.
   const [undoPatch, setUndoPatch] = useState<Partial<SessionSettings> | null>(null)
@@ -237,13 +249,14 @@ export function SessionSettingsContent({
               TestId.sessionPanel.inheritMaxContext
             )}
             controlLayout="block"
-            control={
+            control={(fieldId) => (
               <ContextCountControl
+                inputId={fieldId}
                 inputTestId={TestId.settings.sessionMaxContext}
                 value={settings?.maxContextMessageCount ?? global.maxContextMessageCount ?? NO_CONTEXT_LIMIT}
                 onChange={(value) => setParam({ maxContextMessageCount: value })}
               />
-            }
+            )}
           />
           <SettingRow
             label={t('Temperature')}
@@ -253,29 +266,22 @@ export function SessionSettingsContent({
               TestId.sessionPanel.inheritTemperature
             )}
             controlLayout="block"
-            control={
-              <SamplingParamControl
-                kind="temperature"
-                clearable={settings?.temperature !== undefined}
-                inputTestId={TestId.settings.sessionTemperature}
-                value={settings?.temperature ?? global.temperature}
-                onChange={(value) => setParam({ temperature: value })}
-              />
-            }
+            control={temperatureFieldShown ? temperatureControl : temperatureControl()}
           />
           <SettingRow
             label="Top P"
             status={inherit('topP', describeSamplingValue(global.topP, t))}
             controlLayout="block"
-            control={
+            control={(fieldId) => (
               <SamplingParamControl
+                inputId={fieldId}
                 kind="topP"
                 clearable={settings?.topP !== undefined}
                 inputTestId={TestId.settings.sessionTopP}
                 value={settings?.topP ?? global.topP}
                 onChange={(value) => setParam({ topP: value })}
               />
-            }
+            )}
           />
           <SettingRow
             label={t('Max Output Tokens')}
@@ -283,9 +289,13 @@ export function SessionSettingsContent({
             status={
               settings?.maxTokens !== undefined ? <RestoreLink onRestore={() => restore('maxTokens')} /> : undefined
             }
-            control={
-              <MaxTokensInput value={settings?.maxTokens} onChange={(value) => setParam({ maxTokens: value })} />
-            }
+            control={(fieldId) => (
+              <MaxTokensInput
+                inputId={fieldId}
+                value={settings?.maxTokens}
+                onChange={(value) => setParam({ maxTokens: value })}
+              />
+            )}
           />
           {settings?.provider === ModelProviderEnum.Claude && (
             <SettingRow
@@ -435,7 +445,15 @@ export function SessionSettingsContent({
   )
 }
 
-function MaxTokensInput({ value, onChange }: { value?: number; onChange: (value?: number) => void }) {
+function MaxTokensInput({
+  value,
+  onChange,
+  inputId,
+}: {
+  value?: number
+  onChange: (value?: number) => void
+  inputId?: string
+}) {
   const { t } = useTranslation()
   const { draft, setDraft, flush } = useFieldDraft<string | number>(value ?? '', (next) => {
     const parsed = typeof next === 'number' ? next : Number.parseInt(next, 10)
@@ -446,6 +464,7 @@ function MaxTokensInput({ value, onChange }: { value?: number; onChange: (value?
   })
   return (
     <NumberInput
+      id={inputId}
       data-testid={TestId.settings.sessionMaxTokens}
       w={112}
       size="xs"

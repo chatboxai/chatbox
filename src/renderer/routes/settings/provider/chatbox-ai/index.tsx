@@ -4,5 +4,5 @@ import { ChatboxAISettings } from './-components/ChatboxAISettings'
 export const Route = createFileRoute('/settings/provider/chatbox-ai/')({ component: RouteComponent })
 
 export function RouteComponent() {
-  return <ChatboxAISettings />
+  return <ChatboxAISettings padded />
 }

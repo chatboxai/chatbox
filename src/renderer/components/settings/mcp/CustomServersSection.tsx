@@ -1,4 +1,4 @@
-import { ActionIcon, Anchor, Badge, Flex, Paper, SimpleGrid, Switch, Text } from '@mantine/core'
+import { Anchor, Badge, Button, Flex, Switch, Text } from '@mantine/core'
 import { spotlight } from '@mantine/spotlight'
 import { IconPlus } from '@tabler/icons-react'
 import { type FC, useCallback, useEffect, useState } from 'react'
@@ -8,6 +8,7 @@ import { v4 as uuid } from 'uuid'
 import { bucketPlausibleCount } from '@/analytics/plausible'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import MCPStatus from '@/components/mcp/MCPStatus'
+import { SettingRow, SettingsListItem, SettingsSection } from '@/components/settings/SettingsLayout'
 import { useMCPServerStatus, useToggleMCPServer } from '@/hooks/mcp'
 import { mcpController } from '@/packages/mcp/controller'
 import type { MCPServerConfig } from '@/packages/mcp/types'
@@ -20,7 +21,7 @@ import type { MCPRegistryEntry } from './registries'
 import ServerRegistrySpotlight from './ServerRegistrySpotlight'
 import { parseServersFromJson } from './utils'
 
-const ServerCard: FC<{
+const ServerRow: FC<{
   config: MCPServerConfig
   triggerEdit: (serverConfig: MCPServerConfig) => void
   onEnabledChange: (id: string, enabled: boolean) => void
@@ -30,36 +31,46 @@ const ServerCard: FC<{
   const status = useMCPServerStatus(config.id)
   const unsupported = platform.type === 'mobile' && config.transport.type === 'stdio'
   return (
-    <Paper shadow="xs" radius="lg" withBorder p="sm">
-      <Flex justify="space-between" align="center">
-        <Text size="sm" fw={600}>
-          {config.name}
-        </Text>
-        <Switch
-          size="xs"
-          checked={config.enabled}
-          disabled={unsupported}
-          onChange={(e) => onEnabledChange(config.id, e.currentTarget.checked)}
-        />
-      </Flex>
-      <Flex justify="space-between" align="center" mt="lg">
-        <Flex align="center" gap="xs">
+    <SettingRow
+      id={`mcp-server-${config.id}`}
+      label={
+        <div className="flex items-center gap-2 min-w-0">
           <MCPStatus status={status} />
+          <span className="truncate">{config.name}</span>
+        </div>
+      }
+      status={
+        <Flex align="center" gap="xs" wrap="wrap" mt={2}>
           <Badge size="sm" variant="light" color="chatbox-brand">
             {config.transport.type}
           </Badge>
-          {unsupported && <Text size="xs">{t('Local MCP servers are only available on desktop')}</Text>}
+          {unsupported && (
+            <Text fz={12} c="chatbox-tertiary">
+              {t('Local MCP servers are only available on desktop')}
+            </Text>
+          )}
           {config.enabled && !unsupported && status?.state !== 'running' && status?.state !== 'starting' && (
-            <Anchor size="xs" onClick={() => onEnabledChange(config.id, true)}>
+            <Anchor component="button" fz={12} onClick={() => onEnabledChange(config.id, true)}>
               {t('Connect')}
             </Anchor>
           )}
         </Flex>
-        <Anchor size="xs" c="chatbox-brand" onClick={() => triggerEdit(config)}>
-          {t('Edit')}
-        </Anchor>
-      </Flex>
-    </Paper>
+      }
+      control={
+        <Flex align="center" gap="xs">
+          <Button variant="subtle" color="chatbox-gray" size="compact-sm" onClick={() => triggerEdit(config)}>
+            {t('Edit')}
+          </Button>
+          <Switch
+            size="md"
+            aria-label={config.name}
+            checked={config.enabled}
+            disabled={unsupported}
+            onChange={(e) => onEnabledChange(config.id, e.currentTarget.checked)}
+          />
+        </Flex>
+      }
+    />
   )
 }
 
@@ -163,40 +174,35 @@ const CustomServersSection: FC<Props> = (props) => {
 
   return (
     <>
-      <Text size="sm" fw={600} mb={12}>
-        {t('Custom MCP Servers')}
-      </Text>
-      <SimpleGrid type="container" cols={{ base: 1, '450px': 2, '800px': 3, '1200px': 4 }}>
-        <Paper
-          tabIndex={-1}
-          shadow="xs"
-          radius="lg"
-          withBorder
-          bd="1px dashed var(--chatbox-border-primary)"
-          p="sm"
-          className="cursor-pointer"
-          onClick={spotlight.open}
-        >
-          <Flex direction="column" justify="center" align="center" h="100%" gap={4}>
-            <ActionIcon variant="filled" size="sm">
-              <ScalableIcon icon={IconPlus} />
-            </ActionIcon>
-            <Text size="xs" c="chatbox-brand">
-              {t('Add Server')}
+      <SettingsSection
+        title={t('Custom MCP Servers')}
+        action={
+          <Button
+            variant="light"
+            size="compact-sm"
+            leftSection={<ScalableIcon icon={IconPlus} size={14} />}
+            onClick={spotlight.open}
+          >
+            {t('Add Server')}
+          </Button>
+        }
+      >
+        {mcpSettings.servers.length === 0 && (
+          <SettingsListItem>
+            <Text fz={14} c="chatbox-tertiary">
+              {t('No custom servers yet. Add one manually, from the registry, or from JSON in your clipboard.')}
             </Text>
-          </Flex>
-        </Paper>
-        {mcpSettings.servers.map((server) => {
-          return (
-            <ServerCard
-              key={server.id}
-              config={server}
-              triggerEdit={(config) => setModal({ mode: 'edit', config })}
-              onEnabledChange={onEnabledChange}
-            />
-          )
-        })}
-      </SimpleGrid>
+          </SettingsListItem>
+        )}
+        {mcpSettings.servers.map((server) => (
+          <ServerRow
+            key={server.id}
+            config={server}
+            triggerEdit={(config) => setModal({ mode: 'edit', config })}
+            onEnabledChange={onEnabledChange}
+          />
+        ))}
+      </SettingsSection>
       <ServerRegistrySpotlight triggerAddServer={triggerAddServer} triggerImportJson={triggerImportJson} />
       <ConfigModal
         mode={modal?.mode}

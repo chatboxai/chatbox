@@ -5,7 +5,12 @@ import type { Settings } from '@shared/types'
 import { MAX_TOOL_CALLS_BEFORE_CONFIRMATION } from '@shared/utils/tool-call-limit-pause'
 import { createFileRoute } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
-import { ContextCountControl, NO_CONTEXT_LIMIT, SamplingParamControl } from '@/components/settings/ParamControl'
+import {
+  ContextCountControl,
+  NO_CONTEXT_LIMIT,
+  SamplingParamControl,
+  useSamplingFieldShown,
+} from '@/components/settings/ParamControl'
 import {
   SettingRow,
   SettingSwitchRow,
@@ -42,6 +47,16 @@ export function RouteComponent() {
   const { t } = useTranslation()
   const { setSettings, ...settings } = useSettingsStore((state) => state)
   const density = useSettingsDensity()
+  const temperatureFieldShown = useSamplingFieldShown('temperature')
+  const temperatureControl = (fieldId?: string) => (
+    <SamplingParamControl
+      inputId={fieldId}
+      kind="temperature"
+      inputTestId={TestId.settings.temperature}
+      value={settings.temperature}
+      onChange={(v) => setSettings({ temperature: v })}
+    />
+  )
   const defaultPrompt = getDefaultPrompt()
   const promptIsDefault = (settings.defaultPrompt ?? '') === defaultPrompt
   const defaultsUntouched =
@@ -89,9 +104,10 @@ export function RouteComponent() {
           label={t('System prompt')}
           description={t('The first instruction sent to the model')}
           controlLayout="block"
-          control={
+          control={(fieldId) => (
             <div className="flex flex-col gap-1.5">
               <Textarea
+                id={fieldId}
                 data-testid={TestId.settings.defaultPrompt}
                 aria-label={t('System prompt') ?? undefined}
                 value={settings.defaultPrompt || ''}
@@ -116,48 +132,43 @@ export function RouteComponent() {
                 </Button>
               )}
             </div>
-          }
+          )}
         />
         <SettingRow
           id="max-context"
           label={t('Context messages')}
           description={t('More messages keep replies coherent but use more tokens')}
           controlLayout="block"
-          control={
+          control={(fieldId) => (
             <ContextCountControl
+              inputId={fieldId}
               inputTestId={TestId.settings.maxContext}
               value={settings.maxContextMessageCount ?? NO_CONTEXT_LIMIT}
               onChange={(v) => setSettings({ maxContextMessageCount: v })}
             />
-          }
+          )}
         />
         <SettingRow
           id="temperature"
           label={t('Temperature')}
           description={t('Lower is steadier, higher is more varied')}
           controlLayout="block"
-          control={
-            <SamplingParamControl
-              kind="temperature"
-              inputTestId={TestId.settings.temperature}
-              value={settings.temperature}
-              onChange={(v) => setSettings({ temperature: v })}
-            />
-          }
+          control={temperatureFieldShown ? temperatureControl : temperatureControl()}
         />
         <SettingRow
           id="top-p"
           label="Top P"
           description={t('Usually adjusted instead of temperature, not together')}
           controlLayout="block"
-          control={
+          control={(fieldId) => (
             <SamplingParamControl
+              inputId={fieldId}
               kind="topP"
               inputTestId={TestId.settings.topP}
               value={settings.topP}
               onChange={(v) => setSettings({ topP: v })}
             />
-          }
+          )}
         />
         <SettingSwitchRow
           id="stream"

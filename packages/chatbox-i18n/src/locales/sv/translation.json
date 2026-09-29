@@ -1833,5 +1833,13 @@
   "Work Mode uses the agent persona instead of a conversation prompt.": "Arbetsläget använder agentens persona i stället för en konversationsprompt.",
   "jpg or png, up to 5MB. Each chat can set its own.": "jpg eller png, högst 5 MB. Varje chatt kan ha en egen.",
   "{{count}} configured": "{{count}} konfigurerade",
-  "{{count}} differ from global defaults": "{{count}} skiljer sig från globala standardvärden"
+  "{{count}} differ from global defaults": "{{count}} skiljer sig från globala standardvärden",
+  "The search service used when a model searches the web.": "Söktjänsten som används när en modell söker på webben.",
+  "How files attached to chats and knowledge bases are turned into text.": "Hur filer som bifogas i chattar och kunskapsbaser omvandlas till text.",
+  "Behavior": "Beteende",
+  "Tools from MCP servers are available to models that support tool use.": "Verktyg från MCP-servrar är tillgängliga för modeller som stöder verktygsanvändning.",
+  "No custom servers yet. Add one manually, from the registry, or from JSON in your clipboard.": "Inga egna servrar ännu. Lägg till en manuellt, från registret eller från JSON i urklipp.",
+  "Documents the model can search when a knowledge base is attached to a chat.": "Dokument som modellen kan söka i när en kunskapsbas är kopplad till en chatt.",
+  "Connection": "Anslutning",
+  "Website": "Webbplats"
 }

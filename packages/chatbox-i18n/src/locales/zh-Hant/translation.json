@@ -1833,5 +1833,13 @@
   "Work Mode uses the agent persona instead of a conversation prompt.": "Work 模式使用 Agent 人設，不使用對話的系統提示詞。",
   "jpg or png, up to 5MB. Each chat can set its own.": "jpg 或 png，5MB 以內；單個對話可以單獨設定。",
   "{{count}} configured": "{{count}} 個",
-  "{{count}} differ from global defaults": "{{count}} 項與全域不同"
+  "{{count}} differ from global defaults": "{{count}} 項與全域不同",
+  "The search service used when a model searches the web.": "模型聯網搜尋時使用的搜尋服務。",
+  "How files attached to chats and knowledge bases are turned into text.": "對話和知識庫中附加的檔案如何轉換為文字。",
+  "Behavior": "行為",
+  "Tools from MCP servers are available to models that support tool use.": "支援工具呼叫的模型可以使用 MCP 伺服器提供的工具。",
+  "No custom servers yet. Add one manually, from the registry, or from JSON in your clipboard.": "還沒有自訂伺服器。可以手動新增、從伺服器目錄新增，或從剪貼簿中的 JSON 匯入。",
+  "Documents the model can search when a knowledge base is attached to a chat.": "在對話中關聯知識庫後，模型可以檢索這些文件。",
+  "Connection": "連線",
+  "Website": "官網"
 }

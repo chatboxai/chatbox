@@ -59,10 +59,11 @@ function ProxyRow({ disabled }: { disabled: boolean }) {
       label={t('Network Proxy')}
       description={t('Supports http, https and socks5. Leave empty to connect directly.')}
       controlLayout="block"
-      control={
+      control={(fieldId) => (
         <div className="flex flex-col gap-1.5">
           <Flex gap="xs" align="flex-start">
             <TextInput
+              id={fieldId}
               flex={1}
               size="sm"
               disabled={disabled || testing}
@@ -115,7 +116,7 @@ function ProxyRow({ disabled }: { disabled: boolean }) {
             </Flex>
           )}
         </div>
-      }
+      )}
     />
   )
 }

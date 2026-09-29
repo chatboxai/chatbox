@@ -1833,5 +1833,13 @@
   "Work Mode uses the agent persona instead of a conversation prompt.": "Work Mode uses the agent persona instead of a conversation prompt.",
   "jpg or png, up to 5MB. Each chat can set its own.": "jpg or png, up to 5MB. Each chat can set its own.",
   "{{count}} configured": "{{count}} configured",
-  "{{count}} differ from global defaults": "{{count}} differ from global defaults"
+  "{{count}} differ from global defaults": "{{count}} differ from global defaults",
+  "The search service used when a model searches the web.": "The search service used when a model searches the web.",
+  "How files attached to chats and knowledge bases are turned into text.": "How files attached to chats and knowledge bases are turned into text.",
+  "Behavior": "Behavior",
+  "Tools from MCP servers are available to models that support tool use.": "Tools from MCP servers are available to models that support tool use.",
+  "No custom servers yet. Add one manually, from the registry, or from JSON in your clipboard.": "No custom servers yet. Add one manually, from the registry, or from JSON in your clipboard.",
+  "Documents the model can search when a knowledge base is attached to a chat.": "Documents the model can search when a knowledge base is attached to a chat.",
+  "Connection": "Connection",
+  "Website": "Website"
 }

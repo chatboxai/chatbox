@@ -1833,5 +1833,13 @@
   "Work Mode uses the agent persona instead of a conversation prompt.": "يستخدم وضع العمل شخصية الوكيل بدلًا من موجّه المحادثة.",
   "jpg or png, up to 5MB. Each chat can set its own.": "jpg أو png حتى 5 ميغابايت. يمكن لكل محادثة تعيين خلفيتها الخاصة.",
   "{{count}} configured": "{{count}} مُعدّ",
-  "{{count}} differ from global defaults": "{{count}} تختلف عن الإعدادات العامة"
+  "{{count}} differ from global defaults": "{{count}} تختلف عن الإعدادات العامة",
+  "The search service used when a model searches the web.": "خدمة البحث المستخدمة عندما يبحث النموذج في الويب.",
+  "How files attached to chats and knowledge bases are turned into text.": "كيفية تحويل الملفات المرفقة بالمحادثات وقواعد المعرفة إلى نص.",
+  "Behavior": "السلوك",
+  "Tools from MCP servers are available to models that support tool use.": "تتوفر أدوات خوادم MCP للنماذج التي تدعم استخدام الأدوات.",
+  "No custom servers yet. Add one manually, from the registry, or from JSON in your clipboard.": "لا توجد خوادم مخصصة بعد. أضف خادمًا يدويًا أو من السجل أو من JSON في الحافظة.",
+  "Documents the model can search when a knowledge base is attached to a chat.": "المستندات التي يمكن للنموذج البحث فيها عند إرفاق قاعدة معرفة بمحادثة.",
+  "Connection": "الاتصال",
+  "Website": "الموقع الإلكتروني"
 }

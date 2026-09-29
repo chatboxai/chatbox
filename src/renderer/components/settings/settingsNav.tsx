@@ -172,6 +172,12 @@ export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [
   { page: 'context', id: 'auto-compaction', label: 'Auto Compaction' },
   { page: 'context', id: 'compaction-threshold', label: 'Compaction Threshold' },
   { page: 'context', id: 'compaction-prompt', label: 'Compaction Prompt' },
+  { page: 'web-search', id: 'search-provider', label: 'Search Provider' },
+  ...(featureFlags.agentMode
+    ? ([{ page: 'agent', id: 'smart-switching', label: 'Smart Switching' }] satisfies SettingsSearchEntry[])
+    : []),
+  { page: 'agent', id: 'memory', label: 'Memory' },
+  { page: 'document-parser', id: 'parser-type', label: 'Parser Type' },
   { page: 'appearance', id: 'theme', label: 'Theme' },
   { page: 'appearance', id: 'language', label: 'Language' },
   { page: 'appearance', id: 'theme-color', label: 'Theme color' },

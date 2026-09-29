@@ -1833,5 +1833,13 @@
   "Work Mode uses the agent persona instead of a conversation prompt.": "El modo Trabajo usa la persona del agente en lugar de una instrucción de conversación.",
   "jpg or png, up to 5MB. Each chat can set its own.": "jpg o png, hasta 5 MB. Cada chat puede tener el suyo.",
   "{{count}} configured": "{{count}} configurados",
-  "{{count}} differ from global defaults": "{{count}} difieren de los valores globales"
+  "{{count}} differ from global defaults": "{{count}} difieren de los valores globales",
+  "The search service used when a model searches the web.": "El servicio de búsqueda que se usa cuando un modelo busca en la web.",
+  "How files attached to chats and knowledge bases are turned into text.": "Cómo se convierten en texto los archivos adjuntos a chats y bases de conocimiento.",
+  "Behavior": "Comportamiento",
+  "Tools from MCP servers are available to models that support tool use.": "Las herramientas de los servidores MCP están disponibles para los modelos que admiten el uso de herramientas.",
+  "No custom servers yet. Add one manually, from the registry, or from JSON in your clipboard.": "Aún no hay servidores personalizados. Añade uno manualmente, desde el registro o desde JSON en el portapapeles.",
+  "Documents the model can search when a knowledge base is attached to a chat.": "Documentos en los que el modelo puede buscar cuando se adjunta una base de conocimiento a un chat.",
+  "Connection": "Conexión",
+  "Website": "Sitio web"
 }

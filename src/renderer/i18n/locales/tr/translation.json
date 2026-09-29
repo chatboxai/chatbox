@@ -1829,5 +1829,13 @@
   "Work Mode uses the agent persona instead of a conversation prompt.": "Çalışma modu sohbet istemi yerine ajan kişiliğini kullanır.",
   "jpg or png, up to 5MB. Each chat can set its own.": "jpg veya png, en fazla 5 MB. Her sohbet kendi arka planını ayarlayabilir.",
   "{{count}} configured": "{{count}} yapılandırıldı",
-  "{{count}} differ from global defaults": "{{count}} tanesi genel varsayılanlardan farklı"
+  "{{count}} differ from global defaults": "{{count}} tanesi genel varsayılanlardan farklı",
+  "The search service used when a model searches the web.": "Bir model web'de arama yaptığında kullanılan arama hizmeti.",
+  "How files attached to chats and knowledge bases are turned into text.": "Sohbetlere ve bilgi tabanlarına eklenen dosyaların metne nasıl dönüştürüleceği.",
+  "Behavior": "Davranış",
+  "Tools from MCP servers are available to models that support tool use.": "MCP sunucularındaki araçlar, araç kullanımını destekleyen modeller tarafından kullanılabilir.",
+  "No custom servers yet. Add one manually, from the registry, or from JSON in your clipboard.": "Henüz özel sunucu yok. Elle, kayıt defterinden veya panodaki JSON'dan ekleyin.",
+  "Documents the model can search when a knowledge base is attached to a chat.": "Bir sohbete bilgi tabanı eklendiğinde modelin arama yapabileceği belgeler.",
+  "Connection": "Bağlantı",
+  "Website": "Web sitesi"
 }

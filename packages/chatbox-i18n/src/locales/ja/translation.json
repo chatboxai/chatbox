@@ -1746,5 +1746,6 @@
   "All browser pages and website data cleared": "すべてのブラウザページとサイトデータを消去しました",
   "Clearing browser data…": "ブラウザデータを消去中…",
   "Upload Files to Page": "ページにファイルをアップロード",
-  "Inspect Page Controls": "ページの操作要素を確認"
+  "Inspect Page Controls": "ページの操作要素を確認",
+  "Deselect folder": "フォルダーの選択を解除"
 }

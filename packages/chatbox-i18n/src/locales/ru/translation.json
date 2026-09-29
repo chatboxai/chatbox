@@ -1746,5 +1746,6 @@
   "All browser pages and website data cleared": "Все страницы браузера и данные сайтов очищены",
   "Clearing browser data…": "Очистка данных браузера…",
   "Upload Files to Page": "Загрузить файлы на страницу",
-  "Inspect Page Controls": "Просмотреть элементы управления страницы"
+  "Inspect Page Controls": "Просмотреть элементы управления страницы",
+  "Deselect folder": "Отменить выбор папки"
 }

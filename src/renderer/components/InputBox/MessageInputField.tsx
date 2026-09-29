@@ -129,6 +129,18 @@ export const MessageInputField = memo(
         [commitValue]
       )
 
+      const handleKeyDown = useCallback(
+        (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+          // IME owns candidate navigation, confirmation and cancellation.
+          if (isComposingRef.current || event.nativeEvent.isComposing || event.keyCode === 229) {
+            event.stopPropagation()
+            return
+          }
+          onKeyDown(event)
+        },
+        [onKeyDown]
+      )
+
       const handlePaste = useCallback(
         (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
           if (isComposingRef.current) {
@@ -181,7 +193,7 @@ export const MessageInputField = memo(
           onChange={onChange}
           onCompositionStart={onCompositionStart}
           onCompositionEnd={onCompositionEnd}
-          onKeyDown={onKeyDown}
+          onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           data-testid={TestId.chat.messageInput}
         />

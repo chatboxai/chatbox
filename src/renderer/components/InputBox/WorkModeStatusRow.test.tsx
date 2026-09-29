@@ -265,7 +265,7 @@ describe('WorkModeStatusRow directory menu', () => {
 
     expect(screen.getByText('Recent')).toBeTruthy()
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Remove' })[0])
+    fireEvent.click(screen.getAllByRole('button', { name: 'Deselect folder' })[0])
     expect(mocks.updateSessionMock).toHaveBeenCalledWith('session-1', expect.any(Function))
     let updater = mocks.updateSessionMock.mock.calls[0][1]
     expect(updater({ settings: {} })).toEqual({ settings: { workingDirectories: ['/code/design-tokens'] } })
@@ -288,7 +288,7 @@ describe('WorkModeStatusRow directory menu', () => {
 
     fireEvent.click(screen.getByTestId(TestId.agent.workingDirStatusTrigger))
     await screen.findByTestId(TestId.agent.workingDirStatusMenu)
-    fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Deselect folder' }))
 
     await act(async () => {})
     expect(mocks.updateSessionMock).toHaveBeenCalled()

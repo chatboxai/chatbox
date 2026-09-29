@@ -114,6 +114,7 @@ describe('batched backup import', () => {
     const archive = await createArchive()
     const storage = new BatchStorage()
     const meta = new BatchMetaStorage()
+    seed(storage, meta)
     storage.failRemoveBatch = true
 
     await expect(importBackupArchive(archive, { storage, metaStorage: meta })).rejects.toThrow(

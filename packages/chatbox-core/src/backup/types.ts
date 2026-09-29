@@ -234,6 +234,8 @@ export interface BackupStorage {
   removeItem(key: string): Promise<void>
   /** Removes a bounded batch of keys; a failed batch leaves every key in it to be retried or reported. */
   removeItems?(keys: string[]): Promise<void>
+  /** Copies a stored value natively; false when the source is absent. */
+  copyItem?(source: string, destination: string): Promise<boolean>
   getBlob(key: string): Promise<string | null>
   setBlob(key: string, value: string): Promise<void>
   delBlob(key: string): Promise<void>

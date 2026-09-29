@@ -31,6 +31,7 @@ import { base64ToBytes, bytesToBase64, decodeStoredBlob, sha256Checksum } from '
 import { validateResourceReferences } from './resource-validation'
 import {
   collectSessionResourceReferences,
+  type ResourceReference,
   restoreCopilotResourceKeys,
   restoreSessionMetaResourceKeys,
   restoreSessionResourceKeys,
@@ -69,6 +70,8 @@ interface StagedEntry {
   checksum: Awaited<ReturnType<typeof sha256Checksum>>
   tempKey?: string
   value?: unknown
+  /** Sessions are validated while reading and published from a second read of the archive. */
+  session?: { id: string; references: Array<Pick<ResourceReference, 'storageKey' | 'sessionId' | 'kind'>> }
 }
 
 interface ResourceWritePlan {
@@ -511,10 +514,9 @@ async function createResourcePlans(
     plans.push({ resource, tempKey: staged.tempKey, targets })
   }
   for (const descriptor of manifest.sessions) {
-    const tempKey = stagedEntries.get(descriptor.path)?.tempKey
-    const session = tempKey ? await storage.getItem<Session | null>(tempKey, null) : null
+    const session = stagedEntries.get(descriptor.path)?.session
     if (!session) throw new Error('Staged session is missing')
-    const missing = validateResourceReferences(manifest, collectSessionResourceReferences(session).references)
+    const missing = validateResourceReferences(manifest, session.references)
     for (const key of missing) {
       if (resourceKeyMap.has(key)) continue
       const target = await findAvailableCollisionKey(storage, key, reserved, createId, signal)
@@ -554,7 +556,6 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
   const newResourceKeys: string[] = []
   const importWarnings: BackupWarning[] = []
   const rehydrationRollbacks: Array<() => Promise<void>> = []
-  let stagedSessionCount = 0
   let stagedResourceCount = 0
   let commitStarted = false
   let commitCompleted = false
@@ -630,6 +631,7 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
     for (const previous of previousValues.reverse()) {
       await restore(async () => {
         if (previous.existed && previous.rollbackKey) {
+          if (await options.storage.copyItem?.(previous.rollbackKey, previous.key)) return
           const missing = {}
           const value = await options.storage.getItem<unknown>(previous.rollbackKey, missing)
           if (value === missing) throw new Error(`Rollback record is missing: ${previous.key}`)
@@ -668,10 +670,11 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
         } else if (isBackupSessionPath(entry.path)) {
           const value = parseJson(entry.data, entry.path)
           if (!isBackupSession(value)) throw new Error(`Invalid session entry: ${entry.path}`)
-          const tempKey = `${tempPrefix}:session:${stagedSessionCount++}`
-          await options.storage.setItemNow(tempKey, value)
-          tempStoreKeys.push(tempKey)
-          staged.tempKey = tempKey
+          // Validation needs each distinct reference once; repeated attachments must not grow memory.
+          const references = new Map<string, Pick<ResourceReference, 'storageKey' | 'sessionId' | 'kind'>>()
+          for (const { storageKey, sessionId, kind } of collectSessionResourceReferences(value).references)
+            references.set(`${sessionId ?? ''}\u0000${storageKey}`, { storageKey, sessionId, kind })
+          staged.session = { id: value.id, references: [...references.values()] }
         } else if (isBackupResourcePath(entry.path)) {
           const tempKey = `${tempPrefix}:resource:${stagedResourceCount++}`
           await options.storage.setBlob(tempKey, bytesToBase64(entry.data))
@@ -710,6 +713,10 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
     const manifestValue = stagedEntries.get(BACKUP_MANIFEST_PATH)?.value
     const manifest = BackupManifestSchema.parse(manifestValue)
     validateManifestEntries(manifest, stagedEntries)
+    for (const descriptor of manifest.sessions) {
+      if (stagedEntries.get(descriptor.path)?.session?.id !== descriptor.id)
+        throw new Error(`Session id does not match manifest: ${descriptor.path}`)
+    }
     const { plans: resourcePlans, resourceKeyMap } = await createResourcePlans(
       manifest,
       stagedEntries,
@@ -717,6 +724,7 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
       createId,
       options.signal
     )
+    for (const staged of stagedEntries.values()) if (staged.session) staged.session.references = []
     const importedMemoryState = await resolveImportedMemoryState(manifest, stagedEntries, options.storage)
     options.onProgress?.({ phase: 'validating', current: 1, total: 1 })
 
@@ -740,8 +748,9 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
       const previous: PreviousValue = { key, existed }
       if (existed) {
         const rollbackKey = `${tempPrefix}:rollback:${tempStoreKeys.length}`
-        const value = await options.storage.getItem<unknown>(key, null)
-        await options.storage.setItemNow(rollbackKey, value)
+        // A native copy keeps the stored value as-is without moving it through JavaScript.
+        if (!(await options.storage.copyItem?.(key, rollbackKey)))
+          await options.storage.setItemNow(rollbackKey, await options.storage.getItem<unknown>(key, null))
         tempStoreKeys.push(rollbackKey)
         previous.rollbackKey = rollbackKey
       }
@@ -792,49 +801,66 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
       if (!createMeta || !pendingMeta.length) return
       await createMeta(pendingMeta.splice(0))
     }
-    for (let index = 0; index < manifest.sessions.length; index++) {
-      throwIfAborted(options.signal)
-      const descriptor = manifest.sessions[index]
-      const tempKey = stagedEntries.get(descriptor.path)?.tempKey
-      if (!tempKey) throw new Error(`Session was not staged: ${descriptor.path}`)
-      const stagedSession = await options.storage.getItem<Session | null>(tempKey, null)
-      if (!isBackupSession(stagedSession) || stagedSession.id !== descriptor.id) {
-        throw new Error(`Session id does not match manifest: ${descriptor.path}`)
-      }
-      let session = restoreSessionResourceKeys(stagedSession, resourceKeyMap)
-      if (options.rehydrateSession) {
-        const rehydrated = await options.rehydrateSession(session)
-        session = rehydrated.session
-        importWarnings.push(...rehydrated.warnings)
-        if (rehydrated.rollback) rehydrationRollbacks.push(rehydrated.rollback)
-      }
-      session = translateImportedSessionMemoryState(session, importedMemoryState)
-      await options.storage.setItemNow(backupSessionStorageKey(session.id), session)
+    // Sessions are read a second time from the archive and written once; each entry must match what was validated.
+    const sessionDescriptors = new Map(manifest.sessions.map((descriptor) => [descriptor.path, descriptor]))
+    const publishedPaths = new Set<string>()
+    await readZipFileEntries(
+      file,
+      async (entry) => {
+        throwIfAborted(options.signal)
+        const descriptor = sessionDescriptors.get(entry.path)
+        const staged = stagedEntries.get(entry.path)
+        if (!descriptor || !staged || publishedPaths.has(entry.path))
+          throw new Error(`Backup changed during restore: ${entry.path}`)
+        const checksum = await (options.checksum ?? sha256Checksum)(entry.data)
+        if (entry.uncompressedSize !== staged.size || checksum.value !== staged.checksum.value)
+          throw new Error(`Backup changed during restore: ${entry.path}`)
+        const restored = parseJson(entry.data, entry.path)
+        if (!isBackupSession(restored) || restored.id !== descriptor.id) {
+          throw new Error(`Session id does not match manifest: ${descriptor.path}`)
+        }
+        publishedPaths.add(entry.path)
+        let session = restoreSessionResourceKeys(restored, resourceKeyMap)
+        if (options.rehydrateSession) {
+          const rehydrated = await options.rehydrateSession(session)
+          session = rehydrated.session
+          importWarnings.push(...rehydrated.warnings)
+          if (rehydrated.rollback) rehydrationRollbacks.push(rehydrated.rollback)
+        }
+        session = translateImportedSessionMemoryState(session, importedMemoryState)
+        await options.storage.setItemNow(backupSessionStorageKey(session.id), session)
 
-      const meta = {
-        ...restoreSessionMetaResourceKeys(descriptor.meta, resourceKeyMap),
-        // The restored body owns folder membership; an explicit key clears a
-        // folder the local metadata still holds when `update` merges.
-        folderId: session.folderId,
-        hasPausedToolCall: hasPausedToolCall(migrateSession(session)),
-        recoveryArchived: descriptor.meta.recoveryArchived,
-        hasPausedToolCall: hasPausedToolCall(migrateSession(session)),
+        const meta = {
+          ...restoreSessionMetaResourceKeys(descriptor.meta, resourceKeyMap),
+          // The restored body owns folder membership; an explicit key clears a
+          // folder the local metadata still holds when `update` merges.
+          folderId: session.folderId,
+          hasPausedToolCall: hasPausedToolCall(migrateSession(session)),
+          recoveryArchived: descriptor.meta.recoveryArchived,
+        }
+        const existingMeta = await options.metaStorage.getById(session.id)
+        previousMeta.set(session.id, existingMeta)
+        changedMetaIds.push(session.id)
+        if (createMeta) {
+          pendingMeta.push(existingMeta ? { ...existingMeta, ...meta } : meta)
+          if (pendingMeta.length >= IMPORT_WRITE_BATCH_SIZE) await flushMeta()
+        } else if (existingMeta) await options.metaStorage.update(session.id, meta)
+        else await options.metaStorage.create(meta)
+        options.onProgress?.({
+          phase: 'restoring',
+          current: resourcePlans.length + publishedPaths.size,
+          total: resourcePlans.length + manifest.sessions.length,
+          label: session.name,
+        })
+      },
+      {
+        bounded: true,
+        filter: isBackupSessionPath,
+        signal: options.signal,
+        entryLimits: (path) => ({ maxEntryUncompressedBytes: backupEntryByteLimit(path) }),
       }
-      const existingMeta = await options.metaStorage.getById(session.id)
-      previousMeta.set(session.id, existingMeta)
-      changedMetaIds.push(session.id)
-      if (createMeta) {
-        pendingMeta.push(existingMeta ? { ...existingMeta, ...meta } : meta)
-        if (pendingMeta.length >= IMPORT_WRITE_BATCH_SIZE) await flushMeta()
-      } else if (existingMeta) await options.metaStorage.update(session.id, meta)
-      else await options.metaStorage.create(meta)
-      options.onProgress?.({
-        phase: 'restoring',
-        current: resourcePlans.length + index + 1,
-        total: resourcePlans.length + manifest.sessions.length,
-        label: session.name,
-      })
-    }
+    )
+    if (publishedPaths.size !== manifest.sessions.length) throw new Error('Backup changed during restore')
 
     await flushMeta()
 

@@ -11,21 +11,18 @@ import {
   IconDots,
   IconHistory,
   IconId,
+  IconLayoutSidebarRight,
   IconSettings,
   IconTrash,
-  IconWorld,
 } from '@tabler/icons-react'
-import { useSetAtom } from 'jotai'
 import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { rendererApplication } from '@/app/renderer-application'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useIsLargeScreen } from '@/hooks/useScreenChange'
 import { copyToClipboard } from '@/packages/navigator'
-import platform from '@/platform'
 import { confirmSessionDeletion } from '@/presentation/session/session-deletion-confirmation'
 import { router } from '@/router'
-import * as atoms from '@/stores/atoms'
 import { useSessionAgentMode } from '@/stores/session/agent-mode'
 import { clear as clearSession, copyAndSwitchSession, deleteSession } from '@/stores/session/crud'
 import * as toastActions from '@/stores/toastActions'
@@ -35,6 +32,7 @@ import { IconButton } from '../common/IconButton'
 import Broom from '../icons/Broom'
 import LayoutExpand from '../icons/LayoutExpand'
 import LayoutShrink from '../icons/LayoutShrink'
+import { toggleSessionPanel } from '../session/SessionSidePanel'
 
 /**
  * Conversation menu (width, thread history, duplicate, export, clear, delete) opened from `children`.
@@ -54,7 +52,7 @@ export function SessionMenu({
   const sessionId = session.id
   const isLargeScreen = useIsLargeScreen()
 
-  const setThreadHistoryDrawerOpen = useSetAtom(atoms.showThreadHistoryDrawerAtom)
+  const openSessionPanel = useUIStore((s) => s.openSessionPanel)
   const widthFull = useUIStore((s) => s.widthFull)
   const setWidthFull = useUIStore((s) => s.setWidthFull)
   const agentModeEntry = useSessionAgentMode(sessionId)
@@ -126,7 +124,7 @@ export function SessionMenu({
             text: t('Thread History'),
             icon: IconHistory,
             testId: TestId.session.threadHistory,
-            onClick: () => setThreadHistoryDrawerOpen(true),
+            onClick: () => openSessionPanel(sessionId, 'threads'),
           },
         ]
       : []),
@@ -189,27 +187,28 @@ export function SessionMenu({
   )
 }
 
-/** Shows or hides the built-in browser sidebar of a Work Mode conversation. */
-function BuiltInBrowserToggle({ sessionId }: { sessionId: string }) {
+/** Opens or closes the conversation side panel (⌘\\ / Ctrl+\\). */
+function SessionPanelToggle({ sessionId }: { sessionId: string }) {
   const { t } = useTranslation()
-  const isWorkMode = resolveSessionMode(useSessionAgentMode(sessionId).value) === 'work'
-  const open = useUIStore((s) => s.builtInBrowserOpenBySession[sessionId] ?? false)
-  const setOpen = useUIStore((s) => s.setShowBuiltInBrowser)
-  if (!platform.builtInBrowser || !isWorkMode) return null
+  const open = useUIStore((s) => s.sessionPanels[sessionId]?.open ?? false)
+  const label = t('Conversation panel')
+  const shortcut = navigator.platform.toLowerCase().includes('mac') ? '⌘\\' : 'Ctrl+\\'
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <IconButton
-          icon={IconWorld}
+          icon={IconLayoutSidebarRight}
           size="sm"
-          aria-label={t('Built-in Browser')}
+          aria-label={label}
           aria-pressed={open}
-          data-testid="built-in-browser-toggle"
+          data-testid={TestId.sessionPanel.toggle}
           color={open ? 'chatbox-brand' : 'chatbox-secondary'}
-          onClick={() => setOpen(sessionId, !open)}
+          onClick={() => toggleSessionPanel(sessionId)}
         />
       </TooltipTrigger>
-      <TooltipContent>{t('Built-in Browser')}</TooltipContent>
+      <TooltipContent>
+        {label} {shortcut}
+      </TooltipContent>
     </Tooltip>
   )
 }
@@ -219,7 +218,7 @@ export default function Toolbar({ session }: { session: Session | SessionHeader 
   const { t } = useTranslation()
   return (
     <Flex align="center" className="controls">
-      <BuiltInBrowserToggle sessionId={session.id} />
+      <SessionPanelToggle sessionId={session.id} />
       <SessionMenu session={session}>
         <IconButton icon={IconDots} size="sm" aria-label={t('More')} data-testid={TestId.session.headerMenuTrigger} />
       </SessionMenu>

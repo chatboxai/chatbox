@@ -1,3 +1,4 @@
+import { QueryKeys } from '@chatbox/react/query'
 import NiceModal from '@ebay/nice-modal-react'
 import { Box, Paper, Stack, Text } from '@mantine/core'
 import { MessageRoleEnum, ModelProviderEnum, type Session } from '@shared/types'
@@ -6,7 +7,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider } from '@tanstack/react-router'
 import { type ComponentType, useEffect, useReducer, useRef, useState } from 'react'
 import i18n from '@/i18n'
-import { QueryKeys } from '@chatbox/react/query'
 import { settingsStore } from '@/stores/settingsStore'
 
 const queryClient = new QueryClient({
@@ -381,7 +381,6 @@ export const SessionSettingsStates: StoryObj = {
         loadModal={() => import('@/modals/SessionSettings').then((module) => module.default)}
         props={{
           session: sampleSession,
-          disableAutoSave: true,
         }}
       />
     </ModalPreview>

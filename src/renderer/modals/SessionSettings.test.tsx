@@ -1,165 +1,117 @@
 // @vitest-environment jsdom
 
 import { MantineProvider } from '@mantine/core'
-import type { Session, Updater } from '@shared/types'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import type { Session } from '@shared/types'
+import { fireEvent, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
+import type { SessionEdit } from '@/components/session/session-edit'
 
 const mocks = vi.hoisted(() => ({
-  delBlob: vi.fn(() => Promise.resolve()),
   hide: vi.fn(),
-  persistedSession: null as Session | null,
   resolve: vi.fn(),
+  delBlob: vi.fn(),
   updateSessionWithMessages: vi.fn(),
 }))
 
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
-  value: vi.fn(
-    (query: string): MediaQueryList => ({
-      matches: false,
-      media: query,
-      onchange: null,
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      dispatchEvent: vi.fn(() => false),
-    })
-  ),
+  value: vi.fn((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(() => false),
+  })),
 })
 
 vi.mock('@ebay/nice-modal-react', () => ({
   default: { create: (component: unknown) => component },
   useModal: () => ({ visible: true, hide: mocks.hide, resolve: mocks.resolve }),
 }))
-
 vi.mock('react-i18next', () => ({
   initReactI18next: { type: '3rdParty', init: vi.fn() },
   useTranslation: () => ({ t: (key: string) => key }),
 }))
-
 vi.mock('@/app/renderer-application', () => ({
-  rendererApplication: {
-    sessions: { updateSessionWithMessages: mocks.updateSessionWithMessages },
-  },
+  rendererApplication: { sessions: { updateSessionWithMessages: mocks.updateSessionWithMessages } },
 }))
-
+vi.mock('@/storage', () => ({ default: { delBlob: mocks.delBlob } }))
 vi.mock('@/components/common/AdaptiveModal', () => {
   const AdaptiveModal = ({ children }: { children: ReactNode }) => <div>{children}</div>
   AdaptiveModal.Actions = ({ children }: { children: ReactNode }) => <div>{children}</div>
-  AdaptiveModal.CloseButton = (props: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
-    <button type="button" {...props}>
-      {props.children ?? 'Cancel'}
-    </button>
-  )
   return { AdaptiveModal }
 })
-
-vi.mock('@/components/common/Avatar', () => ({ AssistantAvatar: () => <div /> }))
-vi.mock('@/components/Image', () => ({
-  handleImageInputAndSave: vi.fn(),
-  ImageInStorage: () => <div />,
-}))
-vi.mock('@/components/ui/tooltip', () => ({ AppTooltip: ({ children }: { children: ReactNode }) => children }))
 vi.mock('@/hooks/useScreenChange', () => ({ useIsSmallScreen: () => false }))
 vi.mock('@/packages/event', () => ({ trackingEvent: vi.fn() }))
-vi.mock('@/storage', () => ({
-  default: {
-    delBlob: mocks.delBlob,
-    setBlob: vi.fn(() => Promise.resolve()),
-  },
-}))
-vi.mock('@/stores/sessionHelpers', () => ({
-  getSessionMeta: (session: Session) => ({
-    id: session.id,
-    name: session.name,
-    type: session.type,
-    backgroundImage: session.backgroundImage,
-  }),
+vi.mock('@/stores/session/agent-mode', () => ({ getSessionAgentModeEntry: () => ({ value: 'off' }) }))
+vi.mock('@/components/session/SessionSettingsContent', () => ({
+  SessionSettingsContent: ({ onEdit }: { onEdit: (edit: SessionEdit) => void }) => (
+    <div>
+      <button type="button" onClick={() => onEdit({ backgroundImage: null })}>
+        Remove background
+      </button>
+      <button type="button" onClick={() => onEdit({ settings: { temperature: 0.2 } })}>
+        Set temperature
+      </button>
+      <input aria-label="Name" onBlur={(event) => onEdit({ name: event.currentTarget.value })} />
+    </div>
+  ),
 }))
 
 import SessionSettings from './SessionSettings'
 
-const originalSession: Session = {
-  id: 'session-1',
-  type: 'picture',
-  name: 'Picture session',
+const draftSession: Session = {
+  id: 'new',
+  type: 'chat',
+  name: 'Untitled',
   messages: [],
-  backgroundImage: { type: 'storage-key', storageKey: 'picture:session-bg:old' },
+  settings: { provider: 'openai', modelId: 'gpt-4o' },
+  backgroundImage: { type: 'storage-key', storageKey: 'picture:session-bg:shared' },
 }
 
-function renderSettings() {
-  return render(
-    <MantineProvider>
-      <SessionSettings id="session-settings-test" session={originalSession} />
-    </MantineProvider>
-  )
-}
-
-describe('SessionSettings background image lifecycle', () => {
+describe('SessionSettings for an unsaved chat', () => {
   beforeEach(() => {
-    mocks.delBlob.mockClear()
     mocks.hide.mockClear()
     mocks.resolve.mockClear()
-    mocks.updateSessionWithMessages.mockReset()
-    mocks.persistedSession = { ...originalSession }
-    mocks.updateSessionWithMessages.mockImplementation((_sessionId: string, updater: Updater<Session>) => {
-      const updated =
-        typeof updater === 'function'
-          ? updater(mocks.persistedSession)
-          : ({ ...mocks.persistedSession, ...updater } as Session)
-      mocks.persistedSession = updated
-      return Promise.resolve(updated)
-    })
+    mocks.delBlob.mockClear()
+    mocks.updateSessionWithMessages.mockClear()
   })
 
-  test('keeps the persisted background blob when deletion is cancelled', () => {
-    renderSettings()
+  test('resolves with the edited draft without saving it or deleting shared blobs', () => {
+    render(
+      <MantineProvider>
+        <SessionSettings id="session-settings-test" session={draftSession} />
+      </MantineProvider>
+    )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove background' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Set temperature' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }))
 
+    const resolved = mocks.resolve.mock.calls[0][0] as Session
+    expect(resolved.backgroundImage).toBeUndefined()
+    expect(resolved.settings).toEqual({ provider: 'openai', modelId: 'gpt-4o', temperature: 0.2 })
+    expect(mocks.hide).toHaveBeenCalled()
     expect(mocks.updateSessionWithMessages).not.toHaveBeenCalled()
     expect(mocks.delBlob).not.toHaveBeenCalled()
   })
 
-  test('keeps a shared background blob after removing it from one Session and saving', async () => {
-    const copiedSession: Session = {
-      ...originalSession,
-      id: 'session-copy',
-      backgroundImage: originalSession.backgroundImage,
-    }
-    let finishSave: (() => void) | undefined
-    mocks.updateSessionWithMessages.mockImplementationOnce(async (_sessionId: string, updater: Updater<Session>) => {
-      const updated =
-        typeof updater === 'function'
-          ? updater(mocks.persistedSession)
-          : ({ ...mocks.persistedSession, ...updater } as Session)
-      await new Promise<void>((resolve) => {
-        finishSave = resolve
-      })
-      mocks.persistedSession = updated
-      return updated
-    })
-    renderSettings()
+  test('includes text a focused field commits when the dialog closes', () => {
+    render(
+      <MantineProvider>
+        <SessionSettings id="session-settings-test" session={draftSession} />
+      </MantineProvider>
+    )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    const name = screen.getByRole('textbox', { name: 'Name' })
+    name.focus()
+    fireEvent.change(name, { target: { value: 'Pricing research' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }))
 
-    await waitFor(() => expect(mocks.updateSessionWithMessages).toHaveBeenCalledTimes(1))
-    expect(mocks.delBlob).not.toHaveBeenCalled()
-
-    await act(async () => finishSave?.())
-
-    await waitFor(() => {
-      expect(mocks.persistedSession?.backgroundImage).toBeUndefined()
-      expect(copiedSession.backgroundImage).toEqual({
-        type: 'storage-key',
-        storageKey: 'picture:session-bg:old',
-      })
-      expect(mocks.delBlob).not.toHaveBeenCalled()
-    })
+    expect((mocks.resolve.mock.calls[0][0] as Session).name).toBe('Pricing research')
   })
 })

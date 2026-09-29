@@ -29,7 +29,7 @@ function cleanupDeletedSessionRuntimeState(sessionId: string): void {
   uiStore.getState().clearSessionWebBrowsing(sessionId)
   uiStore.getState().removeSessionKnowledgeBase(sessionId)
   uiStore.getState().clearSessionAgentMode(sessionId)
-  uiStore.getState().clearSessionBuiltInBrowser(sessionId)
+  uiStore.getState().clearSessionPanel(sessionId)
   platform.builtInBrowser
     ?.forSession(sessionId)
     .dispose()

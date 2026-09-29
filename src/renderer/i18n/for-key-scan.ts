@@ -151,19 +151,54 @@ function _errorI18nKeys(t: (key: string) => string) {
 }
 
 function _otherI18nKeys(t: (key: string) => string) {
-  // src/renderer/routes/settings/route.tsx
+  // src/renderer/components/settings/settingsNav.tsx
+  t('Account')
+  t('Models')
+  t('Capabilities')
+  t('Chat')
+  t('App')
   t('Model Provider')
-  t('Models & services')
+  t('Default Models')
   t('Web Search')
-  t('MCP')
   t('Knowledge Base')
-  t('Skills')
+  t('Agent & Memory')
+  t('Memory')
   t('Document Parser')
-  t('Chat Settings')
+  t('Context & Compaction')
+  t('Appearance')
   t('Keyboard Shortcuts')
-  t('General Settings')
+  t('Data & Backup')
+  t('Advanced')
+  t('About & Updates')
+  t('System prompt')
+  t('Context messages')
+  t('Message layout')
+  t('Show below messages')
+  t('LaTeX Rendering')
+  t('Theme color')
+  t('Recover Conversation List')
+  t('Import and Restore')
+  t('Archived Chats')
+  t('Network Proxy')
+  t('Diagnostic Logs')
+  t('Error Reporting')
+  t('Launch at system startup')
+  t('Automatic updates')
+  t('Beta updates')
 
-  // src/shared/theme-colors.ts, rendered dynamically in settings/general.tsx
+  // src/renderer/routes/settings/chat.tsx
+  t('Model name')
+  t('Time')
+  t('Word count')
+  t('Token usage')
+  t('First token latency')
+
+  // src/renderer/components/settings/ParamControl.tsx
+  t('Precise')
+  t('Balanced')
+  t('Creative')
+
+  // src/shared/theme-colors.ts, rendered dynamically in settings/appearance.tsx
   t('Claude Classic')
   t('Mist Blue')
 

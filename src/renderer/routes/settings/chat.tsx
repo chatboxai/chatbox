@@ -1,636 +1,316 @@
-import { Box, Button, FileButton, Flex, Slider, Stack, Switch, Text, Textarea, Title } from '@mantine/core'
+import { Button, Chip, Group, SegmentedControl, Text, Textarea } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
-import { chatSessionSettings, getDefaultPrompt } from '@shared/defaults'
-import { getDefaultCompactionPrompt } from '@shared/prompts'
+import { getDefaultPrompt } from '@shared/defaults'
+import type { Settings } from '@shared/types'
 import { MAX_TOOL_CALLS_BEFORE_CONFIRMATION } from '@shared/utils/tool-call-limit-pause'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
-import { AssistantAvatar, UserAvatar } from '@/components/common/Avatar'
-import { Divider } from '@/components/common/Divider'
-import MaxContextMessageCountSlider from '@/components/common/MaxContextMessageCountSlider'
-import { MessageLayoutSelector } from '@/components/common/MessageLayoutPreview'
-import SliderWithInput from '@/components/common/SliderWithInput'
-import { TooltipInfoTrigger } from '@/components/common/TooltipInfoTrigger'
-import { handleImageInputAndSave, ImageInStorage } from '@/components/Image'
-import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
-import { languageNameMap } from '@/i18n/locales'
-import { StorageKeyGenerator } from '@/storage/StoreStorage'
+import { ContextCountControl, NO_CONTEXT_LIMIT, SamplingParamControl } from '@/components/settings/ParamControl'
+import {
+  SettingRow,
+  SettingSwitchRow,
+  SettingsPage,
+  SettingsSection,
+  useSettingsDensity,
+} from '@/components/settings/SettingsLayout'
 import { useSettingsStore } from '@/stores/settingsStore'
-import { add as addToast } from '@/stores/toastActions'
-
-const MAX_IMAGE_SIZE = 5 * 1024 * 1024 // 5MB
 
 export const Route = createFileRoute('/settings/chat')({
   component: RouteComponent,
 })
 
+type MessageMetaKey =
+  | 'showModelName'
+  | 'showMessageTimestamp'
+  | 'showWordCount'
+  | 'showTokenUsed'
+  | 'showFirstTokenLatency'
+
+type BooleanSettingKey = {
+  [K in keyof Settings]-?: Settings[K] extends boolean | undefined ? K : never
+}[keyof Settings]
+
+const MESSAGE_META_OPTIONS: { key: MessageMetaKey; label: string }[] = [
+  { key: 'showModelName', label: 'Model name' },
+  { key: 'showMessageTimestamp', label: 'Time' },
+  { key: 'showWordCount', label: 'Word count' },
+  { key: 'showTokenUsed', label: 'Token usage' },
+  { key: 'showFirstTokenLatency', label: 'First token latency' },
+]
+
 export function RouteComponent() {
   const { t } = useTranslation()
   const { setSettings, ...settings } = useSettingsStore((state) => state)
+  const density = useSettingsDensity()
+  const defaultPrompt = getDefaultPrompt()
+  const promptIsDefault = (settings.defaultPrompt ?? '') === defaultPrompt
+  const defaultsUntouched =
+    promptIsDefault &&
+    settings.maxContextMessageCount === undefined &&
+    settings.temperature === undefined &&
+    settings.topP === undefined &&
+    (settings.stream ?? true)
+
+  const toggle = (key: BooleanSettingKey) => (checked: boolean) => {
+    setSettings({ [key]: checked } as Partial<Settings>)
+  }
 
   return (
-    <Stack gap="xxl" p="md">
-      <Title order={5}>{t('Chat Settings')}</Title>
-
-      {/* Avatars */}
-      <Stack gap="md">
-        <Stack gap="xxs">
-          <Text fw="600">{t('Edit Avatars')}</Text>
-          <Text size="xs" c="chatbox-tertiary">
-            {t('Support jpg or png file smaller than 5MB')}
-          </Text>
-        </Stack>
-
-        {/* User Avatar' */}
-        <Stack>
-          <Text size="xs" c="chatbox-secondary">
-            {t('User Avatar')}
-          </Text>
-          <Flex align="center" gap="xs">
-            <UserAvatar size={56} avatarKey={settings.userAvatarKey} />
-            <FileButton
-              onChange={(file) => {
-                if (file) {
-                  if (file.size > MAX_IMAGE_SIZE) {
-                    addToast(t('Support jpg or png file smaller than 5MB'))
-                    return
-                  }
-                  const key = StorageKeyGenerator.picture('user-avatar')
-                  handleImageInputAndSave(
-                    file,
-                    key,
-                    () => setSettings({ userAvatarKey: key }),
-                    (k, v) => currentBlobStorage.set(k, v)
-                  )
-                }
-              }}
-              accept="image/png,image/jpeg"
-            >
-              {(props) => (
-                <Button {...props} variant="outline" size="xs">
-                  {t('Upload Image')}
-                </Button>
-              )}
-            </FileButton>
-            {!!settings.userAvatarKey && (
-              <Button color="chatbox-gray" size="xs" onClick={() => setSettings({ userAvatarKey: undefined })}>
-                {t('Delete')}
-              </Button>
-            )}
-          </Flex>
-        </Stack>
-
-        {/* Default Assistant Avatar */}
-        <Stack>
-          <Text size="xs" c="chatbox-secondary">
-            {t('Default Assistant Avatar')}
-          </Text>
-          <Flex align="center" gap="xs">
-            <AssistantAvatar avatarKey={settings.defaultAssistantAvatarKey} size={56} />
-            <FileButton
-              onChange={(file) => {
-                if (file) {
-                  if (file.size > MAX_IMAGE_SIZE) {
-                    addToast(t('Support jpg or png file smaller than 5MB'))
-                    return
-                  }
-                  const key = StorageKeyGenerator.picture('default-assistant-avatar')
-                  handleImageInputAndSave(
-                    file,
-                    key,
-                    () => setSettings({ defaultAssistantAvatarKey: key }),
-                    (k, v) => currentBlobStorage.set(k, v)
-                  )
-                }
-              }}
-              accept="image/png,image/jpeg"
-            >
-              {(props) => (
-                <Button {...props} variant="outline" size="xs">
-                  {t('Upload Image')}
-                </Button>
-              )}
-            </FileButton>
-            {!!settings.defaultAssistantAvatarKey && (
-              <Button
-                color="chatbox-gray"
-                size="xs"
-                onClick={() => setSettings({ defaultAssistantAvatarKey: undefined })}
-              >
-                {t('Delete')}
-              </Button>
-            )}
-          </Flex>
-        </Stack>
-      </Stack>
-
-      <Divider />
-
-      {/* Default Settings */}
-      <Stack gap="md">
-        <Text fw="600">{t('Default Settings for New Conversation')}</Text>
-        <Stack gap="xxs">
-          <Text fw="500">{t('Prompt')}</Text>
-          <Textarea
-            data-testid={TestId.settings.defaultPrompt}
-            value={settings.defaultPrompt || ''}
-            autosize
-            minRows={1}
-            maxRows={12}
-            onChange={(e) =>
-              setSettings({
-                defaultPrompt: e.currentTarget.value,
-              })
-            }
-          />
+    <SettingsPage
+      title={t('Chat')}
+      description={t(
+        'Defaults for new chats and how messages are shown. Each chat can override them in its conversation settings.'
+      )}
+    >
+      <SettingsSection
+        title={t('New chat defaults')}
+        action={
           <Button
             variant="subtle"
             color="chatbox-gray"
-            onClick={() => {
+            size="compact-sm"
+            disabled={defaultsUntouched}
+            onClick={() =>
               setSettings({
-                defaultPrompt: getDefaultPrompt(),
+                defaultPrompt,
+                maxContextMessageCount: undefined,
+                temperature: undefined,
+                topP: undefined,
+                stream: true,
               })
-            }}
-            px={3}
-            py={6}
-            className=" self-start"
+            }
           >
-            {t('Reset to Default')}
+            {t('Restore all defaults')}
           </Button>
-        </Stack>
-
-        {/* Max Context Message Count */}
-        <MaxContextMessageCountSlider
-          inputTestId={TestId.settings.maxContext}
-          wrapperProps={{ gap: 'xxs' }}
-          labelProps={{ fw: undefined }}
-          value={
-            settings?.maxContextMessageCount ?? chatSessionSettings().maxContextMessageCount ?? Number.MAX_SAFE_INTEGER
-          }
-          onChange={(v) => setSettings({ maxContextMessageCount: v })}
-        />
-
-        {/* Temperature */}
-        <Stack gap="xxs">
-          <Flex align="center" gap="xs">
-            <Text size="sm">{t('Temperature')}</Text>
-            <Tooltip
-              label={t(
-                'Modify the creativity of AI responses; the higher the value, the more random and intriguing the answers become, while a lower value ensures greater stability and reliability.'
-              )}
-              withArrow={true}
-              maw={320}
-              className="!whitespace-normal"
-              zIndex={3000}
-              openOnTouch
-            >
-              <TooltipInfoTrigger label={t('Temperature')} />
-            </Tooltip>
-          </Flex>
-
-          <SliderWithInput
-            inputTestId={TestId.settings.temperature}
-            value={settings?.temperature}
-            onChange={(v) => setSettings({ temperature: v })}
-            max={2}
-          />
-        </Stack>
-
-        {/* Top P */}
-        <Stack gap="xxs">
-          <Flex align="center" gap="xs">
-            <Text size="sm">Top P</Text>
-            <Tooltip
-              label={t(
-                'The topP parameter controls the diversity of AI responses: lower values make the output more focused and predictable, while higher values allow for more varied and creative replies.'
-              )}
-              withArrow={true}
-              maw={320}
-              className="!whitespace-normal"
-              zIndex={3000}
-              openOnTouch
-            >
-              <TooltipInfoTrigger label="Top P" />
-            </Tooltip>
-          </Flex>
-
-          <SliderWithInput
-            inputTestId={TestId.settings.topP}
-            value={settings?.topP}
-            onChange={(v) => setSettings({ topP: v })}
-            max={1}
-          />
-        </Stack>
-
-        {/* Background Image */}
-        <Stack gap="xs">
-          <Text>{t('Background Image')}</Text>
-          <Flex align="center" gap="sm" wrap="wrap">
-            {settings.backgroundImageKey ? (
-              <Box w={160} h={90} className="overflow-hidden rounded bg-chatbox-tertiary/20 flex-shrink-0">
-                <ImageInStorage storageKey={settings.backgroundImageKey} className="object-cover w-full h-full" />
-              </Box>
-            ) : null}
-            <Flex gap="xs" align="center">
-              <FileButton
-                onChange={(file) => {
-                  if (file) {
-                    if (file.size > MAX_IMAGE_SIZE) {
-                      addToast(t('Support jpg or png file smaller than 5MB'))
-                      return
-                    }
-                    const key = StorageKeyGenerator.picture('background-image')
-                    handleImageInputAndSave(
-                      file,
-                      key,
-                      () => setSettings({ backgroundImageKey: key }),
-                      (k, v) => currentBlobStorage.set(k, v)
-                    )
-                  }
-                }}
-                accept="image/png,image/jpeg"
-              >
-                {(props) => (
-                  <Button {...props} variant="outline" size="xs">
-                    {t('Upload Image')}
-                  </Button>
-                )}
-              </FileButton>
-              {!!settings.backgroundImageKey && (
-                <Button color="chatbox-gray" size="xs" onClick={() => setSettings({ backgroundImageKey: undefined })}>
-                  {t('Remove')}
+        }
+      >
+        <SettingRow
+          id="system-prompt"
+          label={t('System prompt')}
+          description={t('The first instruction sent to the model')}
+          controlLayout="block"
+          control={
+            <div className="flex flex-col gap-1.5">
+              <Textarea
+                data-testid={TestId.settings.defaultPrompt}
+                aria-label={t('System prompt') ?? undefined}
+                value={settings.defaultPrompt || ''}
+                autosize
+                minRows={2}
+                maxRows={12}
+                onChange={(e) => setSettings({ defaultPrompt: e.currentTarget.value })}
+              />
+              {promptIsDefault ? (
+                <Text fz={12} c="chatbox-tertiary">
+                  {t('Default')}
+                </Text>
+              ) : (
+                <Button
+                  variant="subtle"
+                  color="chatbox-gray"
+                  size="compact-xs"
+                  className="self-start"
+                  onClick={() => setSettings({ defaultPrompt })}
+                >
+                  {t('Reset to Default')}
                 </Button>
               )}
-            </Flex>
-          </Flex>
-          {!!settings.backgroundImageKey && (
-            <Stack gap="xxs">
-              <Text size="sm">{t('Background Image Opacity')}</Text>
-              <SliderWithInput
-                value={Math.round(settings.backgroundImageOpacity * 100)}
-                onChange={(value) => setSettings({ backgroundImageOpacity: (value ?? 16) / 100 })}
-                max={100}
-                step={1}
-                suffix="%"
-              />
-            </Stack>
-          )}
-        </Stack>
-
-        {/* Stream output */}
-        <Stack gap="xxs">
-          <Flex align="center" gap="xs" justify="space-between">
-            <Text size="sm">{t('Stream output')}</Text>
-            <Switch
-              // label={t('Stream output')}
-              checked={settings?.stream ?? true}
-              onChange={(v) => setSettings({ stream: v.target.checked })}
-            />
-          </Flex>
-        </Stack>
-      </Stack>
-      <Divider />
-
-      {/* Conversation Settings */}
-      <Stack gap="md">
-        <Text fw="600">{t('Conversation Settings')}</Text>
-
-        {/* Display */}
-        <Stack gap="sm">
-          <Text c="chatbox-tertiary">{t('Display')}</Text>
-
-          <MessageLayoutSelector
-            value={settings.messageLayout ?? 'bubble'}
-            onValueChange={(val) => setSettings({ messageLayout: val })}
-          />
-
-          <Switch
-            label={t('Show Avatar')}
-            checked={settings.showAvatar ?? true}
-            onChange={() =>
-              setSettings((draft) => {
-                draft.showAvatar = !(draft.showAvatar ?? true)
-              })
-            }
-          />
-
-          <Switch
-            label={t('Hide system prompt')}
-            checked={settings.hideSystemPromptMessage}
-            onChange={() =>
-              setSettings({
-                hideSystemPromptMessage: !settings.hideSystemPromptMessage,
-              })
-            }
-          />
-
-          <Switch
-            label={t('Auto-scroll new messages to top')}
-            checked={settings.autoScrollNewMessagesToTop}
-            onChange={() =>
-              setSettings({
-                autoScrollNewMessagesToTop: !settings.autoScrollNewMessagesToTop,
-              })
-            }
-          />
-
-          <Switch
-            label={t('show message word count')}
-            checked={settings.showWordCount}
-            onChange={() =>
-              setSettings((draft) => {
-                draft.showWordCount = !draft.showWordCount
-              })
-            }
-          />
-
-          {/* <Switch
-            label={t('show message token count')}
-            checked={settings.showTokenCount}
-            onChange={() =>
-              setSettings({
-                showTokenCount: !settings.showTokenCount,
-              })
-            }
-          /> */}
-
-          <Switch
-            label={t('show message token usage')}
-            checked={settings.showTokenUsed}
-            onChange={() =>
-              setSettings({
-                showTokenUsed: !settings.showTokenUsed,
-              })
-            }
-          />
-
-          <Switch
-            label={t('show model name')}
-            checked={settings.showModelName}
-            onChange={() =>
-              setSettings({
-                showModelName: !settings.showModelName,
-              })
-            }
-          />
-
-          <Switch
-            label={t('show message timestamp')}
-            checked={settings.showMessageTimestamp}
-            onChange={() =>
-              setSettings({
-                showMessageTimestamp: !settings.showMessageTimestamp,
-              })
-            }
-          />
-
-          <Switch
-            label={t('show first token latency')}
-            checked={settings.showFirstTokenLatency}
-            onChange={() =>
-              setSettings({
-                showFirstTokenLatency: !settings.showFirstTokenLatency,
-              })
-            }
-          />
-        </Stack>
-
-        {/* Function */}
-        <Stack gap="sm">
-          <Text c="chatbox-tertiary">{t('Function')}</Text>
-
-          <Switch
-            label={t('Auto-collapse code blocks')}
-            checked={settings.autoCollapseCodeBlock}
-            onChange={() =>
-              setSettings({
-                autoCollapseCodeBlock: !settings.autoCollapseCodeBlock,
-              })
-            }
-          />
-          <Switch
-            label={t('Auto-Generate Chat Titles')}
-            checked={settings.autoGenerateTitle}
-            onChange={() =>
-              setSettings({
-                ...settings,
-                autoGenerateTitle: !settings.autoGenerateTitle,
-              })
-            }
-          />
-          <Switch
-            data-testid={TestId.settings.pauseOnToolCallLimitSwitch}
-            label={t('Pause after every {{count}} steps', { count: MAX_TOOL_CALLS_BEFORE_CONFIRMATION })}
-            checked={settings.pauseOnToolCallLimit ?? true}
-            description={t(
-              "Long tasks pause for confirmation after every {{count}} steps so you can check they're on track. Individual chats can override this in their conversation settings.",
-              { count: MAX_TOOL_CALLS_BEFORE_CONFIRMATION }
-            )}
-            onChange={() =>
-              setSettings({
-                pauseOnToolCallLimit: !(settings.pauseOnToolCallLimit ?? true),
-              })
-            }
-          />
-          <Switch
-            label={t('Spell Check')}
-            checked={settings.spellCheck}
-            onChange={() =>
-              setSettings({
-                ...settings,
-                spellCheck: !settings.spellCheck,
-              })
-            }
-          />
-          <Switch
-            label={t('Markdown Rendering')}
-            checked={settings.enableMarkdownRendering}
-            onChange={() =>
-              setSettings({
-                ...settings,
-                enableMarkdownRendering: !settings.enableMarkdownRendering,
-              })
-            }
-          />
-          <Switch
-            label={t('LaTeX Rendering (Requires Markdown)')}
-            checked={settings.enableLaTeXRendering}
-            onChange={() =>
-              setSettings({
-                ...settings,
-                enableLaTeXRendering: !settings.enableLaTeXRendering,
-              })
-            }
-          />
-          <Switch
-            label={t('Mermaid Diagrams & Charts Rendering')}
-            checked={settings.enableMermaidRendering}
-            onChange={() =>
-              setSettings({
-                ...settings,
-                enableMermaidRendering: !settings.enableMermaidRendering,
-              })
-            }
-          />
-          <Switch
-            label={t('Inject default metadata')}
-            checked={settings.injectDefaultMetadata}
-            description={t('e.g., Model Name, Current Date')}
-            onChange={() =>
-              setSettings({
-                ...settings,
-                injectDefaultMetadata: !settings.injectDefaultMetadata,
-              })
-            }
-          />
-          <Switch
-            label={t('Auto-preview artifacts')}
-            checked={settings.autoPreviewArtifacts}
-            description={t('Automatically render generated artifacts (e.g., HTML with CSS, JS, Tailwind)')}
-            onChange={() =>
-              setSettings({
-                ...settings,
-                autoPreviewArtifacts: !settings.autoPreviewArtifacts,
-              })
-            }
-          />
-          <Switch
-            label={t('Paste long text as a file')}
-            checked={settings.pasteLongTextAsAFile}
-            description={t(
-              'Pasting long text will automatically insert it as a file, keeping chats clean and reducing token usage with prompt caching.'
-            )}
-            onChange={() =>
-              setSettings({
-                ...settings,
-                pasteLongTextAsAFile: !settings.pasteLongTextAsAFile,
-              })
-            }
-          />
-        </Stack>
-      </Stack>
-
-      <Divider />
-
-      {/* Context Management */}
-      <ContextManagementSection />
-    </Stack>
-  )
-}
-
-function ContextManagementSection() {
-  const { t } = useTranslation()
-  const { setSettings, ...settings } = useSettingsStore((state) => state)
-
-  // Get strategy hint based on threshold value
-  const strategyHint = useMemo(() => {
-    const threshold = settings.compactionThreshold ?? 0.6
-    if (threshold <= 0.5) {
-      return t('Cost Priority: Compacts early to save tokens, may lose some context')
-    }
-    if (threshold >= 0.8) {
-      return t('Context Priority: Preserves more context, uses more tokens')
-    }
-    return t('Balanced: Good balance between cost and context preservation')
-  }, [settings.compactionThreshold, t])
-
-  return (
-    <Stack gap="xl">
-      <Text fw="600">{t('Context Management')}</Text>
-
-      {/* Auto Compaction Toggle */}
-      <Stack gap="sm">
-        <Flex align="center" gap="xs" justify="space-between">
-          <Flex align="center" gap="xs">
-            <Text size="sm">{t('Auto Compaction')}</Text>
-            <Tooltip
-              label={t(
-                'Automatically summarize and compact conversation history when context size exceeds the threshold, preserving key information while reducing token usage.'
-              )}
-              withArrow={true}
-              maw={320}
-              className="!whitespace-normal"
-              zIndex={3000}
-              openOnTouch
-            >
-              <TooltipInfoTrigger label={t('Auto Compaction')} />
-            </Tooltip>
-          </Flex>
-          <Switch
-            checked={settings.autoCompaction ?? true}
-            onChange={() =>
-              setSettings({
-                autoCompaction: !(settings.autoCompaction ?? true),
-              })
-            }
-          />
-        </Flex>
-        <Text c="chatbox-tertiary" size="xs">
-          {t('When enabled, conversations will be automatically summarized to manage context window usage.')}
-        </Text>
-      </Stack>
-
-      <Stack gap="sm">
-        <Textarea
-          label={t('Compaction Prompt')}
-          description={t('Used for automatic and manual compression. Leave empty to use the built-in prompt.')}
-          value={settings.compactionPrompt ?? getDefaultCompactionPrompt(languageNameMap[settings.language])}
-          onChange={(event) => setSettings({ compactionPrompt: event.currentTarget.value })}
-          autosize
-          minRows={5}
-          maxRows={10}
+            </div>
+          }
         />
-        <Flex justify="flex-end">
-          <Button variant="subtle" size="xs" onClick={() => setSettings({ compactionPrompt: undefined })}>
-            {t('Restore Default')}
-          </Button>
-        </Flex>
-      </Stack>
+        <SettingRow
+          id="max-context"
+          label={t('Context messages')}
+          description={t('More messages keep replies coherent but use more tokens')}
+          controlLayout="block"
+          control={
+            <ContextCountControl
+              inputTestId={TestId.settings.maxContext}
+              value={settings.maxContextMessageCount ?? NO_CONTEXT_LIMIT}
+              onChange={(v) => setSettings({ maxContextMessageCount: v })}
+            />
+          }
+        />
+        <SettingRow
+          id="temperature"
+          label={t('Temperature')}
+          description={t('Lower is steadier, higher is more varied')}
+          controlLayout="block"
+          control={
+            <SamplingParamControl
+              kind="temperature"
+              inputTestId={TestId.settings.temperature}
+              value={settings.temperature}
+              onChange={(v) => setSettings({ temperature: v })}
+            />
+          }
+        />
+        <SettingRow
+          id="top-p"
+          label="Top P"
+          description={t('Usually adjusted instead of temperature, not together')}
+          controlLayout="block"
+          control={
+            <SamplingParamControl
+              kind="topP"
+              inputTestId={TestId.settings.topP}
+              value={settings.topP}
+              onChange={(v) => setSettings({ topP: v })}
+            />
+          }
+        />
+        <SettingSwitchRow
+          id="stream"
+          label={t('Stream output')}
+          description={t('Show replies as they are written')}
+          checked={settings.stream ?? true}
+          onChange={(checked) => setSettings({ stream: checked })}
+        />
+      </SettingsSection>
 
-      {/* Compaction Threshold Slider */}
-      <Stack gap="sm">
-        <Flex align="center" gap="xs">
-          <Text size="sm">{t('Compaction Threshold')}</Text>
-          <Tooltip
-            label={t(
-              'The percentage of context window usage that triggers automatic compaction. Lower values save tokens but may lose context earlier.'
-            )}
-            withArrow={true}
-            maw={320}
-            className="!whitespace-normal"
-            zIndex={3000}
-            openOnTouch
-          >
-            <TooltipInfoTrigger label={t('Compaction Threshold')} />
-          </Tooltip>
-        </Flex>
+      <SettingsSection title={t('Message display')}>
+        <SettingRow
+          id="message-layout"
+          label={t('Message layout')}
+          control={
+            <SegmentedControl
+              size={density === 'touch' ? 'sm' : 'xs'}
+              radius="md"
+              value={settings.messageLayout ?? 'bubble'}
+              onChange={(value) => {
+                if (value === 'bubble' || value === 'left') setSettings({ messageLayout: value })
+              }}
+              data={[
+                { value: 'bubble', label: t('Chat bubbles') },
+                { value: 'left', label: t('Left-aligned') },
+              ]}
+            />
+          }
+        />
+        <SettingRow
+          id="message-meta"
+          label={t('Show below messages')}
+          controlLayout="block"
+          control={
+            <Chip.Group
+              multiple
+              value={MESSAGE_META_OPTIONS.filter((option) => settings[option.key]).map((option) => option.key)}
+              onChange={(values) =>
+                setSettings(
+                  Object.fromEntries(
+                    MESSAGE_META_OPTIONS.map((option) => [option.key, values.includes(option.key)])
+                  ) as Pick<Settings, MessageMetaKey>
+                )
+              }
+            >
+              <Group gap={6}>
+                {MESSAGE_META_OPTIONS.map((option) => (
+                  <Chip key={option.key} value={option.key} size={density === 'touch' ? 'sm' : 'xs'} radius="md">
+                    {t(option.label)}
+                  </Chip>
+                ))}
+              </Group>
+            </Chip.Group>
+          }
+        />
+        <SettingSwitchRow
+          id="show-avatar"
+          label={t('Show Avatar')}
+          checked={settings.showAvatar ?? true}
+          onChange={(checked) => setSettings({ showAvatar: checked })}
+        />
+        <SettingSwitchRow
+          id="hide-system-prompt"
+          label={t('Hide system prompt')}
+          checked={settings.hideSystemPromptMessage}
+          onChange={toggle('hideSystemPromptMessage')}
+        />
+        <SettingSwitchRow
+          id="auto-scroll"
+          label={t('Auto-scroll new messages to top')}
+          checked={settings.autoScrollNewMessagesToTop}
+          onChange={toggle('autoScrollNewMessagesToTop')}
+        />
+      </SettingsSection>
 
-        <Stack gap="xs" mt="xs">
-          <Slider
-            min={0.4}
-            max={0.9}
-            step={0.05}
-            value={settings.compactionThreshold ?? 0.6}
-            onChange={(v) => setSettings({ compactionThreshold: v })}
-            label={(v) => `${Math.round(v * 100)}%`}
-            disabled={!(settings.autoCompaction ?? true)}
-          />
-          <Flex justify="space-between" px={2}>
-            <Text size="xs" c="chatbox-tertiary">
-              {t('Cost')}
-            </Text>
-            <Text size="xs" c="chatbox-tertiary">
-              {t('Context')}
-            </Text>
-          </Flex>
-        </Stack>
-
-        <Text c="chatbox-tertiary" size="xs">
-          {strategyHint}
-        </Text>
-      </Stack>
-    </Stack>
+      <SettingsSection title={t('Input & rendering')}>
+        <SettingSwitchRow
+          id="auto-title"
+          label={t('Auto-Generate Chat Titles')}
+          checked={settings.autoGenerateTitle}
+          onChange={toggle('autoGenerateTitle')}
+        />
+        <SettingSwitchRow
+          id="pause-on-tool-call-limit"
+          switchTestId={TestId.settings.pauseOnToolCallLimitSwitch}
+          label={t('Pause after every {{count}} steps', { count: MAX_TOOL_CALLS_BEFORE_CONFIRMATION })}
+          description={t(
+            "Long tasks pause for confirmation after every {{count}} steps so you can check they're on track. Individual chats can override this in their conversation settings.",
+            { count: MAX_TOOL_CALLS_BEFORE_CONFIRMATION }
+          )}
+          checked={settings.pauseOnToolCallLimit ?? true}
+          onChange={(checked) => setSettings({ pauseOnToolCallLimit: checked })}
+        />
+        <SettingSwitchRow
+          id="spell-check"
+          label={t('Spell Check')}
+          checked={settings.spellCheck}
+          onChange={toggle('spellCheck')}
+        />
+        <SettingSwitchRow
+          id="paste-long-text"
+          label={t('Paste long text as a file')}
+          description={t(
+            'Pasting long text will automatically insert it as a file, keeping chats clean and reducing token usage with prompt caching.'
+          )}
+          checked={settings.pasteLongTextAsAFile}
+          onChange={toggle('pasteLongTextAsAFile')}
+        />
+        <SettingSwitchRow
+          id="inject-metadata"
+          label={t('Inject default metadata')}
+          description={t('e.g., Model Name, Current Date')}
+          checked={settings.injectDefaultMetadata}
+          onChange={toggle('injectDefaultMetadata')}
+        />
+        <SettingSwitchRow
+          id="markdown"
+          label={t('Markdown Rendering')}
+          checked={settings.enableMarkdownRendering}
+          onChange={toggle('enableMarkdownRendering')}
+        />
+        <SettingSwitchRow
+          id="latex"
+          indent
+          label={t('LaTeX Rendering')}
+          description={t('Requires Markdown rendering')}
+          disabled={!settings.enableMarkdownRendering}
+          checked={settings.enableMarkdownRendering && settings.enableLaTeXRendering}
+          onChange={toggle('enableLaTeXRendering')}
+        />
+        <SettingSwitchRow
+          id="mermaid"
+          indent
+          label={t('Mermaid Diagrams & Charts Rendering')}
+          description={t('Requires Markdown rendering')}
+          disabled={!settings.enableMarkdownRendering}
+          checked={settings.enableMarkdownRendering && settings.enableMermaidRendering}
+          onChange={toggle('enableMermaidRendering')}
+        />
+        <SettingSwitchRow
+          id="auto-collapse-code"
+          label={t('Auto-collapse code blocks')}
+          checked={settings.autoCollapseCodeBlock}
+          onChange={toggle('autoCollapseCodeBlock')}
+        />
+        <SettingSwitchRow
+          id="auto-preview-artifacts"
+          label={t('Auto-preview artifacts')}
+          description={t('Automatically render generated artifacts (e.g., HTML with CSS, JS, Tailwind)')}
+          checked={settings.autoPreviewArtifacts}
+          onChange={toggle('autoPreviewArtifacts')}
+        />
+      </SettingsSection>
+    </SettingsPage>
   )
 }

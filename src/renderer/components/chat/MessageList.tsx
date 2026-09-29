@@ -25,7 +25,7 @@ import {
   IconSwitch3,
   IconTrash,
 } from '@tabler/icons-react'
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useAtomValue } from 'jotai'
 import {
   type FC,
   forwardRef,
@@ -48,7 +48,6 @@ import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { useSessionLockState } from '@/hooks/useSessionLockState'
 import { cn } from '@/lib/utils'
 import platform from '@/platform'
-import * as atoms from '@/stores/atoms'
 import { getSessionAgentModeEntry } from '@/stores/session/agent-mode'
 import { removeMessage } from '@/stores/session/messages'
 import { moveThreadToConversations, removeThread, switchThread } from '@/stores/session/threads'
@@ -172,6 +171,7 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
   const isSmallScreen = useIsSmallScreen()
   const widthFull = useUIStore((s) => s.widthFull)
   const hideSystemPromptMessage = useSettingsStore((s) => s.hideSystemPromptMessage)
+  const globalMaxContextMessageCount = useSettingsStore((s) => s.maxContextMessageCount)
 
   const completeSession = props.currentSession
   const isCompleteSession = completeSession !== undefined
@@ -200,13 +200,13 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
     mode: sessionMode,
     messages: completeSession?.messages ?? [],
     compactionPoints: completeSession?.compactionPoints,
-    maxContextMessageCount: currentSession.settings?.maxContextMessageCount,
+    maxContextMessageCount: currentSession.settings?.maxContextMessageCount ?? globalMaxContextMessageCount,
   })
   promptCacheContextRef.current = {
     mode: sessionMode,
     messages: completeSession?.messages ?? [],
     compactionPoints: completeSession?.compactionPoints,
-    maxContextMessageCount: currentSession.settings?.maxContextMessageCount,
+    maxContextMessageCount: currentSession.settings?.maxContextMessageCount ?? globalMaxContextMessageCount,
   }
   const shouldConfirmPromptCacheDelete = useCallback((messageId: string, target: PromptCacheDeleteTarget) => {
     const { mode, messages, compactionPoints, maxContextMessageCount } = promptCacheContextRef.current
@@ -1166,11 +1166,11 @@ type ThreadLabelProps = {
 }
 const ThreadLabel: FC<ThreadLabelProps> = memo(({ thread, sessionId, sessionMode, currentThreadTarget }) => {
   const { t } = useTranslation()
-  const setShowHistoryDrawer = useSetAtom(atoms.showThreadHistoryDrawerAtom)
+  const openSessionPanel = useUIStore((s) => s.openSessionPanel)
 
   const handleOpenHistoryDrawer = useCallback(() => {
-    setShowHistoryDrawer(thread.id || true)
-  }, [setShowHistoryDrawer, thread.id])
+    openSessionPanel(sessionId, 'threads')
+  }, [openSessionPanel, sessionId])
 
   const handleEditThreadName = useCallback(async () => {
     if (!thread.id) return

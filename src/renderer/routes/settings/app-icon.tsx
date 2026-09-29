@@ -14,12 +14,12 @@ export function RouteComponent() {
     <Stack p="md" gap="md">
       <Button
         component={Link}
-        to="/settings/general"
+        to="/settings/appearance"
         variant="subtle"
         leftSection={<IconChevronLeft size={18} />}
         w="fit-content"
       >
-        {t('General Settings')}
+        {t('Appearance')}
       </Button>
       <Title order={5}>{t('App icon')}</Title>
       <AppIconPicker showTitle={false} />

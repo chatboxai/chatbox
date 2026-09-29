@@ -86,7 +86,7 @@ ZIP 导入分为三个阶段：
 ## 相关实现
 
 - `src/renderer/packages/backup/`：manifest、资源图、ZIP codec、导出、导入和 RAG 恢复。
-- `src/renderer/routes/settings/general.tsx`：导出范围、进度、取消、warning 和 legacy JSON 路由。
+- `src/renderer/components/settings/DataSections.tsx`：导出范围、进度、取消、warning 和 legacy JSON 路由。
 - `src/renderer/platform/*_exporter.ts`：Desktop/Web/Mobile 输出能力。
 - `src/renderer/platform/filter_writer.ts`：Capacitor 分块写入、Android picker fallback 和临时文件清理。
 

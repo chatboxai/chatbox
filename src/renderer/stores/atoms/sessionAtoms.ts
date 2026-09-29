@@ -7,4 +7,3 @@ export const currentSessionIdAtom = atomWithStorage<string | null>('_currentSess
 
 // Related UI state
 export const sessionCleanDialogAtom = atom<Session | null>(null) // 清空会话的弹窗
-export const showThreadHistoryDrawerAtom = atom<boolean | string>(false) // 显示会话历史主题的抽屉

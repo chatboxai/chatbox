@@ -21,9 +21,8 @@ import { ICON_SIZE, IconButton } from '@/components/common/IconButton'
 import platform from '@/platform'
 import type { BuiltInBrowser } from '@/platform/interfaces'
 import * as toastActions from '@/stores/toastActions'
-import { useUIStore } from '@/stores/uiStore'
 
-function useBuiltInBrowserState(builtInBrowser: BuiltInBrowser): BuiltInBrowserState {
+export function useBuiltInBrowserState(builtInBrowser: BuiltInBrowser): BuiltInBrowserState {
   const [state, setState] = useState<BuiltInBrowserState>(EMPTY_BUILT_IN_BROWSER_STATE)
   useEffect(() => {
     let active = true
@@ -96,37 +95,16 @@ function reportError(error: unknown) {
 }
 
 /**
- * Right sidebar showing the built-in browser. The page itself is a native view that the main
- * process draws over the placeholder below the toolbar, so the user can take the page over.
- * Opens on its own when the model starts reading a page.
+ * Web tab of the conversation side panel. The page itself is a native view that the main process
+ * draws over the placeholder below the address bar, so the user can take the page over; it is
+ * placed only while this tab shows and steps aside for menus and dialogs that cover it.
  */
-export function BuiltInBrowserSidebar({
-  builtInBrowser,
-  sessionId,
-}: {
-  builtInBrowser: BuiltInBrowser
-  sessionId: string
-}) {
-  const state = useBuiltInBrowserState(builtInBrowser)
-  const open = useUIStore((s) => s.builtInBrowserOpenBySession[sessionId] ?? false)
-  const setOpen = useUIStore((s) => s.setShowBuiltInBrowser)
-
-  useEffect(() => {
-    if (state.reading) setOpen(sessionId, true)
-  }, [state.reading, setOpen, sessionId])
-
-  if (!open) return null
-  return <BuiltInBrowserPanel builtInBrowser={builtInBrowser} state={state} onClose={() => setOpen(sessionId, false)} />
-}
-
-function BuiltInBrowserPanel({
+export function BuiltInBrowserView({
   builtInBrowser,
   state,
-  onClose,
 }: {
   builtInBrowser: BuiltInBrowser
   state: BuiltInBrowserState
-  onClose: () => void
 }) {
   const { t } = useTranslation()
   const pageRef = useRef<HTMLDivElement>(null)
@@ -207,10 +185,7 @@ function BuiltInBrowserPanel({
   }
 
   return (
-    <aside
-      data-testid="built-in-browser-panel"
-      className="flex h-full w-[min(560px,45%)] min-w-[320px] shrink-0 flex-col border-0 border-l border-solid border-chatbox-border-primary"
-    >
+    <div data-testid="built-in-browser-panel" className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-1 px-2 py-1.5">
         <IconButton
           icon={IconArrowLeft}
@@ -286,7 +261,6 @@ function BuiltInBrowserPanel({
         >
           <IconButton icon={IconDots} iconSize={ICON_SIZE.inline} aria-label={t('More')} disabled={clearingData} />
         </ActionMenu>
-        <IconButton icon={IconX} iconSize={ICON_SIZE.inline} aria-label={t('Close')} onClick={onClose} />
       </div>
       {clearingData && (
         <div role="status" className="flex items-center gap-2 px-3 py-2">
@@ -327,6 +301,6 @@ function BuiltInBrowserPanel({
           </div>
         )}
       </div>
-    </aside>
+    </div>
   )
 }

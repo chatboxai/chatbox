@@ -8,7 +8,7 @@
  */
 
 export const AUTOMATION_CONTRACT_ID = 'chatbox-ui'
-export const AUTOMATION_CONTRACT_VERSION = '1.10.0'
+export const AUTOMATION_CONTRACT_VERSION = '1.11.0'
 export const AUTOMATION_CONTRACT_VERSION_ATTRIBUTE = 'data-automation-contract-version'
 
 /** Adjacent identity attributes hosted on TestId elements. */
@@ -57,6 +57,7 @@ export const TestId = {
     newThread: 'new-thread-button',
     rollbackThread: 'rollback-thread-button',
     sessionSettings: 'session-settings-trigger',
+    sessionSettingsOverridden: 'session-settings-overridden',
   },
   model: {
     selectorTrigger: 'model-selector-trigger',
@@ -116,7 +117,7 @@ export const TestId = {
     headerMenu: 'session-header-menu',
     headerMenuTrigger: 'session-header-menu-trigger',
     threadHistory: 'session-thread-history',
-    threadHistoryDrawer: 'session-thread-history-drawer',
+    threadHistoryList: 'session-thread-history-list',
     export: 'session-export',
     duplicate: 'session-duplicate',
     widthToggle: 'session-width-toggle',
@@ -124,6 +125,22 @@ export const TestId = {
     clearMessagesConfirm: 'session-clear-messages-confirm',
     delete: 'session-delete',
     deleteConfirm: 'session-delete-confirm',
+  },
+  sessionPanel: {
+    root: 'session-panel',
+    toggle: 'session-panel-toggle',
+    close: 'session-panel-close',
+    sheet: 'session-panel-sheet',
+    tabSettings: 'session-panel-tab-settings',
+    tabThreads: 'session-panel-tab-threads',
+    tabWeb: 'session-panel-tab-web',
+    newWebTab: 'session-panel-new-web-tab',
+    settings: 'session-panel-settings',
+    inheritMaxContext: 'session-panel-inherit-max-context',
+    inheritTemperature: 'session-panel-inherit-temperature',
+    overrideSummary: 'session-panel-override-summary',
+    restoreAll: 'session-panel-restore-all',
+    undoRestore: 'session-panel-undo-restore',
   },
   message: {
     item: 'message-item',
@@ -199,8 +216,15 @@ export const TestId = {
     providerModelEditorSave: 'settings-provider-model-editor-save',
     close: 'settings-close',
     navChat: 'settings-nav-chat',
-    navGeneral: 'settings-nav-general',
+    navContext: 'settings-nav-context',
+    navAppearance: 'settings-nav-appearance',
+    navData: 'settings-nav-data',
+    navAdvanced: 'settings-nav-advanced',
+    navAbout: 'settings-nav-about',
     navDefaultModels: 'settings-nav-default-models',
+    search: 'settings-search',
+    searchResults: 'settings-search-results',
+    theme: 'settings-theme',
     defaultPrompt: 'settings-default-prompt',
     temperature: 'settings-temperature',
     topP: 'settings-top-p',

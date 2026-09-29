@@ -136,7 +136,7 @@ function RouteComponent() {
  * Desktop: check button, progress bar, error/retry, restart & install.
  * Mobile: "New version available" hint linking to app store.
  */
-function UpdateSection({ language, needCheckUpdate }: { language: string; needCheckUpdate: boolean }) {
+export function UpdateSection({ language, needCheckUpdate }: { language: string; needCheckUpdate: boolean }) {
   const isDesktop = platform.type === 'desktop'
 
   if (isDesktop) {

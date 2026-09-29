@@ -64,7 +64,7 @@ import { copyToClipboard } from '@/packages/navigator'
 import { countWord } from '@/packages/word-count'
 import { lockSessionAgentMode, setSessionAgentMode } from '@/stores/session/agent-mode'
 import { useSettingsStore } from '@/stores/settingsStore'
-import { useUIStore } from '@/stores/uiStore'
+import { uiStore, useUIStore } from '@/stores/uiStore'
 import '../../static/Block.css'
 import {
   generate,
@@ -679,10 +679,8 @@ const _Message: FC<Props> = (props) => {
     </span>
   )
 
-  const onClickAssistantAvatar = async () => {
-    await NiceModal.show('session-settings', {
-      session: await rendererApplication.sessionQueryBridge.getSession(props.sessionId),
-    })
+  const onClickAssistantAvatar = () => {
+    uiStore.getState().openSessionPanel(props.sessionId, 'settings')
   }
 
   const actionMenuItems = useMemo<ActionMenuItemProps[]>(
@@ -1334,7 +1332,7 @@ const _Message: FC<Props> = (props) => {
           </Flex>
           {shouldShowAvatar && (
             <Box className="mt-1 shrink-0">
-              <UserAvatar avatarKey={userAvatarKey} onClick={() => navigateToSettings('/chat')} />
+              <UserAvatar avatarKey={userAvatarKey} onClick={() => navigateToSettings('/appearance')} />
             </Box>
           )}
         </Flex>
@@ -1373,7 +1371,7 @@ const _Message: FC<Props> = (props) => {
                   onClick={onClickAssistantAvatar}
                 />
               ) : (
-                <UserAvatar avatarKey={userAvatarKey} onClick={() => navigateToSettings('/chat')} />
+                <UserAvatar avatarKey={userAvatarKey} onClick={() => navigateToSettings('/appearance')} />
               )}
               {msg.role === 'assistant' && msg.generating && (
                 <Flex className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
@@ -1431,7 +1429,7 @@ const _Message: FC<Props> = (props) => {
                     />
                   ),
                   user: !isBubbleLayout ? (
-                    <UserAvatar avatarKey={userAvatarKey} onClick={() => navigateToSettings('/chat')} />
+                    <UserAvatar avatarKey={userAvatarKey} onClick={() => navigateToSettings('/appearance')} />
                   ) : null,
                   system: <SystemAvatar sessionType={props.sessionType} onClick={onClickAssistantAvatar} />,
                   tool: null,

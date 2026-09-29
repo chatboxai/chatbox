@@ -318,7 +318,7 @@ function rawStorageOwnerGroups(root) {
       name: 'migration and recovery owners',
       files: [
         'src/renderer/pages/SettingDialog/AdvancedSettingTab.tsx',
-        'src/renderer/routes/settings/general.tsx',
+        'src/renderer/components/settings/DataSections.tsx',
         'src/renderer/stores/migration.ts',
       ],
     },

@@ -269,7 +269,7 @@ export function RouteComponent() {
   return (
     <Stack p="md" gap="xl" className="max-w-[880px]">
       <Stack gap="xs">
-        <Title order={4}>{t('Models & services')}</Title>
+        <Title order={4}>{t('Default Models')}</Title>
         <Text c="chatbox-secondary" size="sm">
           {t('Choose which model or service each feature uses. Changes are saved automatically.')}
         </Text>

@@ -441,10 +441,7 @@ function Index() {
   }, [])
 
   const onClickSessionSettings = useCallback(async () => {
-    const res: Session = await NiceModal.show('session-settings', {
-      session,
-      disableAutoSave: true,
-    })
+    const res: Session = await NiceModal.show('session-settings', { session })
     if (res) {
       setSession((old) => ({
         ...old,
@@ -533,6 +530,7 @@ function Index() {
               sessionId="new"
               draftCopilotId={session.copilotId}
               draftCopilotName={session.copilotId ? session.name : undefined}
+              draftSessionSettings={session.settings}
               model={selectedModel}
               // fullWidth
               onSelectModel={onSelectModel}

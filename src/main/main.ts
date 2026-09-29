@@ -954,7 +954,7 @@ ipcMain.handle('shouldUseDarkColors', () => nativeTheme.shouldUseDarkColors)
 
 ipcMain.handle('ensureProxy', (event, json) => {
   const config: { proxy?: string } = JSON.parse(json)
-  proxy.ensure(config.proxy)
+  return proxy.ensure(config.proxy)
 })
 
 ipcMain.handle('relaunch', () => {

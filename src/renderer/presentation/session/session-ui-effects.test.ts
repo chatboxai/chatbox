@@ -25,7 +25,7 @@ vi.mock('@/stores/uiStore', () => ({
       clearSessionWebBrowsing: mocks.cleanup,
       removeSessionKnowledgeBase: mocks.cleanup,
       clearSessionAgentMode: mocks.cleanup,
-      clearSessionBuiltInBrowser: mocks.clearBrowser,
+      clearSessionPanel: mocks.clearBrowser,
     }),
   },
 }))

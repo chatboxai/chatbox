@@ -1,5 +1,4 @@
 import type { SessionHeader } from '@chatbox/core/ports'
-import NiceModal from '@ebay/nice-modal-react'
 import { Flex, Text, UnstyledButton } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import type { Session } from '@shared/types'
@@ -7,10 +6,10 @@ import { IconChevronDown, IconPencil, IconPlus } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { rendererApplication } from '@/app/renderer-application'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { syncSessionAutoTitleOnOpen } from '@/stores/session/naming'
+import { uiStore } from '@/stores/uiStore'
 import { ICON_SIZE, ICON_STROKE_WIDTH, IconButton } from '../common/IconButton'
 import { ScalableIcon } from '../common/ScalableIcon'
 import { PageHeader } from './Page'
@@ -37,9 +36,7 @@ export default function Header(props: { session: Session | SessionHeader }) {
     if (!currentSession) {
       return
     }
-    void rendererApplication.sessionQueryBridge.getSession(currentSession.id).then((session) => {
-      if (session) void NiceModal.show('session-settings', { session })
-    })
+    uiStore.getState().openSessionPanel(currentSession.id, 'settings')
   }
 
   if (isSmallScreen) {

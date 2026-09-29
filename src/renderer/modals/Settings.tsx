@@ -16,16 +16,21 @@ import { Toaster } from 'sonner'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import SettingsKnowledgeBaseRouteComponent from '@/components/knowledge-base/KnowledgeBase'
 import { Modal } from '@/components/layout/Overlay'
-import useNeedRoomForWinControls from '@/hooks/useNeedRoomForWinControls'
 import { useBackupNavigationGuard } from '@/hooks/useBackupNavigationGuard'
+import useNeedRoomForWinControls from '@/hooks/useNeedRoomForWinControls'
 import { getSettingsSearchParam, navigateToDynamicPath, router } from '@/router'
+import { RouteComponent as SettingsAboutRouteComponent } from '@/routes/settings/about'
+import { RouteComponent as SettingsAdvancedRouteComponent } from '@/routes/settings/advanced'
 import { RouteComponent as SettingsAgentRouteComponent } from '@/routes/settings/agent'
+import { RouteComponent as SettingsAppIconRouteComponent } from '@/routes/settings/app-icon'
+import { RouteComponent as SettingsAppearanceRouteComponent } from '@/routes/settings/appearance'
 import { RouteComponent as SettingsArchiveRouteComponent } from '@/routes/settings/archive'
 import { RouteComponent as SettingsChatRouteComponent } from '@/routes/settings/chat'
 import { RouteComponent as SettingsChatboxAiRouteComponent } from '@/routes/settings/chatbox-ai'
+import { RouteComponent as SettingsContextRouteComponent } from '@/routes/settings/context'
+import { RouteComponent as SettingsDataRouteComponent } from '@/routes/settings/data'
 import { RouteComponent as SettingsDefaultModelsRouteComponent } from '@/routes/settings/default-models'
 import { RouteComponent as SettingsDocumentParserRouteComponent } from '@/routes/settings/document-parser'
-import { RouteComponent as SettingsAppIconRouteComponent } from '@/routes/settings/app-icon'
 import { RouteComponent as SettingsGeneralRouteComponent } from '@/routes/settings/general'
 import { RouteComponent as SettingsHotkeysRouteComponent } from '@/routes/settings/hotkeys'
 import { RouteComponent as SettingsIndexRouteComponent } from '@/routes/settings/index'
@@ -59,6 +64,36 @@ const SettingsChatboxAiRoute = createRoute({
 const SettingsGeneralRoute = createRoute({
   component: SettingsGeneralRouteComponent,
   path: '/settings/general',
+  getParentRoute: () => RootRoute,
+})
+
+const SettingsAppearanceRoute = createRoute({
+  component: SettingsAppearanceRouteComponent,
+  path: '/settings/appearance',
+  getParentRoute: () => RootRoute,
+})
+
+const SettingsDataRoute = createRoute({
+  component: SettingsDataRouteComponent,
+  path: '/settings/data',
+  getParentRoute: () => RootRoute,
+})
+
+const SettingsAdvancedRoute = createRoute({
+  component: SettingsAdvancedRouteComponent,
+  path: '/settings/advanced',
+  getParentRoute: () => RootRoute,
+})
+
+const SettingsAboutRoute = createRoute({
+  component: SettingsAboutRouteComponent,
+  path: '/settings/about',
+  getParentRoute: () => RootRoute,
+})
+
+const SettingsContextRoute = createRoute({
+  component: SettingsContextRouteComponent,
+  path: '/settings/context',
   getParentRoute: () => RootRoute,
 })
 
@@ -162,8 +197,13 @@ const routeTree = RootRoute.addChildren([
   SettingsIndexRoute,
   SettingsChatboxAiRoute,
   SettingsGeneralRoute,
+  SettingsAppearanceRoute,
+  SettingsDataRoute,
+  SettingsAdvancedRoute,
+  SettingsAboutRoute,
   SettingsAppIconRoute,
   SettingsChatRoute,
+  SettingsContextRoute,
   SettingsArchiveRoute,
   SettingsWebSearchRoute,
   SettingsMcpRoute,

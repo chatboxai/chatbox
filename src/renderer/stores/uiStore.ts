@@ -25,6 +25,25 @@ export interface TranscriptNavigation {
   }): boolean
 }
 
+/** Tabs of the conversation side panel: pinned tools first, then content tabs. */
+export type SessionPanelTab = 'settings' | 'threads' | 'web'
+
+export interface SessionPanelState {
+  open: boolean
+  tab: SessionPanelTab
+  /** Whether the built-in browser page has a tab. */
+  webTabOpen: boolean
+  /** The page changed while another tab was showing. */
+  webUnseen: boolean
+}
+
+export const DEFAULT_SESSION_PANEL: SessionPanelState = {
+  open: false,
+  tab: 'settings',
+  webTabOpen: false,
+  webUnseen: false,
+}
+
 const isSmallScreenViewport = () => {
   return (
     typeof window !== 'undefined' &&
@@ -104,7 +123,9 @@ export const uiStore = createStore(
         agentModeLastSelected: 'off' as Extract<AgentModeValue, 'on' | 'off'>,
         sessionAgentModeMap: {} as Record<string, AgentModeEntry>,
         promptCacheBreakConfirmDismissed: {} as Record<string, boolean>,
-        builtInBrowserOpenBySession: {} as Record<string, boolean>,
+        sessionPanels: {} as Record<string, SessionPanelState | undefined>,
+        // Width of the conversation side panel in px; null uses min(560px, 45%).
+        sessionPanelWidth: null as number | null,
       },
       (set, get) => ({
         addToast: (content: string, duration?: number, action?: Toast['action']) => {
@@ -129,16 +150,72 @@ export const uiStore = createStore(
           set({ showSidebar })
         },
 
-        clearSessionBuiltInBrowser: (sessionId: string) => {
+        clearSessionPanel: (sessionId: string) => {
           set((state) => {
-            const builtInBrowserOpenBySession = { ...state.builtInBrowserOpenBySession }
-            delete builtInBrowserOpenBySession[sessionId]
-            return { builtInBrowserOpenBySession }
+            const sessionPanels = { ...state.sessionPanels }
+            delete sessionPanels[sessionId]
+            return { sessionPanels }
           })
         },
 
-        setShowBuiltInBrowser: (sessionId: string, open: boolean) => {
-          set((state) => ({ builtInBrowserOpenBySession: { ...state.builtInBrowserOpenBySession, [sessionId]: open } }))
+        /** Opens the conversation side panel (a bottom sheet on small screens), on `tab` when given. */
+        openSessionPanel: (sessionId: string, tab?: SessionPanelTab) => {
+          set((state) => {
+            const current = state.sessionPanels[sessionId] ?? DEFAULT_SESSION_PANEL
+            const nextTab = tab ?? current.tab
+            return {
+              sessionPanels: {
+                ...state.sessionPanels,
+                [sessionId]: {
+                  ...current,
+                  open: true,
+                  tab: nextTab,
+                  webTabOpen: current.webTabOpen || nextTab === 'web',
+                  webUnseen: nextTab === 'web' ? false : current.webUnseen,
+                },
+              },
+            }
+          })
+        },
+
+        closeSessionPanel: (sessionId: string) => {
+          set((state) => {
+            const current = state.sessionPanels[sessionId]
+            if (!current?.open) return {}
+            return { sessionPanels: { ...state.sessionPanels, [sessionId]: { ...current, open: false } } }
+          })
+        },
+
+        /** Shows the web tab: brought forward when the panel is closed, marked unseen otherwise. */
+        revealSessionWebTab: (sessionId: string) => {
+          set((state) => {
+            const current = state.sessionPanels[sessionId] ?? DEFAULT_SESSION_PANEL
+            const next: SessionPanelState = current.open
+              ? { ...current, webTabOpen: true, webUnseen: current.webUnseen || current.tab !== 'web' }
+              : { ...current, open: true, tab: 'web', webTabOpen: true, webUnseen: false }
+            return { sessionPanels: { ...state.sessionPanels, [sessionId]: next } }
+          })
+        },
+
+        closeSessionWebTab: (sessionId: string) => {
+          set((state) => {
+            const current = state.sessionPanels[sessionId] ?? DEFAULT_SESSION_PANEL
+            return {
+              sessionPanels: {
+                ...state.sessionPanels,
+                [sessionId]: {
+                  ...current,
+                  webTabOpen: false,
+                  webUnseen: false,
+                  tab: current.tab === 'web' ? 'settings' : current.tab,
+                },
+              },
+            }
+          })
+        },
+
+        setSessionPanelWidth: (sessionPanelWidth: number | null) => {
+          set({ sessionPanelWidth })
         },
 
         setOpenSearchDialog: (openSearchDialog: boolean, globalOnly = false) => {
@@ -326,6 +403,7 @@ export const uiStore = createStore(
         sessionWebBrowsingMap: state.sessionWebBrowsingMap,
         sessionKnowledgeBaseMap: state.sessionKnowledgeBaseMap,
         promptCacheBreakConfirmDismissed: state.promptCacheBreakConfirmDismissed,
+        sessionPanelWidth: state.sessionPanelWidth,
       }),
       storage: safeStorage,
     }

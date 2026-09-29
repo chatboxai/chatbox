@@ -5,15 +5,14 @@ import * as store from './store-node'
 export function init() {
   const { proxy } = store.getSettings()
   if (proxy) {
-    ensure(proxy)
+    void ensure(proxy)
   }
 }
 
-export function ensure(proxy?: string) {
-  if (proxy) {
-    session.defaultSession.setProxy({ proxyRules: proxy })
-  } else {
-    session.defaultSession.setProxy({})
-  }
-  void builtInBrowser.setProxy(proxy)
+/** Applies the proxy to the app and the built-in browser; resolves once both use it. */
+export async function ensure(proxy?: string): Promise<void> {
+  await Promise.all([
+    session.defaultSession.setProxy(proxy ? { proxyRules: proxy } : {}),
+    builtInBrowser.setProxy(proxy),
+  ])
 }

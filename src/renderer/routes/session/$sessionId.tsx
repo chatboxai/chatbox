@@ -1,15 +1,12 @@
 import { resolveSessionMode } from '@chatbox/core/session/mode-policy'
-import NiceModal from '@ebay/nice-modal-react'
 import { Box, Button } from '@mantine/core'
 import type { ModelProvider } from '@shared/types'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useAtomValue } from 'jotai'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useStore } from 'zustand'
 import { JK_PAGE_NAMES } from '@/analytics/jk-events'
 import { rendererApplication } from '@/app/renderer-application'
-import { BuiltInBrowserSidebar } from '@/components/chat/BuiltInBrowserPanel'
 import MessageList, { type MessageListRef } from '@/components/chat/MessageList'
 import { ChatboxWelcomeCard } from '@/components/common/ChatboxWelcomeCard'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
@@ -17,7 +14,8 @@ import InputBox, { type InputBoxPayload } from '@/components/InputBox/InputBox'
 import { paddedContentColumnClassName } from '@/components/layout/contentColumn'
 import Header from '@/components/layout/Header'
 import Page from '@/components/layout/Page'
-import ThreadHistoryDrawer from '@/components/session/ThreadHistoryDrawer'
+import { SessionSheet } from '@/components/session/SessionSheet'
+import { closeSessionPanel, SessionSidePanel } from '@/components/session/SessionSidePanel'
 import { useGenerationStop } from '@/hooks/useGenerationStop'
 import { useInitialSessionScroll } from '@/hooks/useInitialSessionScroll'
 import { useProviders } from '@/hooks/useProviders'
@@ -35,7 +33,6 @@ import {
 } from '@/packages/session-startup-recovery'
 import platform from '@/platform'
 import { showSessionArchiveUndo } from '@/presentation/session/session-archive-notification'
-import { showThreadHistoryDrawerAtom } from '@/stores/atoms'
 import { useAuthInfoStore } from '@/stores/authInfoStore'
 import { applyChatboxLicenseDefaultModelToSession } from '@/stores/defaultChatModel'
 import { lastUsedModelStore } from '@/stores/lastUsedModelStore'
@@ -46,7 +43,7 @@ import { startNewThread } from '@/stores/session/threads'
 import { clearSessionActivity, setOnScreenSession } from '@/stores/sessionActivityStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { add as addToast } from '@/stores/toastActions'
-import { useUIStore } from '@/stores/uiStore'
+import { uiStore, useUIStore } from '@/stores/uiStore'
 import { getHomeWelcomeCardMode } from '@/utils/homeWelcomeCard'
 
 export const Route = createFileRoute('/session/$sessionId')({
@@ -88,14 +85,14 @@ function RouteComponent() {
   const { isExceeded, isExceededResolved } = useVersion()
   const widthFull = useUIStore((s) => s.widthFull)
   const isSmallScreen = useIsSmallScreen()
-  const showThreadHistory = useAtomValue(showThreadHistoryDrawerAtom)
+  const sessionPanelOpen = useUIStore((s) => s.sessionPanels[currentSessionId]?.open ?? false)
   const { session: completeNavigationSession } = rendererApplication.sessionHooks.useSession(sessionLoadTarget, {
-    enabled: !recovering && Boolean(readModel) && (!isSmallScreen || Boolean(showThreadHistory)),
+    enabled: !recovering && Boolean(readModel) && (!isSmallScreen || sessionPanelOpen),
   })
   const completeSession =
     readModel?.kind === 'full'
       ? readModel.session
-      : !isSmallScreen || showThreadHistory
+      : !isSmallScreen || sessionPanelOpen
         ? (completeNavigationSession ?? undefined)
         : undefined
   const messageListRef = useRef<MessageListRef>(null)
@@ -227,9 +224,10 @@ function RouteComponent() {
     if (!currentSession) {
       return false
     }
-    void rendererApplication.sessionQueryBridge.getSession(currentSession.id).then((session) => {
-      if (session) void NiceModal.show('session-settings', { session })
-    })
+    const state = uiStore.getState()
+    const current = state.sessionPanels[currentSession.id]
+    if (current?.open && current.tab === 'settings') closeSessionPanel(currentSession.id)
+    else state.openSessionPanel(currentSession.id, 'settings')
     return true
   }, [currentSession])
 
@@ -354,10 +352,13 @@ function RouteComponent() {
             />
           </ErrorBoundary>
         </Box>
-        {completeSession && <ThreadHistoryDrawer session={completeSession} />}
       </div>
-      {builtInBrowser && (
-        <BuiltInBrowserSidebar key={currentSessionId} sessionId={currentSessionId} builtInBrowser={builtInBrowser} />
+      {isSmallScreen ? (
+        <SessionSheet session={completeSession} />
+      ) : (
+        completeSession && (
+          <SessionSidePanel key={currentSessionId} session={completeSession} builtInBrowser={builtInBrowser} />
+        )
       )}
     </div>
   ) : (

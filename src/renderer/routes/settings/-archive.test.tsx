@@ -20,7 +20,9 @@ vi.mock('react-i18next', () => ({
 }))
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (config: unknown) => config,
+  Link: ({ children }: { children: ReactNode }) => <a href="/settings/data">{children}</a>,
 }))
+vi.mock('@/hooks/useScreenChange', () => ({ useIsSmallScreen: () => false }))
 vi.mock('@/app/renderer-application', () => ({
   rendererApplication: {
     sessionHooks: {

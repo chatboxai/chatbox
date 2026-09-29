@@ -84,6 +84,7 @@ import * as atoms from '@/stores/atoms'
 import { resolveWebBrowsingMode } from '@/stores/session'
 import { useSessionAgentMode } from '@/stores/session/agent-mode'
 import { useSessionSettings } from '@/stores/session/session-settings'
+import { countSessionDifferences, visibleSessionParameterKeys } from '@/stores/session/session-settings-inheritance'
 import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
 import { confirmModelSwitchIfNeeded } from '@/utils/prompt-cache-confirm'
@@ -122,7 +123,6 @@ import ModelSelectorV2 from '../ModelSelectorV2'
 import AgentModeButton from './AgentModeButton'
 import { FileMiniCard, getParserTypeLabel, ImageMiniCard } from './Attachments'
 import { getAgentModeUIState } from './agentModeState'
-import { ComposerSettingsMenu } from './ComposerSettingsMenu'
 import { ImageUploadInput } from './ImageUploadInput'
 import {
   INPUT_SURFACE_CLASS_NAME,
@@ -162,6 +162,8 @@ export type InputBoxProps = {
   /** Copilot picked on the new-chat page, where the draft session is not persisted yet. */
   draftCopilotId?: string
   draftCopilotName?: string
+  /** Settings of a chat that is not saved yet; its overrides mark the conversation settings button. */
+  draftSessionSettings?: SessionSettings
   model?: {
     provider: string
     modelId: string
@@ -208,6 +210,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       sessionType = 'chat',
       draftCopilotId,
       draftCopilotName,
+      draftSessionSettings,
       model,
       fullWidth = false,
       onSelectModel,
@@ -386,6 +389,16 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const tokenSource = useSessionTokenContext(sessionId || null, readModel)
     const contextPending = !isNewSession && (!readModel || !tokenSource || tokenSource.isPartial === true)
     const { sessionSettings: currentSessionMergedSettings } = useSessionSettings(sessionId || null)
+    const globalChatDefaults = {
+      maxContextMessageCount: useSettingsStore((s) => s.maxContextMessageCount),
+      temperature: useSettingsStore((s) => s.temperature),
+      topP: useSettingsStore((s) => s.topP),
+      stream: useSettingsStore((s) => s.stream),
+      pauseOnToolCallLimit: useSettingsStore((s) => s.pauseOnToolCallLimit),
+    }
+    const overrideSource = draftSessionSettings ?? sessionHeader?.settings
+    const hasSessionOverrides =
+      countSessionDifferences(overrideSource, visibleSessionParameterKeys(overrideSource), globalChatDefaults) > 0
     const sessionLocks = useSessionLockState(currentSession, sessionId)
     const submitAvailability = getSubmitAvailability(sessionLocks)
     // While replies stream, an empty draft shows Stop; entering content turns
@@ -2016,8 +2029,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   draftCopilotName={draftCopilotName}
                 />
 
-                {!isSmallScreen &&
-                  canCreateThread &&
+                {canCreateThread &&
                   (showRollbackThreadButton ? (
                     <Tooltip label={t('Rollback Thread')} position="top" withArrow>
                       <UnstyledButton
@@ -2056,33 +2068,29 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                     </Tooltip>
                   ))}
 
-                {!isSmallScreen && (
-                  <Tooltip label={t('Conversation Settings')} position="top" withArrow>
-                    <UnstyledButton
-                      data-testid={TestId.chat.sessionSettings}
-                      aria-label={t('Conversation Settings') || undefined}
-                      onClick={onClickSessionSettings}
-                      disabled={!onClickSessionSettings}
-                      className="flex items-center gap-1 px-2 py-1 rounded-md hover:bg-[var(--chatbox-background-tertiary)] transition-colors disabled:opacity-50"
-                    >
+                <Tooltip label={t('Conversation Settings')} position="top" withArrow>
+                  <UnstyledButton
+                    data-testid={TestId.chat.sessionSettings}
+                    aria-label={t('Conversation Settings') || undefined}
+                    onClick={onClickSessionSettings}
+                    disabled={!onClickSessionSettings}
+                    className="flex items-center gap-1 px-2 py-1 rounded-md hover:bg-[var(--chatbox-background-tertiary)] transition-colors disabled:opacity-50"
+                  >
+                    <span className="relative flex">
                       <IconAdjustmentsHorizontal
                         size={toolbarIconSize}
                         strokeWidth={1.8}
                         className="text-[var(--chatbox-tint-secondary)]"
                       />
-                    </UnstyledButton>
-                  </Tooltip>
-                )}
-
-                {isSmallScreen && (
-                  <ComposerSettingsMenu
-                    canCreateThread={canCreateThread}
-                    toolbarIconSize={toolbarIconSize}
-                    onStartNewThread={startNewThread}
-                    threadActionPending={threadActionPending}
-                    onClickSessionSettings={onClickSessionSettings}
-                  />
-                )}
+                      {hasSessionOverrides && (
+                        <span
+                          data-testid={TestId.chat.sessionSettingsOverridden}
+                          className="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-chatbox-tint-brand"
+                        />
+                      )}
+                    </span>
+                  </UnstyledButton>
+                </Tooltip>
               </Flex>
 
               {/* Right Group: Token Count + Model Selector */}

@@ -6,9 +6,9 @@ import { MessageRoleEnum } from '@shared/types'
 import { getDefaultStore } from 'jotai'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { currentSessionIdAtom } from '@/stores/atoms'
 import { fireEvent, render } from '@/test-utils'
-import { currentSessionIdAtom, showThreadHistoryDrawerAtom } from '@/stores/atoms'
-import ThreadHistoryDrawer from './ThreadHistoryDrawer'
+import ThreadHistoryList from './ThreadHistoryList'
 
 const actionMenuItemsLog = vi.hoisted(() => [] as Array<Array<{ text?: string; divider?: boolean }>>)
 const scrollToIndexMock = vi.hoisted(() => vi.fn())
@@ -19,11 +19,6 @@ vi.mock('react-i18next', () => ({
     init: vi.fn(),
   },
   useTranslation: () => ({ t: (key: string) => key }),
-}))
-
-vi.mock('@mui/material/SwipeableDrawer', () => ({
-  default: ({ children, open }: { children: ReactNode; open: boolean }) =>
-    open ? <div data-testid="swipeable-drawer">{children}</div> : null,
 }))
 
 vi.mock('@/hooks/useScreenChange', () => ({
@@ -42,10 +37,6 @@ vi.mock('@/stores/session/threads', () => ({
 
 vi.mock('@/stores/scrollActions', () => ({
   scrollToIndex: scrollToIndexMock,
-}))
-
-vi.mock('@/stores/settingsStore', () => ({
-  useLanguage: () => 'en',
 }))
 
 vi.mock('../ActionMenu', () => ({
@@ -68,7 +59,7 @@ function message(id: string, role: Message['role']): Message {
   }
 }
 
-describe('ThreadHistoryDrawer in work mode', () => {
+describe('ThreadHistoryList in work mode', () => {
   beforeEach(() => {
     actionMenuItemsLog.length = 0
     scrollToIndexMock.mockClear()
@@ -95,7 +86,6 @@ describe('ThreadHistoryDrawer in work mode', () => {
     )
     const store = getDefaultStore()
     store.set(currentSessionIdAtom, 'session-1')
-    store.set(showThreadHistoryDrawerAtom, true)
   })
 
   test('keeps stored threads navigable without switch or delete actions', () => {
@@ -118,12 +108,12 @@ describe('ThreadHistoryDrawer in work mode', () => {
 
     const { getByTestId, getByText } = render(
       <MantineProvider>
-        <ThreadHistoryDrawer session={session} />
+        <ThreadHistoryList session={session} />
       </MantineProvider>
     )
 
-    expect(getByTestId('swipeable-drawer').textContent).toContain('Archived Thread')
-    expect(getByTestId('swipeable-drawer').textContent).toContain('Current Thread')
+    expect(getByTestId('session-thread-history-list').textContent).toContain('Archived Thread')
+    expect(getByTestId('session-thread-history-list').textContent).toContain('Current Thread')
     fireEvent.click(getByText(/Archived Thread/))
     expect(scrollToIndexMock).toHaveBeenCalledWith(0, 'start', 'smooth')
     const threadActions = actionMenuItemsLog.flat().flatMap((item) => (item.text ? [item.text] : []))

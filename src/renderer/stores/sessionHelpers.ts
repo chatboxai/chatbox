@@ -1,4 +1,3 @@
-import { withSessionWorkAccess } from '@/adapters/session-work-lock'
 import {
   type AttachmentAnalysis,
   type AttachmentPreparationOptions,
@@ -20,6 +19,7 @@ import { migrateMessage } from '@shared/utils/message'
 import { BrowserAttachmentAdapter } from '@/adapters/BrowserAttachmentAdapter'
 import { CapacitorAttachmentAdapter } from '@/adapters/CapacitorAttachmentAdapter'
 import { DesktopAttachmentAdapter } from '@/adapters/DesktopAttachmentAdapter'
+import { withSessionWorkAccess } from '@/adapters/session-work-lock'
 import { rendererApplication, sessionRepository } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
 import { PREVIEW_LINES } from '@/packages/context-management/attachment-payload'
@@ -1000,10 +1000,9 @@ export function initEmptyChatSession(): Omit<Session, 'id'> {
     type: 'chat',
     threadName: '',
     messages: [],
+    // Context size, temperature, top P and streaming stay unset so the chat follows the global
+    // new-chat defaults until it overrides them.
     settings: {
-      maxContextMessageCount: settings.maxContextMessageCount ?? Number.MAX_SAFE_INTEGER,
-      temperature: settings.temperature || undefined,
-      topP: settings.topP || undefined,
       ...defaultChatModel,
     },
   }

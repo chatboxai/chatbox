@@ -1,32 +1,40 @@
 import { type CurrentThreadTarget, getCurrentThreadTarget } from '@chatbox/core/application/session'
-import { isThreadHistoryAvailable, resolveSessionMode } from '@chatbox/core/session/mode-policy'
+import { resolveSessionMode } from '@chatbox/core/session/mode-policy'
 import NiceModal from '@ebay/nice-modal-react'
-import { ActionIcon, Badge, Flex, ScrollArea, Text } from '@mantine/core'
-import SwipeableDrawer from '@mui/material/SwipeableDrawer'
+import { ActionIcon, Badge, Flex, Text } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import type { Session, SessionThreadBrief } from '@shared/types'
-import { IconDots, IconEdit, IconSwitch, IconTrash, IconX } from '@tabler/icons-react'
-import { useAtom, useAtomValue } from 'jotai'
+import { IconDots, IconEdit, IconSwitch, IconTrash } from '@tabler/icons-react'
+import clsx from 'clsx'
+import { useAtomValue } from 'jotai'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
-import { currentSessionIdAtom, showThreadHistoryDrawerAtom } from '@/stores/atoms'
+import { currentSessionIdAtom } from '@/stores/atoms'
 import { scrollToIndex } from '@/stores/scrollActions'
 import { useSessionAgentMode } from '@/stores/session/agent-mode'
 import { removeThread, switchThread as switchThreadAction } from '@/stores/session/threads'
 import { getAllMessageList, getCurrentThreadHistoryHash } from '@/stores/sessionHelpers'
-import { useLanguage } from '@/stores/settingsStore'
-import { CHATBOX_BUILD_PLATFORM } from '@/variables'
 import ActionMenu from '../ActionMenu'
 import { ScalableIcon } from '../common/ScalableIcon'
 
-export default function ThreadHistoryDrawer({ session }: { session: Session }) {
+/**
+ * Threads of the conversation, newest last. Selecting one scrolls to it; the menu renames,
+ * switches to or deletes it. Hosted by the side panel and the small-screen conversation sheet.
+ */
+export default function ThreadHistoryList({
+  session,
+  onNavigate,
+  inlineMenus,
+}: {
+  session: Session
+  onNavigate?: () => void
+  /** Renders thread menus inside the list, for hosts such as a modal sheet that block the page outside. */
+  inlineMenus?: boolean
+}) {
   const { t } = useTranslation()
-  const language = useLanguage()
-  const [showDrawer, setShowDrawer] = useAtom(showThreadHistoryDrawerAtom)
   const agentModeEntry = useSessionAgentMode(session.id)
   const sessionMode = resolveSessionMode(agentModeEntry.value)
-  const showThreadHistory = isThreadHistoryAvailable(session, sessionMode)
 
   const currentMessageList = useMemo(() => getAllMessageList(session), [session])
 
@@ -46,86 +54,56 @@ export default function ThreadHistoryDrawer({ session }: { session: Session }) {
       if (msgIndex >= 0) {
         scrollToIndex(msgIndex, 'start', 'smooth')
       }
-      setShowDrawer(false)
+      onNavigate?.()
     },
-    [threadList, setShowDrawer, currentMessageList]
+    [threadList, onNavigate, currentMessageList]
   )
 
   const handleSwitchThread = useCallback(
     (threadId: string) => {
       void switchThreadAction(session.id, threadId)
-      setShowDrawer(false)
+      onNavigate?.()
     },
-    [session.id, setShowDrawer]
+    [session.id, onNavigate]
   )
 
-  // Do not mount an unavailable drawer: this also closes entry paths that
-  // bypass the hidden menu items, such as iOS swipe-to-open.
-  if (!showThreadHistory) {
-    return null
+  if (threadList.length === 0) {
+    return (
+      <Text fz={13} c="chatbox-tertiary" ta="center" py="xl">
+        {t('No threads yet')}
+      </Text>
+    )
   }
 
   return (
-    <SwipeableDrawer
-      anchor={language === 'ar' ? 'left' : 'right'}
-      variant="temporary"
-      open={!!showDrawer}
-      onClose={() => setShowDrawer(false)}
-      onOpen={() => setShowDrawer(true)}
-      title={t('Thread History') || ''}
-      ModalProps={{
-        keepMounted: true, // Better open performance on mobile.
-      }}
-      classes={{
-        paper:
-          'bg-none box-border max-w-75vw min-w-[240px] flex flex-col gap-0 pt-[var(--mobile-safe-area-inset-top)] pb-[var(--mobile-safe-area-inset-bottom)]',
-      }}
-      SlideProps={language === 'ar' ? { direction: 'right' } : undefined}
-      PaperProps={
-        language === 'ar'
-          ? { sx: { direction: 'rtl', overflowY: 'initial' }, 'data-testid': TestId.session.threadHistoryDrawer }
-          : { sx: { overflowY: 'initial' }, 'data-testid': TestId.session.threadHistoryDrawer }
-      }
-      disableSwipeToOpen={CHATBOX_BUILD_PLATFORM !== 'ios'} // 只在iOS设备上启用SwipeToOpen
-      disableEnforceFocus={true} // 关闭 focus trap，避免在侧边栏打开时弹出的 modal 中 input 无法点击
-    >
-      <Flex align="center" justify="space-between" className="px-sm py-xs">
-        <Text size="md" fw={600}>
-          {t('Thread History')}
-        </Text>
-        <ActionIcon variant="transparent" color="chatbox-primary" onClick={() => setShowDrawer(false)}>
-          <ScalableIcon icon={IconX} size={20} />
-        </ActionIcon>
-      </Flex>
-      <ScrollArea className="flex-1">
-        {threadList.map((thread) => (
-          <ThreadItem
-            key={thread.id}
-            thread={thread}
-            goto={gotoThreadMessage}
-            showHistoryDrawer={showDrawer}
-            switchThread={handleSwitchThread}
-            allowStructureActions={sessionMode === 'chat'}
-            sessionId={session.id}
-            currentThreadTarget={getCurrentThreadTarget(session)}
-          />
-        ))}
-      </ScrollArea>
-    </SwipeableDrawer>
+    <div className="flex flex-col gap-0.5" data-testid={TestId.session.threadHistoryList}>
+      {threadList.map((thread) => (
+        <ThreadItem
+          key={thread.id}
+          thread={thread}
+          goto={gotoThreadMessage}
+          switchThread={handleSwitchThread}
+          allowStructureActions={sessionMode === 'chat'}
+          sessionId={session.id}
+          currentThreadTarget={getCurrentThreadTarget(session)}
+          inlineMenu={inlineMenus}
+        />
+      ))}
+    </div>
   )
 }
 
 function ThreadItem(props: {
   thread: SessionThreadBrief
   goto(threadId: string): void
-  showHistoryDrawer: string | boolean
   switchThread(threadId: string): void
   allowStructureActions: boolean
   sessionId: string
   currentThreadTarget: CurrentThreadTarget
+  inlineMenu?: boolean
 }) {
   const { t } = useTranslation()
-  const { thread, goto, switchThread, allowStructureActions, sessionId, currentThreadTarget } = props
+  const { thread, goto, switchThread, allowStructureActions, sessionId, currentThreadTarget, inlineMenu } = props
   const threadName = thread.name || t('New Thread')
   const currentSessionId = useAtomValue(currentSessionIdAtom)
   const isSmallScreen = useIsSmallScreen()
@@ -147,7 +125,10 @@ function ThreadItem(props: {
       onClick={() => {
         goto(thread.id)
       }}
-      className="group/thread-item px-xs py-xxs cursor-pointer hover:bg-chatbox-background-gray-secondary"
+      className={clsx(
+        'group/thread-item cursor-pointer rounded-md px-2 hover:bg-chatbox-background-gray-secondary',
+        isSmallScreen ? 'min-h-11' : 'min-h-8'
+      )}
     >
       <Badge color="chatbox-tertiary" size="xs">
         {thread.messageCount}
@@ -155,12 +136,13 @@ function ThreadItem(props: {
       {/* <Text size="xs" c="chatbox-tertiary">
         {thread.messageCount}
       </Text> */}
-      <Text size="xs" lineClamp={1} flex={1}>
+      <Text fz={isSmallScreen ? 14 : 13} lineClamp={1} flex={1}>
         {threadName} ({thread.createdAtLabel})
       </Text>
       <ActionMenu
         position="bottom"
         type="desktop"
+        withinPortal={!inlineMenu}
         items={[
           { text: t('Edit Thread Name'), icon: IconEdit, onClick: onEditButtonClick },
           ...(allowStructureActions

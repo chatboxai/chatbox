@@ -228,9 +228,7 @@ vi.mock('jotai', async (importOriginal) => {
   }
 })
 
-vi.mock('@/stores/atoms', () => ({
-  showThreadHistoryDrawerAtom: {},
-}))
+vi.mock('@/stores/atoms', () => ({}))
 
 const settingsState = vi.hoisted(() => ({
   autoCollapseCodeBlock: false,

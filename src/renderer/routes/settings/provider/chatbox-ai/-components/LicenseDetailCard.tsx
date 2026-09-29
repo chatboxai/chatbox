@@ -260,7 +260,13 @@ export function LicenseDetailCard({
   }, [])
 
   const expiryText = licenseDetail.token_expire_time
-    ? `${new Date(licenseDetail.token_expire_time).toLocaleDateString(i18n.language)}${isExpired ? ` (${t('Expired')})` : ''}`
+    ? `${new Date(licenseDetail.token_expire_time).toLocaleString(i18n.language, {
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      })}${isExpired ? ` (${t('Expired')})` : ''}`
     : '-'
 
   const refreshText = licenseDetail.token_next_refresh_time

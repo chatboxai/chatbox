@@ -2,11 +2,7 @@ import { EventEmitter } from 'node:events'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import {
-  BUILT_IN_BROWSER_CHANNELS,
-  BUILT_IN_BROWSER_DEFAULT_VIEWPORT,
-  EMPTY_BUILT_IN_BROWSER_STATE,
-} from '@shared/built-in-browser'
+import { BUILT_IN_BROWSER_DEFAULT_VIEWPORT, EMPTY_BUILT_IN_BROWSER_STATE } from '@shared/built-in-browser'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { downloadLocationOf, PageDownloads, routeDownload } from './page-downloads'
 
@@ -222,12 +218,14 @@ describe('BuiltInBrowserController reads', () => {
     expect(views[0].setBounds).toHaveBeenLastCalledWith(bounds)
   })
 
-  it('reset cancels active scripts, destroys page history and publishes the empty state', async () => {
-    controller = new BuiltInBrowserController('a', false)
+  it('dispose cancels active scripts and destroys page history, reporting each state change', async () => {
+    const onStateChange = vi.fn()
+    controller = new BuiltInBrowserController('a', false, onStateChange)
     controller.navigate(host as unknown as Host, 'https://example.com/')
     const contents = views[0].webContents
     contents.emit('dom-ready')
     const opened = controller.request(host as unknown as Host, 1, { kind: 'read', requestId: 'open' })
+    expect(onStateChange).toHaveBeenCalled()
     await flush()
     contents.finishSnapshot('Loaded.')
     const page = referenceOf(await opened)
@@ -238,14 +236,11 @@ describe('BuiltInBrowserController reads', () => {
       code: 'await new Promise(() => {})',
     })
     await flush()
-    controller.resetPage()
+    controller.dispose()
     await expect(read).resolves.toMatchObject({ run: { status: 'unknown', code: 'cancelled' } })
     expect(contents.closed).toBe(true)
     expect(controller.getState()).toEqual(EMPTY_BUILT_IN_BROWSER_STATE)
-    expect(host.webContents.send).toHaveBeenCalledWith(BUILT_IN_BROWSER_CHANNELS.state, {
-      ...EMPTY_BUILT_IN_BROWSER_STATE,
-      sessionId: 'a',
-    })
+    expect(host.webContents.send).not.toHaveBeenCalled()
     controller.navigate(host as unknown as Host, 'https://new.example/')
     expect(views).toHaveLength(2)
     expect(controller.getState().canGoBack).toBe(false)

@@ -1,9 +1,11 @@
 import {
+  BUILT_IN_BROWSER_MAX_TABS,
   BUILT_IN_BROWSER_MAX_UPLOAD_FILES,
   BUILT_IN_BROWSER_TOOL_NAME,
   type BuiltInBrowserCommand,
   type BuiltInBrowserDownload,
   type BuiltInBrowserPageEvents,
+  type BuiltInBrowserPageView,
   type BuiltInBrowserRunPage,
   type BuiltInBrowserUploadFile,
   builtInBrowserCommandOf,
@@ -33,6 +35,8 @@ const UPLOAD_TIMEOUT_MS = 20_000
 interface BrowserToolInput {
   command: BuiltInBrowserCommand
   url?: string
+  tab?: string
+  newTab?: boolean
   page?: string
   code?: string
   maxLength?: number
@@ -69,13 +73,17 @@ const USER_INTERACTED_NOTE =
 function pageLines(record: Record<string, unknown> | null): string[] {
   const title = stringField(record, 'title')
   const url = stringField(record, 'url')
+  const tab = stringField(record, 'tab')
   const page = stringField(record, 'page')
   const settled = record?.settledOperations
   const downloads = record?.downloads
+  const tabs = record?.tabs
   return [
     title ? `Title: ${title}` : undefined,
     url ? `URL: ${url}` : undefined,
+    tab ? `Tab: ${tab}` : undefined,
     page ? `Page: ${page}` : undefined,
+    Array.isArray(tabs) && tabs.length ? `Open tabs: ${JSON.stringify(tabs)}` : undefined,
     record?.note === USER_INTERACTED_NOTE ? `Note: ${USER_INTERACTED_NOTE}` : undefined,
     Array.isArray(downloads) && downloads.length ? `Downloads: ${JSON.stringify(downloads)}` : undefined,
     Array.isArray(settled) && settled.length ? `Earlier runs finished: ${JSON.stringify(settled)}` : undefined,
@@ -185,13 +193,30 @@ function describeTool(options: { hasParseLink: boolean; screenshot: boolean }): 
   const screenshot = options.screenshot
     ? '\n- screenshot: capture the visible viewport of url or the current page.'
     : ''
-  return `Chatbox's built-in browser, shown to the user in the sidebar. Runs page JavaScript, reaches local addresses, and has the user's sign-ins.${whenToUse}
+  return `Chatbox's built-in browser, shown to the user in the conversation's side panel. Runs page JavaScript, reaches local addresses, and has the user's sign-ins.${whenToUse}
 Commands:
 - read: return the rendered text of url, or of the current page when url is omitted.
 - snapshot: outline the controls, fields, links and structure of url or the current page, each control with a reference such as e12. Use it before interacting; filter with query, focus on a part with scope.
 - run: run code, an async function body, on \`page\` from the latest result that has one; returns its status and value. To click, type or scroll, load the ${BUILT_IN_BROWSER_SKILL_NAME} skill first. With download, files the run downloads are saved to this conversation's download folder; their paths come back in the result, to read or copy with file tools.
 - upload: hand local files to target, a file input or the control that opens the file picker, on \`page\`; the site uploads them itself.${screenshot}
-If a page needs sign-in or a check only the user can do, ask them to do it in the sidebar, then read again.`
+Pages open in tabs of the side panel. Without tab, read${options.screenshot ? ', snapshot and screenshot' : ' and snapshot'} work in your own tab, the latest one opened for you: a url opens one when you have none, never loading in a tab the user opened, and without a url and a tab of your own you read the tab the user is viewing. run, upload and a snapshot cursor act on the tab their page or cursor came from. Pass tab to use another open tab, or newTab with url to open url beside your page, such as to compare pages. Open tabs marks the tab the user is viewing; when the user asks about the page they have open, pass that tab. A conversation keeps at most ${BUILT_IN_BROWSER_MAX_TABS} tabs; the user may close them.
+If a page needs sign-in or a check only the user can do, ask them to do it in the side panel, then read again.`
+}
+
+/** The tab of a result and the conversation's open tabs, when it has more than one. */
+function tabFields(page: Pick<BuiltInBrowserPageView, 'tab' | 'tabs'>) {
+  return {
+    ...(page.tab ? { tab: page.tab } : {}),
+    ...(page.tabs?.length ? { tabs: page.tabs } : {}),
+  }
+}
+
+/** The tab an observing command uses. */
+function tabTarget(input: BrowserToolInput) {
+  return {
+    ...(input.tab ? { tab: input.tab } : {}),
+    ...(input.newTab ? { newTab: true } : {}),
+  }
 }
 
 /** What happened on the page since the previous result, for the model to account for. */
@@ -209,6 +234,7 @@ async function snapshotPage(builtInBrowser: BuiltInBrowser, input: BrowserToolIn
     {
       kind: 'snapshot',
       url: input.url,
+      ...tabTarget(input),
       ...(input.scope ? { scope: input.scope } : {}),
       ...(input.query ? { query: input.query } : {}),
       ...(input.cursor ? { cursor: input.cursor } : {}),
@@ -220,6 +246,7 @@ async function snapshotPage(builtInBrowser: BuiltInBrowser, input: BrowserToolIn
   return {
     url: page.url,
     title: page.title,
+    ...tabFields(page),
     ...(page.page ? { page: page.page } : {}),
     ...pageEvents(page),
     ...(error ? { error } : { content: page.content, totalLines }),
@@ -232,12 +259,13 @@ async function snapshotPage(builtInBrowser: BuiltInBrowser, input: BrowserToolIn
 
 async function readPage(builtInBrowser: BuiltInBrowser, input: BrowserToolInput, signal?: AbortSignal) {
   const limit = Math.min(Math.max(input.maxLength ?? DEFAULT_READ_MAX_CHARS, 500), 50_000)
-  const page = await builtInBrowser.request({ kind: 'read', url: input.url }, { signal })
+  const page = await builtInBrowser.request({ kind: 'read', url: input.url, ...tabTarget(input) }, { signal })
   const content = page.content.trim()
   const shown = content.slice(0, limit)
   return {
     url: page.url,
     title: page.title,
+    ...tabFields(page),
     ...(page.page ? { page: page.page } : {}),
     ...pageEvents(page),
     content: shown,
@@ -271,10 +299,13 @@ async function runScript(builtInBrowser: BuiltInBrowser, input: BrowserToolInput
     ...(result.status === 'unknown' ? { operationId } : {}),
     ...(page.page ? { page: page.page } : {}),
     url: page.url,
+    ...tabFields(page),
     ...(page.lastNavigation ? { lastNavigation: page.lastNavigation } : {}),
     ...pageEvents(page, downloads),
     ...(result.navigated && !page.page && result.status !== 'not_started'
-      ? { next: 'The page is loading another document. Read it without a url before running another script.' }
+      ? {
+          next: `The page is loading another document. Read it${page.tab ? ` with tab ${page.tab}` : ''}, without a url, before running another script.`,
+        }
       : {}),
   }
 }
@@ -348,6 +379,7 @@ async function uploadFiles(
       : {}),
     ...(page.page ? { page: page.page } : {}),
     url: page.url,
+    ...tabFields(page),
     ...(page.lastNavigation ? { lastNavigation: page.lastNavigation } : {}),
     ...pageEvents(page),
   }
@@ -378,6 +410,14 @@ export function getBuiltInBrowserToolSet(
           format: 'uri',
           description: 'read/snapshot/screenshot: page to open; omit for the current page.',
         },
+        tab: {
+          type: 'string',
+          description: 'read/snapshot/screenshot: open tab to use, from a result; omit to work in your own tab.',
+        },
+        newTab: {
+          type: 'boolean',
+          description: 'read/snapshot/screenshot: open url in a new tab instead of the current one.',
+        },
         page: {
           type: 'string',
           description: 'run/upload: page from the latest result that has one.',
@@ -401,7 +441,8 @@ export function getBuiltInBrowserToolSet(
         },
         cursor: {
           type: 'string',
-          description: 'snapshot: nextCursor of the previous snapshot, with the same query and scope, to continue it.',
+          description:
+            'snapshot: nextCursor of the previous snapshot, with the same query and scope, to continue it on the page it came from.',
         },
         timeoutMs: {
           type: 'integer',
@@ -443,14 +484,26 @@ export function getBuiltInBrowserToolSet(
       if (input.command !== 'screenshot') return readPage(builtInBrowser, input, abortSignal)
       if (!imageResults) return { error: 'Screenshots are not available for this model.' }
       imageResults.reserve(messages)
-      const page = await builtInBrowser.request({ kind: 'screenshot', url: input.url }, { signal: abortSignal })
+      const page = await builtInBrowser.request(
+        { kind: 'screenshot', url: input.url, ...tabTarget(input) },
+        { signal: abortSignal }
+      )
       const { screenshot } = page
       const dataUrl = `data:${screenshot.mediaType};base64,${screenshot.base64Data}`
       if (dataUrl.length > VIEW_IMAGE_MAX_NORMALIZED_LENGTH) {
         return { error: 'The screenshot exceeds the request image limit.' }
       }
-      const result = await imageResults.record({ toolCallId, label: page.url, dataUrl })
-      return { ...result, url: page.url, title: page.title, width: screenshot.width, height: screenshot.height }
+      // The label is what the model reads with the image, so it names the tab to return to.
+      const label = page.tab ? `${page.url} (tab ${page.tab})` : page.url
+      const result = await imageResults.record({ toolCallId, label, dataUrl })
+      return {
+        ...result,
+        url: page.url,
+        title: page.title,
+        ...(page.tab ? { tab: page.tab } : {}),
+        width: screenshot.width,
+        height: screenshot.height,
+      }
     },
     toModelOutput: (options: { toolCallId: string; input: unknown; output: unknown }) => {
       const command = builtInBrowserCommandOf(options.input)

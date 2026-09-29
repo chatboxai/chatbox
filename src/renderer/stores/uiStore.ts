@@ -25,23 +25,22 @@ export interface TranscriptNavigation {
   }): boolean
 }
 
-/** Tabs of the conversation side panel: pinned tools first, then content tabs. */
+/** Tabs of the conversation side panel: pinned tools first, then the built-in browser's pages. */
 export type SessionPanelTab = 'settings' | 'threads' | 'web'
 
 export interface SessionPanelState {
   open: boolean
   tab: SessionPanelTab
-  /** Whether the built-in browser page has a tab. */
-  webTabOpen: boolean
-  /** The page changed while another tab was showing. */
-  webUnseen: boolean
+  /** Browser tab shown while `tab` is `web`. */
+  webTab?: string
+  /** Browser tabs the model read while another tab was showing. */
+  unseenWebTabs: string[]
 }
 
 export const DEFAULT_SESSION_PANEL: SessionPanelState = {
   open: false,
   tab: 'settings',
-  webTabOpen: false,
-  webUnseen: false,
+  unseenWebTabs: [],
 }
 
 const isSmallScreenViewport = () => {
@@ -158,11 +157,15 @@ export const uiStore = createStore(
           })
         },
 
-        /** Opens the conversation side panel (a bottom sheet on small screens), on `tab` when given. */
-        openSessionPanel: (sessionId: string, tab?: SessionPanelTab) => {
+        /**
+         * Opens the conversation side panel (a bottom sheet on small screens), on `tab` when given;
+         * `webTab` picks the browser tab of the `web` tab.
+         */
+        openSessionPanel: (sessionId: string, tab?: SessionPanelTab, webTab?: string) => {
           set((state) => {
             const current = state.sessionPanels[sessionId] ?? DEFAULT_SESSION_PANEL
             const nextTab = tab ?? current.tab
+            const nextWebTab = webTab ?? current.webTab
             return {
               sessionPanels: {
                 ...state.sessionPanels,
@@ -170,8 +173,9 @@ export const uiStore = createStore(
                   ...current,
                   open: true,
                   tab: nextTab,
-                  webTabOpen: current.webTabOpen || nextTab === 'web',
-                  webUnseen: nextTab === 'web' ? false : current.webUnseen,
+                  webTab: nextWebTab,
+                  unseenWebTabs:
+                    nextTab === 'web' ? current.unseenWebTabs.filter((id) => id !== nextWebTab) : current.unseenWebTabs,
                 },
               },
             }
@@ -186,28 +190,47 @@ export const uiStore = createStore(
           })
         },
 
-        /** Shows the web tab: brought forward when the panel is closed, marked unseen otherwise. */
-        revealSessionWebTab: (sessionId: string) => {
+        /**
+         * A browser tab the model is reading: brought forward when the panel is closed, marked
+         * unseen when the panel shows something else.
+         */
+        revealSessionWebTab: (sessionId: string, webTab: string) => {
           set((state) => {
             const current = state.sessionPanels[sessionId] ?? DEFAULT_SESSION_PANEL
-            const next: SessionPanelState = current.open
-              ? { ...current, webTabOpen: true, webUnseen: current.webUnseen || current.tab !== 'web' }
-              : { ...current, open: true, tab: 'web', webTabOpen: true, webUnseen: false }
-            return { sessionPanels: { ...state.sessionPanels, [sessionId]: next } }
+            if (!current.open) {
+              const unseenWebTabs = current.unseenWebTabs.filter((id) => id !== webTab)
+              return {
+                sessionPanels: {
+                  ...state.sessionPanels,
+                  [sessionId]: { ...current, open: true, tab: 'web', webTab, unseenWebTabs },
+                },
+              }
+            }
+            const showing = current.tab === 'web' && current.webTab === webTab
+            if (showing || current.unseenWebTabs.includes(webTab)) return {}
+            return {
+              sessionPanels: {
+                ...state.sessionPanels,
+                [sessionId]: { ...current, unseenWebTabs: [...current.unseenWebTabs, webTab] },
+              },
+            }
           })
         },
 
-        closeSessionWebTab: (sessionId: string) => {
+        /** Forgets a browser tab that closed; the panel moves to a neighbour or back to settings. */
+        forgetSessionWebTab: (sessionId: string, webTab: string, neighbour?: string) => {
           set((state) => {
-            const current = state.sessionPanels[sessionId] ?? DEFAULT_SESSION_PANEL
+            const current = state.sessionPanels[sessionId]
+            if (!current) return {}
+            const showing = current.tab === 'web' && current.webTab === webTab
             return {
               sessionPanels: {
                 ...state.sessionPanels,
                 [sessionId]: {
                   ...current,
-                  webTabOpen: false,
-                  webUnseen: false,
-                  tab: current.tab === 'web' ? 'settings' : current.tab,
+                  // The neighbour that comes into view is seen.
+                  unseenWebTabs: current.unseenWebTabs.filter((id) => id !== webTab && !(showing && id === neighbour)),
+                  ...(showing ? (neighbour ? { webTab: neighbour } : { tab: 'settings', webTab: undefined }) : {}),
                 },
               },
             }

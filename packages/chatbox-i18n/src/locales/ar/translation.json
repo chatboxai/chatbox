@@ -5,7 +5,6 @@
   "Pages the AI reads open here. You can sign in or click through a page yourself, then ask the AI to continue.": "تُفتح هنا الصفحات التي يقرأها الذكاء الاصطناعي. يمكنك تسجيل الدخول أو التنقل في الصفحة بنفسك، ثم اطلب من الذكاء الاصطناعي المتابعة.",
   "Sign-ins stay in the built-in browser and are never sent to the model.": "تبقى بيانات تسجيل الدخول في المتصفح المدمج ولا تُرسل إلى النموذج أبدًا.",
   "Browse Page": "تصفح الصفحة",
-  "Built-in Browser": "المتصفح المدمج",
   "Clear built-in browser data": "مسح بيانات المتصفح المدمج",
   "Built-in browser data cleared": "تم مسح بيانات المتصفح المدمج",
   "Projects": "المشاريع",
@@ -1739,10 +1738,8 @@
   "Page Screenshot": "لقطة شاشة للصفحة",
   "Run Browser JavaScript": "تشغيل JavaScript في المتصفح",
   "Open in external browser": "فتح في متصفح خارجي",
-  "Clear current page and history": "مسح الصفحة الحالية وسجلها",
   "Clear all pages and website data": "مسح جميع الصفحات وبيانات المواقع",
   "Clear all pages and sign out of websites?": "هل تريد مسح جميع الصفحات وتسجيل الخروج من المواقع؟",
-  "Current page and history cleared. Website sign-ins kept.": "تم مسح الصفحة الحالية وسجلها. تم الاحتفاظ بتسجيل الدخول إلى المواقع.",
   "All browser pages and website data cleared": "تم مسح جميع صفحات المتصفح وبيانات المواقع",
   "Clearing browser data…": "جارٍ مسح بيانات المتصفح…",
   "Upload Files to Page": "رفع الملفات إلى الصفحة",
@@ -1803,7 +1800,6 @@
   "No matching settings": "لا توجد إعدادات مطابقة",
   "No threads yet": "لا توجد مواضيع بعد",
   "Not activated": "غير مُفعّل",
-  "Open built-in browser": "فتح المتصفح المدمج",
   "Overridden": "تم التجاوز",
   "Overrides the global background for this chat": "يتجاوز الخلفية العامة لهذه المحادثة",
   "Precise": "دقيق",
@@ -1841,5 +1837,6 @@
   "No custom servers yet. Add one manually, from the registry, or from JSON in your clipboard.": "لا توجد خوادم مخصصة بعد. أضف خادمًا يدويًا أو من السجل أو من JSON في الحافظة.",
   "Documents the model can search when a knowledge base is attached to a chat.": "المستندات التي يمكن للنموذج البحث فيها عند إرفاق قاعدة معرفة بمحادثة.",
   "Connection": "الاتصال",
-  "Website": "الموقع الإلكتروني"
+  "Website": "الموقع الإلكتروني",
+  "New tab": "علامة تبويب جديدة"
 }

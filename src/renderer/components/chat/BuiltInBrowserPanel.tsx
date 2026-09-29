@@ -1,9 +1,5 @@
 import { Loader, Text, TextInput } from '@mantine/core'
-import {
-  type BuiltInBrowserClearScope,
-  type BuiltInBrowserState,
-  EMPTY_BUILT_IN_BROWSER_STATE,
-} from '@shared/built-in-browser'
+import type { BuiltInBrowserTab, BuiltInBrowserTabs } from '@shared/built-in-browser'
 import {
   IconArrowLeft,
   IconArrowRight,
@@ -14,7 +10,7 @@ import {
   IconWorld,
   IconX,
 } from '@tabler/icons-react'
-import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { type RefObject, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ActionMenu } from '@/components/ActionMenu'
 import { ICON_SIZE, IconButton } from '@/components/common/IconButton'
@@ -22,20 +18,29 @@ import platform from '@/platform'
 import type { BuiltInBrowser } from '@/platform/interfaces'
 import * as toastActions from '@/stores/toastActions'
 
-export function useBuiltInBrowserState(builtInBrowser: BuiltInBrowser): BuiltInBrowserState {
-  const [state, setState] = useState<BuiltInBrowserState>(EMPTY_BUILT_IN_BROWSER_STATE)
+/**
+ * The conversation's open browser tabs, kept current as pages load and tabs open or close;
+ * undefined until the first list arrives.
+ */
+export function useBuiltInBrowserTabs(builtInBrowser: BuiltInBrowser): BuiltInBrowserTabs | undefined {
+  const [tabs, setTabs] = useState<BuiltInBrowserTabs>()
   useEffect(() => {
     let active = true
-    const unsubscribe = builtInBrowser.onStateChange((next) => setState(next))
-    void builtInBrowser.getState().then((initial) => {
-      if (active) setState(initial)
+    let pushed = false
+    const unsubscribe = builtInBrowser.onTabsChange((next) => {
+      pushed = true
+      setTabs(next)
+    })
+    void builtInBrowser.getTabs().then((initial) => {
+      // A push that arrived first is newer than the initial answer.
+      if (active && !pushed) setTabs(initial)
     })
     return () => {
       active = false
       unsubscribe()
     }
   }, [builtInBrowser])
-  return state
+  return tabs
 }
 
 const OVERLAY_SELECTOR = '[role="dialog"], [role="menu"], [role="listbox"], [data-radix-popper-content-wrapper]'
@@ -95,18 +100,20 @@ function reportError(error: unknown) {
 }
 
 /**
- * Web tab of the conversation side panel. The page itself is a native view that the main process
+ * A web tab of the conversation side panel. The page itself is a native view that the main process
  * draws over the placeholder below the address bar, so the user can take the page over; it is
  * placed only while this tab shows and steps aside for menus and dialogs that cover it.
  */
 export function BuiltInBrowserView({
   builtInBrowser,
-  state,
+  tab,
 }: {
   builtInBrowser: BuiltInBrowser
-  state: BuiltInBrowserState
+  tab: BuiltInBrowserTab
 }) {
   const { t } = useTranslation()
+  const state = tab
+  const page = useMemo(() => builtInBrowser.tab(tab.id), [builtInBrowser, tab.id])
   const pageRef = useRef<HTMLDivElement>(null)
   const [address, setAddress] = useState(state.url)
   const [editingAddress, setEditingAddress] = useState(false)
@@ -126,7 +133,7 @@ export function BuiltInBrowserView({
     const element = pageRef.current
     if (!element || !showPage) {
       let active = true
-      builtInBrowser
+      page
         .setView({ visible: false, snapshot: hasPage })
         .then((image) => {
           if (active) setSnapshot(image)
@@ -139,7 +146,7 @@ export function BuiltInBrowserView({
     setSnapshot(null)
     const place = () => {
       const rect = element.getBoundingClientRect()
-      void builtInBrowser.setView({
+      void page.setView({
         visible: true,
         bounds: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
       })
@@ -153,30 +160,26 @@ export function BuiltInBrowserView({
       observer.disconnect()
       window.removeEventListener('resize', place)
     }
-  }, [builtInBrowser, showPage, hasPage])
+  }, [page, showPage, hasPage])
 
-  useEffect(() => () => void builtInBrowser.setView({ visible: false }), [builtInBrowser])
+  useEffect(() => () => void page.setView({ visible: false }), [page])
 
   const submitAddress = () => {
     const url = address.trim()
     if (!url) return
     setEditingAddress(false)
-    builtInBrowser.navigate(url).catch(reportError)
+    page.navigate(url).catch(reportError)
   }
 
-  const clearData = async (scope: BuiltInBrowserClearScope) => {
+  const clearData = async () => {
     if (clearingData) return
     setClearingData(true)
     try {
-      await builtInBrowser.clearData(scope)
+      await builtInBrowser.clearData()
       setEditingAddress(false)
       setAddress('')
       setSnapshot(null)
-      toastActions.add(
-        scope === 'page'
-          ? t('Current page and history cleared. Website sign-ins kept.')
-          : t('All browser pages and website data cleared')
-      )
+      toastActions.add(t('All browser pages and website data cleared'))
     } catch (error) {
       reportError(error)
     } finally {
@@ -192,21 +195,21 @@ export function BuiltInBrowserView({
           iconSize={ICON_SIZE.inline}
           aria-label={t('Back')}
           disabled={!state.canGoBack}
-          onClick={() => builtInBrowser.goBack().catch(reportError)}
+          onClick={() => page.goBack().catch(reportError)}
         />
         <IconButton
           icon={IconArrowRight}
           iconSize={ICON_SIZE.inline}
           aria-label={t('Forward')}
           disabled={!state.canGoForward}
-          onClick={() => builtInBrowser.goForward().catch(reportError)}
+          onClick={() => page.goForward().catch(reportError)}
         />
         {state.loading ? (
           <IconButton
             icon={IconX}
             iconSize={ICON_SIZE.inline}
             aria-label={t('Stop')}
-            onClick={() => builtInBrowser.stop().catch(reportError)}
+            onClick={() => page.stop().catch(reportError)}
           />
         ) : (
           <IconButton
@@ -214,7 +217,7 @@ export function BuiltInBrowserView({
             iconSize={ICON_SIZE.inline}
             aria-label={t('Reload')}
             disabled={!hasPage}
-            onClick={() => builtInBrowser.reload().catch(reportError)}
+            onClick={() => page.reload().catch(reportError)}
           />
         )}
         <TextInput
@@ -245,17 +248,11 @@ export function BuiltInBrowserView({
               onClick: () => void platform.openLink(state.url).catch(reportError),
             },
             {
-              text: t('Clear current page and history'),
-              icon: IconTrash,
-              disabled: clearingData || !hasPage,
-              onClick: () => void clearData('page'),
-            },
-            {
               text: t('Clear all pages and website data'),
               icon: IconTrash,
               disabled: clearingData,
               doubleCheck: { text: t('Clear all pages and sign out of websites?') as string },
-              onClick: () => void clearData('all'),
+              onClick: () => void clearData(),
             },
           ]}
         >

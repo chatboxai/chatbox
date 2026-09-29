@@ -5,7 +5,6 @@
   "Pages the AI reads open here. You can sign in or click through a page yourself, then ask the AI to continue.": "Le pagine lette dall’IA si aprono qui. Puoi accedere o navigare tu stesso in una pagina, poi chiedere all’IA di continuare.",
   "Sign-ins stay in the built-in browser and are never sent to the model.": "Gli accessi restano nel browser integrato e non vengono mai inviati al modello.",
   "Browse Page": "Sfoglia pagina",
-  "Built-in Browser": "Browser integrato",
   "Clear built-in browser data": "Cancella i dati del browser integrato",
   "Built-in browser data cleared": "Dati del browser integrato cancellati",
   "Projects": "Progetti",
@@ -1739,10 +1738,8 @@
   "Page Screenshot": "Screenshot della pagina",
   "Run Browser JavaScript": "Esegui JavaScript nel browser",
   "Open in external browser": "Apri in un browser esterno",
-  "Clear current page and history": "Cancella la pagina corrente e la cronologia",
   "Clear all pages and website data": "Cancella tutte le pagine e i dati dei siti",
   "Clear all pages and sign out of websites?": "Cancellare tutte le pagine e disconnettersi dai siti?",
-  "Current page and history cleared. Website sign-ins kept.": "Pagina corrente e cronologia cancellate. Gli accessi ai siti sono mantenuti.",
   "All browser pages and website data cleared": "Tutte le pagine e i dati dei siti sono stati cancellati",
   "Clearing browser data…": "Cancellazione dei dati del browser…",
   "Upload Files to Page": "Carica file nella pagina",
@@ -1803,7 +1800,6 @@
   "No matching settings": "Nessuna impostazione corrispondente",
   "No threads yet": "Nessun thread ancora",
   "Not activated": "Non attivato",
-  "Open built-in browser": "Apri browser integrato",
   "Overridden": "Sovrascritto",
   "Overrides the global background for this chat": "Sostituisce lo sfondo globale per questa chat",
   "Precise": "Preciso",
@@ -1841,5 +1837,6 @@
   "No custom servers yet. Add one manually, from the registry, or from JSON in your clipboard.": "Nessun server personalizzato. Aggiungine uno manualmente, dal registro o da JSON negli appunti.",
   "Documents the model can search when a knowledge base is attached to a chat.": "Documenti in cui il modello può cercare quando una base di conoscenza è collegata a una chat.",
   "Connection": "Connessione",
-  "Website": "Sito web"
+  "Website": "Sito web",
+  "New tab": "Nuova scheda"
 }

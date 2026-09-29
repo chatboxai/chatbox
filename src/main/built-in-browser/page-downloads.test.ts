@@ -22,6 +22,12 @@ import {
   routeDownload,
   safeFileName,
 } from './page-downloads'
+import { PendingOutcomes } from './page-outcomes'
+
+let outcomes = new PendingOutcomes()
+beforeEach(() => {
+  outcomes = new PendingOutcomes()
+})
 
 const userData = path.join(tmpdir(), 'page-downloads-user-data')
 vi.mock('electron', () => ({ app: { getPath: () => userData } }))
@@ -79,15 +85,24 @@ describe('page downloads', () => {
 
   it('blocks downloads outside a capture and reports them once without secrets', () => {
     const contents = fakeContents()
-    const downloads = new PageDownloads(contents as unknown as WebContents)
+    const downloads = new PageDownloads(contents as unknown as WebContents, { outcomes })
 
     const event = start(contents, new FakeItem('report.csv'))
 
     expect(event.preventDefault).toHaveBeenCalled()
-    expect(downloads.takeEvents()).toEqual([
+    expect(outcomes.take().downloads ?? []).toEqual([
       { name: 'report.csv', url: 'https://files.example/export/report.csv', status: 'blocked' },
     ])
-    expect(downloads.takeEvents()).toEqual([])
+    expect(outcomes.take().downloads ?? []).toEqual([])
+  })
+
+  it('reports blocked downloads to the shared queue with the tab they happened in', () => {
+    const contents = fakeContents()
+    new PageDownloads(contents as unknown as WebContents, { outcomes, tab: 't2' })
+    start(contents, new FakeItem('report.csv'))
+    expect(outcomes.take().downloads).toEqual([
+      expect.objectContaining({ name: 'report.csv', status: 'blocked', tab: 't2' }),
+    ])
   })
 
   it('cancels downloads of pages without a download handler', () => {
@@ -98,7 +113,7 @@ describe('page downloads', () => {
   it('saves captured downloads under unique names and returns them once they finish', async () => {
     vi.useFakeTimers()
     const contents = fakeContents()
-    const downloads = new PageDownloads(contents as unknown as WebContents)
+    const downloads = new PageDownloads(contents as unknown as WebContents, { outcomes })
     writeFileSync(path.join(directory, 'report.csv'), 'existing')
     const capture = await downloads.start({ root: directory, directory })
     const first = new FakeItem('report.csv')
@@ -130,9 +145,28 @@ describe('page downloads', () => {
     expect(start(contents, new FakeItem('late.csv')).preventDefault).toHaveBeenCalled()
   })
 
+  it('gives downloads of two tabs saving into one folder different names', async () => {
+    const firstTab = fakeContents()
+    const secondTab = fakeContents()
+    const firstDownloads = new PageDownloads(firstTab as unknown as WebContents, { outcomes })
+    const secondDownloads = new PageDownloads(secondTab as unknown as WebContents, { outcomes })
+    await firstDownloads.start({ root: directory, directory })
+    await secondDownloads.start({ root: directory, directory })
+    const first = new FakeItem('report.csv')
+    const second = new FakeItem('report.csv')
+
+    start(firstTab, first)
+    start(secondTab, second)
+
+    expect(first.savePath).toBe(path.join(directory, 'report.csv'))
+    expect(second.savePath).toBe(path.join(directory, 'report (1).csv'))
+    first.finish('completed')
+    second.finish('completed')
+  })
+
   it('creates the conversation folder, and again when it was removed during a capture', async () => {
     const contents = fakeContents()
-    const downloads = new PageDownloads(contents as unknown as WebContents)
+    const downloads = new PageDownloads(contents as unknown as WebContents, { outcomes })
     const target = path.join(directory, 'browser-downloads', 'conversation')
     const capture = await downloads.start({ root: directory, directory: target })
     expect(existsSync(target)).toBe(true)
@@ -147,7 +181,7 @@ describe('page downloads', () => {
 
   it('refuses a folder reached through a link out of its root, at the start and when a download arrives', async () => {
     const contents = fakeContents()
-    const downloads = new PageDownloads(contents as unknown as WebContents)
+    const downloads = new PageDownloads(contents as unknown as WebContents, { outcomes })
     const outside = path.join(directory, 'outside')
     const root = path.join(directory, 'user-data')
     mkdirSync(outside)
@@ -165,12 +199,14 @@ describe('page downloads', () => {
 
     expect(start(contents, item).preventDefault).toHaveBeenCalled()
     expect(item.savePath).toBe('')
-    expect(downloads.takeEvents()).toEqual([expect.objectContaining({ name: 'report.csv', status: 'blocked' })])
+    expect(outcomes.take().downloads ?? []).toEqual([
+      expect.objectContaining({ name: 'report.csv', status: 'blocked' }),
+    ])
     downloads.release(capture)
   })
 
   it('creates nothing beyond a linked parent and removes nothing through one', async () => {
-    const downloads = new PageDownloads(fakeContents() as unknown as WebContents)
+    const downloads = new PageDownloads(fakeContents() as unknown as WebContents, { outcomes })
     const outside = path.join(directory, 'outside')
     const root = path.join(directory, 'user-data')
     mkdirSync(path.join(outside, 'conversation'), { recursive: true })
@@ -211,7 +247,7 @@ describe('page downloads', () => {
 
   it('does not use a filename occupied by a dangling symbolic link', async () => {
     const contents = fakeContents()
-    const downloads = new PageDownloads(contents as unknown as WebContents)
+    const downloads = new PageDownloads(contents as unknown as WebContents, { outcomes })
     symlinkSync(path.join(directory, 'missing-file'), path.join(directory, 'report.csv'))
     const capture = await downloads.start({ root: directory, directory })
     const item = new FakeItem('report.csv')
@@ -225,7 +261,7 @@ describe('page downloads', () => {
   it('captures staggered downloads throughout the bounded start grace', async () => {
     vi.useFakeTimers()
     const contents = fakeContents()
-    const downloads = new PageDownloads(contents as unknown as WebContents)
+    const downloads = new PageDownloads(contents as unknown as WebContents, { outcomes })
     const capture = await downloads.start({ root: directory, directory })
     const first = new FakeItem('first.csv')
     start(contents, first)
@@ -252,7 +288,7 @@ describe('page downloads', () => {
   it('ends the start grace after its deadline even when a download finishes early', async () => {
     vi.useFakeTimers()
     const contents = fakeContents()
-    const downloads = new PageDownloads(contents as unknown as WebContents)
+    const downloads = new PageDownloads(contents as unknown as WebContents, { outcomes })
     const capture = await downloads.start({ root: directory, directory })
     const item = new FakeItem('report.csv')
     start(contents, item)
@@ -267,7 +303,7 @@ describe('page downloads', () => {
     // Only timers are faked, so Date.now() stays behind the grace deadline when the timer fires.
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const contents = fakeContents()
-    const downloads = new PageDownloads(contents as unknown as WebContents)
+    const downloads = new PageDownloads(contents as unknown as WebContents, { outcomes })
     const capture = await downloads.start({ root: directory, directory })
     let done = false
     const settled = downloads.settle(capture, new AbortController().signal).then(() => {
@@ -282,7 +318,7 @@ describe('page downloads', () => {
   it('waits a moment for a download to start, then gives up', async () => {
     vi.useFakeTimers()
     const contents = fakeContents()
-    const downloads = new PageDownloads(contents as unknown as WebContents)
+    const downloads = new PageDownloads(contents as unknown as WebContents, { outcomes })
     const capture = await downloads.start({ root: directory, directory })
     let done = false
     const settled = downloads.settle(capture, new AbortController().signal).then(() => {
@@ -298,7 +334,7 @@ describe('page downloads', () => {
 
   it('reports a download still running at release when it ends, and cancels one that is too large', async () => {
     const contents = fakeContents()
-    const downloads = new PageDownloads(contents as unknown as WebContents)
+    const downloads = new PageDownloads(contents as unknown as WebContents, { outcomes })
     const capture = await downloads.start({ root: directory, directory })
     const slow = new FakeItem('slow.zip')
     const huge = new FakeItem('huge.iso', 600 * 1024 * 1024)
@@ -317,7 +353,9 @@ describe('page downloads', () => {
 
     slow.progress(10)
     slow.finish('completed')
-    expect(downloads.takeEvents()).toEqual([expect.objectContaining({ name: 'slow.zip', status: 'saved', size: 10 })])
+    expect(outcomes.take().downloads ?? []).toEqual([
+      expect.objectContaining({ name: 'slow.zip', status: 'saved', size: 10 }),
+    ])
   })
 })
 
@@ -331,7 +369,7 @@ describe('page download limits', () => {
 
   it('saves at most the per-run number of files and reports every late outcome of the ones it saved', async () => {
     const contents = fakeContents()
-    const downloads = new PageDownloads(contents as unknown as WebContents)
+    const downloads = new PageDownloads(contents as unknown as WebContents, { outcomes })
     const capture = await downloads.start({ root: directory, directory })
     const items = Array.from(
       { length: BUILT_IN_BROWSER_MAX_DOWNLOADS_PER_RUN + 3 },
@@ -343,7 +381,7 @@ describe('page download limits', () => {
     expect(downloads.release(capture)).toHaveLength(BUILT_IN_BROWSER_MAX_DOWNLOADS_PER_RUN)
     for (const item of items.slice(0, BUILT_IN_BROWSER_MAX_DOWNLOADS_PER_RUN)) item.finish('completed')
 
-    const reported = downloads.takeEvents()
+    const reported = outcomes.take().downloads ?? []
     expect(reported.filter((download) => download.status === 'over_limit')).toHaveLength(3)
     expect(reported.filter((download) => download.status === 'saved')).toHaveLength(
       BUILT_IN_BROWSER_MAX_DOWNLOADS_PER_RUN
@@ -356,7 +394,7 @@ describe('page downloads of a run whose result is not delivered', () => {
     const directory = mkdtempSync(path.join(tmpdir(), 'browser-download-cancelled-'))
     try {
       const contents = fakeContents()
-      const downloads = new PageDownloads(contents as unknown as WebContents)
+      const downloads = new PageDownloads(contents as unknown as WebContents, { outcomes })
       const capture = await downloads.start({ root: directory, directory })
       const finished = new FakeItem('done.csv')
       const running = new FakeItem('later.csv')
@@ -365,9 +403,9 @@ describe('page downloads of a run whose result is not delivered', () => {
       finished.finish('completed')
 
       downloads.releaseToEvents(capture)
-      expect(downloads.takeEvents()).toEqual([expect.objectContaining({ name: 'done.csv', status: 'saved' })])
+      expect(outcomes.take().downloads ?? []).toEqual([expect.objectContaining({ name: 'done.csv', status: 'saved' })])
       running.finish('completed')
-      expect(downloads.takeEvents()).toEqual([expect.objectContaining({ name: 'later.csv', status: 'saved' })])
+      expect(outcomes.take().downloads ?? []).toEqual([expect.objectContaining({ name: 'later.csv', status: 'saved' })])
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
@@ -379,7 +417,7 @@ describe('interrupted page downloads', () => {
     const directory = mkdtempSync(path.join(tmpdir(), 'browser-download-interrupted-'))
     try {
       const contents = fakeContents()
-      const downloads = new PageDownloads(contents as unknown as WebContents)
+      const downloads = new PageDownloads(contents as unknown as WebContents, { outcomes })
       const capture = await downloads.start({ root: directory, directory })
       const item = new FakeItem('export.csv')
       start(contents, item)
@@ -400,7 +438,7 @@ describe('page downloads released twice', () => {
     const directory = mkdtempSync(path.join(tmpdir(), 'browser-download-once-'))
     try {
       const contents = fakeContents()
-      const downloads = new PageDownloads(contents as unknown as WebContents)
+      const downloads = new PageDownloads(contents as unknown as WebContents, { outcomes })
       const capture = await downloads.start({ root: directory, directory })
       const item = new FakeItem('report.csv')
       start(contents, item)
@@ -409,7 +447,27 @@ describe('page downloads released twice', () => {
       // The user navigates from the sidebar while the run still waits for more downloads.
       downloads.endEarlierCapture()
       expect(downloads.release(capture)).toEqual([])
-      expect(downloads.takeEvents()).toEqual([expect.objectContaining({ name: 'report.csv', status: 'saved' })])
+      expect(outcomes.take().downloads ?? []).toEqual([
+        expect.objectContaining({ name: 'report.csv', status: 'saved' }),
+      ])
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps saving for a run still going when another call ends only lingering captures', async () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'browser-download-running-'))
+    try {
+      const contents = fakeContents()
+      const downloads = new PageDownloads(contents as unknown as WebContents, { outcomes })
+      const capture = await downloads.start({ root: directory, directory })
+      downloads.endLingeringCapture()
+      const item = new FakeItem('export.csv')
+      start(contents, item)
+      item.finish('completed')
+
+      expect(item.cancel).not.toHaveBeenCalled()
+      expect(downloads.release(capture)).toEqual([expect.objectContaining({ name: 'export.csv', status: 'saved' })])
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
@@ -423,7 +481,7 @@ describe('page download names', () => {
       const directory = mkdtempSync(path.join(tmpdir(), 'browser-download-case-'))
       try {
         const contents = fakeContents()
-        const downloads = new PageDownloads(contents as unknown as WebContents)
+        const downloads = new PageDownloads(contents as unknown as WebContents, { outcomes })
         await downloads.start({ root: directory, directory })
         const upper = new FakeItem('Report.pdf')
         const lower = new FakeItem('report.pdf')

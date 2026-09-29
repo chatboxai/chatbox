@@ -1,11 +1,11 @@
 import {
-  BUILT_IN_BROWSER_CHANNELS,
   BUILT_IN_BROWSER_DEFAULT_READ_TIMEOUT_MS,
   BUILT_IN_BROWSER_DEFAULT_VIEWPORT,
   BUILT_IN_BROWSER_MAX_READ_TIMEOUT_MS,
   BUILT_IN_BROWSER_SCREENSHOT_MAX_DIMENSION,
   type BuiltInBrowserCall,
   type BuiltInBrowserNavigation,
+  type BuiltInBrowserPageEvents,
   type BuiltInBrowserPageView,
   type BuiltInBrowserReadResult,
   type BuiltInBrowserRequestKind,
@@ -28,6 +28,7 @@ import { extractReadableContent } from './extract'
 import { DebuggerUnavailableError, PageDebugger } from './page-debugger'
 import { type DownloadLocation, downloadLocationOf, isOwnDirectory, routeDownload } from './page-downloads'
 import { PageOperation, type PageRefusal, pageToActOn, ReadTimeoutError } from './page-operation'
+import { type PageOutcomeTarget, PendingOutcomes } from './page-outcomes'
 import { PageRun, reportFailedRequest } from './page-run'
 import { type PageSnapshotOutcome, pageOfLines, pageSnapshotSource } from './page-snapshot'
 import { PageTracker } from './page-tracker'
@@ -115,9 +116,9 @@ function browserUserAgent(defaultUserAgent: string): string {
 }
 
 /**
- * Owns the single page view of the built-in browser. The view lives in the app window that last
- * showed the sidebar; it keeps its page while the sidebar is closed so the model and the user
- * continue from the same page.
+ * Owns one page view of the built-in browser, the page of one tab. The view lives in the app
+ * window that last showed it; it keeps its page while the panel is closed so the model and the
+ * user continue from the same page.
  */
 export class BuiltInBrowserController {
   private static configuredSession: Session | null = null
@@ -134,7 +135,11 @@ export class BuiltInBrowserController {
 
   constructor(
     private readonly sessionId?: string,
-    private readonly manageHostLifecycle = true
+    private readonly manageHostLifecycle = true,
+    /** Called whenever {@link getState} may have changed. */
+    private readonly onStateChange?: () => void,
+    /** Where the pages report what ends after their results; a queue of this page's own by default. */
+    private readonly outcomeTarget: PageOutcomeTarget = { outcomes: new PendingOutcomes() }
   ) {}
 
   dispose(): void {
@@ -172,6 +177,11 @@ export class BuiltInBrowserController {
     })
     BuiltInBrowserController.configuredSession = ses
     return ses
+  }
+
+  /** Stops saving downloads for a run of this page that already returned; a run still going keeps its own. */
+  endLingeringCapture(): void {
+    this.page?.downloads.endLingeringCapture()
   }
 
   async setProxy(proxy: string | undefined): Promise<void> {
@@ -312,17 +322,6 @@ export class BuiltInBrowserController {
         const { kind } = unknown as { kind?: unknown }
         return Promise.reject(new Error(`Unknown built-in browser request: ${String(kind)}`))
       }
-    }
-  }
-
-  resetPage(): void {
-    const host = this.host
-    this.dispose()
-    if (host && !host.isDestroyed() && !host.webContents.isDestroyed()) {
-      host.webContents.send(BUILT_IN_BROWSER_CHANNELS.state, {
-        ...EMPTY_BUILT_IN_BROWSER_STATE,
-        sessionId: this.sessionId,
-      })
     }
   }
 
@@ -838,7 +837,7 @@ export class BuiltInBrowserController {
     view.setBackgroundColor('#ffffff')
     const contents = view.webContents
     // Sign-in flows often open a popup; keep them in the sidebar so they share the profile.
-    const page = new PageTracker(contents)
+    const page = new PageTracker(contents, this.outcomeTarget)
     contents.setWindowOpenHandler(({ url }) => {
       page.expectPageNavigation()
       contents.loadURL(url).catch(() => undefined)
@@ -854,9 +853,7 @@ export class BuiltInBrowserController {
   }
 
   private pushState(): void {
-    const host = this.host
-    if (!host || host.isDestroyed()) return
-    host.webContents.send(BUILT_IN_BROWSER_CHANNELS.state, { ...this.getState(), sessionId: this.sessionId })
+    this.onStateChange?.()
   }
 }
 

@@ -1,9 +1,9 @@
 /**
  * Contract between the renderer and the desktop built-in browser.
  *
- * Each conversation owns a page view embedded in the app window's right sidebar. The model
- * reads its conversation's page and the user can take it over to sign in or click through it.
- * Page URLs and navigation history are conversation-local. Views share a dedicated persistent
+ * Each conversation owns up to {@link BUILT_IN_BROWSER_MAX_TABS} pages, shown as tabs of the
+ * conversation's side panel. The model reads them and the user can take any of them over to sign
+ * in or click through it. Page URLs and navigation history are local to their tab. Views share a dedicated persistent
  * website profile so sign-ins survive restarts; sign-in state is never shared with the app
  * window or sent to a model.
  */
@@ -17,15 +17,17 @@ export const BUILT_IN_BROWSER_CHANNELS = {
   reload: 'built-in-browser:reload',
   stop: 'built-in-browser:stop',
   setView: 'built-in-browser:set-view',
-  getState: 'built-in-browser:get-state',
   clearData: 'built-in-browser:clear-data',
   dispose: 'built-in-browser:dispose',
-  /** Main → renderer push whenever {@link BuiltInBrowserState} changes. */
-  state: 'built-in-browser:state',
+  getTabs: 'built-in-browser:get-tabs',
+  openTab: 'built-in-browser:open-tab',
+  closeTab: 'built-in-browser:close-tab',
+  /** Main → renderer push of {@link BuiltInBrowserTabs} whenever a tab opens, closes or changes. */
+  tabs: 'built-in-browser:tabs',
 } as const
 
-/** Page clears this conversation's view/history; all also clears the shared website profile. */
-export type BuiltInBrowserClearScope = 'page' | 'all'
+/** Most pages one conversation keeps open; the model reuses a tab once they are all open. */
+export const BUILT_IN_BROWSER_MAX_TABS = 8
 
 /** Initial layout for pages opened by background tools before a sidebar has placed them. */
 export const BUILT_IN_BROWSER_DEFAULT_VIEWPORT = { width: 1024, height: 768 } as const
@@ -34,14 +36,24 @@ export const BUILT_IN_BROWSER_DEFAULT_READ_TIMEOUT_MS = 25_000
 export const BUILT_IN_BROWSER_MAX_READ_TIMEOUT_MS = 60_000
 
 /**
- * One operation on a conversation's page, selected by `kind`. `read`, `snapshot` and `screenshot`
- * observe `url`, or the page shown when it is omitted; `run` and `upload` act on the page `page`
- * names.
+ * Which tab an observing request uses. Without `tab`, it uses the model's own tab, the latest one
+ * opened for it: a url opens one when there is none, and a request without a url reads the tab the
+ * user is viewing when the model has none. With `newTab`, `url` opens in a new tab.
+ */
+export interface BuiltInBrowserTabTarget {
+  tab?: string
+  newTab?: boolean
+}
+
+/**
+ * One operation on a conversation's pages, selected by `kind`. `read`, `snapshot` and `screenshot`
+ * observe `url`, or the page the tab shows when it is omitted; `run` and `upload` act on the page
+ * `page` names, in the tab that issued it.
  */
 export type BuiltInBrowserRequest =
-  | { kind: 'read'; url?: string }
-  | { kind: 'screenshot'; url?: string }
-  | ({ kind: 'snapshot'; url?: string } & BuiltInBrowserSnapshotRequest)
+  | ({ kind: 'read'; url?: string } & BuiltInBrowserTabTarget)
+  | ({ kind: 'screenshot'; url?: string } & BuiltInBrowserTabTarget)
+  | ({ kind: 'snapshot'; url?: string } & BuiltInBrowserTabTarget & BuiltInBrowserSnapshotRequest)
   /** With `download`, files the run downloads are saved to the conversation's download folder. */
   | { kind: 'run'; page: string; code: string; download?: boolean }
   | ({ kind: 'upload' } & BuiltInBrowserUploadRequest)
@@ -224,11 +236,15 @@ export interface BuiltInBrowserDownload {
   size?: number
   /** Origin and path of the download URL. */
   url: string
+  /** The tab it happened in, for a download reported after the result of the run that started it. */
+  tab?: string
 }
 
 /** Final outcome of a run that was reported as `unknown` and finished afterwards. */
 export type BuiltInBrowserSettledOperation = Omit<BuiltInBrowserRunResult, 'status' | 'navigated'> & {
   status: Exclude<BuiltInBrowserRunStatus, 'not_started'>
+  /** The tab it ran in. */
+  tab?: string
 }
 
 /** What happened on the page since the previous result; each event is handed out once. */
@@ -241,8 +257,21 @@ export interface BuiltInBrowserPageEvents {
   downloads?: BuiltInBrowserDownload[]
 }
 
+/** An open tab, as results list them for the model. */
+export interface BuiltInBrowserTabSummary {
+  tab: string
+  url: string
+  title: string
+  /** The user is looking at this tab. */
+  viewing?: true
+}
+
 /** The page a result describes, and what happened on it since the previous result. */
 export interface BuiltInBrowserPageView extends BuiltInBrowserPageEvents {
+  /** The tab showing the page. */
+  tab?: string
+  /** Every open tab, when the conversation has more than one. */
+  tabs?: BuiltInBrowserTabSummary[]
   /**
    * Opaque reference to the page this result observed. It changes whenever the main frame loads
    * a document or changes its URL, including a reload of the same URL, and runs and uploads act
@@ -262,6 +291,7 @@ export interface BuiltInBrowserReadResult extends BuiltInBrowserPageView {
 
 /** Reaches the model as exactly its image, so it hands out neither a page reference nor page events. */
 export interface BuiltInBrowserScreenshotResult {
+  tab?: string
   url: string
   title: string
   screenshot: BuiltInBrowserScreenshot
@@ -294,9 +324,8 @@ export interface BuiltInBrowserResults {
   upload: BuiltInBrowserUploadPage
 }
 
+/** State of one tab's page. */
 export interface BuiltInBrowserState {
-  /** Conversation owning this page; included in main-process state notifications. */
-  sessionId?: string
   /** Empty until a page has been opened. */
   url: string
   title: string
@@ -314,6 +343,17 @@ export const EMPTY_BUILT_IN_BROWSER_STATE: BuiltInBrowserState = {
   canGoBack: false,
   canGoForward: false,
   reading: false,
+}
+
+export interface BuiltInBrowserTab extends BuiltInBrowserState {
+  id: string
+}
+
+/** A conversation's open tabs, in the order they were opened. */
+export interface BuiltInBrowserTabs {
+  /** Included in main-process notifications. */
+  sessionId?: string
+  tabs: BuiltInBrowserTab[]
 }
 
 /** Where the page view is drawn, in CSS pixels relative to the app window's content area. */

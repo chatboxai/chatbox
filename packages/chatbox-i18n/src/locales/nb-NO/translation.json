@@ -5,7 +5,6 @@
   "Pages the AI reads open here. You can sign in or click through a page yourself, then ask the AI to continue.": "Sider som KI-en leser, åpnes her. Du kan logge inn eller klikke deg gjennom en side selv, og deretter be KI-en fortsette.",
   "Sign-ins stay in the built-in browser and are never sent to the model.": "Innlogginger blir værende i den innebygde nettleseren og sendes aldri til modellen.",
   "Browse Page": "Bla gjennom side",
-  "Built-in Browser": "Innebygd nettleser",
   "Clear built-in browser data": "Tøm data for innebygd nettleser",
   "Built-in browser data cleared": "Data for innebygd nettleser er tømt",
   "Projects": "Prosjekter",
@@ -1739,10 +1738,8 @@
   "Page Screenshot": "Skjermbilde av side",
   "Run Browser JavaScript": "Kjør JavaScript i nettleseren",
   "Open in external browser": "Åpne i ekstern nettleser",
-  "Clear current page and history": "Tøm gjeldende side og historikk",
   "Clear all pages and website data": "Slett alle sider og nettstedsdata",
   "Clear all pages and sign out of websites?": "Tømme alle sider og logge ut av nettsteder?",
-  "Current page and history cleared. Website sign-ins kept.": "Gjeldende side og historikk er tømt. Innlogginger på nettsteder beholdes.",
   "All browser pages and website data cleared": "Alle nettlesersider og nettstedsdata er slettet",
   "Clearing browser data…": "Sletter nettleserdata…",
   "Upload Files to Page": "Last opp filer til siden",
@@ -1803,7 +1800,6 @@
   "No matching settings": "Ingen samsvarende innstillinger",
   "No threads yet": "Ingen tråder ennå",
   "Not activated": "Ikke aktivert",
-  "Open built-in browser": "Åpne innebygd nettleser",
   "Overridden": "Overstyrt",
   "Overrides the global background for this chat": "Overstyrer den globale bakgrunnen for denne chatten",
   "Precise": "Presis",
@@ -1841,5 +1837,6 @@
   "No custom servers yet. Add one manually, from the registry, or from JSON in your clipboard.": "Ingen egendefinerte servere ennå. Legg til en manuelt, fra registeret eller fra JSON på utklippstavlen.",
   "Documents the model can search when a knowledge base is attached to a chat.": "Dokumenter modellen kan søke i når en kunnskapsbase er knyttet til en samtale.",
   "Connection": "Tilkobling",
-  "Website": "Nettsted"
+  "Website": "Nettsted",
+  "New tab": "Ny fane"
 }

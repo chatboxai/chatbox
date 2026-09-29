@@ -5,7 +5,6 @@
   "Pages the AI reads open here. You can sign in or click through a page yourself, then ask the AI to continue.": "AI 读取的页面会在这里打开。你可以自己登录或点击操作页面，然后让 AI 继续。",
   "Sign-ins stay in the built-in browser and are never sent to the model.": "登录信息只保存在内置浏览器中，不会发送给模型。",
   "Browse Page": "浏览网页",
-  "Built-in Browser": "内置浏览器",
   "Clear built-in browser data": "清除内置浏览器数据",
   "Built-in browser data cleared": "内置浏览器数据已清除",
   "Projects": "项目",
@@ -1739,10 +1738,8 @@
   "Page Screenshot": "网页截图",
   "Run Browser JavaScript": "执行浏览器 JavaScript",
   "Open in external browser": "在外部浏览器中打开",
-  "Clear current page and history": "清空当前页面和历史",
   "Clear all pages and website data": "清除所有页面和网站数据",
   "Clear all pages and sign out of websites?": "清空所有页面并退出网站登录？",
-  "Current page and history cleared. Website sign-ins kept.": "已清空当前页面和历史，网站登录已保留。",
   "All browser pages and website data cleared": "已清除所有浏览器页面和网站数据",
   "Clearing browser data…": "正在清除浏览器数据…",
   "Upload Files to Page": "上传文件到页面",
@@ -1803,7 +1800,6 @@
   "No matching settings": "没有匹配的设置",
   "No threads yet": "还没有话题",
   "Not activated": "未激活",
-  "Open built-in browser": "打开内置浏览器",
   "Overridden": "已覆盖",
   "Overrides the global background for this chat": "为此对话覆盖全局背景",
   "Precise": "精确",
@@ -1841,5 +1837,6 @@
   "No custom servers yet. Add one manually, from the registry, or from JSON in your clipboard.": "还没有自定义服务器。可以手动添加、从服务器目录添加，或从剪贴板中的 JSON 导入。",
   "Documents the model can search when a knowledge base is attached to a chat.": "在对话中关联知识库后，模型可以检索这些文档。",
   "Connection": "连接",
-  "Website": "官网"
+  "Website": "官网",
+  "New tab": "新标签页"
 }

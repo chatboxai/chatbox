@@ -5,7 +5,6 @@
   "Pages the AI reads open here. You can sign in or click through a page yourself, then ask the AI to continue.": "Las páginas que lee la IA se abren aquí. Puedes iniciar sesión o navegar por una página tú mismo y luego pedirle a la IA que continúe.",
   "Sign-ins stay in the built-in browser and are never sent to the model.": "Los inicios de sesión se quedan en el navegador integrado y nunca se envían al modelo.",
   "Browse Page": "Explorar página",
-  "Built-in Browser": "Navegador integrado",
   "Clear built-in browser data": "Borrar datos del navegador integrado",
   "Built-in browser data cleared": "Datos del navegador integrado borrados",
   "Projects": "Proyectos",
@@ -1739,10 +1738,8 @@
   "Page Screenshot": "Captura de página",
   "Run Browser JavaScript": "Ejecutar JavaScript en el navegador",
   "Open in external browser": "Abrir en un navegador externo",
-  "Clear current page and history": "Borrar la página actual y su historial",
   "Clear all pages and website data": "Borrar todas las páginas y los datos de sitios",
   "Clear all pages and sign out of websites?": "¿Borrar todas las páginas y cerrar sesión en los sitios?",
-  "Current page and history cleared. Website sign-ins kept.": "Página actual e historial borrados. Se mantienen las sesiones de los sitios.",
   "All browser pages and website data cleared": "Se han borrado todas las páginas y los datos de sitios",
   "Clearing browser data…": "Borrando datos del navegador…",
   "Upload Files to Page": "Subir archivos a la página",
@@ -1803,7 +1800,6 @@
   "No matching settings": "No hay ajustes que coincidan",
   "No threads yet": "Aún no hay hilos",
   "Not activated": "No activado",
-  "Open built-in browser": "Abrir navegador integrado",
   "Overridden": "Personalizado",
   "Overrides the global background for this chat": "Sustituye el fondo global en este chat",
   "Precise": "Preciso",
@@ -1841,5 +1837,6 @@
   "No custom servers yet. Add one manually, from the registry, or from JSON in your clipboard.": "Aún no hay servidores personalizados. Añade uno manualmente, desde el registro o desde JSON en el portapapeles.",
   "Documents the model can search when a knowledge base is attached to a chat.": "Documentos en los que el modelo puede buscar cuando se adjunta una base de conocimiento a un chat.",
   "Connection": "Conexión",
-  "Website": "Sitio web"
+  "Website": "Sitio web",
+  "New tab": "Nueva pestaña"
 }

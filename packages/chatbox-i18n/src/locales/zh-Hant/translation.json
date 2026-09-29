@@ -5,7 +5,6 @@
   "Pages the AI reads open here. You can sign in or click through a page yourself, then ask the AI to continue.": "AI 讀取的頁面會在這裡開啟。你可以自行登入或點擊操作頁面，然後讓 AI 繼續。",
   "Sign-ins stay in the built-in browser and are never sent to the model.": "登入資訊只保存在內建瀏覽器中，不會傳送給模型。",
   "Browse Page": "瀏覽網頁",
-  "Built-in Browser": "內建瀏覽器",
   "Clear built-in browser data": "清除內建瀏覽器資料",
   "Built-in browser data cleared": "內建瀏覽器資料已清除",
   "Projects": "專案",
@@ -1739,10 +1738,8 @@
   "Page Screenshot": "網頁截圖",
   "Run Browser JavaScript": "執行瀏覽器 JavaScript",
   "Open in external browser": "在外部瀏覽器中開啟",
-  "Clear current page and history": "清空目前頁面和歷史記錄",
   "Clear all pages and website data": "清除所有頁面和網站資料",
   "Clear all pages and sign out of websites?": "清空所有頁面並登出網站？",
-  "Current page and history cleared. Website sign-ins kept.": "已清空目前頁面和歷史記錄，網站登入已保留。",
   "All browser pages and website data cleared": "已清除所有瀏覽器頁面和網站資料",
   "Clearing browser data…": "正在清除瀏覽器資料…",
   "Upload Files to Page": "上傳檔案至頁面",
@@ -1803,7 +1800,6 @@
   "No matching settings": "沒有符合的設定",
   "No threads yet": "還沒有話題",
   "Not activated": "未啟用",
-  "Open built-in browser": "開啟內建瀏覽器",
   "Overridden": "已覆寫",
   "Overrides the global background for this chat": "為此對話覆寫全域背景",
   "Precise": "精確",
@@ -1841,5 +1837,6 @@
   "No custom servers yet. Add one manually, from the registry, or from JSON in your clipboard.": "還沒有自訂伺服器。可以手動新增、從伺服器目錄新增，或從剪貼簿中的 JSON 匯入。",
   "Documents the model can search when a knowledge base is attached to a chat.": "在對話中關聯知識庫後，模型可以檢索這些文件。",
   "Connection": "連線",
-  "Website": "官網"
+  "Website": "官網",
+  "New tab": "新分頁"
 }

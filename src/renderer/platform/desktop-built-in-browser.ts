@@ -1,15 +1,14 @@
 import {
   BUILT_IN_BROWSER_CHANNELS,
   type BuiltInBrowserCall,
-  type BuiltInBrowserClearScope,
   type BuiltInBrowserRequest,
   type BuiltInBrowserResults,
-  type BuiltInBrowserState,
+  type BuiltInBrowserTabs,
   type BuiltInBrowserViewRequest,
 } from '@shared/built-in-browser'
 import type { ElectronIPC } from '@shared/electron-types'
 import { v4 as uuidv4 } from 'uuid'
-import type { BuiltInBrowser } from './interfaces'
+import type { BuiltInBrowser, BuiltInBrowserTabControls } from './interfaces'
 
 export class DesktopBuiltInBrowser implements BuiltInBrowser {
   constructor(
@@ -45,42 +44,37 @@ export class DesktopBuiltInBrowser implements BuiltInBrowser {
     }
   }
 
-  navigate(url: string): Promise<void> {
-    return this.invoke(BUILT_IN_BROWSER_CHANNELS.navigate, url)
+  getTabs(): Promise<BuiltInBrowserTabs> {
+    return this.invoke(BUILT_IN_BROWSER_CHANNELS.getTabs)
   }
 
-  goBack(): Promise<void> {
-    return this.invoke(BUILT_IN_BROWSER_CHANNELS.goBack)
-  }
-
-  goForward(): Promise<void> {
-    return this.invoke(BUILT_IN_BROWSER_CHANNELS.goForward)
-  }
-
-  reload(): Promise<void> {
-    return this.invoke(BUILT_IN_BROWSER_CHANNELS.reload)
-  }
-
-  stop(): Promise<void> {
-    return this.invoke(BUILT_IN_BROWSER_CHANNELS.stop)
-  }
-
-  setView(request: BuiltInBrowserViewRequest): Promise<string | null> {
-    return this.invoke(BUILT_IN_BROWSER_CHANNELS.setView, request)
-  }
-
-  getState(): Promise<BuiltInBrowserState> {
-    return this.invoke(BUILT_IN_BROWSER_CHANNELS.getState)
-  }
-
-  onStateChange(callback: (state: BuiltInBrowserState) => void): () => void {
-    return this.ipc.onBuiltInBrowserState((state) => {
-      if (state.sessionId === this.sessionId) callback(state)
+  onTabsChange(callback: (tabs: BuiltInBrowserTabs) => void): () => void {
+    return this.ipc.onBuiltInBrowserTabs((tabs) => {
+      if (tabs.sessionId === this.sessionId) callback(tabs)
     })
   }
 
-  clearData(scope: BuiltInBrowserClearScope): Promise<void> {
-    return this.invoke(BUILT_IN_BROWSER_CHANNELS.clearData, scope)
+  openTab(): Promise<string> {
+    return this.invoke(BUILT_IN_BROWSER_CHANNELS.openTab)
+  }
+
+  closeTab(tabId: string): Promise<void> {
+    return this.invoke(BUILT_IN_BROWSER_CHANNELS.closeTab, tabId)
+  }
+
+  tab(tabId: string): BuiltInBrowserTabControls {
+    return {
+      navigate: (url) => this.invoke(BUILT_IN_BROWSER_CHANNELS.navigate, tabId, url),
+      goBack: () => this.invoke(BUILT_IN_BROWSER_CHANNELS.goBack, tabId),
+      goForward: () => this.invoke(BUILT_IN_BROWSER_CHANNELS.goForward, tabId),
+      reload: () => this.invoke(BUILT_IN_BROWSER_CHANNELS.reload, tabId),
+      stop: () => this.invoke(BUILT_IN_BROWSER_CHANNELS.stop, tabId),
+      setView: (request: BuiltInBrowserViewRequest) => this.invoke(BUILT_IN_BROWSER_CHANNELS.setView, tabId, request),
+    }
+  }
+
+  clearData(): Promise<void> {
+    return this.invoke(BUILT_IN_BROWSER_CHANNELS.clearData)
   }
 
   dispose(): Promise<void> {

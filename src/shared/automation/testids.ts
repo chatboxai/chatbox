@@ -8,7 +8,7 @@
  */
 
 export const AUTOMATION_CONTRACT_ID = 'chatbox-ui'
-export const AUTOMATION_CONTRACT_VERSION = '1.11.0'
+export const AUTOMATION_CONTRACT_VERSION = '1.12.0'
 export const AUTOMATION_CONTRACT_VERSION_ATTRIBUTE = 'data-automation-contract-version'
 
 /** Adjacent identity attributes hosted on TestId elements. */
@@ -19,6 +19,7 @@ export const AutomationAdjacentAttr = {
   providerId: 'data-provider-id',
   shortcutName: 'data-shortcut-name',
   shortcutValue: 'data-shortcut-value',
+  browserTabId: 'data-browser-tab-id',
 } as const
 
 /** Dynamic state attributes hosted on stable TestId elements. */

@@ -8,10 +8,17 @@ import {
   type BuiltInBrowserDownload,
 } from '@shared/built-in-browser'
 import { app, type DownloadItem, type Event, type WebContents } from 'electron'
+import type { PageOutcomeTarget } from './page-outcomes'
 import { MAX_DIAGNOSTIC_ENTRIES, redactUrl } from './script-run'
 
 /** How long a run accepts new downloads after its script returned, even if earlier downloads finish. */
 export const DOWNLOAD_START_GRACE_MS = 5_000
+
+/**
+ * Paths of downloads in progress, compared as the file system compares names. Shared by every page,
+ * since the tabs of a conversation save into one folder.
+ */
+const reservedPaths = new Set<string>()
 
 /**
  * The default file systems of macOS and Windows ignore case, so names that differ only in case are
@@ -184,13 +191,16 @@ export interface DownloadCapture {
  */
 export class PageDownloads {
   private capture: DownloadCapture | null = null
-  /** Blocked downloads, and captured ones that ended after the run result reported them. */
-  private events: BuiltInBrowserDownload[] = []
-  /** Paths of downloads in progress, compared as the file system compares names. */
-  private readonly reserved = new Set<string>()
   private readonly waiters = new Set<() => void>()
 
-  constructor(contents: WebContents) {
+  /**
+   * Blocked downloads, and captured ones that end after the run result that reported them, go to
+   * `target`'s queue for the model's next result.
+   */
+  constructor(
+    contents: WebContents,
+    private readonly target: PageOutcomeTarget
+  ) {
     const id = contents.id
     routes.set(id, this)
     contents.once('destroyed', () => {
@@ -285,7 +295,7 @@ export class PageDownloads {
   releaseToEvents(capture: DownloadCapture): void {
     if (this.capture === capture) this.capture = null
     for (const tracked of capture.tracked) {
-      if (tracked.done && !tracked.reported) this.events.push({ ...tracked.download })
+      if (tracked.done && !tracked.reported) this.enqueue(tracked.download)
       tracked.reported = true
     }
   }
@@ -339,29 +349,27 @@ export class PageDownloads {
       limitSize()
     })
     item.once('done', (_event, state) => {
-      this.reserved.delete(reservationKey(filePath))
+      reservedPaths.delete(reservationKey(filePath))
       tracked.done = true
       tracked.download.size = item.getReceivedBytes()
       tracked.download.status = cancelledForSize ? 'too_large' : state === 'completed' ? 'saved' : 'failed'
       if (tracked.download.status !== 'saved') delete tracked.download.path
       // Every run reports at most its own capped downloads, so their final outcomes are never dropped.
-      if (tracked.reported) this.events.push({ ...tracked.download })
+      if (tracked.reported) this.enqueue(tracked.download)
       this.notify()
     })
     limitSize()
     this.notify()
   }
 
-  /** Downloads to report with the next result; each is handed out once. */
-  takeEvents(): BuiltInBrowserDownload[] {
-    const { events } = this
-    this.events = []
-    return events
+  private enqueue(download: BuiltInBrowserDownload, limit?: number): void {
+    const { outcomes, tab } = this.target
+    outcomes.addDownload({ ...download, ...(tab ? { tab } : {}) }, limit)
   }
 
   /** Downloads the page started without being allowed to save them; only the first few are reported. */
   private pushEvent(download: BuiltInBrowserDownload): void {
-    if (this.events.length < MAX_DIAGNOSTIC_ENTRIES) this.events.push(download)
+    this.enqueue(download, MAX_DIAGNOSTIC_ENTRIES)
   }
 
   private notify(): void {
@@ -380,8 +388,8 @@ export class PageDownloads {
         if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error
         exists = false
       }
-      if (!this.reserved.has(reservationKey(candidate)) && !exists) {
-        this.reserved.add(reservationKey(candidate))
+      if (!reservedPaths.has(reservationKey(candidate)) && !exists) {
+        reservedPaths.add(reservationKey(candidate))
         return candidate
       }
     }

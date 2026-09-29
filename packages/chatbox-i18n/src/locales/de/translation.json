@@ -5,7 +5,6 @@
   "Pages the AI reads open here. You can sign in or click through a page yourself, then ask the AI to continue.": "Seiten, die die KI liest, werden hier geöffnet. Du kannst dich selbst anmelden oder dich durch eine Seite klicken und die KI dann weitermachen lassen.",
   "Sign-ins stay in the built-in browser and are never sent to the model.": "Anmeldungen bleiben im integrierten Browser und werden nie an das Modell gesendet.",
   "Browse Page": "Seite aufrufen",
-  "Built-in Browser": "Integrierter Browser",
   "Clear built-in browser data": "Daten des integrierten Browsers löschen",
   "Built-in browser data cleared": "Daten des integrierten Browsers gelöscht",
   "Projects": "Projekte",
@@ -1739,10 +1738,8 @@
   "Page Screenshot": "Seiten-Screenshot",
   "Run Browser JavaScript": "Browser-JavaScript ausführen",
   "Open in external browser": "In externem Browser öffnen",
-  "Clear current page and history": "Aktuelle Seite und Verlauf leeren",
   "Clear all pages and website data": "Alle Seiten und Websitedaten löschen",
   "Clear all pages and sign out of websites?": "Alle Seiten leeren und von Websites abmelden?",
-  "Current page and history cleared. Website sign-ins kept.": "Aktuelle Seite und Verlauf geleert. Website-Anmeldungen bleiben erhalten.",
   "All browser pages and website data cleared": "Alle Browserseiten und Websitedaten gelöscht",
   "Clearing browser data…": "Browserdaten werden gelöscht…",
   "Upload Files to Page": "Dateien auf die Seite hochladen",
@@ -1803,7 +1800,6 @@
   "No matching settings": "Keine passenden Einstellungen",
   "No threads yet": "Noch keine Themen",
   "Not activated": "Nicht aktiviert",
-  "Open built-in browser": "Integrierten Browser öffnen",
   "Overridden": "Überschrieben",
   "Overrides the global background for this chat": "Überschreibt den globalen Hintergrund für diesen Chat",
   "Precise": "Präzise",
@@ -1841,5 +1837,6 @@
   "No custom servers yet. Add one manually, from the registry, or from JSON in your clipboard.": "Noch keine eigenen Server. Füge einen manuell, aus dem Verzeichnis oder aus JSON in der Zwischenablage hinzu.",
   "Documents the model can search when a knowledge base is attached to a chat.": "Dokumente, die das Modell durchsuchen kann, wenn eine Wissensdatenbank an einen Chat angehängt ist.",
   "Connection": "Verbindung",
-  "Website": "Website"
+  "Website": "Website",
+  "New tab": "Neuer Tab"
 }

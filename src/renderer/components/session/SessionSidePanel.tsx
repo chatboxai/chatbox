@@ -1,26 +1,32 @@
 import { isThreadHistoryAvailable, resolveSessionMode } from '@chatbox/core/session/mode-policy'
 import { Loader, Text } from '@mantine/core'
-import { TestId } from '@shared/automation/testids'
-import type { BuiltInBrowserState } from '@shared/built-in-browser'
+import { AutomationAdjacentAttr, TestId } from '@shared/automation/testids'
+import { BUILT_IN_BROWSER_MAX_TABS, type BuiltInBrowserTabs } from '@shared/built-in-browser'
 import type { Session } from '@shared/types'
 import { IconAdjustmentsHorizontal, IconHistory, IconPlus, type IconProps, IconWorld, IconX } from '@tabler/icons-react'
 import clsx from 'clsx'
 import { type ElementType, type KeyboardEvent, type PointerEvent, useCallback, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { rendererApplication } from '@/app/renderer-application'
-import { BuiltInBrowserView, useBuiltInBrowserState } from '@/components/chat/BuiltInBrowserPanel'
+import { BuiltInBrowserView, useBuiltInBrowserTabs } from '@/components/chat/BuiltInBrowserPanel'
 import { ICON_SIZE, ICON_STROKE_WIDTH, IconButton } from '@/components/common/IconButton'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import { SettingsDensityProvider } from '@/components/settings/SettingsLayout'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import type { BuiltInBrowser } from '@/platform/interfaces'
 import { useSessionAgentMode } from '@/stores/session/agent-mode'
+import * as toastActions from '@/stores/toastActions'
 import { DEFAULT_SESSION_PANEL, type SessionPanelTab, uiStore, useUIStore } from '@/stores/uiStore'
 import { SessionSettingsContent } from './SessionSettingsContent'
 import { applySessionEdit, type SessionEdit } from './session-edit'
 import ThreadHistoryList from './ThreadHistoryList'
 
 export const SESSION_PANEL_MIN_WIDTH = 320
+
+function reportPanelError(error: unknown): undefined {
+  toastActions.add(error instanceof Error ? error.message : String(error))
+  return undefined
+}
 const SESSION_PANEL_MAX_RATIO = 0.7
 
 /**
@@ -45,9 +51,9 @@ export function useSessionPanel(sessionId: string) {
   return useUIStore((s) => s.sessionPanels[sessionId] ?? DEFAULT_SESSION_PANEL)
 }
 
-/** Shows another panel tab. */
-export function showSessionPanelTab(sessionId: string, tab: SessionPanelTab) {
-  uiStore.getState().openSessionPanel(sessionId, tab)
+/** Shows another panel tab; `webTab` picks the browser tab of the `web` tab. */
+export function showSessionPanelTab(sessionId: string, tab: SessionPanelTab, webTab?: string) {
+  uiStore.getState().openSessionPanel(sessionId, tab, webTab)
 }
 
 /** Closes the panel or sheet; fields being edited apply their text as they unmount. */
@@ -70,6 +76,7 @@ function PanelTab({
   onSelect,
   onClose,
   testId,
+  browserTabId,
 }: {
   icon: ElementType<IconProps>
   label: string
@@ -79,6 +86,7 @@ function PanelTab({
   onSelect: () => void
   onClose?: () => void
   testId?: string
+  browserTabId?: string
 }) {
   const { t } = useTranslation()
   const tab = (
@@ -88,6 +96,7 @@ function PanelTab({
       aria-selected={active}
       aria-label={label}
       data-testid={testId}
+      {...(browserTabId ? { [AutomationAdjacentAttr.browserTabId]: browserTabId } : {})}
       data-active={active || undefined}
       onClick={onSelect}
       onKeyDown={(event) => {
@@ -169,9 +178,9 @@ function useResizeHandle(container: React.RefObject<HTMLElement>) {
 
 /**
  * Conversation side panel: pinned tools (conversation settings, thread history) on the left of
- * the tab strip and content tabs (the built-in browser page) after them. The panel pushes the
+ * the tab strip and content tabs (the built-in browser's pages) after them. The panel pushes the
  * chat aside rather than covering it. A page the model starts reading opens the panel when it is
- * closed and otherwise waits in its tab with a status mark.
+ * closed and otherwise waits in its tab with a status mark, without taking the user's tab away.
  */
 export function SessionSidePanel({ session, builtInBrowser }: { session: Session; builtInBrowser?: BuiltInBrowser }) {
   return builtInBrowser ? (
@@ -182,24 +191,55 @@ export function SessionSidePanel({ session, builtInBrowser }: { session: Session
 }
 
 function BrowserBackedSessionPanel({ session, builtInBrowser }: { session: Session; builtInBrowser: BuiltInBrowser }) {
-  const browserState = useBuiltInBrowserState(builtInBrowser)
-  return <SessionPanelHost session={session} builtInBrowser={builtInBrowser} browserState={browserState} />
+  const browserTabs = useBuiltInBrowserTabs(builtInBrowser)
+  return <SessionPanelHost session={session} builtInBrowser={builtInBrowser} browserTabs={browserTabs} />
+}
+
+/**
+ * Keeps the panel in step with the conversation's browser tabs: a tab that starts reading is
+ * brought forward (or marked unseen), and a tab that closes leaves the panel.
+ */
+export function useBrowserTabPanelSync(sessionId: string, browserTabs: BuiltInBrowserTabs | undefined) {
+  const readingKey = browserTabs?.tabs
+    .filter((tab) => tab.reading)
+    .map((tab) => tab.id)
+    .join(' ')
+  const tabsKey = browserTabs?.tabs.map((tab) => tab.id).join(' ')
+  const previousTabs = useRef<string[]>([])
+  const previousReading = useRef<string[]>([])
+
+  // Only a tab that starts reading is revealed; one still reading when another finishes is not.
+  useEffect(() => {
+    const reading = readingKey ? readingKey.split(' ') : []
+    for (const id of reading) {
+      if (!previousReading.current.includes(id)) uiStore.getState().revealSessionWebTab(sessionId, id)
+    }
+    previousReading.current = reading
+  }, [readingKey, sessionId])
+
+  // A tab closed by the user, by clearing browser data or by the main process leaves the panel.
+  useEffect(() => {
+    const current = tabsKey ? tabsKey.split(' ') : []
+    for (const [index, id] of previousTabs.current.entries()) {
+      if (current.includes(id)) continue
+      const neighbour = current[Math.min(index, current.length - 1)]
+      uiStore.getState().forgetSessionWebTab(sessionId, id, neighbour)
+    }
+    previousTabs.current = current
+  }, [tabsKey, sessionId])
 }
 
 function SessionPanelHost({
   session,
   builtInBrowser,
-  browserState,
+  browserTabs,
 }: {
   session: Session
   builtInBrowser?: BuiltInBrowser
-  browserState?: BuiltInBrowserState
+  browserTabs?: BuiltInBrowserTabs
 }) {
   const open = useUIStore((s) => s.sessionPanels[session.id]?.open ?? false)
-
-  useEffect(() => {
-    if (browserState?.reading) uiStore.getState().revealSessionWebTab(session.id)
-  }, [browserState?.reading, session.id])
+  useBrowserTabPanelSync(session.id, browserTabs)
 
   useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
@@ -213,35 +253,52 @@ function SessionPanelHost({
   }, [session.id])
 
   if (!open) return null
-  return <OpenSessionPanel session={session} builtInBrowser={builtInBrowser} browserState={browserState} />
+  return <OpenSessionPanel session={session} builtInBrowser={builtInBrowser} browserTabs={browserTabs} />
 }
+
+/** Panel tab keys: the pinned tools, then `web:<browser tab id>` for each page. */
+type PanelTabKey = 'settings' | 'threads' | `web:${string}`
 
 function OpenSessionPanel({
   session,
   builtInBrowser,
-  browserState,
+  browserTabs,
 }: {
   session: Session
   builtInBrowser?: BuiltInBrowser
-  browserState?: BuiltInBrowserState
+  browserTabs?: BuiltInBrowserTabs
 }) {
   const { t } = useTranslation()
   const panel = useSessionPanel(session.id)
   const width = useUIStore((s) => s.sessionPanelWidth)
-  const closeWebTab = useUIStore((s) => s.closeSessionWebTab)
   const ref = useRef<HTMLElement>(null)
   const startResize = useResizeHandle(ref)
   const mode = resolveSessionMode(useSessionAgentMode(session.id).value)
   const onEdit = usePersistedSessionEdit(session)
   const showThreads = isThreadHistoryAvailable(session, mode)
-  const showWebTab = Boolean(builtInBrowser && panel.webTabOpen)
+  const pages = builtInBrowser ? (browserTabs?.tabs ?? []) : []
 
-  const tabs: SessionPanelTab[] = [
+  const tabs: PanelTabKey[] = [
     'settings',
     ...(showThreads ? (['threads'] as const) : []),
-    ...(showWebTab ? (['web'] as const) : []),
+    ...pages.map((page) => `web:${page.id}` as const),
   ]
-  const activeTab: SessionPanelTab = tabs.includes(panel.tab) ? panel.tab : 'settings'
+  const requested: PanelTabKey = panel.tab === 'web' ? `web:${panel.webTab ?? ''}` : panel.tab
+  // Until the first tab list arrives, a web tab the panel was on stays chosen instead of falling back.
+  const loadingPages = Boolean(builtInBrowser) && !browserTabs && panel.tab === 'web'
+  const activeTab: PanelTabKey = tabs.includes(requested) || loadingPages ? requested : 'settings'
+  const activePage = pages.find((page) => activeTab === `web:${page.id}`)
+
+  const show = (key: PanelTabKey) => {
+    if (key === 'settings' || key === 'threads') showSessionPanelTab(session.id, key)
+    else showSessionPanelTab(session.id, 'web', key.slice('web:'.length))
+  }
+
+  const openPage = async () => {
+    if (!builtInBrowser) return
+    const id = await builtInBrowser.openTab().catch(reportPanelError)
+    if (id) showSessionPanelTab(session.id, 'web', id)
+  }
 
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.ctrlKey && event.key === 'Tab') {
@@ -249,8 +306,7 @@ function OpenSessionPanel({
       // Ctrl+Tab elsewhere switches conversations; inside the panel it only switches tabs.
       event.stopPropagation()
       const index = tabs.indexOf(activeTab)
-      const next = tabs[(index + (event.shiftKey ? tabs.length - 1 : 1)) % tabs.length]
-      showSessionPanelTab(session.id, next)
+      show(tabs[(index + (event.shiftKey ? tabs.length - 1 : 1)) % tabs.length])
     }
   }
 
@@ -298,36 +354,42 @@ function OpenSessionPanel({
             testId={TestId.sessionPanel.tabThreads}
           />
         )}
-        {showWebTab && (
-          <>
-            <span className="mx-0.5 h-4 w-px shrink-0 bg-chatbox-border-primary" aria-hidden />
-            <PanelTab
-              icon={IconWorld}
-              label={browserState?.title || browserState?.url || t('Built-in Browser')}
-              active={activeTab === 'web'}
-              status={
-                browserState?.reading || (activeTab !== 'web' && browserState?.loading)
-                  ? 'loading'
-                  : panel.webUnseen
-                    ? 'unseen'
-                    : undefined
-              }
-              onSelect={() => showSessionPanelTab(session.id, 'web')}
-              onClose={() => closeWebTab(session.id)}
-              testId={TestId.sessionPanel.tabWeb}
+        {pages.length > 0 && <span className="mx-0.5 h-4 w-px shrink-0 bg-chatbox-border-primary" aria-hidden />}
+        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
+          {pages.map((page) => {
+            const key = `web:${page.id}` as const
+            const active = activeTab === key
+            return (
+              <PanelTab
+                key={page.id}
+                icon={IconWorld}
+                label={page.title || page.url || t('New tab')}
+                active={active}
+                status={
+                  page.reading || (!active && page.loading)
+                    ? 'loading'
+                    : panel.unseenWebTabs.includes(page.id)
+                      ? 'unseen'
+                      : undefined
+                }
+                onSelect={() => show(key)}
+                onClose={() => void builtInBrowser?.closeTab(page.id).catch(reportPanelError)}
+                testId={TestId.sessionPanel.tabWeb}
+                browserTabId={page.id}
+              />
+            )
+          })}
+          {builtInBrowser && pages.length < BUILT_IN_BROWSER_MAX_TABS && (
+            <IconButton
+              icon={IconPlus}
+              iconSize={ICON_SIZE.inline}
+              className="shrink-0"
+              aria-label={t('New tab')}
+              data-testid={TestId.sessionPanel.newWebTab}
+              onClick={() => void openPage()}
             />
-          </>
-        )}
-        <div className="min-w-0 flex-1" />
-        {builtInBrowser && !showWebTab && (
-          <IconButton
-            icon={IconPlus}
-            iconSize={ICON_SIZE.inline}
-            aria-label={t('Open built-in browser')}
-            data-testid={TestId.sessionPanel.newWebTab}
-            onClick={() => showSessionPanelTab(session.id, 'web')}
-          />
-        )}
+          )}
+        </div>
         <IconButton
           icon={IconX}
           iconSize={ICON_SIZE.inline}
@@ -336,8 +398,10 @@ function OpenSessionPanel({
           onClick={() => closeSessionPanel(session.id)}
         />
       </div>
-      {activeTab === 'web' && builtInBrowser && browserState ? (
-        <BuiltInBrowserView builtInBrowser={builtInBrowser} state={browserState} />
+      {activePage && builtInBrowser ? (
+        <BuiltInBrowserView key={activePage.id} builtInBrowser={builtInBrowser} tab={activePage} />
+      ) : loadingPages ? (
+        <div className="min-h-0 flex-1" role="tabpanel" />
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3" role="tabpanel">
           {activeTab === 'threads' ? (

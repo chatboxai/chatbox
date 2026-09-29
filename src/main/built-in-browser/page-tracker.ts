@@ -8,6 +8,7 @@ import type {
 } from '@shared/built-in-browser'
 import type { WebContents } from 'electron'
 import { PageDownloads } from './page-downloads'
+import type { PageOutcomeTarget } from './page-outcomes'
 
 /** How long a run reported as unknown keeps other runs on its page waiting. */
 export const BUSY_WINDOW_MS = 10_000
@@ -57,7 +58,7 @@ export class PageTracker {
   private navigating = false
   /** Re-checks of reads waiting for a readable document, run after every change of state. */
   private readonly waiters = new Set<() => void>()
-  private readonly refPrefix = randomBytes(3).toString('hex')
+  private readonly refPrefix: string
   private revision = 0
   /** Counts committed main-frame documents; same-document URL changes leave it as is. */
   private documents = 0
@@ -68,11 +69,19 @@ export class PageTracker {
   private userInteracted = false
   private lastInputAt = 0
   private running: RunningScript | null = null
-  private settled: BuiltInBrowserSettledOperation[] = []
   readonly downloads: PageDownloads
 
-  constructor(contents: WebContents) {
-    this.downloads = new PageDownloads(contents)
+  /**
+   * References carry `target.tab`, so a request can name the tab that issued them; runs that end
+   * after their result go to `target`'s queue.
+   */
+  constructor(
+    contents: WebContents,
+    private readonly target: PageOutcomeTarget
+  ) {
+    const random = randomBytes(3).toString('hex')
+    this.refPrefix = target.tab ? `${target.tab}.${random}` : random
+    this.downloads = new PageDownloads(contents, target)
     contents.on('did-start-navigation', (event) => {
       if (!event.isMainFrame) return
       if (!event.isSameDocument) this.navigating = true
@@ -251,7 +260,8 @@ export class PageTracker {
     if (running.reportedAt === undefined) return
     const { operationId, status, code, message, value, truncated, diagnostics } = result
     // Only runs reported as unknown land here, and the busy window spaces them out, so the list stays short.
-    this.settled.push({
+    this.target.outcomes.addSettled({
+      ...(this.target.tab ? { tab: this.target.tab } : {}),
       operationId,
       status: status === 'not_started' ? 'unknown' : status,
       ...(code ? { code } : {}),
@@ -262,16 +272,16 @@ export class PageTracker {
     })
   }
 
-  /** What happened on the page since the previous result; each event is handed out once. */
+  /**
+   * What happened since the previous result: user input on this page, and runs and downloads that
+   * ended anywhere in the queue it shares. Each event is handed out once.
+   */
   takeEvents(): BuiltInBrowserPageEvents {
-    const { userInteracted, settled } = this
-    const downloads = this.downloads.takeEvents()
+    const { userInteracted } = this
     this.userInteracted = false
-    this.settled = []
     return {
       ...(userInteracted ? { userInteracted } : {}),
-      ...(settled.length ? { settledOperations: settled } : {}),
-      ...(downloads.length ? { downloads } : {}),
+      ...this.target.outcomes.take(),
     }
   }
 }

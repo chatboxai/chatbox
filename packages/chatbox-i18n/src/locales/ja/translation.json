@@ -5,7 +5,6 @@
   "Pages the AI reads open here. You can sign in or click through a page yourself, then ask the AI to continue.": "AI が読み取るページはここに開きます。自分でサインインしたりページを操作したりしてから、AI に続行を頼めます。",
   "Sign-ins stay in the built-in browser and are never sent to the model.": "サインイン情報は内蔵ブラウザにのみ保存され、モデルに送信されることはありません。",
   "Browse Page": "ページを閲覧",
-  "Built-in Browser": "内蔵ブラウザ",
   "Clear built-in browser data": "内蔵ブラウザのデータを消去",
   "Built-in browser data cleared": "内蔵ブラウザのデータを消去しました",
   "Projects": "プロジェクト",
@@ -1739,10 +1738,8 @@
   "Page Screenshot": "ページのスクリーンショット",
   "Run Browser JavaScript": "ブラウザーで JavaScript を実行",
   "Open in external browser": "外部ブラウザーで開く",
-  "Clear current page and history": "現在のページと履歴を消去",
   "Clear all pages and website data": "すべてのページとサイトデータを消去",
   "Clear all pages and sign out of websites?": "すべてのページを消去し、サイトからログアウトしますか？",
-  "Current page and history cleared. Website sign-ins kept.": "現在のページと履歴を消去しました。サイトへのログインは保持されます。",
   "All browser pages and website data cleared": "すべてのブラウザページとサイトデータを消去しました",
   "Clearing browser data…": "ブラウザデータを消去中…",
   "Upload Files to Page": "ページにファイルをアップロード",
@@ -1803,7 +1800,6 @@
   "No matching settings": "一致する設定はありません",
   "No threads yet": "スレッドはまだありません",
   "Not activated": "未有効化",
-  "Open built-in browser": "内蔵ブラウザーを開く",
   "Overridden": "上書き済み",
   "Overrides the global background for this chat": "このチャットでは全体の背景を上書きします",
   "Precise": "正確",
@@ -1841,5 +1837,6 @@
   "No custom servers yet. Add one manually, from the registry, or from JSON in your clipboard.": "カスタムサーバーはまだありません。手動、レジストリ、またはクリップボードの JSON から追加できます。",
   "Documents the model can search when a knowledge base is attached to a chat.": "チャットにナレッジベースを添付すると、モデルがこれらのドキュメントを検索できます。",
   "Connection": "接続",
-  "Website": "ウェブサイト"
+  "Website": "ウェブサイト",
+  "New tab": "新しいタブ"
 }

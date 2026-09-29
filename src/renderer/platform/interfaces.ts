@@ -5,10 +5,9 @@ import type { SessionRowStorePort } from '@chatbox/core/ports'
 import type { LocalMemoryScanResult } from '@shared/agent-persona/memory-import'
 import type { AnalyticsEventParams } from '@shared/analytics'
 import type {
-  BuiltInBrowserClearScope,
   BuiltInBrowserRequest,
   BuiltInBrowserResults,
-  BuiltInBrowserState,
+  BuiltInBrowserTabs,
   BuiltInBrowserViewRequest,
 } from '@shared/built-in-browser'
 import type { PlatformType as SharedPlatformType } from '@shared/platform'
@@ -43,13 +42,8 @@ export interface Storage {
   setAllStoreValues(data: { [key: string]: any }): Promise<void>
 }
 
-/** Desktop-only browser with its own persistent profile for reading rendered or signed-in pages. */
-export interface BuiltInBrowser {
-  /** Performs one request on the conversation's page; aborting `signal` cancels it. */
-  request<Request extends BuiltInBrowserRequest>(
-    request: Request,
-    options?: { timeoutMs?: number; signal?: AbortSignal }
-  ): Promise<BuiltInBrowserResults[Request['kind']]>
+/** One tab of a conversation's built-in browser, as the side panel drives it. */
+export interface BuiltInBrowserTabControls {
   navigate(url: string): Promise<void>
   goBack(): Promise<void>
   goForward(): Promise<void>
@@ -57,10 +51,24 @@ export interface BuiltInBrowser {
   stop(): Promise<void>
   /** Resolves to the page still when a hide request asks for one and the page was showing. */
   setView(request: BuiltInBrowserViewRequest): Promise<string | null>
-  getState(): Promise<BuiltInBrowserState>
-  onStateChange(callback: (state: BuiltInBrowserState) => void): () => void
-  clearData(scope: BuiltInBrowserClearScope): Promise<void>
-  /** Removes the conversation's page and the files its runs downloaded. */
+}
+
+/** Desktop-only browser with its own persistent profile for reading rendered or signed-in pages. */
+export interface BuiltInBrowser {
+  /** Performs one request on the conversation's pages; aborting `signal` cancels it. */
+  request<Request extends BuiltInBrowserRequest>(
+    request: Request,
+    options?: { timeoutMs?: number; signal?: AbortSignal }
+  ): Promise<BuiltInBrowserResults[Request['kind']]>
+  getTabs(): Promise<BuiltInBrowserTabs>
+  onTabsChange(callback: (tabs: BuiltInBrowserTabs) => void): () => void
+  /** Opens an empty tab and resolves to its id. */
+  openTab(): Promise<string>
+  closeTab(tabId: string): Promise<void>
+  tab(tabId: string): BuiltInBrowserTabControls
+  /** Closes every conversation's tabs and clears the shared website profile, signing out of websites. */
+  clearData(): Promise<void>
+  /** Closes the conversation's tabs and removes the files its runs downloaded. */
   dispose(): Promise<void>
 }
 

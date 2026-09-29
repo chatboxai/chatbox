@@ -34,14 +34,11 @@ function createBrowser(content: string): BuiltInBrowser {
       content,
       readMode: 'article',
     }),
-    navigate: vi.fn(),
-    goBack: vi.fn(),
-    goForward: vi.fn(),
-    reload: vi.fn(),
-    stop: vi.fn(),
-    setView: vi.fn().mockResolvedValue(null),
-    getState: vi.fn(),
-    onStateChange: vi.fn(),
+    getTabs: vi.fn(),
+    onTabsChange: vi.fn(),
+    openTab: vi.fn(),
+    closeTab: vi.fn(),
+    tab: vi.fn(),
     clearData: vi.fn(),
     dispose: vi.fn(),
   }
@@ -100,7 +97,7 @@ describe('browser tool', () => {
     expect(browserTool(browser).description).toContain('prefer parse_link')
     expect(browserTool(browser, { hasParseLink: false }).description).not.toContain('parse_link')
     expect(browserTool(browser).description).toContain('load the built-in-browser skill')
-    expect(browserTool(browser).description).toContain('ask them to do it in the sidebar')
+    expect(browserTool(browser).description).toContain('ask them to do it in the side panel')
   })
 
   it('reads a page and forwards the abort signal', async () => {
@@ -159,12 +156,52 @@ describe('browser tool', () => {
     expect(output.value).toContain('Earlier runs finished: [{"operationId":"op_1","status":"completed"')
   })
 
-  it('reads the page left open in the sidebar when no url is given', async () => {
+  it('reads the page left open in the side panel when no url is given', async () => {
     const browser = createBrowser('Signed-in page.')
 
     await browserTool(browser).execute({ command: 'read' }, {})
 
     expect(browser.request).toHaveBeenCalledWith({ kind: 'read', url: undefined }, { signal: undefined })
+  })
+
+  it('opens a page in a new tab or reads another tab, and names the tabs in its result', async () => {
+    const browser = createBrowser('Plans.')
+    const tabs = [
+      { tab: 't1', url: 'https://a.example/', title: 'A' },
+      { tab: 't2', url: 'https://example.com/final', title: 'Example' },
+    ]
+    vi.mocked(browser.request).mockResolvedValue({
+      tab: 't2',
+      tabs,
+      page: 't2.p-1',
+      url: 'https://example.com/final',
+      title: 'Example',
+      content: 'Plans.',
+      readMode: 'article',
+    })
+    const tool = browserTool(browser)
+
+    const opened = await tool.execute({ command: 'read', url: 'https://example.com/', newTab: true }, {})
+    await tool.execute({ command: 'read', tab: 't1' }, {})
+
+    expect(browser.request).toHaveBeenNthCalledWith(
+      1,
+      { kind: 'read', url: 'https://example.com/', newTab: true },
+      { signal: undefined }
+    )
+    expect(browser.request).toHaveBeenNthCalledWith(
+      2,
+      { kind: 'read', url: undefined, tab: 't1' },
+      { signal: undefined }
+    )
+    expect(opened).toMatchObject({ tab: 't2', tabs, page: 't2.p-1' })
+    const output = tool.toModelOutput({
+      toolCallId: 'read',
+      input: { command: 'read' },
+      output: opened,
+    }) as { value: string }
+    expect(output.value).toContain('Tab: t2')
+    expect(output.value).toContain(`Open tabs: ${JSON.stringify(tabs)}`)
   })
 })
 
@@ -235,7 +272,7 @@ describe('browser run command', () => {
     expect(output).toMatchObject({
       status: 'completed',
       navigated: true,
-      next: expect.stringContaining('Read it without a url'),
+      next: expect.stringContaining('without a url, before running another script'),
     })
     expect(output).not.toHaveProperty('page')
   })

@@ -13,7 +13,6 @@ const mocks = vi.hoisted(() => ({
     setView: ReturnType<typeof vi.fn>
     dispose: ReturnType<typeof vi.fn>
     getState: ReturnType<typeof vi.fn>
-    resetPage: ReturnType<typeof vi.fn>
   }>,
   host: {},
   clearData: vi.fn().mockResolvedValue(undefined),
@@ -33,10 +32,16 @@ vi.mock('./page-downloads', async (importOriginal) => ({
 vi.mock('./controller', () => ({
   BuiltInBrowserController: class {
     navigate = vi.fn()
-    setView = vi.fn()
+    setView = vi.fn().mockResolvedValue(null)
     dispose = vi.fn()
-    getState = vi.fn()
-    resetPage = vi.fn()
+    getState = vi.fn(() => ({
+      url: '',
+      title: '',
+      loading: false,
+      canGoBack: false,
+      canGoForward: false,
+      reading: false,
+    }))
     clearData = mocks.clearData
     constructor(public sessionId?: string) {
       mocks.controllers.push(this)
@@ -48,7 +53,10 @@ function invoke(channel: string, ...args: unknown[]) {
   return mocks.handlers.get(channel)?.(...args)
 }
 function owner(id: number) {
-  return { sender: Object.assign(new EventEmitter(), { id }) }
+  return { sender: Object.assign(new EventEmitter(), { id, send: vi.fn(), isDestroyed: () => false }) }
+}
+function openTab(event: ReturnType<typeof owner>, sessionId: string): string {
+  return invoke(channels.openTab, event, sessionId) as string
 }
 
 describe('browser IPC conversation ownership', () => {
@@ -58,20 +66,41 @@ describe('browser IPC conversation ownership', () => {
     mocks.clearData.mockReset().mockResolvedValue(undefined)
     registerBuiltInBrowserHandlers()
   })
-  it('keeps controllers separate by conversation and window and reuses each page', () => {
+
+  it('keeps tabs separate by conversation and window and routes each call to its tab', () => {
     const event = owner(1)
-    invoke(channels.navigate, event, 'a', 'https://a.example')
-    invoke(channels.navigate, event, 'b', 'https://b.example')
-    invoke(channels.navigate, event, 'a', 'https://a.example/next')
-    invoke(channels.getState, owner(2), 'a')
-    expect(mocks.controllers.map((controller) => controller.sessionId)).toEqual(['a', 'b', 'a'])
-    expect(mocks.controllers[0].navigate.mock.calls).toEqual([
-      [mocks.host, 'https://a.example'],
-      [mocks.host, 'https://a.example/next'],
-    ])
+    const a1 = openTab(event, 'a')
+    const b1 = openTab(event, 'b')
+    const a2 = openTab(event, 'a')
+    openTab(owner(2), 'a')
+    expect(mocks.controllers.map((controller) => controller.sessionId)).toEqual(['a', 'b', 'a', 'a'])
+    invoke(channels.navigate, event, 'a', a1, 'https://a.example')
+    invoke(channels.navigate, event, 'a', a2, 'https://a.example/next')
+    invoke(channels.navigate, event, 'b', b1, 'https://b.example')
+    expect(mocks.controllers[0].navigate).toHaveBeenCalledWith(mocks.host, 'https://a.example')
+    expect(mocks.controllers[2].navigate).toHaveBeenCalledWith(mocks.host, 'https://a.example/next')
     expect(mocks.controllers[1].navigate).toHaveBeenCalledWith(mocks.host, 'https://b.example')
-    expect(() => invoke(channels.getState, event, '')).toThrow('conversation is required')
+    expect(() => invoke(channels.navigate, event, 'b', 't9', 'https://b.example')).toThrow('No tab t9')
+    expect(() => invoke(channels.getTabs, event, '')).toThrow('conversation is required')
   })
+
+  it('lists and pushes the tabs of a conversation, and closes one tab alone', () => {
+    const event = owner(1)
+    const first = openTab(event, 'a')
+    const second = openTab(event, 'a')
+    expect(invoke(channels.getTabs, event, 'a')).toMatchObject({
+      sessionId: 'a',
+      tabs: [{ id: first }, { id: second }],
+    })
+    invoke(channels.closeTab, event, 'a', first)
+    expect(mocks.controllers[0].dispose).toHaveBeenCalledOnce()
+    expect(mocks.controllers[1].dispose).not.toHaveBeenCalled()
+    expect(event.sender.send).toHaveBeenLastCalledWith(channels.tabs, {
+      sessionId: 'a',
+      tabs: [expect.objectContaining({ id: second })],
+    })
+  })
+
   it('releases deleted conversations and their downloads across windows without recreating pages during late cleanup', async () => {
     const event = owner(1)
     const other = owner(2)
@@ -79,9 +108,9 @@ describe('browser IPC conversation ownership', () => {
       mkdirSync(downloadsOf(sessionId), { recursive: true })
       writeFileSync(path.join(downloadsOf(sessionId), 'report.csv'), 'data')
     }
-    invoke(channels.navigate, event, 'a', 'https://a.example')
-    invoke(channels.navigate, event, 'b', 'https://b.example')
-    invoke(channels.navigate, other, 'a', 'https://a.example')
+    const tab = openTab(event, 'a')
+    openTab(event, 'b')
+    openTab(other, 'a')
     await invoke(channels.dispose, event, 'a')
     expect(mocks.controllers[0].dispose).toHaveBeenCalledOnce()
     expect(mocks.controllers[2].dispose).toHaveBeenCalledOnce()
@@ -90,28 +119,17 @@ describe('browser IPC conversation ownership', () => {
     expect(existsSync(path.join(downloadsOf('b'), 'report.csv'))).toBe(true)
     await invoke(channels.dispose, event, 'a')
     invoke(channels.cancel, event, 'a', 'late-abort')
-    invoke(channels.setView, event, 'a', { visible: false })
+    invoke(channels.setView, event, 'a', tab, { visible: false })
     expect(mocks.controllers).toHaveLength(3)
     event.sender.emit('destroyed')
     expect(mocks.controllers[0].dispose).toHaveBeenCalledOnce()
     expect(mocks.controllers[1].dispose).toHaveBeenCalledOnce()
   })
 
-  it('clears only the current page without clearing the shared website profile', async () => {
+  it('closes tabs in every window before clearing the shared profile and blocks new page loads until done', async () => {
     const event = owner(1)
-    invoke(channels.getState, event, 'a')
-    invoke(channels.getState, event, 'b')
-    await invoke(channels.clearData, event, 'a', 'page')
-    expect(mocks.controllers[0].resetPage).toHaveBeenCalledOnce()
-    expect(mocks.controllers[1].resetPage).not.toHaveBeenCalled()
-    expect(mocks.clearData).not.toHaveBeenCalled()
-    await expect(invoke(channels.clearData, event, 'a', 'invalid')).rejects.toThrow('Unknown browser data scope')
-  })
-
-  it('resets pages in every window before clearing the shared profile and blocks new page loads until done', async () => {
-    const event = owner(1)
-    invoke(channels.getState, event, 'a')
-    invoke(channels.getState, owner(2), 'b')
+    const tab = openTab(event, 'a')
+    openTab(owner(2), 'b')
     let finish: (() => void) | undefined
     mocks.clearData.mockImplementationOnce(
       () =>
@@ -119,44 +137,46 @@ describe('browser IPC conversation ownership', () => {
           finish = resolve
         })
     )
-    const clearing = invoke(channels.clearData, event, 'a', 'all')
+    const clearing = invoke(channels.clearData, event, 'a')
     await Promise.resolve()
-    expect(mocks.controllers.every((browser) => browser.resetPage.mock.calls.length === 1)).toBe(true)
+    expect(mocks.controllers.every((browser) => browser.dispose.mock.calls.length === 1)).toBe(true)
     expect(mocks.clearData).toHaveBeenCalledOnce()
-    expect(mocks.controllers[1].resetPage.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(mocks.controllers[1].dispose.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.clearData.mock.invocationCallOrder[0]
     )
-    expect(() => invoke(channels.navigate, event, 'a', 'https://example.com')).toThrow('being cleared')
+    expect(() => invoke(channels.openTab, event, 'a')).toThrow('being cleared')
     expect(() => invoke(channels.request, event, 'a', { kind: 'read', requestId: 'blocked' })).toThrow('being cleared')
-    const repeated = invoke(channels.clearData, event, 'a', 'all')
+    const repeated = invoke(channels.clearData, event, 'a')
     finish?.()
     await Promise.all([clearing, repeated])
     expect(mocks.clearData).toHaveBeenCalledOnce()
-    invoke(channels.navigate, event, 'a', 'https://example.com')
-    expect(mocks.controllers[0].navigate).toHaveBeenCalledOnce()
+    expect(() => invoke(channels.navigate, event, 'a', tab, 'https://example.com')).toThrow(`No tab ${tab}`)
+    expect(invoke(channels.getTabs, event, 'a')).toMatchObject({ tabs: [] })
   })
 
   it('allows retry after shared profile clearing fails', async () => {
     const event = owner(1)
     mocks.clearData.mockRejectedValueOnce(new Error('disk failure'))
-    await expect(invoke(channels.clearData, event, 'a', 'all')).rejects.toThrow('disk failure')
-    await invoke(channels.clearData, event, 'a', 'all')
+    await expect(invoke(channels.clearData, event, 'a')).rejects.toThrow('disk failure')
+    await invoke(channels.clearData, event, 'a')
     expect(mocks.clearData).toHaveBeenCalledTimes(2)
   })
 
-  it('only shows the selected page and disposes pages on renderer reload or destruction', () => {
+  it('shows only the selected tab across conversations and disposes pages on renderer reload or destruction', () => {
     const event = owner(1)
-    invoke(channels.getState, event, 'a')
-    invoke(channels.getState, event, 'b')
+    openTab(event, 'a')
+    const b1 = openTab(event, 'b')
+    openTab(event, 'b')
     const visible = { visible: true, bounds: { x: 1, y: 1, width: 300, height: 600 } }
-    invoke(channels.setView, event, 'b', visible)
+    invoke(channels.setView, event, 'b', b1, visible)
     expect(mocks.controllers[0].setView).toHaveBeenCalledWith(mocks.host, { visible: false })
+    expect(mocks.controllers[2].setView).toHaveBeenCalledWith(mocks.host, { visible: false })
     expect(mocks.controllers[1].setView).toHaveBeenCalledWith(mocks.host, visible)
     event.sender.emit('did-navigate')
     for (const controller of mocks.controllers) expect(controller.dispose).toHaveBeenCalledOnce()
-    invoke(channels.getState, event, 'a')
-    expect(mocks.controllers).toHaveLength(3)
+    openTab(event, 'a')
+    expect(mocks.controllers).toHaveLength(4)
     event.sender.emit('destroyed')
-    expect(mocks.controllers[2].dispose).toHaveBeenCalledOnce()
+    expect(mocks.controllers[3].dispose).toHaveBeenCalledOnce()
   })
 })

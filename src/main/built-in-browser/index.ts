@@ -1,12 +1,12 @@
 import {
   BUILT_IN_BROWSER_CHANNELS,
   type BuiltInBrowserCall,
-  type BuiltInBrowserClearScope,
   type BuiltInBrowserViewRequest,
 } from '@shared/built-in-browser'
 import { BrowserWindow, type IpcMainInvokeEvent, ipcMain } from 'electron'
 import { BuiltInBrowserController } from './controller'
 import { downloadLocationOf, removeDownloads } from './page-downloads'
+import { SessionPages } from './session-pages'
 
 // All conversation views use the same persistent website login profile and proxy.
 export const builtInBrowser = new BuiltInBrowserController()
@@ -18,7 +18,7 @@ function hostOf(event: IpcMainInvokeEvent): BrowserWindow {
 }
 
 export function registerBuiltInBrowserHandlers(): void {
-  const owners = new Map<number, Map<string, BuiltInBrowserController>>()
+  const owners = new Map<number, Map<string, SessionPages>>()
   let clearingProfile: Promise<void> | undefined
 
   function validate(event: IpcMainInvokeEvent, sessionId: string): void {
@@ -28,38 +28,38 @@ export function registerBuiltInBrowserHandlers(): void {
     }
   }
 
-  function browserOf(event: IpcMainInvokeEvent, sessionId: string): BuiltInBrowserController {
+  function pagesOf(event: IpcMainInvokeEvent, sessionId: string): SessionPages {
     validate(event, sessionId)
     const sender = event.sender
-    let browsers = owners.get(sender.id)
-    if (!browsers) {
-      browsers = new Map()
-      owners.set(sender.id, browsers)
+    let sessions = owners.get(sender.id)
+    if (!sessions) {
+      sessions = new Map()
+      owners.set(sender.id, sessions)
       const release = () => {
         sender.off('did-navigate', release)
         sender.off('destroyed', release)
-        for (const browser of owners.get(sender.id)?.values() ?? []) browser.dispose()
+        for (const pages of owners.get(sender.id)?.values() ?? []) pages.dispose()
         owners.delete(sender.id)
       }
       sender.on('did-navigate', release)
       sender.on('destroyed', release)
     }
-    let browser = browsers.get(sessionId)
-    if (!browser) {
+    let pages = sessions.get(sessionId)
+    if (!pages) {
       // The owner listener releases all its pages together, including on renderer reload.
-      browser = new BuiltInBrowserController(sessionId, false)
-      browsers.set(sessionId, browser)
+      pages = new SessionPages(sessionId, sender)
+      sessions.set(sessionId, pages)
     }
-    return browser
+    return pages
   }
 
-  function pageBrowserOf(event: IpcMainInvokeEvent, sessionId: string): BuiltInBrowserController {
+  function usablePagesOf(event: IpcMainInvokeEvent, sessionId: string): SessionPages {
     if (clearingProfile) throw new Error('Browser data is being cleared. Try again when clearing finishes.')
-    return browserOf(event, sessionId)
+    return pagesOf(event, sessionId)
   }
 
   ipcMain.handle(BUILT_IN_BROWSER_CHANNELS.request, (event, sessionId: string, call: BuiltInBrowserCall) =>
-    pageBrowserOf(event, sessionId).request(hostOf(event), event.sender.id, call)
+    usablePagesOf(event, sessionId).request(hostOf(event), event.sender.id, call)
   )
   ipcMain.handle(BUILT_IN_BROWSER_CHANNELS.cancel, (event, sessionId: string, requestId: string) => {
     validate(event, sessionId)
@@ -68,61 +68,62 @@ export function registerBuiltInBrowserHandlers(): void {
   ipcMain.handle(BUILT_IN_BROWSER_CHANNELS.dispose, async (event, sessionId: string) => {
     validate(event, sessionId)
     // Session deletion applies across windows, unlike ordinary page operations.
-    for (const browsers of owners.values()) {
-      browsers.get(sessionId)?.dispose()
-      browsers.delete(sessionId)
+    for (const sessions of owners.values()) {
+      sessions.get(sessionId)?.dispose()
+      sessions.delete(sessionId)
     }
     // The conversation's downloads go with it.
     await removeDownloads(downloadLocationOf(sessionId))
   })
-  ipcMain.handle(BUILT_IN_BROWSER_CHANNELS.navigate, (event, sessionId: string, url: string) =>
-    pageBrowserOf(event, sessionId).navigate(hostOf(event), url)
+  ipcMain.handle(BUILT_IN_BROWSER_CHANNELS.getTabs, (event, sessionId: string) => pagesOf(event, sessionId).list())
+  ipcMain.handle(BUILT_IN_BROWSER_CHANNELS.openTab, (event, sessionId: string) =>
+    usablePagesOf(event, sessionId).openTab()
   )
-  ipcMain.handle(BUILT_IN_BROWSER_CHANNELS.goBack, (event, sessionId: string) =>
-    pageBrowserOf(event, sessionId).goBack()
+  ipcMain.handle(BUILT_IN_BROWSER_CHANNELS.closeTab, (event, sessionId: string, tabId: string) =>
+    pagesOf(event, sessionId).closeTab(tabId)
   )
-  ipcMain.handle(BUILT_IN_BROWSER_CHANNELS.goForward, (event, sessionId: string) =>
-    pageBrowserOf(event, sessionId).goForward()
+  ipcMain.handle(BUILT_IN_BROWSER_CHANNELS.navigate, (event, sessionId: string, tabId: string, url: string) =>
+    usablePagesOf(event, sessionId).tab(tabId).navigate(hostOf(event), url)
   )
-  ipcMain.handle(BUILT_IN_BROWSER_CHANNELS.reload, (event, sessionId: string) =>
-    pageBrowserOf(event, sessionId).reload()
+  ipcMain.handle(BUILT_IN_BROWSER_CHANNELS.goBack, (event, sessionId: string, tabId: string) =>
+    usablePagesOf(event, sessionId).tab(tabId).goBack()
   )
-  ipcMain.handle(BUILT_IN_BROWSER_CHANNELS.stop, (event, sessionId: string) => browserOf(event, sessionId).stop())
-  ipcMain.handle(BUILT_IN_BROWSER_CHANNELS.setView, (event, sessionId: string, request: BuiltInBrowserViewRequest) => {
-    validate(event, sessionId)
-    const host = hostOf(event)
-    if (!request.visible) return owners.get(event.sender.id)?.get(sessionId)?.setView(host, request) ?? null
-    const browser = browserOf(event, sessionId)
-    for (const other of owners.get(event.sender.id)?.values() ?? []) {
-      if (other !== browser) void other.setView(host, { visible: false })
-    }
-    return browser.setView(host, request)
-  })
-  ipcMain.handle(BUILT_IN_BROWSER_CHANNELS.getState, (event, sessionId: string) =>
-    browserOf(event, sessionId).getState()
+  ipcMain.handle(BUILT_IN_BROWSER_CHANNELS.goForward, (event, sessionId: string, tabId: string) =>
+    usablePagesOf(event, sessionId).tab(tabId).goForward()
+  )
+  ipcMain.handle(BUILT_IN_BROWSER_CHANNELS.reload, (event, sessionId: string, tabId: string) =>
+    usablePagesOf(event, sessionId).tab(tabId).reload()
+  )
+  ipcMain.handle(BUILT_IN_BROWSER_CHANNELS.stop, (event, sessionId: string, tabId: string) =>
+    pagesOf(event, sessionId).tab(tabId).stop()
   )
   ipcMain.handle(
-    BUILT_IN_BROWSER_CHANNELS.clearData,
-    async (event, sessionId: string, scope: BuiltInBrowserClearScope) => {
+    BUILT_IN_BROWSER_CHANNELS.setView,
+    (event, sessionId: string, tabId: string, request: BuiltInBrowserViewRequest) => {
       validate(event, sessionId)
-      if (scope === 'page') {
-        owners.get(event.sender.id)?.get(sessionId)?.resetPage()
-        return
+      const host = hostOf(event)
+      if (!request.visible) return owners.get(event.sender.id)?.get(sessionId)?.setView(host, tabId, request) ?? null
+      const pages = pagesOf(event, sessionId)
+      for (const other of owners.get(event.sender.id)?.values() ?? []) {
+        if (other !== pages) other.hideAll(host)
       }
-      if (scope !== 'all') throw new Error('Unknown browser data scope')
-      if (clearingProfile) return clearingProfile
-      // Close every page before clearing shared storage so running scripts cannot repopulate it.
-      clearingProfile = Promise.resolve().then(async () => {
-        for (const browsers of owners.values()) {
-          for (const browser of browsers.values()) browser.resetPage()
-        }
-        await builtInBrowser.clearData()
-      })
-      try {
-        await clearingProfile
-      } finally {
-        clearingProfile = undefined
-      }
+      return pages.setView(host, tabId, request)
     }
   )
+  ipcMain.handle(BUILT_IN_BROWSER_CHANNELS.clearData, async (event, sessionId: string) => {
+    validate(event, sessionId)
+    if (clearingProfile) return clearingProfile
+    // Close every page before clearing shared storage so running scripts cannot repopulate it.
+    clearingProfile = Promise.resolve().then(async () => {
+      for (const sessions of owners.values()) {
+        for (const pages of sessions.values()) pages.closeAll()
+      }
+      await builtInBrowser.clearData()
+    })
+    try {
+      await clearingProfile
+    } finally {
+      clearingProfile = undefined
+    }
+  })
 }

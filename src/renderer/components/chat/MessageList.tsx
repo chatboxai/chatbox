@@ -464,8 +464,8 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
       else props.onRequireComplete?.()
       return
     }
-    smoothFollowOutput.pause()
-    virtuoso.current?.scrollTo({ top: 0, behavior: 'smooth' })
+    // Virtualized rows change height as they mount; an animated jump can be interrupted by those measurements.
+    virtuoso.current?.scrollTo({ top: 0, behavior: 'auto' })
   }, [smoothFollowOutput, props.hasOlder, props.onJumpToEdge, props.onRequireComplete])
 
   const handleScrollToBottom = useCallback(() => {

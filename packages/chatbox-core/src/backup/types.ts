@@ -232,6 +232,8 @@ export interface BackupStorage {
   getItem<T>(key: string, initialValue: T): Promise<T>
   setItemNow<T>(key: string, value: T): Promise<void>
   removeItem(key: string): Promise<void>
+  /** Removes a bounded batch of keys; a failed batch leaves every key in it to be retried or reported. */
+  removeItems?(keys: string[]): Promise<void>
   getBlob(key: string): Promise<string | null>
   setBlob(key: string, value: string): Promise<void>
   delBlob(key: string): Promise<void>
@@ -246,4 +248,6 @@ export interface BackupMetaStorage {
     updates: Partial<z.infer<typeof SessionMetaRecordSchema>>
   ): Promise<z.infer<typeof SessionMetaRecordSchema> | null>
   delete(id: string): Promise<void>
+  /** Upserts complete records in one write. */
+  createMany?(records: z.infer<typeof SessionMetaRecordSchema>[]): Promise<void>
 }

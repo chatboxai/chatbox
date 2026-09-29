@@ -32,6 +32,8 @@ export interface Storage {
   openBackupValue?(key: string): Promise<import('@chatbox/core/backup').BackupFile | null>
   /** Returns space freed by bulk rewrites, such as a backup restore, to the file system. */
   compactStore?(): Promise<void>
+  /** Removes several keys at once; the batch is atomic where the backend supports transactions. */
+  delStoreValues?(keys: string[]): Promise<void>
   getStorageType(): string
   setStoreValue(key: string, value: any): Promise<void>
   getStoreValue(key: string): Promise<any>

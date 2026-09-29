@@ -117,6 +117,20 @@ it('leaves the database file alone when little of it is free', async () => {
 
   expect(await freePages()).toBe(before)
 })
+it('removes several small and chunked values in one transaction', async () => {
+  const { storage, bytes } = await fixture()
+  await storage.setItem('a', 'small')
+  await storage.writeStream('b', chunks('y'.repeat(100_000)))
+  await storage.setItem('keep', 'kept')
+  bytes.length = 0
+
+  await storage.removeItems(['b', 'a', 'a'])
+
+  expect(bytes).toHaveLength(1)
+  expect(await storage.getItem('a')).toBeNull()
+  expect(await storage.openBackupValue('b')).toBeNull()
+  expect(await storage.getItem('keep')).toBe('kept')
+})
 it('retains the previous snapshot on transaction failure and cleans interrupted stream chunks', async () => {
   const { storage, db, failNext } = await fixture()
   await storage.writeStream('old', chunks('original'))

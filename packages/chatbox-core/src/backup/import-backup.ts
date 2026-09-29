@@ -1,4 +1,4 @@
-import type { CopilotDetail, Message, Session, Settings } from '@shared/types'
+import type { CopilotDetail, Message, Session, SessionMetaRecord, Settings } from '@shared/types'
 import { v4 as uuidv4 } from 'uuid'
 import { migrateSession } from '../application/session/compatibility/session-load'
 import { hasPausedToolCall } from '../application/session/session-metadata'
@@ -59,6 +59,9 @@ import {
   validateBackupManifestGraph,
 } from './types'
 import { readZipFileEntries } from './zip'
+
+/** Keys or metadata records written per storage transaction during an import. */
+const IMPORT_WRITE_BATCH_SIZE = 64
 
 interface StagedEntry {
   path: string
@@ -559,8 +562,20 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
   const cleanupTemps = async () => {
     const failures: unknown[] = []
     const remaining: string[] = []
+    const removeItems = options.storage.removeItems?.bind(options.storage)
+    if (removeItems) {
+      for (let index = 0; index < tempStoreKeys.length; index += IMPORT_WRITE_BATCH_SIZE) {
+        const batch = tempStoreKeys.slice(index, index + IMPORT_WRITE_BATCH_SIZE)
+        try {
+          await removeItems(batch)
+        } catch (error) {
+          failures.push(error)
+          remaining.push(...batch)
+        }
+      }
+    }
     for (const [keys, remove] of [
-      [tempStoreKeys, (key: string) => options.storage.removeItem(key)],
+      [removeItems ? [] : tempStoreKeys, (key: string) => options.storage.removeItem(key)],
       [tempBlobKeys, (key: string) => options.storage.delBlob(key)],
     ] as const) {
       for (const key of keys)
@@ -770,6 +785,13 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
       })
     }
 
+    // Metadata of published sessions is written in batches; rollback covers each record before its batch is sent.
+    const createMeta = options.metaStorage.createMany?.bind(options.metaStorage)
+    const pendingMeta: SessionMetaRecord[] = []
+    const flushMeta = async () => {
+      if (!createMeta || !pendingMeta.length) return
+      await createMeta(pendingMeta.splice(0))
+    }
     for (let index = 0; index < manifest.sessions.length; index++) {
       throwIfAborted(options.signal)
       const descriptor = manifest.sessions[index]
@@ -801,7 +823,10 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
       const existingMeta = await options.metaStorage.getById(session.id)
       previousMeta.set(session.id, existingMeta)
       changedMetaIds.push(session.id)
-      if (existingMeta) await options.metaStorage.update(session.id, meta)
+      if (createMeta) {
+        pendingMeta.push(existingMeta ? { ...existingMeta, ...meta } : meta)
+        if (pendingMeta.length >= IMPORT_WRITE_BATCH_SIZE) await flushMeta()
+      } else if (existingMeta) await options.metaStorage.update(session.id, meta)
       else await options.metaStorage.create(meta)
       options.onProgress?.({
         phase: 'restoring',
@@ -810,6 +835,8 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
         label: session.name,
       })
     }
+
+    await flushMeta()
 
     throwIfAborted(options.signal)
     if (manifest.data.settings) {

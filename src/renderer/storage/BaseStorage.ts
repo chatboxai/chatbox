@@ -113,6 +113,9 @@ export default class BaseStorage {
   public get openBackupValue() {
     return platform.openBackupValue?.bind(platform)
   }
+  public get removeItems() {
+    return platform.delStoreValues?.bind(platform)
+  }
 
   public get blobStreams() {
     return platform.backupBlobStreams

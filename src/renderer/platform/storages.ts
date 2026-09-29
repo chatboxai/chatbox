@@ -399,6 +399,24 @@ class SQLiteStorage {
     return this.enqueueOperation(first, () => (first === second ? copy() : this.enqueueOperation(second, copy)))
   }
 
+  /** Removes several keys and their chunks in one transaction, holding every key's operation queue. */
+  async removeItems(keys: string[]): Promise<void> {
+    await this.ensureInitialized()
+    const ordered = [...new Set(keys)].sort()
+    if (ordered.length === 0) return
+    const remove = () =>
+      this.database.executeSet(
+        ordered.flatMap((key) => [
+          { statement: 'DELETE FROM key_value WHERE key = ?;', values: [key] },
+          { statement: 'DELETE FROM key_value_chunks WHERE key = ?;', values: [key] },
+        ]),
+        true
+      )
+    const acquire = (index: number): Promise<unknown> =>
+      this.enqueueOperation(ordered[index], () => (index + 1 < ordered.length ? acquire(index + 1) : remove()))
+    await acquire(0)
+  }
+
   /** Stage bounded native chunks, then publish one manifest for an absent key. */
   async writeStream(key: string, chunks: AsyncIterable<string>): Promise<void> {
     await this.ensureInitialized()
@@ -605,6 +623,9 @@ export class MobileSQLiteStorage implements Storage {
   }
   public compactStore() {
     return this.sqliteStorage.compact()
+  }
+  public delStoreValues(keys: string[]) {
+    return this.sqliteStorage.removeItems(keys)
   }
   public get backupResourceStorage() {
     return this.sqliteStorage

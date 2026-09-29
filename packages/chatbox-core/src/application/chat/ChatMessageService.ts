@@ -1,8 +1,15 @@
 import { withSessionGenerationLock } from '../../generation/generation-lock'
-import { assertSessionActionAllowed, deriveSessionLockState } from '../../session/action-gates'
+import type { GenerationRuntimeStore } from '../../generation/runtime-store'
+import {
+  assertSessionActionAllowed,
+  deriveSessionLockState,
+  SessionActionBlockedError,
+} from '../../session/action-gates'
+import { isActionAvailableInMode, resolveSessionMode } from '../../session/mode-policy'
 import { buildCreateForkPatch, findMessageLocation } from '../../session/message-forks'
 import type { Message, Session, SessionSettings } from '../../types'
-import { applyMessageRemoval } from '../session/message-tree'
+import type { UpdateSessionOptions } from '../session/SessionService'
+import { applyMessageInsert, applyMessageRemoval } from '../session/message-tree'
 
 export type ChatMessageFiles = NonNullable<Message['files']>
 export type ChatMessageLinks = NonNullable<Message['links']>
@@ -20,13 +27,16 @@ export interface ChatMessageSessionPort {
   getSession(sessionId: string): Promise<Session | null>
   updateSessionWithMessages(
     sessionId: string,
-    updater: (session: Session | null | undefined) => Session
+    updater: (session: Session | null | undefined) => Session,
+    options?: Pick<UpdateSessionOptions, 'preserveCachedGeneratingMessages' | 'onFullSessionPersisted'>
   ): Promise<Session>
 }
 
 export interface ChatMessageServiceDependencies {
   sessions: ChatMessageSessionPort
   generation: ChatGenerationPort
+  runtime?: GenerationRuntimeStore
+  isCompactionRunning?(sessionId: string): boolean
   /** Runs inside the per-session generation lock before a new turn is persisted. */
   beforeSend?(sessionId: string, pendingUserMessage: Message): Promise<void>
   createId(): string
@@ -282,6 +292,81 @@ export class ChatMessageService {
     })
   }
 
+  /** Flat candidates own independent runtimes and may start while another reply streams. */
+  async replyBelow(sessionId: string, messageId: string): Promise<void> {
+    const { runtime } = this.dependencies
+    const lease = runtime?.acquireGenerationPreparationLease(sessionId)
+    if (runtime && !lease) throw new SessionActionBlockedError('reply-below', 'generating')
+    const reply: Message = { ...this.createMessage('assistant', ''), generating: true }
+    let inserted = false
+    const settleFailure = async (error: unknown) => {
+      await this.dependencies.sessions.updateSessionWithMessages(
+        sessionId,
+        (session) => {
+          if (!session) throw error
+          return replaceMessage(session, reply.id, (current) =>
+            current.generating
+              ? { ...current, generating: false, error: error instanceof Error ? error.message : String(error) }
+              : current
+          )
+        },
+        { preserveCachedGeneratingMessages: true }
+      )
+    }
+    try {
+      await this.dependencies.sessions.updateSessionWithMessages(
+        sessionId,
+        (session) => {
+          if (!session) throw new Error(`Session ${sessionId} not found`)
+          const mode = resolveSessionMode(session.settings?.agentMode?.value)
+          if (!isActionAvailableInMode('reply-below', mode)) {
+            throw new Error('Reply Again Below is unavailable in Work Mode')
+          }
+          const thread = session.threads?.find((candidate) =>
+            candidate.messages.some((message) => message.id === messageId)
+          )
+          const list = thread?.messages ?? session.messages
+          const index = list.findIndex((message) => message.id === messageId)
+          const target = list[index]
+          if (
+            !target ||
+            target.isSummary ||
+            target.isForkMarker ||
+            (target.role !== 'user' && target.role !== 'system')
+          ) {
+            throw new Error(`Message ${messageId} cannot receive a reply below`)
+          }
+          assertSessionActionAllowed(
+            'reply-below',
+            deriveSessionLockState(session, {
+              activeGenerationMessageIds: new Set(runtime?.list(sessionId).map((state) => state.messageId)),
+              compactionRunning: this.dependencies.isCompactionRunning?.(sessionId),
+            }),
+            { messageGenerating: target.generating === true, sessionMode: mode }
+          )
+          return applyMessageInsert(session, sessionId, reply, messageId, { requireAnchor: true })
+        },
+        {
+          preserveCachedGeneratingMessages: true,
+          onFullSessionPersisted: () => {
+            inserted = true
+          },
+        }
+      )
+    } catch (error) {
+      if (inserted) await settleFailure(error)
+      throw error
+    } finally {
+      if (lease) runtime?.releaseGenerationPreparationLease(lease)
+    }
+    try {
+      await this.dependencies.generation.orchestrate(sessionId, reply, { operationType: 'regenerate' })
+    } catch (error) {
+      await settleFailure(error)
+      throw error
+    }
+  }
+
   retryMessage(sessionId: string, messageId: string): Promise<void> {
     return withSessionGenerationLock(sessionId, async () => {
       const current = await this.requireSession(sessionId)
@@ -289,7 +374,7 @@ export class ChatMessageService {
       if (!location) throw new Error(`Message ${messageId} not found`)
       const { index } = location
       const target = location.list[index]
-      assertSessionActionAllowed('regenerate', deriveSessionLockState(current), {
+      assertSessionActionAllowed('regenerate', this.getLockState(current), {
         messageGenerating: target.generating === true,
       })
 
@@ -316,6 +401,9 @@ export class ChatMessageService {
           }
       await this.dependencies.sessions.updateSessionWithMessages(sessionId, (latest) => {
         if (!latest) throw new Error(`Session ${sessionId} not found`)
+        assertSessionActionAllowed('regenerate', this.getLockState(latest), {
+          messageGenerating: target.generating === true,
+        })
         if (!pivot) return replaceMessage(latest, target.id, () => retried)
         const patch = buildCreateForkPatch(latest, pivot.id, {
           createId: this.dependencies.createId,
@@ -385,6 +473,13 @@ export class ChatMessageService {
       contentParts: text ? [{ type: 'text', text }] : [],
       timestamp: this.dependencies.now(),
     }
+  }
+
+  private getLockState(session: Session) {
+    return deriveSessionLockState(session, {
+      activeGenerationMessageIds: new Set(this.dependencies.runtime?.list(session.id).map((state) => state.messageId)),
+      compactionRunning: this.dependencies.isCompactionRunning?.(session.id),
+    })
   }
 
   private async requireSession(sessionId: string): Promise<Session> {

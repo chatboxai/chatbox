@@ -16,13 +16,15 @@ const usage = {
 class TestModel extends AbstractAISDKModel {
   constructor(
     private readonly model: MockLanguageModelV4,
-    stream = true
+    stream = true,
+    platformType?: ModelDependencies['platformType']
   ) {
     super({ model: { modelId: 'test', type: 'chat' }, stream }, {
       request: { apiRequest: vi.fn(), fetchWithOptions: vi.fn() },
       storage: { saveImage: vi.fn(), getImage: vi.fn() },
       sentry: { captureException: vi.fn(), withScope: vi.fn() },
       getRemoteConfig: vi.fn(),
+      platformType,
     } satisfies ModelDependencies)
   }
 
@@ -41,29 +43,79 @@ const messages: ModelMessage[] = [
 ]
 
 describe('model step execution', () => {
-  it('does not retry a billable stream after output has started', async () => {
-    const model = new MockLanguageModelV4({
-      doStream: async () => ({
-        stream: convertArrayToReadableStream<LanguageModelV4StreamPart>([
-          { type: 'stream-start', warnings: [] },
-          { type: 'text-start', id: 'answer' },
-          { type: 'text-delta', id: 'answer', delta: 'Partial answer' },
-          {
-            type: 'error',
-            error: new APICallError({
-              message: 'Stream interrupted',
-              url: 'https://provider.test/chat',
-              requestBodyValues: {},
-              statusCode: 503,
-              isRetryable: true,
-            }),
-          },
-        ]),
-      }),
-    })
-    await expect(new TestModel(model).chat(messages, {})).rejects.toBeInstanceOf(ApiError)
-    expect(model.doStreamCalls).toHaveLength(1)
-  })
+  it.each([
+    { platformType: 'mobile', reason: undefined },
+    { platformType: 'desktop', reason: 1790672259534 },
+    { platformType: 'web', reason: 1790672259535 },
+  ] as const)(
+    'settles an aborted $platformType SDK stream without unhandled result promises',
+    async ({ platformType, reason }) => {
+      const release = Object.getOwnPropertyDescriptor(process, 'release')!
+      const unhandled: unknown[] = []
+      const onUnhandled = (error: unknown) => unhandled.push(error)
+      process.on('unhandledRejection', onUnhandled)
+      Object.defineProperty(process, 'release', { configurable: true, value: { name: 'browser' } })
+      const abort = new AbortController()
+      // RN's AbortController shim does not expose a cancellation reason.
+      if (platformType === 'mobile') Object.defineProperty(abort.signal, 'reason', { value: undefined })
+      let provider: ReadableStreamDefaultController<LanguageModelV4StreamPart> | undefined
+      const model = new MockLanguageModelV4({
+        doStream: async () => ({
+          stream: new ReadableStream<LanguageModelV4StreamPart>({
+            start(controller) {
+              provider = controller
+              controller.enqueue({ type: 'stream-start', warnings: [] })
+              controller.enqueue({ type: 'text-start', id: 'answer' })
+              controller.enqueue({ type: 'text-delta', id: 'answer', delta: 'Partial answer' })
+            },
+          }),
+        }),
+      })
+      const stream = new TestModel(model, true, platformType).chatStream(messages, { signal: abort.signal })
+      try {
+        let chunk = await stream.next()
+        while (!chunk.done && chunk.value.type !== 'text-delta') chunk = await stream.next()
+        expect(chunk.value).toMatchObject({ type: 'text-delta', text: 'Partial answer' })
+        abort.abort(reason)
+        provider?.enqueue({ type: 'text-delta', id: 'answer', delta: 'discarded after stop' })
+        while (!(await stream.next()).done) {}
+        await new Promise<void>((resolve) => setTimeout(resolve, 0))
+        expect(unhandled).toEqual([])
+        expect(model.doStreamCalls).toHaveLength(1)
+      } finally {
+        await stream.return(undefined)
+        Object.defineProperty(process, 'release', release)
+        process.off('unhandledRejection', onUnhandled)
+      }
+    }
+  )
+
+  it.each([undefined, 'mobile', 'desktop', 'web'] as const)(
+    'does not retry a billable %s stream after output has started',
+    async (platformType) => {
+      const model = new MockLanguageModelV4({
+        doStream: async () => ({
+          stream: convertArrayToReadableStream<LanguageModelV4StreamPart>([
+            { type: 'stream-start', warnings: [] },
+            { type: 'text-start', id: 'answer' },
+            { type: 'text-delta', id: 'answer', delta: 'Partial answer' },
+            {
+              type: 'error',
+              error: new APICallError({
+                message: 'Stream interrupted',
+                url: 'https://provider.test/chat',
+                requestBodyValues: {},
+                statusCode: 503,
+                isRetryable: true,
+              }),
+            },
+          ]),
+        }),
+      })
+      await expect(new TestModel(model, true, platformType).chat(messages, {})).rejects.toBeInstanceOf(ApiError)
+      expect(model.doStreamCalls).toHaveLength(1)
+    }
+  )
 
   it.each([true, false])('preserves system history when stream=%s', async (stream) => {
     const model = new MockLanguageModelV4({

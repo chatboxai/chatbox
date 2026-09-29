@@ -1,6 +1,7 @@
 import { compactionFailureError, SessionNotFoundError } from '@chatbox/core'
 import {
   createGenerationSegmentSplitWriter,
+  type SessionService,
   StreamingWriteCoordinator,
   snapshotStreamingMessage,
 } from '@chatbox/core/application/session'
@@ -112,7 +113,7 @@ export async function insertMessageAfter(
   sessionId: string,
   msg: Message,
   afterMsgId: string,
-  options: { requireAnchor?: boolean } = {}
+  options: Parameters<SessionService['insertMessage']>[3] = {}
 ) {
   const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
   if (!session) {

@@ -1,3 +1,4 @@
+import { SessionEventBus } from '@chatbox/core/application/session'
 import { GenerationRuntimeStore } from '@chatbox/core/generation'
 import type { Message, Session } from '@shared/types'
 import { describe, expect, it, vi } from 'vitest'
@@ -21,6 +22,7 @@ function dependencies(
   const persistMessage = vi.fn<GenerationCancellationDependencies['persistMessage']>().mockResolvedValue(undefined)
   const value: GenerationCancellationDependencies = {
     runtime,
+    sessionEvents: new SessionEventBus(),
     getSession: vi.fn().mockResolvedValue(session),
     removeMessage,
     persistMessage,
@@ -119,6 +121,42 @@ describe('main generation cancellation', () => {
     expect(runtime.get('session-1', 'message-1')).toBeUndefined()
     expect(runtime.start('session-1', 'message-1').abortController.signal.aborted).toBe(false)
   })
+
+  it.each(['before', 'after'] as const)(
+    'recovers a failed Stop-all when a durable terminal event arrives %s rejection',
+    async (timing) => {
+      const runtime = new GenerationRuntimeStore()
+      runtime.start('session-1', 'message-1')
+      const session: Session = {
+        id: 'session-1',
+        name: 'Session',
+        messages: [message('message-1', { contentParts: [{ type: 'text', text: 'partial' }] })],
+      }
+      const sessionEvents = new SessionEventBus()
+      const publish = () =>
+        sessionEvents.publish({
+          type: 'session-updated',
+          session: { ...session, messages: [message('message-1', { generating: false })] },
+          meta: null,
+          preserveCachedGeneratingMessages: false,
+        })
+      const harness = dependencies(session, runtime, {
+        sessionEvents,
+        persistMessage: vi.fn(async () => {
+          if (timing === 'before') await publish()
+          throw new Error('storage projection failed')
+        }),
+      })
+      await expect(stopAllMessageGenerations(session.id, harness.value)).rejects.toThrow('Failed to persist')
+      if (timing === 'after') {
+        expect(runtime.get(session.id, 'message-1')?.phase).toBe('stopping')
+        await publish()
+      }
+      expect(runtime.list(session.id)).toHaveLength(0)
+      expect(runtime.isSessionStopRequested(session.id)).toBe(false)
+      await runtime.waitForIdle()
+    }
+  )
 
   it('retains a runtime that registers while a placeholder Stop reads the Session', async () => {
     const runtime = new GenerationRuntimeStore()

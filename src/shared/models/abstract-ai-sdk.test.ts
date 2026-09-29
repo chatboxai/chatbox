@@ -333,6 +333,23 @@ describe('AbstractAISDKModel chatStream closure', () => {
     vi.clearAllMocks()
   })
 
+  it.each(['mobile', 'desktop', 'web', 'harmony', undefined] as const)(
+    'disables SDK tracing for both streaming entry points on %s hosts',
+    async (platformType) => {
+      mockEmptyStream()
+      const model = new TestModel(
+        { model: { modelId: 'test-model', type: 'chat' } },
+        { ...createDependencies(), platformType }
+      )
+      await model.chatStream([], {}).next()
+      await model.chat([], {})
+      expect(aiMocks.streamText).toHaveBeenCalledTimes(2)
+      for (const [options] of aiMocks.streamText.mock.calls) {
+        expect(options.telemetry).toEqual({ isEnabled: false })
+      }
+    }
+  )
+
   it('closes the underlying provider stream when the consumer closes chatStream early', async () => {
     // Consumers close chatStream early on Stop drains and chunk-processing failures;
     // that closure must propagate to the SDK stream so provider/tool work stops too.
@@ -358,6 +375,49 @@ describe('AbstractAISDKModel chatStream closure', () => {
     await stream.return(undefined)
     expect(providerStreamClosed).toBe(true)
   })
+
+  it.each(['close', 'resume'] as const)(
+    'handles an aborted prefetched read while the consumer is paused before %s',
+    async (action) => {
+      const abortError = new Error('provider aborted')
+      let rejectPrefetch: (error: Error) => void = () => {}
+      const prefetch = new Promise<IteratorResult<unknown>>((_resolve, reject) => {
+        rejectPrefetch = reject
+      })
+      const providerReturn = vi.fn(async () => ({ done: true as const, value: undefined }))
+      aiMocks.streamText.mockReturnValue({
+        stream: {
+          [Symbol.asyncIterator]() {
+            let firstRead = true
+            return {
+              next() {
+                if (!firstRead) return prefetch
+                firstRead = false
+                return Promise.resolve({ done: false, value: { type: 'text-delta', id: 't1', text: 'hello' } })
+              },
+              return: providerReturn,
+            }
+          },
+        },
+      })
+      const unhandled: unknown[] = []
+      const onUnhandled = (error: unknown) => unhandled.push(error)
+      process.on('unhandledRejection', onUnhandled)
+      const stream = createModel().chatStream([], {})
+      try {
+        expect((await stream.next()).value).toMatchObject({ type: 'text-delta', text: 'hello' })
+        rejectPrefetch(abortError)
+        await new Promise<void>((resolve) => setTimeout(resolve, 0))
+        if (action === 'close') await stream.return(undefined)
+        else await expect(stream.next()).rejects.toBe(abortError)
+        expect(unhandled).toEqual([])
+        expect(providerReturn).toHaveBeenCalledOnce()
+      } finally {
+        process.off('unhandledRejection', onUnhandled)
+        await stream.return(undefined)
+      }
+    }
+  )
 
   it('awaits the resolved-request checkpoint before the provider stream starts', async () => {
     const checkpointError = new Error('checkpoint failed')

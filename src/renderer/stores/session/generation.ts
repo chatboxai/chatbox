@@ -1,9 +1,11 @@
+import { applyMessageUpdate } from '@chatbox/core/application/session'
+import { SessionActionBlockedError } from '@chatbox/core/session/action-gates'
 import { withSessionGenerationLock } from '@chatbox/core/generation'
 import { isActionAvailableInMode, resolveSessionMode } from '@chatbox/core/session/mode-policy'
 import { buildContext } from '@shared/context'
 import type { AttachmentResolver } from '@shared/context/types'
 import { supportsSessionGeneration } from '@shared/session/capabilities'
-import { findMessageContext } from '@shared/session/message-forks'
+import { findMessageContext, findMessageLocation as findStoredMessageLocation } from '@shared/session/message-forks'
 import { type CompactionPoint, createMessage, type Message, type Session, type SessionSettings } from '@shared/types'
 import { countMessageWords } from '@shared/utils/message'
 import { v4 as uuidv4 } from 'uuid'
@@ -71,9 +73,35 @@ async function generateReplyBelowWithoutSessionLock(sessionId: string, msgId: st
   const newAssistantMsg = createMessage('assistant', '')
   newAssistantMsg.generating = true // prevent estimating token count before generating done
   const preparationLease = rendererApplication.generationRuntime.acquireGenerationPreparationLease(sessionId)
-  if (!preparationLease) return
+  if (!preparationLease) throw new SessionActionBlockedError('reply-below', 'generating')
+  let inserted = false
   try {
-    await insertMessageAfter(sessionId, newAssistantMsg, msgId)
+    await insertMessageAfter(sessionId, newAssistantMsg, msgId, {
+      preserveCachedGeneratingMessages: true,
+      onFullSessionPersisted: () => {
+        inserted = true
+      },
+    })
+  } catch (error) {
+    if (inserted) {
+      await rendererApplication.sessions.updateSessionWithMessages(
+        sessionId,
+        (session) => {
+          if (!session) throw error
+          const location = findStoredMessageLocation(session, newAssistantMsg.id)
+          const current = location?.list[location.index]
+          if (!current?.generating) return session
+          // Use the current container: the user may have switched branches while the write settled.
+          return applyMessageUpdate(session, sessionId, newAssistantMsg.id, {
+            ...current,
+            generating: false,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        },
+        { preserveCachedGeneratingMessages: true }
+      )
+    }
+    throw error
   } finally {
     rendererApplication.generationRuntime.releaseGenerationPreparationLease(preparationLease)
   }

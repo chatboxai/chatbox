@@ -66,12 +66,7 @@ import { lockSessionAgentMode, setSessionAgentMode } from '@/stores/session/agen
 import { useSettingsStore } from '@/stores/settingsStore'
 import { uiStore, useUIStore } from '@/stores/uiStore'
 import '../../static/Block.css'
-import {
-  generate,
-  generateMore,
-  regenerateInNewFork,
-  retryFromLastToolCallAfterApiError,
-} from '@/stores/session/generation'
+import { generate, regenerateInNewFork, retryFromLastToolCallAfterApiError } from '@/stores/session/generation'
 import { modifyMessage, removeMessage } from '@/stores/session/messages'
 import * as toastActions from '@/stores/toastActions'
 import { confirmPromptCacheBreakingAction, isPromptCacheBreakConfirmDismissed } from '@/utils/prompt-cache-confirm'
@@ -94,6 +89,7 @@ import { getMessageRoleClass } from './message-role-class'
 import { createCollapsedDisplayGroups, createMessageTimelineLayout } from './message-timeline'
 import { getMessageTokenDisplay } from './message-token-display'
 import { PictureGallery } from './PictureGallery'
+import { useReplyBelowAction } from './useReplyBelowAction'
 import { useProcessTimelineCollapse } from './useProcessTimelineCollapse'
 
 const useIsGenerationRuntimeActive = (sessionId: string, messageId: string) =>
@@ -400,9 +396,12 @@ const _Message: FC<Props> = (props) => {
     await handleRefresh()
   }, [handleRefresh, lastStepForRetry])
 
-  const onGenerateMore = useCallback(() => {
-    generateMore(sessionId, msg.id)
-  }, [sessionId, msg.id])
+  const { gate: replyBelowGate, run: onGenerateMore } = useReplyBelowAction(
+    sessionId,
+    msg.id,
+    msg.generating,
+    sessionLocks
+  )
 
   const onCopyMsg = useCallback(() => {
     copyToClipboard(getMessageText(msg, true, false))
@@ -700,6 +699,7 @@ const _Message: FC<Props> = (props) => {
                 text: t('Reply Again Below'),
                 icon: IconArrowDown,
                 testId: TestId.message.actionMenuRetryBelow,
+                disabled: !replyBelowGate.allowed,
                 onClick: onGenerateMore,
               },
             canEditMessage &&
@@ -782,6 +782,7 @@ const _Message: FC<Props> = (props) => {
       props.sessionType,
       generationLocked,
       canReplyBelow,
+      replyBelowGate.allowed,
       canEditMessage,
       canDeleteMessage,
       confirmCacheBreakingDelete,
@@ -1214,7 +1215,8 @@ const _Message: FC<Props> = (props) => {
           <MessageActionIcon
             testId={TestId.message.actionBarRetryBelow}
             icon={IconArrowDown}
-            tooltip={t('Reply Again Below')}
+            tooltip={replyBelowGate.allowed ? t('Reply Again Below') : getSessionLockNotice(replyBelowGate.reason, t)}
+            disabled={!replyBelowGate.allowed}
             onClick={onGenerateMore}
           />
         )}

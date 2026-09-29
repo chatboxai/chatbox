@@ -117,8 +117,9 @@ export class GenerationRuntimeStore {
     return true
   }
 
-  isSessionStopRequested(sessionId: string): boolean {
-    return this.sessionStopGates.has(sessionId)
+  isSessionStopRequested(sessionId: string, expected?: GenerationSessionStopGate): boolean {
+    const current = this.sessionStopGates.get(sessionId)
+    return current !== undefined && (!expected || current === expected)
   }
 
   acquireGenerationPreparationLease(sessionId: string): GenerationPreparationLease | undefined {

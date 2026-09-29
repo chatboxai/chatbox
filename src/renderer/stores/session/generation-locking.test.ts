@@ -1,7 +1,10 @@
+import { InMemorySessionRepository } from '@chatbox/core/testing'
+import { SessionEventBus, SessionService, SessionWriteCoordinator } from '@chatbox/core/application/session'
 import type { Message, Session } from '@shared/types'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
+  updateSessionWithMessagesMock,
   getSessionMock,
   getSessionSettingsMock,
   createNewForkMock,
@@ -12,6 +15,7 @@ const {
   orchestrateGenerationMock,
   guardSessionActionMock,
 } = vi.hoisted(() => ({
+  updateSessionWithMessagesMock: vi.fn(),
   getSessionMock: vi.fn(),
   getSessionSettingsMock: vi.fn(),
   createNewForkMock: vi.fn(),
@@ -29,6 +33,7 @@ vi.mock('@/app/renderer-application', async () => {
   return {
     rendererApplication: {
       backupOperations: new BackupOperationCoordinator(),
+      sessions: { updateSessionWithMessages: updateSessionWithMessagesMock },
       generationRuntime: new GenerationRuntimeStore(),
       sessionQueryBridge: { getSession: getSessionMock },
     },
@@ -100,6 +105,50 @@ describe('generation entry-point locking', () => {
     expect(orchestrateGenerationMock.mock.calls.map((call) => call[1].id)).toEqual(['assistant-1', 'assistant-2'])
   })
 
+  it.each(['body', 'metadata'] as const)(
+    'settles only durable Reply Below candidates after %s persistence fails',
+    async (failure) => {
+      vi.useFakeTimers()
+      const repository = new InMemorySessionRepository()
+      const session: Session = { id: 'session-1', name: 'Session', messages: [userMessage('user-1')] }
+      repository.sessions.set(session.id, session)
+      repository.records.set(session.id, { id: session.id, name: session.name, sortOrder: 1, createdAt: 1 })
+      const sessions = new SessionService(repository, new SessionWriteCoordinator(repository), new SessionEventBus(), {
+        createId: () => 'unused',
+        now: () => 1,
+      })
+      getSessionMock.mockImplementation(() => sessions.getSession(session.id))
+      insertMessageAfterMock.mockImplementation((...args: Parameters<SessionService['insertMessage']>) =>
+        sessions.insertMessage(...args)
+      )
+      updateSessionWithMessagesMock.mockImplementation(
+        (...args: Parameters<SessionService['updateSessionWithMessages']>) =>
+          sessions.updateSessionWithMessages(...args)
+      )
+      const error = new Error(`${failure} unavailable`)
+      const write = vi.spyOn(repository, 'setSession')
+      if (failure === 'body') write.mockRejectedValueOnce(error)
+      else vi.spyOn(repository.meta, 'update').mockRejectedValueOnce(error)
+      try {
+        await expect(generateMore(session.id, 'user-1')).rejects.toBe(error)
+        const messages = (await repository.getSession(session.id))?.messages
+        if (failure === 'metadata') {
+          expect(messages).toHaveLength(2)
+          expect(messages?.[1]).toMatchObject({ generating: false, error: error.message })
+          expect(write).toHaveBeenCalledTimes(2)
+        } else {
+          expect(messages).toEqual(session.messages)
+          expect(write).toHaveBeenCalledOnce()
+        }
+        expect(orchestrateGenerationMock).not.toHaveBeenCalled()
+        expect(generationRuntime.waitForGenerationPreparationLeases(session.id)).toBeUndefined()
+      } finally {
+        vi.clearAllTimers()
+        vi.useRealTimers()
+      }
+    }
+  )
+
   it('starts multiple alternative replies for the same message concurrently', async () => {
     let finishFirst = () => {}
     const firstGeneration = new Promise<void>((resolve) => {
@@ -134,7 +183,8 @@ describe('generation entry-point locking', () => {
     expect(insertMessageAfterMock).toHaveBeenCalledWith(
       'session-1',
       expect.objectContaining({ role: 'assistant', generating: true }),
-      'user-1'
+      'user-1',
+      expect.objectContaining({ preserveCachedGeneratingMessages: true, onFullSessionPersisted: expect.any(Function) })
     )
     expect(orchestrateGenerationMock).toHaveBeenCalledWith(
       'session-1',
@@ -160,7 +210,7 @@ describe('generation entry-point locking', () => {
   it('does not insert Reply Again Below while a Session Stop gate is active', async () => {
     const gate = generationRuntime.beginSessionStop('session-1', 'stopped')
 
-    await generateMore('session-1', 'user-1')
+    await expect(generateMore('session-1', 'user-1')).rejects.toMatchObject({ reason: 'generating' })
 
     expect(insertMessageAfterMock).not.toHaveBeenCalled()
     expect(orchestrateGenerationMock).not.toHaveBeenCalled()
@@ -187,6 +237,7 @@ describe('generation entry-point locking', () => {
     })
     const dependencies: GenerationCancellationDependencies = {
       runtime: generationRuntime,
+      sessionEvents: new SessionEventBus(),
       getSession: getStopSession,
       removeMessage,
       persistMessage: vi.fn().mockResolvedValue(undefined),
@@ -221,6 +272,7 @@ describe('generation entry-point locking', () => {
     const getStopSession = vi.fn(() => Promise.resolve(session))
     const dependencies: GenerationCancellationDependencies = {
       runtime: generationRuntime,
+      sessionEvents: new SessionEventBus(),
       getSession: getStopSession,
       removeMessage: vi.fn().mockResolvedValue(undefined),
       persistMessage: vi.fn().mockResolvedValue(undefined),
@@ -260,7 +312,8 @@ describe('generation entry-point locking', () => {
     expect(insertMessageAfterMock).toHaveBeenCalledWith(
       'session-1',
       expect.objectContaining({ role: 'assistant', generating: true }),
-      replacement.id
+      replacement.id,
+      expect.objectContaining({ preserveCachedGeneratingMessages: true, onFullSessionPersisted: expect.any(Function) })
     )
     expect(orchestrateGenerationMock).toHaveBeenCalledOnce()
   })
@@ -277,7 +330,8 @@ describe('generation entry-point locking', () => {
     expect(insertMessageAfterMock).toHaveBeenCalledWith(
       'session-1',
       expect.objectContaining({ role: 'assistant', generating: true }),
-      'user-1'
+      'user-1',
+      expect.objectContaining({ preserveCachedGeneratingMessages: true, onFullSessionPersisted: expect.any(Function) })
     )
   })
 

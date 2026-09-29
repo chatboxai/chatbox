@@ -1,3 +1,4 @@
+import { SessionEventBus } from '@chatbox/core/application/session'
 import type { Message, Session } from '@shared/types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -110,6 +111,7 @@ describe('removeMessage runtime cleanup', () => {
       .fn<GenerationCancellationDependencies['persistMessage']>()
       .mockRejectedValue(new Error('storage unavailable'))
     const dependencies: GenerationCancellationDependencies = {
+      sessionEvents: new SessionEventBus(),
       runtime: generationRuntimeStore,
       getSession: () => Promise.resolve(currentSession),
       removeMessage: vi.fn().mockResolvedValue(undefined),

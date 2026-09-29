@@ -361,13 +361,22 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
       experimental_repairToolCall: repairToolCallJson as ToolCallRepairFunction<T>,
       abortSignal: options.signal,
       ...callSettings,
+      // Chatbox owns request diagnostics; SDK tracing result promises need a Node consumer.
+      telemetry: { isEnabled: false },
       // The model wrapper owns retry limits, backoff and UI status for HTTP and
       // network failures. Keep SDK retries disabled to avoid multiplying attempts.
       maxRetries: 0,
     })
 
     const streamIterator = result.stream[Symbol.asyncIterator]()
-    let nextChunk = streamIterator.next()
+    const readNextChunk = () => {
+      const nextChunk = streamIterator.next()
+      // A consumer can pause at yield while the prefetched read rejects on abort.
+      // Observe it immediately and keep the original promise for the next read.
+      void nextChunk.catch(() => {})
+      return nextChunk
+    }
+    let nextChunk = readNextChunk()
 
     try {
       while (true) {
@@ -401,7 +410,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
         }
 
         const chunk = next.iteration.value
-        nextChunk = streamIterator.next()
+        nextChunk = readNextChunk()
         if (chunk.type === 'error') {
           this.handleError(chunk.error)
         }
@@ -417,12 +426,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     } finally {
       // Consumers may close this generator early (Stop drain, chunk-processing failure).
       // Propagate the closure to the SDK stream, otherwise the prefetched read keeps
-      // provider/tool work alive after the message was already finalized. Swallow the
-      // abandoned prefetch too, so its late settlement can't become an unhandled rejection.
-      nextChunk.then(
-        () => {},
-        () => {}
-      )
+      // provider/tool work alive after the message was already finalized.
       await streamIterator.return?.().catch(() => {})
     }
   }
@@ -813,6 +817,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
       experimental_repairToolCall: repairToolCallJson as ToolCallRepairFunction<T>,
       abortSignal: options.signal,
       ...callSettings,
+      telemetry: { isEnabled: false },
       // The model wrapper owns retry limits, backoff and UI status for HTTP and
       // network failures. Keep SDK retries disabled to avoid multiplying attempts.
       maxRetries: 0,

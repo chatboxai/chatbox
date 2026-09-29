@@ -1,6 +1,7 @@
 export * from './compatibility'
 export * from './ForkService'
 export * from './generation-segment-split'
+export * from './generation-stop-recovery'
 export * from './message-derived-data'
 export * from './message-tree'
 export * from './RowBackedSessionRepository'

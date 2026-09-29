@@ -560,10 +560,16 @@ export class SessionService {
     sessionId: string,
     message: Message,
     previousId?: string,
-    options: MessageInsertOptions = {}
+    options: MessageInsertOptions &
+      Pick<UpdateSessionOptions, 'onFullSessionPersisted' | 'preserveCachedGeneratingMessages'> = {}
   ): Promise<void> {
-    await this.updateSessionWithMessages(sessionId, (session) =>
-      applyMessageInsert(session, sessionId, message, previousId, options)
+    await this.updateSessionWithMessages(
+      sessionId,
+      (session) => applyMessageInsert(session, sessionId, message, previousId, options),
+      {
+        onFullSessionPersisted: options.onFullSessionPersisted,
+        preserveCachedGeneratingMessages: options.preserveCachedGeneratingMessages,
+      }
     )
   }
 

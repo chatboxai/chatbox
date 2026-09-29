@@ -300,6 +300,8 @@ const THREAD_PAGE_SIZE = 8
 // Safe identifier characters need no JSON escaping. Other text keeps a six-times
 // allowance, plus fixed object/numeric overhead, before choosing a fitting page.
 const MESSAGE_PAGE_RESPONSE_BUDGET = 384 * 1024
+/** Payload bytes of small backup messages materialized together during an export read. */
+const BACKUP_PAYLOAD_BATCH_BYTES = 384 * 1024
 // Every metadata row contributes at least 512 estimated bytes. Rows beyond
 // this bounded lookahead cannot fit in the current response budget.
 const MESSAGE_PAGE_MAX_ROWS = Math.floor(MESSAGE_PAGE_RESPONSE_BUDGET / 512)
@@ -812,13 +814,33 @@ export class SqlSessionRowStore implements SessionRowStorePort {
       params.push(limits.maxPageRows, Math.min(limits.maxPageBytes, MESSAGE_PAGE_RESPONSE_BUDGET))
       const page = await this.database.query<MessageRecord>(selectMessagePageSql(cursor !== undefined), params)
       if (!page.length) break
-      for (const entry of page) {
-        const shell = toMessageRow(entry, { id: entry.message_id, role: 'user', contentParts: [] })
-        const rowBytes =
-          textEncoder.encode(JSON.stringify({ kind: 'message', message: shell })).length -
-          textEncoder.encode(JSON.stringify(shell.message)).length +
-          entry.payload_utf8_length
-        if (rowBytes > limits.maxRecordBytes) {
+      const shells = page.map((entry) => toMessageRow(entry, { id: entry.message_id, role: 'user', contentParts: [] }))
+      const oversized = page.map(
+        (entry, index) =>
+          textEncoder.encode(JSON.stringify({ kind: 'message', message: shells[index] })).length -
+            textEncoder.encode(JSON.stringify(shells[index].message)).length +
+            entry.payload_utf8_length >
+          limits.maxRecordBytes
+      )
+      // Read bounded runs of small payloads together; each run is followed by one revision check.
+      let batch: MessageRow[] = []
+      let batchEnd = 0
+      const readBatch = async (start: number) => {
+        const records: MessageRecord[] = []
+        let bytes = 0
+        let end = start
+        for (; end < page.length && !oversized[end]; end++) {
+          if (records.length && bytes + page[end].payload_utf8_length > BACKUP_PAYLOAD_BATCH_BYTES) break
+          records.push(page[end])
+          bytes += page[end].payload_utf8_length
+        }
+        batch = await this.readMessageRows(records, Object.create(null))
+        batchEnd = end
+        await assertRevision()
+      }
+      for (const [index, entry] of page.entries()) {
+        const shell = shells[index]
+        if (oversized[index]) {
           const { chunkCount, expectedLength } = this.validatePayloadManifest(entry)
           const database = this.database
           const chunks = async function* () {
@@ -865,9 +887,8 @@ export class SqlSessionRowStore implements SessionRowStorePort {
           yield bounded({ kind: 'message', message: shell, payload: { size: expectedLength, chunks } })
           continue
         }
-        const [message] = await this.readMessageRows([entry], Object.create(null))
-        await assertRevision()
-        yield bounded({ kind: 'message', message })
+        if (index >= batchEnd) await readBatch(index)
+        yield bounded({ kind: 'message', message: batch[index - (batchEnd - batch.length)] })
       }
       cursor = page[page.length - 1]
     }

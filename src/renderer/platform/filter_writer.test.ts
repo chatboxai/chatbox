@@ -161,15 +161,11 @@ describe('AndroidFilterWriter', () => {
     const tempPath = filesystemMock.writeFile.mock.calls[0][0].path
     expect(filesystemMock.writeFile).toHaveBeenCalledWith({
       path: tempPath,
-      data: 'AAEC',
+      data: 'AAECAwQ=',
       directory: 'CACHE',
       recursive: true,
     })
-    expect(filesystemMock.appendFile).toHaveBeenCalledWith({
-      path: tempPath,
-      data: 'AwQ=',
-      directory: 'CACHE',
-    })
+    expect(filesystemMock.appendFile).not.toHaveBeenCalled()
     expect(documentSaverMock.saveFile).toHaveBeenCalledWith({
       sourceUri: 'cache://temporary-export',
       suggestedName: 'backup.zip',
@@ -229,8 +225,8 @@ describe('MobileExporter', () => {
 
     expect(filesystemMock.writeFile.mock.calls[0][0].directory).toBe('CACHE')
     const writes = [...filesystemMock.writeFile.mock.calls, ...filesystemMock.appendFile.mock.calls]
-    expect(writes).toHaveLength(17)
-    expect(Math.max(...writes.map(([options]) => options.data.length))).toBeLessThanOrEqual(87384)
+    expect(writes).toHaveLength(5)
+    expect(Math.max(...writes.map(([options]) => options.data.length))).toBeLessThanOrEqual(349528)
     expect(documentSaverMock.saveFile).toHaveBeenCalledWith(expect.objectContaining({ mimeType: 'application/zip' }))
     expect(filesystemMock.deleteFile).toHaveBeenCalled()
   })
@@ -307,7 +303,7 @@ describe('MobileExporter', () => {
     filesystemMock.appendFile.mockRejectedValueOnce(new Error('disk full'))
     const dataCallback = async function* () {
       starts++
-      yield new Uint8Array(65537)
+      yield new Uint8Array(256 * 1024 + 1)
     }
     await expect(
       new MobileExporter().exportStreamingFile('backup.zip', dataCallback, 'application/zip')

@@ -93,9 +93,13 @@ export class LocalStorage implements Storage {
   }
 }
 
+const resourceTextEncoder = new TextEncoder()
+
 class SQLiteStorage {
   private static readonly BRIDGE_CHUNK_SIZE = 256 * 1024
   private static readonly CHUNKS_PER_WRITE = 2
+  /** Escaped request bytes per transaction while streaming a backup resource, within the soft bridge budget. */
+  private static readonly RESOURCE_WRITE_BYTES = 320 * 1024
   private static readonly MANIFEST_PEEK_LENGTH = 128
   // Even six-times JSON escaping keeps a complete small value below 100 KiB.
   private static readonly INLINE_READ_BYTES = 16 * 1024
@@ -374,32 +378,46 @@ class SQLiteStorage {
       const generation = uuidv4()
       let count = 0
       let length = 0
+      let batch: Array<{ statement: string; values: Array<string | number> }> = []
+      let batchBytes = 0
+      const flush = async () => {
+        if (!batch.length) return
+        const statements = batch
+        batch = []
+        batchBytes = 0
+        await this.database.executeSet(statements, true)
+      }
       const write = async (value: string) => {
         if (!value) return
         length += value.length
         if (++count > 100_000 || length > Math.ceil(MAX_BACKUP_RESOURCE_ENTRY_BYTES / 3) * 4 + 4096)
           throw new Error('Backup resource exceeds budget')
-        await this.database.executeSet(
-          [
-            {
-              statement: 'INSERT INTO key_value_chunks(key,generation,chunk_index,value) VALUES (?,?,?,?)',
-              values: [key, generation, count - 1, value],
-            },
-          ],
-          true
-        )
+        const bytes = resourceTextEncoder.encode(JSON.stringify(value)).length + 256
+        if (batchBytes + bytes > SQLiteStorage.RESOURCE_WRITE_BYTES) await flush()
+        batch.push({
+          statement: 'INSERT INTO key_value_chunks(key,generation,chunk_index,value) VALUES (?,?,?,?)',
+          values: [key, generation, count - 1, value],
+        })
+        batchBytes += bytes
       }
       try {
+        // Emit fixed-size fragments regardless of upstream chunk boundaries.
         let pending = ''
         for await (const chunk of chunks) {
-          for (let offset = 0; offset < chunk.length; offset += 16384) {
-            const value = pending + chunk.slice(offset, offset + 16384)
-            const last = value.charCodeAt(value.length - 1)
-            pending = last >= 0xd800 && last <= 0xdbff ? value.slice(-1) : ''
-            await write(pending ? value.slice(0, -1) : value)
+          const text = pending + chunk
+          let offset = 0
+          while (text.length - offset > 16384) {
+            const last = text.charCodeAt(offset + 16383)
+            const size = last >= 0xd800 && last <= 0xdbff ? 16383 : 16384
+            await write(text.slice(offset, offset + size))
+            offset += size
           }
+          pending = text.slice(offset)
         }
-        if (pending) throw new Error('Backup resource contains invalid Unicode')
+        const last = pending.charCodeAt(pending.length - 1)
+        if (last >= 0xd800 && last <= 0xdbff) throw new Error('Backup resource contains invalid Unicode')
+        await write(pending)
+        await flush()
         await this.database.executeSet(
           [
             {

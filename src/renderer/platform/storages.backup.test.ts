@@ -71,7 +71,25 @@ it('round-trips native streamed resources and copies legacy values without trans
   expect(await text(await storage.openBackupValue('snapshot'))).toBe(value)
   expect(await storage.copyItem('missing', 'snapshot')).toBe(false)
   expect(await text(await storage.openBackupValue('snapshot'))).toBe(value)
-  expect(Math.max(...bytes)).toBeLessThan(140 * 1024)
+  expect(Math.max(...bytes)).toBeLessThan(384 * 1024)
+})
+it('reads values stored as many small chunks within the bridge budget', async () => {
+  const { storage, db, bytes } = await fixture()
+  const value = 'a'.repeat(20000)
+  for (let index = 0; index < value.length; index++)
+    await db.query('INSERT INTO key_value_chunks(key,generation,chunk_index,value) VALUES (?,?,?,?)', [
+      'tiny',
+      'g',
+      index,
+      value[index],
+    ])
+  await db.query('INSERT INTO key_value(key,value) VALUES (?,?)', [
+    'tiny',
+    `__CHATBOX_CHUNKED_VALUE_V1__:g:${value.length}:${value.length}`,
+  ])
+  bytes.length = 0
+  expect(await text(await storage.openBackupValue('tiny'))).toBe(value)
+  expect(Math.max(...bytes)).toBeLessThan(384 * 1024)
 })
 it('retains the previous snapshot on transaction failure and cleans interrupted stream chunks', async () => {
   const { storage, db, failNext } = await fixture()

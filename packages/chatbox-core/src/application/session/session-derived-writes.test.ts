@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { SessionRowConflictError } from '../../ports'
 import { isRowsSessionRecord } from '../../ports/session-record-store'
 import { InMemorySessionRecordStore, InMemorySessionRepository, InMemorySessionRowStore } from '../../testing'
-import type { Session } from '../../types'
+import type { Message, Session } from '../../types'
+import { encodeSessionTree } from '../../session/session-tree'
 import { getSessionMessageTokenizationDigest, type SessionMessageDerivedPatch } from './message-derived-data'
 import { RowBackedSessionRepository } from './RowBackedSessionRepository'
 import { SessionService } from './SessionService'
@@ -45,6 +46,76 @@ async function setup() {
 }
 
 describe('derived service and coordinator writes', () => {
+  it('orders tail appends with streaming saves, queued messages and compaction', async () => {
+    const { repo, rows, service } = await setup()
+    const assistant: Message = { id: 'reply', role: 'assistant', generating: true, contentParts: [] }
+    const queued: Message = { id: 'queued', role: 'user', contentParts: [{ type: 'text', text: 'Next' }] }
+    const summary: Message = {
+      id: 'summary',
+      role: 'assistant',
+      isSummary: true,
+      contentParts: [{ type: 'text', text: 'Summary' }],
+    }
+    const following: Message = { id: 'following', role: 'user', contentParts: [{ type: 'text', text: 'Continue' }] }
+    let release!: () => void
+    let entered!: () => void
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const started = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    const apply = rows.applyDiff.bind(rows)
+    vi.spyOn(rows, 'applyDiff').mockImplementationOnce(async (...args) => {
+      entered()
+      await barrier
+      return apply(...args)
+    })
+    const first = service.insertMessage('s', assistant)
+    await started
+    const pending = [
+      service.updateMessage('s', assistant.id, (message) => {
+        if (!message) throw new Error('Missing assistant')
+        return { ...message, contentParts: [{ type: 'text', text: 'Streamed answer' }] }
+      }),
+      service.insertMessage('s', queued),
+      service.updateSessionWithMessages('s', (session) => {
+        if (!session) throw new Error('Missing session')
+        return {
+          ...session,
+          messages: [...session.messages, summary],
+          compactionPoints: [{ boundaryMessageId: queued.id, summaryMessageId: summary.id, createdAt: 300 }],
+        }
+      }),
+      service.insertMessage('s', following),
+      service.updateMessage('s', assistant.id, (message) => {
+        if (!message) throw new Error('Missing assistant')
+        return { ...message, generating: false }
+      }),
+    ]
+    release()
+    await Promise.all([first, ...pending])
+    const stored = (await repo.getSession('s'))!
+    expect(stored.messages.map((message) => message.id)).toEqual(['m', 'reply', 'queued', 'summary', 'following'])
+    expect(stored.messages[1]).toMatchObject({
+      generating: false,
+      contentParts: [{ type: 'text', text: 'Streamed answer' }],
+    })
+    expect(stored.compactionPoints).toEqual([
+      { boundaryMessageId: queued.id, summaryMessageId: summary.id, createdAt: 300 },
+    ])
+    const snapshot = (await rows.readSnapshot('s'))!
+    const encoded = encodeSessionTree(stored, {
+      activeThreadId: 's',
+      now: 1234,
+      previousMessages: snapshot.rows.messages,
+    })
+    if (!encoded.ok) throw new Error(encoded.reason)
+    expect(snapshot.rows.messages).toEqual(encoded.tree.messages)
+    expect(snapshot.rows.threads).toEqual(encoded.tree.threads)
+    expect(snapshot.record).toEqual(encoded.tree.session)
+  })
+
   it.each(['unencodable', 'row-write-failure', 'marker-write-failure'] as const)(
     'records the accepted V1 version after an attachment patch (%s)',
     async (fallback) => {

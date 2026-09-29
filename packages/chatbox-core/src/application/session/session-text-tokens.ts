@@ -35,16 +35,17 @@ export function mapSessionMessages(session: Session, update: (message: Message) 
         return [key, lists.every((list, i) => list === fork.lists[i]) ? fork : { ...fork, lists }]
       })
     )
-  return {
-    ...session,
-    messages,
-    threads: threads?.every((thread, i) => thread === session.threads?.[i]) ? session.threads : threads,
-    messageForksHash:
-      messageForksHash &&
-      Object.keys(messageForksHash).every((key) => messageForksHash[key] === session.messageForksHash?.[key])
-        ? session.messageForksHash
-        : messageForksHash,
+  const nextThreads = threads?.every((thread, i) => thread === session.threads?.[i]) ? session.threads : threads
+  const nextForks =
+    messageForksHash &&
+    Object.keys(messageForksHash).every((key) => messageForksHash[key] === session.messageForksHash?.[key])
+      ? session.messageForksHash
+      : messageForksHash
+  // Writes recognize their baseline by identity, so an unchanged session stays the same object.
+  if (messages === session.messages && nextThreads === session.threads && nextForks === session.messageForksHash) {
+    return session
   }
+  return { ...session, messages, threads: nextThreads, messageForksHash: nextForks }
 }
 
 export function textTokenPatches(results: readonly SessionTextTokenResult[]) {

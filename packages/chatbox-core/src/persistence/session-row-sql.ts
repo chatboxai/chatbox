@@ -1618,14 +1618,14 @@ export class SqlSessionRowStore implements SessionRowStorePort {
     sessionId: string
   ): Promise<Result[]> {
     const payloads = new Map<string, PayloadChunkRecord[]>()
-    let mode: 'sampling' | 'ascii-observed' | 'conservative' = 'sampling'
-    let asciiExpansion = 2
+    let mode: 'sampling' | 'sampled' | 'conservative' = 'sampling'
+    let observedExpansion = 2
     let cursor = 0
 
     while (cursor < records.length) {
       const firstIdBytes = textEncoder.encode(JSON.stringify(records[cursor].payload_id)).byteLength + 1
       const ascii: boolean =
-        mode === 'ascii-observed' && ASCII_PAYLOAD_ID_REQUEST_OVERHEAD + firstIdBytes <= PAYLOAD_READ_REQUEST_BUDGET
+        mode === 'sampled' && ASCII_PAYLOAD_ID_REQUEST_OVERHEAD + firstIdBytes <= PAYLOAD_READ_REQUEST_BUDGET
       const batch: Record[] = []
       let batchBytes = 0
       let requestBytes = ascii ? ASCII_PAYLOAD_ID_REQUEST_OVERHEAD : PAYLOAD_ID_REQUEST_OVERHEAD
@@ -1641,7 +1641,7 @@ export class SqlSessionRowStore implements SessionRowStorePort {
         if (6 * expectedLength + overhead > PAYLOAD_READ_RESPONSE_BUDGET) break
         // Observed expansion is a packing hint. SQL verifies every actual chunk
         // before returning any body, including when later text expands further.
-        const responseBytes = Math.ceil((ascii ? asciiExpansion : 6) * expectedLength) + overhead
+        const responseBytes = Math.ceil((ascii ? observedExpansion : 6) * expectedLength) + overhead
         if (
           requestBytes + idRequestBytes > PAYLOAD_READ_REQUEST_BUDGET ||
           (batch.length > 0 && batchBytes + responseBytes > PAYLOAD_READ_RESPONSE_BUDGET)
@@ -1691,14 +1691,26 @@ export class SqlSessionRowStore implements SessionRowStorePort {
       }
       if (mode === 'sampling') {
         for (const record of batch) this.parseMessagePayload(record, payloads.get(record.payload_id) ?? [])
-        mode = chunks.every((chunk) => isSafeAsciiPayload(chunk.value)) ? 'ascii-observed' : 'conservative'
-        if (mode === 'ascii-observed') {
-          asciiExpansion = chunks.reduce(
+        if (chunks.every((chunk) => isSafeAsciiPayload(chunk.value))) {
+          observedExpansion = chunks.reduce(
             (maximum, chunk) =>
               Math.max(maximum, (JSON.stringify(chunk.value).length - 2) / Math.max(1, chunk.value.length)),
             1
           )
+        } else {
+          let payloadBytes = 0
+          let responseBytes = 0
+          for (const chunk of chunks) {
+            const bytes = textEncoder.encode(chunk.value).byteLength
+            payloadBytes += bytes
+            responseBytes += isSafeAsciiPayload(chunk.value) ? JSON.stringify(chunk.value).length - 2 : 6 * bytes
+          }
+          // Mixed-language conversations can still have predominantly ASCII bodies.
+          // Limit their sampling-based increase to twice the conservative page size;
+          // SQL checks the actual expansion and rejects a page that exceeds the budget.
+          observedExpansion = Math.max(3, Math.ceil(responseBytes / Math.max(1, payloadBytes)))
         }
+        mode = observedExpansion < 6 ? 'sampled' : 'conservative'
       }
       cursor += batch.length
     }

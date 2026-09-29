@@ -15,6 +15,7 @@ import type { Message, Session } from '../../types/session'
 import { migrateSession } from './compatibility/session-load'
 import { applyMessageRemoval } from './message-tree'
 import { RowBackedSessionRepository } from './RowBackedSessionRepository'
+import { SessionPersistenceProtocol } from './SessionPersistenceProtocol'
 
 const NOW = 1_000
 
@@ -357,6 +358,146 @@ describe('RowBackedSessionRepository', () => {
     }
     expect(written).toBe(true)
   })
+  test.each([false, true])(
+    'full reads join background context reads, preserving write barriers (failure=%s)',
+    async (fail) => {
+      const { records, rows, repository: setup } = await createHarness()
+      const session = createPlainSession()
+      await setup.setSession(session)
+      let locked = false
+      let locks = 0
+      const repository = new RowBackedSessionRepository({
+        records,
+        rows,
+        serializeSessionOperation: async (_id, action) => {
+          expect(locked).toBe(false)
+          locked = true
+          locks += 1
+          try {
+            return await action()
+          } finally {
+            locked = false
+          }
+        },
+      })
+      let release!: () => void
+      const barrier = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const readContext = rows.readContext.bind(rows)
+      const started = vi.fn()
+      vi.spyOn(rows, 'readContext').mockImplementation(async (request) => {
+        expect(locked).toBe(true)
+        started()
+        await barrier
+        expect(locked).toBe(true)
+        if (fail) throw new Error('context unavailable')
+        return readContext(request)
+      })
+      const context = repository.getSessionContextSource({ sessionId: session.id }).catch((error: unknown) => error)
+      await vi.waitFor(() => expect(started).toHaveBeenCalledOnce())
+      try {
+        // This must resolve while the context query is deliberately suspended.
+        const loaded = await repository.getSession(session.id)
+        if (!loaded) throw new Error('Missing session')
+        expect(loaded?.name).toBe('Plain session')
+        expect(locks).toBe(1)
+        let written = false
+        let laterRead = false
+        const write = repository.setSession({ ...session, name: 'Updated' }, { baseSession: loaded }).then(() => {
+          written = true
+        })
+        const after = repository.getSession(session.id).then((value) => {
+          laterRead = true
+          return value
+        })
+        await Promise.resolve()
+        expect(written).toBe(false)
+        expect(laterRead).toBe(false)
+        release()
+        await context
+        await write
+        expect((await after)?.name).toBe('Updated')
+        expect(locks).toBe(3)
+      } finally {
+        release()
+        await context
+      }
+    }
+  )
+
+  test('releases a read batch when record preparation fails', async () => {
+    const { repository, records } = await createHarness()
+    const session = createPlainSession()
+    await repository.setSession(session)
+    vi.spyOn(records, 'getRecord').mockRejectedValueOnce(new Error('record unavailable'))
+    const results = await Promise.allSettled([
+      repository.getSessionContextSource({ sessionId: session.id }),
+      repository.getCompleteSessionSource(session.id),
+      repository.getSession(session.id),
+    ])
+    expect(results.map((result) => result.status)).toEqual(['rejected', 'rejected', 'rejected'])
+    await repository.setSession({ ...session, name: 'Recovered' })
+    expect((await repository.getSession(session.id))?.name).toBe('Recovered')
+  })
+
+  test('appends from token overlays while retaining canonical message rows', async () => {
+    const { repository, rows } = await createHarness()
+    Object.assign(rows, { acceptTextTokenResults: vi.fn() })
+    const session = createPlainSession()
+    await repository.setSession(session)
+    const original = (await repository.getSession(session.id))!
+    const overlay = {
+      ...original,
+      messages: original.messages.map((item) => ({
+        ...item,
+        tokenCountMap: { default: 999 },
+        tokenCalculatedAt: { default: 456 },
+      })),
+    }
+    encoding.calls = 0
+    const read = vi.spyOn(rows, 'readSnapshot')
+    await repository.setSession(
+      { ...overlay, messages: [...overlay.messages, message('new', 'user', 500)] },
+      { baseSession: overlay }
+    )
+    expect(encoding.calls).toBe(0)
+    expect(read).not.toHaveBeenCalled()
+    const stored = await rows.readSnapshot(session.id)
+    expect(stored?.rows.messages.slice(0, original.messages.length).map((row) => row.message)).toEqual(
+      original.messages
+    )
+  })
+
+  test('appends consecutive messages without encoding or hashing history and still rejects stale bases', async () => {
+    const { repository, rows } = await createHarness()
+    const session = createPlainSession()
+    await repository.setSession(session)
+    const original = (await repository.getSession(session.id))!
+    encoding.calls = 0
+    const fingerprint = vi.spyOn(SessionPersistenceProtocol.prototype, 'fingerprint')
+    const read = vi.spyOn(rows, 'readSnapshot')
+    const write = vi.spyOn(rows, 'applyDiff')
+    const first = { ...original, messages: [...original.messages, message('next-user', 'user', 300)] }
+    await repository.setSession(first, { baseSession: original })
+    const second = { ...first, messages: [...first.messages, message('next-assistant', 'assistant', 400)] }
+    await repository.setSession(second, { baseSession: first })
+    expect(encoding.calls).toBe(0)
+    expect(fingerprint).not.toHaveBeenCalled()
+    expect(read).not.toHaveBeenCalled()
+    expect(write.mock.calls.map(([diff]) => diff.messages.upsert.map((row) => row.messageId))).toEqual([
+      ['assistant-1', 'next-user'],
+      ['next-user', 'next-assistant'],
+    ])
+    await expect(repository.setSession({ ...first, name: 'Stale' }, { baseSession: first })).rejects.toMatchObject({
+      name: 'SessionWriteConflictError',
+    })
+    expect((await repository.getSession(session.id))?.messages.map((value) => value.id)).toEqual(
+      second.messages.map((value) => value.id)
+    )
+    fingerprint.mockRestore()
+  })
+
   describe('SessionRepositoryPort contract', () => {
     const createRepository = (): SessionRepositoryPort => {
       const meta = new InMemorySessionRepository().meta
@@ -625,6 +766,32 @@ describe('RowBackedSessionRepository', () => {
       expect(diff.messages.delete).toEqual([])
       expect(diff.threads.upsert.map((row) => row.threadId)).toEqual([session.id])
       expect(diff.threads.delete).toEqual([])
+    })
+
+    test('recognizes the previous write as the base of the next one without hashing it again', async () => {
+      Object.assign(harness.rows, {
+        acceptTextTokenResults:
+          vi.fn<NonNullable<import('../../ports').SessionRowStorePort['acceptTextTokenResults']>>(),
+      })
+      const session = createPlainSession()
+      await harness.records.setRecord(session)
+      await harness.repository.migrateSession(session.id)
+      const loaded = await harness.repository.getSession(session.id)
+      if (!loaded) throw new Error('session was not loaded')
+      const first = { ...loaded, messages: [...loaded.messages, message('user-2', 'user', 500)] }
+      await harness.repository.setSession(first, { baseSession: loaded })
+      const second = { ...first, messages: [...first.messages, message('assistant-2', 'assistant', 600)] }
+      const fingerprint = vi.spyOn(SessionPersistenceProtocol.prototype, 'fingerprint')
+
+      await harness.repository.setSession(second, { baseSession: first })
+
+      expect(fingerprint.mock.calls.map(([hashed]) => hashed)).not.toContain(first)
+      expect(storedRows(harness, session.id).messages.map((row) => row.messageId)).toEqual([
+        'user-1',
+        'assistant-1',
+        'user-2',
+        'assistant-2',
+      ])
     })
 
     test('does not rewrite legacy messages without timestamps when the clock advances', async () => {

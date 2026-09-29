@@ -12,7 +12,8 @@ import type {
 
 export interface CompactionSessionPort {
   getSession(sessionId: string): Promise<Session | null>
-  getSessionSettings(sessionId: string): Promise<SessionSettings>
+  /** `session` is the complete session the caller already read; implementations may resolve settings from it. */
+  getSessionSettings(sessionId: string, session?: Session): Promise<SessionSettings>
   updateSessionWithMessages(
     sessionId: string,
     updater: (session: Session | null | undefined) => Session
@@ -90,7 +91,7 @@ export class CompactionService {
     const modelId = session.settings?.modelId ?? globalSettings.defaultChatModel?.model
     if (!modelId) return false
 
-    const sessionSettings = await this.options.sessions.getSessionSettings(sessionId)
+    const sessionSettings = await this.options.sessions.getSessionSettings(sessionId, session)
     return this.options.policy.shouldCompact({ sessionId, session, sessionSettings, globalSettings, pendingMessage })
   }
 
@@ -120,7 +121,7 @@ export class CompactionService {
       const globalSettings = this.options.settings.getSettings()
       const modelId = session.settings?.modelId ?? globalSettings.defaultChatModel?.model
       if (!modelId) return { status: 'skipped', reason: 'no_model' }
-      const sessionSettings = await this.options.sessions.getSessionSettings(sessionId)
+      const sessionSettings = await this.options.sessions.getSessionSettings(sessionId, session)
       const planned = await createCompactionPlan(session, request, (scopedSession, pendingMessage) =>
         this.options.policy.getCompactionContext(scopedSession, sessionSettings, pendingMessage)
       )

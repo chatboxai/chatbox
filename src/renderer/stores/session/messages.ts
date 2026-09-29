@@ -317,10 +317,12 @@ export async function submitNewUserMessageUnlocked(
   const { _generateWithoutSessionLock } = await import('./generation.js')
 
   const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
-  const settings = await getSessionSettings(sessionId)
-  if (!session || !settings) {
+  if (!session) {
     return
   }
+  // The complete session already carries the settings; a separate header read
+  // would add storage round trips before the draft clears.
+  const settings = await getSessionSettings(sessionId, session)
   if (!supportsSessionGeneration(session.type)) {
     return
   }

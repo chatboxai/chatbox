@@ -68,6 +68,8 @@ import {
   SessionPersistenceProtocol,
 } from './SessionPersistenceProtocol'
 import { SessionNotFoundError } from './SessionWriteCoordinator'
+import { isAppendBase, planSessionAppend } from './session-append'
+import { applySessionDerivedPatches } from './session-derived-data'
 import { contextRecordHeader, contextSourceFromRows, contextSourceFromSession } from './session-context-source'
 import { overlaySessionTextTokens, overlayTextTokenMessages, restorePersistedTextTokens } from './session-text-tokens'
 
@@ -259,7 +261,16 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
   private readonly baselines = new Map<string, SessionBaseline>()
   private readonly observedVersions = new Map<string, PersistedSessionVersion>()
   private readonly revisionsByFingerprint = new Map<string, number | null>()
+  private readonly deferredFingerprints = new WeakSet<PersistedSessionVersion>()
   private readonly operationTails = new Map<string, Promise<void>>()
+  private readonly readBatches = new Map<
+    string,
+    {
+      record: Promise<StoredSessionRecord | null>
+      pending: number
+      finish: () => void
+    }
+  >()
   private initialization: Promise<void> | null = null
 
   constructor(options: RowBackedSessionRepositoryOptions) {
@@ -285,13 +296,13 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
   }
 
   getSession(id: string): Promise<Session | null> {
-    return this.enqueueSessionOperation(id, () => this.getSessionNow(id))
+    return this.enqueueSessionRead(id, (record) => this.getSessionNow(id, { record }))
   }
 
   getCompleteSessionSource(id: string) {
-    return this.enqueueSessionOperation(id, async () => {
-      const session = await this.getSessionNow(id)
-      return session ? { session, textTokens: this.baselines.get(id)?.textTokens } : null
+    return this.enqueueSessionRead(id, async (record) => {
+      const read = await this.readSessionNow(id, { record })
+      return read ? { session: read.session, textTokens: read.textTokens } : null
     })
   }
 
@@ -311,9 +322,8 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
   }
 
   getSessionContextSource(request: SessionContextRequest): Promise<SessionContextSource | null> {
-    return this.enqueueSessionOperation(request.sessionId, async () => {
+    return this.enqueueSessionRead(request.sessionId, async (marker) => {
       validateSessionContextRequest(request)
-      const marker = await this.records.getRecord(request.sessionId)
       if (!marker) return null
       if (isRowsSessionRecord(marker)) {
         const context = await this.rows.readContext(request)
@@ -374,8 +384,8 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
           }
         }
       }
-      const session = await this.getSessionNow(id, { record: marker })
-      return session ? { kind: 'full', session, textTokens: this.baselines.get(id)?.textTokens } : null
+      const read = await this.readSessionNow(id, { record: marker })
+      return read ? { kind: 'full', session: read.session, textTokens: read.textTokens } : null
     })
   }
 
@@ -471,7 +481,25 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
               snapshot.record,
               snapshot.revision
             )
-            this.forgetSessionState(sessionId)
+            const baseline = this.baselines.get(sessionId)
+            if (baseline?.revision === snapshot.revision) {
+              const session = applySessionDerivedPatches(baseline.session, accepted).session
+              const version = this.rememberSnapshot(
+                sessionId,
+                {
+                  ...commit,
+                  rows: {
+                    ...baseline.rows,
+                    messages: baseline.rows.messages.map((row) => changed.get(row.messageId) ?? row),
+                  },
+                },
+                session
+              )
+              this.rememberObservedVersion(sessionId, version)
+              this.rememberVersion(version)
+            } else {
+              this.forgetSessionState(sessionId)
+            }
             return { sessionId, previousRevision: snapshot.revision, revision: commit.revision, patches: accepted }
           } catch (error) {
             if (error instanceof SessionRowConflictError && attempt < 2) continue
@@ -538,6 +566,14 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     id: string,
     observedRecord?: { record: StoredSessionRecord | null }
   ): Promise<Session | null> {
+    return (await this.readSessionNow(id, observedRecord))?.session ?? null
+  }
+
+  /** Reads a session together with the token results overlaid on it; concurrent reads never share them. */
+  private async readSessionNow(
+    id: string,
+    observedRecord?: { record: StoredSessionRecord | null }
+  ): Promise<{ session: Session; textTokens?: SessionTextTokenRead } | null> {
     observedRecord ??= { record: await this.readRecord(id) }
     const baseline = this.baselines.get(id)
     const state = await this.inspectPersistedState(
@@ -562,10 +598,11 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
             : read
         const remembered = this.baselines.get(id)
         if (remembered) remembered.textTokens = textTokens
-        return overlaySessionTextTokens(state.session, textTokens)
+        return { session: overlaySessionTextTokens(state.session, textTokens), textTokens }
       }
+      return { session: state.session, textTokens: read }
     }
-    return state.session
+    return { session: state.session }
   }
 
   setSession(session: Session, options: SessionDataWriteOptions = {}): Promise<void> {
@@ -585,6 +622,28 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
 
   private async persistSession(session: Session, options: SessionDataWriteOptions): Promise<PersistedSessionVersion> {
     const id = session.id
+    const cached = this.baselines.get(id)
+    if (
+      cached &&
+      session.messages.length > cached.session.messages.length &&
+      options.baseSession &&
+      isAppendBase(cached.session, options.baseSession, Boolean(this.rows.acceptTextTokenResults))
+    ) {
+      const candidate = this.rows.acceptTextTokenResults ? restorePersistedTextTokens(session, cached.session) : session
+      const append = planSessionAppend(cached.session, candidate, cached.rows)
+      if (append) {
+        const marker = await this.records.getRecord(id)
+        if (
+          marker &&
+          isRowsSessionRecord(marker) &&
+          !hasReleasedClientContent(marker) &&
+          (await this.rows.getRevision(id)) === cached.revision
+        ) {
+          const snapshot = await this.commitDiff(id, append.diff, append.record, cached.revision, append.rows)
+          return this.rememberSnapshot(id, snapshot, candidate, true)
+        }
+      }
+    }
     const context = await this.resolveWriteContext(id, options)
     const baseline = context.baseline
     if (baseline && this.rows.acceptTextTokenResults) session = restorePersistedTextTokens(session, baseline.session)
@@ -819,6 +878,8 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
 
   /** Keeps background migration, foreground writes and deletes ordered per id. */
   private enqueueSessionOperation<Result>(id: string, action: () => Promise<Result>): Promise<Result> {
+    // A new exclusive operation closes the current read batch to later readers.
+    this.readBatches.delete(id)
     const previous = this.operationTails.get(id) ?? Promise.resolve()
     const result = previous
       .catch(() => undefined)
@@ -832,6 +893,43 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
       if (this.operationTails.get(id) === tail) this.operationTails.delete(id)
     })
     return result
+  }
+
+  /** Concurrent reads share one storage lock; writes remain barriers on both sides. */
+  private enqueueSessionRead<Result>(
+    id: string,
+    action: (record: StoredSessionRecord | null) => Promise<Result>
+  ): Promise<Result> {
+    let batch = this.readBatches.get(id)
+    if (!batch) {
+      let resolveRecord!: (record: StoredSessionRecord | null) => void
+      let rejectRecord!: (error: unknown) => void
+      let finish!: () => void
+      const record = new Promise<StoredSessionRecord | null>((resolve, reject) => {
+        resolveRecord = resolve
+        rejectRecord = reject
+      })
+      const finished = new Promise<void>((resolve) => {
+        finish = resolve
+      })
+      batch = { record, pending: 0, finish }
+      // Record normalization can write legacy content back. Complete it before
+      // exposing the record to readers, while holding the cross-context lock.
+      void this.enqueueSessionOperation(id, async () => {
+        resolveRecord(await this.readRecord(id))
+        await finished
+      }).catch(rejectRecord)
+      this.readBatches.set(id, batch)
+    }
+    const current = batch
+    current.pending += 1
+    return current.record.then(action).finally(() => {
+      current.pending -= 1
+      if (current.pending === 0) {
+        if (this.readBatches.get(id) === current) this.readBatches.delete(id)
+        current.finish()
+      }
+    })
   }
 
   /** Stores a V1 session through the same promotion/recovery protocol used by foreground writes. */
@@ -969,12 +1067,34 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     })
   }
 
-  private rememberSnapshot(id: string, snapshot: SessionRowSnapshot, session: Session): PersistedSessionVersion {
+  private rememberSnapshot(
+    id: string,
+    snapshot: SessionRowSnapshot,
+    session: Session,
+    deferFingerprint = false
+  ): PersistedSessionVersion {
+    let fingerprint: string | undefined
+    const version: PersistedSessionVersion = deferFingerprint
+      ? {
+          revision: snapshot.revision,
+          get fingerprint() {
+            if (fingerprint === undefined) fingerprint = materialize()
+            return fingerprint
+          },
+        }
+      : { fingerprint: this.fingerprint(session), revision: snapshot.revision }
+    const materialize = () => {
+      fingerprint = this.fingerprint(session)
+      this.deferredFingerprints.delete(version)
+      this.rememberVersion(version)
+      return fingerprint
+    }
+    if (deferFingerprint) this.deferredFingerprints.add(version)
     return this.rememberBaseline(id, {
       rows: snapshot.rows,
       record: snapshot.record,
       revision: snapshot.revision,
-      version: { fingerprint: this.fingerprint(session), revision: snapshot.revision },
+      version,
       session,
       decoded: false,
     })
@@ -1018,6 +1138,9 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
   }
 
   private rememberVersion(version: PersistedSessionVersion): void {
+    // Identity and row revision prove a tail append. Materialize its content
+    // fingerprint only when a later operation needs a content comparison.
+    if (this.deferredFingerprints.has(version)) return
     this.revisionsByFingerprint.delete(version.fingerprint)
     this.revisionsByFingerprint.set(version.fingerprint, version.revision)
     while (this.revisionsByFingerprint.size > VERSION_TOKEN_LIMIT) {

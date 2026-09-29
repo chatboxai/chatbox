@@ -316,6 +316,57 @@ describe('SQLite bridge read budgets', () => {
     expect(calls.some((call) => call.ascii)).toBe(false)
   })
 
+  it('packs mixed-language conversation payloads within the native response budget', async () => {
+    const { writer, reader, calls } = setup()
+    const snapshot = sessionSnapshot(240)
+    for (const [index, row] of snapshot.rows.messages.entries()) {
+      const size = index % 2 === 0 ? 500 : index % 40 === 1 ? 32_000 : 4_000
+      row.message.contentParts = [
+        {
+          type: 'text',
+          text: `Message ${index} `.padEnd(
+            size,
+            index % 2 === 0 ? '请解释一下这段代码的作用 ' : 'Here is a detailed answer with examples. '
+          ),
+        },
+      ]
+    }
+    await writer.writeRows(snapshot)
+
+    const context = await reader.readContext({ sessionId: snapshot.record.id })
+
+    expect(context?.messages).toEqual(snapshot.rows.messages.map(expectedContextMessage))
+    expect(Object.keys(context?.textTokens?.sources ?? {})).toHaveLength(240)
+    const payload = calls.filter((call) => call.kind === 'payload')
+    expect(payload.length).toBeLessThanOrEqual(12)
+    expect(payload.every((call) => !call.oversized)).toBe(true)
+  })
+
+  it('falls back when text after a mixed-language sample expands beyond the response budget', async () => {
+    const { writer, reader, calls } = setup()
+    const snapshot = sessionSnapshot(240)
+    for (const [index, row] of snapshot.rows.messages.entries()) {
+      row.message.contentParts = [
+        {
+          type: 'text',
+          text: index >= 32 ? '界😀<&>'.repeat(600) : index % 2 === 0 ? '请解释'.repeat(166) : 'answer '.repeat(570),
+        },
+      ]
+    }
+    await writer.writeRows(snapshot)
+
+    const selected = await reader.readMessages({
+      sessionId: snapshot.record.id,
+      messageIds: snapshot.rows.messages.map((row) => row.messageId),
+    })
+
+    expect(selected?.messages).toEqual(snapshot.rows.messages)
+    const payload = calls.filter((call) => call.kind === 'payload')
+    expect(payload.filter((call) => call.oversized)).toHaveLength(1)
+    expect(payload.find((call) => call.oversized)).toMatchObject({ ascii: true, rows: 1 })
+    expect(payload.at(-1)?.ascii).toBe(false)
+  })
+
   it.each(['界'.repeat(160), '<&>'.repeat(160), '"\\'.repeat(160)])(
     'replays an overflowing ASCII batch once and stays conservative',
     async (text) => {

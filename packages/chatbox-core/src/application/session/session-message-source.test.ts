@@ -34,6 +34,37 @@ async function setup(session = contextSession()) {
 }
 
 describe('targeted message reads and derived commits', () => {
+  it('discards an outdated baseline when another writer changed the session before a token patch', async () => {
+    const { repo, rows, records } = await setup()
+    const original = (await repo.getSession('context-session'))!
+    const other = new RowBackedSessionRepository({ rows, records })
+    const current = (await other.getSession(original.id))!
+    await other.setSession({ ...current, name: 'Changed elsewhere' }, { baseSession: current })
+    await repo.patchSessionMessageDerivedData(original.id, [textPatch(original.messages.at(-2)!)])
+    await expect(repo.setSession({ ...original, name: 'Stale' }, { baseSession: original })).rejects.toMatchObject({
+      name: 'SessionWriteConflictError',
+    })
+    expect((await repo.getSession(original.id))?.name).toBe('Changed elsewhere')
+  })
+
+  it('keeps a matching write baseline after a token patch so the next insert does not reread history', async () => {
+    const { repo, rows } = await setup(contextSession(1000))
+    const original = (await repo.getSession('context-session'))!
+    const patch = textPatch(original.messages.at(-2)!)
+    const readSnapshot = vi.spyOn(rows, 'readSnapshot')
+    await repo.patchSessionMessageDerivedData(original.id, [patch])
+    const replayed: Session = {
+      ...original,
+      messages: original.messages.map((message) => applySessionMessageDerivedPatch(message, patch)?.message ?? message),
+    }
+    const added: Message = { id: 'appended', role: 'user', contentParts: [{ type: 'text', text: 'Continue' }] }
+    await repo.setSession({ ...replayed, messages: [...replayed.messages, added] }, { baseSession: replayed })
+    expect(readSnapshot).not.toHaveBeenCalled()
+    const stored = await repo.getSession(original.id)
+    expect(stored?.messages.at(-1)?.id).toBe(added.id)
+    expect(stored?.messages.find((message) => message.id === patch.messageId)?.tokenCountMap?.default).toBe(7)
+  })
+
   it('reads and patches one row without decoding a session or returning a full projection', async () => {
     const session = contextSession(1000)
     const message = session.messages.at(-2)!

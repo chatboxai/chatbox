@@ -29,7 +29,7 @@ const log = getLogger('compaction')
 const compactionService = new CompactionService({
   sessions: {
     getSession: (sessionId) => rendererApplication.sessionQueryBridge.getSession(sessionId),
-    getSessionSettings: (sessionId) => getSessionSettings(sessionId),
+    getSessionSettings: (sessionId, session) => getSessionSettings(sessionId, session),
     updateSessionWithMessages: (sessionId, updater) =>
       rendererApplication.sessions.updateSessionWithMessages(sessionId, updater),
   },

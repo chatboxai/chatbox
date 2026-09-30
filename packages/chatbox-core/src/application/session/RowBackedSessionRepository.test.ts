@@ -2,20 +2,23 @@ import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { SessionRepositoryError, type SessionRepositoryPort, type StoredSessionRecord } from '../../ports'
 import type { SessionRowSnapshot, SessionRows } from '../../ports/session-row-store'
 import { createSessionRepositoryContract } from '../../ports/testing/session-repository-contract'
-import { buildSwitchForkToPatch } from '../../session/message-forks'
+import { buildDeleteForkPatch, buildSwitchForkToPatch } from '../../session/message-forks'
 import {
   normalizeSessionV1,
   type SessionRecordV2,
   type VerifySessionTreeRoundTripResult,
 } from '../../session/session-tree'
+import { UNENCODABLE_REASON, unencodableMessage } from '../../session/session-tree/unencodable.test-support'
 import { InMemorySessionRecordStore } from '../../testing/InMemorySessionRecordStore'
 import { InMemorySessionRepository } from '../../testing/InMemorySessionRepository'
 import { InMemorySessionRowStore } from '../../testing/InMemorySessionRowStore'
 import type { Message, Session } from '../../types/session'
 import { migrateSession } from './compatibility/session-load'
+import { getSessionMessageTokenizationDigest } from './message-derived-data'
 import { applyMessageRemoval } from './message-tree'
 import { RowBackedSessionRepository } from './RowBackedSessionRepository'
 import { SessionPersistenceProtocol } from './SessionPersistenceProtocol'
+import { SessionWriteCoordinator } from './SessionWriteCoordinator'
 
 const NOW = 1_000
 
@@ -24,13 +27,16 @@ const encoding = vi.hoisted(() => ({ calls: 0 }))
 
 vi.mock('../../session/session-tree', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../session/session-tree')>()
+  const { failOnUnencodableMarker } = await import('../../session/session-tree/unencodable.test-support')
+  const encode = failOnUnencodableMarker(actual.encodeSessionTree)
   return {
     ...actual,
     verifySessionTreeRoundTrip: (
       ...args: Parameters<typeof actual.verifySessionTreeRoundTrip>
     ): VerifySessionTreeRoundTripResult => {
       encoding.calls += 1
-      return actual.verifySessionTreeRoundTrip(...args)
+      const rejected = encode(...args)
+      return rejected.ok ? actual.verifySessionTreeRoundTrip(...args) : rejected
     },
   }
 })
@@ -632,11 +638,7 @@ describe('RowBackedSessionRepository', () => {
 
     test('reads a session that cannot be row-encoded without mutating it', async () => {
       const session = createRichSession()
-      const fork = session.messageForksHash?.['user-1']
-      if (!fork) {
-        throw new Error('fixture is missing its fork')
-      }
-      fork.lists[fork.position].messages = [message('stray', 'assistant', 420)]
+      session.messages.push(unencodableMessage())
       await harness.records.setRecord(session)
 
       const loaded = await harness.repository.getSession(session.id)
@@ -744,7 +746,7 @@ describe('RowBackedSessionRepository', () => {
           tokenCountMap: { default: 3 },
           tokenCalculatedAt: { default: 1 },
         }
-        if (fallback === 'legacy-shape') original.messages.push({ ...original.messages[0] })
+        if (fallback === 'legacy-shape') original.messages.push(unencodableMessage())
         await harness.records.setRecord(original)
         const loaded = await harness.repository.getSession(original.id)
         if (!loaded) throw new Error('expected session')
@@ -1213,20 +1215,16 @@ describe('RowBackedSessionRepository', () => {
 
     test('keeps an unencodable new session in V1 form', async () => {
       const session = createRichSession()
-      const fork = session.messageForksHash?.['user-1']
-      if (!fork) {
-        throw new Error('fixture is missing its fork')
-      }
-      fork.lists[fork.position].messages = [message('stray', 'assistant', 420)]
+      session.messages.push(unencodableMessage())
 
       await harness.repository.setSession(session)
 
-      expect(harness.migrationSkipped).toHaveBeenCalledWith(session.id, expect.stringContaining('user-1'))
+      expect(harness.migrationSkipped).toHaveBeenCalledWith(session.id, UNENCODABLE_REASON)
       expect(storedRecord(harness, session.id)).not.toHaveProperty('storageFormat')
       await expect(harness.rows.hasRows(session.id)).resolves.toBe(false)
     })
 
-    test('keeps a new session with duplicate archived thread ids in V1 form', async () => {
+    test('stores a new session with duplicate archived thread ids as rows under distinct ids', async () => {
       const session = createRichSession()
       const archived = session.threads?.[0]
       if (!archived) throw new Error('fixture is missing its archived thread')
@@ -1234,20 +1232,348 @@ describe('RowBackedSessionRepository', () => {
 
       await harness.repository.setSession(session)
 
-      expect(harness.migrationSkipped).toHaveBeenCalledWith(session.id, expect.stringContaining(archived.id))
-      expect(storedRecord(harness, session.id)).not.toHaveProperty('storageFormat')
-      await expect(harness.rows.hasRows(session.id)).resolves.toBe(false)
+      expect(harness.migrationSkipped).not.toHaveBeenCalled()
+      expect(storedRecord(harness, session.id).storageFormat).toBe('rows')
+      const stored = await harness.repository.getSession(session.id)
+      expect(stored?.threads?.map((thread) => thread.id)).toEqual([archived.id, `${archived.id}~thread`])
+      expect(stored?.threads?.[1].messages.map((item) => item.id)).toEqual(['other-history-user'])
+    })
+
+    test('keeps the repaired session as the baseline so a hinted write updates the displayed copy', async () => {
+      const legacy: Session = {
+        ...createPlainSession(),
+        messages: [
+          message('first', 'user', 1),
+          { ...message('repeated', 'user', 2), contentParts: [{ type: 'text', text: 'earlier' }] },
+          message('middle', 'assistant', 3),
+          { ...message('repeated', 'assistant', 4), contentParts: [{ type: 'text', text: 'later' }] },
+        ],
+      }
+      await harness.records.setRecord(legacy)
+      const original = await harness.repository.getSession(legacy.id)
+      if (!original) throw new Error('expected session')
+      const renamed = { ...original, name: 'Renamed' }
+      await harness.repository.setSession(renamed, { baseSession: original })
+      const edited = {
+        ...renamed,
+        messages: renamed.messages.map((item, index) =>
+          index === 3 ? { ...item, contentParts: [{ type: 'text' as const, text: 'edited' }] } : item
+        ),
+      }
+
+      await harness.repository.setSession(edited, { baseSession: renamed, changedMessageId: 'repeated' })
+
+      harness.repository.forgetAllBaselines()
+      const stored = await harness.repository.getSession(legacy.id)
+      expect(stored?.messages.map((item) => [item.id, item.contentParts[0]])).toEqual([
+        ['first', { type: 'text', text: 'first' }],
+        ['repeated', { type: 'text', text: 'earlier' }],
+        ['middle', { type: 'text', text: 'middle' }],
+        ['repeated~dup', { type: 'text', text: 'edited' }],
+      ])
+    })
+
+    test('hands out a V1 session in its repaired shape so a snapshot taken before background migration stays valid', async () => {
+      const legacy: Session = {
+        ...createPlainSession(),
+        messages: [
+          message('first', 'user', 1),
+          { ...message('repeated', 'user', 2), contentParts: [{ type: 'text', text: 'earlier' }] },
+          message('middle', 'assistant', 3),
+          { ...message('repeated', 'assistant', 4), contentParts: [{ type: 'text', text: 'later' }], generating: true },
+        ],
+      }
+      await harness.records.setRecord(legacy)
+      const before = await harness.repository.getSession(legacy.id)
+      if (!before) throw new Error('expected session')
+      expect(before.messages.map((item) => item.id)).toEqual(['first', 'repeated', 'middle', 'repeated~dup'])
+
+      await expect(harness.repository.migrateSession(legacy.id)).resolves.toBe('migrated')
+      const settled = {
+        ...before,
+        messages: before.messages.map((item) => (item.id === 'repeated~dup' ? { ...item, generating: false } : item)),
+      }
+      await harness.repository.setSession(settled, { baseSession: before, changedMessageId: 'repeated~dup' })
+
+      harness.repository.forgetAllBaselines()
+      const stored = await harness.repository.getSession(legacy.id)
+      expect(stored?.messages.map((item) => [item.id, item.contentParts[0], Boolean(item.generating)])).toEqual([
+        ['first', { type: 'text', text: 'first' }, false],
+        ['repeated', { type: 'text', text: 'earlier' }, false],
+        ['middle', { type: 'text', text: 'middle' }, false],
+        ['repeated~dup', { type: 'text', text: 'later' }, false],
+      ])
+    })
+
+    test('keeps a session with only unreachable forks free of forks through fast writes after migration', async () => {
+      const legacy: Session = {
+        ...createPlainSession(),
+        messageForksHash: {
+          'deleted-pivot': {
+            position: 1,
+            createdAt: 1,
+            lists: [
+              { id: 'saved', messages: [message('hidden', 'assistant', 5)] },
+              { id: 'active', messages: [] },
+            ],
+          },
+        },
+      }
+      await harness.records.setRecord(legacy)
+      const original = await harness.repository.getSession(legacy.id)
+      if (!original) throw new Error('expected session')
+      expect(original.messageForksHash ?? {}).toEqual({})
+      const appended = { ...original, messages: [...original.messages, message('reply', 'assistant', 40)] }
+      await harness.repository.setSession(appended, { baseSession: original })
+      const settled = {
+        ...appended,
+        messages: appended.messages.map((item) => (item.id === 'reply' ? { ...item, generating: false } : item)),
+      }
+      await harness.repository.setSession(settled, { baseSession: appended, changedMessageId: 'reply' })
+      await harness.repository.setSession({ ...settled, name: 'Renamed' }, { baseSession: settled })
+
+      expect(storedRecord(harness, legacy.id).storageFormat).toBe('rows')
+      const record = (await harness.rows.readSnapshot(legacy.id))?.record
+      expect(record).toMatchObject({ name: 'Renamed', presentation: { hasForks: false } })
+      expect(record).not.toHaveProperty('forkCreatedAt')
+    })
+
+    test.each([false, true])(
+      'keeps fork metadata out of the record after writing a caller session with an unreachable fork (baseline evicted: %s)',
+      async (evicted) => {
+        const session: Session = {
+          ...createPlainSession(),
+          messageForksHash: {
+            deleted: {
+              position: 1,
+              createdAt: 1,
+              lists: [
+                { id: 'saved', messages: [message('hidden', 'assistant', 5)] },
+                { id: 'active', messages: [] },
+              ],
+            },
+          },
+        }
+        await harness.repository.setSession(session)
+        if (evicted) harness.repository.forgetAllBaselines()
+        await harness.repository.setSession({ ...session, name: 'Renamed' }, { baseSession: session })
+
+        const record = (await harness.rows.readSnapshot(session.id))?.record
+        expect(record).toMatchObject({ name: 'Renamed', presentation: { hasForks: false } })
+        expect(record).not.toHaveProperty('forkCreatedAt')
+      }
+    )
+
+    test('rebuilds an evicted baseline from rows when the caller snapshot would be repaired', async () => {
+      const session: Session = {
+        ...createPlainSession(),
+        messages: [
+          message('first', 'user', 1),
+          { ...message('repeated', 'user', 2), contentParts: [{ type: 'text', text: 'earlier' }] },
+          message('middle', 'assistant', 3),
+          { ...message('repeated', 'assistant', 4), contentParts: [{ type: 'text', text: 'later' }] },
+        ],
+      }
+      await harness.repository.setSession(session)
+      harness.repository.forgetAllBaselines()
+      const edited = {
+        ...session,
+        messages: session.messages.map((item, index) =>
+          index === 3 ? { ...item, contentParts: [{ type: 'text' as const, text: 'edited later' }] } : item
+        ),
+      }
+
+      await harness.repository.setSession(edited, { baseSession: session, changedMessageId: 'repeated' })
+
+      harness.repository.forgetAllBaselines()
+      const stored = await harness.repository.getSession(session.id)
+      expect(stored?.messages.map((item) => [item.id, item.contentParts[0]])).toEqual([
+        ['first', { type: 'text', text: 'first' }],
+        ['repeated', { type: 'text', text: 'earlier' }],
+        ['middle', { type: 'text', text: 'middle' }],
+        ['repeated~dup', { type: 'text', text: 'edited later' }],
+      ])
+    })
+
+    test('keeps hinted writes from an unrepaired caller snapshot on the displayed copy', async () => {
+      const text = (value: string) => [{ type: 'text' as const, text: value }]
+      const raw: Session = {
+        ...createPlainSession(),
+        messages: [
+          message('a', 'user', 1),
+          { ...message('x', 'assistant', 2), contentParts: text('FIRST') },
+          { ...message('x', 'user', 3), contentParts: text('SECOND') },
+          message('c', 'assistant', 4),
+          message('d', 'user', 5),
+        ],
+      }
+      await harness.repository.setSession(raw)
+      const editedC = {
+        ...raw,
+        messages: raw.messages.map((item, index) => (index === 3 ? { ...item, contentParts: text('c edited') } : item)),
+      }
+      await harness.repository.setSession(editedC, { baseSession: raw, changedMessageId: 'c' })
+      const editedX = {
+        ...editedC,
+        messages: editedC.messages.map((item, index) =>
+          index === 2 ? { ...item, contentParts: text('SECOND edited') } : item
+        ),
+      }
+      await harness.repository.setSession(editedX, { baseSession: editedC, changedMessageId: 'x' })
+
+      harness.repository.forgetAllBaselines()
+      const stored = await harness.repository.getSession(raw.id)
+      expect(stored?.messages.map((item) => [item.id, item.contentParts[0]])).toEqual([
+        ['a', { type: 'text', text: 'a' }],
+        ['x', { type: 'text', text: 'FIRST' }],
+        ['x~dup', { type: 'text', text: 'SECOND edited' }],
+        ['c', { type: 'text', text: 'c edited' }],
+        ['d', { type: 'text', text: 'd' }],
+      ])
+    })
+
+    test('keeps streaming writes on the fast path after deleting a fork down to one branch', async () => {
+      const session: Session = {
+        ...createPlainSession(),
+        messageForksHash: {
+          'user-1': {
+            position: 1,
+            createdAt: 5,
+            lists: [
+              { id: 'saved', messages: [message('alternative', 'assistant', 3)] },
+              { id: 'active', messages: [] },
+            ],
+          },
+        },
+      }
+      await harness.repository.setSession(session)
+      const patch = buildDeleteForkPatch(session, 'user-1')
+      if (!patch) throw new Error('expected a fork deletion')
+      const deleted = { ...session, ...patch }
+      await harness.repository.setSession(deleted, { baseSession: session })
+      const appended = {
+        ...deleted,
+        messages: [...deleted.messages, message('question', 'user', 40), message('reply', 'assistant', 41)],
+      }
+      await harness.repository.setSession(appended, { baseSession: deleted })
+
+      encoding.calls = 0
+      let current = appended
+      for (let chunk = 0; chunk < 5; chunk += 1) {
+        const next = {
+          ...current,
+          messages: current.messages.map((item) =>
+            item.id === 'reply' ? { ...item, contentParts: [{ type: 'text' as const, text: `chunk ${chunk}` }] } : item
+          ),
+        }
+        await harness.repository.setSession(next, { baseSession: current, changedMessageId: 'reply' })
+        current = next
+      }
+      await harness.repository.setSession({ ...current, name: 'Renamed' }, { baseSession: current })
+
+      expect(encoding.calls).toBe(0)
+      const record = (await harness.rows.readSnapshot(session.id))?.record
+      expect(record).toMatchObject({ name: 'Renamed', presentation: { hasForks: false } })
+      expect(record).not.toHaveProperty('forkCreatedAt')
+      harness.repository.forgetAllBaselines()
+      const stored = await harness.repository.getSession(session.id)
+      expect(stored?.messages.at(-1)?.contentParts).toEqual([{ type: 'text', text: 'chunk 4' }])
+    })
+
+    test('keeps streaming writes on the fast path after derived data is written back through the coordinator', async () => {
+      const coordinator = new SessionWriteCoordinator(
+        Object.assign(harness.repository, { meta: new InMemorySessionRepository().meta })
+      )
+      const session = createPlainSession()
+      await harness.repository.setSession(session)
+      const question = message('question', 'user', 40)
+      await coordinator.update(session.id, (current) => {
+        if (!current) throw new Error('expected session')
+        return { ...current, messages: [...current.messages, question, message('reply', 'assistant', 41)] }
+      })
+      await coordinator.patchMessageDerivedData(session.id, [
+        {
+          messageId: 'question',
+          text: [
+            {
+              tokenizerType: 'default',
+              sourceDigest: getSessionMessageTokenizationDigest(question),
+              tokens: 3,
+              calculatedAt: 10,
+              approximate: false,
+            },
+          ],
+        },
+      ])
+
+      encoding.calls = 0
+      for (let chunk = 0; chunk < 3; chunk += 1) {
+        await coordinator.update(
+          session.id,
+          (current) => {
+            if (!current) throw new Error('expected session')
+            return {
+              ...current,
+              messages: current.messages.map((item) =>
+                item.id === 'reply'
+                  ? { ...item, contentParts: [{ type: 'text' as const, text: `chunk ${chunk}` }] }
+                  : item
+              ),
+            }
+          },
+          { changedMessageId: 'reply' }
+        )
+      }
+
+      expect(encoding.calls).toBe(0)
+      harness.repository.forgetAllBaselines()
+      const stored = await harness.repository.getSession(session.id)
+      expect(stored?.messages.find((item) => item.id === 'question')?.tokenCountMap).toEqual({ default: 3 })
+      expect(stored?.messages.at(-1)?.contentParts).toEqual([{ type: 'text', text: 'chunk 2' }])
+    })
+
+    test('keeps a moved fork creation time through later record-only and appended writes', async () => {
+      const legacy: Session = {
+        ...createPlainSession(),
+        messages: [message('question', 'user', 1), summaryMessage('summary', 2), message('answer', 'assistant', 3)],
+        messageForksHash: {
+          summary: {
+            position: 1,
+            createdAt: 5,
+            lists: [
+              { id: 'saved', messages: [message('alternative', 'assistant', 20)] },
+              { id: 'active', messages: [] },
+            ],
+          },
+        },
+      }
+      await harness.records.setRecord(legacy)
+      const original = await harness.repository.getSession(legacy.id)
+      if (!original) throw new Error('expected session')
+      const first = { ...original, name: 'First' }
+      await harness.repository.setSession(first, { baseSession: original })
+      const second = { ...first, name: 'Second' }
+      await harness.repository.setSession(second, { baseSession: first })
+      const appended = { ...second, messages: [...second.messages, message('follow-up', 'user', 30)] }
+      await harness.repository.setSession(appended, { baseSession: second })
+
+      harness.repository.forgetAllBaselines()
+      const stored = await harness.repository.getSession(legacy.id)
+      expect(stored?.name).toBe('Second')
+      expect(stored?.messages.map((item) => item.id)).toEqual(['question', 'summary', 'answer', 'follow-up'])
+      expect(stored?.messageForksHash).toEqual({
+        question: expect.objectContaining({
+          createdAt: 5,
+          lists: [expect.objectContaining({ id: 'saved' }), expect.anything()],
+        }),
+      })
     })
 
     test('refuses to write a migrated session back in V1 form', async () => {
       const session = createRichSession()
       await harness.repository.setSession(session)
       const broken = normalized(session)
-      const fork = broken.messageForksHash?.['user-1']
-      if (!fork) {
-        throw new Error('normalized session is missing its fork')
-      }
-      fork.lists[fork.position].messages = [message('stray', 'assistant', 420)]
+      broken.messages = [...broken.messages, unencodableMessage()]
 
       await expect(harness.repository.setSession(broken)).rejects.toMatchObject({
         name: 'SessionRepositoryError',
@@ -1434,6 +1760,31 @@ describe('RowBackedSessionRepository', () => {
       await expect(harness.repository.listUnmigratedSessionIds()).resolves.toEqual([])
     })
 
+    test('migrates a V1 record whose unreachable fork still holds messages and drops that fork', async () => {
+      const session = createRichSession()
+      session.messageForksHash = {
+        ...session.messageForksHash,
+        'deleted-pivot': {
+          position: 1,
+          createdAt: 1,
+          lists: [
+            { id: 'saved', messages: [message('unreachable', 'assistant', 430)] },
+            { id: 'active', messages: [] },
+          ],
+        },
+      }
+      await harness.records.setRecord(session)
+
+      await expect(harness.repository.migrateSession(session.id)).resolves.toBe('migrated')
+
+      expect(harness.migrationSkipped).not.toHaveBeenCalled()
+      expect(storedRecord(harness, session.id).storageFormat).toBe('rows')
+      const loaded = await harness.repository.getSession(session.id)
+      expect(loaded).toEqual(normalized(session))
+      expect(loaded?.messageForksHash).not.toHaveProperty('deleted-pivot')
+      expect(JSON.stringify(loaded)).not.toContain('unreachable')
+    })
+
     test('reports an already migrated session and touches nothing', async () => {
       const session = createPlainSession()
       await harness.repository.setSession(session)
@@ -1458,16 +1809,12 @@ describe('RowBackedSessionRepository', () => {
 
     test('skips a session whose round-trip self-check fails and keeps it in V1 form', async () => {
       const session = createRichSession()
-      const fork = session.messageForksHash?.['user-1']
-      if (!fork) {
-        throw new Error('fixture is missing its fork')
-      }
-      fork.lists[fork.position].messages = [message('stray', 'assistant', 420)]
+      session.messages.push(unencodableMessage())
       await harness.records.setRecord(session)
 
       await expect(harness.repository.migrateSession(session.id)).resolves.toBe('skipped')
 
-      expect(harness.migrationSkipped).toHaveBeenCalledWith(session.id, expect.stringContaining('user-1'))
+      expect(harness.migrationSkipped).toHaveBeenCalledWith(session.id, UNENCODABLE_REASON)
       expect(storedRecord(harness, session.id)).not.toHaveProperty('storageFormat')
       await expect(harness.rows.hasRows(session.id)).resolves.toBe(false)
     })

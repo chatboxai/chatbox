@@ -1,7 +1,10 @@
 import { exportBackupArchive, importBackupArchive, prepareBackupExport } from '@chatbox/core/backup'
 import { MemoryStorage } from '../../../packages/chatbox-core/src/backup/sharded.test-support'
+import {
+  UNENCODABLE_REASON,
+  unencodableMessage,
+} from '../../../packages/chatbox-core/src/session/session-tree/unencodable.test-support'
 import 'fake-indexeddb/auto'
-import { IDBFactory } from 'fake-indexeddb'
 import { type SessionMetaRepositoryPort, SessionRepositoryError } from '@chatbox/core/ports'
 import {
   createSessionRepositoryContract,
@@ -9,10 +12,19 @@ import {
 } from '@chatbox/core/ports/testing/session-repository-contract'
 import { InMemorySessionRepository } from '@chatbox/core/testing'
 import type { Message, Session, SessionMetaPage, SessionMetaRecord } from '@shared/types'
+import { IDBFactory } from 'fake-indexeddb'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { IndexedDBSessionMetaStorage } from '@/storage/SessionMetaStorage'
 import { IndexedDBSessionRowStore } from '@/storage/SessionRowStorage'
 import { type CurrentSessionDataStorage, CurrentSessionRepository } from './CurrentSessionRepository'
+
+vi.mock('../../../packages/chatbox-core/src/session/session-tree/encode', async (importOriginal) => {
+  const { failOnUnencodableMarker } = await import(
+    '../../../packages/chatbox-core/src/session/session-tree/unencodable.test-support'
+  )
+  const actual = await importOriginal<typeof import('../../../packages/chatbox-core/src/session/session-tree/encode')>()
+  return { ...actual, encodeSessionTree: failOnUnencodableMarker(actual.encodeSessionTree) }
+})
 
 function message(id: string, role: Message['role'], timestamp: number): Message {
   return { id, role, contentParts: [{ type: 'text', text: id }], timestamp }
@@ -141,52 +153,78 @@ describe('CurrentSessionRepository contract', () => {
     harness = createHarness()
   })
 
-  test.each([false, true])('scans the authoritative restored record with orphan branches: %s', async (orphan) => {
-    const id = 'restored-ownership'
-    await harness.repository.setSession(createSessionWithMessages(id))
-    const restored: Session = {
-      ...createSession(id),
-      messages: [message('restored', 'user', 300)],
-      ...(orphan
-        ? {
-            messageForksHash: {
-              missing: {
-                position: 1,
-                createdAt: 1,
-                lists: [{ id: 'saved', messages: [message('orphan', 'assistant', 400)] }],
+  test.each(['plain', 'unreachable fork', 'summary pivot', 'unencodable'] as const)(
+    'scans the authoritative restored record with %s branches',
+    async (topology) => {
+      const id = 'restored-ownership'
+      await harness.repository.setSession(createSessionWithMessages(id))
+      const restoredMessage = message('restored', 'user', 300)
+      const savedBranch = {
+        position: 1,
+        createdAt: 1,
+        lists: [
+          { id: 'saved', messages: [message('saved-reply', 'assistant', 400)] },
+          { id: 'active', messages: [] },
+        ],
+      }
+      const restored: Session = {
+        ...createSession(id),
+        messages: [topology === 'summary pivot' ? { ...restoredMessage, isSummary: true } : restoredMessage],
+        ...(topology === 'unreachable fork' ? { messageForksHash: { missing: savedBranch } } : {}),
+        ...(topology === 'summary pivot' ? { messageForksHash: { restored: savedBranch } } : {}),
+        ...(topology === 'unencodable'
+          ? {
+              messageForksHash: {
+                restored: {
+                  ...savedBranch,
+                  lists: [savedBranch.lists[0], { id: 'held', messages: [unencodableMessage()] }, savedBranch.lists[1]],
+                  position: 2,
+                },
               },
-            },
-          }
-        : {}),
-    }
-    await harness.repository.withBackupStorageAccess(async (_read, _meta, store) => {
-      const candidate = await store!.beginLegacyRestore!(restored)
-      await candidate.publish()
-      await candidate.dispose()
-    })
-    const updated: Session = {
-      ...restored,
-      messages: [
-        ...restored.messages,
-        {
-          ...message('new-attachment', 'user', 500),
-          files: [{ id: 'file', name: 'document.pdf', fileType: 'application/pdf', sessionAttachmentId: 7 }],
-        },
-      ],
-    }
-    if (orphan) {
-      // 无法迁移的对话后续编辑仍写旧 JSON，残留行不能授权附件删除。
-      await harness.repository.setSession(updated, { baseSession: (await harness.repository.getSession(id))! })
-      expect(await messageRowIds(harness, id)).toEqual(['assistant-1', 'user-1'])
-      await expect(harness.repository.collectSessionAttachmentOwnership(id)).rejects.toThrow('unreachable fork')
-    } else {
-      // 模拟旧格式导入；即便尚未触发迁移，扫描也必须忽略同 ID 的旧行。
-      await harness.dataStorage.setItemNow(`session:${id}`, updated)
+            }
+          : {}),
+      }
+      await harness.repository.withBackupStorageAccess(async (_read, _meta, store) => {
+        const candidate = await store!.beginLegacyRestore!(restored)
+        await candidate.publish()
+        await candidate.dispose()
+      })
+      const updated: Session = {
+        ...restored,
+        messages: [
+          ...restored.messages,
+          {
+            ...message('new-attachment', 'user', 500),
+            files: [{ id: 'file', name: 'document.pdf', fileType: 'application/pdf', sessionAttachmentId: 7 }],
+          },
+        ],
+      }
+      if (topology === 'unencodable') {
+        // 无法迁移的对话后续编辑仍写旧 JSON，残留行不能授权附件删除。
+        await harness.repository.setSession(updated, { baseSession: (await harness.repository.getSession(id))! })
+        expect(await messageRowIds(harness, id)).toEqual(['assistant-1', 'user-1'])
+        await expect(harness.repository.collectSessionAttachmentOwnership(id)).rejects.toThrow(UNENCODABLE_REASON)
+        return
+      }
+      if (topology === 'summary pivot') {
+        // 挂在摘要上的分支修复后可以写成行，分支里的消息仍归属这个对话。
+        await harness.repository.setSession(updated, { baseSession: (await harness.repository.getSession(id))! })
+        const ownership = await harness.repository.collectSessionAttachmentOwnership(id)
+        expect(ownership.messageIds.sort()).toEqual(['new-attachment', 'restored', 'restored~anchor', 'saved-reply'])
+        return
+      }
+      if (topology === 'unreachable fork') {
+        // 不可达分支随编码去掉，后续编辑可以写成行，扫描只认可见消息。
+        await harness.repository.setSession(updated, { baseSession: (await harness.repository.getSession(id))! })
+      } else {
+        // 模拟旧格式导入；即便尚未触发迁移，扫描也必须忽略同 ID 的旧行。
+        await harness.dataStorage.setItemNow(`session:${id}`, updated)
+      }
       const ownership = await harness.repository.collectSessionAttachmentOwnership(id)
       expect(ownership.messageIds.sort()).toEqual(['new-attachment', 'restored'])
       expect(ownership.attachmentReferences).toEqual([{ attachmentId: 7, sessionId: id, messageId: 'new-attachment' }])
     }
-  })
+  )
 
   test('satisfies the reusable portable repository contract', async () => {
     const values = new Map<string, unknown>()

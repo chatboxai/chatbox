@@ -51,24 +51,34 @@ describe('normalizeSessionV1', () => {
     })
   })
 
-  test('rejects unreachable fork entries that still own messages', () => {
-    const result = normalizeSessionV1(
+  test('drops unreachable fork entries together with their saved messages', () => {
+    const normalized = normalize(
       makeSession({
-        messages: [message('u1')],
+        messages: [message('u1'), message('a1', 'assistant')],
         messageForksHash: {
           orphan: {
             position: 0,
             createdAt: 5,
             lists: [
               { id: 'list-active', messages: [] },
-              { id: 'list-saved', messages: [message('ghost', 'assistant')] },
+              // An id that also exists on the visible path must not count as a duplicate.
+              { id: 'list-saved', messages: [message('ghost', 'assistant'), message('a1', 'assistant')] },
+            ],
+          },
+          ghost: {
+            position: 0,
+            createdAt: 6,
+            lists: [
+              { id: 'nested-active', messages: [] },
+              { id: 'nested-saved', messages: [message('nested', 'user')] },
             ],
           },
         },
       })
     )
 
-    expect(result).toEqual({ ok: false, reason: 'unreachable fork orphan contains messages' })
+    expect(normalized.messages.map((item) => item.id)).toEqual(['u1', 'a1'])
+    expect(normalized).not.toHaveProperty('messageForksHash')
   })
 
   test('drops empty fork entries whose pivot is unreachable', () => {
@@ -146,64 +156,80 @@ describe('normalizeSessionV1', () => {
     expect(normalized).toEqual({ id: 'session-1', name: 'Session', messages: [], threadName: '' })
   })
 
-  test('reports duplicate message ids', () => {
-    expect(normalizeSessionV1(makeSession({ messages: [message('u1'), message('u1')] }))).toEqual({
-      ok: false,
-      reason: 'duplicate message id u1',
+  test('gives a later duplicate message id a derived id', () => {
+    const normalized = normalize(makeSession({ messages: [message('u1'), message('u1')] }))
+    expect(normalized.messages.map((item) => item.id)).toEqual(['u1', 'u1~dup'])
+  })
+
+  test('moves a fork pivoted on a summary to the preceding message', () => {
+    const normalized = normalize(
+      makeSession({
+        messages: [message('u1'), summaryMessage('s1'), message('a1', 'assistant')],
+        messageForksHash: {
+          s1: {
+            position: 0,
+            createdAt: 5,
+            lists: [
+              { id: 'list-active', messages: [] },
+              { id: 'list-saved', messages: [message('alt', 'assistant')] },
+            ],
+          },
+        },
+      })
+    )
+    expect(normalized.messages.map((item) => item.id)).toEqual(['u1', 's1', 'a1'])
+    expect(Object.keys(normalized.messageForksHash ?? {})).toEqual(['u1'])
+    expect(normalized.messageForksHash?.u1).toMatchObject({
+      position: 0,
+      lists: [{ id: 'list-active' }, { id: 'list-saved' }],
     })
   })
 
-  test('reports a fork pivoted on a summary message', () => {
-    expect(
-      normalizeSessionV1(
-        makeSession({
-          messages: [message('u1'), summaryMessage('s1'), message('a1', 'assistant')],
-          messageForksHash: {
-            s1: {
-              position: 0,
-              createdAt: 5,
-              lists: [
-                { id: 'list-active', messages: [] },
-                { id: 'list-saved', messages: [message('alt', 'assistant')] },
-              ],
-            },
+  test('points an out-of-range position at the empty placeholder', () => {
+    const normalized = normalize(
+      makeSession({
+        messages: [message('u1'), message('a1', 'assistant')],
+        messageForksHash: {
+          u1: {
+            position: 3,
+            createdAt: 5,
+            lists: [
+              { id: 'list-saved', messages: [message('alt', 'assistant')] },
+              { id: 'list-active', messages: [] },
+            ],
           },
-        })
-      )
-    ).toEqual({ ok: false, reason: 'fork pivot s1 is a summary message' })
+        },
+      })
+    )
+    expect(normalized.messageForksHash?.u1).toMatchObject({ position: 1 })
+    expect(normalized.messages.map((item) => item.id)).toEqual(['u1', 'a1'])
   })
 
-  test('reports an out-of-range active position', () => {
-    expect(
-      normalizeSessionV1(
-        makeSession({
-          messages: [message('u1')],
-          messageForksHash: {
-            u1: { position: 3, createdAt: 5, lists: [{ id: 'list-active', messages: [] }] },
+  test('moves messages stored in the active branch placeholder to a saved branch', () => {
+    const normalized = normalize(
+      makeSession({
+        messages: [message('u1'), message('a1', 'assistant')],
+        messageForksHash: {
+          u1: {
+            position: 0,
+            createdAt: 5,
+            lists: [
+              { id: 'list-active', messages: [message('stranded', 'assistant')] },
+              { id: 'list-saved', messages: [message('alt', 'assistant')] },
+            ],
           },
-        })
-      )
-    ).toEqual({ ok: false, reason: 'fork u1 has out-of-range position 3' })
-  })
-
-  test('reports an active branch that stores messages', () => {
-    expect(
-      normalizeSessionV1(
-        makeSession({
-          messages: [message('u1'), message('a1', 'assistant')],
-          messageForksHash: {
-            u1: {
-              position: 0,
-              createdAt: 5,
-              lists: [
-                { id: 'list-active', messages: [message('stranded', 'assistant')] },
-                { id: 'list-saved', messages: [message('alt', 'assistant')] },
-              ],
-            },
-          },
-        })
-      )
-    ).toEqual({ ok: false, reason: 'fork u1 stores messages in its active branch' })
+        },
+      })
+    )
+    expect(normalized.messages.map((item) => item.id)).toEqual(['u1', 'a1'])
+    expect(normalized.messageForksHash?.u1).toMatchObject({
+      position: 0,
+      lists: [
+        { id: 'list-active', messages: [] },
+        { id: 'list-saved', messages: [expect.objectContaining({ id: 'alt' })] },
+        { id: 'u1~residual', messages: [expect.objectContaining({ id: 'stranded' })] },
+      ],
+    })
   })
 
   test('is idempotent', () => {

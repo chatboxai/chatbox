@@ -469,6 +469,8 @@ export async function importShardedBackup(
     }),
   }
   const legacyTopologies = new Map<string, string>()
+  // Counts of every message a single-file session stores, including branches its tree encoding drops.
+  const storedCounts = new Map<string, { threads: number; messages: number }>()
   const singleTree = (data: Uint8Array) => {
     const value = parse(data)
     SessionSchema.parse(value)
@@ -510,14 +512,16 @@ export async function importShardedBackup(
         if (manifest) throw new Error('Backup manifest must be last')
         finishGraph()
         const { session, tree, topology } = singleTree(entry.data)
+        let messages = session.messages.length
+        for (const thread of session.threads ?? []) messages += thread.messages.length
+        for (const fork of Object.values(session.messageForksHash ?? {}))
+          for (const list of fork.lists) messages += list.messages.length
+        const counts = { threads: (session.threads?.length ?? 0) + 1, messages }
+        storedCounts.set(session.id, counts)
         if (!tree) {
-          // 混合分片备份也可携带旧 JSON。先保留诊断，清单校验后才允许按旧记录恢复，不能丢掉孤立消息。
+          // 混合分片备份也可携带旧 JSON。先保留诊断，清单校验后才允许按旧记录恢复，不能丢掉其中的消息。
           legacyTopologies.set(session.id, topology!)
-          let messages = session.messages.length
-          for (const thread of session.threads ?? []) messages += thread.messages.length
-          for (const fork of Object.values(session.messageForksHash ?? {}))
-            for (const list of fork.lists) messages += list.messages.length
-          summaries.set(session.id, { threads: (session.threads?.length ?? 0) + 1, messages })
+          summaries.set(session.id, counts)
           referenceCatalog.add(collectSessionResourceReferences(session).references)
           return
         }
@@ -629,8 +633,10 @@ export async function importShardedBackup(
     if (topology && (session.layout !== 'single' || !session.legacyTopology)) throw new Error(topology)
     if (topology && !sharded.store.beginLegacyRestore)
       throw new Error('Backup storage does not support legacy conversation restoration')
-    if (JSON.stringify(session.counts) !== JSON.stringify(summaries.get(session.id)))
-      throw new Error('Backup session counts mismatch')
+    // A legacy JSON entry counts every stored message, including unreachable branches its tree encoding drops.
+    const summary =
+      session.layout === 'single' && session.legacyTopology ? storedCounts.get(session.id) : summaries.get(session.id)
+    if (JSON.stringify(session.counts) !== JSON.stringify(summary)) throw new Error('Backup session counts mismatch')
     const prefix = `sessions/${await safeSessionPathComponent(session.id, checksum)}`
     if (session.path !== `${prefix}/${session.layout === 'single' ? 'session' : 'header'}.json`)
       throw new Error('Invalid backup session path')

@@ -22,12 +22,12 @@ import {
   type SessionMessageWindowRequest,
   type SessionMetaRepositoryPort,
   type SessionReadModel,
-  type SessionSearchThreadsPage,
-  type SessionSearchThreadsPageRequest,
   SessionRepositoryError,
   type SessionRepositoryOperation,
   type SessionRepositoryPort,
   type SessionRowStorePort,
+  type SessionSearchThreadsPage,
+  type SessionSearchThreadsPageRequest,
   SessionWriteConflictError,
 } from '@chatbox/core/ports'
 import * as Sentry from '@sentry/react'
@@ -37,6 +37,7 @@ import platform from '@/platform'
 import storage from '@/storage'
 import { rendererBackupSessionStore } from './backup-session-store'
 import { type CurrentSessionDataStorage, CurrentSessionRecordStore } from './CurrentSessionRecordStore'
+import { createMigrationSkipReporter } from './session-migration-skip-report'
 import { collectSessionOwnership } from './session-ownership'
 
 export type { CurrentSessionDataStorage } from './CurrentSessionRecordStore'
@@ -90,6 +91,8 @@ export async function withExclusiveSessionStorageLock<Result>(
   }
 }
 
+const reportMigrationSkipEvent = createMigrationSkipReporter(Sentry)
+
 /**
  * A session whose encoding does not round-trip keeps working in its legacy
  * whole-session form, so this is a compatibility signal rather than a failure.
@@ -102,6 +105,7 @@ function reportMigrationSkipped(sessionId: string, reason: string): void {
     message: `session row migration skipped: ${reason}`,
     data: { sessionId, reason },
   })
+  reportMigrationSkipEvent(sessionId, reason)
 }
 
 async function normalizeRepositoryError<T>(

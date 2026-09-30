@@ -60,6 +60,8 @@ async function* rangeBytes(file: BackupFile, start: number, end: number, signal?
 async function scanLegacy(file: BackupFile, signal?: AbortSignal) {
   const frames: Frame[] = []
   const ranges = new Map<string, Range>()
+  // A duplicated id cannot name the range of either copy.
+  const duplicated = new Set<string>()
   const exterior: string[] = []
   const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
   let structureBytes = 0
@@ -90,9 +92,13 @@ async function scanLegacy(file: BackupFile, signal?: AbortSignal) {
           if (--message.depth === 0) {
             message.validator.write(bytes.subarray(segment, i + 1))
             const { message: value, addContentParts } = message.validator.finishLegacy()
-            if (ranges.has(value.id)) throw new Error('Legacy backup contains duplicate message IDs')
             const legacy = addContentParts || 'content' in value || 'webBrowsing' in value ? value : undefined
-            ranges.set(value.id, { start: message.start, end: offset + i + 1, legacy })
+            if (ranges.has(value.id) || duplicated.has(value.id)) {
+              ranges.delete(value.id)
+              duplicated.add(value.id)
+            } else {
+              ranges.set(value.id, { start: message.start, end: offset + i + 1, legacy })
+            }
             retain(
               JSON.stringify(legacy ? migrateMessage({ ...legacy, contentParts: [...legacy.contentParts] }) : value)
             )
@@ -166,7 +172,7 @@ export function legacyBackupSource(rows: BackupSessionStore, source: LegacyBacku
       const file = await source.open?.(id)
       let value: Session | null | undefined
       if (file) {
-        // 孤立分支仍可能保存用户消息，不能为通过树校验而删除；仅在有界范围内读取完整旧 JSON。
+        // 无法按行导出的旧会话原样备份完整 JSON，导入时再修复；仅在有界范围内读取。
         if (file.size > maxBytes) throw new Error('Legacy conversation exceeds the single-file backup limit')
         const bytes = new Uint8Array(file.size)
         let offset = 0
@@ -204,6 +210,11 @@ export function legacyBackupSource(rows: BackupSessionStore, source: LegacyBacku
       const encoded = encodeSessionTree(session, { activeThreadId: `backup-active:${id}`, now: 0 })
       if (!encoded.ok) throw new LegacyBackupTopologyError(encoded.reason)
       const { tree } = encoded
+      // The scan retains large messages only as projections, so a message that repairs created or renamed
+      // cannot be streamed from the source. Checked before any row is yielded, so classification sees it
+      // and backs the session up as its legacy JSON.
+      const unstreamable = file ? tree.messages.find((row) => !scanned?.ranges.has(row.messageId)) : undefined
+      if (unstreamable) throw new LegacyBackupTopologyError(`message ${unstreamable.messageId} has no source range`)
       yield { kind: 'header', record: tree.session }
       for (const thread of tree.threads.sort((a, b) => a.seq - b.seq)) {
         throwIfAborted(signal)
@@ -212,7 +223,6 @@ export function legacyBackupSource(rows: BackupSessionStore, source: LegacyBacku
       for (const message of tree.messages.sort((a, b) => compareBackupIds(a.threadId, b.threadId) || a.seq - b.seq)) {
         throwIfAborted(signal)
         const range = scanned?.ranges.get(message.messageId)
-        if (file && !range) throw new Error('Legacy message source is missing')
         yield {
           kind: 'message',
           message,

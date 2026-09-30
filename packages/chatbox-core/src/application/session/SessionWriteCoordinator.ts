@@ -330,11 +330,9 @@ export class SessionWriteCoordinator {
     const baseSession = await this.repository.getSession(session.id)
     try {
       await this.repository.setSession(session, { baseSession: baseSession ?? undefined })
-      this.prime(session)
-    } catch (error) {
-      this.forget(session.id)
-      throw error
     } finally {
+      // Storage can repair a restored session's shape, so the next update reads what was stored.
+      this.forget(session.id)
       this.discardCurrentSession(session.id)
     }
   }

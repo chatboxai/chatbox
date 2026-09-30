@@ -1,10 +1,18 @@
 import type { CompactionPoint, Message, Session, SessionThread } from '../../types/session'
 import { forkTailStartIndex } from '../message-forks'
+import { repairSessionV1 } from './repair'
 
 type MessageForkEntry = NonNullable<Session['messageForksHash']>[string]
 type MessageForkList = MessageForkEntry['lists'][number]
 
-export type NormalizeSessionV1Result = { ok: true; session: Session } | { ok: false; reason: string }
+export type NormalizeSessionV1Result =
+  | {
+      ok: true
+      session: Session
+      /** True when repairs changed the input's messages, ids or threads. */
+      reshaped: boolean
+    }
+  | { ok: false; reason: string }
 
 const ACTIVE_THREAD_KEY = 'active'
 
@@ -28,10 +36,16 @@ interface PivotLocation {
  * to the end of `lists`, dangling compaction points removed, and empty
  * optional containers reduced to absent.
  *
- * Structural damage that cannot be canonicalized without losing messages is
- * reported instead of repaired.
+ * Shapes the row model cannot represent are repaired first (see
+ * `repairSessionV1`). A fork whose pivot is not reachable from any thread is
+ * removed together with its saved branches: released clients render and export
+ * branches only from a reachable pivot, so those messages were never visible.
+ *
+ * Remaining structural damage that cannot be canonicalized without losing
+ * visible messages is reported instead of repaired.
  */
-export function normalizeSessionV1(session: Session): NormalizeSessionV1Result {
+export function normalizeSessionV1(input: Session): NormalizeSessionV1Result {
+  const session = repairSessionV1(input)
   const forks = session.messageForksHash ?? {}
   const archivedThreads = session.threads ?? []
 
@@ -69,12 +83,6 @@ export function normalizeSessionV1(session: Session): NormalizeSessionV1Result {
       for (const list of fork.lists) {
         queue.push({ threadKey: container.threadKey, messages: list.messages })
       }
-    }
-  }
-
-  for (const [pivotId, fork] of Object.entries(forks)) {
-    if (!pivots.has(pivotId) && fork.lists.some((list) => list.messages.length > 0)) {
-      return { ok: false, reason: `unreachable fork ${pivotId} contains messages` }
     }
   }
 
@@ -147,6 +155,7 @@ export function normalizeSessionV1(session: Session): NormalizeSessionV1Result {
 
   return {
     ok: true,
+    reshaped: session !== input,
     session: {
       ...rest,
       ...(normalizedThreads.length > 0 ? { threads: normalizedThreads } : {}),

@@ -1,6 +1,10 @@
 import { findMessageLocation } from '@shared/session/message-forks'
 import { validateSessionContextRequest } from '../../persistence/session-context-read'
 import { assertSessionReadRevision, validateSessionMessagesRequest } from '../../persistence/session-message-selection'
+import {
+  assertSessionThreadPageRevision,
+  validateSessionThreadPageRequest,
+} from '../../persistence/session-thread-page'
 import type { SessionContextRequest, SessionContextSource } from '../../ports/session-context-source'
 import type { SessionMessageDerivedWriteResult, SessionMessagesSource } from '../../ports/session-message-source'
 import type {
@@ -8,10 +12,6 @@ import type {
   SessionSearchThreadsPage,
   SessionSearchThreadsPageRequest,
 } from '../../ports/session-read-model'
-import {
-  assertSessionThreadPageRevision,
-  validateSessionThreadPageRequest,
-} from '../../persistence/session-thread-page'
 import {
   isRowsSessionRecord,
   type SessionRecordStorePort,
@@ -48,9 +48,11 @@ import {
   type MessageRow,
   messageRowStatus,
   messageRowUpdatedAt,
+  normalizeSessionV1,
   type SessionRecordV2,
   type SessionTree,
   verifySessionTreeRoundTrip,
+  withCommittedTopology,
 } from '../../session/session-tree'
 import type { Session } from '../../types/session'
 import {
@@ -62,6 +64,7 @@ import { migrateSession } from './compatibility/session-load'
 import { applySessionMessageDerivedPatch, type SessionMessageDerivedPatch } from './message-derived-data'
 import { applyMessageUpdate } from './message-tree'
 import {
+  decodeLegacyRecord,
   type KnownRowState,
   type PersistedSessionState,
   type PersistedSessionVersion,
@@ -69,8 +72,8 @@ import {
 } from './SessionPersistenceProtocol'
 import { SessionNotFoundError } from './SessionWriteCoordinator'
 import { isAppendBase, planSessionAppend } from './session-append'
-import { applySessionDerivedPatches } from './session-derived-data'
 import { contextRecordHeader, contextSourceFromRows, contextSourceFromSession } from './session-context-source'
+import { applySessionDerivedPatches } from './session-derived-data'
 import { overlaySessionTextTokens, overlayTextTokenMessages, restorePersistedTextTokens } from './session-text-tokens'
 
 /** Most recently touched sessions whose last persisted rows stay in memory. */
@@ -147,6 +150,12 @@ function isEmptyDiff(diff: SessionRowsDiff): boolean {
   )
 }
 
+/** True when encoding needs no repair of the session's messages, ids or threads. */
+function isRowShaped(session: Session): boolean {
+  const normalized = normalizeSessionV1(session)
+  return normalized.ok && !normalized.reshaped
+}
+
 /** True when a write cannot have changed a single row of the baseline. */
 function hasUnchangedRows(baseline: SessionBaseline, next: Session): boolean {
   return next.messages === baseline.session.messages && hasSameThreadStructure(baseline.session, next)
@@ -169,9 +178,10 @@ interface SingleMessageWrite {
 
 /**
  * The single row a `changedMessageId` write touches, or null when what the hint
- * promises cannot be confirmed in constant time. Every check is a reference or
+ * promises cannot be confirmed without encoding. Every check is a reference or
  * scalar comparison, so a rejected hint costs nothing beyond the encode the
- * caller then has to do anyway.
+ * caller then has to do anyway. Every other message must carry the baseline's
+ * id at the same position, so the written session keeps the baseline's row shape.
  */
 function planSingleMessageWrite(
   baseline: SessionBaseline,
@@ -188,12 +198,11 @@ function planSingleMessageWrite(
   if (index < 0 || previous.messages[index].id !== changedMessageId) {
     return null
   }
-  const last = next.messages.length - 1
-  if (index !== 0 && next.messages[0] !== previous.messages[0]) {
-    return null
-  }
-  if (index !== last && next.messages[last] !== previous.messages[last]) {
-    return null
+  // The hint vouches for the content of the other messages; the ids show they are the rows' messages.
+  for (let position = 0; position < next.messages.length; position += 1) {
+    if (next.messages[position].id !== previous.messages[position].id) {
+      return null
+    }
   }
 
   const rowIndex = findLastIndex(baseline.rows.messages, (row) => row.messageId === changedMessageId)
@@ -223,11 +232,14 @@ function planSingleMessageWrite(
   messages[rowIndex] = row
   return {
     rows: { ...baseline.rows, messages },
-    record: deriveSessionRecord(next, next.id, {
-      record: baseline.record,
-      before: previous.messages[index],
-      after: message,
-    }),
+    record: withCommittedTopology(
+      deriveSessionRecord(next, next.id, {
+        record: baseline.record,
+        before: previous.messages[index],
+        after: message,
+      }),
+      baseline.record
+    ),
     diff: diffSessionRows(
       { ...baseline.rows, threads: [], messages: [baseRow] },
       { ...baseline.rows, threads: [], messages: [row] }
@@ -452,7 +464,7 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
           if (!isRowsSessionRecord(marker)) {
             // The exclusive session lock covers this read and the derived-only update.
             // A legacy record remains authoritative even when interrupted row data exists.
-            const session = migrateSession(marker)
+            const session = decodeLegacyRecord(marker)
             let updated = session
             const accepted: SessionMessageDerivedPatch[] = []
             for (const patch of patches) {
@@ -658,7 +670,7 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
           const snapshot = await this.commitDiff(
             id,
             plannedWrite.diff,
-            plannedWrite.record,
+            withCommittedTopology(plannedWrite.record, cached.record),
             cached.revision,
             plannedWrite.rows
           )
@@ -688,31 +700,35 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     if (!encoded.ok) {
       return await this.writeUnmigratedSession(context.state, session, encoded.reason)
     }
+    // Row fast paths plan from the baseline session, so it must describe the rows just written.
+    // A write that repairs changed keeps the repaired session; otherwise the caller's object keeps its
+    // identity. Forks that normalization drops have no rows, and fast paths take fork facts from the record.
+    const stored = encoded.reshaped ? encoded.session : session
 
     const nextRows = toSessionRows(encoded.tree)
     if (baseline) {
       const diff = diffSessionRows(baseline.rows, nextRows)
-      const fingerprint = this.fingerprint(session)
+      const fingerprint = this.fingerprint(stored)
       if (isEmptyDiff(diff) && fingerprint === baseline.version.fingerprint) {
         return this.rememberBaseline(id, {
           ...baseline,
-          session,
+          session: stored,
           decoded: false,
           version: { ...baseline.version, fingerprint },
         })
       }
       const snapshot = await this.commitDiff(id, diff, encoded.tree.session, baseline.revision, nextRows)
-      return this.rememberSnapshot(id, snapshot, session)
+      return this.rememberSnapshot(id, snapshot, stored)
     }
 
     const result = await this.run('set-session', id, () =>
-      this.persistence.promote(context.state, session, nextRows, encoded.tree.session)
+      this.persistence.promote(context.state, stored, nextRows, encoded.tree.session)
     )
     if (result.kind === 'anchored') {
       this.onMigrationSkipped?.(id, 'row-backed publish failed; kept the complete V1 session record')
       return { fingerprint: this.fingerprint(session), revision: null }
     }
-    return this.rememberSnapshot(id, result.snapshot, session)
+    return this.rememberSnapshot(id, result.snapshot, stored)
   }
 
   deleteSession(id: string): Promise<void> {
@@ -809,7 +825,7 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     if (fingerprint === baseline.version.fingerprint) {
       return this.rememberBaseline(id, { ...baseline, session, decoded: false })
     }
-    const record = deriveSessionRecord(session, baseline.record.activeThreadId)
+    const record = withCommittedTopology(deriveSessionRecord(session, baseline.record.activeThreadId), baseline.record)
     record.contextReadProjection = baseline.record.contextReadProjection
     record.topologyFingerprint = baseline.record.topologyFingerprint
     const diff = diffSessionRows(baseline.rows, baseline.rows)
@@ -1014,6 +1030,12 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
       throw new SessionWriteConflictError(id, null, state.snapshot.revision)
     }
     if (cached) return { state, baseline: cached }
+    // Row fast paths plan from the baseline session, so the caller's snapshot serves only when repairs
+    // would leave its messages, ids and threads as they are.
+    const callerBase =
+      options.baseSession && !this.rows.acceptTextTokenResults && isRowShaped(options.baseSession)
+        ? options.baseSession
+        : undefined
     return {
       state,
       baseline: {
@@ -1021,8 +1043,8 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
         record: state.snapshot.record,
         revision: state.snapshot.revision,
         version: state.version,
-        session: this.rows.acceptTextTokenResults ? state.session : (options.baseSession ?? state.session),
-        decoded: Boolean(this.rows.acceptTextTokenResults) || !options.baseSession,
+        session: callerBase ?? state.session,
+        decoded: !callerBase,
       },
     }
   }

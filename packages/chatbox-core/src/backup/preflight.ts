@@ -304,7 +304,7 @@ export async function prepareBackupExport(
           entryBytes = entryBudget
         }
       } catch (error) {
-        // 备份不等于迁移。旧界面能读取的孤立分支必须随 JSON 保留，不能因无法构树就整段漏备份。
+        // 备份不等于迁移。无法按行编码的旧拓扑必须随 JSON 保留，不能因无法构树就整段漏备份。
         if (!(error instanceof LegacyBackupTopologyError)) throw error
         const legacy = await prepareLegacySession(options.sessionStore, id, options.signal)
         descriptor = {

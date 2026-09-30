@@ -1,14 +1,14 @@
-import type { Message, Session } from '../../types/session'
 import {
   latestConversationMessageHasChatboxSearchSignInError,
   messageHasChatboxSearchSignInError,
 } from '@shared/session/web-search-sign-in-error'
 import { hasPendingPauseInteraction } from '../../message-approval'
+import { deriveContextReadProjection, preservesContextReadProjection } from '../../persistence/session-context-read'
+import type { Message, Session } from '../../types/session'
 import { forkTailStartIndex } from '../message-forks'
 import { normalizeSessionV1 } from './normalize'
-import type { MessageRow, MessageRowStatus, SessionRecordV2, SessionTree, ThreadRow } from './types'
-import { deriveContextReadProjection, preservesContextReadProjection } from '../../persistence/session-context-read'
 import { deriveSessionTopologyFingerprint } from './topology-fingerprint'
+import type { MessageRow, MessageRowStatus, SessionRecordV2, SessionTree, ThreadRow } from './types'
 
 export interface EncodeSessionTreeOptions {
   /** Thread id given to the active conversation; the same value yields the same tree. */
@@ -20,7 +20,7 @@ export interface EncodeSessionTreeOptions {
 }
 
 export type EncodeSessionTreeResult =
-  | { ok: true; tree: SessionTree; normalized: Session }
+  | { ok: true; tree: SessionTree; normalized: Session /** See `NormalizeSessionV1Result`. */; reshaped: boolean }
   | { ok: false; reason: string }
 
 /** Row status of a message; a row written outside `encodeSessionTree` derives it the same way. */
@@ -109,6 +109,28 @@ export function deriveSessionRecord(
       latestMessageHasWebSearchSignInError: latestConversationMessageHasChatboxSearchSignInError(session.messages),
     },
     ...(Object.keys(forkCreatedAt).length > 0 ? { forkCreatedAt } : {}),
+  }
+}
+
+/**
+ * A record whose thread and fork facts come from `committed`. Row fast paths
+ * leave the committed topology unchanged, and the rows, not the caller's
+ * session, decide which forks and threads exist.
+ */
+export function withCommittedTopology(record: SessionRecordV2, committed: SessionRecordV2): SessionRecordV2 {
+  const { forkCreatedAt: _forkCreatedAt, ...rest } = record
+  return {
+    ...rest,
+    ...(committed.forkCreatedAt ? { forkCreatedAt: committed.forkCreatedAt } : {}),
+    ...(rest.presentation && committed.presentation
+      ? {
+          presentation: {
+            ...rest.presentation,
+            hasThreads: committed.presentation.hasThreads,
+            hasForks: committed.presentation.hasForks,
+          },
+        }
+      : {}),
   }
 }
 
@@ -284,7 +306,12 @@ export function encodeSessionTree(session: Session, options: EncodeSessionTreeOp
   sessionRecord.contextReadProjection = deriveContextReadProjection(threads, messages)
   sessionRecord.topologyFingerprint = deriveSessionTopologyFingerprint(threads, messages)
 
-  return { ok: true, tree: { session: sessionRecord, threads, messages }, normalized }
+  return {
+    ok: true,
+    tree: { session: sessionRecord, threads, messages },
+    normalized,
+    reshaped: normalizedResult.reshaped,
+  }
 }
 
 export function sessionTopologyFingerprint(session: Session): string | undefined {

@@ -1,4 +1,3 @@
-import { sessionContentHash } from './session-content-hash'
 import {
   isRowsSessionRecord,
   type SessionRecordStorePort,
@@ -16,10 +15,12 @@ import {
   decodeSessionTree,
   type MessageRow,
   normalizeSessionV1,
+  repairSessionV1,
   type SessionRecordV2,
 } from '../../session/session-tree'
 import type { Session } from '../../types/session'
 import { migrateSession } from './compatibility/session-load'
+import { sessionContentHash } from './session-content-hash'
 import { mapSessionMessages, withoutEstimatedTextTokens } from './session-text-tokens'
 
 export interface PersistedSessionVersion {
@@ -74,6 +75,18 @@ export type PersistedSessionState =
       version: PersistedSessionVersion
       snapshot: SessionRowSnapshot
     }
+
+/**
+ * The session a V1 record holds, in the shape its rows decode to (see `decodeSnapshot`).
+ * Every session the repository hands out has that shape, so a caller's
+ * snapshot taken before migration names the rows migration writes, and row
+ * fast paths derive the same record from it that a full encode would.
+ */
+export function decodeLegacyRecord(record: Session): Session {
+  const migrated = migrateSession(record)
+  const normalized = normalizeSessionV1(migrated)
+  return normalized.ok ? migrateSession(normalized.session) : repairSessionV1(migrated)
+}
 
 export type PromotionResult =
   | { kind: 'committed'; snapshot: SessionRowSnapshot }
@@ -178,7 +191,7 @@ export class SessionPersistenceProtocol {
     }
 
     const revision = await this.rows.getRevision(id)
-    const session = migrateSession(record)
+    const session = decodeLegacyRecord(record)
     const version = { fingerprint: this.fingerprint(session), revision: null }
     // The complete V1 record is authoritative until a row marker is published.
     // Residual row payloads are inspected only when attempting to reuse a promotion.

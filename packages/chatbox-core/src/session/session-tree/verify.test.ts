@@ -273,13 +273,18 @@ describe('verifySessionTreeRoundTrip', () => {
     expect(reencoded.tree).toEqual(first.tree)
   })
 
-  test('reports the failure instead of throwing on damaged input', () => {
+  test('reports the failure instead of throwing on input it cannot encode', () => {
     expect(
       verifySessionTreeRoundTrip(
-        { id: 'session-1', name: 'Session', messages: [message('u1'), message('u1')] },
+        {
+          id: 'session-1',
+          name: 'Session',
+          messages: [message('u1')],
+          threads: [{ id: OPTIONS.activeThreadId, name: 'Archived', createdAt: 1, messages: [message('u0')] }],
+        },
         OPTIONS
       )
-    ).toEqual({ ok: false, reason: 'duplicate message id u1' })
+    ).toEqual({ ok: false, reason: `archived thread ${OPTIONS.activeThreadId} collides with the active thread id` })
   })
 
   test('round-trips randomly generated sessions', () => {

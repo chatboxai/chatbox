@@ -14,8 +14,10 @@ export {
   messageRowStatus,
   messageRowUpdatedAt,
   sessionTopologyFingerprint,
+  withCommittedTopology,
 } from './encode'
 export { type NormalizeSessionV1Result, normalizeSessionV1 } from './normalize'
+export { repairSessionV1 } from './repair'
 export type { MessageRow, MessageRowKind, MessageRowStatus, SessionRecordV2, SessionTree, ThreadRow } from './types'
 export { type SessionTreeValidationResult, validateSessionTree } from './validate'
 export { type VerifySessionTreeRoundTripResult, verifySessionTreeRoundTrip } from './verify'

@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { buildSwitchForkToPatch } from '../../session/message-forks'
+import { unencodableMessage } from '../../session/session-tree/unencodable.test-support'
 import { InMemorySessionRecordStore, InMemorySessionRepository, InMemorySessionRowStore } from '../../testing'
 import type { Message, Session } from '../../types'
 import { getSessionMessageTokenizationDigest, type SessionMessageDerivedPatch } from './message-derived-data'
@@ -16,15 +18,12 @@ async function setup() {
     type: 'chat',
     messages: [message],
     messageForksHash: {
-      missing: {
-        position: 0,
+      user: {
+        position: 1,
         createdAt: 1,
         lists: [
+          { id: 'saved', messages: [unencodableMessage()] },
           { id: 'active', messages: [] },
-          {
-            id: 'saved',
-            messages: [{ id: 'orphan', role: 'assistant', contentParts: [{ type: 'text', text: 'Preserved text' }] }],
-          },
         ],
       },
     },
@@ -51,10 +50,16 @@ async function setup() {
   return { session, records, rows, repository, patch }
 }
 
+vi.mock('../../session/session-tree/encode', async (importOriginal) => {
+  const { failOnUnencodableMarker } = await import('../../session/session-tree/unencodable.test-support')
+  const actual = await importOriginal<typeof import('../../session/session-tree/encode')>()
+  return { ...actual, encodeSessionTree: failOnUnencodableMarker(actual.encodeSessionTree) }
+})
+
 afterEach(() => vi.restoreAllMocks())
 
 describe('legacy derived data writes', () => {
-  it('preserves unreachable branches and updates caches with one record read and write', async () => {
+  it('preserves legacy branches and updates caches with one record read and write', async () => {
     const h = await setup()
     const read = vi.spyOn(h.records, 'getRecord')
     const write = vi.spyOn(h.records, 'setRecord')
@@ -147,5 +152,51 @@ describe('legacy derived data writes', () => {
     await expect(h.repository.patchSessionMessageDerivedData(h.session.id, [h.patch])).rejects.toThrow()
     expect(await h.records.getRecord(h.session.id)).toEqual(h.session)
     expect((await h.repository.patchSessionMessageDerivedData(h.session.id, [h.patch])).patches).toEqual([h.patch])
+  })
+})
+
+describe('backup restoration through the write coordinator', () => {
+  it('keeps the stored shape of a restored session so later updates apply to it', async () => {
+    const records = new InMemorySessionRecordStore()
+    const rows = new InMemorySessionRowStore()
+    const repository = Object.assign(new RowBackedSessionRepository({ records, rows }), {
+      meta: new InMemorySessionRepository().meta,
+    })
+    await repository.initialize()
+    const coordinator = new SessionWriteCoordinator(repository)
+    const text = (value: string) => [{ type: 'text' as const, text: value }]
+    const restored: Session = {
+      id: 'restored',
+      name: 'Restored',
+      type: 'chat',
+      messages: [
+        { id: 'u1', role: 'user', contentParts: text('question') },
+        { id: 'a1', role: 'assistant', contentParts: text('answer') },
+      ],
+      messageForksHash: {
+        u1: {
+          position: 0,
+          createdAt: 1,
+          lists: [
+            { id: 'active', messages: [{ id: 'old', role: 'assistant', contentParts: text('earlier answer') }] },
+            { id: 'saved', messages: [{ id: 'a2', role: 'assistant', contentParts: text('other answer') }] },
+          ],
+        },
+      },
+    }
+
+    await coordinator.replaceFromBackup(restored)
+    const shown = await repository.getSession(restored.id)
+    const residual = shown?.messageForksHash?.u1.lists.findIndex((list) => list.id === 'u1~residual') ?? -1
+    expect(residual).toBeGreaterThan(0)
+    await coordinator.update(restored.id, (session) => {
+      if (!session) throw new Error('Missing session')
+      const patch = buildSwitchForkToPatch(session, 'u1', residual)
+      if (!patch) throw new Error('The residual branch is not switchable')
+      return { ...session, ...patch }
+    })
+
+    repository.forgetAllBaselines()
+    expect((await repository.getSession(restored.id))?.messages.map((message) => message.id)).toEqual(['u1', 'old'])
   })
 })

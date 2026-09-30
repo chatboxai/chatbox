@@ -4,7 +4,15 @@ import { type EncodeSessionTreeOptions, encodeSessionTree } from './encode'
 import type { SessionTree } from './types'
 import { validateSessionTree } from './validate'
 
-export type VerifySessionTreeRoundTripResult = { ok: true; tree: SessionTree } | { ok: false; reason: string }
+export type VerifySessionTreeRoundTripResult =
+  | {
+      ok: true
+      tree: SessionTree
+      /** The normalized session the tree decodes back to; stores keep it when `reshaped` is true. */
+      session: Session
+      reshaped: boolean
+    }
+  | { ok: false; reason: string }
 
 const STRUCTURAL_SESSION_KEYS = ['messages', 'threads', 'threadName', 'messageForksHash', 'compactionPoints']
 
@@ -169,5 +177,5 @@ export function verifySessionTreeRoundTrip(
   if (difference) {
     return { ok: false, reason: difference }
   }
-  return { ok: true, tree: encoded.tree }
+  return { ok: true, tree: encoded.tree, session: encoded.normalized, reshaped: encoded.reshaped }
 }

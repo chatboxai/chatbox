@@ -1839,5 +1839,8 @@
   "Connection": "Connexion",
   "Website": "Site web",
   "New tab": "Nouvel onglet",
-  "Enabled in Work Mode": "Disponible en mode travail"
+  "Enabled in Work Mode": "Disponible en mode travail",
+  "Not recommended": "Déconseillé",
+  "Keep it at No Limit and let auto-compaction manage context": "Laissez « Aucune limite » : la compaction automatique gère le contexte",
+  "Context message limit": "Limite de messages de contexte"
 }

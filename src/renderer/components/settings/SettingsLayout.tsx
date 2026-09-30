@@ -100,11 +100,14 @@ export function SettingsSection({
   children,
   tone,
   bare,
+  footer,
 }: {
   title?: ReactNode
   description?: ReactNode
   action?: ReactNode
   children: ReactNode
+  /** Content under the rows, outside the bordered container, such as a subdued extra setting. */
+  footer?: ReactNode
   /** `danger` outlines destructive groups such as restoring a backup. */
   tone?: 'danger'
   /** Renders rows without the bordered container, for panel content that is already framed. */
@@ -147,6 +150,7 @@ export function SettingsSection({
       >
         {children}
       </div>
+      {footer}
     </section>
   )
 }

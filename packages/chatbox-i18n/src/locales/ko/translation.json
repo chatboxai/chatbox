@@ -1839,5 +1839,8 @@
   "Connection": "연결",
   "Website": "웹사이트",
   "New tab": "새 탭",
-  "Enabled in Work Mode": "작업 모드에서 활성화"
+  "Enabled in Work Mode": "작업 모드에서 활성화",
+  "Not recommended": "권장하지 않음",
+  "Keep it at No Limit and let auto-compaction manage context": "「제한 없음」으로 두고 자동 압축이 컨텍스트를 관리하도록 하세요",
+  "Context message limit": "컨텍스트 메시지 수 제한"
 }

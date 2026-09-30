@@ -1,9 +1,11 @@
-import { Flex, NumberInput, SegmentedControl, Stack } from '@mantine/core'
-import { useEffect, useState } from 'react'
+import { NativeSelect, SegmentedControl, Stack } from '@mantine/core'
+import { IconSelector } from '@tabler/icons-react'
+import clsx from 'clsx'
+import { useEffect, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { ScalableIcon } from '@/components/common/ScalableIcon'
 import SliderWithInput from '@/components/common/SliderWithInput'
-import { useFieldDraft } from '@/hooks/useFieldDraft'
-import { type SettingsDensity, useSettingsDensity } from './SettingsLayout'
+import { SettingRow, type SettingsDensity, useSettingsDensity } from './SettingsLayout'
 
 const TEMPERATURE_PRESETS = [
   { key: 'precise', label: 'Precise', value: 0.3 },
@@ -103,73 +105,154 @@ export function SamplingParamControl({
 }
 
 export const NO_CONTEXT_LIMIT = Number.MAX_SAFE_INTEGER
-const CONTEXT_STEPS = [0, 4, 10, 20, 50, NO_CONTEXT_LIMIT]
-const TOUCH_CONTEXT_STEPS = [0, 10, 20, 50, NO_CONTEXT_LIMIT]
+const CONTEXT_STEPS = [NO_CONTEXT_LIMIT, 50, 20, 10, 4, 0]
+const INHERIT_CONTEXT_OPTION = 'inherit'
 
 export function formatContextCount(value: number, t: (key: string) => string) {
   return value >= NO_CONTEXT_LIMIT ? t('No Limit') : `${value}`
 }
 
+/** Counts offered for the context limit, largest first; a stored count outside the steps stays selectable. */
+function contextCountOptions(value: number) {
+  return CONTEXT_STEPS.includes(value) ? CONTEXT_STEPS : [...CONTEXT_STEPS, value].sort((a, b) => b - a)
+}
+
+function NotRecommendedBadge() {
+  const { t } = useTranslation()
+  return (
+    <span className="inline-flex h-[18px] shrink-0 items-center rounded px-1.5 text-[11px] font-normal leading-none bg-chatbox-background-gray-secondary text-chatbox-tint-tertiary">
+      {t('Not recommended')}
+    </span>
+  )
+}
+
+function ContextLimitLabel() {
+  const { t } = useTranslation()
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5 text-[13px] font-normal text-chatbox-tint-secondary">
+      {t('Context message limit')}
+      <NotRecommendedBadge />
+    </span>
+  )
+}
+
 /**
- * Number of earlier messages sent as context: common counts as one tap, any other count in the
- * number field (a stepper on touch screens).
+ * Global limit on earlier messages sent as context. Auto-compaction manages context, so the row
+ * sits below the new-chat defaults in a subdued style and recommends No Limit.
  */
-export function ContextCountControl({
+export function ContextLimitSettingRow({
   value,
   onChange,
-  inputTestId,
-  inputId,
+  testId,
 }: {
   value: number
   onChange(value: number): void
-  inputTestId?: string
-  /** Id of the count field, for a label that names it. */
-  inputId?: string
+  testId?: string
 }) {
   const { t } = useTranslation()
   const density = useSettingsDensity()
-  const steps = density === 'touch' ? TOUCH_CONTEXT_STEPS : CONTEXT_STEPS
-  const { draft, setDraft, flush } = useFieldDraft<string | number>(value >= NO_CONTEXT_LIMIT ? '' : value, (next) => {
-    const count = typeof next === 'number' ? next : Number.parseInt(next, 10)
-    if (!Number.isFinite(count) || count < 0) return 'rejected'
-    if (count === value) return 'unchanged'
-    onChange(count)
-    return 'applied'
-  })
-
   return (
-    <Flex gap="xs" align="center" wrap="wrap">
-      <SegmentedControl
-        size={density === 'touch' ? 'sm' : 'xs'}
-        radius="md"
-        className="flex-1 min-w-0"
-        fullWidth
-        value={steps.includes(value) ? `${value}` : ''}
-        onChange={(next) => onChange(Number(next))}
-        data={steps.map((step) => ({ value: `${step}`, label: formatContextCount(step, t) }))}
+    <div className="settings-section-body flex flex-col min-w-0 rounded-xl border border-dashed border-chatbox-border-primary">
+      <SettingRow
+        id="max-context"
+        label={<ContextLimitLabel />}
+        description={t('Keep it at No Limit and let auto-compaction manage context')}
+        controlLayout="block"
+        control={
+          <SegmentedControl
+            data-testid={testId}
+            aria-label={t('Context message limit') ?? undefined}
+            size={density === 'touch' ? 'sm' : 'xs'}
+            radius="md"
+            fullWidth
+            value={`${value}`}
+            onChange={(next) => onChange(Number(next))}
+            data={contextCountOptions(value).map((step) => ({ value: `${step}`, label: formatContextCount(step, t) }))}
+          />
+        }
       />
-      <NumberInput
-        id={inputId}
-        data-testid={inputTestId}
-        w={density === 'touch' ? 96 : 72}
-        size={density === 'touch' ? 'sm' : 'xs'}
-        min={0}
-        allowDecimal={false}
-        allowNegative={false}
-        hideControls={density !== 'touch'}
-        placeholder={t('No Limit') ?? ''}
-        aria-label={t('Context messages') ?? undefined}
-        value={draft}
-        onChange={setDraft}
-        onBlur={flush}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') event.currentTarget.blur()
+    </div>
+  )
+}
+
+/**
+ * Conversation limit on earlier messages sent as context, shown as a small row under the model
+ * parameters. The picker offers following the global value or an explicit count.
+ */
+export function ContextLimitSelectRow({
+  value,
+  inheritedValue,
+  onChange,
+  onInherit,
+  selectTestId,
+  testId,
+}: {
+  /** The conversation's own count, or undefined when it follows the global value. */
+  value?: number
+  inheritedValue: number
+  onChange(value: number): void
+  onInherit(): void
+  selectTestId?: string
+  testId?: string
+}) {
+  const { t } = useTranslation()
+  const density = useSettingsDensity()
+  const selectId = useId()
+  const fontSize = density === 'touch' ? 13 : 12
+  return (
+    <div
+      data-testid={testId}
+      data-inherit-state={value === undefined ? 'inherited' : 'overridden'}
+      className={clsx(
+        'flex items-center gap-1.5 px-1 text-chatbox-tint-tertiary',
+        density === 'touch' ? 'min-h-11' : 'min-h-7'
+      )}
+      style={{ fontSize }}
+    >
+      <label htmlFor={selectId} className="min-w-0 truncate cursor-pointer">
+        {t('Context message limit')}
+      </label>
+      <NotRecommendedBadge />
+      <span className="flex-1" />
+      <NativeSelect
+        id={selectId}
+        data-testid={selectTestId}
+        variant="unstyled"
+        size="xs"
+        value={value === undefined ? INHERIT_CONTEXT_OPTION : `${value}`}
+        onChange={(event) => {
+          const next = event.currentTarget.value
+          if (next === INHERIT_CONTEXT_OPTION) onInherit()
+          else onChange(Number(next))
         }}
-        inputMode="numeric"
-        enterKeyHint="done"
-        classNames={{ input: '!text-center' }}
+        data={[
+          {
+            value: INHERIT_CONTEXT_OPTION,
+            label: `${t('Follows global')} · ${formatContextCount(inheritedValue, t)}`,
+          },
+          ...contextCountOptions(value ?? inheritedValue).map((step) => ({
+            value: `${step}`,
+            label: formatContextCount(step, t),
+          })),
+        ]}
+        rightSection={<ScalableIcon icon={IconSelector} size={12} className="text-inherit" />}
+        rightSectionWidth={16}
+        rightSectionPointerEvents="none"
+        styles={{
+          input: {
+            fontSize,
+            height: 'auto',
+            minHeight: 0,
+            paddingLeft: 0,
+            paddingRight: 16,
+            textAlign: 'right',
+            textAlignLast: 'right',
+            color: 'var(--chatbox-tint-secondary)',
+            cursor: 'pointer',
+          },
+        }}
       />
-    </Flex>
+    </div>
   )
 }
 

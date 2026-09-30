@@ -24,9 +24,8 @@ import { ICON_STROKE_WIDTH } from '@/components/common/IconButton'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import { handleImageInputAndSave, ImageInStorage } from '@/components/Image'
 import {
-  ContextCountControl,
+  ContextLimitSelectRow,
   describeSamplingValue,
-  formatContextCount,
   NO_CONTEXT_LIMIT,
   SamplingParamControl,
   useSamplingFieldShown,
@@ -240,24 +239,17 @@ export function SessionSettingsContent({
               </Text>
             ) : undefined
           }
+          footer={
+            <ContextLimitSelectRow
+              testId={TestId.sessionPanel.inheritMaxContext}
+              selectTestId={TestId.settings.sessionMaxContext}
+              value={settings?.maxContextMessageCount}
+              inheritedValue={global.maxContextMessageCount ?? NO_CONTEXT_LIMIT}
+              onChange={(value) => setParam({ maxContextMessageCount: value })}
+              onInherit={() => restore('maxContextMessageCount')}
+            />
+          }
         >
-          <SettingRow
-            label={t('Context messages')}
-            status={inherit(
-              'maxContextMessageCount',
-              formatContextCount(global.maxContextMessageCount ?? NO_CONTEXT_LIMIT, t),
-              TestId.sessionPanel.inheritMaxContext
-            )}
-            controlLayout="block"
-            control={(fieldId) => (
-              <ContextCountControl
-                inputId={fieldId}
-                inputTestId={TestId.settings.sessionMaxContext}
-                value={settings?.maxContextMessageCount ?? global.maxContextMessageCount ?? NO_CONTEXT_LIMIT}
-                onChange={(value) => setParam({ maxContextMessageCount: value })}
-              />
-            )}
-          />
           <SettingRow
             label={t('Temperature')}
             status={inherit(

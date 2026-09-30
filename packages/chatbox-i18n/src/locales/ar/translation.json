@@ -1839,5 +1839,8 @@
   "Connection": "الاتصال",
   "Website": "الموقع الإلكتروني",
   "New tab": "علامة تبويب جديدة",
-  "Enabled in Work Mode": "متاح في وضع العمل"
+  "Enabled in Work Mode": "متاح في وضع العمل",
+  "Not recommended": "غير مستحسن",
+  "Keep it at No Limit and let auto-compaction manage context": "أبقِه على «بدون حد» ودَع الضغط التلقائي يدير السياق",
+  "Context message limit": "حد رسائل السياق"
 }

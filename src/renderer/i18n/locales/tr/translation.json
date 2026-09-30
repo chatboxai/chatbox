@@ -1835,5 +1835,8 @@
   "Connection": "Bağlantı",
   "Website": "Web sitesi",
   "New tab": "Yeni sekme",
-  "Enabled in Work Mode": "Çalışma modunda etkin"
+  "Enabled in Work Mode": "Çalışma modunda etkin",
+  "Not recommended": "Önerilmez",
+  "Keep it at No Limit and let auto-compaction manage context": "«Sınır Yok» olarak bırakın; bağlamı otomatik sıkıştırma yönetsin",
+  "Context message limit": "Bağlam mesajı sınırı"
 }

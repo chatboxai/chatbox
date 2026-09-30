@@ -1839,5 +1839,8 @@
   "Connection": "Connection",
   "Website": "Website",
   "New tab": "New tab",
-  "Enabled in Work Mode": "Enabled in Work Mode"
+  "Enabled in Work Mode": "Enabled in Work Mode",
+  "Not recommended": "Not recommended",
+  "Keep it at No Limit and let auto-compaction manage context": "Keep it at No Limit and let auto-compaction manage context",
+  "Context message limit": "Context message limit"
 }

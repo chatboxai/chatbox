@@ -1839,5 +1839,8 @@
   "Connection": "連線",
   "Website": "官網",
   "New tab": "新分頁",
-  "Enabled in Work Mode": "工作模式下啟用"
+  "Enabled in Work Mode": "工作模式下啟用",
+  "Not recommended": "不建議",
+  "Keep it at No Limit and let auto-compaction manage context": "建議保持「無限制」，由自動壓縮管理上下文",
+  "Context message limit": "上下文訊息數上限"
 }

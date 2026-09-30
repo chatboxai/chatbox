@@ -1839,5 +1839,8 @@
   "Connection": "连接",
   "Website": "官网",
   "New tab": "新标签页",
-  "Enabled in Work Mode": "工作模式下启用"
+  "Enabled in Work Mode": "工作模式下启用",
+  "Not recommended": "不推荐",
+  "Keep it at No Limit and let auto-compaction manage context": "建议保持「不限制」，由自动压缩管理上下文",
+  "Context message limit": "上下文消息数上限"
 }

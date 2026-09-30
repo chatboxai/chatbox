@@ -1839,5 +1839,8 @@
   "Connection": "接続",
   "Website": "ウェブサイト",
   "New tab": "新しいタブ",
-  "Enabled in Work Mode": "作業モードで有効"
+  "Enabled in Work Mode": "作業モードで有効",
+  "Not recommended": "非推奨",
+  "Keep it at No Limit and let auto-compaction manage context": "「制限なし」のままにし、自動圧縮でコンテキストを管理することをおすすめします",
+  "Context message limit": "コンテキストのメッセージ数上限"
 }

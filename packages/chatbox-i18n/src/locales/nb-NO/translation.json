@@ -1839,5 +1839,8 @@
   "Connection": "Tilkobling",
   "Website": "Nettsted",
   "New tab": "Ny fane",
-  "Enabled in Work Mode": "Tilgjengelig i arbeidsmodus"
+  "Enabled in Work Mode": "Tilgjengelig i arbeidsmodus",
+  "Not recommended": "Anbefales ikke",
+  "Keep it at No Limit and let auto-compaction manage context": "La den stå på «Ingen grense», så styrer automatisk komprimering konteksten",
+  "Context message limit": "Grense for kontekstmeldinger"
 }

@@ -145,7 +145,7 @@ export interface SettingsSearchEntry {
  */
 export const SETTINGS_SEARCH_ENTRIES: SettingsSearchEntry[] = [
   { page: 'chat', id: 'system-prompt', label: 'System prompt' },
-  { page: 'chat', id: 'max-context', label: 'Context messages' },
+  { page: 'chat', id: 'max-context', label: 'Context message limit' },
   { page: 'chat', id: 'temperature', label: 'Temperature' },
   { page: 'chat', id: 'top-p', label: 'Top P' },
   { page: 'chat', id: 'stream', label: 'Stream output' },

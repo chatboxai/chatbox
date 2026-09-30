@@ -6,7 +6,7 @@ import { MAX_TOOL_CALLS_BEFORE_CONFIRMATION } from '@shared/utils/tool-call-limi
 import { createFileRoute } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import {
-  ContextCountControl,
+  ContextLimitSettingRow,
   NO_CONTEXT_LIMIT,
   SamplingParamControl,
   useSamplingFieldShown,
@@ -98,6 +98,13 @@ export function RouteComponent() {
             {t('Restore all defaults')}
           </Button>
         }
+        footer={
+          <ContextLimitSettingRow
+            testId={TestId.settings.maxContext}
+            value={settings.maxContextMessageCount ?? NO_CONTEXT_LIMIT}
+            onChange={(v) => setSettings({ maxContextMessageCount: v })}
+          />
+        }
       >
         <SettingRow
           id="system-prompt"
@@ -132,20 +139,6 @@ export function RouteComponent() {
                 </Button>
               )}
             </div>
-          )}
-        />
-        <SettingRow
-          id="max-context"
-          label={t('Context messages')}
-          description={t('More messages keep replies coherent but use more tokens')}
-          controlLayout="block"
-          control={(fieldId) => (
-            <ContextCountControl
-              inputId={fieldId}
-              inputTestId={TestId.settings.maxContext}
-              value={settings.maxContextMessageCount ?? NO_CONTEXT_LIMIT}
-              onChange={(v) => setSettings({ maxContextMessageCount: v })}
-            />
           )}
         />
         <SettingRow

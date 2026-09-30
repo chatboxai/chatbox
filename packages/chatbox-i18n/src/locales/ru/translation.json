@@ -1839,5 +1839,8 @@
   "Connection": "Подключение",
   "Website": "Сайт",
   "New tab": "Новая вкладка",
-  "Enabled in Work Mode": "Доступно в рабочем режиме"
+  "Enabled in Work Mode": "Доступно в рабочем режиме",
+  "Not recommended": "Не рекомендуется",
+  "Keep it at No Limit and let auto-compaction manage context": "Оставьте «Без ограничений» — контекстом управляет автоматическое сжатие",
+  "Context message limit": "Лимит сообщений в контексте"
 }

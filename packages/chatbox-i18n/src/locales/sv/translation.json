@@ -1839,5 +1839,8 @@
   "Connection": "Anslutning",
   "Website": "Webbplats",
   "New tab": "Ny flik",
-  "Enabled in Work Mode": "Tillgängligt i arbetsläge"
+  "Enabled in Work Mode": "Tillgängligt i arbetsläge",
+  "Not recommended": "Rekommenderas inte",
+  "Keep it at No Limit and let auto-compaction manage context": "Låt den stå på ”Ingen gräns” så hanterar automatisk komprimering kontexten",
+  "Context message limit": "Gräns för kontextmeddelanden"
 }

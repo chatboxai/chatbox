@@ -89,9 +89,31 @@ describe('SessionSettingsContent', () => {
   test('shows inherited values and names the model the parameters apply to', () => {
     renderContent(makeSession({}))
     expect(screen.getByText('Applies to GPT-4o')).toBeTruthy()
-    expect(screen.getByTestId('session-panel-inherit-max-context').textContent).toBe('Follows global · 20')
+    const maxContext = screen.getByTestId('session-settings-max-context') as HTMLSelectElement
+    expect(maxContext.selectedOptions[0]?.textContent).toBe('Follows global · 20')
+    expect(screen.getByTestId('session-panel-inherit-max-context').getAttribute('data-inherit-state')).toBe('inherited')
     expect(screen.getByTestId('session-panel-inherit-temperature').textContent).toBe('Follows global · Model default')
     expect(screen.getByText('All parameters follow global defaults')).toBeTruthy()
+  })
+
+  test('sets a conversation context limit and follows global again from the picker', () => {
+    const onEdit = renderContent(makeSession({ maxContextMessageCount: 37 }))
+    const maxContext = screen.getByTestId('session-settings-max-context') as HTMLSelectElement
+    expect(maxContext.value).toBe('37')
+    expect(Array.from(maxContext.options).map((option) => option.value)).toEqual([
+      'inherit',
+      `${Number.MAX_SAFE_INTEGER}`,
+      '50',
+      '37',
+      '20',
+      '10',
+      '4',
+      '0',
+    ])
+    fireEvent.change(maxContext, { target: { value: '10' } })
+    expect(onEdit).toHaveBeenLastCalledWith({ settings: { maxContextMessageCount: 10 } })
+    fireEvent.change(maxContext, { target: { value: 'inherit' } })
+    expect(onEdit).toHaveBeenLastCalledWith({ settings: { maxContextMessageCount: undefined } })
   })
 
   test('restores one overridden parameter to the inherited value', () => {

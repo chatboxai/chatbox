@@ -1839,5 +1839,8 @@
   "Connection": "Connessione",
   "Website": "Sito web",
   "New tab": "Nuova scheda",
-  "Enabled in Work Mode": "Disponibile in modalità lavoro"
+  "Enabled in Work Mode": "Disponibile in modalità lavoro",
+  "Not recommended": "Sconsigliato",
+  "Keep it at No Limit and let auto-compaction manage context": "Lascia «Nessun limite» e affida il contesto alla compattazione automatica",
+  "Context message limit": "Limite di messaggi di contesto"
 }

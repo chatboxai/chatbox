@@ -1,3 +1,5 @@
+import type { SessionHeader } from '../../ports/session-read-model'
+import type { SessionStructureResult } from '../../ports/session-structure-command'
 import type { SessionCommand, SessionCommandDelta } from '../../ports/session-repository'
 import { type SessionRepositoryPort, SessionWriteConflictError } from '../../ports'
 import { BackupOperationBusyError } from '../../backup/operation'
@@ -34,6 +36,11 @@ export class SessionCommandMetadataUpdateError extends Error {
   ) {
     super(`Failed to update metadata for session ${result.delta.sessionId}`, { cause: metadataError })
   }
+}
+
+export interface SessionCommandWriteOptions {
+  expectedRevision?: number
+  onPersisted?: (header: SessionHeader) => void
 }
 
 export interface SessionWriteOptions {
@@ -142,19 +149,26 @@ export class SessionWriteCoordinator {
 
   executeCommand(
     sessionId: string,
-    command: SessionCommand
+    command: SessionCommand,
+    onCommitted?: (result: SessionStructureResult) => void,
+    options: SessionCommandWriteOptions = {}
   ): Promise<SessionCommandWriteResult | ({ kind: 'full' } & SessionWriteResult) | null> {
     if (this.unavailable.has(sessionId)) return Promise.reject(new SessionNotFoundError(sessionId))
     return this.enqueue(sessionId, async () => {
       if (!this.repository.executeSessionCommand || (await this.loadRecoveryArchive(sessionId)) !== undefined)
         return null
-      const committed = await this.repository.executeSessionCommand(sessionId, command).catch((error: unknown) => {
-        if (error instanceof SessionWriteConflictError) {
-          this.current.delete(sessionId)
-          this.discardCurrentSession(sessionId)
-        }
-        throw error
-      })
+      const committed = await this.repository
+        .executeSessionCommand(sessionId, command, options.expectedRevision)
+        .catch((error: unknown) => {
+          if (error instanceof SessionWriteConflictError) {
+            this.current.delete(sessionId)
+            this.discardCurrentSession(sessionId)
+          }
+          throw error
+        })
+      options.onPersisted?.(committed.kind === 'full' ? committed.session : committed.delta.header)
+      const structureResult = committed.kind === 'full' ? committed.structureResult : committed.delta.structureResult
+      if (structureResult) onCommitted?.(structureResult)
       if (committed.kind === 'full') {
         this.current.set(sessionId, committed.session)
         const meta = projectSessionMetaUpdate(committed.session)

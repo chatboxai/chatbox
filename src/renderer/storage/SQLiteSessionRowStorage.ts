@@ -20,6 +20,7 @@ import type {
   SessionThreadPage,
   SessionThreadPageRequest,
   SessionThreadSuffixRequest,
+  SessionStructureSnapshot,
   SessionRowCommit,
   SessionRowSnapshot,
   SessionRowStorePort,
@@ -559,6 +560,10 @@ export class SQLiteSessionRowStore implements SessionRowStorePort {
 
   readMessages(request: SessionMessagesRequest): Promise<SessionMessagesSnapshot | null> {
     return this.store.readMessages(request)
+  }
+
+  readStructure(request: { sessionId: string; expectedRevision?: number }): Promise<SessionStructureSnapshot | null> {
+    return this.store.readStructure(request)
   }
 
   readThreadSuffix(request: SessionThreadSuffixRequest): Promise<SessionMessagesSnapshot | null> {

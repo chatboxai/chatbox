@@ -902,3 +902,42 @@ it.each(['ios', 'android'] as const)(
     expect(persisted?.messageForksHash?.pivot.lists[1].messages.map((item) => item.id)).toEqual(['saved'])
   }
 )
+
+it.each(['ios', 'android'] as const)(
+  'commits thread lifecycle through the %s structural mobile port',
+  async (platform) => {
+    const { store } = realBridge(platform)
+    const repository = new RowBackedSessionRepository({ rows: store, records: new InMemorySessionRecordStore() })
+    await repository.initialize()
+    const message = (id: string): Message => ({
+      id,
+      role: 'user',
+      contentParts: [{ type: 'text', text: id }],
+      timestamp: 1,
+    })
+    await repository.setSession({
+      id: 'session',
+      name: 'Threaded',
+      messages: [message('active')],
+      threads: [{ id: 'archived', name: 'History', createdAt: 1, messages: [message('old')] }],
+    })
+    repository.forgetBaseline('session')
+    const fullRead = vi.spyOn(store, 'readSnapshot')
+    const structure = vi.spyOn(store, 'readStructure')
+    const switched = await repository.executeSessionCommand('session', {
+      type: 'structure',
+      operation: { action: 'thread-switch', threadId: 'archived', archiveId: 'saved', now: 2 },
+    })
+    expect(switched.kind).toBe('rows')
+    const deleted = await repository.executeSessionCommand('session', {
+      type: 'structure',
+      operation: { action: 'thread-delete', threadId: 'saved' },
+    })
+    expect(deleted.kind).toBe('rows')
+    expect(structure).toHaveBeenCalledTimes(2)
+    expect(fullRead).not.toHaveBeenCalled()
+    const persisted = await repository.getSession('session')
+    expect(persisted?.messages.map((item) => item.id)).toEqual(['old'])
+    expect(persisted?.threads ?? []).toEqual([])
+  }
+)

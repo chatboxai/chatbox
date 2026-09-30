@@ -9,6 +9,13 @@ export type { ModelFactoryPort } from './model-factory'
 export * from './session-context-source'
 export * from './session-message-source'
 export * from './session-read-model'
+export type {
+  SessionStructureOperation,
+  SessionThreadOperation,
+  SessionStructureResult,
+  CurrentThreadIdentity,
+} from './session-structure-command'
+export type { SessionStructureSnapshot } from './session-row-store'
 export {
   isRowsSessionRecord,
   type SessionRecordStorePort,

@@ -367,6 +367,30 @@ export async function clearConversationList(keepNum: number) {
  */
 export async function clear(sessionId: string) {
   if (!(await guardBackupWrite())) return
+  let cleanup: Promise<void> | undefined
+  try {
+    const result = await rendererApplication.sessions.executeStructureCommand(
+      sessionId,
+      { action: 'session-clear', scope: 'all' },
+      (committed) => {
+        for (const id of committed.affectedMessageIds ?? [])
+          if (committed.cancelMessageIds.includes(id) || rendererApplication.generationRuntime.get(sessionId, id))
+            rendererApplication.generationRuntime.discard(sessionId, id, 'session-cleared')
+        clearSessionActivity(sessionId)
+        if (platform.isDesktopLike)
+          cleanup = platform
+            .getSessionAttachmentRagController()
+            .deleteSessionAttachments(sessionId)
+            .then(() => undefined)
+            .catch((error: unknown) => {
+              console.warn('Failed to cleanup session attachment RAG entries while clearing session:', error)
+            })
+      }
+    )
+    if (result) return
+  } finally {
+    await cleanup
+  }
   const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
   if (!session) {
     return

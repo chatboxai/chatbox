@@ -666,6 +666,7 @@ function applyForkTransform(
   transform: ForkTransform
 ): Partial<Session> | null {
   const tryTransform = (messages: Message[]): ForkTransformResult | null => {
+    if (!messages.some((message) => message.id === forkMessageId)) return null
     const forkEntry = ensureForkEntry()
     if (!forkEntry) {
       return null

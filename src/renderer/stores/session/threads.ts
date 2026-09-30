@@ -7,10 +7,14 @@ import { rendererApplication } from '@/app/renderer-application'
 import * as dom from '@/hooks/dom'
 import * as scrollActions from '../scrollActions'
 import { getSessionAgentModeEntry } from './agent-mode'
+import { getSessionHeader } from './session-settings'
 import { _copySession as copySession, switchCurrentSession } from './crud'
 
 const threadService = new ThreadService({
   sessions: {
+    getCurrentThreadIdentity: (id) => rendererApplication.sessions.getCurrentThreadIdentity(id),
+    executeStructureCommand: (id, operation, onCommitted) =>
+      rendererApplication.sessions.executeStructureCommand(id, operation, onCommitted),
     getSession: (sessionId) => rendererApplication.sessionQueryBridge.getSession(sessionId),
     updateSession: (sessionId, updater) => rendererApplication.sessions.updateSession(sessionId, updater),
     updateSessionWithMessages: (sessionId, updater) =>
@@ -19,6 +23,11 @@ const threadService = new ThreadService({
   createId: uuidv4,
   now: Date.now,
   getDefaultSystemPrompt: defaults.getDefaultPrompt,
+  getLiveMessageIds: (sessionId) =>
+    new Set(rendererApplication.generationRuntime.list(sessionId).map((entry) => entry.messageId)),
+  cancelMessageIds: (sessionId, messageIds) => {
+    for (const id of messageIds) rendererApplication.generationRuntime.requestAbort(sessionId, id, 'thread-changed')
+  },
   cancelMessages: (sessionId, messages) => {
     for (const message of messages) {
       if (message.generating || rendererApplication.generationRuntime.get(sessionId, message.id)) {
@@ -44,7 +53,7 @@ export async function switchThread(sessionId: string, threadId: string) {
 }
 
 async function createThreadWithRollback(sessionId: string) {
-  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
+  const session = await getSessionHeader(sessionId)
   if (!session) return false
   // Mode-policy backstop: work mode is a single linear conversation and has
   // no New Thread. Compaction still archives via compressAndCreate.

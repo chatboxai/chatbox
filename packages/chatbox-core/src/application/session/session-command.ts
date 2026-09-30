@@ -18,7 +18,7 @@ import { getSessionMessageTokenizationText } from './message-derived-data'
 
 export function planSessionCommand(
   window: SessionMessageWindow,
-  command: SessionCommand,
+  command: Exclude<SessionCommand, { type: 'structure' }>,
   selected: readonly MessageRow[],
   acceptsTokens: boolean,
   suffix: readonly MessageRow[] = []

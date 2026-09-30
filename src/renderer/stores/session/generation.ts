@@ -78,7 +78,7 @@ async function generateReplyBelowWithoutSessionLock(sessionId: string, msgId: st
   try {
     await insertMessageAfter(sessionId, newAssistantMsg, msgId, {
       preserveCachedGeneratingMessages: true,
-      onFullSessionPersisted: () => {
+      onPersisted: () => {
         inserted = true
       },
     })

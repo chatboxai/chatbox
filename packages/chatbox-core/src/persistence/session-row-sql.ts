@@ -1,3 +1,5 @@
+import type { SessionStructureSnapshot } from '../ports/session-row-store'
+import type { MessageRowMetadata } from '../session/session-tree/types'
 import { assertSessionThreadPageRevision, validateSessionThreadPageRequest } from './session-thread-page'
 import { throwIfAborted } from '../backup/abort'
 import { type BackupPageLimits, type BackupRow, backupPageLimits } from '../backup/session-port'
@@ -498,7 +500,7 @@ function validateThreadRow(thread: ThreadRow, sessionId: string): void {
   }
 }
 
-function validateMessageRow(message: MessageRow, sessionId: string): void {
+function validateMessageRow(message: MessageRowMetadata, sessionId: string): void {
   requireSessionId(message.sessionId, 'message row')
   if (!message.threadId) {
     throw new Error('message row is missing a threadId')
@@ -568,7 +570,7 @@ function* splitPayload(value: string): Generator<string> {
 }
 
 /** Scalar subqueries preserve the payload manifest; a missing source violates its NOT NULL constraint. */
-function messageMetadataStatement(message: MessageRow): SessionRowSqlStatement {
+function messageMetadataStatement(message: MessageRowMetadata): SessionRowSqlStatement {
   return {
     kind: 'upsert-message-metadata',
     sql: `INSERT OR REPLACE INTO session_messages (${MESSAGE_COLUMNS}) VALUES (
@@ -708,6 +710,10 @@ function updateCommitStatement(sessionId: string, commit: SessionRowCommit): Ses
 }
 
 function toMessageRow(record: MessageRecord, message: Message): MessageRow {
+  return { ...toMessageMetadata(record), message }
+}
+
+function toMessageMetadata(record: MessageRecord): MessageRowMetadata {
   return {
     sessionId: record.session_id,
     threadId: record.thread_id,
@@ -720,7 +726,6 @@ function toMessageRow(record: MessageRecord, message: Message): MessageRow {
     createdAt: Number(record.created_at),
     updatedAt: Number(record.updated_at),
     branchId: record.branch_id ?? null,
-    message,
   }
 }
 
@@ -1080,6 +1085,19 @@ export class SqlSessionRowStore implements SessionRowStorePort {
     })
   }
 
+  async readStructure(request: {
+    sessionId: string
+    expectedRevision?: number
+  }): Promise<SessionStructureSnapshot | null> {
+    return this.run('read-messages', request.sessionId, () =>
+      this.readSelectedSnapshot(request, async (commit, threads) => ({
+        ...commit,
+        threads,
+        messages: (await this.readMessageRecords(request.sessionId)).map(toMessageMetadata),
+      }))
+    )
+  }
+
   async readThreadSuffix(request: SessionThreadSuffixRequest): Promise<SessionMessagesSnapshot | null> {
     if (!request.threadId || !Number.isSafeInteger(request.afterSeq) || request.afterSeq < -1)
       throw new Error('Invalid thread suffix request')
@@ -1399,7 +1417,13 @@ export class SqlSessionRowStore implements SessionRowStorePort {
       if (!Number.isSafeInteger(commit.revision) || commit.revision <= 0 || commit.record.id !== diff.sessionId) {
         throw new Error(`session ${diff.sessionId} has invalid commit metadata`)
       }
+      if (diff.messageMetadataUpsert?.length && !reusePayload)
+        throw new Error('Structural edits require an expected revision')
       const statements: SessionRowSqlStatement[] = []
+      for (const row of diff.messageMetadataUpsert ?? []) {
+        validateMessageRow(row, diff.sessionId)
+        statements.push(messageMetadataStatement(row))
+      }
       for (const thread of diff.threads.upsert) {
         validateThreadRow(thread, diff.sessionId)
         statements.push(threadStatement(thread, commit))

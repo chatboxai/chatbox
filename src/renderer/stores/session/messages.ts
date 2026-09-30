@@ -1,3 +1,7 @@
+import { SessionActionBlockedError } from '@chatbox/core/session/action-gates'
+import { t } from 'i18next'
+import { notifySessionLockBlocked } from '@/utils/session-lock-copy'
+import { getCompactionUIState } from '../atoms/compactionAtoms'
 import { compactionFailureError, SessionNotFoundError } from '@chatbox/core'
 import {
   createGenerationSegmentSplitWriter,
@@ -132,7 +136,7 @@ export async function insertMessageAfter(
   afterMsgId: string,
   options: Parameters<SessionService['insertMessage']>[3] = {}
 ) {
-  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
+  const session = await getSessionHeader(sessionId)
   if (!session) {
     // A caller that requires the anchor cannot treat a missing session as a
     // successful write; let insertMessage raise the same error it always does.
@@ -240,6 +244,54 @@ export async function persistStreamingMessage(
  * @param messageId
  */
 export async function removeMessage(sessionId: string, messageId: string) {
+  let cleanup: Promise<void> | undefined
+  const onCommitted = (result: import('@chatbox/core/ports').SessionStructureResult) => {
+    if (!result.applied) return
+    if (result.cancelMessageIds.includes(messageId) || rendererApplication.generationRuntime.get(sessionId, messageId))
+      rendererApplication.generationRuntime.discard(sessionId, messageId, 'message-deleted')
+    clearMessageGenerationStopOperation(sessionId, messageId)
+    cleanup = (async () => {
+      if (!platform.isDesktopLike) return
+      try {
+        const controller = platform.getSessionAttachmentRagController()
+        for (const transfer of planAttachmentOwnershipTransfers(
+          result.removedMessages ?? [],
+          result.survivingMessages ?? []
+        ))
+          await controller.rebindAttachment({
+            attachmentId: transfer.attachmentId,
+            sessionId,
+            messageId: transfer.messageId,
+          })
+        await controller.deleteMessageAttachments(messageId)
+      } catch (error) {
+        console.warn('Failed to cleanup session attachment RAG entries for message deletion:', error)
+      }
+    })()
+  }
+  try {
+    const result = await rendererApplication.sessions.executeStructureCommand(
+      sessionId,
+      {
+        action: 'message-remove',
+        messageId,
+        replacementPivotId: createMessage('system', '').id,
+        guard: {
+          action: 'delete-summary',
+          compactionRunning: getCompactionUIState(sessionId).status === 'running',
+          activeGenerationMessageIds: rendererApplication.generationRuntime.getActiveMessageIds(sessionId),
+        },
+      },
+      onCommitted
+    )
+    if (result) return
+  } catch (error) {
+    if (!(error instanceof SessionActionBlockedError)) throw error
+    await notifySessionLockBlocked(error.reason, t)
+    return
+  } finally {
+    await cleanup
+  }
   // Deleting ordinary messages is always allowed (streaming targets are
   // stopped by the caller first), but removing a compaction summary while
   // replies stream would yank the compacted context out from under them.

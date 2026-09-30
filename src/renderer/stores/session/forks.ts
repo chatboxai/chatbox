@@ -1,11 +1,5 @@
 import { ForkService } from '@chatbox/core/application/session'
-import { getReachableSessionMessages } from '@chatbox/core/session/generation-state'
-import {
-  buildDeleteForkPatch,
-  buildSaveAndResendForkPatch,
-  buildSwitchForkToPatch,
-  findMessageLocation,
-} from '@shared/session/message-forks'
+import { findMessageLocation } from '@shared/session/message-forks'
 import { planAttachmentOwnershipTransfers } from '@shared/session-attachment-rag/ownership'
 import type { Message } from '@shared/types'
 import { v4 as uuidv4 } from 'uuid'
@@ -20,8 +14,11 @@ const forkIdentity = {
 
 const forkService = new ForkService(
   {
-    updateSessionWithMessages: (sessionId, updater) =>
+    executeStructureCommand: (sessionId, operation, onCommitted) =>
+      rendererApplication.sessions.executeStructureCommand(sessionId, operation, onCommitted),
+    updateSessionWithMessages: (sessionId, updater, options) =>
       rendererApplication.sessions.updateSessionWithMessages(sessionId, updater, {
+        ...options,
         preserveCachedGeneratingMessages: true,
       }),
   },
@@ -30,11 +27,6 @@ const forkService = new ForkService(
 
 // Keep the existing lookup export stable for generation and message callers.
 export { findMessageLocation }
-
-// Every fork mutation is a full-session write and must pass
-// `preserveCachedGeneratingMessages`: alternative replies stream outside the
-// session generation lock with cache-only chunk updates, so a plain write would
-// roll their visible content back to the last 2s persistence snapshot.
 
 /** Create a new fork branch at the specified message. */
 export function createNewFork(sessionId: string, forkMessageId: string) {
@@ -59,26 +51,11 @@ export async function createSaveAndResendFork(
   let applied = false
   let persisted = false
   try {
-    await rendererApplication.sessions.updateSessionWithMessages(
-      sessionId,
-      (session) => {
-        if (!session) {
-          throw new Error('Session not found')
-        }
-        const patch = buildSaveAndResendForkPatch(session, targetMessageId, replacement, forkIdentity)
-        if (!patch) {
-          return session
-        }
-        applied = true
-        return { ...session, ...patch }
-      },
-      {
-        preserveCachedGeneratingMessages: true,
-        onFullSessionPersisted: () => {
-          persisted = true
-        },
-      }
-    )
+    const result = await forkService.saveAndResend(sessionId, targetMessageId, replacement, (result) => {
+      persisted = true
+      applied = result.applied
+    })
+    applied = result.applied
   } catch (error) {
     // A failed list-metadata projection still rejects after the session data
     // itself is durable. The branch already holds the original prompt under
@@ -105,17 +82,7 @@ export async function switchForkTo(sessionId: string, forkMessageId: string, pos
   if (!(await guardSessionAction(sessionId, 'switch-fork'))) {
     return
   }
-  await rendererApplication.sessions.updateSessionWithMessages(
-    sessionId,
-    (session) => {
-      if (!session) {
-        throw new Error('Session not found')
-      }
-      const patch = buildSwitchForkToPatch(session, forkMessageId, position)
-      return patch ? { ...session, ...patch } : session
-    },
-    { preserveCachedGeneratingMessages: true }
-  )
+  await forkService.switch(sessionId, forkMessageId, position)
 }
 
 /** Delete the current fork branch. */
@@ -136,35 +103,20 @@ export async function deleteFork(sessionId: string, forkMessageId: string) {
     // ownership on its own, so a failure below costs latency, not the file.
     void reassignSharedAttachmentOwnership(sessionId, droppedMessages, survivingMessages)
   }
-  await rendererApplication.sessions.updateSessionWithMessages(
-    sessionId,
-    (session) => {
-      if (!session) {
-        throw new Error('Session not found')
-      }
-      const patch = buildDeleteForkPatch(session, forkMessageId)
-      if (!patch) return session
-
-      const updated = { ...session, ...patch }
-      survivingMessages = getReachableSessionMessages(updated)
-      const reachableAfter = new Set(survivingMessages.map((message) => message.id))
-      droppedMessages = getReachableSessionMessages(session).filter((message) => !reachableAfter.has(message.id))
-      removedMessageIds = new Set(
-        droppedMessages
-          .filter(
-            (message) =>
-              message.role === 'assistant' &&
-              (message.generating || rendererApplication.generationRuntime.get(sessionId, message.id) !== undefined)
-          )
-          .map((message) => message.id)
-      )
-      return updated
-    },
-    {
-      preserveCachedGeneratingMessages: true,
-      onFullSessionPersisted: discardRemovedRuntimes,
-    }
-  )
+  await forkService.delete(sessionId, forkMessageId, (result) => {
+    droppedMessages = result.removedMessages ?? []
+    survivingMessages = result.survivingMessages ?? []
+    removedMessageIds = new Set(
+      droppedMessages
+        .filter(
+          (message) =>
+            message.role === 'assistant' &&
+            (message.generating || rendererApplication.generationRuntime.get(sessionId, message.id) !== undefined)
+        )
+        .map((message) => message.id)
+    )
+    discardRemovedRuntimes()
+  })
 }
 
 async function reassignSharedAttachmentOwnership(sessionId: string, removed: Message[], survivors: Message[]) {

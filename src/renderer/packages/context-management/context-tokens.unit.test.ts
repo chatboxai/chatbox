@@ -1,4 +1,4 @@
-import { selectContextMessages } from '@shared/context'
+import { buildContext, selectContextMessages } from '@shared/context'
 /**
  * @vitest-environment jsdom
  */
@@ -34,6 +34,7 @@ vi.mock('@/packages/token-estimation', () => ({
   getTokenizerType: vi.fn(() => 'default'),
 }))
 
+import { getCompactionContext } from './compaction-context'
 import { getContextMessagesForTokenEstimation, getContextMessagesForTokenSource } from './context-tokens'
 
 function createMessage(id: string, role: (typeof MessageRoleEnum)[keyof typeof MessageRoleEnum], text = ''): Message {
@@ -190,4 +191,146 @@ it('keeps an applicable summary in the same preview window as sending', () => {
   )
   expect(preview).toEqual(expected)
   expect(preview.some((message) => message.id === 'summary')).toBe(true)
+})
+
+describe('history boundaries across send, compaction, and token preview', () => {
+  const system = createMessage('system', 'system', 'Keep the instructions')
+  const boundary = createMessage('boundary', 'assistant')
+  const summary: Message = { ...createMessage('summary', 'assistant', 'Earlier history'), isSummary: true }
+  const attachment: Message = {
+    ...createMessage('attachment', 'user', 'Use these sources'),
+    files: [{ id: 'file', name: 'notes.txt', fileType: 'txt', storageKey: 'notes' }],
+    links: [{ id: 'link', title: 'Reference', url: 'https://example.com', storageKey: 'reference' }],
+  }
+  const tool: Message = {
+    ...createMessage('tool', 'assistant'),
+    contentParts: [
+      {
+        type: 'tool-call',
+        state: 'result',
+        toolCallId: 'call',
+        toolName: 'read_file',
+        args: { path: 'notes.txt' },
+        result: { content: 'Read result' },
+      },
+    ],
+  }
+  const point: CompactionPoint = { boundaryMessageId: 'boundary', summaryMessageId: 'summary', createdAt: 1 }
+  const cases: {
+    name: string
+    messages: Message[]
+    compactionPoints: CompactionPoint[]
+    expected: Record<number, string[]>
+  }[] = [
+    {
+      name: 'tools and attachment owners after a summary',
+      messages: [
+        system,
+        {
+          ...createMessage('old', 'user'),
+          files: [{ id: 'old-file', name: 'old.txt', fileType: 'txt', storageKey: 'excluded' }],
+        },
+        boundary,
+        summary,
+        attachment,
+        tool,
+      ],
+      compactionPoints: [point],
+      expected: {
+        0: ['system'],
+        4: ['system', 'summary', 'attachment', 'tool'],
+        100: ['system', 'summary', 'attachment', 'tool'],
+      },
+    },
+    {
+      name: 'selected fork path with an older applicable summary',
+      messages: [
+        system,
+        createMessage('old', 'user'),
+        boundary,
+        summary,
+        createMessage('selected-user', 'user'),
+        createMessage('selected-reply', 'assistant'),
+      ],
+      compactionPoints: [
+        point,
+        { boundaryMessageId: 'selected-reply', summaryMessageId: 'sibling-summary', createdAt: 2 },
+      ],
+      expected: {
+        0: ['system'],
+        4: ['system', 'summary', 'selected-user', 'selected-reply'],
+        100: ['system', 'summary', 'selected-user', 'selected-reply'],
+      },
+    },
+    {
+      name: 'legacy steering order with excluded messages and a sticky limit',
+      messages: [
+        system,
+        createMessage('old-1', 'user'),
+        createMessage('old-2', 'assistant'),
+        createMessage('original', 'user'),
+        createMessage('reply', 'assistant'),
+        { ...createMessage('steered', 'user'), steered: true },
+        { ...createMessage('stream', 'assistant'), generating: true },
+        { ...createMessage('error', 'assistant'), error: 'Failed' },
+        { ...createMessage('marker', 'user'), isForkMarker: true },
+      ],
+      compactionPoints: [],
+      expected: {
+        0: ['system'],
+        4: ['system', 'original', 'steered', 'reply'],
+        100: ['system', 'old-1', 'old-2', 'original', 'steered', 'reply'],
+      },
+    },
+  ]
+
+  it.each(cases)('$name', async ({ messages, compactionPoints, expected }) => {
+    const pending = createMessage('pending', 'user', 'Next question')
+    const current = createTestSession({ messages, compactionPoints })
+    const original = structuredClone({ current, pending })
+    const bodies: Record<string, string> = { notes: 'Selected file body', reference: 'Selected link body' }
+    for (const maxContextMessageCount of [0, 4, 100]) {
+      const read = vi.fn(async (key: string) => bodies[key] ?? null)
+      const settings = { maxContextMessageCount }
+      const sending = await buildContext([...messages, pending], {
+        attachmentResolver: { read },
+        compactionPoints,
+        maxContextMessageCount,
+      })
+      const preview = getContextMessagesForTokenSource({ candidateMessages: messages, compactionPoints }, { settings })
+      const compacting = getCompactionContext(current, settings, pending)
+      const sentHistory = sending.filter((message) => message.id !== pending.id)
+      expect(sending.map((message) => message.id)).toEqual([...expected[maxContextMessageCount], pending.id])
+      for (const selected of [sentHistory, preview, compacting]) {
+        expect(selected.map((message) => message.id)).toEqual(expected[maxContextMessageCount])
+        for (const message of selected) {
+          const source = messages.find((item) => item.id === message.id)!
+          expect(message.files).toEqual(source.files)
+          expect(message.links).toEqual(source.links)
+          expect(message.contentParts.filter((part) => part.type === 'tool-call')).toEqual(
+            source.contentParts.filter((part) => part.type === 'tool-call')
+          )
+        }
+      }
+      // Selection retains original content; attachment injection belongs to sending.
+      for (const selected of [preview, compacting]) {
+        expect(selected).toEqual(
+          expected[maxContextMessageCount].map((id) => messages.find((message) => message.id === id))
+        )
+      }
+      const sentAttachment = sentHistory.find((message) => message.id === 'attachment')
+      if (sentAttachment) {
+        const text = sentAttachment.contentParts
+          .filter((part) => part.type === 'text')
+          .map((part) => part.text)
+          .join('\n')
+        expect(text).toContain(bodies.notes)
+        expect(text).toContain(bodies.reference)
+        expect(read.mock.calls.map(([key]) => key).sort()).toEqual(['notes', 'reference'])
+      } else {
+        expect(read).not.toHaveBeenCalled()
+      }
+      expect({ current, pending }).toEqual(original)
+    }
+  })
 })

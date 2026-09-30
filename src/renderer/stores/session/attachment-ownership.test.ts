@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const { sessionsMock, sessionQueryBridgeMock, generationRuntimeMock, ragControllerMock, guardSessionActionMock } =
   vi.hoisted(() => ({
     sessionsMock: {
+      executeStructureCommand: vi.fn().mockResolvedValue(null),
       removeMessage: vi.fn().mockResolvedValue(undefined),
       updateSessionWithMessages: vi.fn(),
     },
@@ -11,6 +12,7 @@ const { sessionsMock, sessionQueryBridgeMock, generationRuntimeMock, ragControll
       getSession: vi.fn(),
     },
     generationRuntimeMock: {
+      getActiveMessageIds: vi.fn(() => new Set<string>()),
       get: vi.fn(() => undefined),
       discard: vi.fn(),
     },

@@ -1,4 +1,6 @@
 import { SessionEventBus, SessionService, SessionWriteCoordinator } from '@chatbox/core'
+import { MessageAnchorNotFoundError } from '@chatbox/core/application/session'
+import { SessionActionBlockedError } from '@chatbox/core/session/action-gates'
 import { exportBackupArchive, importBackupArchive, prepareBackupExport } from '@chatbox/core/backup'
 import { MemoryStorage } from '../../../packages/chatbox-core/src/backup/sharded.test-support'
 import {
@@ -427,6 +429,46 @@ describe('CurrentSessionRepository contract', () => {
     await harness.repository.meta.create(record)
 
     expect(harness.metaStorage.create).toHaveBeenCalledWith(record)
+  })
+
+  test('preserves command domain errors and leaves the durable rows unchanged', async () => {
+    const original = createSessionWithMessages()
+    original.messages.push({ ...message('summary', 'assistant', 300), isSummary: true })
+    original.compactionPoints = [{ boundaryMessageId: 'assistant-1', summaryMessageId: 'summary', createdAt: 300 }]
+    original.messages[1].generating = true
+    await harness.repository.setSession(original)
+    const revision = await harness.rowStore.getRevision(original.id)
+
+    const missingAnchor = await harness.repository
+      .executeSessionCommand(original.id, {
+        type: 'structure',
+        operation: {
+          action: 'message-insert-after',
+          message: message('continuation', 'assistant', 400),
+          previousId: 'missing',
+          requireAnchor: true,
+        },
+      })
+      .catch((error: unknown) => error)
+    expect.soft(missingAnchor).toBeInstanceOf(MessageAnchorNotFoundError)
+    expect.soft(missingAnchor).toMatchObject({ sessionId: original.id, anchorMessageId: 'missing' })
+
+    const blocked = await harness.repository
+      .executeSessionCommand(original.id, {
+        type: 'structure',
+        operation: {
+          action: 'message-remove',
+          messageId: 'summary',
+          replacementPivotId: 'replacement',
+          guard: { action: 'delete-summary', activeGenerationMessageIds: new Set(['assistant-1']) },
+        },
+      })
+      .catch((error: unknown) => error)
+    expect(blocked).toBeInstanceOf(SessionActionBlockedError)
+    expect(await harness.rowStore.getRevision(original.id)).toBe(revision)
+    expect((await harness.repository.getSession(original.id))?.messages.map((item) => item.id)).toEqual(
+      original.messages.map((item) => item.id)
+    )
   })
 
   test('normalizes backend failures with operation and session context', async () => {

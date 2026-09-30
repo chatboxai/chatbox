@@ -184,7 +184,7 @@ describe('generation entry-point locking', () => {
       'session-1',
       expect.objectContaining({ role: 'assistant', generating: true }),
       'user-1',
-      expect.objectContaining({ preserveCachedGeneratingMessages: true, onFullSessionPersisted: expect.any(Function) })
+      expect.objectContaining({ preserveCachedGeneratingMessages: true, onPersisted: expect.any(Function) })
     )
     expect(orchestrateGenerationMock).toHaveBeenCalledWith(
       'session-1',
@@ -313,7 +313,7 @@ describe('generation entry-point locking', () => {
       'session-1',
       expect.objectContaining({ role: 'assistant', generating: true }),
       replacement.id,
-      expect.objectContaining({ preserveCachedGeneratingMessages: true, onFullSessionPersisted: expect.any(Function) })
+      expect.objectContaining({ preserveCachedGeneratingMessages: true, onPersisted: expect.any(Function) })
     )
     expect(orchestrateGenerationMock).toHaveBeenCalledOnce()
   })
@@ -331,7 +331,7 @@ describe('generation entry-point locking', () => {
       'session-1',
       expect.objectContaining({ role: 'assistant', generating: true }),
       'user-1',
-      expect.objectContaining({ preserveCachedGeneratingMessages: true, onFullSessionPersisted: expect.any(Function) })
+      expect.objectContaining({ preserveCachedGeneratingMessages: true, onPersisted: expect.any(Function) })
     )
   })
 

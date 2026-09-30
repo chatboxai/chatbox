@@ -1,10 +1,11 @@
+import { SessionEventBus, SessionService, SessionWriteCoordinator } from '@chatbox/core/application/session'
+import { InMemorySessionRepository } from '@chatbox/core/testing'
 import { buildSessionExportThreads } from '@chatbox/core/utils/chat-export'
 import type { AgentModeEntry, CompactionPoint, Message, Session } from '@shared/types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { getSessionMock, updateSessionWithMessagesMock, uiStoreState } = vi.hoisted(() => ({
-  getSessionMock: vi.fn(),
-  updateSessionWithMessagesMock: vi.fn(),
+const { sessionHarness, uiStoreState } = vi.hoisted(() => ({
+  sessionHarness: { service: undefined as SessionService | undefined },
   uiStoreState: {
     sessionAgentModeMap: {} as Record<string, AgentModeEntry>,
     agentModeSmartSwitchingDefault: false,
@@ -25,11 +26,10 @@ vi.mock('@/app/renderer-application', async () => {
   return {
     rendererApplication: {
       generationRuntime: new GenerationRuntimeStore(),
-      sessions: {
-        updateSession: vi.fn(),
-        updateSessionWithMessages: updateSessionWithMessagesMock,
+      get sessions() {
+        return sessionHarness.service!
       },
-      sessionQueryBridge: { getSession: getSessionMock },
+      sessionQueryBridge: { getSession: (id: string) => sessionHarness.service!.getSession(id) },
     },
   }
 })
@@ -72,13 +72,11 @@ function testSession(): Session {
   }
 }
 
+let repository: InMemorySessionRepository
+
 function updatedSession(): Session {
-  expect(updateSessionWithMessagesMock).toHaveBeenCalledTimes(1)
-  const arg = updateSessionWithMessagesMock.mock.calls[0][1] as Session | ((s: Session) => Session)
-  // Thread transfers must use functional updaters so they read the update
-  // queue's current session, not a possibly stale getSession() snapshot.
-  expect(typeof arg).toBe('function')
-  return (arg as (s: Session) => Session)(testSession())
+  expect(repository.writeOptions).toHaveLength(1)
+  return repository.sessions.get('session-1')!
 }
 
 // Compaction points must travel with their message list across every
@@ -89,8 +87,16 @@ describe('thread flows carry compaction points with their messages', () => {
     vi.clearAllMocks()
     uiStoreState.sessionAgentModeMap = {}
     generationRuntimeStore.abort('session-1')
-    getSessionMock.mockResolvedValue(testSession())
-    updateSessionWithMessagesMock.mockResolvedValue(undefined)
+    repository = new InMemorySessionRepository()
+    repository.sessions.set('session-1', testSession())
+    sessionHarness.service = new SessionService(
+      repository,
+      new SessionWriteCoordinator(repository),
+      new SessionEventBus(),
+      {
+        createId: () => 'created-session',
+      }
+    )
   })
 
   it('switchThread swaps session and thread compaction points', async () => {
@@ -130,24 +136,22 @@ describe('thread flows carry compaction points with their messages', () => {
   })
 
   it('removeCurrentThread clears compaction points when no thread remains', async () => {
-    getSessionMock.mockResolvedValue({ ...testSession(), threads: [] })
+    repository.sessions.set('session-1', { ...testSession(), threads: [] })
 
     await removeCurrentThread('session-1')
 
-    expect(updateSessionWithMessagesMock).toHaveBeenCalledTimes(1)
-    const updater = updateSessionWithMessagesMock.mock.calls[0][1] as (s: Session) => Session
-    expect(updater({ ...testSession(), threads: [] }).compactionPoints).toBeUndefined()
+    expect(updatedSession().compactionPoints).toBeUndefined()
   })
 
   it('does not create a thread in work mode', async () => {
-    getSessionMock.mockResolvedValue({
+    repository.sessions.set('session-1', {
       ...testSession(),
       settings: { agentMode: { value: 'on', locked: true, lockReason: null } },
     })
 
     await refreshContextAndCreateNewThread('session-1')
 
-    expect(updateSessionWithMessagesMock).not.toHaveBeenCalled()
+    expect(repository.writeOptions).toHaveLength(0)
   })
 
   it('does not create a thread when work mode lives in the legacy uiStore map', async () => {
@@ -157,19 +161,24 @@ describe('thread flows carry compaction points with their messages', () => {
 
     await refreshContextAndCreateNewThread('session-1')
 
-    expect(updateSessionWithMessagesMock).not.toHaveBeenCalled()
+    expect(repository.writeOptions).toHaveLength(0)
   })
 
   it('archives a compaction that committed after the snapshot was taken', async () => {
-    // getSession returned a stale snapshot (no compaction yet); by the time
-    // the queued updater runs, the compaction commit has landed. The transfer
-    // must archive the queue's newer state, not the snapshot.
-    getSessionMock.mockResolvedValue({ ...testSession(), messages: [message('u1', { role: 'user' })] })
+    const initial = { ...testSession(), messages: [message('u1', { role: 'user' })], compactionPoints: undefined }
+    repository.sessions.set('session-1', initial)
+    const service = rendererApplication.sessions
+    const readIdentity = service.getCurrentThreadIdentity.bind(service)
+    vi.spyOn(service, 'getCurrentThreadIdentity').mockImplementationOnce(async (sessionId) => {
+      const identity = await readIdentity(sessionId)
+      // Compaction commits after the operation identifies its current thread.
+      repository.sessions.set(sessionId, testSession())
+      return identity
+    })
 
     await refreshContextAndCreateNewThread('session-1')
 
-    const updater = updateSessionWithMessagesMock.mock.calls[0][1] as (s: Session) => Session
-    const updated = updater(testSession())
+    const updated = updatedSession()
     const archived = updated.threads?.find((t) => t.id === 'new-thread-id')
     expect(archived?.messages.map((m) => m.id)).toEqual(['u1', 'a1', 'summary-active'])
     expect(archived?.compactionPoints).toEqual([activePoint])
@@ -195,12 +204,11 @@ describe('thread flows carry compaction points with their messages', () => {
         },
       },
     }
-    getSessionMock.mockResolvedValue(session)
+    repository.sessions.set('session-1', session)
 
     await compressAndCreateThread('session-1', 'Summary')
 
-    const updater = updateSessionWithMessagesMock.mock.calls[0][1] as (current: Session) => Session
-    const updated = updater(session)
+    const updated = updatedSession()
     expect(updated.messageForksHash?.[pivot.id]).toBeDefined()
     expect(
       buildSessionExportThreads(updated, true, true).map(

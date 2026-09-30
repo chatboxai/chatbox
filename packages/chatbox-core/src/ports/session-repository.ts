@@ -1,3 +1,8 @@
+import type {
+  SessionStructureOperation,
+  SessionStructureResult,
+  CurrentThreadIdentity,
+} from './session-structure-command'
 import type { SessionRowCommit, SessionRowsDiff } from './session-row-store'
 import type { Message, Session, SessionFolder, SessionMetaPage, SessionMetaRecord } from '../types/session'
 import type { Updater } from '../types'
@@ -57,12 +62,14 @@ export type SessionMessageMutation =
   | { type: 'replace'; messageId: string; message: Message }
 
 export type SessionCommand =
+  | { type: 'structure'; operation: SessionStructureOperation }
   | { type: 'append'; messages: readonly Message[] }
   | { type: 'update'; messageId: string; updater: Updater<Message> }
   | { type: 'header'; updater: Updater<SessionHeader> }
 
 /** A committed row change; complete Sessions are obtained through explicit reads. */
 export interface SessionCommandDelta extends SessionRowCommit {
+  structureResult?: SessionStructureResult
   sessionId: string
   previousRevision: number
   header: SessionHeader
@@ -74,7 +81,7 @@ export interface SessionCommandDelta extends SessionRowCommit {
 
 export type SessionCommandResult =
   | { kind: 'rows'; delta: SessionCommandDelta }
-  | { kind: 'full'; session: Session; previous: Session }
+  | { kind: 'full'; session: Session; previous: Session; structureResult?: SessionStructureResult }
 
 export interface SessionDataWriteOptions {
   /**
@@ -97,6 +104,7 @@ export interface SessionDataRepositoryPort
   getSession(id: string): Promise<Session | null>
   setSession(session: Session, options?: SessionDataWriteOptions): Promise<void>
   /** Execute against the current committed revision; complex and legacy sessions use a complete result. */
+  getCurrentThreadIdentity?(sessionId: string): Promise<CurrentThreadIdentity | null>
   executeSessionCommand?(
     sessionId: string,
     command: SessionCommand,

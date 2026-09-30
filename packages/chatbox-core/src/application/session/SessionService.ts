@@ -1,3 +1,10 @@
+import type { SessionCommandWriteOptions } from './SessionWriteCoordinator'
+import type {
+  SessionStructureOperation,
+  SessionStructureResult,
+  CurrentThreadIdentity,
+} from '../../ports/session-structure-command'
+import { SessionWriteConflictError } from '../../ports/session-repository'
 import type { SessionCommand } from '../../ports/session-repository'
 import { findMessageLocation } from '@shared/session/message-forks'
 import {
@@ -40,6 +47,7 @@ import {
   SessionNotFoundError,
   type SessionWriteCoordinator,
   type SessionWriteResult,
+  type SessionCommandWriteResult,
 } from './SessionWriteCoordinator'
 import { contextSourceFromSession } from './session-context-source'
 import type { SessionEventBus } from './session-events'
@@ -400,7 +408,7 @@ export class SessionService {
    * optionally placing it at `sortOrder` within the target group.
    */
   async moveSessionToFolder(sessionId: string, folderId: string | undefined, sortOrder?: number): Promise<void> {
-    await this.updateSession(sessionId, { folderId })
+    await this.updateSessionHeader(sessionId, { folderId })
     // The session may sit on a page that is not loaded yet, where no cache
     // patch can place it; re-read the first page in the new order.
     if (sortOrder !== undefined) {
@@ -586,30 +594,34 @@ export class SessionService {
     return result.session
   }
 
+  private publishCommandResult(
+    result: SessionCommandWriteResult | ({ kind: 'full' } & SessionWriteResult),
+    preserveCachedGeneratingMessages: boolean
+  ): Promise<void> {
+    return this.events.publish(
+      result.kind === 'rows'
+        ? {
+            type: 'session-command-committed',
+            delta: result.delta,
+            meta: result.meta,
+            preserveCachedGeneratingMessages,
+          }
+        : { type: 'session-updated', session: result.session, meta: result.meta, preserveCachedGeneratingMessages }
+    )
+  }
+
   private async persistCommand(
     sessionId: string,
     command: SessionCommand,
-    preserveCachedGeneratingMessages = true
+    preserveCachedGeneratingMessages = true,
+    onCommitted?: (result: SessionStructureResult) => void,
+    options: SessionCommandWriteOptions = {}
   ): Promise<boolean> {
     await this.initialize()
     try {
-      const result = await this.writes.executeCommand(sessionId, command)
+      const result = await this.writes.executeCommand(sessionId, command, onCommitted, options)
       if (!result) return false
-      if (result.kind === 'rows') {
-        await this.events.publish({
-          type: 'session-command-committed',
-          delta: result.delta,
-          meta: result.meta,
-          preserveCachedGeneratingMessages,
-        })
-      } else {
-        await this.events.publish({
-          type: 'session-updated',
-          session: result.session,
-          meta: result.meta,
-          preserveCachedGeneratingMessages,
-        })
-      }
+      await this.publishCommandResult(result, preserveCachedGeneratingMessages)
       if (command.type === 'header') {
         const header = result.kind === 'rows' ? result.delta.header : result.session
         const previous = result.kind === 'rows' ? result.delta.previousHeader : result.previous
@@ -642,6 +654,28 @@ export class SessionService {
     }
   }
 
+  async getCurrentThreadIdentity(sessionId: string): Promise<CurrentThreadIdentity | null> {
+    await this.initialize()
+    if (this.repository.getCurrentThreadIdentity) return this.repository.getCurrentThreadIdentity(sessionId)
+    const session = await this.getSession(sessionId)
+    return session
+      ? { sessionId, firstMessageId: session.messages[0]?.id, lastArchivedThreadId: session.threads?.at(-1)?.id }
+      : null
+  }
+
+  async executeStructureCommand(
+    sessionId: string,
+    operation: SessionStructureOperation,
+    onCommitted?: (result: SessionStructureResult) => void
+  ): Promise<SessionStructureResult | null> {
+    let result: SessionStructureResult | null = null
+    await this.persistCommand(sessionId, { type: 'structure', operation }, true, (committed) => {
+      result = committed
+      onCommitted?.(committed)
+    })
+    return result
+  }
+
   async updateSessionHeader(sessionId: string, updater: Updater<SessionHeader>): Promise<void> {
     if (await this.persistCommand(sessionId, { type: 'header', updater })) return
     await this.updateSession(sessionId, updater)
@@ -652,28 +686,54 @@ export class SessionService {
     message: Message,
     previousId?: string,
     options: MessageInsertOptions &
+      Pick<SessionCommandWriteOptions, 'onPersisted'> &
       Pick<UpdateSessionOptions, 'onFullSessionPersisted' | 'preserveCachedGeneratingMessages'> = {}
   ): Promise<void> {
+    const onFullSessionPersisted =
+      options.onFullSessionPersisted || options.onPersisted
+        ? (session: Session) => {
+            options.onFullSessionPersisted?.(session)
+            options.onPersisted?.(getSessionMetadataSnapshot(session))
+          }
+        : undefined
     if (!previousId) {
       if (
         !options.onFullSessionPersisted &&
         (await this.persistCommand(
           sessionId,
           { type: 'append', messages: [message] },
-          options.preserveCachedGeneratingMessages === true
+          options.preserveCachedGeneratingMessages === true,
+          undefined,
+          { onPersisted: options.onPersisted }
         ))
       )
         return
-      await this.persistSessionUpdate(sessionId, {}, options, { type: 'append', messages: [message] })
+      await this.persistSessionUpdate(
+        sessionId,
+        {},
+        { ...options, onFullSessionPersisted },
+        { type: 'append', messages: [message] }
+      )
       return
     }
+    if (
+      !options.onFullSessionPersisted &&
+      (await this.persistCommand(
+        sessionId,
+        {
+          type: 'structure',
+          operation: { action: 'message-insert-after', message, previousId, requireAnchor: options.requireAnchor },
+        },
+        options.preserveCachedGeneratingMessages === true,
+        undefined,
+        { onPersisted: options.onPersisted }
+      ))
+    )
+      return
     await this.updateSessionWithMessages(
       sessionId,
       (session) => applyMessageInsert(session, sessionId, message, previousId, options),
-      {
-        onFullSessionPersisted: options.onFullSessionPersisted,
-        preserveCachedGeneratingMessages: options.preserveCachedGeneratingMessages,
-      }
+      { onFullSessionPersisted, preserveCachedGeneratingMessages: options.preserveCachedGeneratingMessages }
     )
   }
 
@@ -681,6 +741,44 @@ export class SessionService {
     if (!messages.length) return
     if (await this.persistCommand(sessionId, { type: 'append', messages })) return
     await this.persistSessionUpdate(sessionId, {}, {}, { type: 'append', messages })
+  }
+
+  async insertMessagesFromSnapshot(
+    sessionId: string,
+    messages: readonly Message[],
+    source: CompleteSessionSource,
+    assertUnchanged: (current: Session) => void,
+    onPersisted?: (header: SessionHeader) => void
+  ): Promise<SessionHeader> {
+    if (source.session.id !== sessionId) throw new Error('Session identity cannot change')
+    let committed: SessionHeader | undefined
+    const persisted = (header: SessionHeader) => {
+      committed = header
+      onPersisted?.(header)
+    }
+    if (source.revision !== undefined) {
+      try {
+        if (
+          await this.persistCommand(sessionId, { type: 'append', messages }, true, undefined, {
+            expectedRevision: source.revision,
+            onPersisted: persisted,
+          })
+        )
+          return committed!
+      } catch (error) {
+        if (committed || !(error instanceof SessionWriteConflictError)) throw error
+      }
+    }
+    await this.updateSessionWithMessages(
+      sessionId,
+      (current) => {
+        if (!current) throw new SessionNotFoundError(sessionId)
+        assertUnchanged(current)
+        return { ...current, messages: [...current.messages, ...messages] }
+      },
+      { onFullSessionPersisted: persisted }
+    )
+    return committed!
   }
 
   async updateMessage(sessionId: string, messageId: string, updater: Updater<Message>): Promise<void> {
@@ -977,20 +1075,7 @@ export class SessionService {
       if (!refreshArchiveLists) {
         const committed = await this.writes.executeCommand(sessionId, { type: 'header', updater: {} })
         if (committed) {
-          if (committed.kind === 'rows')
-            await this.events.publish({
-              type: 'session-command-committed',
-              delta: committed.delta,
-              meta: committed.meta,
-              preserveCachedGeneratingMessages: true,
-            })
-          else
-            await this.events.publish({
-              type: 'session-updated',
-              session: committed.session,
-              meta: committed.meta,
-              preserveCachedGeneratingMessages: true,
-            })
+          await this.publishCommandResult(committed, true)
           return
         }
       }

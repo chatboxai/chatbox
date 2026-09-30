@@ -1,4 +1,10 @@
-import type { MessageRow, MessageRowStatus, SessionRecordV2, ThreadRow } from '../session/session-tree/types'
+import type {
+  MessageRow,
+  MessageRowMetadata,
+  MessageRowStatus,
+  SessionRecordV2,
+  ThreadRow,
+} from '../session/session-tree/types'
 import type { SessionContextRequest, SessionContextRows } from './session-context-source'
 import type { SessionTextTokenRead, SessionTextTokenStorePort } from './session-text-tokens'
 
@@ -8,7 +14,14 @@ export interface SessionRows {
   messages: MessageRow[]
 }
 
+export interface SessionStructureSnapshot extends SessionRowCommit {
+  threads: ThreadRow[]
+  messages: MessageRowMetadata[]
+}
+
 export interface SessionRowsDiff {
+  /** Structural edits retain the committed payload and require an expected revision. */
+  messageMetadataUpsert?: MessageRowMetadata[]
   /** Upserted rows with payloads identical to the expected revision. Stores may reuse those payloads only under CAS. */
   unchangedPayloadMessageIds?: string[]
   sessionId: string
@@ -151,6 +164,7 @@ export class SessionRowConflictError extends Error {
 export interface SessionRowStorePort extends Partial<SessionTextTokenStorePort> {
   initialize(): Promise<void>
   /** Rows, record and revision from one committed snapshot; null when the session has no visible rows. */
+  readStructure?(request: { sessionId: string; expectedRevision?: number }): Promise<SessionStructureSnapshot | null>
   readSnapshot(sessionId: string): Promise<SessionRowSnapshot | null>
   /** Reads only the selected path window. Stale cursors throw SessionRowConflictError; restart at the tail. */
   readMessageWindow(request: SessionMessageWindowRequest): Promise<SessionMessageWindow | null>

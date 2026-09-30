@@ -28,6 +28,8 @@ export interface MessageRow {
   message: Message
 }
 
+export type MessageRowMetadata = Omit<MessageRow, 'message'>
+
 export interface ThreadRow {
   sessionId: string
   threadId: string

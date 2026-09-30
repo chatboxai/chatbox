@@ -1,8 +1,10 @@
 import {
   createSessionMetaRecord,
+  MessageAnchorNotFoundError,
   RowBackedSessionRepository,
   type SessionMigrationOutcome,
 } from '@chatbox/core/application/session'
+import { SessionActionBlockedError } from '@chatbox/core/session/action-gates'
 import {
   BackupOperationBusyError,
   type BackupSessionStore,
@@ -120,7 +122,9 @@ async function normalizeRepositoryError<T>(
     if (
       error instanceof SessionRepositoryError ||
       error instanceof SessionWriteConflictError ||
-      error instanceof BackupOperationBusyError
+      error instanceof BackupOperationBusyError ||
+      error instanceof MessageAnchorNotFoundError ||
+      error instanceof SessionActionBlockedError
     )
       throw error
     throw new SessionRepositoryError(operation, error, sessionId)
@@ -397,6 +401,10 @@ export class CurrentSessionRepository implements SessionRepositoryPort {
 
   readSessionMessageWindow(request: SessionMessageWindowRequest): Promise<SessionMessageWindow | null> {
     return this.getData().readSessionMessageWindow(request)
+  }
+
+  getCurrentThreadIdentity(sessionId: string) {
+    return this.getData().getCurrentThreadIdentity(sessionId)
   }
 
   executeSessionCommand(sessionId: string, command: SessionCommand, expectedRevision?: number) {

@@ -1,3 +1,4 @@
+import type { SessionStructureSnapshot } from '@chatbox/core/ports'
 import { iterateIndexedDBBackupRows, beginIndexedDBBackupRestore } from './session-row-idb-backup'
 import {
   readStoredMessage,
@@ -98,7 +99,11 @@ function assertThreadRow(operation: SessionRowStoreOperation, sessionId: string,
   }
 }
 
-function assertMessageRow(operation: SessionRowStoreOperation, sessionId: string, row: MessageRow): void {
+function assertMessageRow(
+  operation: SessionRowStoreOperation,
+  sessionId: string,
+  row: Omit<MessageRow, 'message'>
+): void {
   if (!row.sessionId || !row.threadId || !row.messageId) {
     throw new SessionRowStoreError(operation, new Error('message row is missing an id'), sessionId)
   }
@@ -428,6 +433,25 @@ export class IndexedDBSessionRowStore implements SessionRowStorePort {
     })
   }
 
+  async readStructure(request: {
+    sessionId: string
+    expectedRevision?: number
+  }): Promise<SessionStructureSnapshot | null> {
+    return this.readSelectedSnapshot('read-messages', request, (tx, commit, threads, finish, fail) => {
+      const read = tx.objectStore(SESSION_ROW_MESSAGE_STORE).index(SESSION_INDEX).getAll(request.sessionId)
+      read.onerror = () => fail(read.error)
+      read.onsuccess = () =>
+        finish({
+          ...commit,
+          threads,
+          messages: (read.result as StoredMessageRow[]).map((row) => {
+            const { message: _message, payload: _payload, ...metadata } = row
+            return metadata
+          }),
+        })
+    })
+  }
+
   async readThreadSuffix(request: SessionThreadSuffixRequest): Promise<SessionMessagesSnapshot | null> {
     if (!request.threadId || !Number.isSafeInteger(request.afterSeq) || request.afterSeq < -1)
       throw new Error('Invalid thread suffix request')
@@ -699,6 +723,19 @@ export class IndexedDBSessionRowStore implements SessionRowStorePort {
           }
           for (const threadId of diff.threads.delete) {
             threadStore.delete([sessionId, threadId])
+          }
+          for (const row of diff.messageMetadataUpsert ?? []) {
+            if (expectedRevision === undefined) throw new Error('Structural edits require an expected revision')
+            assertMessageRow('apply-diff', sessionId, row)
+            const read = messageStore.get([sessionId, row.messageId])
+            read.onerror = () => fail(read.error)
+            read.onsuccess = () => {
+              if (!read.result) {
+                fail(new Error('Structural message is missing'))
+                return
+              }
+              messageStore.put({ ...read.result, ...row })
+            }
           }
           putStoredMessages(
             tx,

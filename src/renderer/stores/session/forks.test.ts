@@ -11,7 +11,10 @@ vi.mock('@/app/renderer-application', async () => {
   return {
     rendererApplication: {
       generationRuntime: new GenerationRuntimeStore(),
-      sessions: { updateSessionWithMessages: updateSessionWithMessagesMock },
+      sessions: {
+        executeStructureCommand: vi.fn().mockResolvedValue(null),
+        updateSessionWithMessages: updateSessionWithMessagesMock,
+      },
     },
   }
 })

@@ -126,7 +126,7 @@ describe('ThreadService', () => {
 
     await expect(harness.service.switch('session-1', 'history-1')).resolves.toBe(true)
 
-    expect(harness.cancelMessages).toHaveBeenCalledWith('session-1', current)
+    expect(harness.cancelMessages).not.toHaveBeenCalled()
     expect(harness.session.messages).toBe(history)
     expect(harness.session.threadName).toBe('History')
     expect(harness.session.settings?.sessionPromptContextSnapshot).toBe(historySnapshot)
@@ -269,11 +269,11 @@ describe('ThreadService', () => {
     expect(harness.copiedSource?.messageForksHash?.[historyPivot.id]).toBeDefined()
     expect(harness.session.threads).toEqual([concurrentThread])
     expect(harness.session.settings?.sessionPromptContextSnapshot).toBe(currentSnapshot)
-    expect(harness.cancelMessages).toHaveBeenCalledWith('session-1', historyMessages)
+    expect(harness.cancelMessages).not.toHaveBeenCalled()
   })
 
   test('cancels the messages discarded when removing the current thread', async () => {
-    const currentMessages = [message('current', 'user'), message('reply', 'assistant')]
+    const currentMessages = [message('current', 'user'), { ...message('reply', 'assistant'), generating: true }]
     const harness = createHarness({
       id: 'session-1',
       name: 'Session',
@@ -283,13 +283,13 @@ describe('ThreadService', () => {
 
     await expect(harness.service.removeCurrent('session-1')).resolves.toBe(true)
 
-    expect(harness.cancelMessages).toHaveBeenCalledWith('session-1', currentMessages)
+    expect(harness.cancelMessages).toHaveBeenCalledWith('session-1', [currentMessages[1]])
     expect(harness.session.threadName).toBe('')
   })
 
   test('cancels inactive fork replies when replacing the current conversation', async () => {
     const pivot = message('pivot', 'user')
-    const inactiveReply = message('inactive-reply', 'assistant')
+    const inactiveReply = { ...message('inactive-reply', 'assistant'), generating: true }
     const harness = createHarness({
       id: 'session-1',
       name: 'Session',
@@ -308,6 +308,6 @@ describe('ThreadService', () => {
 
     await harness.service.refreshContextAndCreateNew('session-1')
 
-    expect(harness.cancelMessages).toHaveBeenCalledWith('session-1', [pivot, inactiveReply])
+    expect(harness.cancelMessages).toHaveBeenCalledWith('session-1', [inactiveReply])
   })
 })

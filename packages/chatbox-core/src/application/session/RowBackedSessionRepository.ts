@@ -1,3 +1,17 @@
+import { planMessageStructure, applyMessageStructure } from './session-message-structure'
+import { planForkStructure, applyForkStructure } from './session-fork-command'
+import { planThreadStructure, applyThreadStructure, currentThreadIdentity } from './session-thread-command'
+import {
+  updateSessionTopologyFingerprint,
+  deriveSessionTopologyFingerprint,
+} from '../../session/session-tree/topology-fingerprint'
+import type {
+  SessionThreadOperation,
+  SessionMessageStructureOperation,
+  SessionStructureOperation,
+  CurrentThreadIdentity,
+} from '../../ports/session-structure-command'
+import type { StructurePlan } from './session-structure-plan'
 import { migrateMessage } from '@shared/utils/message'
 import { assertNoMessageDataUpdate, getSessionMetadataSnapshot } from './session-metadata'
 import { planSessionCommand, projectCommittedSessionCommand } from './session-command'
@@ -88,6 +102,20 @@ import {
   restoreMessageTextTokens,
 } from './session-text-tokens'
 
+function isMessageStructureOperation(
+  operation: SessionStructureOperation
+): operation is SessionMessageStructureOperation {
+  return (
+    operation.action === 'message-remove' ||
+    operation.action === 'message-insert-after' ||
+    operation.action === 'session-clear'
+  )
+}
+
+function isThreadOperation(operation: SessionStructureOperation): operation is SessionThreadOperation {
+  return operation.action.startsWith('thread-')
+}
+
 /** Most recently touched sessions whose last persisted rows stay in memory. */
 const BASELINE_LIMIT = 32
 const VERSION_TOKEN_LIMIT = BASELINE_LIMIT * 4
@@ -156,6 +184,7 @@ function describeError(error: unknown): string {
 
 function isEmptyDiff(diff: SessionRowsDiff): boolean {
   return (
+    !diff.messageMetadataUpsert?.length &&
     diff.threads.upsert.length === 0 &&
     diff.threads.delete.length === 0 &&
     diff.messages.upsert.length === 0 &&
@@ -683,7 +712,16 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
         if (revision !== undefined && actualRevision !== revision)
           throw new SessionWriteConflictError(sessionId, revision, actualRevision)
         let next: Session
-        if (prepared.type === 'header') {
+        let structureResult: import('../../ports/session-structure-command').SessionStructureResult | undefined
+        if (prepared.type === 'structure') {
+          const transformed = isThreadOperation(prepared.operation)
+            ? applyThreadStructure(previous, prepared.operation)
+            : isMessageStructureOperation(prepared.operation)
+              ? applyMessageStructure(previous, prepared.operation)
+              : applyForkStructure(previous, prepared.operation)
+          next = transformed.session
+          structureResult = transformed.result
+        } else if (prepared.type === 'header') {
           const patch =
             typeof prepared.updater === 'function'
               ? prepared.updater(getSessionMetadataSnapshot(previous))
@@ -699,12 +737,16 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
           baseSession: previous,
           changedMessageId: prepared.type === 'update' ? prepared.messageId : undefined,
         })
-        return { kind: 'full', session: this.baselines.get(sessionId)?.session ?? next, previous }
+        return { kind: 'full', session: this.baselines.get(sessionId)?.session ?? next, previous, structureResult }
       }
       const marker = await this.readRecord(sessionId)
       if (!marker || !isRowsSessionRecord(marker) || hasReleasedClientContent(marker))
         return fallback(command, expectedRevision)
       try {
+        if (command.type === 'structure') {
+          const result = await this.executeStructureNow(sessionId, command.operation, expectedRevision)
+          return result ?? fallback(command, expectedRevision)
+        }
         const window = await this.rows.readMessageWindow({ sessionId, limit: 1, expectedRevision })
         if (!window) return fallback(command, expectedRevision)
         const messageIds =
@@ -863,6 +905,106 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     current.textTokens = {
       sources: Object.fromEntries(Object.entries(previous.textTokens.sources).filter(([id]) => !changed.has(id))),
       results: [],
+    }
+  }
+
+  getCurrentThreadIdentity(sessionId: string): Promise<CurrentThreadIdentity | null> {
+    return this.enqueueSessionRead(sessionId, async (marker) => {
+      if (!marker) return null
+      if (isRowsSessionRecord(marker) && this.rows.readStructure) {
+        const snapshot = await this.rows.readStructure({ sessionId })
+        return snapshot ? currentThreadIdentity(snapshot) : null
+      }
+      const session = await this.getSessionNow(sessionId, { record: marker })
+      return session
+        ? { sessionId, firstMessageId: session.messages[0]?.id, lastArchivedThreadId: session.threads?.at(-1)?.id }
+        : null
+    })
+  }
+
+  private async executeStructureNow(
+    sessionId: string,
+    operation: SessionStructureOperation,
+    expectedRevision?: number
+  ): Promise<SessionCommandResult | null> {
+    if (!this.rows.readStructure) return null
+    const snapshot = await this.rows.readStructure({ sessionId, expectedRevision })
+    if (!snapshot) throw new SessionNotFoundError(sessionId)
+    const readMessages = async (messageIds: string[]) => {
+      if (!messageIds.length) return []
+      const selected = await this.rows.readMessages({ sessionId, messageIds, expectedRevision: snapshot.revision })
+      if (!selected) throw new SessionNotFoundError(sessionId)
+      return selected.messages.map((row) => ({
+        ...row,
+        message: migrateMessage({ ...row.message, contentParts: [...(row.message.contentParts ?? [])] }),
+      }))
+    }
+    const plan: StructurePlan | null = isThreadOperation(operation)
+      ? await planThreadStructure(snapshot, operation, readMessages)
+      : isMessageStructureOperation(operation)
+        ? await planMessageStructure(snapshot, operation, readMessages)
+        : await planForkStructure(snapshot, operation, readMessages)
+    if (!plan) return null
+    const beforeThreads = new Map(snapshot.threads.map((row) => [row.threadId, row]))
+    const beforeMessages = new Map(snapshot.messages.map((row) => [row.messageId, row]))
+    const afterThreads = new Map(plan.threads.map((row) => [row.threadId, row]))
+    const afterMessages = new Map(plan.messages.map((row) => [row.messageId, row]))
+    const payloadIds = new Set(plan.upsertMessages.map((row) => row.messageId))
+    const equal = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right)
+    const diff: SessionRowsDiff = {
+      sessionId,
+      threads: {
+        upsert: plan.threads.filter((row) => !equal(beforeThreads.get(row.threadId), row)),
+        delete: snapshot.threads.filter((row) => !afterThreads.has(row.threadId)).map((row) => row.threadId),
+      },
+      messages: {
+        upsert: plan.upsertMessages,
+        delete: snapshot.messages.filter((row) => !afterMessages.has(row.messageId)).map((row) => row.messageId),
+      },
+      messageMetadataUpsert: plan.messages.filter(
+        (row) => !payloadIds.has(row.messageId) && !equal(beforeMessages.get(row.messageId), row)
+      ),
+    }
+    const changedThreads = new Set([...diff.threads.upsert.map((row) => row.threadId), ...diff.threads.delete])
+    const changedMessages = new Set([
+      ...diff.messageMetadataUpsert!.map((row) => row.messageId),
+      ...diff.messages.upsert.map((row) => row.messageId),
+      ...diff.messages.delete,
+    ])
+    const fingerprint =
+      updateSessionTopologyFingerprint(
+        snapshot.record.topologyFingerprint,
+        {
+          threads: snapshot.threads.filter((row) => changedThreads.has(row.threadId)),
+          messages: snapshot.messages.filter((row) => changedMessages.has(row.messageId)),
+        },
+        {
+          threads: plan.threads.filter((row) => changedThreads.has(row.threadId)),
+          messages: plan.messages.filter((row) => changedMessages.has(row.messageId)),
+        }
+      ) ?? deriveSessionTopologyFingerprint(plan.threads, plan.messages)
+    const record = plan.result.applied ? { ...plan.record, topologyFingerprint: fingerprint } : snapshot.record
+    let revision = snapshot.revision
+    if (!isEmptyDiff(diff) || record !== snapshot.record) {
+      if (!Number.isSafeInteger(revision + 1)) throw new Error('Session revision exhausted')
+      await this.rows.applyDiff(diff, { record, revision: ++revision }, snapshot.revision)
+      this.forgetSessionState(sessionId)
+    }
+    const active = plan.threads.find((thread) => thread.threadId === record.activeThreadId)
+    const previousActive = snapshot.threads.find((thread) => thread.threadId === snapshot.record.activeThreadId)
+    return {
+      kind: 'rows',
+      delta: {
+        sessionId,
+        previousRevision: snapshot.revision,
+        revision,
+        record,
+        header: { ...contextRecordHeader(record), threadName: active?.name ?? undefined },
+        previousHeader: { ...contextRecordHeader(snapshot.record), threadName: previousActive?.name ?? undefined },
+        diff,
+        appendedMessageIds: [],
+        structureResult: plan.result,
+      },
     }
   }
 

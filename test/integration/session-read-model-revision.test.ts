@@ -252,6 +252,88 @@ describe.each(['sqlite', 'indexeddb'] as const)('full read-model identity throug
     }
   )
 
+  it.each(driver === 'sqlite' ? (['tokens', 'newer-command'] as const) : (['newer-command'] as const))(
+    'preserves %s arriving during structural history selection',
+    async (concurrent) => {
+      const h = await setup(driver)
+      await h.repository.setSession(session())
+      const observer = new QueryObserver(
+        h.application.queryClient,
+        h.application.sessionQueryBridge.definitions.readModel('s')
+      )
+      cleanup.push(observer.subscribe(() => {}))
+      await vi.waitFor(() => expect(observer.getCurrentResult().data?.kind).toBe('window'))
+      let release!: () => void
+      let started!: () => void
+      const waiting = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const reading = new Promise<void>((resolve) => {
+        started = resolve
+      })
+      const read = h.repository.getSessionReadModel.bind(h.repository)
+      vi.spyOn(h.repository, 'getSessionReadModel').mockImplementationOnce(async (id) => {
+        const result = await read(id)
+        started()
+        await waiting
+        return result
+      })
+      const structure = h.application.sessions.executeStructureCommand('s', {
+        action: 'thread-create',
+        archiveId: 'history',
+        now: 10,
+        systemMessageId: 'new-system',
+        defaultSystemPrompt: 'Prompt',
+      })
+      try {
+        await reading
+        if (concurrent === 'tokens') {
+          const sources = (await h.repository.getCompleteSessionSource('s'))!.textTokens!.sources
+          for (const [id, tokens] of [
+            ['m118', 77],
+            ['m119', 88],
+          ] as const) {
+            const source = sources[id]
+            await h.application.sessions.acceptSessionTextTokenResults('s', [
+              {
+                source,
+                value: { tokenizerType: 'default', sourceDigest: source.textDigest, tokens, calculatedAt: 1 },
+              },
+            ])
+          }
+          const current = observer.getCurrentResult().data
+          expect(current?.kind).toBe('window')
+          if (current?.kind !== 'window') throw new Error('Expected loaded window')
+          expect(current.window.messages.find((row) => row.message.id === 'm118')?.message.tokenCountMap?.default).toBe(
+            77
+          )
+          expect(current.window.messages.find((row) => row.message.id === 'm119')?.message.tokenCountMap?.default).toBe(
+            88
+          )
+        } else {
+          await h.application.sessions.insertMessage('s', {
+            id: 'newer',
+            role: 'assistant',
+            generating: true,
+            contentParts: [],
+          })
+        }
+      } finally {
+        release()
+        await structure
+      }
+      const model = observer.getCurrentResult().data
+      expect(model?.kind).toBe('full')
+      if (model?.kind !== 'full') throw new Error('Expected complete history')
+      expect(model.revision).toBe(await h.rows.getRevision('s'))
+      if (concurrent === 'tokens') {
+        const archived = model.session.threads?.find((thread) => thread.id === 'history')
+        expect(archived?.messages.find((message) => message.id === 'm118')?.tokenCountMap?.default).toBe(77)
+        expect(archived?.messages.find((message) => message.id === 'm119')?.tokenCountMap?.default).toBe(88)
+      } else expect(model.session.messages.at(-1)?.id).toBe('newer')
+    }
+  )
+
   it('retains live reply text when history navigation loads its first complete query', async () => {
     const h = await setup(driver)
     const original = session()

@@ -1,3 +1,5 @@
+import { SessionActionBlockedError } from '@chatbox/core/session/action-gates'
+import { notifySessionLockBlocked } from '@/utils/session-lock-copy'
 import { SessionEventBus } from '@chatbox/core/application/session'
 import type { Message, Session } from '@shared/types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -13,7 +15,11 @@ vi.mock('@/app/renderer-application', async () => {
   return {
     rendererApplication: {
       generationRuntime: new GenerationRuntimeStore(),
-      sessions: { removeMessage: removeMessageMock, updateMessage: updateMessageMock },
+      sessions: {
+        executeStructureCommand: vi.fn().mockResolvedValue(null),
+        removeMessage: removeMessageMock,
+        updateMessage: updateMessageMock,
+      },
       sessionQueryBridge: { getSession: getSessionMock },
     },
   }
@@ -24,6 +30,7 @@ vi.mock('@/adapters', () => ({ createModel: vi.fn() }))
 vi.mock('@/packages/context-management', () => ({ runCompactionWithUIState: vi.fn() }))
 vi.mock('@/packages/model-setting-utils', () => ({ getModelDisplayName: vi.fn() }))
 vi.mock('@/packages/token', () => ({ estimateTokensFromMessages: vi.fn() }))
+vi.mock('@/utils/session-lock-copy', () => ({ notifySessionLockBlocked: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/utils/sentry', () => ({ reportError: vi.fn() }))
 vi.mock('./action-guard', () => ({ guardSessionAction: vi.fn().mockResolvedValue(true) }))
 vi.mock('./session-settings', () => ({ getSessionSettings: vi.fn() }))
@@ -50,6 +57,7 @@ function message(id: string): Message {
 
 describe('removeMessage runtime cleanup', () => {
   beforeEach(() => {
+    vi.mocked(rendererApplication.sessions.executeStructureCommand).mockReset().mockResolvedValue(null)
     getSessionMock.mockReset()
     removeMessageMock.mockReset()
     removeMessageMock.mockImplementation((_sessionId: string, _messageId: string, onPersisted?: () => void) => {
@@ -90,6 +98,31 @@ describe('removeMessage runtime cleanup', () => {
 
     expect(removeMessageMock).toHaveBeenCalledWith('session-1', 'reply-1', expect.any(Function))
     expect(generationRuntimeStore.get('session-1', 'reply-1')).toBeUndefined()
+  })
+
+  it('reports blocked summary deletion and leaves the message and runtime intact', async () => {
+    vi.mocked(rendererApplication.sessions.executeStructureCommand).mockRejectedValueOnce(
+      new SessionActionBlockedError('delete-summary', 'generating')
+    )
+    await expect(removeMessage('session-1', 'summary')).resolves.toBeUndefined()
+    expect(notifySessionLockBlocked).toHaveBeenCalledWith('generating', expect.any(Function))
+    expect(removeMessageMock).not.toHaveBeenCalled()
+  })
+
+  it('discards a paused runtime only after the structure content commit', async () => {
+    const runtime = generationRuntimeStore.start('session-1', 'paused-structure')
+    generationRuntimeStore.setPhase('session-1', 'paused-structure', 'paused', runtime)
+    vi.mocked(rendererApplication.sessions.executeStructureCommand).mockImplementationOnce(
+      async (_id, _operation, committed) => {
+        expect(runtime.abortController.signal.aborted).toBe(false)
+        const result = { applied: true, cancelMessageIds: [], affectedMessageIds: ['paused-structure'] }
+        committed?.(result)
+        throw new Error('metadata failed')
+      }
+    )
+    await expect(removeMessage('session-1', 'paused-structure')).rejects.toThrow('metadata failed')
+    expect(runtime.abortController.signal.aborted).toBe(true)
+    expect(removeMessageMock).not.toHaveBeenCalled()
   })
 
   it('retains failed Stop ownership until a competing terminal write durably releases it', async () => {

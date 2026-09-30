@@ -137,6 +137,19 @@ describe('ChatMessageService.replyBelow', () => {
     expect(invalid.get().messages).toHaveLength(3)
   })
 
+  it('rechecks compaction when the fallback updater executes', async () => {
+    const h = harness()
+    const write = h.updateSessionWithMessages.getMockImplementation()!
+    h.updateSessionWithMessages.mockImplementationOnce(async (id, updater) => {
+      h.compact()
+      return write(id, updater)
+    })
+    await expect(h.service.replyBelow('concurrent-chat', 'prompt')).rejects.toMatchObject({ reason: 'compaction' })
+    expect(h.get().messages).toHaveLength(3)
+    expect(h.orchestrate).not.toHaveBeenCalled()
+    expect(h.runtime.waitForGenerationPreparationLeases('concurrent-chat')).toBeUndefined()
+  })
+
   it('releases candidate preparation admission after a rejected persistence write', async () => {
     const h = harness()
     h.updateSessionWithMessages.mockRejectedValueOnce(new Error('Disk unavailable'))

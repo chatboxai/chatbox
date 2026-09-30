@@ -99,6 +99,7 @@ vi.mock('i18next', () => ({ t: (key: string) => key }))
 vi.mock('@/i18n', () => ({ default: { t: (key: string) => key, language: 'en' } }))
 
 vi.mock('@/app/renderer-application', async () => {
+  const { getCurrentThreadTarget } = await import('@chatbox/core/application/session')
   const { BackupOperationCoordinator } = await import('@chatbox/core/backup')
   const { GenerationRuntimeStore } = await import('@chatbox/core/generation')
   const { QueryClient } = await import('@tanstack/react-query')
@@ -108,6 +109,11 @@ vi.mock('@/app/renderer-application', async () => {
       generationRuntime: new GenerationRuntimeStore(),
       queryClient: new QueryClient(),
       sessions: {
+        getCurrentThreadIdentity: async (sessionId: string) => {
+          const session = (await getSessionMock(sessionId)) as Session | null
+          return session ? getCurrentThreadTarget(session) : null
+        },
+        executeStructureCommand: vi.fn().mockResolvedValue(null),
         readSessionMessages: readSessionMessagesMock,
         updateSessionWithMessages,
         updateSession: updateSessionMock,
@@ -356,7 +362,7 @@ describe('fork actions', () => {
   })
 
   test('createNewFork skips update when no trailing messages', async () => {
-    uuidQueue.push('id-1')
+    uuidQueue.push('seed-list', 'stored-list', 'active-list')
     const pivot = makeMessage('pivot', 'user')
     const session: Session = {
       id: 'session-2',

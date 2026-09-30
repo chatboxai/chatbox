@@ -1,7 +1,7 @@
-import type { MessageRow, ThreadRow } from './types'
+import type { MessageRowMetadata, ThreadRow } from './types'
 
 /** Stable noncryptographic identity for branch structure, independent of message contents. */
-export function deriveLegacySessionTopologyFingerprint(threads: ThreadRow[], messages: MessageRow[]): string {
+export function deriveLegacySessionTopologyFingerprint(threads: ThreadRow[], messages: MessageRowMetadata[]): string {
   let first = 0x811c9dc5
   let second = 0x9e3779b9
   const add = (value: unknown) => {
@@ -40,7 +40,7 @@ function topologyItem(value: unknown): [number, number] {
 function addTopologyRows(
   summary: TopologySummary,
   threads: readonly ThreadRow[],
-  messages: readonly MessageRow[],
+  messages: readonly MessageRowMetadata[],
   sign: 1 | -1
 ): void {
   const add = (value: unknown) => {
@@ -72,7 +72,7 @@ function encodeTopologySummary(summary: TopologySummary): string {
 /** Non-security topology identity. Counts and additive dual hashes support selected-row commits. */
 export function deriveSessionTopologyFingerprint(
   threads: readonly ThreadRow[],
-  messages: readonly MessageRow[]
+  messages: readonly MessageRowMetadata[]
 ): string {
   const summary: TopologySummary = { threads: 0, messages: 0, first: 0, second: 0 }
   addTopologyRows(summary, threads, messages, 1)
@@ -82,8 +82,8 @@ export function deriveSessionTopologyFingerprint(
 /** Null means the persisted identity requires a full write to establish this version. */
 export function updateSessionTopologyFingerprint(
   fingerprint: string | undefined,
-  before: { threads: readonly ThreadRow[]; messages: readonly MessageRow[] },
-  after: { threads: readonly ThreadRow[]; messages: readonly MessageRow[] }
+  before: { threads: readonly ThreadRow[]; messages: readonly MessageRowMetadata[] },
+  after: { threads: readonly ThreadRow[]; messages: readonly MessageRowMetadata[] }
 ): string | null {
   const match = fingerprint?.match(/^v2:(\d+):(\d+):([0-9a-f]{8}):([0-9a-f]{8})$/)
   if (!match) return null

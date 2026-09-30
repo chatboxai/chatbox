@@ -1,3 +1,4 @@
+import type { SessionStructureSnapshot } from '../ports/session-row-store'
 import type { SessionThreadSuffixRequest } from '../ports/session-row-store'
 import { assertSessionThreadPageRevision, validateSessionThreadPageRequest } from '../persistence/session-thread-page'
 import {
@@ -133,6 +134,22 @@ export class InMemorySessionRowStore implements SessionRowStorePort {
       record: clone(state.record),
       revision: state.revision,
     })
+  }
+
+  async readStructure(request: {
+    sessionId: string
+    expectedRevision?: number
+  }): Promise<SessionStructureSnapshot | null> {
+    const state = this.sessions.get(request.sessionId)
+    assertSessionReadRevision(request, this.revisions.get(request.sessionId) ?? null)
+    return state
+      ? clone({
+          record: state.record,
+          revision: state.revision,
+          threads: [...state.threads.values()],
+          messages: [...state.messages.values()].map(({ message: _message, ...metadata }) => metadata),
+        })
+      : null
   }
 
   async readThreadsPage(request: SessionThreadPageRequest): Promise<SessionThreadPage | null> {
@@ -302,6 +319,12 @@ export class InMemorySessionRowStore implements SessionRowStorePort {
           throw new Error(`thread ${thread.threadId} belongs to session ${thread.sessionId}`)
         }
         next.threads.set(thread.threadId, clone(thread))
+      }
+      for (const row of diff.messageMetadataUpsert ?? []) {
+        const previous = next.messages.get(row.messageId)
+        if (expectedRevision === undefined || !previous || row.sessionId !== diff.sessionId)
+          throw new Error('Invalid structural message edit')
+        next.messages.set(row.messageId, { ...clone(row), message: previous.message })
       }
       for (const message of diff.messages.upsert) {
         requireIdentity(message.sessionId, message.threadId, message.messageId)

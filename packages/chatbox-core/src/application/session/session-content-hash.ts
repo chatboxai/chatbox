@@ -5,13 +5,17 @@ export function sessionContentHash(value: unknown): string {
   let second = 0x9e3779b9
   const append = (text: string) => {
     length += text.length
+    let firstHash = first
+    let secondHash = second
     for (let i = 0; i < text.length; i++) {
       const code = text.charCodeAt(i)
-      first = Math.imul(first ^ code, 0x01000193) >>> 0
-      first ^= first >>> 13
-      second = Math.imul(second ^ code, 0x01000193) >>> 0
-      second ^= second >>> 13
+      firstHash = Math.imul(firstHash ^ code, 0x01000193) >>> 0
+      firstHash ^= firstHash >>> 13
+      secondHash = Math.imul(secondHash ^ code, 0x01000193) >>> 0
+      secondHash ^= secondHash >>> 13
     }
+    first = firstHash
+    second = secondHash
   }
   const string = (text: string) => {
     append('"')

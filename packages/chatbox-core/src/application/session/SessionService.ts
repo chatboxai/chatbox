@@ -573,6 +573,14 @@ export class SessionService {
     )
   }
 
+  async insertMessages(sessionId: string, messages: readonly Message[]): Promise<void> {
+    if (!messages.length) return
+    await this.updateSessionWithMessages(sessionId, (session) => {
+      if (!session) throw new SessionNotFoundError(sessionId)
+      return messages.reduce((current, message) => applyMessageInsert(current, sessionId, message), session)
+    })
+  }
+
   async updateMessage(sessionId: string, messageId: string, updater: Updater<Message>): Promise<void> {
     await this.updateSessionWithMessages(
       sessionId,

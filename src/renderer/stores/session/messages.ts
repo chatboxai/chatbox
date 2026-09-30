@@ -22,7 +22,7 @@ import { rendererApplication } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
 import { runCompactionWithUIState } from '@/packages/context-management'
 import { getModelDisplayName } from '@/packages/model-setting-utils'
-import { estimateTokensFromMessages } from '@/packages/token'
+import { estimateTokensFromMessages, type TokenModel } from '@/packages/token'
 import platform from '@/platform'
 import { clearMessageGenerationStopOperation } from '@/stores/generationStopOperations'
 import { reportError } from '@/utils/sentry'
@@ -87,6 +87,24 @@ export async function attachLargeFileRagMetadata(sessionId: string, message: Mes
 }
 
 /**
+ * Refreshes a message's word and token counts. `dropTokenCaches` clears cached
+ * token entries first, because the estimate trusts a carried map entry that new
+ * text invalidates.
+ */
+function applyMessageCounts(
+  message: Message,
+  tokenModel: TokenModel | undefined,
+  options: { dropTokenCaches?: boolean } = {}
+) {
+  message.wordCount = countMessageWords(message)
+  if (options.dropTokenCaches) {
+    message.tokenCountMap = undefined
+    message.tokenCountApproximate = undefined
+  }
+  message.tokenCount = estimateTokensFromMessages([message], 'output', tokenModel)
+}
+
+/**
  * 在当前主题的最后插入一条消息。
  * @param sessionId
  * @param msg
@@ -96,10 +114,9 @@ export async function insertMessage(sessionId: string, msg: Message) {
   if (!session) {
     return
   }
-  msg.wordCount = countMessageWords(msg)
   // The session model addresses both the tokenizer and the draft worker's
   // remembered exact count for a long draft being sent.
-  msg.tokenCount = estimateTokensFromMessages([msg], 'output', getSessionTokenModel(session))
+  applyMessageCounts(msg, getSessionTokenModel(session))
   return await rendererApplication.sessions.insertMessage(session.id, msg)
 }
 
@@ -121,8 +138,7 @@ export async function insertMessageAfter(
     // successful write; let insertMessage raise the same error it always does.
     if (!options.requireAnchor) return
   }
-  msg.wordCount = countMessageWords(msg)
-  msg.tokenCount = estimateTokensFromMessages([msg], 'output', session ? getSessionTokenModel(session) : undefined)
+  applyMessageCounts(msg, session ? getSessionTokenModel(session) : undefined)
 
   await rendererApplication.sessions.insertMessage(sessionId, msg, afterMsgId, options)
 }
@@ -144,12 +160,7 @@ export async function modifyMessage(
     return
   }
   if (refreshCounting) {
-    updated.wordCount = countMessageWords(updated)
-    // Cleared first: the estimate below trusts a carried map entry, and the
-    // edited text invalidates whatever the message carried.
-    updated.tokenCountMap = undefined
-    updated.tokenCountApproximate = undefined
-    updated.tokenCount = estimateTokensFromMessages([updated], 'output', getSessionTokenModel(session))
+    applyMessageCounts(updated, getSessionTokenModel(session), { dropTokenCaches: true })
   }
 
   // 更新消息时间戳
@@ -190,12 +201,7 @@ export async function persistStreamingMessage(
   options?: { checkpoint?: boolean; refreshCounting?: boolean; onlyIfGenerating?: boolean }
 ): Promise<void> {
   if (options?.refreshCounting) {
-    message.wordCount = countMessageWords(message)
-    // Cleared first: the estimate below trusts a carried map entry, and the
-    // streamed text invalidates whatever the message carried.
-    message.tokenCountMap = undefined
-    message.tokenCountApproximate = undefined
-    message.tokenCount = estimateTokensFromMessages([message])
+    applyMessageCounts(message, undefined, { dropTokenCaches: true })
   }
   message.timestamp = Date.now()
   const snapshot = snapshotStreamingMessage(message)
@@ -350,17 +356,18 @@ export async function submitNewUserMessageUnlocked(
     }
   }
 
-  // Invoke callback after compaction succeeds, before user message is inserted
-  // This allows caller to clear draft at the right time
-  params.onUserMessageReady?.()
-
   let { newUserMsg } = params
   const { needGenerating } = params
   const webBrowsing = getSessionWebBrowsing(sessionId, settings.provider)
 
-  // 先在聊天列表中插入发送的用户消息
-  await insertMessage(sessionId, newUserMsg)
-  newUserMsg = await attachLargeFileRagMetadata(sessionId, newUserMsg)
+  const insertTogether = platform.type === 'mobile' && needGenerating
+  if (!insertTogether) {
+    // Invoke callback after compaction succeeds, before user message is inserted
+    // This allows caller to clear draft at the right time
+    params.onUserMessageReady?.()
+    await insertMessage(sessionId, newUserMsg)
+    newUserMsg = await attachLargeFileRagMetadata(sessionId, newUserMsg)
+  }
 
   const globalSettings = settingsStore.getState().getSettings()
   const isPro = settingActions.isPro()
@@ -388,7 +395,15 @@ export async function submitNewUserMessageUnlocked(
   }
   if (needGenerating) {
     newAssistantMsg.generating = true
-    await insertMessage(sessionId, newAssistantMsg)
+    if (insertTogether) {
+      const tokenModel = getSessionTokenModel(session)
+      for (const message of [newUserMsg, newAssistantMsg]) applyMessageCounts(message, tokenModel)
+      await rendererApplication.sessions.insertMessages(sessionId, [newUserMsg, newAssistantMsg])
+      // Both messages are saved together, so the draft is released only now.
+      params.onUserMessageReady?.()
+    } else {
+      await insertMessage(sessionId, newAssistantMsg)
+    }
   }
 
   try {

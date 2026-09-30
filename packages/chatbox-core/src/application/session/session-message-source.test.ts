@@ -9,6 +9,7 @@ import {
   type SessionMessageDerivedPatch,
 } from './message-derived-data'
 import type { Message, Session } from '../../types/session'
+import { isRowsSessionRecord } from '../../ports/session-record-store'
 
 function textPatch(message: Message, tokens = 7): SessionMessageDerivedPatch {
   return {
@@ -200,20 +201,27 @@ describe('targeted message reads and derived commits', () => {
     expect(await repo.readSessionMessages({ sessionId: session.id, messageIds: ['question'] })).toBeNull()
   })
 
-  it.each([false, true])('uses the authoritative legacy record through safe promotion (%s)', async (interrupted) => {
+  it.each([false, true])('preserves legacy derived data through explicit migration (%s)', async (interrupted) => {
     const session = contextSession()
     const { repo, rows, records } = await setup(session)
     if (!interrupted) await rows.deleteRows(session.id)
     await records.setRecord(session)
     const source = await repo.readSessionMessages({ sessionId: session.id, messageIds: ['question'] })
     expect(source?.revision).toBeNull()
+    const rowRevision = await rows.getRevision(session.id)
     const result = await repo.patchSessionMessageDerivedData(session.id, [textPatch(session.messages.at(-2)!)])
     expect(result.previousRevision).toBeNull()
-    expect(result.revision).toBe(await rows.getRevision(session.id))
+    expect(result.revision).toBeNull()
+    expect(await rows.getRevision(session.id)).toBe(rowRevision)
+    expect(isRowsSessionRecord((await records.getRecord(session.id))!)).toBe(false)
     expect(
       (await repo.readSessionMessages({ sessionId: session.id, messageIds: ['question'] }))?.messages[0].tokenCountMap
         ?.default
     ).toBe(7)
-    expect((await repo.getSession(session.id))?.messages).toHaveLength(session.messages.length)
+    await repo.migrateSession(session.id)
+    const complete = await repo.getSession(session.id)
+    expect(complete?.messages).toHaveLength(session.messages.length)
+    expect(complete?.messages.find((message) => message.id === 'question')?.tokenCountMap?.default).toBe(7)
+    expect(isRowsSessionRecord((await records.getRecord(session.id))!)).toBe(true)
   })
 })

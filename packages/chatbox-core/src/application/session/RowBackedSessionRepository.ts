@@ -450,8 +450,9 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
           const marker = await this.records.getRecord(sessionId)
           if (!marker) throw new SessionNotFoundError(sessionId)
           if (!isRowsSessionRecord(marker)) {
-            const session = await this.getSessionNow(sessionId, { record: marker })
-            if (!session) throw new SessionNotFoundError(sessionId)
+            // The exclusive session lock covers this read and the derived-only update.
+            // A legacy record remains authoritative even when interrupted row data exists.
+            const session = migrateSession(marker)
             let updated = session
             const accepted: SessionMessageDerivedPatch[] = []
             for (const patch of patches) {
@@ -461,11 +462,11 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
               updated = applyMessageUpdate(updated, sessionId, patch.messageId, result.message)
               accepted.push(result.patch)
             }
-            if (accepted.length) await this.setSessionNow(updated, { baseSession: session })
-            const committedMarker = accepted.length ? await this.records.getRecord(sessionId) : marker
-            const revision =
-              committedMarker && isRowsSessionRecord(committedMarker) ? await this.rows.getRevision(sessionId) : null
-            return { sessionId, previousRevision: null, revision, patches: accepted }
+            if (accepted.length) {
+              await this.run('set-session', sessionId, () => this.records.setRecord(updated))
+              this.forgetSessionState(sessionId)
+            }
+            return { sessionId, previousRevision: null, revision: null, patches: accepted }
           }
           const snapshot = await this.rows.readMessages({
             sessionId,

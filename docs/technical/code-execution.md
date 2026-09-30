@@ -82,6 +82,20 @@ Chat 模式不再向模型注入底层 `sandbox_*` 工具，旧的 `toolsets/san
 - 递归文件发现和内容搜索使用应用内置 ripgrep，统一结果数量、超时、重目录排除和 Rust regex 语义；不使用 Node 递归遍历。
 - 本地 `create_download` 直接调用 `persistArtifact`。相对路径基于会话工作目录解析，持久化前进行真实路径和允许根目录校验，不再通过 Shell 执行 `test` / `realpath`。
 
+## 宿主命令的输出与后台进程
+
+`run_command` 走宿主执行路径时，由 `src/main/skills/user-exec-runner.ts` 管理命令的输出管道。包装 shell 退出后，正常关闭的管道立即完成；被后台进程持有的管道最多额外排空约 1 秒。输出文件写入发生背压时会继续等待读取恢复，整个调用仍受命令超时限制；超时预算包含输出排空阶段。
+
+工具完成后会关闭其持有的管道读端。需要在调用结束后继续运行的服务、代理或 watcher 必须自行重定向 stdout/stderr，否则后续写入可能收到 `SIGPIPE` / `EPIPE` 并退出。POSIX 示例：
+
+```bash
+npm run dev > /tmp/dev-server.log 2>&1 < /dev/null &
+```
+
+Windows 可使用 `Start-Process` 的 `-RedirectStandardOutput` 和 `-RedirectStandardError`，分别指向两个日志文件。长期日志不属于已经完成的工具输出，需通过文件工具读取。
+
+取消、超时和输出超限会请求终止进程树，并在缺少退出事件时于 5 秒后强制完成工具结果。在 POSIX 上，退出排空阶段的取消会补发进程组 `SIGKILL`。Windows 的 `taskkill /T` 无法保证回收父进程已退出后脱离进程树的守护进程；工具结果完成不等于这类进程已经退出。
+
 ## Agent Mode
 
 ### 状态模型

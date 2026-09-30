@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -167,6 +167,58 @@ describe.skipIf(process.platform === 'win32')('user_exec cancellation', () => {
       expect(readFileSync(result.outputFile, 'utf8')).toContain('x'.repeat(20_000))
     } finally {
       rmSync(result.outputFile, { force: true })
+    }
+  })
+
+  it('settles after a short drain window when a background process holds the pipes', async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'chatbox-pipe-leak-'))
+    const startedAt = Date.now()
+    try {
+      const result = await executeUserExecCommand({
+        command: 'sleep 30 & echo $! > daemon.pid; echo started',
+        cwd: root,
+        toolCallId: 'pipe-leak',
+      })
+      expect(Date.now() - startedAt).toBeLessThan(6_000)
+      expect(result).toMatchObject({ success: true, exitCode: 0 })
+      expect(result.stdout).toContain('started')
+    } finally {
+      if (existsSync(path.join(root, 'daemon.pid'))) {
+        try {
+          process.kill(Number(readFileSync(path.join(root, 'daemon.pid'), 'utf8')), 'SIGKILL')
+        } catch {}
+      }
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it.each(['cancel', 'timeout'] as const)('kills SIGTERM-resistant descendants on %s', async (reason) => {
+    const root = mkdtempSync(path.join(tmpdir(), 'chatbox-resistant-child-'))
+    const pidPath = path.join(root, 'daemon.pid')
+    let pid: number | undefined
+    const params = {
+      command: `bash -c 'trap "" TERM; echo $$ > daemon.pid; while :; do sleep 1; done' & wait`,
+      cwd: root,
+      sessionId: 'resistant-child',
+      toolCallId: reason,
+      timeout: reason === 'timeout' ? 2_000 : 15_000,
+    }
+    const execution = executeUserExecCommand(params)
+    try {
+      await vi.waitFor(() => expect(existsSync(pidPath)).toBe(true), { timeout: 1_500 })
+      pid = Number(readFileSync(pidPath, 'utf8'))
+      if (reason === 'cancel') expect(cancelUserExecCommand(params)).toEqual({ killed: true })
+      await expect(execution).resolves.toMatchObject({ success: false })
+      await vi.waitFor(() => expect(() => process.kill(pid as number, 0)).toThrow(), { timeout: 4_000 })
+    } finally {
+      cancelUserExecCommand(params)
+      if (pid) {
+        try {
+          process.kill(pid, 'SIGKILL')
+        } catch {}
+      }
+      await execution
+      rmSync(root, { recursive: true, force: true })
     }
   })
 

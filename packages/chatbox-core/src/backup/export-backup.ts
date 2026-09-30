@@ -10,7 +10,12 @@ import {
 } from './archive-layout'
 import { sha256Checksum } from './codec'
 import { normalizeBackupExportItems } from './export-items'
-import { type BackupExportPlan, prepareBackupExport, preparedSessionReader } from './preflight'
+import {
+  type BackupExportPlan,
+  type PreparedSessionEntry,
+  prepareBackupExport,
+  preparedSessionReader,
+} from './preflight'
 import { BackupReadError } from './read-error'
 import { BackupResourceBudgetError, BackupResourceCatalog } from './resource-catalog'
 import { collectGlobalResourceReferences, collectSessionResourceReferences, prepareSessionForBackup } from './resources'
@@ -38,7 +43,7 @@ import {
   MAX_BACKUP_JSON_ENTRY_BYTES,
   validateBackupManifestGraph,
 } from './types'
-import { createZipStream, DEFAULT_ZIP_LIMITS, type ZipArchiveEntry } from './zip'
+import { createZipStream, DEFAULT_ZIP_LIMITS, isDeflatedZipData, type ZipArchiveEntry } from './zip'
 
 interface SessionEntryState {
   entry: BackupSessionEntry
@@ -57,6 +62,8 @@ export interface BackupExportWriteResult {
 export interface BackupExportOptions {
   sessionStore?: BackupSessionStore
   prepared?: BackupExportPlan
+  /** Archive entries completed during preparation; each is removed once written. */
+  preparedSessionEntries?: Map<string, PreparedSessionEntry>
   /** Payloads up to this many bytes are parsed natively during classification and export. */
   nativePayloadLimit?: number
   legacyTopologies?: ReadonlyMap<string, string>
@@ -140,9 +147,10 @@ export async function* enforceArchiveLimits(
     entryCount++
     if (entryCount > DEFAULT_ZIP_LIMITS.maxEntries) throw new Error('Backup contains too many entries')
     const maxEntryBytes = backupEntryByteLimit(entry.path)
-    if (entry.data instanceof Uint8Array) {
-      if (entry.data.length > maxEntryBytes) throw new Error(`Backup entry is too large: ${entry.path}`)
-      totalUncompressedBytes += entry.data.length
+    if (entry.data instanceof Uint8Array || isDeflatedZipData(entry.data)) {
+      const size = entry.data instanceof Uint8Array ? entry.data.length : entry.data.size
+      if (size > maxEntryBytes) throw new Error(`Backup entry is too large: ${entry.path}`)
+      totalUncompressedBytes += size
       if (totalUncompressedBytes > DEFAULT_ZIP_LIMITS.maxTotalUncompressedBytes) {
         throw new Error('Backup uncompressed size exceeds the safety limit')
       }
@@ -246,12 +254,14 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
         JSON.stringify([...new Set(options.selectedSessionIds)]) !== JSON.stringify(prepared.selectedSessionIds))
     )
       throw new Error('Backup selection changed; prepare the export again')
-    if (prepared.formatVersion === 3)
+    if (prepared.formatVersion === 3) {
+      prepared.entries?.clear()
       return exportShardedBackup(options, {
         store: options.sessionStore,
         prepared,
         nativePayloadLimit: options.nativePayloadLimit,
       })
+    }
     return exportBackupArchive({
       ...options,
       sessionStore: undefined,
@@ -268,6 +278,7 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
         )
       ),
       readSession: preparedSessionReader({ ...options, sessionStore: options.sessionStore }, prepared),
+      preparedSessionEntries: prepared.entries,
     })
   }
   if (options.sharded) return exportShardedBackup(options, options.sharded)
@@ -316,6 +327,27 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
           total: sessionIds.length,
           label: metaById.get(sessionId)?.name,
         })
+        const prepared = options.preparedSessionEntries?.get(sessionId)
+        if (prepared) {
+          options.preparedSessionEntries?.delete(sessionId)
+          warnings.push(...prepared.sourceWarnings, ...prepared.warnings)
+          catalog.add(prepared.references)
+          const path = `sessions/${await safeSessionPathComponent(sessionId, checksum)}/session.json`
+          sessions.push({
+            entry: {
+              path,
+              size: prepared.size,
+              checksum: prepared.checksum,
+              legacyTopology: options.legacyTopologies?.get(sessionId),
+              id: sessionId,
+              meta: deriveSessionMeta(prepared.session, metaById.get(sessionId)),
+              resourceIds: [],
+            },
+            resourceStorageKeys: new Set(prepared.references.map((reference) => reference.storageKey)),
+          })
+          yield { path, data: prepared.data, compress: true }
+          continue
+        }
         try {
           const session = options.readSession
             ? await options.readSession(sessionId, (sourceWarnings) => warnings.push(...sourceWarnings))

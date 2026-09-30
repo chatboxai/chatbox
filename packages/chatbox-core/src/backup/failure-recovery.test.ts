@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest'
 import { exportBackupArchive } from './export-backup'
+import { prepareBackupExport } from './preflight'
 import { importBackupArchive } from './import-backup'
 import { MemoryMetaStorage, MemoryStorage } from './sharded.test-support'
 import type { Session } from '@shared/types'
@@ -94,8 +95,10 @@ it('reports classification failures and rejects an unreadable session once outpu
       expect.objectContaining({ code: 'session-read-failed', itemId: 'bad' })
     )
     outputStarted = false
+    // Without retained entries, export reads each session again while writing.
+    const prepared = await prepareBackupExport({ ...options, sessionStore: store }, { preparedEntryBytes: 0 })
     failOutput = true
-    await expect(exportBackupArchive(options)).rejects.toThrow('Source disk read failed')
+    await expect(exportBackupArchive({ ...options, prepared })).rejects.toThrow('Source disk read failed')
   } finally {
     database.close()
   }

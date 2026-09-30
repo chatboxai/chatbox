@@ -283,12 +283,8 @@ it('round trips a large IndexedDB message and resumes window reads, edits and re
   reopened.close()
 })
 
-it('upgrades a v1 database additively and exports its existing whole message', async () => {
-  const snapshot = contextSnapshot({
-    id: 'legacy-large',
-    name: 'Legacy',
-    messages: [{ id: 'whole', role: 'user', contentParts: [{ type: 'text', text: 'old'.repeat(100_000) }] }],
-  })
+/** Writes a snapshot through the version 1 schema, where a message is stored whole. */
+async function writeV1Snapshot(snapshot: ReturnType<typeof contextSnapshot>) {
   await new Promise<void>((resolve, reject) => {
     const request = indexedDB.open('chatbox-messages', 1)
     request.onupgradeneeded = () => {
@@ -312,6 +308,15 @@ it('upgrades a v1 database additively and exports its existing whole message', a
       tx.onerror = () => reject(tx.error)
     }
   })
+}
+
+it('upgrades a v1 database additively and exports its existing whole message', async () => {
+  const snapshot = contextSnapshot({
+    id: 'legacy-large',
+    name: 'Legacy',
+    messages: [{ id: 'whole', role: 'user', contentParts: [{ type: 'text', text: 'old'.repeat(100_000) }] }],
+  })
+  await writeV1Snapshot(snapshot)
   const store = new IndexedDBSessionRowStore()
   const archive = await exportFile(store, DEFAULT_BACKUP_PAGE_LIMITS)
   await importBackupArchive(archive, {
@@ -331,6 +336,44 @@ it('upgrades a v1 database additively and exports its existing whole message', a
       }
     })
   ).rejects.toMatchObject({ name: 'VersionError' })
+})
+
+it('keeps an existing whole message complete in a v2 export prepared from IndexedDB', async () => {
+  const text = 'old'.repeat(100_000)
+  const snapshot = contextSnapshot({
+    id: 'legacy-large',
+    name: 'Legacy',
+    messages: [{ id: 'whole', role: 'user', contentParts: [{ type: 'text', text }] }],
+  })
+  await writeV1Snapshot(snapshot)
+  const store = new IndexedDBSessionRowStore()
+  const options = {
+    storage: new MemoryStorage(),
+    metaStorage: new MemoryMetaStorage(),
+    sessionStore: store,
+    exportItems: ['conversations'] as ['conversations'],
+    includeKeys: false,
+    application: { version: 'test', platform: 'test' },
+  }
+  const prepared = await prepareBackupExport(options)
+  expect(prepared.warnings).toEqual([])
+  expect(prepared.formatVersion).toBe(2)
+  let archive = new Blob()
+  await exportBackupArchive({
+    ...options,
+    prepared,
+    writeArchive: async (stream) => {
+      const parts: Uint8Array<ArrayBuffer>[] = []
+      for await (const part of stream()) parts.push(new Uint8Array(part))
+      archive = new Blob(parts)
+      return { boundedMemory: true }
+    },
+  })
+  store.close()
+  const restored = new MemoryStorage()
+  await importBackupArchive(archive, { storage: restored, metaStorage: new MemoryMetaStorage() })
+  const session = restored.values.get(backupSessionStorageKey(snapshot.record.id)) as Session
+  expect(session.messages[0].contentParts).toEqual([{ type: 'text', text }])
 })
 
 it('keeps wide messages readable while allowing only one payload write in flight', async () => {

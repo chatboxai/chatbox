@@ -2,17 +2,40 @@ import type { Message, Session } from '@shared/types'
 import { decodeSessionTree } from '../session/session-tree/decode'
 import type { SessionTree } from '../session/session-tree/types'
 import { throwIfAborted } from './abort'
+import { sha256Checksum } from './codec'
 import type { BackupExportOptions } from './export-backup'
 import { classifyBackupSession } from './format-classification'
 import { LegacyBackupTopologyError } from './legacy-source'
 import { BackupReadError } from './read-error'
 import { prepareBackupMessagePayload } from './resource-payload'
+import type { ResourceReference } from './resources'
 import { collectSessionResourceReferences, prepareSessionForBackup } from './resources'
-import { type BackupSessionStore, backupPageLimits } from './session-port'
+import { type BackupRow, type BackupSessionStore, backupPageLimits } from './session-port'
 import { BackupSourceBudgetError, checkedBackupRows, MAX_BACKUP_SESSION_STRUCTURE_BYTES } from './source-check'
-import type { BackupWarning } from './types'
+import { createTaskYielder } from './task-yield'
+import { type BackupWarning, MAX_BACKUP_JSON_ENTRY_BYTES } from './types'
+import { type DeflatedZipData, deflateZipData } from './zip'
 
 export const SINGLE_BACKUP_SESSION_BYTES = 64 * 1024 * 1024
+/** Compressed session entries retained from preparation so export writes them without reading the session again. */
+export const PREPARED_SESSION_ENTRY_BYTES = 16 * 1024 * 1024
+/** Sessions materialized during preparation stay within this many prepared bytes. */
+const PREPARED_SESSION_MATERIALIZE_BYTES = 8 * 1024 * 1024
+
+/** A session larger than the single-file budget; it is classified without being materialized. */
+export class SingleFileBudgetError extends BackupSourceBudgetError {}
+
+/** A single-file session entry produced during preparation, exactly as export would write it. */
+export interface PreparedSessionEntry {
+  data: DeflatedZipData
+  size: number
+  checksum: Awaited<ReturnType<typeof sha256Checksum>>
+  /** Session fields the manifest metadata is derived from; messages are not retained. */
+  session: Session
+  references: ResourceReference[]
+  sourceWarnings: BackupWarning[]
+  warnings: BackupWarning[]
+}
 export type PreparedBackupSession = { id: string; name: string } & (
   | { layout: 'single'; size: number; legacyTopology?: string }
   | { layout: 'sharded' }
@@ -24,6 +47,8 @@ export interface BackupExportPlan {
   selectedSessionIds: string[]
   exportItems: BackupExportOptions['exportItems']
   includeKeys: boolean
+  /** Consumed by export; sessions without an entry are read again. */
+  entries?: Map<string, PreparedSessionEntry>
 }
 type PreparationOptions = Omit<BackupExportOptions, 'writeArchive'> & {
   sessionStore: BackupSessionStore
@@ -37,7 +62,9 @@ export async function prepareSessionSource(
   id: string,
   signal?: AbortSignal,
   materializeLimit: number = SINGLE_BACKUP_SESSION_BYTES,
-  nativePayloadLimit?: number
+  nativePayloadLimit?: number,
+  /** Bytes a streamed payload may prepare beyond the limit before the session is rejected. */
+  payloadAllowance = 128 * 1024
 ) {
   const tree: Partial<SessionTree> & Pick<SessionTree, 'threads' | 'messages'> = { threads: [], messages: [] }
   let messageBytes = 0
@@ -78,8 +105,8 @@ export async function prepareSessionSource(
         for await (const part of source) {
           throwIfAborted(signal)
           bytes += part.length
-          if (bytes + messageBytes > materializeLimit + 128 * 1024)
-            throw new Error('Prepared session exceeded its single-file budget')
+          if (bytes + messageBytes > materializeLimit + payloadAllowance)
+            throw new SingleFileBudgetError('Prepared session exceeded its single-file budget')
           parts.push(new Uint8Array(part))
         }
         warn(row.payload.original())
@@ -95,7 +122,7 @@ export async function prepareSessionSource(
       keep({ ...row.message, message: { id: row.message.messageId, role: 'user', contentParts: [] } })
       messageBytes += encoder.encode(JSON.stringify(message)).length
       if (messageBytes > materializeLimit)
-        throw new BackupSourceBudgetError('Prepared session exceeded its single-file budget')
+        throw new SingleFileBudgetError('Prepared session exceeded its single-file budget')
       tree.messages.push(projected)
     }
   }
@@ -107,12 +134,150 @@ export async function prepareSessionSource(
   return { session, size, warnings: sourceWarnings }
 }
 
+/**
+ * Reads a session's rows ahead while the held rows and the stored payload sizes stay within the limit.
+ * Payloads are not read. A payload without a stored size may only be read while its row is current, so read-ahead
+ * stops there. With `lowerBound`, it also applies classification's sharded test: prepared inline bytes alone at
+ * inline rows, and together with stored payload sizes at payload rows.
+ */
+async function readMeasuredRows(
+  store: BackupSessionStore,
+  id: string,
+  limit: number,
+  lowerBound: boolean,
+  signal?: AbortSignal
+): Promise<{ rows: BackupRow[]; name?: string; result: 'complete' | 'unmeasured' | 'beyond-bound' }> {
+  const rows: BackupRow[] = []
+  let name: string | undefined
+  let heldBytes = 0
+  let inlineBytes = 0
+  let payloadBytes = 0
+  let structureBytes = 0
+  for await (const row of store.iterateBackupRows(id, backupPageLimits(), signal)) {
+    throwIfAborted(signal)
+    if (row.kind === 'message') {
+      if (row.payload && row.payload.size === undefined) return { rows, name, result: 'unmeasured' }
+      // The whole held row counts, including its structure; a payload adds the bytes its stream will prepare.
+      heldBytes += encoder.encode(JSON.stringify(row.message)).length
+      if (row.payload) {
+        heldBytes += row.payload.size ?? 0
+        payloadBytes += row.payload.size ?? 0
+        if (lowerBound && inlineBytes + payloadBytes > limit) return { rows, name, result: 'beyond-bound' }
+      } else if (lowerBound) {
+        inlineBytes += encoder.encode(
+          JSON.stringify(prepareSessionForBackup({ id, name: '', messages: [row.message.message] }).messages[0])
+        ).length
+        if (inlineBytes > limit) return { rows, name, result: 'beyond-bound' }
+      }
+      if (heldBytes > limit) return { rows, name, result: 'unmeasured' }
+    } else {
+      if (row.kind === 'header') name = row.record.name
+      structureBytes += encoder.encode(JSON.stringify(row.kind === 'header' ? row.record : row.thread)).length
+      if (structureBytes > MAX_BACKUP_SESSION_STRUCTURE_BYTES)
+        throw new BackupSourceBudgetError('Backup session structure exceeds budget')
+    }
+    rows.push(row)
+  }
+  return { rows, name, result: 'complete' }
+}
+
 /** The caller holds write exclusion from classification through archive completion. */
 export async function prepareBackupExport(
   options: PreparationOptions,
-  budgets: { singleSessionBytes?: number } = {}
+  budgets: { singleSessionBytes?: number; preparedEntryBytes?: number } = {}
 ): Promise<BackupExportPlan> {
   const threshold = budgets.singleSessionBytes ?? SINGLE_BACKUP_SESSION_BYTES
+  const entryBudget = budgets.preparedEntryBytes ?? PREPARED_SESSION_ENTRY_BYTES
+  const checksum = options.checksum ?? sha256Checksum
+  const entries = new Map<string, PreparedSessionEntry>()
+  let entryBytes = 0
+  const retain = async (id: string, source: Awaited<ReturnType<typeof prepareSessionSource>>) => {
+    if (entryBytes >= entryBudget) return
+    const preparedSession = prepareSessionForBackup(source.session)
+    const bytes = encoder.encode(JSON.stringify(preparedSession))
+    if (bytes.length > MAX_BACKUP_JSON_ENTRY_BYTES) return
+    const collected = collectSessionResourceReferences(source.session)
+    const data = await deflateZipData(bytes, options.signal)
+    // Only the fields manifest metadata is derived from; threads and forks carry message bodies.
+    const {
+      id: sessionId,
+      name,
+      starred,
+      hidden,
+      archivedAt,
+      assistantAvatarKey,
+      picUrl,
+      backgroundImage,
+      type,
+    } = preparedSession
+    const session: Session = {
+      id: sessionId,
+      name,
+      starred,
+      hidden,
+      archivedAt,
+      assistantAvatarKey,
+      picUrl,
+      backgroundImage,
+      type,
+      messages: [],
+    }
+    const cost =
+      data.deflated.length +
+      encoder.encode(JSON.stringify([session, collected.references, collected.warnings, source.warnings])).length
+    if (entryBytes + cost > entryBudget) {
+      // The budget is spent; later sessions are classified without being prepared.
+      entryBytes = entryBudget
+      return
+    }
+    entryBytes += cost
+    entries.set(id, {
+      data,
+      size: bytes.length,
+      checksum: await checksum(bytes),
+      session,
+      references: collected.references,
+      sourceWarnings: source.warnings,
+      warnings: collected.warnings,
+    })
+  }
+  const classifyStored = (id: string) =>
+    classifyBackupSession(options.sessionStore, id, threshold, options.signal, options.nativePayloadLimit)
+  // A session measured within the materialization limit is prepared once from its read-ahead rows: that yields
+  // its exact size and archive entry. Larger sessions are classified from stored sizes, as classification would.
+  const classify = async (id: string): Promise<PreparedBackupSession> => {
+    if (entryBytes >= entryBudget) return classifyStored(id)
+    const limit = Math.min(threshold, PREPARED_SESSION_MATERIALIZE_BYTES)
+    const measured = await readMeasuredRows(options.sessionStore, id, limit, limit === threshold, options.signal)
+    // Beyond the threshold, the same lower bound makes classification choose the sharded layout.
+    if (measured.result === 'beyond-bound') return { id, name: measured.name ?? id, layout: 'sharded' }
+    if (measured.result === 'unmeasured') return classifyStored(id)
+    const replay: BackupSessionStore = {
+      ...options.sessionStore,
+      // Rows were read ahead; replay them in order, leaving the UI thread room while each is prepared.
+      async *iterateBackupRows() {
+        const yieldTask = createTaskYielder()
+        for (const row of measured.rows) {
+          await yieldTask()
+          yield row
+        }
+      },
+    }
+    let source: Awaited<ReturnType<typeof prepareSessionSource>>
+    try {
+      source = await prepareSessionSource(replay, id, options.signal, limit, options.nativePayloadLimit, 0)
+    } catch (error) {
+      // A prepared prefix beyond the threshold is the lower bound classification settles on.
+      if (error instanceof SingleFileBudgetError && limit === threshold)
+        return { id, name: measured.name ?? id, layout: 'sharded' }
+      // Other budgets apply when the session is written; classification leaves them to export.
+      if (error instanceof BackupSourceBudgetError) return classifyStored(id)
+      throw error
+    }
+    if (source.size > threshold) return { id, name: source.session.name, layout: 'sharded' }
+    await retain(id, source)
+    return { id, name: source.session.name, layout: 'single', size: source.size }
+  }
   if (!Number.isSafeInteger(threshold) || threshold < 1 || threshold > SINGLE_BACKUP_SESSION_BYTES)
     throw new Error('Invalid single-session backup budget')
   const ids = options.exportItems.includes('conversations')
@@ -132,13 +297,12 @@ export async function prepareBackupExport(
     try {
       let descriptor: PreparedBackupSession
       try {
-        descriptor = await classifyBackupSession(
-          options.sessionStore,
-          id,
-          threshold,
-          options.signal,
-          options.nativePayloadLimit
-        )
+        descriptor = await classify(id)
+        // A sharded session makes the archive v3, which writes sessions from storage; retained entries go unused.
+        if (descriptor.layout === 'sharded') {
+          entries.clear()
+          entryBytes = entryBudget
+        }
       } catch (error) {
         // 备份不等于迁移。旧界面能读取的孤立分支必须随 JSON 保留，不能因无法构树就整段漏备份。
         if (!(error instanceof LegacyBackupTopologyError)) throw error
@@ -181,6 +345,7 @@ export async function prepareBackupExport(
     selectedSessionIds: ids,
     exportItems: [...options.exportItems],
     includeKeys: options.includeKeys,
+    entries,
   }
 }
 

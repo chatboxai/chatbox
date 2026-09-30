@@ -1,5 +1,6 @@
-import { Inflate, Unzip, UnzipInflate, Zip, ZipDeflate, ZipPassThrough } from 'fflate'
+import { Deflate, Inflate, Unzip, UnzipInflate, Zip, ZipDeflate, type ZipInputFile, ZipPassThrough } from 'fflate'
 import { throwIfAborted } from './abort'
+import { createTaskYielder } from './task-yield'
 import { type BackupFile, readBackupFileBytes } from './types'
 
 export const DEFAULT_ZIP_LIMITS = {
@@ -16,8 +17,65 @@ const ZIP_RANGE_READ_BYTES = 64 * 1024
 
 export interface ZipArchiveEntry {
   path: string
-  data: Uint8Array | AsyncIterable<Uint8Array>
+  data: Uint8Array | AsyncIterable<Uint8Array> | DeflatedZipData
   compress?: boolean
+}
+
+/** An entry body already compressed with raw DEFLATE; written as-is. */
+export interface DeflatedZipData {
+  deflated: Uint8Array<ArrayBuffer>
+  size: number
+  crc: number
+}
+
+const CRC_TABLE = (() => {
+  const table = new Int32Array(256)
+  for (let index = 0; index < 256; index++) {
+    let value = index
+    for (let bit = 0; bit < 8; bit++) value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1
+    table[index] = value
+  }
+  return table
+})()
+
+function updateCrc32(crc: number, bytes: Uint8Array): number {
+  for (let index = 0; index < bytes.length; index++) crc = CRC_TABLE[(crc ^ bytes[index]) & 0xff] ^ (crc >>> 8)
+  return crc
+}
+
+// Compression runs in steps so the host can run UI work between them.
+const DEFLATE_STEP_BYTES = 256 * 1024
+
+/** Compresses an entry body the same way streamed entries are, so it can be written later without its source. */
+export async function deflateZipData(bytes: Uint8Array, signal?: AbortSignal): Promise<DeflatedZipData> {
+  const parts: Uint8Array[] = []
+  let length = 0
+  const deflate = new Deflate({ level: 6 }, (chunk) => {
+    parts.push(chunk)
+    length += chunk.length
+  })
+  let crc = -1
+  const yieldTask = createTaskYielder()
+  for (let offset = 0; ; offset += DEFLATE_STEP_BYTES) {
+    const step = bytes.subarray(offset, offset + DEFLATE_STEP_BYTES)
+    crc = updateCrc32(crc, step)
+    const final = offset + DEFLATE_STEP_BYTES >= bytes.length
+    deflate.push(step, final)
+    if (final) break
+    await yieldTask()
+    throwIfAborted(signal)
+  }
+  const deflated = new Uint8Array(length)
+  let position = 0
+  for (const part of parts) {
+    deflated.set(part, position)
+    position += part.length
+  }
+  return { deflated, size: bytes.length, crc: ~crc }
+}
+
+export function isDeflatedZipData(data: ZipArchiveEntry['data']): data is DeflatedZipData {
+  return !(data instanceof Uint8Array) && 'deflated' in data
 }
 
 export interface ZipReadLimits {
@@ -55,7 +113,7 @@ function* splitBytes(bytes: Uint8Array): Generator<Uint8Array> {
   }
 }
 
-function toChunks(data: ZipArchiveEntry['data']): Iterable<Uint8Array> | AsyncIterable<Uint8Array> {
+function toChunks(data: Uint8Array | AsyncIterable<Uint8Array>): Iterable<Uint8Array> | AsyncIterable<Uint8Array> {
   return data instanceof Uint8Array ? splitBytes(data) : data
 }
 
@@ -113,11 +171,20 @@ export async function* createZipStream(
         assertSafeArchivePath(entry.path)
         if (seenPaths.has(entry.path)) throw new Error(`Duplicate ZIP entry: ${entry.path}`)
         seenPaths.add(entry.path)
+        const data = entry.data
+        if (isDeflatedZipData(data)) {
+          // Level 6 DEFLATE uses general-purpose flag 0, matching streamed entries.
+          const file: ZipInputFile = { filename: entry.path, size: data.size, crc: data.crc, compression: 8, flag: 0 }
+          zip.add(file)
+          file.ondata?.(null, data.deflated, true)
+          await waitForDrain()
+          continue
+        }
         const file =
           entry.compress === false ? new ZipPassThrough(entry.path) : new ZipDeflate(entry.path, { level: 6 })
         zip.add(file)
         let pushed = false
-        for await (const chunk of toChunks(entry.data)) {
+        for await (const chunk of toChunks(data)) {
           throwIfAborted(signal)
           if (chunk.length === 0) continue
           if (pushed) {

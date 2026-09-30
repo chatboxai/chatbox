@@ -1838,5 +1838,6 @@
   "Documents the model can search when a knowledge base is attached to a chat.": "Dokument som modellen kan söka i när en kunskapsbas är kopplad till en chatt.",
   "Connection": "Anslutning",
   "Website": "Webbplats",
-  "New tab": "Ny flik"
+  "New tab": "Ny flik",
+  "Enabled in Work Mode": "Tillgängligt i arbetsläge"
 }

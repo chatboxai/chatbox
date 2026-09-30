@@ -1838,5 +1838,6 @@
   "Documents the model can search when a knowledge base is attached to a chat.": "Документы, в которых модель может искать, когда к чату подключена база знаний.",
   "Connection": "Подключение",
   "Website": "Сайт",
-  "New tab": "Новая вкладка"
+  "New tab": "Новая вкладка",
+  "Enabled in Work Mode": "Доступно в рабочем режиме"
 }

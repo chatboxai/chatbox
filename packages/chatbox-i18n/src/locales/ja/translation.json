@@ -1838,5 +1838,6 @@
   "Documents the model can search when a knowledge base is attached to a chat.": "チャットにナレッジベースを添付すると、モデルがこれらのドキュメントを検索できます。",
   "Connection": "接続",
   "Website": "ウェブサイト",
-  "New tab": "新しいタブ"
+  "New tab": "新しいタブ",
+  "Enabled in Work Mode": "作業モードで有効"
 }

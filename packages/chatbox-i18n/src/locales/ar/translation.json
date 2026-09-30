@@ -1838,5 +1838,6 @@
   "Documents the model can search when a knowledge base is attached to a chat.": "المستندات التي يمكن للنموذج البحث فيها عند إرفاق قاعدة معرفة بمحادثة.",
   "Connection": "الاتصال",
   "Website": "الموقع الإلكتروني",
-  "New tab": "علامة تبويب جديدة"
+  "New tab": "علامة تبويب جديدة",
+  "Enabled in Work Mode": "متاح في وضع العمل"
 }

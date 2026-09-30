@@ -1838,5 +1838,6 @@
   "Documents the model can search when a knowledge base is attached to a chat.": "在對話中關聯知識庫後，模型可以檢索這些文件。",
   "Connection": "連線",
   "Website": "官網",
-  "New tab": "新分頁"
+  "New tab": "新分頁",
+  "Enabled in Work Mode": "工作模式下啟用"
 }

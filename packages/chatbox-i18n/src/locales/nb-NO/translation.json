@@ -1838,5 +1838,6 @@
   "Documents the model can search when a knowledge base is attached to a chat.": "Dokumenter modellen kan søke i når en kunnskapsbase er knyttet til en samtale.",
   "Connection": "Tilkobling",
   "Website": "Nettsted",
-  "New tab": "Ny fane"
+  "New tab": "Ny fane",
+  "Enabled in Work Mode": "Tilgjengelig i arbeidsmodus"
 }

@@ -340,16 +340,24 @@ const MobileAgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProp
       </UnstyledButton>
       <UnstyledButton
         aria-label={t('Skills')}
+        disabled={entry.value !== 'on'}
         onClick={() => {
           onClose?.()
           navigateToSettings('/skills')
         }}
-        style={{ minHeight: 44 }}
+        style={{ minHeight: 44, opacity: entry.value === 'on' ? 1 : 0.45 }}
       >
         <Group justify="space-between">
           <Group gap="xs">
             <IconBook size={18} />
-            <Text size="sm">{t('Skills')}</Text>
+            <Stack gap={2}>
+              <Text size="sm">{t('Skills')}</Text>
+              {entry.value !== 'on' && (
+                <Text size="xs" c="dimmed">
+                  {t('Enabled in Work Mode')}
+                </Text>
+              )}
+            </Stack>
           </Group>
           <IconChevronRight size={16} />
         </Group>

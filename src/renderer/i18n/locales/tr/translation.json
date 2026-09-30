@@ -1834,5 +1834,6 @@
   "Documents the model can search when a knowledge base is attached to a chat.": "Bir sohbete bilgi tabanı eklendiğinde modelin arama yapabileceği belgeler.",
   "Connection": "Bağlantı",
   "Website": "Web sitesi",
-  "New tab": "Yeni sekme"
+  "New tab": "Yeni sekme",
+  "Enabled in Work Mode": "Çalışma modunda etkin"
 }

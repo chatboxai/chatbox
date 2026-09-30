@@ -1838,5 +1838,6 @@
   "Documents the model can search when a knowledge base is attached to a chat.": "在对话中关联知识库后，模型可以检索这些文档。",
   "Connection": "连接",
   "Website": "官网",
-  "New tab": "新标签页"
+  "New tab": "新标签页",
+  "Enabled in Work Mode": "工作模式下启用"
 }

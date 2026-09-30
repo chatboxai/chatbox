@@ -1838,5 +1838,6 @@
   "Documents the model can search when a knowledge base is attached to a chat.": "채팅에 지식 베이스를 연결하면 모델이 검색할 수 있는 문서입니다.",
   "Connection": "연결",
   "Website": "웹사이트",
-  "New tab": "새 탭"
+  "New tab": "새 탭",
+  "Enabled in Work Mode": "작업 모드에서 활성화"
 }

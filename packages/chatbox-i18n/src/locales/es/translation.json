@@ -1838,5 +1838,6 @@
   "Documents the model can search when a knowledge base is attached to a chat.": "Documentos en los que el modelo puede buscar cuando se adjunta una base de conocimiento a un chat.",
   "Connection": "Conexión",
   "Website": "Sitio web",
-  "New tab": "Nueva pestaña"
+  "New tab": "Nueva pestaña",
+  "Enabled in Work Mode": "Disponible en el modo de trabajo"
 }

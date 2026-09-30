@@ -90,12 +90,14 @@ export async function navigateCompleteTranscript({
   initialNavigation,
   isCurrent,
   messageId,
+  edge = 'head',
   navigate,
 }: {
   sessionId: string
   initialNavigation: TranscriptNavigation | null
   isCurrent: () => boolean
   messageId?: string
+  edge?: 'head' | 'tail'
   navigate: (handle: TranscriptNavigation) => boolean
 }): Promise<boolean> {
   const deadline = performance.now() + 1000
@@ -120,7 +122,11 @@ export async function navigateCompleteTranscript({
       if (containsVisibleMessage(view.container, view.list, messageId)) return true
     } else {
       const scroller = view.container.querySelector<HTMLElement>('[data-virtuoso-scroller]')
-      if (scroller && Math.abs(scroller.scrollTop) <= 1) return true
+      if (scroller) {
+        const distance =
+          edge === 'tail' ? scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop : scroller.scrollTop
+        if (Math.abs(distance) <= 1) return true
+      }
     }
   } while (performance.now() < deadline)
   return false

@@ -89,6 +89,8 @@ import {
   windowScrollObjectId,
 } from './window-scroll-cache'
 
+const MINIMAP_MESSAGE_LIMIT = 500
+
 const EMPTY_MINIMAP_ANCHORS: MessageMinimapAnchor[] = []
 
 // LRU-like cache with max size to prevent unbounded memory growth
@@ -144,10 +146,12 @@ function readWindowLayout(container: HTMLElement, widthFull: boolean, smallScree
   ])
 }
 
+export type MessageNavigationTarget = { kind: 'head' | 'tail' } | { kind: 'message'; messageId: string }
+
 export interface MessageListRef {
-  scrollToTop: (behavior?: ScrollBehavior) => void
-  scrollToBottom: (behavior?: ScrollBehavior) => void
-  scrollToMessage: (messageId: string, behavior?: 'auto' | 'smooth') => boolean
+  scrollToTop: (behavior?: ScrollBehavior, source?: 'replay') => void
+  scrollToBottom: (behavior?: ScrollBehavior, source?: 'replay') => void
+  scrollToMessage: (messageId: string, behavior?: 'auto' | 'smooth', source?: 'replay') => boolean
   setIsNewMessage: (flag: boolean) => void
 }
 
@@ -159,10 +163,13 @@ export type MessageListProps = {
   isLoadingOlder?: boolean
   isLoadingNewer?: boolean
   isJumping?: boolean
+  totalMessageCount?: number
   onLoadNewer?: () => void
+  onNavigate?: (target: MessageNavigationTarget) => boolean
   onJumpToEdge?: (edge: 'head' | 'tail') => void
   windowPosition?: { id: number; edge: 'head' | 'tail' } | null
   onRequireComplete?: (messageId?: string) => void
+  onLoadCompleteNavigation?: () => void
   windowIdentity?: WindowTranscriptIdentity
 } & ({ currentSession: Session; transcript?: never } | { currentSession?: never; transcript: SessionTranscript })
 
@@ -262,6 +269,48 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
     [props.transcript, props.windowIdentity, currentSession, renderItems, firstItemIndex]
   )
 
+  const hasUnloadedNavigation = Boolean(props.transcript && (props.hasOlder || props.hasNewer))
+  const minimapEligible =
+    !isSmallScreen &&
+    Math.max(props.totalMessageCount ?? currentMessageList.length, currentMessageList.length) <=
+      MINIMAP_MESSAGE_LIMIT &&
+    (!hasUnloadedNavigation || props.totalMessageCount !== undefined)
+  const [minimapReadySession, setMinimapReadySession] = useState<string | null>(null)
+  const minimapReady = minimapEligible && minimapReadySession === currentSession.id
+  const loadMinimapRef = useRef<() => void>(() => {})
+  loadMinimapRef.current = () => {
+    if (hasUnloadedNavigation) {
+      const anchor = messageListRef.current ? readWindowAnchor(messageListRef.current, renderItems) : null
+      if (anchor) viewportAnchorRef.current = anchor
+      props.onLoadCompleteNavigation?.()
+    }
+  }
+  const messageWorkPending = Boolean(
+    props.isLoadingOlder || props.isLoadingNewer || props.isJumping || sessionLocks.anyReplyGenerating
+  )
+  useEffect(() => {
+    if (!minimapEligible) {
+      setMinimapReadySession(null)
+      return
+    }
+    if (minimapReady || messageWorkPending) return
+    let idleCallback: number | undefined
+    let fallbackTimer: ReturnType<typeof setTimeout> | undefined
+    const load = () => {
+      loadMinimapRef.current()
+      setMinimapReadySession(currentSession.id)
+    }
+    const frame = requestAnimationFrame(() => {
+      if (typeof window.requestIdleCallback === 'function') idleCallback = window.requestIdleCallback(load)
+      else fallbackTimer = setTimeout(load, 300)
+    })
+    return () => {
+      cancelAnimationFrame(frame)
+      clearTimeout(fallbackTimer)
+      if (idleCallback !== undefined) window.cancelIdleCallback(idleCallback)
+    }
+  }, [currentSession.id, minimapEligible, minimapReady, messageWorkPending])
+
   // A streaming reply replaces the session object for every chunk. Build the
   // minimap once when generation starts, freeze it while chunks arrive, then
   // refresh it once with the final assistant preview after generation ends.
@@ -274,9 +323,8 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
   const userMessageAnchors = useMemo<MessageMinimapAnchor[]>(() => {
     const previousState = previousMinimapStateRef.current
 
-    // Small screens never show the rail, so skip the anchor scan entirely
-    // (it would otherwise run on every streaming chunk on mobile).
-    if (isSmallScreen) {
+    // Hidden and incomplete minimaps must not scan message previews.
+    if (!minimapReady || hasUnloadedNavigation) {
       previousMinimapStateRef.current = {
         sessionId: currentSession.id,
         generationRunning: false,
@@ -339,7 +387,14 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
       anchors: stableAnchors,
     }
     return stableAnchors
-  }, [currentMessageList, currentSession.id, renderItems, sessionLocks.anyReplyGenerating, isSmallScreen])
+  }, [
+    currentMessageList,
+    currentSession.id,
+    renderItems,
+    sessionLocks.anyReplyGenerating,
+    minimapReady,
+    hasUnloadedNavigation,
+  ])
   const showMinimap = !isSmallScreen && userMessageAnchors.length > 0
 
   const virtuoso = useRef<VirtuosoHandle>(null)
@@ -458,6 +513,7 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
   const handleMessageNavigationVisibleChanged = useCallback((v: boolean) => setMessageNavigationVisible(v), [])
 
   const handleScrollToTop = useCallback(() => {
+    if (props.onNavigate?.({ kind: 'head' })) return
     smoothFollowOutput.pause()
     if (props.hasOlder) {
       if (props.onJumpToEdge) props.onJumpToEdge('head')
@@ -466,16 +522,17 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
     }
     // Virtualized rows change height as they mount; an animated jump can be interrupted by those measurements.
     virtuoso.current?.scrollTo({ top: 0, behavior: 'auto' })
-  }, [smoothFollowOutput, props.hasOlder, props.onJumpToEdge, props.onRequireComplete])
+  }, [smoothFollowOutput, props.hasOlder, props.onJumpToEdge, props.onRequireComplete, props.onNavigate])
 
   const handleScrollToBottom = useCallback(() => {
+    if (props.onNavigate?.({ kind: 'tail' })) return
     if (props.hasNewer) {
       props.onJumpToEdge?.('tail')
       return
     }
     smoothFollowOutput.resume()
     virtuoso.current?.scrollTo({ top: Infinity, behavior: 'smooth' })
-  }, [smoothFollowOutput, props.hasNewer, props.onJumpToEdge])
+  }, [smoothFollowOutput, props.hasNewer, props.onJumpToEdge, props.onNavigate])
 
   useLayoutEffect(() => {
     if (!props.windowPosition) return
@@ -485,10 +542,20 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
 
   const handleMinimapJump = useCallback(
     (anchor: MessageMinimapAnchor) => {
+      if (props.onNavigate?.({ kind: 'message', messageId: anchor.messageId })) return
       smoothFollowOutput.pause()
       virtuoso.current?.scrollToIndex({ index: anchor.itemIndex, align: 'start', behavior: 'smooth' })
     },
-    [smoothFollowOutput]
+    [smoothFollowOutput, props.onNavigate]
+  )
+
+  const navigateToItem = useCallback(
+    (index: number) => {
+      const message = renderItems[index]?.messages.find(isUserNavigationMessage) ?? renderItems[index]?.messages[0]
+      if (message && props.onNavigate?.({ kind: 'message', messageId: message.id })) return
+      virtuoso.current?.scrollToIndex({ index, align: 'start', behavior: 'smooth' })
+    },
+    [renderItems, props.onNavigate]
   )
 
   const handleScrollToPrev = useCallback(() => {
@@ -511,31 +578,23 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
             // contains a user message (e.g. a long assistant response in a group),
             // scroll to the top of THIS element first to bring the question back.
             if (rect.top < containerRect.top - 2 && renderItems[i].messages.some(isUserNavigationMessage)) {
-              virtuoso.current.scrollToIndex({
-                index: i,
-                align: 'start',
-                behavior: 'smooth',
-              })
+              navigateToItem(i)
               return
             }
             for (let j = i - 1; j >= 0; j--) {
               if (renderItems[j].messages.some(isUserNavigationMessage)) {
-                virtuoso.current.scrollToIndex({
-                  index: j,
-                  align: 'start',
-                  behavior: 'smooth',
-                })
+                navigateToItem(j)
                 return
               }
             }
             // 没有上一条用户消息了，滚动到顶部
-            virtuoso.current.scrollToIndex({ index: 0, align: 'start', behavior: 'smooth' })
+            navigateToItem(0)
             return
           }
         }
       }
     }
-  }, [renderItems, smoothFollowOutput])
+  }, [renderItems, smoothFollowOutput, navigateToItem, props.onNavigate])
 
   const handleScrollToNext = useCallback(() => {
     smoothFollowOutput.pause()
@@ -552,18 +611,19 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
           if (rect.bottom > containerRect.top + 2) {
             for (let j = i + 1; j < renderItems.length; j++) {
               if (renderItems[j].messages.some(isUserNavigationMessage)) {
-                virtuoso.current.scrollToIndex({ index: j, align: 'start', behavior: 'smooth' })
+                navigateToItem(j)
                 return
               }
             }
             // 没有下一条用户消息了，滚动到底部
+            if (props.onNavigate?.({ kind: 'tail' })) return
             virtuoso.current.scrollToIndex({ index: renderItems.length - 1, align: 'end', behavior: 'smooth' })
             return
           }
         }
       }
     }
-  }, [renderItems, smoothFollowOutput])
+  }, [renderItems, smoothFollowOutput, navigateToItem, props.onNavigate])
 
   const [atBottom, setAtBottom] = useState(false)
   const [atTop, setAtTop] = useState(false)
@@ -862,7 +922,8 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
   )
 
   useImperativeHandle(ref, () => ({
-    scrollToTop: (behavior = 'auto') => {
+    scrollToTop: (behavior = 'auto', source) => {
+      if (source !== 'replay' && props.onNavigate?.({ kind: 'head' })) return
       smoothFollowOutput.pause()
       if (props.hasOlder) {
         if (props.onJumpToEdge) props.onJumpToEdge('head')
@@ -872,7 +933,8 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
       smoothFollowOutput.pause()
       virtuoso.current?.scrollTo({ top: 0, behavior })
     },
-    scrollToBottom: (behavior = 'auto') => {
+    scrollToBottom: (behavior = 'auto', source) => {
+      if (source !== 'replay' && props.onNavigate?.({ kind: 'tail' })) return
       if (props.hasNewer) {
         props.onJumpToEdge?.('tail')
         return
@@ -880,7 +942,8 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
       smoothFollowOutput.resume()
       virtuoso.current?.scrollTo({ top: Infinity, behavior })
     },
-    scrollToMessage: (messageId, behavior = 'smooth') => {
+    scrollToMessage: (messageId, behavior = 'smooth', source) => {
+      if (source !== 'replay' && props.onNavigate?.({ kind: 'message', messageId })) return true
       const itemIndex = renderItems.findIndex((item) => item.messages.some((message) => message.id === messageId))
       if (itemIndex < 0) {
         props.onRequireComplete?.(messageId)
@@ -934,7 +997,7 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
             'overflow-hidden relative',
             isSmallScreen ? 'min-h-0 flex-1' : 'h-full',
             // The minimap inset is mirrored on the right so the message column stays centered on the composer.
-            showMinimap ? 'px-[28px]' : 'pl-1 pr-0 sm:pl-0'
+            minimapEligible ? 'px-[28px]' : 'pl-1 pr-0 sm:pl-0'
           )}
           ref={messageListRef}
           data-session-id={currentSession.id}

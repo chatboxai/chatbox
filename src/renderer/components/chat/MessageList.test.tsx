@@ -12,6 +12,36 @@ import { act, cleanup, fireEvent, render, waitFor } from '@/test-utils'
 import MessageList, { clearScrollPositionCache, type MessageListRef } from './MessageList'
 import { getWindowScrollPosition } from './window-scroll-cache'
 
+const idleCallbacks = new Map<number, IdleRequestCallback>()
+let nextIdleId = 0
+beforeEach(() => {
+  idleCallbacks.clear()
+  vi.stubGlobal(
+    'requestIdleCallback',
+    vi.fn((callback: IdleRequestCallback) => {
+      const id = ++nextIdleId
+      idleCallbacks.set(id, callback)
+      return id
+    })
+  )
+  vi.stubGlobal(
+    'cancelIdleCallback',
+    vi.fn((id: number) => idleCallbacks.delete(id))
+  )
+})
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
+async function runMinimapIdle() {
+  await waitFor(() => expect(idleCallbacks.size).toBeGreaterThan(0))
+  act(() => {
+    const callbacks = [...idleCallbacks.values()]
+    idleCallbacks.clear()
+    for (const callback of callbacks) callback({ didTimeout: false, timeRemaining: () => 50 })
+  })
+}
+
 const virtuosoScrollToIndexMock = vi.hoisted(() => vi.fn())
 const virtuosoScrollToMock = vi.hoisted(() => vi.fn())
 const virtuosoAtBottom = vi.hoisted(() => ({ value: true }))
@@ -143,16 +173,31 @@ vi.mock('./Message', () => ({
   },
 }))
 
+const localNavigation = vi.hoisted(() => ({
+  minimap: undefined as undefined | ((anchor: { messageId: string; itemIndex: number }) => void),
+  buttons: undefined as
+    | undefined
+    | {
+        onScrollToTop: () => void
+        onScrollToBottom: () => void
+        onScrollToPrev: () => void
+        onScrollToNext: () => void
+      },
+}))
 const minimapRenderLog = vi.hoisted(() => [] as unknown[])
 vi.mock('./MessageMinimapRail', () => ({
-  default: (props: { anchors: unknown }) => {
+  default: (props: { anchors: unknown; onJump: (anchor: { messageId: string; itemIndex: number }) => void }) => {
+    localNavigation.minimap = props.onJump
     minimapRenderLog.push(props.anchors)
     return null
   },
 }))
 
 vi.mock('./MessageNavigation', () => ({
-  default: () => null,
+  default: (props: NonNullable<typeof localNavigation.buttons>) => {
+    localNavigation.buttons = props
+    return null
+  },
   ScrollToBottomButton: () => null,
 }))
 
@@ -894,6 +939,92 @@ describe('MessageList new message layout', () => {
     act(() => ref.current?.scrollToTop())
     expect(requireComplete).toHaveBeenCalledWith()
   })
+  test('loaded ref navigation informs the pending owner, while replay applies locally', () => {
+    const ref = createRef<MessageListRef>()
+    const navigate = vi.fn(() => true)
+    render(
+      <MantineProvider>
+        <MessageList
+          ref={ref}
+          onNavigate={navigate}
+          transcript={{
+            header: { id: 'local-navigation', name: 'Local' },
+            messages: [message('loaded', MessageRoleEnum.User, 'Loaded')],
+          }}
+        />
+      </MantineProvider>
+    )
+    virtuosoScrollToMock.mockClear()
+    virtuosoScrollToIndexMock.mockClear()
+    act(() => {
+      ref.current?.scrollToTop()
+      ref.current?.scrollToBottom()
+      ref.current?.scrollToMessage('loaded')
+    })
+    expect(navigate.mock.calls).toEqual([
+      [{ kind: 'head' }],
+      [{ kind: 'tail' }],
+      [{ kind: 'message', messageId: 'loaded' }],
+    ])
+    expect(virtuosoScrollToMock).not.toHaveBeenCalled()
+    expect(virtuosoScrollToIndexMock).not.toHaveBeenCalled()
+    navigate.mockClear()
+    act(() => {
+      ref.current?.scrollToTop('auto', 'replay')
+      ref.current?.scrollToBottom('auto', 'replay')
+      ref.current?.scrollToMessage('loaded', 'smooth', 'replay')
+    })
+    expect(navigate).not.toHaveBeenCalled()
+    expect(virtuosoScrollToMock).toHaveBeenCalledTimes(2)
+    expect(virtuosoScrollToIndexMock).toHaveBeenCalledTimes(1)
+  })
+  test('local navigation buttons and minimap supersede pending complete navigation', async () => {
+    const navigate = vi.fn(() => true)
+    const view = render(
+      <MantineProvider>
+        <MessageList
+          onNavigate={navigate}
+          transcript={{
+            header: { id: 'local-buttons', name: 'Local' },
+            messages: [message('loaded', MessageRoleEnum.User, 'Loaded')],
+          }}
+        />
+      </MantineProvider>
+    )
+    const row = view.container.querySelector('[data-index="0"]')!
+    vi.spyOn(row, 'getBoundingClientRect').mockReturnValue({
+      top: 0,
+      bottom: 100,
+      left: 0,
+      right: 100,
+      width: 100,
+      height: 100,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    })
+    virtuosoScrollToMock.mockClear()
+    virtuosoScrollToIndexMock.mockClear()
+    expect(localNavigation.buttons).toBeTruthy()
+    await runMinimapIdle()
+    expect(localNavigation.minimap).toBeTruthy()
+    act(() => {
+      localNavigation.buttons?.onScrollToTop()
+      localNavigation.buttons?.onScrollToBottom()
+      localNavigation.buttons?.onScrollToPrev()
+      localNavigation.buttons?.onScrollToNext()
+      localNavigation.minimap?.({ messageId: 'loaded', itemIndex: 0 })
+    })
+    expect(navigate.mock.calls).toEqual([
+      [{ kind: 'head' }],
+      [{ kind: 'tail' }],
+      [{ kind: 'message', messageId: 'loaded' }],
+      [{ kind: 'tail' }],
+      [{ kind: 'message', messageId: 'loaded' }],
+    ])
+    expect(virtuosoScrollToMock).not.toHaveBeenCalled()
+    expect(virtuosoScrollToIndexMock).not.toHaveBeenCalled()
+  })
   test('uses bounded edge navigation and displays loading and the true conversation boundary', () => {
     const jump = vi.fn()
     const requireComplete = vi.fn()
@@ -1596,6 +1727,161 @@ describe('MessageList new message layout', () => {
   })
 })
 
+describe('lazy minimap loading', () => {
+  beforeEach(() => {
+    minimapRenderLog.length = 0
+    previewTextSpy.calls = 0
+    isSmallScreenMock.value = false
+  })
+  const messages = [message('recent-user', 'user', 'Recent question')]
+  test('waits for idle time after paint, then loads navigation without a toolbar', async () => {
+    const load = vi.fn()
+    const view = render(
+      <MantineProvider>
+        <MessageList
+          transcript={{ header: { id: 'scope', name: 'Scope' }, messages }}
+          hasOlder
+          totalMessageCount={500}
+          onLoadCompleteNavigation={load}
+        />
+      </MantineProvider>
+    )
+    expect(load).not.toHaveBeenCalled()
+    expect(previewTextSpy.calls).toBe(0)
+    expect(view.queryByText('Navigation shows {{loaded}} of {{total}} messages')).toBeNull()
+    expect(view.queryByRole('button', { name: 'Load all navigation' })).toBeNull()
+    await runMinimapIdle()
+    expect(load).toHaveBeenCalledOnce()
+    expect(minimapRenderLog).toHaveLength(0)
+    view.rerender(
+      <MantineProvider>
+        <MessageList currentSession={{ id: 'scope', name: 'Scope', messages }} />
+      </MantineProvider>
+    )
+    expect(minimapRenderLog.length).toBeGreaterThan(0)
+  })
+  test('skips loading and preview scans above 500 messages', async () => {
+    const load = vi.fn()
+    render(
+      <MantineProvider>
+        <MessageList
+          transcript={{ header: { id: 'large', name: 'Large' }, messages }}
+          hasOlder
+          totalMessageCount={501}
+          onLoadCompleteNavigation={load}
+        />
+      </MantineProvider>
+    )
+    await act(() => new Promise((resolve) => setTimeout(resolve, 40)))
+    expect(idleCallbacks.size).toBe(0)
+    expect(load).not.toHaveBeenCalled()
+    expect(previewTextSpy.calls).toBe(0)
+    expect(minimapRenderLog).toHaveLength(0)
+  })
+  test('does not scan a fully cached conversation above the limit', async () => {
+    render(
+      <MantineProvider>
+        <MessageList
+          currentSession={{
+            id: 'large-full',
+            name: 'Large',
+            messages: Array.from({ length: 501 }, (_, i) => message(`message-${i}`, 'user', 'Question')),
+          }}
+        />
+      </MantineProvider>
+    )
+    await act(() => new Promise((resolve) => setTimeout(resolve, 40)))
+    expect(idleCallbacks.size).toBe(0)
+    expect(previewTextSpy.calls).toBe(0)
+    expect(minimapRenderLog).toHaveLength(0)
+  })
+  test('defers initial minimap work until generation finishes', async () => {
+    const session = {
+      id: 'generating',
+      name: 'Generating',
+      messages: [
+        message('question', 'user', 'Question'),
+        { ...message('reply', 'assistant', 'Reply'), generating: true },
+      ],
+    }
+    const view = render(
+      <MantineProvider>
+        <MessageList currentSession={session} />
+      </MantineProvider>
+    )
+    await act(() => new Promise((resolve) => setTimeout(resolve, 40)))
+    expect(idleCallbacks.size).toBe(0)
+    expect(previewTextSpy.calls).toBe(0)
+    view.rerender(
+      <MantineProvider>
+        <MessageList
+          currentSession={{
+            ...session,
+            messages: session.messages.map((message) => ({ ...message, generating: false })),
+          }}
+        />
+      </MantineProvider>
+    )
+    await runMinimapIdle()
+    expect(minimapRenderLog.length).toBeGreaterThan(0)
+  })
+  test('cancels pending idle work while messages load and resumes afterwards', async () => {
+    const load = vi.fn()
+    const props = {
+      transcript: { header: { id: 'scope', name: 'Scope' }, messages },
+      hasOlder: true,
+      totalMessageCount: 100,
+      onLoadCompleteNavigation: load,
+    }
+    const view = render(
+      <MantineProvider>
+        <MessageList {...props} />
+      </MantineProvider>
+    )
+    await waitFor(() => expect(idleCallbacks.size).toBe(1))
+    view.rerender(
+      <MantineProvider>
+        <MessageList {...props} isLoadingOlder />
+      </MantineProvider>
+    )
+    expect(idleCallbacks.size).toBe(0)
+    expect(load).not.toHaveBeenCalled()
+    view.rerender(
+      <MantineProvider>
+        <MessageList {...props} />
+      </MantineProvider>
+    )
+    await runMinimapIdle()
+    expect(load).toHaveBeenCalledOnce()
+  })
+  test('cancels idle work when switching to an over-limit conversation', async () => {
+    const load = vi.fn()
+    const view = render(
+      <MantineProvider>
+        <MessageList
+          transcript={{ header: { id: 'scope', name: 'Scope' }, messages }}
+          hasOlder
+          totalMessageCount={100}
+          onLoadCompleteNavigation={load}
+        />
+      </MantineProvider>
+    )
+    await waitFor(() => expect(idleCallbacks.size).toBe(1))
+    view.rerender(
+      <MantineProvider>
+        <MessageList
+          transcript={{ header: { id: 'large', name: 'Large' }, messages }}
+          hasOlder
+          totalMessageCount={501}
+          onLoadCompleteNavigation={load}
+        />
+      </MantineProvider>
+    )
+    expect(idleCallbacks.size).toBe(0)
+    expect(load).not.toHaveBeenCalled()
+  })
+})
+
 describe('MessageList minimap anchors', () => {
   beforeEach(() => {
     minimapRenderLog.length = 0
@@ -1632,7 +1918,7 @@ describe('MessageList minimap anchors', () => {
     }
   }
 
-  test('keeps the anchors reference stable across session cache replacements with identical previews', () => {
+  test('keeps the anchors reference stable across session cache replacements with identical previews', async () => {
     // Unrelated session cache replacements must keep anchor identity once the
     // visible preview prefix is unchanged.
     const longReply = 'streamed reply '.repeat(40)
@@ -1641,6 +1927,7 @@ describe('MessageList minimap anchors', () => {
         <MessageList currentSession={buildSession(longReply)} />
       </MantineProvider>
     )
+    await runMinimapIdle()
     rerender(
       <MantineProvider>
         <MessageList currentSession={buildSession(`${longReply} more streamed tokens past the preview cutoff`)} />
@@ -1651,12 +1938,13 @@ describe('MessageList minimap anchors', () => {
     expect(minimapRenderLog.at(-1)).toBe(minimapRenderLog[0])
   })
 
-  test('produces new anchors when a preview-visible text changes', () => {
+  test('produces new anchors when a preview-visible text changes', async () => {
     const { rerender } = render(
       <MantineProvider>
         <MessageList currentSession={buildSession('short answer')} />
       </MantineProvider>
     )
+    await runMinimapIdle()
     rerender(
       <MantineProvider>
         <MessageList currentSession={buildSession('short answer grew')} />
@@ -1685,9 +1973,15 @@ describe('MessageList minimap anchors', () => {
     expect(minimapRenderLog.length).toBe(0)
   })
 
-  test('freezes anchors across streaming chunks and loads the assistant preview after generation', () => {
+  test('freezes anchors across streaming chunks and loads the assistant preview after generation', async () => {
     const initialSession = buildSession('partial reply', true)
     const { rerender } = render(
+      <MantineProvider>
+        <MessageList currentSession={buildSession('partial reply')} />
+      </MantineProvider>
+    )
+    await runMinimapIdle()
+    rerender(
       <MantineProvider>
         <MessageList currentSession={initialSession} />
       </MantineProvider>
@@ -1717,9 +2011,15 @@ describe('MessageList minimap anchors', () => {
     expect(previewTextSpy.calls).toBeGreaterThan(generationStartPreviewCalls)
   })
 
-  test('rebuilds once when steering inserts a user message during generation', () => {
+  test('rebuilds once when steering inserts a user message during generation', async () => {
     const initialSession = buildSession('partial reply', true)
     const { rerender } = render(
+      <MantineProvider>
+        <MessageList currentSession={buildSession('partial reply')} />
+      </MantineProvider>
+    )
+    await runMinimapIdle()
+    rerender(
       <MantineProvider>
         <MessageList currentSession={initialSession} />
       </MantineProvider>
@@ -1750,9 +2050,15 @@ describe('MessageList minimap anchors', () => {
     expect(previewTextSpy.calls).toBe(steeredPreviewCalls)
   })
 
-  test('rebuilds anchors when a user message is edited during generation', () => {
+  test('rebuilds anchors when a user message is edited during generation', async () => {
     const initialSession = buildSession('partial reply', true)
     const { rerender } = render(
+      <MantineProvider>
+        <MessageList currentSession={buildSession('partial reply')} />
+      </MantineProvider>
+    )
+    await runMinimapIdle()
+    rerender(
       <MantineProvider>
         <MessageList currentSession={initialSession} />
       </MantineProvider>

@@ -1,5 +1,5 @@
 import { resolveSessionMode } from '@chatbox/core/session/mode-policy'
-import { Box, Button } from '@mantine/core'
+import { Box, Button, Loader } from '@mantine/core'
 import type { ModelProvider } from '@shared/types'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
@@ -15,7 +15,7 @@ import { paddedContentColumnClassName } from '@/components/layout/contentColumn'
 import Header from '@/components/layout/Header'
 import Page from '@/components/layout/Page'
 import { SessionSheet } from '@/components/session/SessionSheet'
-import { closeSessionPanel, SessionSidePanel } from '@/components/session/SessionSidePanel'
+import { closeSessionPanel, SessionSidePanel, toggleSessionPanel } from '@/components/session/SessionSidePanel'
 import { useGenerationStop } from '@/hooks/useGenerationStop'
 import { useInitialSessionScroll } from '@/hooks/useInitialSessionScroll'
 import { useProviders } from '@/hooks/useProviders'
@@ -86,17 +86,34 @@ function RouteComponent() {
   const widthFull = useUIStore((s) => s.widthFull)
   const isSmallScreen = useIsSmallScreen()
   const sessionPanelOpen = useUIStore((s) => s.sessionPanels[currentSessionId]?.open ?? false)
-  const { session: completeNavigationSession } = rendererApplication.sessionHooks.useSession(sessionLoadTarget, {
-    enabled: !recovering && Boolean(readModel) && (!isSmallScreen || sessionPanelOpen),
+  const {
+    session: panelSession,
+    isFetching: isPanelFetching,
+    isError: isPanelError,
+    refetch: reloadPanel,
+  } = rendererApplication.sessionHooks.useSession(sessionLoadTarget, {
+    enabled: !recovering && Boolean(readModel) && sessionPanelOpen,
   })
-  const completeSession =
-    readModel?.kind === 'full'
-      ? readModel.session
-      : !isSmallScreen || sessionPanelOpen
-        ? (completeNavigationSession ?? undefined)
-        : undefined
+  const completeSession = readModel?.kind === 'full' ? readModel.session : undefined
+  const sessionForPanel = completeSession ?? panelSession ?? undefined
+  useEffect(() => {
+    if (sessionForPanel || isSmallScreen) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key === '\\') {
+        event.preventDefault()
+        toggleSessionPanel(currentSessionId)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [currentSessionId, isSmallScreen, sessionForPanel])
   const messageListRef = useRef<MessageListRef>(null)
-  const { requireComplete } = useSessionViewNavigation(currentSessionId, messageListRef, Boolean(completeSession))
+  const {
+    requireComplete,
+    loadCompleteNavigation,
+    jumpToEdge,
+    navigate: navigateTranscript,
+  } = useSessionViewNavigation(currentSessionId, messageListRef, Boolean(completeSession), transcript.cancelJump)
   const setLastUsedChatModel = useStore(lastUsedModelStore, (state) => state.setChatModel)
   const isWorkMode = resolveSessionMode(useSessionAgentMode(currentSessionId).value) === 'work'
   const builtInBrowser = useMemo(
@@ -292,13 +309,14 @@ function RouteComponent() {
       <div className={`flex min-w-0 flex-1 flex-col h-full ${!isSmallScreen ? 'relative' : ''}`}>
         <Header session={completeSession ?? currentSession} />
         {!completeSession && transcript.error && (
-          <Button variant="subtle" onClick={transcript.retry}>
+          <Button variant="subtle" onClick={() => transcript.retry((edge) => jumpToEdge(edge, transcript.jumpToEdge))}>
             {t('Try Again')}
           </Button>
         )}
 
         {/* MessageList 设置 key，确保每个 session 对应新的 MessageList 实例 */}
         <MessageList
+          onNavigate={navigateTranscript}
           ref={messageListRef}
           key={`message-list${currentSessionId}`}
           {...(completeSession
@@ -313,9 +331,11 @@ function RouteComponent() {
                 isLoadingOlder: transcript.isLoadingOlder,
                 isLoadingNewer: transcript.isLoadingNewer,
                 isJumping: transcript.isJumping,
-                onJumpToEdge: transcript.jumpToEdge,
+                onJumpToEdge: (edge) => jumpToEdge(edge, transcript.jumpToEdge),
                 windowPosition: transcript.position,
                 onRequireComplete: requireComplete,
+                onLoadCompleteNavigation: loadCompleteNavigation,
+                totalMessageCount: readModel?.kind === 'window' ? readModel.summary.messageCount : undefined,
               })}
           className={!isSmallScreen ? 'pt-[2px]' : undefined}
         />
@@ -353,11 +373,30 @@ function RouteComponent() {
           </ErrorBoundary>
         </Box>
       </div>
+      {!isSmallScreen && sessionPanelOpen && !sessionForPanel && (
+        <Box role="status" className="flex items-center justify-center gap-2 p-4">
+          {isPanelFetching ? (
+            <>
+              <Loader size="xs" />
+              {t('Loading...')}
+            </>
+          ) : isPanelError ? (
+            <Button variant="subtle" onClick={() => void reloadPanel()}>
+              {t('Try Again')}
+            </Button>
+          ) : null}
+        </Box>
+      )}
       {isSmallScreen ? (
-        <SessionSheet session={completeSession} />
+        <SessionSheet
+          session={sessionForPanel}
+          sessionId={currentSessionId}
+          isError={isPanelError && !isPanelFetching}
+          onRetry={() => void reloadPanel()}
+        />
       ) : (
-        completeSession && (
-          <SessionSidePanel key={currentSessionId} session={completeSession} builtInBrowser={builtInBrowser} />
+        sessionForPanel && (
+          <SessionSidePanel key={currentSessionId} session={sessionForPanel} builtInBrowser={builtInBrowser} />
         )
       )}
     </div>

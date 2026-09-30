@@ -1,5 +1,5 @@
 import { isThreadHistoryAvailable, resolveSessionMode, type SessionMode } from '@chatbox/core/session/mode-policy'
-import { SegmentedControl } from '@mantine/core'
+import { Button, Loader, SegmentedControl } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import type { Session } from '@shared/types'
 import { useCallback } from 'react'
@@ -15,9 +15,19 @@ import ThreadHistoryList from './ThreadHistoryList'
  * Small-screen counterpart of the conversation side panel: one bottom sheet whose segments match
  * the panel's tabs. The sheet is the only scroll container and every change applies immediately.
  */
-export function SessionSheet({ session }: { session: Session | undefined }) {
+export function SessionSheet({
+  session,
+  sessionId: requestedSessionId,
+  isError,
+  onRetry,
+}: {
+  session: Session | undefined
+  sessionId?: string
+  isError?: boolean
+  onRetry?: () => void
+}) {
   const { t } = useTranslation()
-  const sessionId = session?.id ?? ''
+  const sessionId = session?.id ?? requestedSessionId ?? ''
   const panel = useSessionPanel(sessionId)
   const mode = resolveSessionMode(useSessionAgentMode(sessionId).value)
   const close = useCallback(() => closeSessionPanel(sessionId), [sessionId])
@@ -27,7 +37,7 @@ export function SessionSheet({ session }: { session: Session | undefined }) {
 
   return (
     <Drawer.Root
-      open={panel.open && Boolean(session)}
+      open={panel.open && Boolean(sessionId)}
       onOpenChange={(open) => !open && close()}
       noBodyStyles
       repositionInputs={false}
@@ -57,16 +67,28 @@ export function SessionSheet({ session }: { session: Session | undefined }) {
             </div>
           )}
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pt-1 pb-[calc(var(--mobile-safe-area-inset-bottom,0px)+16px)]">
-            {session &&
-              (tab === 'threads' ? (
-                <div className="rounded-xl bg-chatbox-background-primary p-1">
-                  <ThreadHistoryList key={session.id} session={session} onNavigate={close} inlineMenus />
-                </div>
-              ) : (
-                <SettingsDensityProvider density="touch">
-                  <SheetSessionSettings key={session.id} session={session} mode={mode} />
-                </SettingsDensityProvider>
-              ))}
+            {!session ? (
+              <div role="status" className="flex min-h-24 items-center justify-center gap-2">
+                {isError ? (
+                  <Button variant="subtle" onClick={onRetry}>
+                    {t('Try Again')}
+                  </Button>
+                ) : (
+                  <>
+                    <Loader size="xs" />
+                    {t('Loading...')}
+                  </>
+                )}
+              </div>
+            ) : tab === 'threads' ? (
+              <div className="rounded-xl bg-chatbox-background-primary p-1">
+                <ThreadHistoryList key={session.id} session={session} onNavigate={close} inlineMenus />
+              </div>
+            ) : (
+              <SettingsDensityProvider density="touch">
+                <SheetSessionSettings key={session.id} session={session} mode={mode} />
+              </SettingsDensityProvider>
+            )}
           </div>
         </Drawer.Content>
       </Drawer.Portal>

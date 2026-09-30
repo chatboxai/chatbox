@@ -14,6 +14,7 @@ const ui = vi.hoisted(() => ({
 vi.mock('@/app/renderer-application', () => ({
   rendererApplication: { sessionQueryBridge: { requireCompleteSessionView: load } },
 }))
+vi.mock('@/stores/toastActions', () => ({ add: vi.fn() }))
 vi.mock('@/stores/uiStore', () => ({ uiStore: { getState: () => ui } }))
 vi.mock('@/stores/sessionHelpers', () => ({ getAllMessageList: vi.fn() }))
 
@@ -64,7 +65,7 @@ test('publishes only the current route request and drops unmounted requests', as
   const ref = messageListRef()
   const { result, unmount } = renderHook(() => useSessionViewNavigation('A', ref, false))
   await act(async () => result.current.requireComplete('old-message'))
-  expect(result.current.pendingNavigation?.messageId).toBe('old-message')
+  expect(result.current.pendingNavigation?.target).toEqual({ kind: 'message', messageId: 'old-message' })
   const isCurrent = result.current.isCurrent
   unmount()
   expect(isCurrent()).toBe(false)
@@ -155,7 +156,7 @@ test('uses the MessageList message navigation after readiness to preserve highli
   expect(ref.current.scrollToMessage).not.toHaveBeenCalled()
   view.list.style.visibility = 'visible'
   await advance(64)
-  expect(ref.current.scrollToMessage).toHaveBeenCalledExactlyOnceWith('target')
+  expect(ref.current.scrollToMessage).toHaveBeenCalledExactlyOnceWith('target', 'smooth', 'replay')
   expect(ref.current.scrollToTop).not.toHaveBeenCalled()
   expect(result.current.pendingNavigation).toBeNull()
 })
@@ -175,12 +176,12 @@ test('a later same-session request owns navigation even when the earlier read co
     finishes[1]({ id: 'A' })
     await newRequest
   })
-  expect(result.current.pendingNavigation?.messageId).toBe('new')
+  expect(result.current.pendingNavigation?.target).toEqual({ kind: 'message', messageId: 'new' })
   await act(async () => {
     finishes[0]({ id: 'A' })
     await oldRequest
   })
-  expect(result.current.pendingNavigation?.messageId).toBe('new')
+  expect(result.current.pendingNavigation?.target).toEqual({ kind: 'message', messageId: 'new' })
 })
 
 test('completion of an already dispatched request cannot finish its newer same-session successor', async () => {
@@ -199,7 +200,7 @@ test('completion of an already dispatched request cannot finish its newer same-s
   view.list.style.visibility = 'hidden'
   await act(async () => result.current.requireComplete('new'))
   await advance(64)
-  expect(result.current.pendingNavigation?.messageId).toBe('new')
+  expect(result.current.pendingNavigation?.target).toEqual({ kind: 'message', messageId: 'new' })
   expect(ref.current.scrollToMessage).not.toHaveBeenCalled()
   vi.mocked(ref.current.scrollToMessage).mockImplementation((id) => {
     showMessage(view, id)
@@ -207,7 +208,7 @@ test('completion of an already dispatched request cannot finish its newer same-s
   })
   view.list.style.visibility = 'visible'
   await advance(64)
-  expect(ref.current.scrollToMessage).toHaveBeenCalledExactlyOnceWith('new')
+  expect(ref.current.scrollToMessage).toHaveBeenCalledExactlyOnceWith('new', 'smooth', 'replay')
   expect(result.current.pendingNavigation).toBeNull()
 })
 
@@ -282,3 +283,271 @@ test.each(['missing', 'error'] as const)(
     expect(error).toHaveBeenCalledTimes(failure === 'error' ? 1 : 0)
   }
 )
+
+test('reports a pending complete read immediately and clears it after failure so navigation can retry', async () => {
+  let reject: (error: Error) => void = () => undefined
+  load.mockImplementation(
+    () =>
+      new Promise((_resolve, fail) => {
+        reject = fail
+      })
+  )
+  vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  const { result } = renderHook(() => useSessionViewNavigation('A', messageListRef(), false))
+  let request: Promise<void> | undefined
+  act(() => {
+    request = result.current.requireComplete('message')
+  })
+  expect(result.current.isLoadingComplete).toBe(true)
+  await act(async () => {
+    reject(new Error('read failed'))
+    await request
+  })
+  expect(result.current.isLoadingComplete).toBe(false)
+  expect(result.current.pendingNavigation).toBeNull()
+})
+
+test('loading complete navigation leaves scrolling and highlighting to the existing viewport restoration', async () => {
+  load.mockResolvedValue({ id: 'A' })
+  const ref = messageListRef()
+  const { result, rerender } = renderHook(({ complete }) => useSessionViewNavigation('A', ref, complete), {
+    initialProps: { complete: false },
+  })
+  await act(() => result.current.loadCompleteNavigation())
+  expect(load).toHaveBeenCalledWith('A')
+  expect(result.current.pendingNavigation).toBeNull()
+  rerender({ complete: true })
+  expect(ref.current.scrollToMessage).not.toHaveBeenCalled()
+  expect(ref.current.scrollToTop).not.toHaveBeenCalled()
+  expect(ref.current.scrollToBottom).not.toHaveBeenCalled()
+  expect(result.current.isLoadingComplete).toBe(false)
+})
+
+test.each(['head', 'tail'] as const)(
+  'starts a paged %s jump immediately during hydration and preserves it in the complete view',
+  async (edge) => {
+    vi.useFakeTimers()
+    const view = mountTranscript()
+    const ref = messageListRef()
+    let finish: ((session: { id: string }) => void) | undefined
+    load.mockClear()
+    load.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        })
+    )
+    Object.defineProperties(view.scroller, { scrollHeight: { value: 10000 }, clientHeight: { value: 600 } })
+    vi.mocked(ref.current.scrollToTop).mockImplementation(() => {
+      view.scroller.scrollTop = 0
+    })
+    vi.mocked(ref.current.scrollToBottom).mockImplementation(() => {
+      view.scroller.scrollTop = 9400
+    })
+    const jumpWindow = vi.fn()
+    const { result, rerender } = renderHook(({ complete }) => useSessionViewNavigation('A', ref, complete), {
+      initialProps: { complete: false },
+    })
+    let hydration: Promise<void> | undefined
+    act(() => {
+      hydration = result.current.loadCompleteNavigation()
+    })
+    act(() => {
+      result.current.jumpToEdge(edge, jumpWindow)
+    })
+    expect(jumpWindow).toHaveBeenCalledExactlyOnceWith(edge)
+    expect(load).toHaveBeenCalledOnce()
+    await act(async () => {
+      finish?.({ id: 'A' })
+      await hydration
+    })
+    view.complete()
+    view.list.style.visibility = 'visible'
+    rerender({ complete: true })
+    await advance(64)
+    expect(edge === 'head' ? ref.current.scrollToTop : ref.current.scrollToBottom).toHaveBeenCalledOnce()
+    expect(view.scroller.scrollTop).toBe(edge === 'head' ? 0 : 9400)
+    expect(result.current.pendingNavigation).toBeNull()
+  }
+)
+
+test('uses paged edge reads while no complete load owns navigation', () => {
+  const jumpWindow = vi.fn()
+  const { result } = renderHook(() => useSessionViewNavigation('A', messageListRef(), false))
+  act(() => {
+    result.current.jumpToEdge('head', jumpWindow)
+  })
+  expect(jumpWindow).toHaveBeenCalledExactlyOnceWith('head')
+})
+
+test.each(['head', 'tail'] as const)(
+  'retains an in-flight paged %s target when load-all replaces its window',
+  async (edge) => {
+    vi.useFakeTimers()
+    const view = mountTranscript()
+    const ref = messageListRef()
+    let finishWindow: () => void = () => undefined
+    let finishComplete: (session: { id: string }) => void = () => undefined
+    const jumpWindow = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishWindow = resolve
+        })
+    )
+    load.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishComplete = resolve
+        })
+    )
+    Object.defineProperties(view.scroller, { scrollHeight: { value: 10000 }, clientHeight: { value: 600 } })
+    vi.mocked(ref.current.scrollToTop).mockImplementation(() => {
+      view.scroller.scrollTop = 0
+    })
+    vi.mocked(ref.current.scrollToBottom).mockImplementation(() => {
+      view.scroller.scrollTop = 9400
+    })
+    const { result, rerender } = renderHook(({ complete }) => useSessionViewNavigation('A', ref, complete), {
+      initialProps: { complete: false },
+    })
+    act(() => {
+      result.current.jumpToEdge(edge, jumpWindow)
+    })
+    expect(jumpWindow).toHaveBeenCalledExactlyOnceWith(edge)
+    let hydration: Promise<void> | undefined
+    act(() => {
+      hydration = result.current.loadCompleteNavigation()
+    })
+    await act(async () => {
+      finishComplete({ id: 'A' })
+      await hydration
+    })
+    view.complete()
+    view.list.style.visibility = 'visible'
+    rerender({ complete: true })
+    await advance(64)
+    expect(edge === 'head' ? ref.current.scrollToTop : ref.current.scrollToBottom).toHaveBeenCalledOnce()
+    expect(view.scroller.scrollTop).toBe(edge === 'head' ? 0 : 9400)
+    await act(async () => {
+      finishWindow()
+      await Promise.resolve()
+    })
+    expect(result.current.pendingNavigation).toBeNull()
+  }
+)
+
+test.each(
+  ([{ kind: 'head' }, { kind: 'tail' }, { kind: 'message', messageId: 'loaded-message' }] as const).flatMap((target) =>
+    [true, false].map((latestFirst) => ({ target, latestFirst }))
+  )
+)(
+  'executes local $target.kind immediately and retains it after hydration (latest first: $latestFirst)',
+  async ({ target, latestFirst }) => {
+    const finishes: Array<(session: { id: string }) => void> = []
+    load.mockClear()
+    load.mockImplementation(() => new Promise((resolve) => finishes.push(resolve)))
+    const cancelWindow = vi.fn()
+    const { result } = renderHook(() => useSessionViewNavigation('A', messageListRef(), false, cancelWindow))
+    act(() => {
+      void result.current.loadCompleteNavigation()
+      void result.current.requireComplete('older-target')
+      expect(result.current.navigate(target)).toBe(false)
+    })
+    expect(cancelWindow).toHaveBeenCalledOnce()
+    expect(load).toHaveBeenCalledTimes(2)
+    if (latestFirst) await act(async () => finishes[1]({ id: 'A' }))
+    await act(async () => finishes[0]({ id: 'A' }))
+    if (!latestFirst) {
+      expect(result.current.pendingNavigation).toBeNull()
+      await act(async () => finishes[1]({ id: 'A' }))
+    }
+    expect(result.current.pendingNavigation?.target).toEqual(target)
+  }
+)
+
+test('a failed background read cannot suppress local navigation', async () => {
+  let fail: ((error: Error) => void) | undefined
+  load.mockClear()
+  load.mockImplementation(
+    () =>
+      new Promise((_resolve, reject) => {
+        fail = reject
+      })
+  )
+  vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  const { result } = renderHook(() => useSessionViewNavigation('A', messageListRef(), false))
+  let hydration: Promise<void> | undefined
+  const scroll = vi.fn()
+  act(() => {
+    hydration = result.current.loadCompleteNavigation()
+    if (!result.current.navigate({ kind: 'message', messageId: 'loaded' })) scroll()
+  })
+  expect(scroll).toHaveBeenCalledOnce()
+  expect(load).toHaveBeenCalledOnce()
+  await act(async () => {
+    fail?.(new Error('read failed'))
+    await hydration
+  })
+  expect(result.current.pendingNavigation).toBeNull()
+  expect(scroll).toHaveBeenCalledOnce()
+})
+
+test('local navigation on the complete view cancels a pending replay', async () => {
+  vi.useFakeTimers()
+  const view = mountTranscript()
+  const ref = messageListRef()
+  load.mockResolvedValue({ id: 'A' })
+  const { result, rerender } = renderHook(({ complete }) => useSessionViewNavigation('A', ref, complete), {
+    initialProps: { complete: false },
+  })
+  await act(() => result.current.requireComplete('old-target'))
+  view.complete()
+  rerender({ complete: true })
+  act(() => {
+    expect(result.current.navigate({ kind: 'tail' })).toBe(false)
+  })
+  view.list.style.visibility = 'visible'
+  await advance(80)
+  expect(ref.current.scrollToMessage).not.toHaveBeenCalled()
+  expect(result.current.pendingNavigation).toBeNull()
+})
+
+test('ordinary local navigation does not read complete history', () => {
+  load.mockClear()
+  const { result } = renderHook(() => useSessionViewNavigation('A', messageListRef(), false))
+  expect(result.current.navigate({ kind: 'tail' })).toBe(false)
+  expect(load).not.toHaveBeenCalled()
+})
+
+test('a canceled window read cannot clear a later complete navigation owner', async () => {
+  let finishWindow: (() => void) | undefined
+  let finishComplete: ((session: { id: string }) => void) | undefined
+  const windowRead = new Promise<void>((resolve) => {
+    finishWindow = resolve
+  })
+  load.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finishComplete = resolve
+      })
+  )
+  const cancelWindow = vi.fn()
+  const { result } = renderHook(() => useSessionViewNavigation('A', messageListRef(), false, cancelWindow))
+  act(() => result.current.jumpToEdge('head', () => windowRead))
+  act(() => expect(result.current.navigate({ kind: 'tail' })).toBe(false))
+  expect(cancelWindow).toHaveBeenCalledOnce()
+  let complete: Promise<void> | undefined
+  act(() => {
+    complete = result.current.requireComplete('latest')
+  })
+  await act(async () => {
+    finishWindow?.()
+    await windowRead
+  })
+  expect(result.current.isLoadingComplete).toBe(true)
+  await act(async () => {
+    finishComplete?.({ id: 'A' })
+    await complete
+  })
+  expect(result.current.pendingNavigation?.target).toEqual({ kind: 'message', messageId: 'latest' })
+})

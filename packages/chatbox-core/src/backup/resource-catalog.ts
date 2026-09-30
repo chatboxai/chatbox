@@ -6,8 +6,9 @@ import { safeSessionPathComponent } from './export-backup'
 import { createBackupProgressReporter } from './progress'
 import { BackupReadError } from './read-error'
 import type { ResourceReference } from './resources'
-import type { BackupResourceEntry, BackupWarning } from './types'
+import type { BackupResourceEntry } from './types'
 import type { ZipArchiveEntry } from './zip'
+import { BackupWarningBudgetError, BackupWarningIndex } from './warning-index'
 
 interface ResourceCandidate {
   references: ResourceReference[]
@@ -48,7 +49,7 @@ export class BackupResourceBudgetError extends Error {
 export class BackupResourceCatalog {
   readonly candidates = new Map<string, ResourceCandidate>()
   readonly resources: BackupResourceEntry[] = []
-  readonly warnings: BackupWarning[] = []
+  readonly warnings = new BackupWarningIndex()
   readonly keys = new Map<string, string>()
   successfulKeys = 0
   private referenceCount = 0
@@ -169,7 +170,9 @@ export class BackupResourceCatalog {
           compress: shouldCompressMimeType(encoded.mimeType),
         }
       } catch (error) {
-        warnings.push({
+        throwIfAborted(options.signal)
+        if (error instanceof BackupWarningBudgetError) throw error
+        warnings.add({
           code: 'resource-read-failed',
           reason: error instanceof BackupReadError ? error.reason : undefined,
           itemType: 'resource',

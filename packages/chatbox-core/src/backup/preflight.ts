@@ -14,6 +14,7 @@ import { type BackupRow, type BackupSessionStore, backupPageLimits } from './ses
 import { BackupSourceBudgetError, checkedBackupRows, MAX_BACKUP_SESSION_STRUCTURE_BYTES } from './source-check'
 import { createTaskYielder } from './task-yield'
 import { type BackupWarning, MAX_BACKUP_JSON_ENTRY_BYTES } from './types'
+import { BackupWarningBudgetError, BackupWarningIndex } from './warning-index'
 import { type DeflatedZipData, deflateZipData } from './zip'
 
 export const SINGLE_BACKUP_SESSION_BYTES = 64 * 1024 * 1024
@@ -69,8 +70,7 @@ export async function prepareSessionSource(
   const tree: Partial<SessionTree> & Pick<SessionTree, 'threads' | 'messages'> = { threads: [], messages: [] }
   let messageBytes = 0
   let structureBytes = 0
-  const sourceWarnings: BackupWarning[] = []
-  let warningBytes = 0
+  const sourceWarnings = new BackupWarningIndex()
   const keep = (value: unknown) => {
     structureBytes += encoder.encode(JSON.stringify(value)).length
     if (structureBytes > MAX_BACKUP_SESSION_STRUCTURE_BYTES)
@@ -78,9 +78,7 @@ export async function prepareSessionSource(
   }
   const warn = (message: Message) => {
     const warnings = collectSessionResourceReferences({ id, name: '', messages: [message] }).warnings
-    warningBytes += encoder.encode(JSON.stringify(warnings)).length
-    if (warningBytes > 4 * 1024 * 1024) throw new BackupSourceBudgetError('Backup warning index exceeds budget')
-    sourceWarnings.push(...warnings)
+    sourceWarnings.addAll(warnings)
   }
   for await (const row of checkedBackupRows(store, id, backupPageLimits(), signal, nativePayloadLimit)) {
     if (row.kind === 'header') {
@@ -131,7 +129,7 @@ export async function prepareSessionSource(
   if (!decoded.ok) throw new Error(decoded.reason)
   const session = decoded.session
   const size = encoder.encode(JSON.stringify(session)).length
-  return { session, size, warnings: sourceWarnings }
+  return { session, size, warnings: sourceWarnings.toArray() }
 }
 
 /**
@@ -270,6 +268,7 @@ export async function prepareBackupExport(
       // A prepared prefix beyond the threshold is the lower bound classification settles on.
       if (error instanceof SingleFileBudgetError && limit === threshold)
         return { id, name: measured.name ?? id, layout: 'sharded' }
+      if (error instanceof BackupWarningBudgetError) throw error
       // Other budgets apply when the session is written; classification leaves them to export.
       if (error instanceof BackupSourceBudgetError) return classifyStored(id)
       throw error
@@ -285,7 +284,7 @@ export async function prepareBackupExport(
     : []
   if (ids.length > 50_000) throw new BackupSourceBudgetError('Too many selected sessions')
   const sessions: PreparedBackupSession[] = []
-  const warnings: BackupWarning[] = []
+  const warnings = new BackupWarningIndex()
   let planBytes = 0
   const reserve = (value: unknown) => {
     planBytes += encoder.encode(JSON.stringify(value)).length
@@ -332,16 +331,16 @@ export async function prepareBackupExport(
         message: (error instanceof Error ? error.message : String(error)).slice(0, 1024),
       }
       reserve(warning)
-      warnings.push(warning)
+      warnings.add(warning)
     }
   }
   options.onProgress?.({ phase: 'preparing', current: ids.length, total: ids.length })
   if (ids.length && !sessions.length)
-    throw new Error(`No selected conversation can be backed up: ${warnings[0]?.message}`)
+    throw new Error(`No selected conversation can be backed up: ${warnings.toArray()[0]?.message}`)
   return {
     formatVersion: sessions.some((session) => session.layout === 'sharded') ? 3 : 2,
     sessions,
-    warnings,
+    warnings: warnings.toArray(),
     selectedSessionIds: ids,
     exportItems: [...options.exportItems],
     includeKeys: options.includeKeys,
@@ -352,7 +351,9 @@ export async function prepareBackupExport(
 async function prepareLegacySession(store: BackupSessionStore, id: string, signal?: AbortSignal) {
   const value = await store.readLegacySession?.(id, SINGLE_BACKUP_SESSION_BYTES, signal)
   if (!value) throw new Error('Legacy backup source is unavailable')
-  const warnings = collectSessionResourceReferences(value).warnings
+  const warningIndex = new BackupWarningIndex()
+  warningIndex.addAll(collectSessionResourceReferences(value).warnings)
+  const warnings = warningIndex.toArray()
   const session = prepareSessionForBackup(value)
   const size = encoder.encode(JSON.stringify(session)).length
   if (size > SINGLE_BACKUP_SESSION_BYTES) throw new Error('Legacy conversation exceeds the single-file backup limit')

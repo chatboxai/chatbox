@@ -137,7 +137,7 @@ export async function exportShardedBackup(
   const entries = async function* (): AsyncGenerator<ZipArchiveEntry> {
     const sessions: BackupManifestV3['sessions'] = []
     const catalog = new BackupResourceCatalog()
-    catalog.warnings.push(...sourceWarnings)
+    catalog.warnings.addAll(sourceWarnings)
     const globalData: import('./types').BackupManifest['data'] = {}
     yield* backupGlobalEntries(options, catalog, globalData, await options.storage.getAllKeys())
     let total = 0
@@ -173,11 +173,11 @@ export async function exportShardedBackup(
       if (selected?.layout === 'single' && sharded.prepared) {
         const session = await preparedSessionReader({ ...options, sessionStore: sharded.store }, sharded.prepared)(
           id,
-          (warnings) => catalog.warnings.push(...warnings)
+          (warnings) => catalog.warnings.addAll(warnings)
         )
         const collected = collectSessionResourceReferences(session)
         catalog.add(collected.references)
-        catalog.warnings.push(...collected.warnings)
+        catalog.warnings.addAll(collected.warnings)
         const entry = await encode(`${prefix}/session.json`, session, 64 * 1024 * 1024)
         let messages = session.messages.length
         for (const thread of session.threads ?? []) messages += thread.messages.length
@@ -268,7 +268,7 @@ export async function exportShardedBackup(
           }
           if (!prepared || !row.payload.original) throw new Error('Backup payload projection is missing')
           const originalResources = rowResources({ ...logical, value: row.payload.original() }, id)
-          catalog.warnings.push(...originalResources.warnings)
+          catalog.warnings.addAll(originalResources.warnings)
           if (row.payload.size !== undefined && rawSize !== row.payload.size)
             throw new Error('Backup payload size mismatch')
           logical = LogicalBackupRowSchema.parse({
@@ -280,7 +280,7 @@ export async function exportShardedBackup(
         graph.add(logical)
         const collected = rowResources(logical, id)
         catalog.add(collected.references)
-        catalog.warnings.push(...collected.warnings)
+        catalog.warnings.addAll(collected.warnings)
         if (!(logical.kind === 'message' && logical.payload)) logical = prepareRow(logical, id)
         if (logical.kind === 'header') {
           const entry = await encode(`${prefix}/header.json`, logical, limits.maxRecordBytes)
@@ -334,7 +334,7 @@ export async function exportShardedBackup(
       session.resourceIds = catalog.resources
         .filter((resource) => resource.sessionIds.includes(session.id))
         .map((resource) => resource.id)
-    const warnings = [...new Map(catalog.warnings.map((warning) => [JSON.stringify(warning), warning])).values()]
+    const warnings = catalog.warnings.toArray()
     manifest = BackupManifestV3Schema.parse({
       format: 'chatbox-backup',
       formatVersion: 3,

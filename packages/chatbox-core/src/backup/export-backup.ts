@@ -43,6 +43,7 @@ import {
   MAX_BACKUP_JSON_ENTRY_BYTES,
   validateBackupManifestGraph,
 } from './types'
+import { BackupWarningBudgetError } from './warning-index'
 import { createZipStream, DEFAULT_ZIP_LIMITS, isDeflatedZipData, type ZipArchiveEntry } from './zip'
 
 interface SessionEntryState {
@@ -290,7 +291,7 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
   const generateEntries = async function* (): AsyncGenerator<ZipArchiveEntry> {
     const catalog = new BackupResourceCatalog()
     const warnings = catalog.warnings
-    warnings.push(...(options.sourceWarnings ?? []))
+    warnings.addAll(options.sourceWarnings ?? [])
     const sessions: SessionEntryState[] = []
     const resources = catalog.resources
     const storageKeyToResourceId = catalog.keys
@@ -330,7 +331,8 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
         const prepared = options.preparedSessionEntries?.get(sessionId)
         if (prepared) {
           options.preparedSessionEntries?.delete(sessionId)
-          warnings.push(...prepared.sourceWarnings, ...prepared.warnings)
+          warnings.addAll(prepared.sourceWarnings)
+          warnings.addAll(prepared.warnings)
           catalog.add(prepared.references)
           const path = `sessions/${await safeSessionPathComponent(sessionId, checksum)}/session.json`
           sessions.push({
@@ -350,7 +352,7 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
         }
         try {
           const session = options.readSession
-            ? await options.readSession(sessionId, (sourceWarnings) => warnings.push(...sourceWarnings))
+            ? await options.readSession(sessionId, (sourceWarnings) => warnings.addAll(sourceWarnings))
             : await options.storage.getItem<Session | null>(backupSessionStorageKey(sessionId), null)
           if (session === null && !metaById.has(sessionId) && !options.selectedSessionIds) continue
           if (session === null) throw new BackupReadError('session-missing', 'Session data is missing')
@@ -361,7 +363,7 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
           const preparedSession = prepareSessionForBackup(session)
           const path = `sessions/${await safeSessionPathComponent(session.id, checksum)}/session.json`
           const { archive, descriptor } = await jsonEntry(path, preparedSession, checksum)
-          warnings.push(...collected.warnings)
+          warnings.addAll(collected.warnings)
           catalog.add(collected.references)
           sessions.push({
             entry: {
@@ -375,9 +377,14 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
           })
           yield archive
         } catch (error) {
-          if (options.strictSessions || error instanceof BackupResourceBudgetError) throw error
+          if (
+            options.strictSessions ||
+            error instanceof BackupResourceBudgetError ||
+            error instanceof BackupWarningBudgetError
+          )
+            throw error
           throwIfAborted(options.signal)
-          warnings.push({
+          warnings.add({
             code: 'session-read-failed',
             reason: error instanceof BackupReadError ? error.reason : undefined,
             itemType: 'session',
@@ -413,12 +420,12 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
       data,
       sessions: sessions.map((session) => session.entry),
       resources,
-      warnings,
+      warnings: warnings.toArray(),
       stats: {
         sessionCount: sessions.length,
         resourceCount: resources.length,
         deduplicatedResourceCount: Math.max(0, catalog.successfulKeys - resources.length),
-        warningCount: warnings.length,
+        warningCount: warnings.size,
       },
     })
     validateBackupManifestGraph(manifest)

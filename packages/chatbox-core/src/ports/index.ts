@@ -17,6 +17,8 @@ export {
 export {
   type SessionDataRepositoryPort,
   type SessionDataWriteOptions,
+  type SessionCommand,
+  type SessionCommandDelta,
   type SessionMessageMutation,
   type SessionFolderStorePort,
   type SessionMetaRepositoryPort,
@@ -29,6 +31,7 @@ export {
   type GeneratingMessageRef,
   type SessionMessagesRequest,
   type SessionMessagesSnapshot,
+  type SessionThreadSuffixRequest,
   type SessionMessageWindow,
   type SessionMessageWindowCursor,
   type SessionMessageWindowRequest,

@@ -1,3 +1,4 @@
+import type { SessionThreadSuffixRequest } from '../ports/session-row-store'
 import { assertSessionThreadPageRevision, validateSessionThreadPageRequest } from '../persistence/session-thread-page'
 import {
   type GeneratingMessageRef,
@@ -188,6 +189,19 @@ export class InMemorySessionRowStore implements SessionRowStorePort {
       if (error instanceof SessionRowConflictError) throw error
       throw new SessionRowStoreError('read-message-window', error, request.sessionId)
     }
+  }
+
+  async readThreadSuffix(request: SessionThreadSuffixRequest): Promise<SessionMessagesSnapshot | null> {
+    const state = this.sessions.get(request.sessionId)
+    assertSessionReadRevision(request, this.revisions.get(request.sessionId) ?? null)
+    if (!state) return null
+    return clone({
+      record: state.record,
+      revision: state.revision,
+      messages: [...state.messages.values()]
+        .filter((row) => row.threadId === request.threadId && row.seq > request.afterSeq)
+        .sort((a, b) => a.seq - b.seq),
+    })
   }
 
   async readMessages(request: SessionMessagesRequest): Promise<SessionMessagesSnapshot | null> {

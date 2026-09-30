@@ -1,3 +1,6 @@
+import { RowBackedSessionRepository } from '@chatbox/core/application/session'
+import { InMemorySessionRecordStore } from '../../../../packages/chatbox-core/src/testing/InMemorySessionRecordStore'
+import type { Message } from '@chatbox/core'
 import { DEFAULT_BACKUP_PAGE_LIMITS } from '@chatbox/core/backup'
 import { type SessionRowSqlBindValue, type SessionRowSqlDatabase, SqlSessionRowStore } from '@chatbox/core'
 import type { SessionRowSnapshot, SessionTextTokenResult } from '@chatbox/core/ports'
@@ -859,3 +862,43 @@ it('initializes all row tables with the Android native statement delimiter', asy
   await store.writeRows(snapshot(1))
   expect(await store.listSessionIds()).toEqual(['session'])
 })
+
+it.each(['ios', 'android'] as const)(
+  'keeps repeated branched append commands bounded through the %s mobile port',
+  async (platform) => {
+    const { store } = realBridge(platform)
+    const repository = new RowBackedSessionRepository({ rows: store, records: new InMemorySessionRecordStore() })
+    await repository.initialize()
+    const message = (id: string): Message => ({
+      id,
+      role: 'user',
+      contentParts: [{ type: 'text', text: id }],
+      timestamp: 1,
+    })
+    await repository.setSession({
+      id: 'session',
+      name: 'Forked',
+      messages: [message('pivot'), message('tail')],
+      messageForksHash: {
+        pivot: {
+          position: 0,
+          createdAt: 1,
+          lists: [
+            { id: 'selected', messages: [] },
+            { id: 'other', messages: [message('saved')] },
+          ],
+        },
+      },
+    })
+    repository.forgetBaseline('session')
+    const fullRead = vi.spyOn(store, 'readSnapshot')
+    for (const id of ['next', 'last']) {
+      const result = await repository.executeSessionCommand('session', { type: 'append', messages: [message(id)] })
+      expect(result.kind).toBe('rows')
+    }
+    expect(fullRead).not.toHaveBeenCalled()
+    const persisted = await repository.getSession('session')
+    expect(persisted?.messages.map((item) => item.id)).toEqual(['pivot', 'tail', 'next', 'last'])
+    expect(persisted?.messageForksHash?.pivot.lists[1].messages.map((item) => item.id)).toEqual(['saved'])
+  }
+)

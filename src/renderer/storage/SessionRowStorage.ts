@@ -44,6 +44,7 @@ import {
   type SessionMessageWindowRequest,
   type SessionMessagesRequest,
   type SessionMessagesSnapshot,
+  type SessionThreadSuffixRequest,
   type SessionContextRequest,
   type SessionContextRows,
   SessionRowConflictError,
@@ -424,6 +425,36 @@ export class IndexedDBSessionRowStore implements SessionRowStorePort {
     return this.readSelectedSnapshot('read-messages', request, (tx, commit, _threads, finish, fail) => {
       const ids = [...new Set(request.messageIds)]
       this.readSelectedRows(tx, request.sessionId, ids, (messages) => finish({ ...commit, messages }), fail)
+    })
+  }
+
+  async readThreadSuffix(request: SessionThreadSuffixRequest): Promise<SessionMessagesSnapshot | null> {
+    if (!request.threadId || !Number.isSafeInteger(request.afterSeq) || request.afterSeq < -1)
+      throw new Error('Invalid thread suffix request')
+    return this.readSelectedSnapshot('read-messages', request, (tx, commit, _threads, finish, fail) => {
+      const range = IDBKeyRange.bound(
+        [request.sessionId, request.threadId, request.afterSeq + 1],
+        [request.sessionId, request.threadId, Number.MAX_SAFE_INTEGER, []]
+      )
+      const cursor = tx.objectStore(SESSION_ROW_MESSAGE_STORE).index(MESSAGE_ORDER_INDEX).openCursor(range)
+      const messages: MessageRow[] = []
+      cursor.onerror = () => fail(cursor.error)
+      cursor.onsuccess = () => {
+        const current = cursor.result
+        if (!current) {
+          finish({ ...commit, messages })
+          return
+        }
+        readStoredMessage(
+          tx,
+          current.value as StoredMessageRow,
+          (message) => {
+            messages.push(message)
+            current.continue()
+          },
+          fail
+        )
+      }
     })
   }
 

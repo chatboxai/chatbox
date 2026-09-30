@@ -1,3 +1,7 @@
+import { InMemorySessionRecordStore, InMemorySessionRowStore, InMemorySessionRepository } from '../../testing'
+import { RowBackedSessionRepository } from './RowBackedSessionRepository'
+import { SessionService } from './SessionService'
+import { SessionWriteCoordinator } from './SessionWriteCoordinator'
 import { describe, expect, it, vi } from 'vitest'
 import { GenerationRuntimeStore, type GenerationRuntimeState } from '../../generation/runtime-store'
 import type { Session } from '../../types'
@@ -10,7 +14,7 @@ const session = (generating: boolean): Session => ({
   messages: [{ id: 'reply', role: 'assistant', contentParts: [], generating }],
 })
 
-function harness(all = true) {
+function harness(all = true, readDurableSession?: () => Promise<Session | null>) {
   const runtime = new GenerationRuntimeStore()
   const events = new SessionEventBus()
   const listeners = new Set<SessionEventListener>()
@@ -36,6 +40,7 @@ function harness(all = true) {
       stopGate,
       preparationBarrier,
       stoppingRuntimes,
+      readDurableSession,
     })
   const recovery = create()
   const stopping = runtime.beginStop('session', 'reply', undefined, active)
@@ -46,6 +51,109 @@ function harness(all = true) {
 }
 
 describe('durable generation stop recovery', () => {
+  it('releases Stop-all after a durable terminal command rejects its metadata write', async () => {
+    const rows = new RowBackedSessionRepository({
+      records: new InMemorySessionRecordStore(),
+      rows: new InMemorySessionRowStore(),
+    })
+    await rows.setSession(session(true))
+    const repository = Object.assign(new InMemorySessionRepository(), {
+      getSession: rows.getSession.bind(rows),
+      executeSessionCommand: rows.executeSessionCommand.bind(rows),
+    })
+    vi.spyOn(repository.meta, 'update').mockRejectedValueOnce(new Error('metadata unavailable'))
+    const read = vi.fn(() => rows.getSession('session'))
+    const h = harness(true, read)
+    const service = new SessionService(repository, new SessionWriteCoordinator(repository), h.events, {
+      createId: () => 'unused',
+    })
+    const published = vi.spyOn(h.events, 'publish')
+    await expect(
+      service.updateMessage('session', 'reply', { generating: false, finishReason: 'canceled' })
+    ).rejects.toThrow('metadata unavailable')
+    expect(published.mock.calls.some(([event]) => event.type === 'session-command-committed')).toBe(true)
+    expect(read).not.toHaveBeenCalled()
+    h.recovery.recover()
+    await vi.waitFor(() => expect(h.runtime.isSessionStopRequested('session')).toBe(false))
+    expect(h.runtime.list('session')).toHaveLength(0)
+    expect(read).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['before', 'after'] as const)(
+    'reads durable rows only when the terminal command arrives %s a failed stop',
+    async (timing) => {
+      const repository = new RowBackedSessionRepository({
+        records: new InMemorySessionRecordStore(),
+        rows: new InMemorySessionRowStore(),
+      })
+      await repository.setSession(session(true))
+      const read = vi.fn(() => repository.getSession('session'))
+      const h = harness(true, read)
+      const commit = await repository.executeSessionCommand('session', {
+        type: 'update',
+        messageId: 'reply',
+        updater: { generating: false, finishReason: 'canceled' },
+      })
+      if (commit.kind !== 'rows') throw new Error('Expected row command')
+      const publish = () =>
+        h.events.publish({
+          type: 'session-command-committed',
+          delta: commit.delta,
+          meta: null,
+          preserveCachedGeneratingMessages: false,
+        })
+      if (timing === 'before') await publish()
+      expect(read).not.toHaveBeenCalled()
+      h.recovery.recover()
+      if (timing === 'after') await publish()
+      await vi.waitFor(() => expect(h.runtime.isSessionStopRequested('session')).toBe(false))
+      expect(h.runtime.list('session')).toHaveLength(0)
+      expect(read).toHaveBeenCalledTimes(1)
+      expect(h.listeners.size).toBe(0)
+    }
+  )
+
+  it('does not accept a delayed durable read after a newer command', async () => {
+    const repository = new RowBackedSessionRepository({
+      records: new InMemorySessionRecordStore(),
+      rows: new InMemorySessionRowStore(),
+    })
+    await repository.setSession(session(true))
+    let resolve!: (value: Session | null) => void
+    const read = vi
+      .fn<() => Promise<Session | null>>()
+      .mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolve = done
+          })
+      )
+      .mockResolvedValue(session(true))
+    const h = harness(true, read)
+    h.recovery.recover()
+    const publish = async (generating: boolean) => {
+      const result = await repository.executeSessionCommand('session', {
+        type: 'update',
+        messageId: 'reply',
+        updater: { generating },
+      })
+      if (result.kind !== 'rows') throw new Error('Expected row command')
+      await h.events.publish({
+        type: 'session-command-committed',
+        delta: result.delta,
+        meta: null,
+        preserveCachedGeneratingMessages: false,
+      })
+    }
+    await publish(false)
+    await publish(true)
+    resolve(session(false))
+    await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(2))
+    expect(h.runtime.isSessionStopRequested('session')).toBe(true)
+    expect(h.runtime.get('session', 'reply')?.phase).toBe('stopping')
+    h.recovery.dispose()
+  })
+
   it.each(['before', 'after'] as const)(
     'releases terminal runtimes when persistence finishes %s Stop fails',
     async (timing) => {

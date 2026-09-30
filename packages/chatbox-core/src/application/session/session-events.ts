@@ -1,3 +1,4 @@
+import type { SessionCommandDelta } from '../../ports/session-repository'
 import type { LoggerPort } from '../../ports/logger'
 import type { SessionMessageDerivedWriteResult } from '../../ports/session-message-source'
 import type { Session, SessionFolder, SessionMeta, SessionMetaPage, SessionMetaRecord } from '../../types'
@@ -5,6 +6,12 @@ import type { Session, SessionFolder, SessionMeta, SessionMetaPage, SessionMetaR
 export type SessionDeleteOperation = 'session deletion' | 'bulk session deletion' | 'stale session meta cleanup'
 
 export type SessionApplicationEvent =
+  | {
+      type: 'session-command-committed'
+      delta: SessionCommandDelta
+      meta: SessionMeta | null
+      preserveCachedGeneratingMessages: boolean
+    }
   | ({ type: 'session-derived-data-patched' } & SessionMessageDerivedWriteResult)
   | ({ type: 'session-text-tokens-cached' } & SessionTextTokenWriteResult)
   | {

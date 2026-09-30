@@ -1,3 +1,4 @@
+import type { SessionCommand, SessionCommandDelta } from '../../ports/session-repository'
 import { type SessionRepositoryPort, SessionWriteConflictError } from '../../ports'
 import { BackupOperationBusyError } from '../../backup/operation'
 import type { SessionMessageDerivedWriteResult } from '../../ports/session-message-source'
@@ -7,13 +8,32 @@ import type { SessionMessageDerivedPatch } from './message-derived-data'
 import { applySessionDerivedPatches } from './session-derived-data'
 import { projectSessionMetaUpdate } from './session-metadata'
 import { clearChangedTextTokenSeeds, textTokenPatches } from './session-text-tokens'
-import { prepareSessionMessageOperation, type SessionMessageOperation } from './message-mutation'
+import {
+  applySessionMessageMutation,
+  prepareSessionMessageOperation,
+  type SessionMessageOperation,
+} from './message-mutation'
 
 export interface SessionWriteResult {
   session: Session
   meta: SessionMeta | null
   /** The session the update was applied to. */
   previous?: Session
+}
+
+export interface SessionCommandWriteResult {
+  kind: 'rows'
+  delta: SessionCommandDelta
+  meta: SessionMeta | null
+}
+
+export class SessionCommandMetadataUpdateError extends Error {
+  constructor(
+    readonly result: SessionCommandWriteResult,
+    readonly metadataError: unknown
+  ) {
+    super(`Failed to update metadata for session ${result.delta.sessionId}`, { cause: metadataError })
+  }
 }
 
 export interface SessionWriteOptions {
@@ -29,9 +49,9 @@ export interface SessionWriteOptions {
 
 export interface SessionWriteCoordinatorOptions {
   /**
-   * The current Renderer injects a React Query-backed reader so the first
-   * persisted write starts from cache-only streaming state when it exists.
-   * Other hosts can inject their own read model or use repository reads.
+   * Read a persistence-compatible baseline when no committed snapshot is held.
+   * Row repositories require this snapshot to match their durable content;
+   * cache-only streaming projections are display state, not a write baseline.
    */
   readCurrentSession?: (sessionId: string) => Promise<Session | null>
   /**
@@ -71,10 +91,10 @@ export class SessionMetadataUpdateError extends Error {
 /**
  * Serializes read-modify-write operations per session id.
  *
- * The in-memory state is updated only after the full session write succeeds.
+ * Full-session operations retain the last committed snapshot. Row commands use
+ * the repository revision and discard that snapshot after committing their delta.
  * A failed operation does not poison the tail: later writes can still run.
- * After the first read or `prime`, that snapshot remains the source for later
- * updates. Runtime full-session writes must therefore go through this coordinator.
+ * Runtime writes must go through this coordinator to preserve both ownership paths.
  * Restore/import code that writes the repository directly must call `forget` for
  * every affected id before another update, or recreate/reload the runtime.
  */
@@ -118,6 +138,47 @@ export class SessionWriteCoordinator {
       return Promise.reject(new SessionNotFoundError(sessionId))
     }
     return this.enqueue(sessionId, () => this.performUpdate(sessionId, updater, options))
+  }
+
+  executeCommand(
+    sessionId: string,
+    command: SessionCommand
+  ): Promise<SessionCommandWriteResult | ({ kind: 'full' } & SessionWriteResult) | null> {
+    if (this.unavailable.has(sessionId)) return Promise.reject(new SessionNotFoundError(sessionId))
+    return this.enqueue(sessionId, async () => {
+      if (!this.repository.executeSessionCommand || (await this.loadRecoveryArchive(sessionId)) !== undefined)
+        return null
+      const committed = await this.repository.executeSessionCommand(sessionId, command).catch((error: unknown) => {
+        if (error instanceof SessionWriteConflictError) {
+          this.current.delete(sessionId)
+          this.discardCurrentSession(sessionId)
+        }
+        throw error
+      })
+      if (committed.kind === 'full') {
+        this.current.set(sessionId, committed.session)
+        const meta = projectSessionMetaUpdate(committed.session)
+        try {
+          await this.repository.meta.update(sessionId, meta)
+        } catch (error) {
+          throw new SessionMetadataUpdateError(committed.session, meta, error)
+        }
+        return { ...committed, meta }
+      }
+      this.current.delete(sessionId)
+      const { delta } = committed
+      const projected = projectSessionMetaUpdate(
+        { ...delta.header, messages: [] },
+        (delta.record.presentation?.pausedMessageCount ?? 0) > 0
+      )
+      const result: SessionCommandWriteResult = { kind: 'rows', delta, meta: projected }
+      try {
+        await this.repository.meta.update(sessionId, projected)
+      } catch (error) {
+        throw new SessionCommandMetadataUpdateError(result, error)
+      }
+      return result
+    })
   }
 
   mutateMessages(
@@ -434,20 +495,22 @@ export class SessionWriteCoordinator {
       throw new SessionNotFoundError(sessionId)
     }
 
-    const prepared = operation
+    const mutation = operation
       ? prepareSessionMessageOperation(previous, operation, Boolean(this.repository.acceptSessionTextTokenResults))
       : undefined
-    const next = prepared?.session ?? (typeof updater === 'function' ? updater(previous) : { ...previous, ...updater })
+    const next = operation
+      ? mutation
+        ? applySessionMessageMutation(previous, mutation)
+        : previous
+      : typeof updater === 'function'
+        ? updater(previous)
+        : { ...previous, ...updater }
     const content =
-      !prepared && this.repository.acceptSessionTextTokenResults ? clearChangedTextTokenSeeds(next, previous) : next
-    const updated =
+      !operation && this.repository.acceptSessionTextTokenResults ? clearChangedTextTokenSeeds(next, previous) : next
+    let updated =
       recoveryArchivedAt === undefined ? content : { ...content, hidden: true, archivedAt: recoveryArchivedAt }
     try {
-      if (prepared?.mutation && this.repository.mutateSessionMessages && recoveryArchivedAt === undefined) {
-        await this.repository.mutateSessionMessages(previous, prepared.mutation)
-      } else {
-        await this.repository.setSession(updated, { changedMessageId: options.changedMessageId, baseSession: previous })
-      }
+      await this.repository.setSession(updated, { changedMessageId: options.changedMessageId, baseSession: previous })
     } catch (error) {
       if (error instanceof SessionWriteConflictError) {
         this.current.delete(sessionId)

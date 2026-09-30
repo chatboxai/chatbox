@@ -2,7 +2,7 @@ import { findMessageLocation } from '../../session/message-forks'
 import type { SessionMessageMutation } from '../../ports/session-repository'
 import type { Message, Session, Updater } from '../../types'
 import { getSessionMessageTokenizationText } from './message-derived-data'
-import { applyMessageInsert, applyMessageUpdate } from './message-tree'
+import { applyMessageUpdate } from './message-tree'
 import { withoutEstimatedTextTokens } from './session-text-tokens'
 
 export type SessionMessageOperation =
@@ -15,10 +15,11 @@ export function prepareSessionMessageOperation(
   clearSeeds: boolean
 ) {
   if (operation.type === 'append') {
-    return { session: applySessionMessageMutation(session, operation), mutation: operation }
+    return operation
   }
-  const location = findMessageLocation(session, operation.messageId)
-  const message = location?.list[location.index]
+  const tail = session.messages.at(-1)
+  const location = tail?.id === operation.messageId ? undefined : findMessageLocation(session, operation.messageId)
+  const message = tail?.id === operation.messageId ? tail : location?.list[location.index]
   const update = message
     ? typeof operation.updater === 'function'
       ? operation.updater(message)
@@ -44,12 +45,23 @@ export function prepareSessionMessageOperation(
       },
     }
   }
-  return { session: mutation ? applySessionMessageMutation(session, mutation) : session, mutation }
+  return mutation
 }
 
 export function applySessionMessageMutation(session: Session, mutation: SessionMessageMutation): Session {
   if (mutation.type === 'append') {
-    return mutation.messages.reduce((current, message) => applyMessageInsert(current, session.id, message), session)
+    const ids = new Set(session.messages.map((message) => message.id))
+    const appended = mutation.messages.filter((message) => {
+      if (ids.has(message.id)) return false
+      ids.add(message.id)
+      return true
+    })
+    return appended.length ? { ...session, messages: [...session.messages, ...appended] } : session
+  }
+  if (session.messages.at(-1)?.id === mutation.messageId) {
+    const messages = session.messages.slice()
+    messages[messages.length - 1] = mutation.message
+    return { ...session, messages }
   }
   return applyMessageUpdate(session, session.id, mutation.messageId, mutation.message)
 }

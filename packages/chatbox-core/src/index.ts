@@ -384,6 +384,8 @@ export {
   type PlatformCapability,
   type SessionDataRepositoryPort,
   type SessionDataWriteOptions,
+  type SessionCommand,
+  type SessionCommandDelta,
   type SessionMessageMutation,
   type SessionFolderStorePort,
   type SessionMetaRepositoryPort,

@@ -141,7 +141,7 @@ export interface GenerationOptions {
   externalAbortSignal?: AbortSignal
 }
 
-export interface GenerationSessionPort extends Pick<SessionRepositoryPort, 'getSession'> {
+export interface GenerationSessionPort extends Pick<SessionRepositoryPort, 'getSession' | 'getCompleteSessionSource'> {
   isSessionMissingError?(error: unknown): boolean
   getSessionContextSource?(request: SessionContextRequest): Promise<SessionContextSource | null>
   readSessionMessages?(request: SessionMessagesRequest): Promise<SessionMessagesSource | null>
@@ -528,8 +528,16 @@ export class GenerationService<TContext> {
         if (source.topologyFingerprint) {
           const fingerprint = source.topologyFingerprint
           conversationScope = async () => {
-            const complete = await sessions.getSession(sessionId)
-            if (!complete || sessionTopologyFingerprint(complete) !== fingerprint) return null
+            const snapshot = sessions.getCompleteSessionSource
+              ? await sessions.getCompleteSessionSource(sessionId)
+              : null
+            const complete = snapshot?.session ?? (await sessions.getSession(sessionId))
+            const currentFingerprint = fingerprint.startsWith('v2:')
+              ? snapshot?.topologyFingerprint
+              : complete
+                ? sessionTopologyFingerprint(complete, fingerprint)
+                : undefined
+            if (!complete || currentFingerprint !== fingerprint) return null
             const path = findMessageContext(complete, initialTargetMessage.id)
             return path ? new Set(path.list.map((message) => message.id)) : null
           }

@@ -82,12 +82,13 @@ const logger: LoggerPort = {
 
 const sessions: GenerationSessionPort = {
   getSession: (sessionId) => rendererApplication.sessionQueryBridge.getSession(sessionId),
+  getCompleteSessionSource: (sessionId) => rendererApplication.sessions.getCompleteSessionSource(sessionId),
   getSessionContextSource: (request) => rendererApplication.sessions.getSessionContextSource(request),
   readSessionMessages: (request) => rendererApplication.sessions.readSessionMessages(request),
   isSessionMissingError: (error) => error instanceof SessionNotFoundError,
   getSessionSettings: (sessionId, header) => getSessionSettings(sessionId, header),
   updateSessionSettings: async (sessionId, update) => {
-    await rendererApplication.sessions.updateSession(sessionId, (current) => {
+    await rendererApplication.sessions.updateSessionHeader(sessionId, (current) => {
       if (!current) {
         throw new Error(`Session ${sessionId} not found`)
       }

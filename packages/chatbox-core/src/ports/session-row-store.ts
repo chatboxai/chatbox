@@ -91,6 +91,13 @@ export interface SessionMessagesSnapshot extends SessionRowCommit {
   messages: MessageRow[]
 }
 
+export interface SessionThreadSuffixRequest {
+  sessionId: string
+  threadId: string
+  afterSeq: number
+  expectedRevision: number
+}
+
 export interface GeneratingMessageRef {
   sessionId: string
   threadId: string
@@ -151,6 +158,8 @@ export interface SessionRowStorePort extends Partial<SessionTextTokenStorePort> 
   readThreadsPage?(request: SessionThreadPageRequest): Promise<SessionThreadPage | null>
   /** Returns rows in deduplicated request order, across active, archived and fork paths. */
   readMessages(request: SessionMessagesRequest): Promise<SessionMessagesSnapshot | null>
+  /** Rows whose DFS labels must move when inserting before an inactive branch. */
+  readThreadSuffix?(request: SessionThreadSuffixRequest): Promise<SessionMessagesSnapshot | null>
   /** Reuse committed payloads only when their session and revision match the selected snapshot. */
   readContext(
     request: SessionContextRequest,

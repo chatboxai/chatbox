@@ -13,8 +13,10 @@ import { reportError } from '@/utils/sentry'
 
 const namingService = new SessionNamingService({
   sessions: {
-    getSession: (sessionId) => rendererApplication.sessionQueryBridge.getSession(sessionId),
-    updateSession: (sessionId, updater) => rendererApplication.sessions.updateSession(sessionId, updater),
+    getSession: async (sessionId) =>
+      rendererApplication.sessionQueryBridge.getLoadedSession(sessionId) ??
+      rendererApplication.sessionQueryBridge.getSession(sessionId),
+    updateSession: (sessionId, updater) => rendererApplication.sessions.updateSessionHeader(sessionId, updater),
     updateSessionWithMessages: (sessionId, updater) =>
       rendererApplication.sessions.updateSessionWithMessages(sessionId, updater),
   },
@@ -103,7 +105,9 @@ export async function syncSessionAutoTitleOnOpen(
     return
   }
 
-  const completeSession = await rendererApplication.sessionQueryBridge.getSession(session.id)
+  const completeSession =
+    rendererApplication.sessionQueryBridge.getLoadedSession(session.id) ??
+    (await rendererApplication.sessionQueryBridge.getSession(session.id))
   if (isCurrent() && completeSession) await syncSessionAutoTitle(completeSession)
 }
 

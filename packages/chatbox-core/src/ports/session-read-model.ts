@@ -8,11 +8,19 @@ import type {
 } from './session-row-store'
 import type { SessionTextTokenRead } from './session-text-tokens'
 
+export interface CompleteSessionSource {
+  session: Session
+  textTokens?: SessionTextTokenRead
+  /** Identity of the same atomic row snapshot as session. */
+  topologyFingerprint?: string
+  revision?: number
+}
+
 /** Metadata cannot be mistaken for a complete session by mutation consumers. */
 export type SessionHeader = Omit<Session, 'messages' | 'threads' | 'messageForksHash' | 'compactionPoints'>
 
 export type SessionReadModel =
-  | { kind: 'full'; session: Session; textTokens?: SessionTextTokenRead }
+  | { kind: 'full'; session: Session; textTokens?: SessionTextTokenRead; revision?: number }
   | { kind: 'window'; header: SessionHeader; summary: SessionPresentationSummary; window: SessionMessageWindow }
 
 export type SessionSearchThreadsPageRequest = SessionThreadPageRequest
@@ -29,7 +37,7 @@ export type SessionSearchThreadsPage =
     }
 
 export interface SessionReadRepositoryPort {
-  getCompleteSessionSource?(id: string): Promise<{ session: Session; textTokens?: SessionTextTokenRead } | null>
+  getCompleteSessionSource?(id: string): Promise<CompleteSessionSource | null>
   readSessionSearchThreadsPage(request: SessionSearchThreadsPageRequest): Promise<SessionSearchThreadsPage | null>
   getSessionReadModel(id: string): Promise<SessionReadModel | null>
   readSessionMessageWindow(request: SessionMessageWindowRequest): Promise<SessionMessageWindow | null>

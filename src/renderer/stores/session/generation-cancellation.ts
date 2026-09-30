@@ -26,6 +26,7 @@ export interface GenerationCancellationDependencies {
     | 'waitForGenerationPreparationLeases'
   >
   sessionEvents: Pick<SessionEventBus, 'subscribe'>
+  readDurableSession?: (sessionId: string) => Promise<Session | null>
   getSession: (sessionId: string) => Promise<Session | null>
   removeMessage: (sessionId: string, messageId: string) => Promise<void>
   persistMessage: (sessionId: string, message: Message) => Promise<void>
@@ -98,6 +99,10 @@ export function stopMessageGeneration(
     sessionId,
     targetMessageId: messageId,
     stoppingRuntimes,
+    readDurableSession: () =>
+      dependencies
+        ? (dependencies.readDurableSession ?? dependencies.getSession)(sessionId)
+        : rendererApplication.sessions.getSession(sessionId),
   })
   let stoppingRuntime = initialRuntime ? runtime.beginStop(sessionId, messageId, stoppedAt, initialRuntime) : undefined
   if (stoppingRuntime) stoppingRuntimes.set(messageId, stoppingRuntime)
@@ -159,6 +164,10 @@ export function stopAllMessageGenerations(
     stopGate,
     preparationBarrier,
     stoppingRuntimes,
+    readDurableSession: () =>
+      dependencies
+        ? (dependencies.readDurableSession ?? dependencies.getSession)(sessionId)
+        : rendererApplication.sessions.getSession(sessionId),
   })
   for (const activeRuntime of activeRuntimes) {
     const stopping = runtime.beginStop(sessionId, activeRuntime.messageId, stoppedAt, activeRuntime)

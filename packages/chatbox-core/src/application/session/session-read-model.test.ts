@@ -80,7 +80,7 @@ describe('session read models', () => {
   test.each(['work', 'legacy-mode', 'archive', 'fork', 'paused', 'generating'] as const)(
     'preserves complete control data for %s',
     async (kind) => {
-      const { repo } = repository()
+      const { repo, rows } = repository()
       const session = plain()
       if (kind === 'work') session.settings!.agentMode!.value = 'on'
       if (kind === 'legacy-mode') delete session.settings!.agentMode
@@ -114,6 +114,7 @@ describe('session read models', () => {
       const model = await repo.getSessionReadModel('s')
       expect(model?.kind).toBe('full')
       if (model?.kind !== 'full') throw new Error('expected complete controls')
+      expect(model.revision).toBe((await rows.readSnapshot('s'))?.revision)
       expect(model.session.messages).toHaveLength(120)
       if (kind === 'fork') expect(model.session.messageForksHash?.m118.lists[1].messages[0].generating).toBe(true)
     }

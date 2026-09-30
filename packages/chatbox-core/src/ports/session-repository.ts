@@ -1,7 +1,9 @@
+import type { SessionRowCommit, SessionRowsDiff } from './session-row-store'
 import type { Message, Session, SessionFolder, SessionMetaPage, SessionMetaRecord } from '../types/session'
+import type { Updater } from '../types'
 import type { SessionContextRepositoryPort } from './session-context-source'
 import type { SessionMessageRepositoryPort } from './session-message-source'
-import type { SessionReadRepositoryPort } from './session-read-model'
+import type { SessionHeader, SessionReadRepositoryPort } from './session-read-model'
 import type { SessionTextTokenRepositoryPort } from './session-text-tokens'
 
 export type SessionRepositoryOperation =
@@ -54,6 +56,26 @@ export type SessionMessageMutation =
   | { type: 'append'; messages: readonly Message[] }
   | { type: 'replace'; messageId: string; message: Message }
 
+export type SessionCommand =
+  | { type: 'append'; messages: readonly Message[] }
+  | { type: 'update'; messageId: string; updater: Updater<Message> }
+  | { type: 'header'; updater: Updater<SessionHeader> }
+
+/** A committed row change; complete Sessions are obtained through explicit reads. */
+export interface SessionCommandDelta extends SessionRowCommit {
+  sessionId: string
+  previousRevision: number
+  header: SessionHeader
+  previousHeader: SessionHeader
+  diff: SessionRowsDiff
+  /** The newly appended active-path rows, excluding the previous tail link update. */
+  appendedMessageIds: string[]
+}
+
+export type SessionCommandResult =
+  | { kind: 'rows'; delta: SessionCommandDelta }
+  | { kind: 'full'; session: Session; previous: Session }
+
 export interface SessionDataWriteOptions {
   /**
    * The caller guarantees that, against the last persisted state, only this
@@ -74,8 +96,12 @@ export interface SessionDataRepositoryPort
   initialize(): Promise<void>
   getSession(id: string): Promise<Session | null>
   setSession(session: Session, options?: SessionDataWriteOptions): Promise<void>
-  /** Apply a message operation against the caller's immutable snapshot, preserving optimistic concurrency. */
-  mutateSessionMessages?(base: Session, mutation: SessionMessageMutation): Promise<void>
+  /** Execute against the current committed revision; complex and legacy sessions use a complete result. */
+  executeSessionCommand?(
+    sessionId: string,
+    command: SessionCommand,
+    expectedRevision?: number
+  ): Promise<SessionCommandResult>
   deleteSession(id: string): Promise<void>
   getAllSessionIds(): Promise<string[]>
 }

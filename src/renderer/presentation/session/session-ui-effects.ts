@@ -4,7 +4,11 @@ import { rendererApplication } from '@/app/renderer-application'
 import { clearScrollPositionCache } from '@/components/chat/MessageList'
 import { sessionStartupRecovery } from '@/packages/session-startup-recovery'
 import platform from '@/platform'
-import { clearSessionNameGenerationState, syncSessionAutoTitle } from '@/stores/session/naming'
+import {
+  clearSessionNameGenerationState,
+  syncSessionAutoTitle,
+  syncSessionAutoTitleOnOpen,
+} from '@/stores/session/naming'
 import { clearSessionActivity } from '@/stores/sessionActivityStore'
 import { uiStore } from '@/stores/uiStore'
 
@@ -62,6 +66,14 @@ export function registerSessionUiEffects(events: SessionEventBus): () => void {
         rendererApplication.generationRuntime.abort(sessionId, undefined, 'session-deleted')
       }
       await cleanupAttachmentRagEntries(event)
+      return
+    }
+    if (event.type === 'session-command-committed') {
+      if (event.meta && !event.delta.header.hidden) {
+        void syncSessionAutoTitleOnOpen(event.delta.header, () => true).catch((error: unknown) => {
+          console.warn('Failed to synchronize session title:', error)
+        })
+      }
       return
     }
     if (event.type === 'session-updated' && event.session) {

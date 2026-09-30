@@ -1,3 +1,4 @@
+import { migrateMessage } from '@shared/utils/message'
 import { findLatestApplicableCompactionPoint } from '@shared/context/compaction-points'
 import { isContextEligibleMessage } from '@shared/context/message-eligibility'
 import { findMessageContext, findMessageSourceThread } from '@shared/session/message-forks'
@@ -31,12 +32,19 @@ export function contextSourceFromRows(rows: SessionContextRows): SessionContextS
     thread: rows.thread,
     revision: rows.revision,
     candidateMessages: overlayTextTokenMessages(
-      rows.messages.map((row) => row.message),
+      rows.messages.map((row) =>
+        migrateMessage({ ...row.message, contentParts: [...(row.message.contentParts ?? [])] })
+      ),
       rows.textTokens
     ),
     textTokens: rows.textTokens,
     compactionPoints: rows.thread.compactionPoints,
-    targetMessage: rows.targetMessage ? overlayTextTokenMessages([rows.targetMessage], rows.textTokens)[0] : undefined,
+    targetMessage: rows.targetMessage
+      ? overlayTextTokenMessages(
+          [migrateMessage({ ...rows.targetMessage, contentParts: [...(rows.targetMessage.contentParts ?? [])] })],
+          rows.textTokens
+        )[0]
+      : undefined,
     mode: rows.mode,
     beforeTarget: rows.beforeTarget,
     effectiveCompactionPoint: rows.effectiveCompactionPoint,

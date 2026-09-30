@@ -20,6 +20,7 @@ interface GenerationStopRecoveryOptions {
   targetMessageId?: string
   stopGate?: GenerationSessionStopGate
   preparationBarrier?: Promise<void>
+  readDurableSession?: () => Promise<Session | null>
   stoppingRuntimes: ReadonlyMap<string, GenerationRuntimeState>
 }
 
@@ -46,6 +47,9 @@ export function createGenerationStopRecovery(options: GenerationStopRecoveryOpti
   let failed = false
   let reconciling = false
   let preparationFinished = !options.preparationBarrier
+  let durableEpoch = 0
+  let needsDurableRead = false
+  let readingDurable = false
   let durableSession: Session | null | undefined
   let unsubscribeEvents = () => {}
   let unsubscribeRuntime = () => {}
@@ -112,10 +116,42 @@ export function createGenerationStopRecovery(options: GenerationStopRecoveryOpti
     }
   }
 
+  const refreshDurableSession = () => {
+    if (disposed || !failed || !needsDurableRead || readingDurable || !options.readDurableSession) return
+    readingDurable = true
+    needsDurableRead = false
+    const epoch = durableEpoch
+    void options
+      .readDurableSession()
+      .then(
+        (session) => {
+          if (disposed || epoch !== durableEpoch) return
+          durableSession = session
+          reconcile()
+        },
+        () => {
+          // Keep the stop gate closed until a later durable write or explicit retry.
+        }
+      )
+      .finally(() => {
+        readingDurable = false
+        refreshDurableSession()
+      })
+  }
+
   unsubscribeEvents = events.subscribe((event) => {
+    if (event.type === 'session-command-committed' && event.delta.sessionId === sessionId) {
+      durableEpoch += 1
+      durableSession = undefined
+      needsDurableRead = true
+      refreshDurableSession()
+      return
+    }
     if (event.type === 'session-updated' && event.session.id === sessionId) durableSession = event.session
     else if (event.type === 'session-deleted' && event.ids.includes(sessionId)) durableSession = null
     else return
+    durableEpoch += 1
+    needsDurableRead = false
     reconcile()
   })
   unsubscribeRuntime = runtime.subscribe(reconcile)
@@ -130,6 +166,7 @@ export function createGenerationStopRecovery(options: GenerationStopRecoveryOpti
     recover() {
       failed = true
       reconcile()
+      refreshDurableSession()
     },
   }
 }

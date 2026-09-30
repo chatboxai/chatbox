@@ -1,3 +1,6 @@
+import { migrateMessage } from '@shared/utils/message'
+import { assertNoMessageDataUpdate, getSessionMetadataSnapshot } from './session-metadata'
+import { planSessionCommand, projectCommittedSessionCommand } from './session-command'
 import { findMessageLocation } from '@shared/session/message-forks'
 import { validateSessionContextRequest } from '../../persistence/session-context-read'
 import { assertSessionReadRevision, validateSessionMessagesRequest } from '../../persistence/session-message-selection'
@@ -8,6 +11,7 @@ import {
 import type { SessionContextRequest, SessionContextSource } from '../../ports/session-context-source'
 import type { SessionMessageDerivedWriteResult, SessionMessagesSource } from '../../ports/session-message-source'
 import type {
+  CompleteSessionSource,
   SessionReadModel,
   SessionSearchThreadsPage,
   SessionSearchThreadsPageRequest,
@@ -18,9 +22,10 @@ import {
   type StoredSessionRecord,
 } from '../../ports/session-record-store'
 import {
+  type SessionCommand,
+  type SessionCommandResult,
   type SessionDataRepositoryPort,
   type SessionDataWriteOptions,
-  type SessionMessageMutation,
   SessionRepositoryError,
   type SessionRepositoryOperation,
   SessionWriteConflictError,
@@ -55,7 +60,7 @@ import {
   verifySessionTreeRoundTrip,
   withCommittedTopology,
 } from '../../session/session-tree'
-import type { Session } from '../../types/session'
+import type { Message, Session } from '../../types/session'
 import {
   hasReleasedClientContent,
   mergeReleasedClientContent,
@@ -63,7 +68,7 @@ import {
 } from './compatibility/released-client-writes'
 import { migrateSession } from './compatibility/session-load'
 import { applySessionMessageDerivedPatch, type SessionMessageDerivedPatch } from './message-derived-data'
-import { applySessionMessageMutation } from './message-mutation'
+import { applySessionMessageMutation, prepareSessionMessageOperation } from './message-mutation'
 import { applyMessageUpdate } from './message-tree'
 import {
   decodeLegacyRecord,
@@ -93,6 +98,7 @@ interface SessionBaseline {
   record: SessionRecordV2
   revision: number
   version: PersistedSessionVersion
+  /** Logical read view. Canonical token seeds are owned by rows.messages. */
   session: Session
   /** Set only after decoding persisted rows, including canonical V1 load normalization. */
   decoded: boolean
@@ -212,12 +218,21 @@ function planSingleMessageWrite(
     }
   }
 
+  return planMessageReplacement(baseline, next, next.messages[index], changedMessageId)
+}
+
+function planMessageReplacement(
+  baseline: SessionBaseline,
+  next: Session,
+  message: Message,
+  changedMessageId: string
+): SingleMessageWrite | null {
+  if (message.id !== changedMessageId) return null
   const rowIndex = findLastIndex(baseline.rows.messages, (row) => row.messageId === changedMessageId)
   if (rowIndex < 0) {
     return null
   }
   const baseRow = baseline.rows.messages[rowIndex]
-  const message = next.messages[index]
   // An unchanged message object means the write carries a change somewhere the
   // constant-time checks above cannot see.
   if (baseRow.message === message || baseRow.threadId !== next.id) {
@@ -242,7 +257,7 @@ function planSingleMessageWrite(
     record: withCommittedTopology(
       deriveSessionRecord(next, next.id, {
         record: baseline.record,
-        before: previous.messages[index],
+        before: baseRow.message,
         after: message,
       }),
       baseline.record
@@ -258,7 +273,7 @@ function toSessionRows(tree: SessionTree): SessionRows {
   return { sessionId: tree.session.id, threads: tree.threads, messages: tree.messages }
 }
 
-function toKnownRowState(baseline: SessionBaseline): KnownRowState {
+function toKnownRowState(baseline: SessionBaseline, requireDecodedSession = false): KnownRowState {
   return {
     snapshot: {
       rows: baseline.rows,
@@ -266,8 +281,8 @@ function toKnownRowState(baseline: SessionBaseline): KnownRowState {
       revision: baseline.revision,
       textTokens: baseline.textTokens,
     },
-    session: baseline.session,
-    version: baseline.version,
+    projection:
+      !requireDecodedSession || baseline.decoded ? { session: baseline.session, version: baseline.version } : undefined,
   }
 }
 
@@ -332,7 +347,7 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
   getCompleteSessionSource(id: string) {
     return this.enqueueSessionRead(id, async (record) => {
       const read = await this.readSessionNow(id, { record })
-      return read ? { session: read.session, textTokens: read.textTokens } : null
+      return read
     })
   }
 
@@ -416,7 +431,7 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
         }
       }
       const read = await this.readSessionNow(id, { record: marker })
-      return read ? { kind: 'full', session: read.session, textTokens: read.textTokens } : null
+      return read ? { kind: 'full', session: read.session, textTokens: read.textTokens, revision: read.revision } : null
     })
   }
 
@@ -430,9 +445,12 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
         if (!snapshot) throw new Error(`session ${request.sessionId} is stored as rows but has none`)
         return {
           header: contextRecordHeader(snapshot.record),
+          presentation: snapshot.record.presentation,
           revision: snapshot.revision,
           messages: overlayTextTokenMessages(
-            snapshot.messages.map((row) => row.message),
+            snapshot.messages.map((row) =>
+              migrateMessage({ ...row.message, contentParts: [...(row.message.contentParts ?? [])] })
+            ),
             snapshot.textTokens
           ),
           textTokens: snapshot.textTokens,
@@ -525,8 +543,11 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
                     messages: baseline.rows.messages.map((row) => changed.get(row.messageId) ?? row),
                   },
                 },
-                session
+                session,
+                baseline.decoded,
+                baseline.decoded
               )
+              this.retainBaselineTextSources(sessionId, baseline, new Set(changed.keys()))
               this.rememberObservedVersion(sessionId, version)
               this.rememberVersion(version)
             } else {
@@ -605,14 +626,15 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
   private async readSessionNow(
     id: string,
     observedRecord?: { record: StoredSessionRecord | null }
-  ): Promise<{ session: Session; textTokens?: SessionTextTokenRead } | null> {
+  ): Promise<CompleteSessionSource | null> {
     observedRecord ??= { record: await this.readRecord(id) }
     const baseline = this.baselines.get(id)
     const state = await this.inspectPersistedState(
       'get-session',
       id,
-      baseline?.decoded ? baseline : null,
-      observedRecord
+      baseline?.decoded || baseline?.textTokens || !this.rows.readTextTokenResults ? baseline : null,
+      observedRecord,
+      true
     )
     if (state.kind === 'missing') {
       this.forgetSessionState(id)
@@ -624,15 +646,22 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
       this.rememberRowsState(id, state)
       const read = state.snapshot.textTokens
       if (read && this.rows.readTextTokenResults) {
-        const textTokens =
-          baseline?.decoded && baseline.revision === state.snapshot.revision
-            ? { ...read, results: await this.rows.readTextTokenResults(Object.values(read.sources)) }
-            : read
+        const textTokens = read
         const remembered = this.baselines.get(id)
         if (remembered) remembered.textTokens = textTokens
-        return { session: overlaySessionTextTokens(state.session, textTokens), textTokens }
+        return {
+          session: overlaySessionTextTokens(state.session, textTokens),
+          textTokens,
+          revision: state.snapshot.revision,
+          topologyFingerprint: state.snapshot.record.topologyFingerprint,
+        }
       }
-      return { session: state.session, textTokens: read }
+      return {
+        session: state.session,
+        textTokens: read,
+        revision: state.snapshot.revision,
+        topologyFingerprint: state.snapshot.record.topologyFingerprint,
+      }
     }
     return { session: state.session }
   }
@@ -641,53 +670,205 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     return this.enqueueSessionOperation(session.id, () => this.setSessionNow(session, options))
   }
 
-  mutateSessionMessages(base: Session, mutation: SessionMessageMutation): Promise<void> {
-    return this.enqueueSessionOperation(base.id, async () => {
-      const cached = this.baselines.get(base.id)
-      const acceptsTokens = Boolean(this.rows.acceptTextTokenResults)
-      if (cached && isAppendBase(cached.session, base, acceptsTokens)) {
-        let persistedMutation = mutation
-        if (acceptsTokens && mutation.type === 'replace') {
-          const location = findMessageLocation(cached.session, mutation.messageId)
-          if (location) {
-            const original = location.list[location.index]
-            const message = restoreMessageTextTokens(mutation.message, original)
-            persistedMutation = {
-              ...mutation,
-              message: {
-                ...message,
-                tokenCountMap: message.tokenCountMap,
-                tokenCalculatedAt: message.tokenCalculatedAt,
-                tokenCountApproximate: message.tokenCountApproximate,
-              },
-            }
+  executeSessionCommand(
+    sessionId: string,
+    command: SessionCommand,
+    expectedRevision?: number
+  ): Promise<SessionCommandResult> {
+    return this.enqueueSessionOperation(sessionId, async () => {
+      const fallback = async (prepared: SessionCommand, revision?: number): Promise<SessionCommandResult> => {
+        const previous = await this.getSessionNow(sessionId)
+        if (!previous) throw new SessionNotFoundError(sessionId)
+        const actualRevision = this.observedVersions.get(sessionId)?.revision ?? null
+        if (revision !== undefined && actualRevision !== revision)
+          throw new SessionWriteConflictError(sessionId, revision, actualRevision)
+        let next: Session
+        if (prepared.type === 'header') {
+          const patch =
+            typeof prepared.updater === 'function'
+              ? prepared.updater(getSessionMetadataSnapshot(previous))
+              : prepared.updater
+          assertNoMessageDataUpdate(patch)
+          if (patch.id !== undefined && patch.id !== sessionId) throw new Error('Session identity cannot change')
+          next = { ...previous, ...patch }
+        } else {
+          const mutation = prepareSessionMessageOperation(previous, prepared, true)
+          next = mutation ? applySessionMessageMutation(previous, mutation) : previous
+        }
+        await this.setSessionNow(next, {
+          baseSession: previous,
+          changedMessageId: prepared.type === 'update' ? prepared.messageId : undefined,
+        })
+        return { kind: 'full', session: this.baselines.get(sessionId)?.session ?? next, previous }
+      }
+      const marker = await this.readRecord(sessionId)
+      if (!marker || !isRowsSessionRecord(marker) || hasReleasedClientContent(marker))
+        return fallback(command, expectedRevision)
+      try {
+        const window = await this.rows.readMessageWindow({ sessionId, limit: 1, expectedRevision })
+        if (!window) return fallback(command, expectedRevision)
+        const messageIds =
+          command.type === 'header'
+            ? []
+            : command.type === 'update'
+              ? [command.messageId]
+              : command.messages.map((message) => message.id)
+        const selection = messageIds.length
+          ? await this.rows.readMessages({ sessionId, messageIds, expectedRevision: window.revision })
+          : null
+        if (messageIds.length && !selection) throw new SessionNotFoundError(sessionId)
+        let prepared = command
+        let evaluate: SessionCommand = command
+        if (command.type === 'update' && typeof command.updater === 'function') {
+          const updater = command.updater
+          evaluate = {
+            ...command,
+            updater: (message: Message | null | undefined) => {
+              const patch = updater(message)
+              prepared = { ...command, updater: patch }
+              return patch
+            },
+          }
+        } else if (command.type === 'header' && typeof command.updater === 'function') {
+          const updater = command.updater
+          evaluate = {
+            ...command,
+            updater: (header: import('../../ports/session-read-model').SessionHeader | null | undefined) => {
+              const patch = updater(header)
+              prepared = { ...command, updater: patch }
+              return patch
+            },
           }
         }
-        const next = applySessionMessageMutation(cached.session, persistedMutation)
-        await this.setSessionNow(
-          next,
-          {
-            baseSession: cached.session,
-            changedMessageId: mutation.type === 'replace' ? mutation.messageId : undefined,
-          },
-          true
+        let suffix: MessageRow[] = []
+        if (command.type === 'append' && window.record.presentation?.hasForks) {
+          if (!this.rows.readThreadSuffix) return fallback(command, window.revision)
+          const selectedSuffix = await this.rows.readThreadSuffix({
+            sessionId,
+            threadId: window.thread.threadId,
+            afterSeq: window.messages.at(-1)?.seq ?? -1,
+            expectedRevision: window.revision,
+          })
+          if (!selectedSuffix) throw new SessionNotFoundError(sessionId)
+          suffix = selectedSuffix.messages
+        }
+        const planned = planSessionCommand(
+          window,
+          evaluate,
+          selection?.messages ?? [],
+          Boolean(this.rows.acceptTextTokenResults),
+          suffix
         )
-      } else {
-        await this.setSessionNow(applySessionMessageMutation(base, mutation), {
-          baseSession: base,
-          changedMessageId: mutation.type === 'replace' ? mutation.messageId : undefined,
-        })
+        if (!planned) return fallback(prepared, window.revision)
+        let revision = window.revision
+        if (!isEmptyDiff(planned.diff) || planned.record !== window.record) {
+          if (!Number.isSafeInteger(revision + 1)) throw new Error('Session revision exhausted')
+          revision += 1
+          await this.rows.applyDiff(planned.diff, { record: planned.record, revision }, window.revision)
+          this.advanceCommandBaseline(
+            sessionId,
+            planned.diff,
+            planned.record,
+            window.revision,
+            revision,
+            planned.appendedMessageIds
+          )
+        }
+        const active =
+          planned.diff.threads.upsert.find((thread) => thread.threadId === window.thread.threadId) ?? window.thread
+        return {
+          kind: 'rows',
+          delta: {
+            sessionId,
+            previousRevision: window.revision,
+            revision,
+            record: planned.record,
+            previousHeader: { ...contextRecordHeader(window.record), threadName: window.thread.name ?? undefined },
+            header: { ...contextRecordHeader(planned.record), threadName: active.name ?? undefined },
+            diff: planned.diff,
+            appendedMessageIds: planned.appendedMessageIds,
+          },
+        }
+      } catch (error) {
+        if (error instanceof SessionRowConflictError) {
+          this.forgetSessionState(sessionId)
+          throw new SessionWriteConflictError(sessionId, error.expectedRevision, error.actualRevision)
+        }
+        throw error
       }
     })
   }
 
-  private async setSessionNow(
-    session: Session,
-    options: SessionDataWriteOptions,
-    persistedTokens = false
-  ): Promise<void> {
+  private advanceCommandBaseline(
+    sessionId: string,
+    diff: SessionRowsDiff,
+    record: SessionRecordV2,
+    previousRevision: number,
+    revision: number,
+    appendedMessageIds: readonly string[]
+  ): void {
+    const baseline = this.baselines.get(sessionId)
+    if (!baseline || baseline.revision !== previousRevision) {
+      this.forgetSessionState(sessionId)
+      return
+    }
+    const messages = new Map(baseline.rows.messages.map((row) => [row.messageId, row]))
+    const threads = new Map(baseline.rows.threads.map((row) => [row.threadId, row]))
+    for (const id of diff.messages.delete) messages.delete(id)
+    const unchangedPayloads = new Set(diff.unchangedPayloadMessageIds)
+    for (const row of diff.messages.upsert) {
+      const original = messages.get(row.messageId)
+      messages.set(
+        row.messageId,
+        original && unchangedPayloads.has(row.messageId) ? { ...row, message: original.message } : row
+      )
+    }
+    for (const id of diff.threads.delete) threads.delete(id)
+    for (const row of diff.threads.upsert) threads.set(row.threadId, row)
+    const rows: SessionRows = { sessionId, messages: [...messages.values()], threads: [...threads.values()] }
+    const active = threads.get(record.activeThreadId)
+    const decoded =
+      baseline.decoded && active
+        ? {
+            ok: true as const,
+            session: projectCommittedSessionCommand(baseline.session, record, active, diff, appendedMessageIds),
+          }
+        : decodeSessionTree({ session: record, messages: rows.messages, threads: rows.threads })
+    if (!decoded.ok) {
+      this.forgetSessionState(sessionId)
+      return
+    }
+    const version = this.rememberSnapshot(
+      sessionId,
+      { record, revision, rows },
+      decoded.session,
+      true,
+      baseline.decoded
+    )
+    this.retainBaselineTextSources(
+      sessionId,
+      baseline,
+      new Set([
+        ...diff.messages.delete,
+        ...diff.messages.upsert.filter((row) => !unchangedPayloads.has(row.messageId)).map((row) => row.messageId),
+      ])
+    )
+    this.rememberObservedVersion(sessionId, version)
+    this.rememberVersion(version)
+  }
+
+  private retainBaselineTextSources(id: string, previous: SessionBaseline, changed: ReadonlySet<string>): void {
+    const current = this.baselines.get(id)
+    if (!current || !previous.textTokens) return
+    current.textTokens = {
+      sources: Object.fromEntries(Object.entries(previous.textTokens.sources).filter(([id]) => !changed.has(id))),
+      results: [],
+    }
+  }
+
+  private async setSessionNow(session: Session, options: SessionDataWriteOptions): Promise<void> {
     try {
-      const version = await this.persistSession(session, options, persistedTokens)
+      const version = await this.persistSession(session, options)
       this.rememberObservedVersion(session.id, version)
       this.rememberVersion(version)
     } catch (error) {
@@ -696,11 +877,7 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     }
   }
 
-  private async persistSession(
-    session: Session,
-    options: SessionDataWriteOptions,
-    persistedTokens: boolean
-  ): Promise<PersistedSessionVersion> {
+  private async persistSession(session: Session, options: SessionDataWriteOptions): Promise<PersistedSessionVersion> {
     const id = session.id
     const cached = this.baselines.get(id)
     if (
@@ -709,14 +886,16 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
       options.baseSession &&
       isAppendBase(cached.session, options.baseSession, Boolean(this.rows.acceptTextTokenResults))
     ) {
-      const candidate =
-        !persistedTokens && this.rows.acceptTextTokenResults
-          ? restorePersistedTextTokens(session, cached.session)
-          : session
+      const candidate = this.rows.acceptTextTokenResults
+        ? restorePersistedTextTokens(
+            session,
+            cached.rows.messages.map((row) => row.message)
+          )
+        : session
       const single = options.changedMessageId
         ? planSingleMessageWrite(cached, candidate, options.changedMessageId)
         : null
-      const plannedWrite = single ?? planSessionAppend(cached.session, candidate, cached.rows)
+      const plannedWrite = single ?? planSessionAppend(options.baseSession, session, cached.rows)
       if (plannedWrite) {
         const marker = await this.records.getRecord(id)
         if (
@@ -738,8 +917,11 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     }
     const context = await this.resolveWriteContext(id, options)
     const baseline = context.baseline
-    if (baseline && !persistedTokens && this.rows.acceptTextTokenResults)
-      session = restorePersistedTextTokens(session, baseline.session)
+    if (baseline && this.rows.acceptTextTokenResults)
+      session = restorePersistedTextTokens(
+        session,
+        baseline.rows.messages.map((row) => row.message)
+      )
     if (baseline && hasUnchangedRows(baseline, session)) {
       return await this.completeWrite(id, session, baseline)
     }
@@ -1145,10 +1327,15 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     operation: 'get-session' | 'set-session' | 'delete-session',
     id: string,
     baseline: SessionBaseline | null = this.baselines.get(id) ?? null,
-    observedRecord?: { record: StoredSessionRecord | null }
+    observedRecord?: { record: StoredSessionRecord | null },
+    requireDecodedSession = false
   ): Promise<PersistedSessionState> {
     return this.run(operation, id, () =>
-      this.persistence.inspectPersistedState(id, baseline ? toKnownRowState(baseline) : undefined, observedRecord)
+      this.persistence.inspectPersistedState(
+        id,
+        baseline ? toKnownRowState(baseline, requireDecodedSession) : undefined,
+        observedRecord
+      )
     )
   }
 
@@ -1168,7 +1355,8 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     id: string,
     snapshot: SessionRowSnapshot,
     session: Session,
-    deferFingerprint = false
+    deferFingerprint = false,
+    decoded = false
   ): PersistedSessionVersion {
     let fingerprint: string | undefined
     const version: PersistedSessionVersion = deferFingerprint
@@ -1193,7 +1381,7 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
       revision: snapshot.revision,
       version,
       session,
-      decoded: false,
+      decoded,
     })
   }
 
@@ -1214,7 +1402,9 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
 
   private overlayWindow(window: SessionMessageWindow): SessionMessageWindow {
     const messages = overlayTextTokenMessages(
-      window.messages.map((row) => row.message),
+      window.messages.map((row) =>
+        migrateMessage({ ...row.message, contentParts: [...(row.message.contentParts ?? [])] })
+      ),
       window.textTokens
     )
     return {

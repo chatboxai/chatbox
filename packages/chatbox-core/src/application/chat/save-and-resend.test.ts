@@ -132,9 +132,9 @@ describe('saveAndResendMessage', () => {
 
   it('does not allow an assistant target or an empty edited text', async () => {
     const test = setup()
-    await expect(
-      saveAndResendMessage(test.dependencies, { ...test.request, messageId: answer.id })
-    ).rejects.toThrow('user message')
+    await expect(saveAndResendMessage(test.dependencies, { ...test.request, messageId: answer.id })).rejects.toThrow(
+      'user message'
+    )
     await expect(
       saveAndResendMessage(test.dependencies, { ...test.request, contentParts: text('  ') })
     ).rejects.toThrow('Enter a message')

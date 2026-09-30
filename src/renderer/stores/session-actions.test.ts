@@ -31,6 +31,7 @@ const {
   createSessionMock,
   useSessionMock,
   getSessionMock,
+  readSessionMessagesMock,
   listAllSessionsMetaMock,
   archiveSessionsMock,
   deleteSessionsMock,
@@ -47,6 +48,7 @@ const {
   createSessionMock: vi.fn(),
   useSessionMock: vi.fn(),
   getSessionMock: vi.fn(),
+  readSessionMessagesMock: vi.fn(),
   listAllSessionsMetaMock: vi.fn(),
   archiveSessionsMock: vi.fn(),
   deleteSessionsMock: vi.fn(),
@@ -106,6 +108,7 @@ vi.mock('@/app/renderer-application', async () => {
       generationRuntime: new GenerationRuntimeStore(),
       queryClient: new QueryClient(),
       sessions: {
+        readSessionMessages: readSessionMessagesMock,
         updateSessionWithMessages,
         updateSession: updateSessionMock,
         updateMessage: updateMessageMock,
@@ -247,6 +250,8 @@ beforeEach(() => {
   createSessionMock.mockReset()
   useSessionMock.mockReset()
   getSessionMock.mockReset()
+  readSessionMessagesMock.mockReset()
+  updateMessageMock.mockReset()
   listAllSessionsMetaMock.mockReset()
   archiveSessionsMock.mockReset()
   deleteSessionsMock.mockReset()
@@ -690,13 +695,13 @@ describe('fork actions', () => {
     }
 
     getSessionMock.mockResolvedValue(session)
+    readSessionMessagesMock.mockResolvedValue({ header: { id: session.id, name: session.name }, messages: [] })
 
     await sessionActions.saveAndResendMessage(session.id, target)
 
-    // The edit is still saved in place (user text survives); only the fork
-    // and the resend are blocked. The extra session read belongs to that
-    // in-place save.
-    expect(getSessionMock).toHaveBeenCalledTimes(2)
+    // The edit is saved using the header read; the fork and resend stay blocked.
+    expect(getSessionMock).toHaveBeenCalledTimes(1)
+    expect(readSessionMessagesMock).toHaveBeenCalledWith({ sessionId: session.id, messageIds: [] })
     expect(updateSessionWithMessages).not.toHaveBeenCalled()
     expect(updateMessageMock).toHaveBeenCalledWith(session.id, target.id, expect.objectContaining({ id: target.id }))
     expect(toastMock).toHaveBeenCalledWith('Wait for the current replies to finish', 2500)
@@ -725,12 +730,14 @@ describe('fork actions', () => {
       messages: [makeMessage('target', 'user'), makeMessage('reply', 'assistant')],
     }
     getSessionMock.mockRejectedValueOnce(new Error('session read failed'))
-    getSessionMock.mockResolvedValue(session)
+    readSessionMessagesMock.mockResolvedValue({ header: { id: session.id, name: session.name }, messages: [] })
     const edited = { ...makeMessage('target', 'user'), contentParts: [{ type: 'text' as const, text: 'edited' }] }
 
     await expect(sessionActions.saveAndResendMessage(session.id, edited)).resolves.toBeUndefined()
 
     // The failed guarded read falls back to a plain in-place save of the edit.
+    expect(getSessionMock).toHaveBeenCalledTimes(1)
+    expect(readSessionMessagesMock).toHaveBeenCalledWith({ sessionId: session.id, messageIds: [] })
     expect(updateMessageMock).toHaveBeenCalledWith(
       session.id,
       'target',
@@ -742,6 +749,7 @@ describe('fork actions', () => {
 
   test('saveAndResendMessage stays rejection-free when every session read fails', async () => {
     getSessionMock.mockRejectedValue(new Error('session read failed'))
+    readSessionMessagesMock.mockRejectedValue(new Error('header read failed'))
 
     await expect(
       sessionActions.saveAndResendMessage('session-save-resend-read-error', makeMessage('target', 'user'))

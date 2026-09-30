@@ -19,6 +19,7 @@ import type {
   SessionMessageWindowRequest,
   SessionThreadPage,
   SessionThreadPageRequest,
+  SessionThreadSuffixRequest,
   SessionRowCommit,
   SessionRowSnapshot,
   SessionRowStorePort,
@@ -558,6 +559,10 @@ export class SQLiteSessionRowStore implements SessionRowStorePort {
 
   readMessages(request: SessionMessagesRequest): Promise<SessionMessagesSnapshot | null> {
     return this.store.readMessages(request)
+  }
+
+  readThreadSuffix(request: SessionThreadSuffixRequest): Promise<SessionMessagesSnapshot | null> {
+    return this.store.readThreadSuffix(request)
   }
 
   readContext(

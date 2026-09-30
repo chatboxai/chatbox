@@ -48,6 +48,28 @@ export function mapSessionMessages(session: Session, update: (message: Message) 
   return { ...session, messages, threads: nextThreads, messageForksHash: nextForks }
 }
 
+/** Merge calculated values only for the payload identities owned by this read. */
+export function mergeSessionTextTokenResults(
+  read: SessionTextTokenRead,
+  incoming: readonly SessionTextTokenResult[]
+): SessionTextTokenRead {
+  const results = new Map<string, SessionTextTokenResult>()
+  for (const result of [...read.results, ...incoming]) {
+    const source = read.sources[result.source.messageId]
+    if (
+      !source ||
+      source.sessionId !== result.source.sessionId ||
+      source.payloadId !== result.source.payloadId ||
+      source.calculationVersion !== result.source.calculationVersion ||
+      source.textDigest !== result.source.textDigest
+    )
+      continue
+    const key = `${source.messageId}:${result.value.tokenizerType}`
+    if (result.value.calculatedAt >= (results.get(key)?.value.calculatedAt ?? 0)) results.set(key, result)
+  }
+  return { ...read, results: [...results.values()] }
+}
+
 export function textTokenPatches(results: readonly SessionTextTokenResult[]) {
   return results.map(({ source, value }) => ({ messageId: source.messageId, text: [value] }))
 }
@@ -75,12 +97,16 @@ export function overlaySessionTextTokens(session: Session, read: SessionTextToke
 }
 
 /** Restore content-owned seed caches before writing a numerical view. New messages retain their draft seeds. */
-export function restorePersistedTextTokens(session: Session, persisted: Session): Session {
+export function restorePersistedTextTokens(session: Session, persisted: Session | Iterable<Message>): Session {
   const originals = new Map<string, Message>()
-  mapSessionMessages(persisted, (message) => {
-    originals.set(message.id, message)
-    return message
-  })
+  if (Symbol.iterator in persisted) {
+    for (const message of persisted) originals.set(message.id, message)
+  } else {
+    mapSessionMessages(persisted, (message) => {
+      originals.set(message.id, message)
+      return message
+    })
+  }
   return mapSessionMessages(session, (message) => {
     const original = originals.get(message.id)
     if (!original || original === message) return message

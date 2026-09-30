@@ -32,7 +32,7 @@ import { ensureMessageFileSessionAttachment } from '../sessionAttachmentRagIndex
 import * as settingActions from '../settingActions'
 import { settingsStore } from '../settingsStore'
 import { guardSessionAction } from './action-guard'
-import { getSessionSettings, getSessionTokenModel } from './session-settings'
+import { getSessionHeader, getSessionSettings, getSessionTokenModel } from './session-settings'
 import { getSessionWebBrowsing } from './utils'
 
 const log = getLogger('session-messages')
@@ -110,7 +110,7 @@ function applyMessageCounts(
  * @param msg
  */
 export async function insertMessage(sessionId: string, msg: Message) {
-  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
+  const session = await getSessionHeader(sessionId)
   if (!session) {
     return
   }
@@ -155,7 +155,7 @@ export async function modifyMessage(
   refreshCounting?: boolean,
   updateOnlyCache?: boolean
 ) {
-  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
+  const session = await getSessionHeader(sessionId)
   if (!session) {
     return
   }
@@ -322,12 +322,10 @@ export async function submitNewUserMessageUnlocked(
   // avoid reacquiring the session lock already held by submitNewUserMessage().
   const { _generateWithoutSessionLock } = await import('./generation.js')
 
-  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
+  const session = await getSessionHeader(sessionId)
   if (!session) {
     return
   }
-  // The complete session already carries the settings; a separate header read
-  // would add storage round trips before the draft clears.
   const settings = await getSessionSettings(sessionId, session)
   if (!supportsSessionGeneration(session.type)) {
     return
@@ -340,7 +338,9 @@ export async function submitNewUserMessageUnlocked(
         import('@/packages/mobile-work-mode/runtime'),
         import('@/adapters/CurrentBlobStorage'),
       ])
-      await capacitorWorkspace.preflight(sessionId, [...session.messages, params.newUserMsg], currentBlobStorage)
+      const complete = await rendererApplication.sessions.getSession(sessionId)
+      if (!complete) return
+      await capacitorWorkspace.preflight(sessionId, [...complete.messages, params.newUserMsg], currentBlobStorage)
     }
   }
 

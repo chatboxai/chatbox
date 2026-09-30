@@ -6,6 +6,7 @@ import {
   type GeneratingMessageRef,
   type SessionMessagesRequest,
   type SessionMessagesSnapshot,
+  type SessionThreadSuffixRequest,
   type SessionMessageWindow,
   type SessionMessageWindowRequest,
   type SessionThreadPage,
@@ -254,11 +255,11 @@ SELECT ${MESSAGE_COLUMNS} FROM path WHERE response_bytes <= ? OR depth = 0 ORDER
 }
 const SELECT_WINDOW_MESSAGE_ANCESTORS_SQL = selectWindowMessagePathSql(false)
 const SELECT_WINDOW_MESSAGE_DESCENDANTS_SQL = selectWindowMessagePathSql(true)
-function selectMessagePageSql(hasCursor: boolean): string {
+function selectMessagePageSql(hasCursor: boolean, suffix = false): string {
   return `WITH page AS (
     SELECT ${MESSAGE_COLUMNS}
     FROM session_messages
-    WHERE session_id = ?${hasCursor ? ' AND (thread_id, seq, message_id) > (?, ?, ?)' : ''}
+    WHERE session_id = ?${suffix ? ' AND thread_id = ? AND seq > ?' : ''}${hasCursor ? ' AND (thread_id, seq, message_id) > (?, ?, ?)' : ''}
     ORDER BY thread_id, seq, message_id
     LIMIT ?
   ), sized AS (
@@ -1079,6 +1080,20 @@ export class SqlSessionRowStore implements SessionRowStorePort {
     })
   }
 
+  async readThreadSuffix(request: SessionThreadSuffixRequest): Promise<SessionMessagesSnapshot | null> {
+    if (!request.threadId || !Number.isSafeInteger(request.afterSeq) || request.afterSeq < -1)
+      throw new Error('Invalid thread suffix request')
+    return this.run('read-messages', request.sessionId, () =>
+      this.readSelectedSnapshot(request, async (commit) => ({
+        ...commit,
+        messages: await this.readMessageRows(
+          await this.readMessageRecords(request.sessionId, request),
+          Object.create(null)
+        ),
+      }))
+    )
+  }
+
   async readContext(
     request: SessionContextRequest,
     knownSnapshot?: Pick<SessionRowSnapshot, 'rows' | 'revision'>
@@ -1453,14 +1468,18 @@ export class SqlSessionRowStore implements SessionRowStorePort {
     }
   }
 
-  private async readMessageRecords(sessionId: string): Promise<MessageRecord[]> {
+  private async readMessageRecords(sessionId: string, suffix?: SessionThreadSuffixRequest): Promise<MessageRecord[]> {
     const records: MessageRecord[] = []
     let cursor: MessageRecord | undefined
     for (;;) {
       const params: SessionRowSqlBindValue[] = [sessionId]
+      if (suffix) params.push(suffix.threadId, suffix.afterSeq)
       if (cursor) params.push(cursor.thread_id, cursor.seq, cursor.message_id)
       params.push(MESSAGE_PAGE_MAX_ROWS, MESSAGE_PAGE_RESPONSE_BUDGET)
-      const page = await this.database.query<MessageRecord>(selectMessagePageSql(cursor !== undefined), params)
+      const page = await this.database.query<MessageRecord>(
+        selectMessagePageSql(cursor !== undefined, Boolean(suffix)),
+        params
+      )
       if (page.length === 0) return records
       records.push(...page)
       cursor = page[page.length - 1]

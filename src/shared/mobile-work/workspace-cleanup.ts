@@ -16,7 +16,7 @@ export function registerWorkspaceCleanup(
     } else if (
       event.type === 'session-deleted' ||
       event.type === 'session-created' ||
-      (event.type === 'session-updated' && event.meta)
+      ((event.type === 'session-updated' || event.type === 'session-command-committed') && event.meta)
     ) {
       const target = typeof workspace === 'function' ? await workspace() : workspace
       if (event.type === 'session-deleted') {
@@ -27,7 +27,7 @@ export function registerWorkspaceCleanup(
             failures.map((failure) => failure.reason),
             'Workspace cleanup failed'
           )
-      } else target.reopen(event.session.id)
+      } else target.reopen(event.type === 'session-command-committed' ? event.delta.sessionId : event.session.id)
     }
   })
 }

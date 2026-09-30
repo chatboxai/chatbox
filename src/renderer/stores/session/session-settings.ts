@@ -60,7 +60,7 @@ export async function getSessionSettings(sessionId: string, header?: SessionHead
  * resolution the InputBox feeds into useTokenEstimation, so counts cached
  * against it (e.g. the draft worker's) stay addressable from non-React code.
  */
-export function getSessionTokenModel(session: Session): TokenModel | undefined {
+export function getSessionTokenModel(session: Pick<Session, 'type' | 'settings'>): TokenModel | undefined {
   const { provider, modelId } = mergeDefaultSessionSettings(session, settingsStore.getState().getSettings())
   return provider && modelId ? { provider, modelId } : undefined
 }

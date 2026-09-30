@@ -1,9 +1,34 @@
-import { SessionEventBus } from '@chatbox/core/application/session'
+import { RowBackedSessionRepository, SessionEventBus } from '@chatbox/core/application/session'
+import { InMemorySessionRecordStore, InMemorySessionRowStore } from '@chatbox/core/testing'
 import { describe, expect, it, vi } from 'vitest'
 import { registerWorkspaceCleanup } from './workspace-cleanup'
 import { WorkspaceLifecycle } from './workspace-lifecycle'
 
 describe('session workspace cleanup', () => {
+  it('reopens a workspace after a row commit with persisted metadata', async () => {
+    const repository = new RowBackedSessionRepository({
+      records: new InMemorySessionRecordStore(),
+      rows: new InMemorySessionRowStore(),
+    })
+    await repository.setSession({ id: 'a', name: 'A', messages: [] })
+    const result = await repository.executeSessionCommand('a', { type: 'header', updater: { name: 'Restored' } })
+    if (result.kind !== 'rows') throw new Error('Expected row command')
+    const events = new SessionEventBus()
+    const workspace = { remove: vi.fn(), reopen: vi.fn() }
+    const unsubscribe = registerWorkspaceCleanup(events, workspace, vi.fn())
+    const event = {
+      type: 'session-command-committed' as const,
+      delta: result.delta,
+      meta: null,
+      preserveCachedGeneratingMessages: false,
+    }
+    await events.publish(event)
+    expect(workspace.reopen).not.toHaveBeenCalled()
+    await events.publish({ ...event, meta: { id: 'a', name: 'Restored' } })
+    expect(workspace.reopen).toHaveBeenCalledWith('a')
+    unsubscribe()
+  })
+
   it.each([['one'], ['one', 'two', 'three']])('aborts before deleting every workspace in %j', async (...ids) => {
     const events = new SessionEventBus()
     const order: string[] = []

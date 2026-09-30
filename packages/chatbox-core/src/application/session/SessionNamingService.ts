@@ -27,7 +27,9 @@ export interface NameGenerationSchedulerPort {
 }
 
 export interface SessionNamingServiceDependencies {
-  sessions: Pick<SessionUseCasePort, 'getSession' | 'updateSession' | 'updateSessionWithMessages'>
+  sessions: Pick<SessionUseCasePort, 'getSession' | 'updateSessionWithMessages'> & {
+    updateSession(sessionId: string, updater: Parameters<SessionUseCasePort['updateSession']>[1]): Promise<unknown>
+  }
   settings: Pick<SettingsRepositoryPort, 'getSettings'>
   models: ModelFactoryPort
   scheduler: NameGenerationSchedulerPort

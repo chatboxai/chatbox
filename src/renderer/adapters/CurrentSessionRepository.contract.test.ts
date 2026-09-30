@@ -151,16 +151,20 @@ describe('CurrentSessionRepository contract', () => {
       tokenCountApproximate: undefined,
     })
     const event = publish.mock.calls.at(-1)?.[0]
-    expect(event?.type).toBe('session-updated')
-    if (event?.type !== 'session-updated') throw new Error('Expected updated session event')
+    expect(event?.type).toBe('session-command-committed')
+    if (event?.type !== 'session-command-committed') throw new Error('Expected committed command event')
+    const published = event.delta.diff.messages.upsert.find((row) => row.messageId === 'user-1')?.message
+    expect(published).toBeDefined()
     const saved = (await rowStore.readSnapshot(source.id))?.rows.messages.find(
       (row) => row.messageId === 'user-1'
     )?.message
-    expect(event.session.messages[0].tokenCalculatedAt).toBeUndefined()
+    expect(published?.tokenCalculatedAt).toBeUndefined()
+    expect(published?.tokenCountMap).toBeUndefined()
+    expect(published?.tokenCountApproximate).toBeUndefined()
     expect(saved?.tokenCalculatedAt).toBeUndefined()
     expect(saved?.tokenCountMap).toBeUndefined()
     expect(saved?.tokenCountApproximate).toBeUndefined()
-    expect(saved?.contentParts).toEqual(event.session.messages[0].contentParts)
+    expect(saved?.contentParts).toEqual(published?.contentParts)
     await service.insertMessage(source.id, message('next', 'user', 300))
     expect((await repository.getSession(source.id))?.messages.at(-1)?.id).toBe('next')
   })

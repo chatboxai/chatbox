@@ -24,6 +24,7 @@ vi.mock('@/packages/model-setting-utils', () => ({ getModelDisplayName: vi.fn() 
 vi.mock('@/packages/token', () => ({ estimateTokensFromMessages: vi.fn().mockReturnValue(1) }))
 vi.mock('@/utils/sentry', () => ({ reportError: vi.fn() }))
 vi.mock('./session-settings', () => ({
+  getSessionHeader: mocks.getSession,
   getSessionSettings: vi.fn().mockResolvedValue(mocks.settings),
   getSessionTokenModel: vi.fn().mockReturnValue('deepseek'),
 }))

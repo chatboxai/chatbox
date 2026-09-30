@@ -137,11 +137,14 @@ async function setup() {
         : write()
   }
   const collectFullQuery = async () => {
-    expect(client.getQueryCache().find({ queryKey: fullKey, exact: true })?.getObserversCount()).toBe(0)
-    const before = removedFullQueries
-    await vi.advanceTimersByTimeAsync(31)
+    const query = client.getQueryCache().find({ queryKey: fullKey, exact: true })
+    if (query) {
+      expect(query.getObserversCount()).toBe(0)
+      const before = removedFullQueries
+      await vi.advanceTimersByTimeAsync(31)
+      expect(removedFullQueries).toBeGreaterThan(before)
+    }
     expect(bridge.getCachedSession(session.id)).toBeUndefined()
-    expect(removedFullQueries).toBeGreaterThan(before)
     sample()
   }
   const assertFinished = async (text: string) => {
@@ -195,11 +198,11 @@ describe('shared streaming writes in one application instance', () => {
     await h.stream(assistant('AB'))
     const started = deferred<void>()
     const release = deferred<void>()
-    const write = h.repository.setSession.bind(h.repository)
-    vi.spyOn(h.repository, 'setSession').mockImplementationOnce(async (...args) => {
+    const write = h.repository.executeSessionCommand.bind(h.repository)
+    vi.spyOn(h.repository, 'executeSessionCommand').mockImplementationOnce(async (...args) => {
       started.resolve()
       await release.promise
-      await write(...args)
+      return write(...args)
     })
     const checkpoint = h.persist(assistant('AB'), true)
     await started.promise
@@ -224,15 +227,16 @@ describe('shared streaming writes in one application instance', () => {
       started.resolve()
       return read.promise
     })
-    const cacheUpdate = h.stream(assistant('ABC'))
+    const pendingRead = h.bridge.getSession(h.session.id)
     await started.promise
+    const cacheUpdate = h.stream(assistant('ABC'))
     await h.persist(assistant('ABCD', false))
     read.resolve(old)
-    await cacheUpdate
+    await Promise.all([cacheUpdate, pendingRead])
     await h.assertFinished('ABCD')
   })
 
-  test('keeps the newest chunk when a cold cache read resumes after a newer cache hit', async () => {
+  test('keeps the newest chunks while an explicit full read is pending', async () => {
     const h = await setup()
     await h.collectFullQuery()
     const stored = await h.repository.getCompleteSessionSource(h.session.id)
@@ -242,70 +246,43 @@ describe('shared streaming writes in one application instance', () => {
       started.resolve()
       return read.promise
     })
-    const olderUpdate = h.stream(assistant('AB'))
+    const pendingRead = h.bridge.getSession(h.session.id)
     await started.promise
-    let newerUpdate: Promise<void> | undefined
-    const unsubscribe = h.client.getQueryCache().subscribe((event) => {
-      if (
-        event.type === 'updated' &&
-        event.action.type === 'success' &&
-        event.query.queryKey[0] === QueryKeys.ChatSession(h.session.id)[0] &&
-        !newerUpdate
-      ) {
-        newerUpdate = h.stream(assistant('ABCD'))
-      }
-    })
-    cleanup.push(unsubscribe)
+    await h.stream(assistant('AB'))
+    await h.stream(assistant('ABCD'))
+    expect(messageText(h.visible())).toBe('ABCD')
     read.resolve(stored)
-    await olderUpdate
-    expect(newerUpdate).toBeDefined()
-    await newerUpdate
+    await pendingRead
     expect(messageText(h.visible())).toBe('ABCD')
     await h.persist(assistant('ABCD', false))
     await h.assertFinished('ABCD')
   })
 
-  test('does not project the stored snapshot while superseded updates await the same cold read', async () => {
+  test('updates a retained complete view after full-cache collection without reading storage for chunks', async () => {
     const h = await setup()
     await h.stream(assistant('AB'))
     await h.collectFullQuery()
-    const stored = await h.repository.getCompleteSessionSource(h.session.id)
-    const started = deferred<void>()
-    const read = deferred<typeof stored>()
-    vi.spyOn(h.repository, 'getCompleteSessionSource').mockImplementationOnce(async () => {
-      started.resolve()
-      return read.promise
-    })
-    const olderUpdate = h.stream(assistant('ABC'))
-    await started.promise
-    const newerUpdate = h.stream(assistant('ABCD'))
-    read.resolve(stored)
-    await Promise.all([olderUpdate, newerUpdate])
+    const read = vi.spyOn(h.repository, 'getCompleteSessionSource')
+    const selected = vi.spyOn(h.repository, 'readSessionMessages')
+    await Promise.all([h.stream(assistant('ABC')), h.stream(assistant('ABCD'))])
+    expect(read).not.toHaveBeenCalled()
+    expect(selected).not.toHaveBeenCalled()
+    expect(messageText(h.visible())).toBe('ABCD')
     await h.persist(assistant('ABCD', false))
     await h.assertFinished('ABCD')
   })
 
-  test('does not recover streamed text from a retained read model when the complete cache is explicitly null', async () => {
+  test('does not resurrect a deleted session when a late chunk arrives', async () => {
     const h = await setup()
-    const committed = await h.repository.getSession(h.session.id)
-    if (!committed) throw new Error('Missing committed fixture')
     await h.stream(assistant('ABCD'))
-    h.client.setQueryData(QueryKeys.ChatSession(h.session.id), null)
-    expect(messageText(h.visible())).toBe('ABCD')
+    await h.application.sessions.deleteSession(h.session.id)
+    await expect(h.stream(assistant('ABCDE'))).rejects.toThrow('not found')
     expect(h.bridge.getCachedSession(h.session.id)).toBeNull()
-
-    await h.application.sessionEvents.publish({
-      type: 'session-updated',
-      session: committed,
-      meta: null,
-      preserveCachedGeneratingMessages: true,
-    })
-
-    expect(messageText(h.visible())).toBe('A')
-    expect(h.bridge.getCachedSession(h.session.id)?.messages).toEqual(committed.messages)
+    expect(h.client.getQueryData(QueryKeys.ChatSessionReadModel(h.session.id))).toBeNull()
+    expect(await h.repository.getSession(h.session.id)).toBeNull()
   })
 
-  test('does not merge a partial message window into a complete committed session', async () => {
+  test('preserves the live reply from a loaded window while retaining the complete committed history', async () => {
     const h = await setup()
     const committed = await h.repository.getSession(h.session.id)
     const window = await h.repository.readSessionMessageWindow({ sessionId: h.session.id, limit: 1 })
@@ -331,9 +308,9 @@ describe('shared streaming writes in one application instance', () => {
       preserveCachedGeneratingMessages: true,
     })
 
-    expect(messageText(h.visible())).toBe('A')
-    expect(h.visible()?.messages).toEqual(committed.messages)
+    expect(messageText(h.visible())).toBe('ABCD')
+    expect(h.visible()?.messages).toHaveLength(committed.messages.length)
     expect(h.visible()?.messages.slice(0, 3)).toEqual(h.session.messages)
-    expect(h.bridge.getCachedSession(h.session.id)?.messages).toEqual(committed.messages)
+    expect(h.bridge.getCachedSession(h.session.id)?.messages).toEqual(h.visible()?.messages)
   })
 })

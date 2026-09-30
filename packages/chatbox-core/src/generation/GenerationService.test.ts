@@ -1,3 +1,6 @@
+import { decodeSessionTree } from '../session/session-tree/decode'
+import { deriveSessionTopologyFingerprint } from '../session/session-tree/topology-fingerprint'
+import { deriveContextReadProjection } from '../persistence/session-context-read'
 import type { ChatStreamOptions, ModelInterface, ModelStreamPart } from '@shared/models/types'
 import type { Config, Message, Session, SessionSettings, Settings } from '@shared/types'
 import { jsonSchema, type ModelMessage, type ToolSet } from 'ai'
@@ -478,7 +481,23 @@ async function boundedHarness() {
   }
   const getSession = vi.fn(() => Promise.resolve(harness.session))
   harness.sessions.getSession = getSession
-  return { ...harness, getSession }
+  const getCompleteSessionSource = vi.fn(async () => {
+    const snapshot = await rows.readSnapshot(complete.id)
+    if (!snapshot) return null
+    const decoded = decodeSessionTree({
+      session: snapshot.record,
+      threads: snapshot.rows.threads,
+      messages: snapshot.rows.messages,
+    })
+    if (!decoded.ok) throw new Error(decoded.reason)
+    return {
+      session: decoded.session,
+      topologyFingerprint: snapshot.record.topologyFingerprint,
+      revision: snapshot.revision,
+    }
+  })
+  harness.sessions.getCompleteSessionSource = getCompleteSessionSource
+  return { ...harness, getSession, getCompleteSessionSource, rows }
 }
 
 describe('generation context sources', () => {
@@ -668,12 +687,33 @@ describe('generation context sources', () => {
     await harness.service.orchestrate('session-1', targetMessage())
     const loader = harness.steeringRegister.mock.calls[0][1] as Parameters<GenerationSteeringPort['register']>[1]
     if (typeof loader !== 'function') throw new Error('Expected lazy scope')
-    if (changed) harness.session.messages.splice(2, 1)
+    if (changed) {
+      harness.session.messages.splice(2, 1)
+      await harness.rows.writeRows(contextSnapshot(harness.session, 2), 1)
+    }
     const scope = await loader()
 
-    expect(harness.getSession).toHaveBeenCalledTimes(1)
+    expect(harness.getSession).not.toHaveBeenCalled()
+    expect(harness.getCompleteSessionSource).toHaveBeenCalledTimes(1)
     if (changed) expect(scope).toBeNull()
     else expect(scope).toEqual(new Set(harness.session.messages.map((message) => message.id)))
+  })
+
+  it('uses the atomic persisted identity for sparse DFS labels after a deletion', async () => {
+    const harness = await boundedHarness()
+    const snapshot = (await harness.rows.readSnapshot('session-1'))!
+    const messages = snapshot.rows.messages.map((row) => ({ ...row, seq: row.seq * 2 }))
+    const record = {
+      ...snapshot.record,
+      topologyFingerprint: deriveSessionTopologyFingerprint(snapshot.rows.threads, messages),
+      contextReadProjection: deriveContextReadProjection(snapshot.rows.threads, messages),
+    }
+    await harness.rows.writeRows({ ...snapshot, record, revision: 2, rows: { ...snapshot.rows, messages } }, 1)
+    await harness.service.orchestrate('session-1', targetMessage())
+    const scope = harness.steeringRegister.mock.calls[0][1]
+    if (typeof scope !== 'function') throw new Error('Expected lazy scope')
+    expect(await scope()).toEqual(new Set(harness.session.messages.map((message) => message.id)))
+    expect(harness.getSession).not.toHaveBeenCalled()
   })
 
   it('preloads the original complete scope for a legacy source without a fingerprint', async () => {

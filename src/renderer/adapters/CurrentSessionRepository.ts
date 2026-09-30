@@ -14,7 +14,7 @@ import {
   type SessionContextRequest,
   type SessionContextSource,
   type SessionDataWriteOptions,
-  type SessionMessageMutation,
+  type SessionCommand,
   type SessionMessageDerivedPatch,
   type SessionMessageDerivedWriteResult,
   type SessionMessagesRequest,
@@ -399,8 +399,12 @@ export class CurrentSessionRepository implements SessionRepositoryPort {
     return this.getData().readSessionMessageWindow(request)
   }
 
-  mutateSessionMessages(base: Session, mutation: SessionMessageMutation): Promise<void> {
-    return normalizeRepositoryError('set-session', () => this.getData().mutateSessionMessages(base, mutation), base.id)
+  executeSessionCommand(sessionId: string, command: SessionCommand, expectedRevision?: number) {
+    return normalizeRepositoryError(
+      'set-session',
+      () => this.getData().executeSessionCommand(sessionId, command, expectedRevision),
+      sessionId
+    )
   }
 
   setSession(session: Session, options?: SessionDataWriteOptions): Promise<void> {

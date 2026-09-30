@@ -1,3 +1,4 @@
+import type { SessionCommand } from '../../ports/session-repository'
 import { findMessageLocation } from '@shared/session/message-forks'
 import {
   assertSessionThreadPageRevision,
@@ -7,6 +8,8 @@ import type { LoggerPort, SessionFolderStorePort, SessionRepositoryPort } from '
 import type { SessionContextRequest, SessionContextSource } from '../../ports/session-context-source'
 import type { SessionMessageDerivedWriteResult, SessionMessagesSource } from '../../ports/session-message-source'
 import type {
+  SessionHeader,
+  CompleteSessionSource,
   SessionReadModel,
   SessionSearchThreadsPage,
   SessionSearchThreadsPageRequest,
@@ -32,6 +35,7 @@ import {
   type MessageInsertOptions,
 } from './message-tree'
 import {
+  SessionCommandMetadataUpdateError,
   SessionMetadataUpdateError,
   SessionNotFoundError,
   type SessionWriteCoordinator,
@@ -189,15 +193,25 @@ export class SessionService {
     if (model?.kind === 'window') return model
     const session =
       model?.kind === 'full' ? await this.repairReadSession(model.session) : await this.getSession(sessionId)
-    return session ? { kind: 'full', session, textTokens: model?.kind === 'full' ? model.textTokens : undefined } : null
+    if (!session) return null
+    if (model?.kind === 'full' && session === model.session) return model
+    if (model?.kind === 'full' && this.repository.getCompleteSessionSource) {
+      const source = await this.repository.getCompleteSessionSource(sessionId)
+      return source
+        ? { kind: 'full', session: source.session, revision: source.revision, textTokens: source.textTokens }
+        : null
+    }
+    return { kind: 'full', session }
   }
 
-  async getCompleteSessionSource(sessionId: string) {
+  async getCompleteSessionSource(sessionId: string): Promise<CompleteSessionSource | null> {
     await this.initialize()
     if (this.repository.getCompleteSessionSource) {
       const source = await this.repository.getCompleteSessionSource(sessionId)
       const session = source ? await this.repairReadSession(source.session) : null
-      return session ? { ...source, session } : null
+      if (!session || !source) return null
+      // A repair commits a new revision; read its body and identity together.
+      return session === source.session ? source : this.repository.getCompleteSessionSource(sessionId)
     }
     const session = await this.getSession(sessionId)
     return session ? { session } : null
@@ -353,7 +367,7 @@ export class SessionService {
    * the previous directory's folder follow the directory.
    */
   private async resolveDirectoryFolder(
-    session: Session,
+    session: SessionHeader,
     previousDirectory: string | undefined
   ): Promise<string | undefined> {
     const directory = getSessionWorkingDirectory(session)
@@ -572,6 +586,67 @@ export class SessionService {
     return result.session
   }
 
+  private async persistCommand(
+    sessionId: string,
+    command: SessionCommand,
+    preserveCachedGeneratingMessages = true
+  ): Promise<boolean> {
+    await this.initialize()
+    try {
+      const result = await this.writes.executeCommand(sessionId, command)
+      if (!result) return false
+      if (result.kind === 'rows') {
+        await this.events.publish({
+          type: 'session-command-committed',
+          delta: result.delta,
+          meta: result.meta,
+          preserveCachedGeneratingMessages,
+        })
+      } else {
+        await this.events.publish({
+          type: 'session-updated',
+          session: result.session,
+          meta: result.meta,
+          preserveCachedGeneratingMessages,
+        })
+      }
+      if (command.type === 'header') {
+        const header = result.kind === 'rows' ? result.delta.header : result.session
+        const previous = result.kind === 'rows' ? result.delta.previousHeader : result.previous
+        const folderId = await this.resolveDirectoryFolder(
+          header,
+          previous ? getSessionWorkingDirectory(previous) : undefined
+        )
+        if (folderId) await this.updateSessionHeader(sessionId, { folderId })
+      }
+      return true
+    } catch (error) {
+      if (error instanceof SessionMetadataUpdateError) {
+        await this.events.publish({
+          type: 'session-updated',
+          session: error.session,
+          meta: error.meta,
+          preserveCachedGeneratingMessages,
+        })
+        this.scheduleMetaProjectionRepair(sessionId)
+        throw error.metadataError
+      }
+      if (!(error instanceof SessionCommandMetadataUpdateError)) throw error
+      await this.events.publish({
+        type: 'session-command-committed',
+        ...error.result,
+        preserveCachedGeneratingMessages,
+      })
+      this.scheduleMetaProjectionRepair(sessionId)
+      throw error.metadataError
+    }
+  }
+
+  async updateSessionHeader(sessionId: string, updater: Updater<SessionHeader>): Promise<void> {
+    if (await this.persistCommand(sessionId, { type: 'header', updater })) return
+    await this.updateSession(sessionId, updater)
+  }
+
   async insertMessage(
     sessionId: string,
     message: Message,
@@ -580,6 +655,15 @@ export class SessionService {
       Pick<UpdateSessionOptions, 'onFullSessionPersisted' | 'preserveCachedGeneratingMessages'> = {}
   ): Promise<void> {
     if (!previousId) {
+      if (
+        !options.onFullSessionPersisted &&
+        (await this.persistCommand(
+          sessionId,
+          { type: 'append', messages: [message] },
+          options.preserveCachedGeneratingMessages === true
+        ))
+      )
+        return
       await this.persistSessionUpdate(sessionId, {}, options, { type: 'append', messages: [message] })
       return
     }
@@ -595,10 +679,12 @@ export class SessionService {
 
   async insertMessages(sessionId: string, messages: readonly Message[]): Promise<void> {
     if (!messages.length) return
+    if (await this.persistCommand(sessionId, { type: 'append', messages })) return
     await this.persistSessionUpdate(sessionId, {}, {}, { type: 'append', messages })
   }
 
   async updateMessage(sessionId: string, messageId: string, updater: Updater<Message>): Promise<void> {
+    if (await this.persistCommand(sessionId, { type: 'update', messageId, updater })) return
     await this.persistSessionUpdate(
       sessionId,
       {},
@@ -888,6 +974,26 @@ export class SessionService {
   private async repairMetaProjection(sessionId: string): Promise<void> {
     const refreshArchiveLists = this.pendingArchiveListRefreshes.delete(sessionId)
     try {
+      if (!refreshArchiveLists) {
+        const committed = await this.writes.executeCommand(sessionId, { type: 'header', updater: {} })
+        if (committed) {
+          if (committed.kind === 'rows')
+            await this.events.publish({
+              type: 'session-command-committed',
+              delta: committed.delta,
+              meta: committed.meta,
+              preserveCachedGeneratingMessages: true,
+            })
+          else
+            await this.events.publish({
+              type: 'session-updated',
+              session: committed.session,
+              meta: committed.meta,
+              preserveCachedGeneratingMessages: true,
+            })
+          return
+        }
+      }
       const result = await this.writes.reprojectMeta(sessionId)
       if (!result) return
       const revision = refreshArchiveLists ? ++this.archiveStateRevision : this.archiveStateRevision

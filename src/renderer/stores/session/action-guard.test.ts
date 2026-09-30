@@ -1,8 +1,9 @@
 import type { Message, Session } from '@shared/types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { getSessionMock, toastMock } = vi.hoisted(() => ({
+const { getSessionMock, readMessagesMock, toastMock } = vi.hoisted(() => ({
   getSessionMock: vi.fn(),
+  readMessagesMock: vi.fn(),
   toastMock: vi.fn(),
 }))
 
@@ -26,6 +27,7 @@ vi.mock('@/app/renderer-application', async () => {
       backupOperations: new BackupOperationCoordinator(),
       generationRuntime: new GenerationRuntimeStore(),
       sessionQueryBridge: { getSession: getSessionMock },
+      sessions: { readSessionMessages: readMessagesMock },
     },
   }
 })
@@ -66,8 +68,29 @@ describe('guardSessionAction', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    readMessagesMock.mockResolvedValue({})
     setCompactionUIState('session-1', { status: 'idle' })
     generationRuntimeStore.clear('session-1')
+  })
+
+  it('uses persisted lock counts and selected runtime messages without hydrating a linear session', async () => {
+    readMessagesMock.mockResolvedValue({
+      header: { id: 'session-1', name: 'Session' },
+      messages: [],
+      presentation: { hasForks: false, generatingMessageCount: 1, pausedMessageCount: 0 },
+    })
+    expect(await guardSessionAction('session-1', 'submit-message')).toBe(false)
+    expect(getSessionMock).not.toHaveBeenCalled()
+    expect(readMessagesMock).toHaveBeenCalledWith({ sessionId: 'session-1', messageIds: [] })
+    generationRuntimeStore.start('session-1', 'reply')
+    readMessagesMock.mockResolvedValue({
+      header: { id: 'session-1', name: 'Session' },
+      messages: [message({ id: 'reply', generating: true })],
+      presentation: { hasForks: false, generatingMessageCount: 0, pausedMessageCount: 0 },
+    })
+    expect(await guardSessionAction('session-1', 'regenerate')).toBe(false)
+    expect(getSessionMock).not.toHaveBeenCalled()
+    expect(readMessagesMock).toHaveBeenLastCalledWith({ sessionId: 'session-1', messageIds: ['reply'] })
   })
 
   it('allows the action and stays silent when the session is unlocked', async () => {

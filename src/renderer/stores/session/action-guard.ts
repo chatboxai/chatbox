@@ -1,3 +1,5 @@
+import type { SessionHeader } from '@chatbox/core/ports'
+import { countCancellableGeneratingAssistantMessages } from '@chatbox/core/session/generation-state'
 import { guardBackupWrite } from '@/app/backup-operation-guard'
 import {
   deriveSessionLockState,
@@ -26,18 +28,45 @@ export async function getSessionLockStateNow(
   sessionId: string,
   preloadedSession?: Session | null
 ): Promise<SessionLockState | null> {
+  return (await readLockSnapshot(sessionId, preloadedSession))?.locks ?? null
+}
+
+async function readLockSnapshot(
+  sessionId: string,
+  preloadedSession?: Session | null
+): Promise<{ session: SessionHeader; locks: SessionLockState } | null> {
+  const activeGenerationMessageIds = rendererApplication.generationRuntime.getActiveMessageIds(sessionId)
+  const compactionRunning = getCompactionUIState(sessionId).status === 'running'
+  if (preloadedSession === undefined) {
+    const source = await rendererApplication.sessions.readSessionMessages({
+      sessionId,
+      messageIds: [...activeGenerationMessageIds],
+    })
+    if (!source) return null
+    const summary = source.presentation
+    if (summary && !summary.hasForks) {
+      const generatingReplyCount = countCancellableGeneratingAssistantMessages(
+        source.messages,
+        activeGenerationMessageIds
+      )
+      return {
+        session: source.header,
+        locks: {
+          generatingReplyCount,
+          anyReplyGenerating: summary.generatingMessageCount > 0 || generatingReplyCount > 0,
+          awaitingPauseDecision: summary.pausedMessageCount > 0,
+          compactionRunning,
+        },
+      }
+    }
+  }
   const session =
     preloadedSession !== undefined
       ? preloadedSession
       : await rendererApplication.sessionQueryBridge.getSession(sessionId)
-  if (!session) {
-    return null
-  }
-  const compactionRunning = getCompactionUIState(sessionId).status === 'running'
-  return deriveSessionLockState(session, {
-    compactionRunning,
-    activeGenerationMessageIds: rendererApplication.generationRuntime.getActiveMessageIds(sessionId),
-  })
+  return session
+    ? { session, locks: deriveSessionLockState(session, { compactionRunning, activeGenerationMessageIds }) }
+    : null
 }
 
 /**
@@ -58,14 +87,12 @@ export async function guardSessionAction(
   preloadedSession?: Session | null
 ): Promise<boolean> {
   if (!(await guardBackupWrite())) return false
-  let session: Session | null
+  let session: SessionHeader | null
   let locks: SessionLockState | null
   try {
-    session =
-      preloadedSession !== undefined
-        ? preloadedSession
-        : await rendererApplication.sessionQueryBridge.getSession(sessionId)
-    locks = await getSessionLockStateNow(sessionId, session)
+    const snapshot = await readLockSnapshot(sessionId, preloadedSession)
+    session = snapshot?.session ?? null
+    locks = snapshot?.locks ?? null
   } catch {
     // A failed session read must not turn a void-called action into an
     // unhandled rejection; fall back to the action's own error handling.

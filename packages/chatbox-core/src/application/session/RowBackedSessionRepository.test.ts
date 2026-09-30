@@ -227,19 +227,114 @@ describe('RowBackedSessionRepository', () => {
     }
   })
 
+  test('consecutive row commands never materialize the caller complete snapshot', async () => {
+    const { repository, rows } = await createHarness()
+    const source = createPlainSession()
+    source.messages = Array.from({ length: 1000 }, (_, index) => message(`old-${index}`, 'user', index))
+    await repository.setSession(source)
+    const readCurrentSession = vi.fn(async () => source)
+    const repo = Object.assign(repository, { meta: new InMemorySessionRepository().meta })
+    const events = new SessionEventBus()
+    const publish = vi.spyOn(events, 'publish')
+    const service = new SessionService(repo, new SessionWriteCoordinator(repo, { readCurrentSession }), events, {
+      createId: () => 'unused',
+    })
+    const fullRead = vi.spyOn(rows, 'readSnapshot')
+    const copy = vi.spyOn(source.messages, Symbol.iterator)
+    const slice = vi.spyOn(source.messages, 'slice')
+    await service.insertMessages(source.id, [message('new-user', 'user', 2000), message('tail', 'assistant', 2001)])
+    await service.updateMessage(source.id, 'tail', { contentParts: [{ type: 'text', text: 'First chunk' }] })
+    await service.updateMessage(source.id, 'tail', {
+      contentParts: [{ type: 'text', text: 'Final chunk' }],
+      generating: false,
+    })
+    await service.updateSessionHeader(source.id, { name: 'Renamed' })
+    expect(readCurrentSession).not.toHaveBeenCalled()
+    expect(fullRead).not.toHaveBeenCalled()
+    expect(copy).not.toHaveBeenCalled()
+    expect(slice).not.toHaveBeenCalled()
+    expect(publish.mock.calls.map(([event]) => event.type)).toEqual(Array(4).fill('session-command-committed'))
+    copy.mockRestore()
+    slice.mockRestore()
+    expect((await repository.getSession(source.id))?.messages.at(-1)?.contentParts).toEqual([
+      { type: 'text', text: 'Final chunk' },
+    ])
+  })
+
+  test('projects pauses from committed rows and publishes the committed session on metadata failure', async () => {
+    const { repository, rows } = await createHarness()
+    const pause = (id: string): Message => ({
+      ...message(id, 'assistant', 100),
+      contentParts: [
+        {
+          type: 'tool-call',
+          toolCallId: id,
+          toolName: 'user_exec',
+          args: {},
+          state: 'paused',
+          pauseReason: { type: 'user_exec_approval', command: 'ls' },
+        },
+      ],
+    })
+    const source = createPlainSession()
+    source.messages = [pause('first'), pause('second')]
+    await repository.setSession(source)
+    const meta = new InMemorySessionRepository().meta
+    const repo = Object.assign(repository, { meta })
+    const writes = new SessionWriteCoordinator(repo)
+    const events = new SessionEventBus()
+    const publish = vi.spyOn(events, 'publish')
+    const service = new SessionService(repo, writes, events, { createId: () => 'unused' })
+    await service.updateMessage(source.id, 'second', { contentParts: [{ type: 'text', text: 'Completed' }] })
+    expect(publish.mock.calls.at(-1)?.[0]).toMatchObject({
+      type: 'session-updated',
+      meta: { hasPausedToolCall: true },
+    })
+    await service.updateMessage(source.id, 'first', { contentParts: [{ type: 'text', text: 'Completed' }] })
+    expect(publish.mock.calls.at(-1)?.[0]).toMatchObject({
+      type: 'session-updated',
+      meta: { hasPausedToolCall: false },
+    })
+    vi.useFakeTimers()
+    try {
+      const failure = new Error('metadata unavailable')
+      vi.spyOn(meta, 'update').mockRejectedValueOnce(failure)
+      await expect(service.insertMessage(source.id, pause('third'))).rejects.toBe(failure)
+      expect(publish.mock.calls.at(-1)?.[0]).toMatchObject({
+        type: 'session-updated',
+        meta: { hasPausedToolCall: true },
+        session: { messages: expect.arrayContaining([expect.objectContaining({ id: 'third' })]) },
+      })
+      expect((await rows.readSnapshot(source.id))?.record.presentation?.pausedMessageCount).toBe(1)
+      await vi.advanceTimersByTimeAsync(1000)
+      await service.updateMessage(source.id, 'third', { contentParts: [{ type: 'text', text: 'Recovered' }] })
+      expect(publish.mock.calls.at(-1)?.[0]).toMatchObject({
+        type: 'session-updated',
+        meta: { hasPausedToolCall: false },
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   test('message commands resolve cold baselines and reject stale snapshots without losing concurrent changes', async () => {
     const { repository, records, rows } = await createHarness()
     const source = createPlainSession()
     await repository.setSession(source)
     const base = (await repository.getSession(source.id))!
     const cold = new RowBackedSessionRepository({ records, rows })
-    await cold.mutateSessionMessages(base, { type: 'append', messages: [message('appended', 'user', 300)] })
+    const revision = (await rows.getRevision(source.id))!
+    await cold.executeSessionCommand(source.id, { type: 'append', messages: [message('appended', 'user', 300)] })
     await expect(
-      repository.mutateSessionMessages(base, {
-        type: 'replace',
-        messageId: 'assistant-1',
-        message: message('assistant-1', 'assistant', 400),
-      })
+      repository.executeSessionCommand(
+        source.id,
+        {
+          type: 'update',
+          messageId: 'assistant-1',
+          updater: message('assistant-1', 'assistant', 400),
+        },
+        revision
+      )
     ).rejects.toMatchObject({ name: 'SessionWriteConflictError' })
     expect((await repository.getSession(source.id))?.messages.map((item) => item.id)).toEqual([
       'user-1',
@@ -248,19 +343,17 @@ describe('RowBackedSessionRepository', () => {
     ])
   })
 
-  test('message commands retain legacy fallback and reject an external legacy edit', async () => {
+  test('message commands retain legacy fallback and preserve an external legacy edit', async () => {
     const { repository, records } = await createHarness()
     const source = createPlainSession()
     source.messages.push(unencodableMessage())
     await records.setRecord(source)
     const base = (await repository.getSession(source.id))!
-    await repository.mutateSessionMessages(base, { type: 'append', messages: [message('appended', 'user', 300)] })
+    await repository.executeSessionCommand(source.id, { type: 'append', messages: [message('appended', 'user', 300)] })
     const appended = (await repository.getSession(source.id))!
     expect(appended.messages.at(-1)?.id).toBe('appended')
     await records.setRecord({ ...appended, name: 'External legacy edit' })
-    await expect(
-      repository.mutateSessionMessages(appended, { type: 'append', messages: [message('late', 'user', 400)] })
-    ).rejects.toMatchObject({ name: 'SessionWriteConflictError' })
+    await repository.executeSessionCommand(source.id, { type: 'append', messages: [message('late', 'user', 400)] })
     expect((await repository.getSession(source.id))?.name).toBe('External legacy edit')
   })
 
@@ -272,10 +365,10 @@ describe('RowBackedSessionRepository', () => {
     await repository.setSession(source)
     const base = (await repository.getSession(source.id))!
     const overlay = { ...base, messages: base.messages.map((item) => ({ ...item, tokenCountMap: { default: 999 } })) }
-    await repository.mutateSessionMessages(overlay, {
-      type: 'replace',
+    await repository.executeSessionCommand(source.id, {
+      type: 'update',
       messageId: 'assistant-1',
-      message: { ...overlay.messages[1], generating: false },
+      updater: { ...overlay.messages[1], generating: false },
     })
     expect((await rows.readSnapshot(source.id))?.rows.messages[1].message.tokenCountMap).toEqual({ default: 12 })
   })
@@ -286,10 +379,10 @@ describe('RowBackedSessionRepository', () => {
     await repository.setSession(source)
     for (const id of ['history-user', 'fork-answer']) {
       const base = (await repository.getSession(source.id))!
-      await repository.mutateSessionMessages(base, {
-        type: 'replace',
+      await repository.executeSessionCommand(source.id, {
+        type: 'update',
         messageId: id,
-        message: message(id, 'assistant', 900),
+        updater: message(id, 'assistant', 900),
       })
     }
     const actual = (await repository.getSession(source.id))!
@@ -707,7 +800,7 @@ describe('RowBackedSessionRepository', () => {
       const first = await harness.repository.getSession(session.id)
       expect(first).toEqual(normalized(session))
       expect(await harness.repository.getSession(session.id)).toBe(first)
-      expect(readSnapshot).toHaveBeenCalledTimes(1)
+      expect(readSnapshot).not.toHaveBeenCalled()
       expect(getRevision).toHaveBeenCalledTimes(2)
 
       const writer = new RowBackedSessionRepository({ records: harness.records, rows: harness.rows })

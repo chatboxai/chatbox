@@ -35,10 +35,10 @@ export function projectSessionMeta(session: SessionMeta): SessionMeta {
 }
 
 /** The full derived metadata patch a session write must project alongside itself. */
-export function projectSessionMetaUpdate(session: Session): SessionMeta {
+export function projectSessionMetaUpdate(session: Session, paused = hasPausedToolCall(session)): SessionMeta {
   return {
     ...projectSessionMeta(session),
-    hasPausedToolCall: hasPausedToolCall(session),
+    hasPausedToolCall: paused,
     recoveryArchived: undefined,
   }
 }

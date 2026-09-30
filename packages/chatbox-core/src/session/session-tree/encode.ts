@@ -7,7 +7,7 @@ import { deriveContextReadProjection, preservesContextReadProjection } from '../
 import type { Message, Session } from '../../types/session'
 import { forkTailStartIndex } from '../message-forks'
 import { normalizeSessionV1 } from './normalize'
-import { deriveSessionTopologyFingerprint } from './topology-fingerprint'
+import { deriveSessionTopologyFingerprint, deriveLegacySessionTopologyFingerprint } from './topology-fingerprint'
 import type { MessageRow, MessageRowStatus, SessionRecordV2, SessionTree, ThreadRow } from './types'
 
 export interface EncodeSessionTreeOptions {
@@ -314,7 +314,10 @@ export function encodeSessionTree(session: Session, options: EncodeSessionTreeOp
   }
 }
 
-export function sessionTopologyFingerprint(session: Session): string | undefined {
+export function sessionTopologyFingerprint(session: Session, expected?: string): string | undefined {
   const encoded = encodeSessionTree(session, { activeThreadId: session.id, now: 0 })
-  return encoded.ok ? encoded.tree.session.topologyFingerprint : undefined
+  if (!encoded.ok) return undefined
+  return expected && !expected.startsWith('v2:')
+    ? deriveLegacySessionTopologyFingerprint(encoded.tree.threads, encoded.tree.messages)
+    : encoded.tree.session.topologyFingerprint
 }

@@ -1,4 +1,5 @@
-import { SessionEventBus } from '@chatbox/core/application/session'
+import { RowBackedSessionRepository, SessionEventBus } from '@chatbox/core/application/session'
+import { InMemorySessionRecordStore, InMemorySessionRowStore } from '@chatbox/core/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -7,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   clearBrowser: vi.fn(),
   abort: vi.fn(),
   cleanup: vi.fn(),
+  syncTitleHeader: vi.fn().mockResolvedValue(undefined),
 }))
 vi.mock('@/app/renderer-application', () => ({
   rendererApplication: { generationRuntime: { abort: mocks.abort } },
@@ -17,6 +19,7 @@ vi.mock('@/platform', () => ({ default: { type: 'desktop', builtInBrowser: { for
 vi.mock('@/stores/session/naming', () => ({
   clearSessionNameGenerationState: mocks.cleanup,
   syncSessionAutoTitle: vi.fn(),
+  syncSessionAutoTitleOnOpen: mocks.syncTitleHeader,
 }))
 vi.mock('@/stores/sessionActivityStore', () => ({ clearSessionActivity: mocks.cleanup }))
 vi.mock('@/stores/uiStore', () => ({
@@ -33,6 +36,33 @@ vi.mock('@/stores/uiStore', () => ({
 const { registerSessionUiEffects } = await import('./session-ui-effects')
 
 describe('session browser cleanup', () => {
+  it('routes committed row headers to title eligibility and skips writes without metadata or hidden writes', async () => {
+    const repository = new RowBackedSessionRepository({
+      records: new InMemorySessionRecordStore(),
+      rows: new InMemorySessionRowStore(),
+    })
+    await repository.setSession({ id: 'a', name: 'Untitled', messages: [] })
+    const result = await repository.executeSessionCommand('a', {
+      type: 'append',
+      messages: [{ id: 'u', role: 'user', contentParts: [{ type: 'text', text: 'Hello' }] }],
+    })
+    if (result.kind !== 'rows') throw new Error('Expected row command')
+    const events = new SessionEventBus()
+    const unsubscribe = registerSessionUiEffects(events)
+    const event = {
+      type: 'session-command-committed' as const,
+      delta: result.delta,
+      meta: { id: 'a', name: 'Untitled' },
+      preserveCachedGeneratingMessages: false,
+    }
+    await events.publish(event)
+    expect(mocks.syncTitleHeader).toHaveBeenCalledWith(result.delta.header, expect.any(Function))
+    await events.publish({ ...event, meta: null })
+    await events.publish({ ...event, delta: { ...result.delta, header: { ...result.delta.header, hidden: true } } })
+    expect(mocks.syncTitleHeader).toHaveBeenCalledTimes(1)
+    unsubscribe()
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.forSession.mockReturnValue({ dispose: mocks.dispose })

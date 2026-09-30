@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   syncAutoTitle: vi.fn(),
   clearSessionState: vi.fn(),
   getSession: vi.fn(),
+  getLoadedSession: vi.fn(),
   getSettings: vi.fn(),
 }))
 
@@ -28,7 +29,7 @@ vi.mock('@/app/renderer-application', async () => {
     rendererApplication: {
       backupOperations: new BackupOperationCoordinator(),
       sessions: { updateSession: vi.fn(), updateSessionWithMessages: vi.fn() },
-      sessionQueryBridge: { getSession: mocks.getSession },
+      sessionQueryBridge: { getSession: mocks.getSession, getLoadedSession: mocks.getLoadedSession },
     },
   }
 })
@@ -54,6 +55,7 @@ describe('Session naming Renderer adapter', () => {
     vi.clearAllMocks()
     mocks.getSettings.mockReturnValue({ autoGenerateTitle: true })
     mocks.getSession.mockReset()
+    mocks.getLoadedSession.mockReset()
   })
 
   it('forwards the current session to syncAutoTitle', async () => {
@@ -67,6 +69,15 @@ describe('Session naming Renderer adapter', () => {
     await syncSessionAutoTitle(session)
 
     expect(mocks.syncAutoTitle).toHaveBeenCalledWith(session, { messages: session.messages })
+  })
+
+  it('reuses the complete display snapshot across untitled streaming checkpoints', async () => {
+    const session = completeSession(header())
+    mocks.getLoadedSession.mockReturnValue(session)
+    for (let checkpoint = 0; checkpoint < 3; checkpoint++) await syncSessionAutoTitleOnOpen(header(), () => true)
+    expect(mocks.getSession).not.toHaveBeenCalled()
+    expect(mocks.syncAutoTitle).toHaveBeenCalledTimes(3)
+    expect(mocks.syncAutoTitle).toHaveBeenLastCalledWith(session, { messages: session.messages })
   })
 
   it('delegates deletion cleanup to the shared naming service', () => {

@@ -7,6 +7,7 @@ import type { SessionMessageDerivedPatch } from './message-derived-data'
 import { applySessionDerivedPatches } from './session-derived-data'
 import { projectSessionMetaUpdate } from './session-metadata'
 import { clearChangedTextTokenSeeds, textTokenPatches } from './session-text-tokens'
+import { prepareSessionMessageOperation, type SessionMessageOperation } from './message-mutation'
 
 export interface SessionWriteResult {
   session: Session
@@ -117,6 +118,15 @@ export class SessionWriteCoordinator {
       return Promise.reject(new SessionNotFoundError(sessionId))
     }
     return this.enqueue(sessionId, () => this.performUpdate(sessionId, updater, options))
+  }
+
+  mutateMessages(
+    sessionId: string,
+    operation: SessionMessageOperation,
+    options: SessionWriteOptions = {}
+  ): Promise<SessionWriteResult> {
+    if (this.unavailable.has(sessionId)) return Promise.reject(new SessionNotFoundError(sessionId))
+    return this.enqueue(sessionId, () => this.performUpdate(sessionId, {}, options, undefined, operation))
   }
 
   patchMessageDerivedData(
@@ -415,7 +425,8 @@ export class SessionWriteCoordinator {
     sessionId: string,
     updater: Updater<Session>,
     options: SessionWriteOptions,
-    fallbackSnapshot?: Session
+    fallbackSnapshot?: Session,
+    operation?: SessionMessageOperation
   ): Promise<SessionWriteResult> {
     const recoveryArchivedAt = options.clearRecoveryArchive ? undefined : await this.loadRecoveryArchive(sessionId)
     const previous = this.current.get(sessionId) ?? fallbackSnapshot ?? (await this.readCurrentSession(sessionId))
@@ -423,12 +434,20 @@ export class SessionWriteCoordinator {
       throw new SessionNotFoundError(sessionId)
     }
 
-    const next = typeof updater === 'function' ? updater(previous) : { ...previous, ...updater }
-    const content = this.repository.acceptSessionTextTokenResults ? clearChangedTextTokenSeeds(next, previous) : next
+    const prepared = operation
+      ? prepareSessionMessageOperation(previous, operation, Boolean(this.repository.acceptSessionTextTokenResults))
+      : undefined
+    const next = prepared?.session ?? (typeof updater === 'function' ? updater(previous) : { ...previous, ...updater })
+    const content =
+      !prepared && this.repository.acceptSessionTextTokenResults ? clearChangedTextTokenSeeds(next, previous) : next
     const updated =
       recoveryArchivedAt === undefined ? content : { ...content, hidden: true, archivedAt: recoveryArchivedAt }
     try {
-      await this.repository.setSession(updated, { changedMessageId: options.changedMessageId, baseSession: previous })
+      if (prepared?.mutation && this.repository.mutateSessionMessages && recoveryArchivedAt === undefined) {
+        await this.repository.mutateSessionMessages(previous, prepared.mutation)
+      } else {
+        await this.repository.setSession(updated, { changedMessageId: options.changedMessageId, baseSession: previous })
+      }
     } catch (error) {
       if (error instanceof SessionWriteConflictError) {
         this.current.delete(sessionId)

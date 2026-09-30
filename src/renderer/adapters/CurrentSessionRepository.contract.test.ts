@@ -1,3 +1,4 @@
+import { SessionEventBus, SessionService, SessionWriteCoordinator } from '@chatbox/core'
 import { exportBackupArchive, importBackupArchive, prepareBackupExport } from '@chatbox/core/backup'
 import { MemoryStorage } from '../../../packages/chatbox-core/src/backup/sharded.test-support'
 import {
@@ -132,6 +133,38 @@ async function messageRowIds(harness: ReturnType<typeof createHarness>, id: stri
 }
 
 describe('CurrentSessionRepository contract', () => {
+  test('keeps published and IndexedDB token seeds aligned after editing and appending', async () => {
+    const { repository, rowStore } = createHarness()
+    const source = createSessionWithMessages('edit-token-seeds')
+    source.messages[0].tokenCountMap = { default: 9 }
+    source.messages[0].tokenCalculatedAt = { default: 100 }
+    source.messages[0].tokenCountApproximate = { default: true }
+    await repository.setSession(source)
+    const events = new SessionEventBus()
+    const publish = vi.spyOn(events, 'publish')
+    const service = new SessionService(repository, new SessionWriteCoordinator(repository), events, {
+      createId: () => 'unused',
+    })
+    await service.updateMessage(source.id, 'user-1', {
+      contentParts: [{ type: 'text', text: 'Edited input' }],
+      tokenCountMap: undefined,
+      tokenCountApproximate: undefined,
+    })
+    const event = publish.mock.calls.at(-1)?.[0]
+    expect(event?.type).toBe('session-updated')
+    if (event?.type !== 'session-updated') throw new Error('Expected updated session event')
+    const saved = (await rowStore.readSnapshot(source.id))?.rows.messages.find(
+      (row) => row.messageId === 'user-1'
+    )?.message
+    expect(event.session.messages[0].tokenCalculatedAt).toBeUndefined()
+    expect(saved?.tokenCalculatedAt).toBeUndefined()
+    expect(saved?.tokenCountMap).toBeUndefined()
+    expect(saved?.tokenCountApproximate).toBeUndefined()
+    expect(saved?.contentParts).toEqual(event.session.messages[0].contentParts)
+    await service.insertMessage(source.id, message('next', 'user', 300))
+    expect((await repository.getSession(source.id))?.messages.at(-1)?.id).toBe('next')
+  })
+
   test('reads complete backup sessions while rejecting conflicting writes until the operation finishes', async () => {
     const source = createHarness()
     const original = createSessionWithMessages('exclusive-backup')

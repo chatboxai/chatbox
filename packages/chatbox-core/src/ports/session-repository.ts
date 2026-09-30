@@ -1,4 +1,4 @@
-import type { Session, SessionFolder, SessionMetaPage, SessionMetaRecord } from '../types/session'
+import type { Message, Session, SessionFolder, SessionMetaPage, SessionMetaRecord } from '../types/session'
 import type { SessionContextRepositoryPort } from './session-context-source'
 import type { SessionMessageRepositoryPort } from './session-message-source'
 import type { SessionReadRepositoryPort } from './session-read-model'
@@ -50,6 +50,10 @@ export class SessionWriteConflictError extends Error {
   }
 }
 
+export type SessionMessageMutation =
+  | { type: 'append'; messages: readonly Message[] }
+  | { type: 'replace'; messageId: string; message: Message }
+
 export interface SessionDataWriteOptions {
   /**
    * The caller guarantees that, against the last persisted state, only this
@@ -70,6 +74,8 @@ export interface SessionDataRepositoryPort
   initialize(): Promise<void>
   getSession(id: string): Promise<Session | null>
   setSession(session: Session, options?: SessionDataWriteOptions): Promise<void>
+  /** Apply a message operation against the caller's immutable snapshot, preserving optimistic concurrency. */
+  mutateSessionMessages?(base: Session, mutation: SessionMessageMutation): Promise<void>
   deleteSession(id: string): Promise<void>
   getAllSessionIds(): Promise<string[]>
 }

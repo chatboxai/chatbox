@@ -19,6 +19,9 @@ import { applyMessageRemoval } from './message-tree'
 import { RowBackedSessionRepository } from './RowBackedSessionRepository'
 import { SessionPersistenceProtocol } from './SessionPersistenceProtocol'
 import { SessionWriteCoordinator } from './SessionWriteCoordinator'
+import * as tokenSeeds from './session-text-tokens'
+import { SessionService } from './SessionService'
+import { SessionEventBus } from './session-events'
 
 const NOW = 1_000
 
@@ -164,6 +167,136 @@ function rowSnapshot(rows: SessionRows, revision: number): SessionRowSnapshot {
 }
 
 describe('RowBackedSessionRepository', () => {
+  test('message commands skip whole-session token reconciliation, encoding, hashing and body rereads', async () => {
+    const { repository, rows } = await createHarness()
+    Object.assign(rows, { acceptTextTokenResults: vi.fn() })
+    const source = createPlainSession()
+    source.messages = Array.from({ length: 1000 }, (_, index) => message(`old-${index}`, 'user', index))
+    await repository.setSession(source)
+    const base = (await repository.getSession(source.id))!
+    const overlay = { ...base, messages: base.messages.map((item) => ({ ...item, tokenCountMap: { default: 999 } })) }
+    const repo = Object.assign(repository, { meta: new InMemorySessionRepository().meta })
+    const writes = new SessionWriteCoordinator(repo, { readCurrentSession: async () => overlay })
+    const events = new SessionEventBus()
+    const publish = vi.spyOn(events, 'publish')
+    const service = new SessionService(repo, writes, events, { createId: () => 'unused' })
+    const clear = vi.spyOn(tokenSeeds, 'clearChangedTextTokenSeeds')
+    const restore = vi.spyOn(tokenSeeds, 'restorePersistedTextTokens')
+    const fingerprint = vi.spyOn(SessionPersistenceProtocol.prototype, 'fingerprint')
+    const read = vi.spyOn(rows, 'readSnapshot')
+    const write = vi.spyOn(rows, 'applyDiff')
+    encoding.calls = 0
+    try {
+      await service.insertMessages(source.id, [
+        message('next-user', 'user', 2000),
+        {
+          ...message('next-assistant', 'assistant', 2001),
+          generating: true,
+          tokenCountMap: { default: 12 },
+        },
+      ])
+      const updater = vi.fn(() => ({
+        id: 'next-assistant',
+        role: 'assistant' as const,
+        contentParts: [{ type: 'text' as const, text: 'new output' }],
+        generating: false,
+      }))
+      await service.updateMessage(source.id, 'next-assistant', updater)
+      expect(updater).toHaveBeenCalledTimes(1)
+      expect(clear).not.toHaveBeenCalled()
+      expect(restore).not.toHaveBeenCalled()
+      expect(encoding.calls).toBe(0)
+      expect(fingerprint).not.toHaveBeenCalled()
+      expect(read).not.toHaveBeenCalled()
+      expect(write.mock.calls.map(([diff]) => diff.messages.upsert.map((row) => row.messageId))).toEqual([
+        ['old-999', 'next-user', 'next-assistant'],
+        ['next-assistant'],
+      ])
+      const stored = (await rows.readSnapshot(source.id))!
+      expect(stored.rows.messages[0].message.tokenCountMap).toBeUndefined()
+      expect(stored.rows.messages.at(-1)?.message).toMatchObject({
+        generating: false,
+        contentParts: [{ type: 'text', text: 'new output' }],
+      })
+      expect(stored.rows.messages.at(-1)?.message.tokenCountMap).toBeUndefined()
+      expect(publish).toHaveBeenCalledTimes(2)
+    } finally {
+      clear.mockRestore()
+      restore.mockRestore()
+      fingerprint.mockRestore()
+    }
+  })
+
+  test('message commands resolve cold baselines and reject stale snapshots without losing concurrent changes', async () => {
+    const { repository, records, rows } = await createHarness()
+    const source = createPlainSession()
+    await repository.setSession(source)
+    const base = (await repository.getSession(source.id))!
+    const cold = new RowBackedSessionRepository({ records, rows })
+    await cold.mutateSessionMessages(base, { type: 'append', messages: [message('appended', 'user', 300)] })
+    await expect(
+      repository.mutateSessionMessages(base, {
+        type: 'replace',
+        messageId: 'assistant-1',
+        message: message('assistant-1', 'assistant', 400),
+      })
+    ).rejects.toMatchObject({ name: 'SessionWriteConflictError' })
+    expect((await repository.getSession(source.id))?.messages.map((item) => item.id)).toEqual([
+      'user-1',
+      'assistant-1',
+      'appended',
+    ])
+  })
+
+  test('message commands retain legacy fallback and reject an external legacy edit', async () => {
+    const { repository, records } = await createHarness()
+    const source = createPlainSession()
+    source.messages.push(unencodableMessage())
+    await records.setRecord(source)
+    const base = (await repository.getSession(source.id))!
+    await repository.mutateSessionMessages(base, { type: 'append', messages: [message('appended', 'user', 300)] })
+    const appended = (await repository.getSession(source.id))!
+    expect(appended.messages.at(-1)?.id).toBe('appended')
+    await records.setRecord({ ...appended, name: 'External legacy edit' })
+    await expect(
+      repository.mutateSessionMessages(appended, { type: 'append', messages: [message('late', 'user', 400)] })
+    ).rejects.toMatchObject({ name: 'SessionWriteConflictError' })
+    expect((await repository.getSession(source.id))?.name).toBe('External legacy edit')
+  })
+
+  test('replacement commands keep canonical seeds for unchanged text despite a numerical overlay', async () => {
+    const { repository, rows } = await createHarness()
+    Object.assign(rows, { acceptTextTokenResults: vi.fn() })
+    const source = createPlainSession()
+    source.messages[1].tokenCountMap = { default: 12 }
+    await repository.setSession(source)
+    const base = (await repository.getSession(source.id))!
+    const overlay = { ...base, messages: base.messages.map((item) => ({ ...item, tokenCountMap: { default: 999 } })) }
+    await repository.mutateSessionMessages(overlay, {
+      type: 'replace',
+      messageId: 'assistant-1',
+      message: { ...overlay.messages[1], generating: false },
+    })
+    expect((await rows.readSnapshot(source.id))?.rows.messages[1].message.tokenCountMap).toEqual({ default: 12 })
+  })
+
+  test('message commands preserve archived-thread and fork updates through the general write path', async () => {
+    const { repository } = await createHarness()
+    const source = createRichSession()
+    await repository.setSession(source)
+    for (const id of ['history-user', 'fork-answer']) {
+      const base = (await repository.getSession(source.id))!
+      await repository.mutateSessionMessages(base, {
+        type: 'replace',
+        messageId: id,
+        message: message(id, 'assistant', 900),
+      })
+    }
+    const actual = (await repository.getSession(source.id))!
+    expect(actual.threads?.[0].messages[0].timestamp).toBe(900)
+    expect(actual.messageForksHash?.['user-1'].lists[1].messages[0].timestamp).toBe(900)
+  })
+
   test('persists a deleted fork pivot by reparenting every child and only deleting the selected row', async () => {
     const harness = await createHarness()
     const source = createRichSession()

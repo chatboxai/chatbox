@@ -84,21 +84,26 @@ export function restorePersistedTextTokens(session: Session, persisted: Session)
   return mapSessionMessages(session, (message) => {
     const original = originals.get(message.id)
     if (!original || original === message) return message
-    const content = withoutEstimatedTextTokens(message)
-    if (
-      message.contentParts !== original.contentParts &&
-      getSessionMessageTokenizationText(message) !== getSessionMessageTokenizationText(original)
-    )
-      return content
-    const restored = {
-      ...content,
-      tokenCountMap: original.tokenCountMap,
-      tokenCalculatedAt: original.tokenCalculatedAt,
-      tokenCountApproximate: original.tokenCountApproximate,
-    }
-    const keys = Object.keys({ ...original, ...restored }) as (keyof Message)[]
-    return keys.every((key) => restored[key] === original[key]) ? original : restored
+    return restoreMessageTextTokens(message, original)
   })
+}
+
+/** Preserve persisted seed fields while accepting only this message's content change. */
+export function restoreMessageTextTokens(message: Message, original: Message): Message {
+  const content = withoutEstimatedTextTokens(message)
+  if (
+    message.contentParts !== original.contentParts &&
+    getSessionMessageTokenizationText(message) !== getSessionMessageTokenizationText(original)
+  )
+    return content
+  const restored = {
+    ...content,
+    tokenCountMap: original.tokenCountMap,
+    tokenCalculatedAt: original.tokenCalculatedAt,
+    tokenCountApproximate: original.tokenCountApproximate,
+  }
+  const keys = Object.keys({ ...original, ...restored }) as (keyof Message)[]
+  return keys.every((key) => restored[key] === original[key]) ? original : restored
 }
 
 /** An edited text cannot inherit a seed merely because its timestamps were copied. */

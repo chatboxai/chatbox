@@ -29,7 +29,6 @@ import {
   applyMessageInsert,
   applyMessageRemoval,
   applyMessagesReplace,
-  applyMessageUpdate,
   type MessageInsertOptions,
 } from './message-tree'
 import {
@@ -49,6 +48,7 @@ import {
   type SessionMetadataUpdate,
 } from './session-metadata'
 import { directoryFolderName, findDirectoryFolder, getSessionWorkingDirectory } from './working-directory-folders'
+import type { SessionMessageOperation } from './message-mutation'
 
 export interface SessionServiceOptions {
   createId: () => string
@@ -506,15 +506,31 @@ export class SessionService {
     updater: Updater<Session>,
     options: UpdateSessionOptions = {}
   ): Promise<Session> {
+    return this.persistSessionUpdate(sessionId, updater, options)
+  }
+
+  private async persistSessionUpdate(
+    sessionId: string,
+    updater: Updater<Session>,
+    options: UpdateSessionOptions = {},
+    operation?: SessionMessageOperation
+  ): Promise<Session> {
     await this.initialize()
-    const updateMeta = typeof updater === 'function' || hasSessionMetaFields(updater) || hasMessageDataFields(updater)
+    const updateMeta =
+      Boolean(operation) ||
+      typeof updater === 'function' ||
+      hasSessionMetaFields(updater) ||
+      hasMessageDataFields(updater)
     let result: SessionWriteResult
     try {
-      result = await this.writes.update(sessionId, updater, {
+      const writeOptions = {
         updateMeta,
         clearRecoveryArchive: options.clearRecoveryArchive,
         changedMessageId: options.changedMessageId,
-      })
+      }
+      result = operation
+        ? await this.writes.mutateMessages(sessionId, operation, writeOptions)
+        : await this.writes.update(sessionId, updater, writeOptions)
     } catch (error) {
       if (!(error instanceof SessionMetadataUpdateError)) throw error
 
@@ -563,6 +579,10 @@ export class SessionService {
     options: MessageInsertOptions &
       Pick<UpdateSessionOptions, 'onFullSessionPersisted' | 'preserveCachedGeneratingMessages'> = {}
   ): Promise<void> {
+    if (!previousId) {
+      await this.persistSessionUpdate(sessionId, {}, options, { type: 'append', messages: [message] })
+      return
+    }
     await this.updateSessionWithMessages(
       sessionId,
       (session) => applyMessageInsert(session, sessionId, message, previousId, options),
@@ -575,17 +595,15 @@ export class SessionService {
 
   async insertMessages(sessionId: string, messages: readonly Message[]): Promise<void> {
     if (!messages.length) return
-    await this.updateSessionWithMessages(sessionId, (session) => {
-      if (!session) throw new SessionNotFoundError(sessionId)
-      return messages.reduce((current, message) => applyMessageInsert(current, sessionId, message), session)
-    })
+    await this.persistSessionUpdate(sessionId, {}, {}, { type: 'append', messages })
   }
 
   async updateMessage(sessionId: string, messageId: string, updater: Updater<Message>): Promise<void> {
-    await this.updateSessionWithMessages(
+    await this.persistSessionUpdate(
       sessionId,
-      (session) => applyMessageUpdate(session, sessionId, messageId, updater),
-      { preserveCachedGeneratingMessages: true, changedMessageId: messageId }
+      {},
+      { preserveCachedGeneratingMessages: true, changedMessageId: messageId },
+      { type: 'update', messageId, updater }
     )
   }
 

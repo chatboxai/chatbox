@@ -20,6 +20,7 @@ import {
 import {
   type SessionDataRepositoryPort,
   type SessionDataWriteOptions,
+  type SessionMessageMutation,
   SessionRepositoryError,
   type SessionRepositoryOperation,
   SessionWriteConflictError,
@@ -62,6 +63,7 @@ import {
 } from './compatibility/released-client-writes'
 import { migrateSession } from './compatibility/session-load'
 import { applySessionMessageDerivedPatch, type SessionMessageDerivedPatch } from './message-derived-data'
+import { applySessionMessageMutation } from './message-mutation'
 import { applyMessageUpdate } from './message-tree'
 import {
   decodeLegacyRecord,
@@ -74,7 +76,12 @@ import { SessionNotFoundError } from './SessionWriteCoordinator'
 import { isAppendBase, planSessionAppend } from './session-append'
 import { contextRecordHeader, contextSourceFromRows, contextSourceFromSession } from './session-context-source'
 import { applySessionDerivedPatches } from './session-derived-data'
-import { overlaySessionTextTokens, overlayTextTokenMessages, restorePersistedTextTokens } from './session-text-tokens'
+import {
+  overlaySessionTextTokens,
+  overlayTextTokenMessages,
+  restorePersistedTextTokens,
+  restoreMessageTextTokens,
+} from './session-text-tokens'
 
 /** Most recently touched sessions whose last persisted rows stay in memory. */
 const BASELINE_LIMIT = 32
@@ -634,9 +641,53 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     return this.enqueueSessionOperation(session.id, () => this.setSessionNow(session, options))
   }
 
-  private async setSessionNow(session: Session, options: SessionDataWriteOptions): Promise<void> {
+  mutateSessionMessages(base: Session, mutation: SessionMessageMutation): Promise<void> {
+    return this.enqueueSessionOperation(base.id, async () => {
+      const cached = this.baselines.get(base.id)
+      const acceptsTokens = Boolean(this.rows.acceptTextTokenResults)
+      if (cached && isAppendBase(cached.session, base, acceptsTokens)) {
+        let persistedMutation = mutation
+        if (acceptsTokens && mutation.type === 'replace') {
+          const location = findMessageLocation(cached.session, mutation.messageId)
+          if (location) {
+            const original = location.list[location.index]
+            const message = restoreMessageTextTokens(mutation.message, original)
+            persistedMutation = {
+              ...mutation,
+              message: {
+                ...message,
+                tokenCountMap: message.tokenCountMap,
+                tokenCalculatedAt: message.tokenCalculatedAt,
+                tokenCountApproximate: message.tokenCountApproximate,
+              },
+            }
+          }
+        }
+        const next = applySessionMessageMutation(cached.session, persistedMutation)
+        await this.setSessionNow(
+          next,
+          {
+            baseSession: cached.session,
+            changedMessageId: mutation.type === 'replace' ? mutation.messageId : undefined,
+          },
+          true
+        )
+      } else {
+        await this.setSessionNow(applySessionMessageMutation(base, mutation), {
+          baseSession: base,
+          changedMessageId: mutation.type === 'replace' ? mutation.messageId : undefined,
+        })
+      }
+    })
+  }
+
+  private async setSessionNow(
+    session: Session,
+    options: SessionDataWriteOptions,
+    persistedTokens = false
+  ): Promise<void> {
     try {
-      const version = await this.persistSession(session, options)
+      const version = await this.persistSession(session, options, persistedTokens)
       this.rememberObservedVersion(session.id, version)
       this.rememberVersion(version)
     } catch (error) {
@@ -645,7 +696,11 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     }
   }
 
-  private async persistSession(session: Session, options: SessionDataWriteOptions): Promise<PersistedSessionVersion> {
+  private async persistSession(
+    session: Session,
+    options: SessionDataWriteOptions,
+    persistedTokens: boolean
+  ): Promise<PersistedSessionVersion> {
     const id = session.id
     const cached = this.baselines.get(id)
     if (
@@ -654,7 +709,10 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
       options.baseSession &&
       isAppendBase(cached.session, options.baseSession, Boolean(this.rows.acceptTextTokenResults))
     ) {
-      const candidate = this.rows.acceptTextTokenResults ? restorePersistedTextTokens(session, cached.session) : session
+      const candidate =
+        !persistedTokens && this.rows.acceptTextTokenResults
+          ? restorePersistedTextTokens(session, cached.session)
+          : session
       const single = options.changedMessageId
         ? planSingleMessageWrite(cached, candidate, options.changedMessageId)
         : null
@@ -680,7 +738,8 @@ export class RowBackedSessionRepository implements SessionDataRepositoryPort {
     }
     const context = await this.resolveWriteContext(id, options)
     const baseline = context.baseline
-    if (baseline && this.rows.acceptTextTokenResults) session = restorePersistedTextTokens(session, baseline.session)
+    if (baseline && !persistedTokens && this.rows.acceptTextTokenResults)
+      session = restorePersistedTextTokens(session, baseline.session)
     if (baseline && hasUnchangedRows(baseline, session)) {
       return await this.completeWrite(id, session, baseline)
     }

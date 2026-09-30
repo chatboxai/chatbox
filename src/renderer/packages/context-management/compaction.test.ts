@@ -69,6 +69,7 @@ vi.mock('@/stores/session/message-queue', () => ({
 
 import { rendererApplication } from '@/app/renderer-application'
 import { requestManualCompaction, runCompactionWithUIState } from './compaction'
+import * as compactionInput from '../token-estimation/compaction-input'
 
 function message(id: string, overrides: Partial<Message> = {}): Message {
   return { id, role: 'assistant', contentParts: [], ...overrides }
@@ -103,6 +104,40 @@ beforeEach(() => {
 })
 
 describe('runCompactionWithUIState', () => {
+  it('performs one token estimate and two session reads for an accepted automatic run', async () => {
+    const estimate = vi.spyOn(compactionInput, 'estimateCompactionInputTokens').mockResolvedValueOnce(1_000_000)
+    generateSummaryWithStreamMock.mockResolvedValueOnce({ success: true, summary: 'Summary' })
+    const states: string[] = []
+    const unsubscribe = getDefaultStore().sub(compactionUIStateMapAtom, () =>
+      states.push(getCompactionUIState('session-1').status)
+    )
+    try {
+      const result = await runCompactionWithUIState('session-1', { kind: 'automatic' })
+      expect(result.status).toBe('compacted')
+      expect(estimate).toHaveBeenCalledOnce()
+      expect(getSessionMock).toHaveBeenCalledTimes(2)
+      expect(states).toEqual(['running', 'completed'])
+    } finally {
+      estimate.mockRestore()
+      unsubscribe()
+    }
+  })
+
+  it('keeps completed feedback when a subsequent automatic run needs no compaction', async () => {
+    const estimate = vi.spyOn(compactionInput, 'estimateCompactionInputTokens').mockResolvedValueOnce(0)
+    getDefaultStore().set(compactionUIStateMapAtom, {
+      'session-1': { status: 'completed', error: null, streamingText: '', summaryMessageId: 'previous' },
+    })
+    try {
+      await runCompactionWithUIState('session-1', { kind: 'automatic' })
+      expect(getCompactionUIState('session-1').status).toBe('completed')
+      expect(getSessionMock).toHaveBeenCalledOnce()
+      expect(generateSummaryWithStreamMock).not.toHaveBeenCalled()
+    } finally {
+      estimate.mockRestore()
+    }
+  })
+
   it('lets sending continue when automatic estimation cannot resolve the provider', async () => {
     resolveTokenEstimationPolicyMock.mockRejectedValueOnce(new Error('ModelProviderNotFoundError'))
     await expect(runCompactionWithUIState('session-1', { kind: 'automatic' })).resolves.toEqual({

@@ -51,9 +51,10 @@ function createHarness(
     input.onStreamUpdate?.('streaming summary')
     return { success: true, summary: 'Final summary' }
   })
+  const getSession = vi.fn(() => Promise.resolve(session))
   const service = new CompactionService({
     sessions: {
-      getSession: () => Promise.resolve(session),
+      getSession,
       getSessionSettings: () => Promise.resolve(sessionSettings),
       async updateSessionWithMessages(_sessionId, updater) {
         session = options.beforeUpdate?.(session) ?? session
@@ -73,6 +74,7 @@ function createHarness(
   })
   return {
     service,
+    getSession,
     getCompactionContext,
     shouldCompact,
     generate,
@@ -376,4 +378,78 @@ describe('CompactionService', () => {
       boundaryMessageId: 'assistant',
     })
   })
+})
+
+test('decides automatic compaction once before starting feedback and reads a fresh planning session', async () => {
+  const harness = createHarness()
+  const onStart = vi.fn(() => {
+    expect(harness.shouldCompact).toHaveBeenCalledOnce()
+    expect(harness.service.isInProgress('session-1')).toBe(true)
+    expect(harness.generate).not.toHaveBeenCalled()
+  })
+  const result = await harness.service.run('session-1', { kind: 'automatic' }, { onStart })
+  expect(result.status).toBe('compacted')
+  expect(onStart).toHaveBeenCalledOnce()
+  expect(harness.getSession).toHaveBeenCalledTimes(2)
+})
+
+test('does not start feedback when automatic compaction is unnecessary or cancelled during estimation', async () => {
+  const harness = createHarness()
+  const onStart = vi.fn()
+  harness.shouldCompact.mockResolvedValueOnce(false)
+  await expect(harness.service.run('session-1', { kind: 'automatic' }, { onStart })).resolves.toEqual({
+    status: 'skipped',
+    reason: 'not_needed',
+  })
+  const controller = new AbortController()
+  harness.shouldCompact.mockImplementationOnce(async () => {
+    controller.abort()
+    return true
+  })
+  await expect(
+    harness.service.run('session-1', { kind: 'automatic' }, { onStart, abortSignal: controller.signal })
+  ).resolves.toEqual({ status: 'cancelled' })
+  expect(onStart).not.toHaveBeenCalled()
+  expect(harness.generate).not.toHaveBeenCalled()
+  expect(harness.service.isInProgress('session-1')).toBe(false)
+})
+
+test('releases ownership when start feedback throws and permits a later run', async () => {
+  const harness = createHarness()
+  const result = await harness.service.run(
+    'session-1',
+    { kind: 'manual' },
+    {
+      onStart: () => {
+        throw new Error('Feedback unavailable')
+      },
+    }
+  )
+  expect(result.status).toBe('failed')
+  expect(harness.service.isInProgress('session-1')).toBe(false)
+  expect(harness.generate).not.toHaveBeenCalled()
+  expect((await harness.service.run('session-1', { kind: 'manual' })).status).toBe('compacted')
+})
+
+test('only the admitted concurrent run starts feedback', async () => {
+  const harness = createHarness()
+  const onStart = vi.fn()
+  const first = harness.service.run('session-1', { kind: 'manual' }, { onStart })
+  const second = harness.service.run('session-1', { kind: 'automatic' }, { onStart })
+  expect(await second).toEqual({ status: 'skipped', reason: 'busy' })
+  expect((await first).status).toBe('compacted')
+  expect(onStart).toHaveBeenCalledOnce()
+})
+
+test('cancellation from start feedback does not generate a summary or retain ownership', async () => {
+  const harness = createHarness()
+  const controller = new AbortController()
+  const result = await harness.service.run(
+    'session-1',
+    { kind: 'manual' },
+    { abortSignal: controller.signal, onStart: () => controller.abort() }
+  )
+  expect(result).toEqual({ status: 'cancelled' })
+  expect(harness.generate).not.toHaveBeenCalled()
+  expect(harness.service.isInProgress('session-1')).toBe(false)
 })

@@ -208,23 +208,25 @@ async function compactWithUIState(
 ): Promise<CompactionServiceResult> {
   if (compactionService.isInProgress(sessionId)) return { status: 'skipped', reason: 'busy' }
   if (options.abortSignal?.aborted) return { status: 'cancelled' }
-  if (request.kind === 'automatic' && !(await compactionService.needsCompaction(sessionId, request.pendingMessage))) {
-    return { status: 'skipped', reason: 'not_needed' }
-  }
-  setCompactionUIState(sessionId, {
-    status: 'running',
-    error: null,
-    streamingText: '',
-    summaryMessageId: null,
-  })
+  let started = false
   const result = await compactionService.run(sessionId, request, {
     ...options,
+    onStart: () => {
+      started = true
+      setCompactionUIState(sessionId, {
+        status: 'running',
+        error: null,
+        streamingText: '',
+        summaryMessageId: null,
+      })
+      options.onStart?.()
+    },
     onStreamUpdate: (text) => {
       setCompactionUIState(sessionId, { streamingText: text })
       options.onStreamUpdate?.(text)
     },
   })
-  if (result.status === 'skipped' && result.reason === 'busy') return result
+  if (!started) return result
   switch (result.status) {
     case 'compacted':
       setCompactionUIState(sessionId, {

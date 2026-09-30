@@ -111,8 +111,10 @@ export class CompactionService {
       return { status: 'skipped', reason: 'busy' }
     }
 
+    if (options.abortSignal?.aborted) return { status: 'cancelled' }
     this.ongoing.add(sessionId)
     try {
+      options.onStart?.()
       const session = await this.options.sessions.getSession(sessionId)
       if (!session) {
         return this.failure('session_not_found', 'Session not found')

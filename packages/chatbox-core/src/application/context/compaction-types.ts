@@ -14,6 +14,8 @@ export type CompactionRequest =
 
 export interface CompactionRunOptions {
   prompt?: string
+  /** Called after admission, when this run owns the session compaction lifecycle. */
+  onStart?: () => void
   onStreamUpdate?: (text: string) => void
   abortSignal?: AbortSignal
 }

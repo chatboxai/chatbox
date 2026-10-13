@@ -101,6 +101,7 @@ export function RouteComponent() {
         footer={
           <ContextLimitSettingRow
             testId={TestId.settings.maxContext}
+            inputTestId={TestId.settings.maxContextCustom}
             value={settings.maxContextMessageCount ?? NO_CONTEXT_LIMIT}
             onChange={(v) => setSettings({ maxContextMessageCount: v })}
           />

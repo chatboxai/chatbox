@@ -3,7 +3,7 @@
 import { MantineProvider } from '@mantine/core'
 import { createMessage, type Session } from '@shared/types'
 import { fireEvent, render, screen } from '@testing-library/react'
-import type { ReactNode } from 'react'
+import { type ReactNode, useState } from 'react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 const globalSettings = vi.hoisted(() => ({
@@ -57,6 +57,7 @@ vi.mock('@/components/ui/tooltip', () => ({ AppTooltip: ({ children }: { childre
 vi.mock('@/adapters/CurrentBlobStorage', () => ({ currentBlobStorage: { set: vi.fn() } }))
 vi.mock('@/storage/StoreStorage', () => ({ StorageKeyGenerator: { picture: (key: string) => `picture:${key}` } }))
 
+import { ContextLimitSettingRow } from '../settings/ParamControl'
 import { SessionSettingsContent } from './SessionSettingsContent'
 
 function makeSession(settings: Session['settings']): Session {
@@ -89,8 +90,7 @@ describe('SessionSettingsContent', () => {
   test('shows inherited values and names the model the parameters apply to', () => {
     renderContent(makeSession({}))
     expect(screen.getByText('Applies to GPT-4o')).toBeTruthy()
-    const maxContext = screen.getByTestId('session-settings-max-context') as HTMLSelectElement
-    expect(maxContext.selectedOptions[0]?.textContent).toBe('Follows global · 20')
+    expect(screen.getByTestId('session-settings-max-context')).toHaveProperty('value', 'Follows global · 20')
     expect(screen.getByTestId('session-panel-inherit-max-context').getAttribute('data-inherit-state')).toBe('inherited')
     expect(screen.getByTestId('session-panel-inherit-temperature').textContent).toBe('Follows global · Model default')
     expect(screen.getByText('All parameters follow global defaults')).toBeTruthy()
@@ -98,22 +98,26 @@ describe('SessionSettingsContent', () => {
 
   test('sets a conversation context limit and follows global again from the picker', () => {
     const onEdit = renderContent(makeSession({ maxContextMessageCount: 37 }))
-    const maxContext = screen.getByTestId('session-settings-max-context') as HTMLSelectElement
-    expect(maxContext.value).toBe('37')
-    expect(Array.from(maxContext.options).map((option) => option.value)).toEqual([
-      'inherit',
-      `${Number.MAX_SAFE_INTEGER}`,
-      '50',
-      '37',
-      '20',
-      '10',
-      '4',
-      '0',
-    ])
-    fireEvent.change(maxContext, { target: { value: '10' } })
+    const maxContext = screen.getByTestId('session-settings-max-context')
+    expect(maxContext).toHaveProperty('value', '37')
+    expect(screen.getByTestId('session-settings-max-context-custom')).toHaveProperty('value', '37')
+    fireEvent.click(maxContext)
+    fireEvent.click(screen.getByRole('option', { name: '10' }))
     expect(onEdit).toHaveBeenLastCalledWith({ settings: { maxContextMessageCount: 10 } })
-    fireEvent.change(maxContext, { target: { value: 'inherit' } })
+    fireEvent.click(maxContext)
+    fireEvent.click(screen.getByRole('option', { name: 'Follows global · 20' }))
     expect(onEdit).toHaveBeenLastCalledWith({ settings: { maxContextMessageCount: undefined } })
+  })
+
+  test('opens a custom count without changing inheritance and saves it on panel close', () => {
+    const onEdit = renderContent(makeSession({}))
+    fireEvent.click(screen.getByTestId('session-settings-max-context'))
+    fireEvent.click(screen.getByRole('option', { name: 'Custom' }))
+    expect(onEdit).not.toHaveBeenCalled()
+    const input = screen.getByTestId('session-settings-max-context-custom')
+    fireEvent.change(input, { target: { value: '8' } })
+    onEdit.view.unmount()
+    expect(onEdit).toHaveBeenLastCalledWith({ settings: { maxContextMessageCount: 8 } })
   })
 
   test('restores one overridden parameter to the inherited value', () => {
@@ -159,4 +163,33 @@ describe('SessionSettingsContent', () => {
     onEdit.view.unmount()
     expect(onEdit).toHaveBeenCalledWith({ name: 'Renamed chat' })
   })
+})
+
+test('global context count accepts custom counts and zero, restores invalid drafts, and switches to presets', () => {
+  function GlobalContextControl() {
+    const [value, setValue] = useState(Number.MAX_SAFE_INTEGER)
+    return <ContextLimitSettingRow value={value} onChange={setValue} inputTestId="custom-count" />
+  }
+  render(
+    <MantineProvider>
+      <GlobalContextControl />
+    </MantineProvider>
+  )
+  const input = screen.getByTestId('custom-count')
+  fireEvent.change(input, { target: { value: '37' } })
+  fireEvent.blur(input)
+  expect(input).toHaveProperty('value', '37')
+  fireEvent.change(input, { target: { value: '9007199254740992' } })
+  fireEvent.blur(input)
+  expect(input).toHaveProperty('value', '37')
+  fireEvent.change(input, { target: { value: '' } })
+  fireEvent.blur(input)
+  expect(input).toHaveProperty('value', '37')
+  fireEvent.change(input, { target: { value: '0' } })
+  fireEvent.blur(input)
+  expect(input).toHaveProperty('value', '0')
+  fireEvent.click(screen.getByRole('radio', { name: '50' }))
+  expect(input).toHaveProperty('value', '50')
+  fireEvent.click(screen.getByRole('radio', { name: 'No Limit' }))
+  expect(input).toHaveProperty('value', '')
 })

@@ -1,10 +1,11 @@
-import { NativeSelect, SegmentedControl, Stack } from '@mantine/core'
+import { Flex, NumberInput, SegmentedControl, Select, Stack } from '@mantine/core'
 import { IconSelector } from '@tabler/icons-react'
 import clsx from 'clsx'
 import { useEffect, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import SliderWithInput from '@/components/common/SliderWithInput'
+import { useFieldDraft } from '@/hooks/useFieldDraft'
 import { SettingRow, type SettingsDensity, useSettingsDensity } from './SettingsLayout'
 
 const TEMPERATURE_PRESETS = [
@@ -117,6 +118,57 @@ function contextCountOptions(value: number) {
   return CONTEXT_STEPS.includes(value) ? CONTEXT_STEPS : [...CONTEXT_STEPS, value].sort((a, b) => b - a)
 }
 
+function ContextCountInput({
+  value,
+  onChange,
+  testId,
+  autoFocus = false,
+}: {
+  value?: number
+  onChange(value: number): void
+  testId?: string
+  autoFocus?: boolean
+}) {
+  const { t } = useTranslation()
+  const density = useSettingsDensity()
+  const { draft, setDraft, flush } = useFieldDraft<string | number>(
+    value === undefined || value >= NO_CONTEXT_LIMIT ? '' : value,
+    (next) => {
+      if (next === '') return 'rejected'
+      const count = Number(next)
+      if (!Number.isSafeInteger(count) || count < 0 || count >= NO_CONTEXT_LIMIT) return 'rejected'
+      if (count === value) return 'unchanged'
+      onChange(count)
+      return 'applied'
+    }
+  )
+  return (
+    <NumberInput
+      data-testid={testId}
+      aria-label={`${t('Context message limit')} · ${t('Custom')}`}
+      placeholder={t('Custom') ?? ''}
+      value={draft}
+      onChange={setDraft}
+      onBlur={flush}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') event.currentTarget.blur()
+      }}
+      autoFocus={autoFocus}
+      min={0}
+      clampBehavior="none"
+      allowDecimal={false}
+      allowNegative={false}
+      hideControls
+      inputMode="numeric"
+      enterKeyHint="done"
+      size={density === 'touch' ? 'sm' : 'xs'}
+      w={88}
+      className="ms-auto shrink-0"
+      classNames={{ input: '!text-center' }}
+    />
+  )
+}
+
 function NotRecommendedBadge() {
   const { t } = useTranslation()
   return (
@@ -144,10 +196,12 @@ export function ContextLimitSettingRow({
   value,
   onChange,
   testId,
+  inputTestId,
 }: {
   value: number
   onChange(value: number): void
   testId?: string
+  inputTestId?: string
 }) {
   const { t } = useTranslation()
   const density = useSettingsDensity()
@@ -159,16 +213,20 @@ export function ContextLimitSettingRow({
         description={t('Keep it at No Limit and let auto-compaction manage context')}
         controlLayout="block"
         control={
-          <SegmentedControl
-            data-testid={testId}
-            aria-label={t('Context message limit') ?? undefined}
-            size={density === 'touch' ? 'sm' : 'xs'}
-            radius="md"
-            fullWidth
-            value={`${value}`}
-            onChange={(next) => onChange(Number(next))}
-            data={contextCountOptions(value).map((step) => ({ value: `${step}`, label: formatContextCount(step, t) }))}
-          />
+          <Flex gap="xs" align="center" wrap="wrap">
+            <SegmentedControl
+              data-testid={testId}
+              aria-label={t('Context message limit') ?? undefined}
+              size={density === 'touch' ? 'sm' : 'xs'}
+              radius="md"
+              fullWidth
+              className="flex-1 min-w-[260px]"
+              value={CONTEXT_STEPS.includes(value) ? `${value}` : ''}
+              onChange={(next) => onChange(Number(next))}
+              data={CONTEXT_STEPS.map((step) => ({ value: `${step}`, label: formatContextCount(step, t) }))}
+            />
+            <ContextCountInput value={value} onChange={onChange} testId={inputTestId} />
+          </Flex>
         }
       />
     </div>
@@ -185,6 +243,7 @@ export function ContextLimitSelectRow({
   onChange,
   onInherit,
   selectTestId,
+  inputTestId,
   testId,
 }: {
   /** The conversation's own count, or undefined when it follows the global value. */
@@ -193,18 +252,24 @@ export function ContextLimitSelectRow({
   onChange(value: number): void
   onInherit(): void
   selectTestId?: string
+  inputTestId?: string
   testId?: string
 }) {
   const { t } = useTranslation()
   const density = useSettingsDensity()
   const selectId = useId()
   const fontSize = density === 'touch' ? 13 : 12
+  const [customOpen, setCustomOpen] = useState(false)
+  useEffect(() => {
+    if (value === undefined || CONTEXT_STEPS.includes(value)) setCustomOpen(false)
+  }, [value])
+  const showCustom = customOpen || (value !== undefined && !CONTEXT_STEPS.includes(value))
   return (
     <div
       data-testid={testId}
       data-inherit-state={value === undefined ? 'inherited' : 'overridden'}
       className={clsx(
-        'flex items-center gap-1.5 px-1 text-chatbox-tint-tertiary',
+        'flex flex-wrap items-center gap-1.5 px-1 text-chatbox-tint-tertiary',
         density === 'touch' ? 'min-h-11' : 'min-h-7'
       )}
       style={{ fontSize }}
@@ -213,15 +278,23 @@ export function ContextLimitSelectRow({
         {t('Context message limit')}
       </label>
       <NotRecommendedBadge />
-      <span className="flex-1" />
-      <NativeSelect
+      <Select
         id={selectId}
         data-testid={selectTestId}
         variant="unstyled"
-        size="xs"
-        value={value === undefined ? INHERIT_CONTEXT_OPTION : `${value}`}
-        onChange={(event) => {
-          const next = event.currentTarget.value
+        size={density === 'touch' ? 'sm' : 'xs'}
+        w={160}
+        className="ms-auto shrink-0 max-w-full"
+        allowDeselect={false}
+        comboboxProps={{ withinPortal: false }}
+        value={customOpen ? 'custom' : value === undefined ? INHERIT_CONTEXT_OPTION : `${value}`}
+        onChange={(next) => {
+          if (next === null) return
+          if (next === 'custom') {
+            setCustomOpen(true)
+            return
+          }
+          setCustomOpen(false)
           if (next === INHERIT_CONTEXT_OPTION) onInherit()
           else onChange(Number(next))
         }}
@@ -234,6 +307,7 @@ export function ContextLimitSelectRow({
             value: `${step}`,
             label: formatContextCount(step, t),
           })),
+          { value: 'custom', label: t('Custom') },
         ]}
         rightSection={<ScalableIcon icon={IconSelector} size={12} className="text-inherit" />}
         rightSectionWidth={16}
@@ -242,7 +316,7 @@ export function ContextLimitSelectRow({
           input: {
             fontSize,
             height: 'auto',
-            minHeight: 0,
+            minHeight: density === 'touch' ? 36 : 24,
             paddingLeft: 0,
             paddingRight: 16,
             textAlign: 'right',
@@ -252,6 +326,16 @@ export function ContextLimitSelectRow({
           },
         }}
       />
+      {showCustom && (
+        <div className="flex w-full justify-end pb-1">
+          <ContextCountInput
+            value={(value ?? inheritedValue) >= NO_CONTEXT_LIMIT ? undefined : (value ?? inheritedValue)}
+            onChange={onChange}
+            testId={inputTestId}
+            autoFocus={customOpen}
+          />
+        </div>
+      )}
     </div>
   )
 }

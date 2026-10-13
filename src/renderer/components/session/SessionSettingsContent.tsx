@@ -243,6 +243,7 @@ export function SessionSettingsContent({
             <ContextLimitSelectRow
               testId={TestId.sessionPanel.inheritMaxContext}
               selectTestId={TestId.settings.sessionMaxContext}
+              inputTestId={TestId.settings.sessionMaxContextCustom}
               value={settings?.maxContextMessageCount}
               inheritedValue={global.maxContextMessageCount ?? NO_CONTEXT_LIMIT}
               onChange={(value) => setParam({ maxContextMessageCount: value })}

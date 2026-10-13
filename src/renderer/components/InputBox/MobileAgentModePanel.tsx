@@ -321,18 +321,25 @@ const MobileAgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProp
       </UnstyledButton>
       <UnstyledButton
         aria-label={t('MCP Settings')}
+        disabled={!workActive}
         onClick={() => {
           onClose?.()
           navigateToSettings('/mcp')
         }}
-        style={{ minHeight: 44 }}
+        style={{ minHeight: 44, opacity: workActive ? 1 : 0.45 }}
       >
         <Group justify="space-between">
           <Group gap="xs">
             <IconPlug size={18} />
             <Stack gap={0}>
               <Text size="sm">{t('MCP Settings')}</Text>
-              <MCPConnectionSummary />
+              {workActive ? (
+                <MCPConnectionSummary />
+              ) : (
+                <Text size="xs" c="dimmed">
+                  {t('Enabled in Work Mode')}
+                </Text>
+              )}
             </Stack>
           </Group>
           <IconChevronRight size={16} />

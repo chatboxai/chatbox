@@ -216,10 +216,32 @@ test('keeps attachment processing mode fixed until draft attachments are removed
   expect(mocks.saveMode).not.toHaveBeenCalled()
 })
 
-test('opens mobile MCP settings', () => {
+test('opens mobile MCP settings in Work Mode', () => {
   renderPanel()
   fireEvent.click(screen.getByRole('button', { name: 'MCP Settings' }))
   expect(mocks.navigate).toHaveBeenCalledWith('/mcp')
+  expect(mocks.close).toHaveBeenCalledOnce()
+})
+
+test.each(['ios', 'android'])('disables MCP settings in Chat Mode on %s', (platform) => {
+  mocks.platform = platform
+  mocks.entry.value = 'off'
+  renderPanel()
+  const mcp = screen.getByRole('button', { name: 'MCP Settings' })
+  expect(mcp).toBeDisabled()
+  expect(mcp).toHaveTextContent('Enabled in Work Mode')
+  fireEvent.click(mcp)
+  expect(mocks.navigate).not.toHaveBeenCalled()
+  expect(mocks.close).not.toHaveBeenCalled()
+})
+
+test('disables MCP settings when the model does not support Work Mode', () => {
+  render(panel({ modelSupportsAgentMode: false }))
+  const mcp = screen.getByRole('button', { name: 'MCP Settings' })
+  expect(mcp).toBeDisabled()
+  fireEvent.click(mcp)
+  expect(mocks.navigate).not.toHaveBeenCalled()
+  expect(mocks.close).not.toHaveBeenCalled()
 })
 
 describe('Mobile Agent Mode memory', () => {

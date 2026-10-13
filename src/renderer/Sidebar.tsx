@@ -26,6 +26,7 @@ import { ScalableIcon } from './components/common/ScalableIcon'
 import ThemeSwitchButton from './components/dev/ThemeSwitchButton'
 import { useAppTitleBarHeight } from './components/layout/AppTitleBar'
 import { SidebarDesktopDownloadCard, useWebAppDownloadPromptVisible } from './components/layout/DesktopDownloadReminder'
+import { SidebarLowQuotaReminder } from './components/layout/LowQuotaReminder'
 import { formatShortcut } from './components/Shortcut'
 import SessionList from './components/session/SessionList'
 import { FORCE_ENABLE_DEV_PAGES } from './dev/devToolsConfig'
@@ -269,6 +270,10 @@ export default function Sidebar() {
         <SessionList sessionListViewportRef={sessionListViewportRef} />
 
         <SidebarUpdateBanner />
+
+        <Box px="xs" pb="xs" className="empty:hidden">
+          <SidebarLowQuotaReminder />
+        </Box>
 
         {showDesktopDownloadCard && (
           <Box px="xs" pb="xs">

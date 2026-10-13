@@ -122,6 +122,8 @@ export const uiStore = createStore(
         agentModeLastSelected: 'off' as Extract<AgentModeValue, 'on' | 'off'>,
         sessionAgentModeMap: {} as Record<string, AgentModeEntry>,
         promptCacheBreakConfirmDismissed: {} as Record<string, boolean>,
+        // License + quota period whose low-points reminder the user closed.
+        lowQuotaReminderDismissedPeriod: null as string | null,
         sessionPanels: {} as Record<string, SessionPanelState | undefined>,
         // Width of the conversation side panel in px; null uses min(560px, 45%).
         sessionPanelWidth: null as number | null,
@@ -426,6 +428,7 @@ export const uiStore = createStore(
         sessionWebBrowsingMap: state.sessionWebBrowsingMap,
         sessionKnowledgeBaseMap: state.sessionKnowledgeBaseMap,
         promptCacheBreakConfirmDismissed: state.promptCacheBreakConfirmDismissed,
+        lowQuotaReminderDismissedPeriod: state.lowQuotaReminderDismissedPeriod,
         sessionPanelWidth: state.sessionPanelWidth,
       }),
       storage: safeStorage,

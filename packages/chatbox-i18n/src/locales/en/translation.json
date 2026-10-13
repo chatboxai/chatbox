@@ -1883,5 +1883,12 @@
   "Eastmoney MX": "Eastmoney MX",
   "Search Chinese laws, cases, and legal citations. Sign in with OAuth on desktop, or set Authorization=Bearer <YOUR_TOKEN> in HTTP Header.": "Search Chinese laws, cases, and legal citations. Sign in with OAuth on desktop, or set Authorization=Bearer <YOUR_TOKEN> in HTTP Header.",
   "Access Eastmoney financial data. Enter your API key as em_api_key=<YOUR_API_KEY> in HTTP Header.": "Access Eastmoney financial data. Enter your API key as em_api_key=<YOUR_API_KEY> in HTTP Header.",
-  "Please enter your own MX API KEY here": "Please enter your own MX API KEY here"
+  "Please enter your own MX API KEY here": "Please enter your own MX API KEY here",
+  "Work Mode supports text, PDF, Word (.doc/.docx), Excel (.xls/.xlsx), and PowerPoint (.ppt/.pptx) files.": "Work Mode supports text, PDF, Word (.doc/.docx), Excel (.xls/.xlsx), and PowerPoint (.ppt/.pptx) files.",
+  "Sign in to Chatbox AI or activate a license to use cloud document parsing.": "Sign in to Chatbox AI or activate a license to use cloud document parsing.",
+  "Cloud document parsing": "Cloud document parsing",
+  "Upload the original file \"{{filename}}\" to Chatbox AI for document parsing? This consumes compute points. The extracted text will be available to the model in this conversation.": "Upload the original file \"{{filename}}\" to Chatbox AI for document parsing? This consumes compute points. The extracted text will be available to the model in this conversation.",
+  "Upload and parse": "Upload and parse",
+  "Cloud document parsing was declined. The file has not been uploaded.": "Cloud document parsing was declined. The file has not been uploaded.",
+  "No readable text was found in this file.": "No readable text was found in this file."
 }

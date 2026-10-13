@@ -11,20 +11,27 @@ const asset: PickedAsset = {
 }
 
 describe('local work attachment preparation', () => {
-  it.each(['letter.docx', 'table.xlsx', 'report.pptx', 'index.html', 'sales.csv'])(
-    'stores original bytes and a compact reference for %s',
-    async (name) => {
-      const read = vi.fn().mockResolvedValue('data:application/octet-stream;base64,YWJj')
-      const write = vi.fn().mockResolvedValue(undefined)
-      const result = await prepareLocalWorkAttachment({ ...asset, name }, read, write)
-      expect(result.rawStorageKey).toBe('file:1:local-workspace_raw')
-      expect(result.content).toBe(`Local workspace file: ${name}`)
-      expect(result.parserType).toBe('local-workspace')
-      expect(write).toHaveBeenCalledWith(result.rawStorageKey, 'data:application/octet-stream;base64,YWJj')
-      expect(result.storageKey).not.toBe(asset.id)
-    }
-  )
-  it.each(['document.pdf', 'archive.zip', 'script.exe'])(
+  it.each([
+    'letter.docx',
+    'table.xlsx',
+    'report.pptx',
+    'index.html',
+    'sales.csv',
+    'report.PDF',
+    'letter.doc',
+    'table.xls',
+    'deck.ppt',
+  ])('stores original bytes and a compact reference for %s', async (name) => {
+    const read = vi.fn().mockResolvedValue('data:application/octet-stream;base64,YWJj')
+    const write = vi.fn().mockResolvedValue(undefined)
+    const result = await prepareLocalWorkAttachment({ ...asset, name }, read, write)
+    expect(result.rawStorageKey).toBe('file:1:local-workspace_raw')
+    expect(result.content).toBe(`Local workspace file: ${name}`)
+    expect(result.parserType).toBe('local-workspace')
+    expect(write).toHaveBeenCalledWith(result.rawStorageKey, 'data:application/octet-stream;base64,YWJj')
+    expect(result.storageKey).not.toBe(asset.id)
+  })
+  it.each(['archive.zip', 'script.exe'])(
     'rejects unsupported input %s before reading or storing bytes',
     async (name) => {
       const read = vi.fn()

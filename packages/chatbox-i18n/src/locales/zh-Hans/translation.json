@@ -1883,5 +1883,12 @@
   "Eastmoney MX": "东方财富妙想",
   "Search Chinese laws, cases, and legal citations. Sign in with OAuth on desktop, or set Authorization=Bearer <YOUR_TOKEN> in HTTP Header.": "检索中国法规、案例和法律引用。桌面端可通过 OAuth 登录，也可在 HTTP Header 中填写 Authorization=Bearer <YOUR_TOKEN>。",
   "Access Eastmoney financial data. Enter your API key as em_api_key=<YOUR_API_KEY> in HTTP Header.": "访问东方财富金融数据。请在 HTTP Header 中填写 em_api_key=<YOUR_API_KEY>。",
-  "Please enter your own MX API KEY here": "请在这里填入你自己的妙想 API KEY"
+  "Please enter your own MX API KEY here": "请在这里填入你自己的妙想 API KEY",
+  "Work Mode supports text, PDF, Word (.doc/.docx), Excel (.xls/.xlsx), and PowerPoint (.ppt/.pptx) files.": "工作模式支持文本、PDF、Word (.doc/.docx)、Excel (.xls/.xlsx) 和 PowerPoint (.ppt/.pptx) 文件。",
+  "Sign in to Chatbox AI or activate a license to use cloud document parsing.": "登录 Chatbox AI 或激活许可证以使用云端文档解析。",
+  "Cloud document parsing": "云端文档解析",
+  "Upload the original file \"{{filename}}\" to Chatbox AI for document parsing? This consumes compute points. The extracted text will be available to the model in this conversation.": "是否将原始文件“{{filename}}”上传至 Chatbox AI 进行文档解析？这会消耗计算点数。提取的文本将提供给本对话中的模型。",
+  "Upload and parse": "上传并解析",
+  "Cloud document parsing was declined. The file has not been uploaded.": "已拒绝云端文档解析。文件尚未上传。",
+  "No readable text was found in this file.": "此文件中未找到可读取的文本。"
 }

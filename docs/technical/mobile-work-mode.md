@@ -1,8 +1,8 @@
 # 移动端本地工作模式
 
-> Last updated: 2026-09
+> Last updated: 2026-10
 
-React Native 与 Capacitor 移动端使用会话 `settings.agentMode`，沿用桌面端的聊天/工作模式选择和消息操作策略。执行与系统工具不要求 Chatbox License，也不依赖 Chatbox API。模型请求仍使用用户配置的提供方。
+React Native 与 Capacitor 移动端使用会话 `settings.agentMode`，沿用桌面端的聊天/工作模式选择和消息操作策略。执行与系统工具不要求 Chatbox License，也不依赖 Chatbox API。模型请求仍使用用户配置的提供方。Capacitor 的云端文档解析需要 Chatbox AI License 和可用算力，并在上传原文件前请求用户确认。
 
 ## 执行与文件
 
@@ -11,6 +11,8 @@ React Native 与 Capacitor 移动端使用会话 `settings.agentMode`，沿用�
 Worker 随应用打包，包含 QuickJS WASM、ExcelJS 和 PptxGenJS；不从 CDN 下载运行时。Metro、Vite 和类型检查调用根目录 `scripts/build-mobile-work-worker.cjs` 生成被忽略的资源文件。代码执行没有网络、Node、Shell 或原生 App 桥接；系统能力通过独立工具访问。
 
 限制为每个文件 10 MiB、执行工作区 20 MiB、128 个文件；QuickJS 堆上限 32 MiB，执行期限 20 秒，宿主额外提供超时和 Worker 销毁。文档库运行在 Worker 内，其内存不属于 QuickJS 堆；额外限制实际 ZIP 解压量、单元格、幻灯片和元素数。切后台、取消或执行进程退出会中断任务；后续执行应检查已保存文件。
+
+Capacitor 工作附件接受文本、PDF、DOC/DOCX、XLS/XLSX 和 PPT/PPTX，保留本地原始字节，添加附件时不调用云端解析。`parse_file` 按需解析：PDF 复用浏览器 PDF 文本提取，DOCX/XLSX/PPTX 使用本地 Worker；旧版 Office、本地解析失败或没有正文时，确认后上传原文件到 Chatbox AI。加密或超限文件直接返回错误。缺少 License、用户拒绝、额度不足和空云端结果均明确报错。取消操作会停止客户端上传/解析请求，并阻止结果提交；已经到达服务端的解析及计费可能继续完成。云端正文也限制为 100000 字符，存入工作区后分页读取。输入及工作区容量限制仍然生效。
 
 工作附件保留本地原始字节。输入目录只读，成果通过 `create_download` 复制并写入共享 Blob 存储。成果引用参与标准会话备份资源收集和恢复映射，因此在另一设备恢复备份后可重建本地成果。删除会话时停止相关执行，等待在途文件操作结束后清理该会话的本地工作区（包括输入、副本和成果）；迟到的写入不能重建已删除目录。导入同 ID 会话后重新启用工作区。中间工作区文件不包含在备份中；恢复后可打开或分享已交付成果，继续执行时从附件重建工作区。
 

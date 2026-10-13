@@ -1,6 +1,5 @@
 import { formatSystemToolDetails } from '@shared/mobile-work/authorization-text'
 import { Capacitor, registerPlugin } from '@capacitor/core'
-import NiceModal from '@ebay/nice-modal-react'
 import { throwIfWorkAborted } from '@shared/mobile-work/abort'
 import {
   createMobileSystemToolGroups,
@@ -11,6 +10,7 @@ import {
 import { MAX_WORKSPACE_FILE_BYTES } from '@shared/mobile-work/workspace-path'
 import i18n from '@/i18n'
 import { blobToBase64, CapacitorWorkspace } from './CapacitorWorkspace'
+import { confirmWorkAction } from './confirmation'
 
 type NativeValue<T> = Promise<{ value: T }>
 export interface CapacitorSystemToolsPlugin {
@@ -44,7 +44,6 @@ export function adaptCapacitorSystemTools(native: CapacitorSystemToolsPlugin): M
   }
 }
 
-let confirmationQueue: Promise<unknown> = Promise.resolve()
 const readGrants = new Set<string>()
 
 async function authorize(
@@ -59,60 +58,37 @@ async function authorize(
   const reusableRead =
     request.operation === 'read' && request.capability !== 'photos' && request.capability !== 'health'
   if (reusableRead && readGrants.has(key)) return true
-  const operation = confirmationQueue
-    .catch(() => undefined)
-    .then(async () => {
-      throwIfWorkAborted(signal)
-      if (reusableRead && readGrants.has(key)) return true
-      const labels = {
-        calendar: i18n.t('Calendar'),
-        reminders: i18n.t('Reminders'),
-        photos: i18n.t('Photos'),
-        health: i18n.t('Health'),
-      }
-      const disclosure =
-        request.operation === 'read'
-          ? request.disclosure === 'health-model'
-            ? i18n.t('Health information returned by this tool will be sent to {{provider}} for this conversation.', {
-                provider: providerLabel,
-              })
-            : i18n.t('Information returned by this tool will be sent to {{provider}} for this conversation.', {
-                provider: providerLabel,
-              })
-          : ''
-      const decision = new Promise<boolean>((resolve) => {
-        let settled = false
-        const finish = (value: boolean) => {
-          if (settled) return
-          settled = true
-          signal?.removeEventListener('abort', abort)
-          resolve(value)
-        }
-        const abort = () => {
-          void NiceModal.hide('confirm')
-          finish(false)
-        }
-        signal?.addEventListener('abort', abort, { once: true })
-        void NiceModal.show('confirm', {
-          onConfirm: onAllow,
-          title: labels[request.capability],
-          message: [formatSystemToolDetails(request.details, i18n.t, i18n.language), disclosure]
-            .filter(Boolean)
-            .join('\n\n'),
-          confirmText: request.operation === 'write' ? i18n.t('Confirm') : i18n.t('Allow'),
-          cancelText: i18n.t('Cancel'),
-        }).then(
-          (result) => finish(result === true),
-          () => finish(false)
-        )
-      })
-      const allowed = await decision
-      throwIfWorkAborted(signal)
-      if (allowed && reusableRead) readGrants.add(key)
-      return allowed
-    })
-  confirmationQueue = operation
-  return operation
+  const labels = {
+    calendar: i18n.t('Calendar'),
+    reminders: i18n.t('Reminders'),
+    photos: i18n.t('Photos'),
+    health: i18n.t('Health'),
+  }
+  const disclosure =
+    request.operation === 'read'
+      ? request.disclosure === 'health-model'
+        ? i18n.t('Health information returned by this tool will be sent to {{provider}} for this conversation.', {
+            provider: providerLabel,
+          })
+        : i18n.t('Information returned by this tool will be sent to {{provider}} for this conversation.', {
+            provider: providerLabel,
+          })
+      : ''
+  const allowed = await confirmWorkAction(
+    {
+      onConfirm: onAllow,
+      title: labels[request.capability],
+      message: [formatSystemToolDetails(request.details, i18n.t, i18n.language), disclosure]
+        .filter(Boolean)
+        .join('\n\n'),
+      confirmText: String(request.operation === 'write' ? i18n.t('Confirm') : i18n.t('Allow')),
+      cancelText: String(i18n.t('Cancel')),
+    },
+    signal,
+    () => reusableRead && readGrants.has(key)
+  )
+  if (allowed && reusableRead) readGrants.add(key)
+  return allowed
 }
 
 export function pickSystemPhotoFiles(signal?: AbortSignal): Promise<File[] | null> {

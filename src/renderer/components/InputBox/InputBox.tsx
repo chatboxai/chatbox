@@ -1365,7 +1365,11 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
               continue
             }
             if (!isLocalWorkAttachment(file.name)) {
-              toastActions.add(t('Work Mode supports text, Word (.docx), Excel (.xlsx), and PowerPoint (.pptx) files.'))
+              toastActions.add(
+                t(
+                  'Work Mode supports text, PDF, Word (.doc/.docx), Excel (.xls/.xlsx), and PowerPoint (.ppt/.pptx) files.'
+                )
+              )
               continue
             }
           }

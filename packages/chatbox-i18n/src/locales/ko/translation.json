@@ -1883,5 +1883,12 @@
   "Eastmoney MX": "Eastmoney MX",
   "Search Chinese laws, cases, and legal citations. Sign in with OAuth on desktop, or set Authorization=Bearer <YOUR_TOKEN> in HTTP Header.": "중국 법률, 판례 및 법률 인용을 검색합니다. 데스크톱에서 OAuth로 로그인하거나 HTTP Header에 Authorization=Bearer <YOUR_TOKEN>을 설정하세요.",
   "Access Eastmoney financial data. Enter your API key as em_api_key=<YOUR_API_KEY> in HTTP Header.": "Eastmoney 금융 데이터에 액세스합니다. HTTP Header에 em_api_key=<YOUR_API_KEY> 형식으로 API 키를 입력하세요.",
-  "Please enter your own MX API KEY here": "여기에 본인의 MX API KEY를 입력하세요"
+  "Please enter your own MX API KEY here": "여기에 본인의 MX API KEY를 입력하세요",
+  "Work Mode supports text, PDF, Word (.doc/.docx), Excel (.xls/.xlsx), and PowerPoint (.ppt/.pptx) files.": "작업 모드는 텍스트, PDF, Word (.doc/.docx), Excel (.xls/.xlsx), PowerPoint (.ppt/.pptx) 파일을 지원합니다.",
+  "Sign in to Chatbox AI or activate a license to use cloud document parsing.": "클라우드 문서 분석을 사용하려면 Chatbox AI에 로그인하거나 라이선스를 활성화하세요.",
+  "Cloud document parsing": "클라우드 문서 분석",
+  "Upload the original file \"{{filename}}\" to Chatbox AI for document parsing? This consumes compute points. The extracted text will be available to the model in this conversation.": "원본 파일 \"{{filename}}\"을 Chatbox AI에 업로드하여 분석할까요? 컴퓨팅 포인트가 소모됩니다. 추출된 텍스트는 이 대화의 모델에 제공됩니다.",
+  "Upload and parse": "업로드 및 분석",
+  "Cloud document parsing was declined. The file has not been uploaded.": "클라우드 문서 분석이 거절되었습니다. 파일은 업로드되지 않았습니다.",
+  "No readable text was found in this file.": "이 파일에서 읽을 수 있는 텍스트를 찾지 못했습니다."
 }

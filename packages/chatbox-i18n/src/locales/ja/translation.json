@@ -1883,5 +1883,12 @@
   "Eastmoney MX": "Eastmoney 妙想",
   "Search Chinese laws, cases, and legal citations. Sign in with OAuth on desktop, or set Authorization=Bearer <YOUR_TOKEN> in HTTP Header.": "中国の法令、判例、法的引用を検索します。デスクトップでは OAuth でログインするか、HTTP Header に Authorization=Bearer <YOUR_TOKEN> を設定してください。",
   "Access Eastmoney financial data. Enter your API key as em_api_key=<YOUR_API_KEY> in HTTP Header.": "Eastmoney の金融データにアクセスします。HTTP Header に em_api_key=<YOUR_API_KEY> の形式で API キーを入力してください。",
-  "Please enter your own MX API KEY here": "ここにご自身の妙想 API KEY を入力してください"
+  "Please enter your own MX API KEY here": "ここにご自身の妙想 API KEY を入力してください",
+  "Work Mode supports text, PDF, Word (.doc/.docx), Excel (.xls/.xlsx), and PowerPoint (.ppt/.pptx) files.": "作業モードはテキスト、PDF、Word (.doc/.docx)、Excel (.xls/.xlsx)、PowerPoint (.ppt/.pptx) ファイルに対応しています。",
+  "Sign in to Chatbox AI or activate a license to use cloud document parsing.": "クラウドで文書を解析するには、Chatbox AI にログインするかライセンスを有効にしてください。",
+  "Cloud document parsing": "クラウド文書解析",
+  "Upload the original file \"{{filename}}\" to Chatbox AI for document parsing? This consumes compute points. The extracted text will be available to the model in this conversation.": "元のファイル「{{filename}}」を Chatbox AI にアップロードして解析しますか？計算ポイントを消費します。抽出されたテキストは、この会話のモデルに提供されます。",
+  "Upload and parse": "アップロードして解析",
+  "Cloud document parsing was declined. The file has not been uploaded.": "クラウド文書解析が拒否されました。ファイルはアップロードされていません。",
+  "No readable text was found in this file.": "このファイルに読み取り可能なテキストが見つかりませんでした。"
 }

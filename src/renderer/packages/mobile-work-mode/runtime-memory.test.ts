@@ -2,6 +2,7 @@ import { createMemoryToolContext, MemoryService } from '@chatbox/core/applicatio
 import { createDefaultSettings } from '@chatbox/core/domain/settings'
 import type { GenerationPreparationRequest } from '@chatbox/core/generation'
 import { InMemoryKeyValueStorage } from '@chatbox/core/testing'
+import { WORK_INSTRUCTIONS } from '@shared/mobile-work/LocalWorkMode'
 import type { ModelInterface } from '@shared/models/types'
 import type { Message } from '@shared/types'
 import type { ModelDependencies } from '@shared/types/adapters'
@@ -107,7 +108,7 @@ describe('Capacitor Work memory integration', () => {
     const prompt = JSON.stringify(prepared.promptMessages)
     expect(prompt).toContain('Session instructions')
     expect(prompt).toContain('Use short answers')
-    expect(prompt).toContain('Work mode executes locally')
+    expect(prompt).toContain(WORK_INSTRUCTIONS)
     expect(prompt).not.toContain('Global secret preference')
     expect(Object.keys(prepared.tools)).toEqual(
       expect.arrayContaining(['save_memory', 'delete_memory', 'code_execution'])

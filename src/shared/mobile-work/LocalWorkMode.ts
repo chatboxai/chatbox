@@ -5,6 +5,7 @@ import { formatLoadSkillOutput } from '../skills/catalog'
 import { throwIfWorkAborted } from './abort'
 import { createLocalBuiltinSkillCatalog, getLocalSkillCapability } from './builtin-skills'
 import { type LocalWorkCapabilityId, resolveLocalWorkCapabilities } from './capabilities'
+import type { WorkDocumentParser } from './document-parser'
 import {
   explainQuickJSError,
   QUICKJS_CODE_INPUT,
@@ -68,7 +69,8 @@ export class LocalWorkMode<W extends LocalWorkspacePort> {
     readonly execution: MobileExecutionService,
     private readonly groups: (context: WorkModeContext) => MobileToolGroup[] = () => [],
     private readonly blobs?: BlobStoragePort,
-    private readonly productInfoHost?: () => MobileProductInfoHost
+    private readonly productInfoHost?: () => MobileProductInfoHost,
+    private readonly documentParser?: WorkDocumentParser
   ) {}
 
   async createTools(context: WorkModeContext, webTools: ToolSet = {}, restoreActive = false) {
@@ -125,20 +127,18 @@ export class LocalWorkMode<W extends LocalWorkspacePort> {
       }),
       ...buildLocalFilesystemTools(this.workspace, context),
       parse_file: tool({
-        description:
-          'Extract DOCX, XLSX, or PPTX content locally. Returns a text file path and short preview; use read_file for paginated content. No skill is required.',
+        description: this.documentParser
+          ? 'Extract PDF, DOC/DOCX, XLS/XLSX, or PPT/PPTX content. Tries local parsing for PDF and modern Office files; legacy Office and failed or empty local results require Chatbox AI cloud parsing with user confirmation and available compute points. Returns a text file path and short preview; use read_file for paginated content. No skill is required.'
+          : 'Extract DOCX, XLSX, or PPTX content locally. Returns a text file path and short preview; use read_file for paginated content. No skill is required.',
         inputSchema: z.object({ path: z.string() }).strict(),
         execute: async ({ path }, options) => {
           const signal = options.abortSignal ?? context.signal
-          const parsed = await this.execution.parseDocument(
-            path,
-            await this.workspace.readBase64(context.sessionId, path),
-            signal
-          )
+          throwIfWorkAborted(signal)
+          const parser = this.documentParser ?? { parse: this.execution.parseDocument.bind(this.execution) }
+          const parsed = await parser.parse(path, await this.workspace.readBase64(context.sessionId, path), signal)
           throwIfWorkAborted(signal)
           const outputPath = `parsed/document-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`
-          const content =
-            parsed.text + (parsed.truncated ? '\n[Document text truncated at the local parsing limit.]' : '')
+          const content = parsed.text + (parsed.truncated ? '\n[Document text truncated at the parsing limit.]' : '')
           await this.workspace.commit(context.sessionId, { [outputPath]: { base64: textToBase64(content) } }, signal)
           return { path: outputPath, preview: parsed.text.slice(0, 512), truncated: parsed.truncated }
         },
@@ -211,4 +211,4 @@ export class LocalWorkMode<W extends LocalWorkspacePort> {
   }
 }
 
-export const WORK_INSTRUCTIONS = `Work mode executes locally on this device using the user's configured model. ${QUICKJS_ENVIRONMENT} Complete the requested task and verify outputs before reporting success. Use list_files to find attachments. Use parse_file to extract DOCX/XLSX/PPTX content to a text file, then read_file to inspect it; no skill is required for parsing. Input files are read-only; write outputs elsewhere in the workspace. Use console.log for concise results. Call load_skill with a listed skill name when the user's task matches its description; full instructions and relevant system tools are loaded on demand. Use create_download to deliver final files. Loading a skill does not authorize reading system data or changing it. Respect the tools' permission flow and report system changes only after success. When execution is interrupted, inspect saved files before retrying.`
+export const WORK_INSTRUCTIONS = `Work mode uses a local workspace on this device and the user's configured model. ${QUICKJS_ENVIRONMENT} Complete the requested task and verify outputs before reporting success. Use list_files to find attachments. Use parse_file to extract supported document content to a text file, then read_file to inspect it; no skill is required for parsing. The tool description lists supported formats and whether cloud parsing is available. When available, cloud parsing asks the user before uploading the original file to Chatbox AI and consuming compute points. If the user declines or parsing fails, report that the file could not be read; do not retry cloud parsing without a user request. Input files are read-only; write outputs elsewhere in the workspace. Use console.log for concise results. Call load_skill with a listed skill name when the user's task matches its description; full instructions and relevant system tools are loaded on demand. Use create_download to deliver final files. Loading a skill does not authorize reading system data or changing it. Respect the tools' permission flow and report system changes only after success. When execution is interrupted, inspect saved files before retrying.`

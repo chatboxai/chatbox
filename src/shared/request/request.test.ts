@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ApiError, ChatboxAIAPIError } from '../models/errors'
-import { createAfetch, createAuthenticatedAfetch } from './request'
+import { createAfetch, createAuthenticatedAfetch, uploadFile } from './request'
 
 const platformInfo = {
   type: 'desktop',
@@ -162,5 +162,57 @@ describe('createAfetch', () => {
 
     await expect(afetch('https://example.com', {}, { retry: 3 })).rejects.toBe(abortError)
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('raw file upload cancellation', () => {
+  afterEach(() => vi.unstubAllGlobals())
+  class UploadRequest {
+    static current: UploadRequest
+    upload = { onprogress: () => undefined }
+    status = 200
+    onload = () => undefined
+    onerror = () => undefined
+    onabort = () => undefined
+    open = vi.fn()
+    send = vi.fn()
+    abort = vi.fn(() => this.onabort())
+    getResponseHeader = () => 'fixture-etag'
+    constructor() {
+      UploadRequest.current = this
+    }
+  }
+
+  it('aborts the active XHR and rejects instead of waiting indefinitely', async () => {
+    vi.stubGlobal('DOMException', undefined)
+    vi.stubGlobal('XMLHttpRequest', UploadRequest)
+    const controller = new AbortController()
+    const upload = uploadFile(new File(['fixture'], 'report.doc'), 'https://upload.test/file', controller.signal)
+    const rejected = expect(upload).rejects.toMatchObject({ name: 'AbortError' })
+    controller.abort()
+    await rejected
+    expect(UploadRequest.current.abort).toHaveBeenCalledOnce()
+  })
+
+  it('does not create an XHR for an already canceled upload', async () => {
+    vi.stubGlobal('DOMException', undefined)
+    const request = vi.fn()
+    vi.stubGlobal('XMLHttpRequest', request)
+    const controller = new AbortController()
+    controller.abort()
+    await expect(
+      uploadFile(new File(['fixture'], 'report.doc'), 'https://upload.test/file', controller.signal)
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(request).not.toHaveBeenCalled()
+  })
+
+  it('removes cancellation listeners after successful upload', async () => {
+    vi.stubGlobal('XMLHttpRequest', UploadRequest)
+    const controller = new AbortController()
+    const result = uploadFile(new File(['fixture'], 'report.doc'), 'https://upload.test/file', controller.signal)
+    UploadRequest.current.onload()
+    expect(await result).toMatchObject({ ETag: 'fixture-etag' })
+    controller.abort()
+    expect(UploadRequest.current.abort).not.toHaveBeenCalled()
   })
 })

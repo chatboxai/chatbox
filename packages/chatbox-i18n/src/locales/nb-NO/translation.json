@@ -1883,5 +1883,12 @@
   "Eastmoney MX": "Eastmoney MX",
   "Search Chinese laws, cases, and legal citations. Sign in with OAuth on desktop, or set Authorization=Bearer <YOUR_TOKEN> in HTTP Header.": "Søk etter kinesiske lover, rettsavgjørelser og juridiske henvisninger. Logg inn med OAuth på datamaskinen, eller angi Authorization=Bearer <YOUR_TOKEN> i HTTP Header.",
   "Access Eastmoney financial data. Enter your API key as em_api_key=<YOUR_API_KEY> in HTTP Header.": "Få tilgang til finansdata fra Eastmoney. Angi API-nøkkelen din som em_api_key=<YOUR_API_KEY> i HTTP Header.",
-  "Please enter your own MX API KEY here": "Skriv inn din egen MX API KEY her"
+  "Please enter your own MX API KEY here": "Skriv inn din egen MX API KEY her",
+  "Work Mode supports text, PDF, Word (.doc/.docx), Excel (.xls/.xlsx), and PowerPoint (.ppt/.pptx) files.": "Arbeidsmodus støtter tekst-, PDF-, Word- (.doc/.docx), Excel- (.xls/.xlsx) og PowerPoint-filer (.ppt/.pptx).",
+  "Sign in to Chatbox AI or activate a license to use cloud document parsing.": "Logg inn på Chatbox AI eller aktiver en lisens for å tolke dokumenter i skyen.",
+  "Cloud document parsing": "Dokumenttolking i skyen",
+  "Upload the original file \"{{filename}}\" to Chatbox AI for document parsing? This consumes compute points. The extracted text will be available to the model in this conversation.": "Laste opp originalfilen \"{{filename}}\" til Chatbox AI for tolking? Dette bruker beregningspoeng. Den uttrukne teksten blir tilgjengelig for modellen i denne samtalen.",
+  "Upload and parse": "Last opp og tolk",
+  "Cloud document parsing was declined. The file has not been uploaded.": "Dokumenttolking i skyen ble avslått. Filen er ikke lastet opp.",
+  "No readable text was found in this file.": "Ingen lesbar tekst ble funnet i denne filen."
 }

@@ -415,7 +415,7 @@ async function fetchLicenseDetail(
   }
 }
 
-export async function generateUploadUrl(params: { licenseKey: string; filename: string }) {
+export async function generateUploadUrl(params: { licenseKey: string; filename: string }, signal?: AbortSignal) {
   type Response = {
     data: {
       url: string
@@ -426,6 +426,7 @@ export async function generateUploadUrl(params: { licenseKey: string; filename: 
   const res = await afetch(
     `${getAPIOrigin()}/api/files/generate-upload-url`,
     {
+      signal,
       method: 'POST',
       headers: {
         Authorization: params.licenseKey,
@@ -440,12 +441,15 @@ export async function generateUploadUrl(params: { licenseKey: string; filename: 
   return json['data']
 }
 
-export async function createUserFile<T extends boolean>(params: {
-  licenseKey: string
-  filename: string
-  filetype: string
-  returnContent: T
-}) {
+export async function createUserFile<T extends boolean>(
+  params: {
+    licenseKey: string
+    filename: string
+    filetype: string
+    returnContent: T
+  },
+  signal?: AbortSignal
+) {
   type Response = {
     data: {
       uuid: string
@@ -456,6 +460,7 @@ export async function createUserFile<T extends boolean>(params: {
   const res = await afetch(
     `${getAPIOrigin()}/api/files/create`,
     {
+      signal,
       method: 'POST',
       headers: {
         Authorization: params.licenseKey,
@@ -470,21 +475,37 @@ export async function createUserFile<T extends boolean>(params: {
   return json['data']
 }
 
+async function uploadUserFile(licenseKey: string, file: File, signal?: AbortSignal) {
+  signal?.throwIfAborted()
+  const { url, filename } = await generateUploadUrl(
+    {
+      licenseKey,
+      filename: file.name,
+    },
+    signal
+  )
+  signal?.throwIfAborted()
+  await uploadFile(file, url, signal)
+  signal?.throwIfAborted()
+  const result = await createUserFile(
+    {
+      licenseKey,
+      filename,
+      filetype: file.type,
+      returnContent: true,
+    },
+    signal
+  )
+  signal?.throwIfAborted()
+  return result
+}
+
+export async function uploadAndParseUserFile(licenseKey: string, file: File, signal: AbortSignal): Promise<string> {
+  return (await uploadUserFile(licenseKey, file, signal)).content
+}
+
 export async function uploadAndCreateUserFile(licenseKey: string, file: File) {
-  const { url, filename } = await generateUploadUrl({
-    licenseKey,
-    filename: file.name,
-  })
-  log.debug(`Uploading user file to URL: ${url}`)
-  await uploadFile(file, url)
-  log.debug(`Uploaded user file: ${file.name}`)
-  const result = await createUserFile({
-    licenseKey,
-    filename,
-    filetype: file.type,
-    returnContent: true,
-  })
-  log.debug(`Created user file with UUID: ${result.uuid}`)
+  const result = await uploadUserFile(licenseKey, file)
   const storageKey = `parseFile-${file.name}_${result.uuid}.${file.type.split('/')[1]}.txt`
 
   await platform.setStoreBlob(storageKey, result.content)

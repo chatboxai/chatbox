@@ -11,7 +11,7 @@ interface LocalBuiltinSkill {
   capability?: LocalWorkCapabilityId
 }
 
-const DOCUMENT_RUNTIME = `Use parse_file for plain DOCX/XLSX/PPTX text extraction and read_file to inspect its paginated output; parsing does not require a skill. Use code_execution. ${QUICKJS_ENVIRONMENT} ${QUICKJS_FILES} Keep logs and results bounded. Deliver final files with create_download.`
+const DOCUMENT_RUNTIME = `Use parse_file for document text extraction in the formats listed by its tool description, and read_file to inspect its paginated output; parsing does not require a skill. When cloud fallback is available, uploading the original file to Chatbox AI requires user confirmation and consumes compute points. Use code_execution. ${QUICKJS_ENVIRONMENT} ${QUICKJS_FILES} Keep logs and results bounded. Deliver final files with create_download.`
 
 const skills: readonly LocalBuiltinSkill[] = [
   {
@@ -40,7 +40,7 @@ ${CHATBOX_PRODUCT_ANSWERING_RULES}`,
   },
   {
     metadata: { name: 'documents', description: 'Read Word document text and write text or HTML reports.' },
-    instructions: `# Documents\n\n${DOCUMENT_RUNTIME}\n\ndocs.readDocument(path) reads the main body text of a .docx file, including table text. Inspect a small sample before processing the full result. It does not preserve layout or expose images, headers, notes or embedded objects. PDF and legacy .doc files are not supported by this runtime. Create final reports as UTF-8 text or HTML files and deliver them with create_download.`,
+    instructions: `# Documents\n\n${DOCUMENT_RUNTIME}\n\ndocs.readDocument(path) reads the main body text of a .docx file, including table text. Inspect a small sample before processing the full result. It does not preserve layout or expose images, headers, notes or embedded objects. For PDF and legacy .doc text, use parse_file when its tool description lists support. docs.readDocument only reads .docx files. Create final reports as UTF-8 text or HTML files and deliver them with create_download.`,
   },
   {
     metadata: {

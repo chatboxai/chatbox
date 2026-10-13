@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildChatboxAIGroupViews } from '@/components/ModelSelectorV2/chatboxCatalog'
-import { getChatboxAIModelList, getModelManifest } from './remote'
+import { getChatboxAIModelList, getModelManifest, uploadAndCreateUserFile, uploadAndParseUserFile } from './remote'
 
-const { afetch } = vi.hoisted(() => ({ afetch: vi.fn() }))
+const { afetch, upload, setBlob } = vi.hoisted(() => ({ afetch: vi.fn(), upload: vi.fn(), setBlob: vi.fn() }))
 
-vi.mock('@shared/request/request', () => ({ createAfetch: () => afetch }))
+vi.mock('@shared/request/request', () => ({ createAfetch: () => afetch, uploadFile: upload }))
 vi.mock('@shared/request/chatboxai_pool', () => ({ getChatboxAPIOrigin: () => 'https://example.test' }))
 vi.mock('@/lib/utils', () => ({ getLogger: () => ({ error: vi.fn() }) }))
 vi.mock('@/platform', () => ({
@@ -12,6 +12,7 @@ vi.mock('@/platform', () => ({
     type: 'web',
     getPlatform: async () => 'web',
     getVersion: async () => 'test',
+    setStoreBlob: setBlob,
   },
 }))
 vi.mock('@/stores/authInfoStore', () => ({ authInfoStore: {} }))
@@ -98,5 +99,51 @@ describe('remote model catalog compatibility', () => {
 
     respond({ models: {} })
     await expect(getChatboxAIModelList({})).rejects.toThrow()
+  })
+})
+
+describe('cloud file parsing transport', () => {
+  beforeEach(() => {
+    afetch.mockReset()
+    upload.mockReset().mockResolvedValue({})
+    setBlob.mockReset().mockResolvedValue(undefined)
+    afetch
+      .mockResolvedValueOnce({
+        json: async () => ({ data: { url: 'https://upload.test/file', filename: 'report.doc' } }),
+      })
+      .mockResolvedValueOnce({ json: async () => ({ data: { uuid: 'fixture', content: 'Parsed text' } }) })
+  })
+
+  it('passes cancellation through URL, raw upload, and parsing without persisting content', async () => {
+    const file = new File(['fixture'], 'report.doc', { type: 'application/msword' })
+    const signal = new AbortController().signal
+    expect(await uploadAndParseUserFile('test-license', file, signal)).toBe('Parsed text')
+    expect(afetch).toHaveBeenCalledTimes(2)
+    expect(afetch.mock.calls.every((call) => call[1].signal === signal)).toBe(true)
+    expect(upload).toHaveBeenCalledWith(file, 'https://upload.test/file', signal)
+    expect(JSON.parse(afetch.mock.calls[1][1].body)).toMatchObject({
+      returnContent: true,
+      filetype: 'application/msword',
+    })
+    expect(setBlob).not.toHaveBeenCalled()
+  })
+
+  it('does not start parsing when canceled during the upload', async () => {
+    const controller = new AbortController()
+    upload.mockImplementationOnce(async () => controller.abort())
+    await expect(
+      uploadAndParseUserFile('test-license', new File(['fixture'], 'report.doc'), controller.signal)
+    ).rejects.toThrow()
+    expect(afetch).toHaveBeenCalledTimes(1)
+    expect(setBlob).not.toHaveBeenCalled()
+  })
+
+  it('preserves the ordinary attachment storage path', async () => {
+    const key = await uploadAndCreateUserFile(
+      'test-license',
+      new File(['fixture'], 'report.doc', { type: 'application/msword' })
+    )
+    expect(key).toBe('parseFile-report.doc_fixture.msword.txt')
+    expect(setBlob).toHaveBeenCalledWith(key, 'Parsed text')
   })
 })

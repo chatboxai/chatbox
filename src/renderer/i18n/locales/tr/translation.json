@@ -1879,5 +1879,12 @@
   "Eastmoney MX": "Eastmoney MX",
   "Search Chinese laws, cases, and legal citations. Sign in with OAuth on desktop, or set Authorization=Bearer <YOUR_TOKEN> in HTTP Header.": "Çin yasalarını, mahkeme kararlarını ve hukuki atıfları arayın. Masaüstünde OAuth ile oturum açın veya HTTP Header alanına Authorization=Bearer <YOUR_TOKEN> yazın.",
   "Access Eastmoney financial data. Enter your API key as em_api_key=<YOUR_API_KEY> in HTTP Header.": "Eastmoney finansal verilerine erişin. HTTP Header alanına API anahtarınızı em_api_key=<YOUR_API_KEY> biçiminde girin.",
-  "Please enter your own MX API KEY here": "Lütfen kendi MX API KEY değerinizi buraya girin"
+  "Please enter your own MX API KEY here": "Lütfen kendi MX API KEY değerinizi buraya girin",
+  "Work Mode supports text, PDF, Word (.doc/.docx), Excel (.xls/.xlsx), and PowerPoint (.ppt/.pptx) files.": "Çalışma modu metin, PDF, Word (.doc/.docx), Excel (.xls/.xlsx) ve PowerPoint (.ppt/.pptx) dosyalarını destekler.",
+  "Sign in to Chatbox AI or activate a license to use cloud document parsing.": "Bulutta belge ayrıştırmak için Chatbox AI hesabınıza giriş yapın veya bir lisans etkinleştirin.",
+  "Cloud document parsing": "Bulutta belge ayrıştırma",
+  "Upload the original file \"{{filename}}\" to Chatbox AI for document parsing? This consumes compute points. The extracted text will be available to the model in this conversation.": "\"{{filename}}\" adlı özgün dosya ayrıştırılmak üzere Chatbox AI’a yüklensin mi? Bu işlem hesaplama puanı tüketir. Çıkarılan metin bu konuşmadaki modele sunulur.",
+  "Upload and parse": "Yükle ve ayrıştır",
+  "Cloud document parsing was declined. The file has not been uploaded.": "Bulutta belge ayrıştırma reddedildi. Dosya yüklenmedi.",
+  "No readable text was found in this file.": "Bu dosyada okunabilir metin bulunamadı."
 }

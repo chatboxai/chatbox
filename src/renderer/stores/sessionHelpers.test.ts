@@ -886,7 +886,7 @@ describe('preprocessFile local parser fallback', () => {
     expect(isSessionAttachmentRagIndexingError('local_parser_failed')).toBe(false)
   })
 
-  it.each(['data.xlsx', 'slides.pptx', 'index.html'])(
+  it.each(['data.xlsx', 'slides.pptx', 'index.html', 'report.pdf', 'report.doc', 'table.xls', 'deck.ppt'])(
     'prepares mobile work attachment %s locally even when the cloud parser is selected',
     async (name) => {
       const { default: platform } = await import('@/platform')

@@ -1883,5 +1883,12 @@
   "Eastmoney MX": "Eastmoney MX",
   "Search Chinese laws, cases, and legal citations. Sign in with OAuth on desktop, or set Authorization=Bearer <YOUR_TOKEN> in HTTP Header.": "Pesquise leis chinesas, decisões judiciais e referências jurídicas. No computador, inicie sessão com OAuth ou defina Authorization=Bearer <YOUR_TOKEN> em HTTP Header.",
   "Access Eastmoney financial data. Enter your API key as em_api_key=<YOUR_API_KEY> in HTTP Header.": "Aceda aos dados financeiros da Eastmoney. Introduza a sua chave API como em_api_key=<YOUR_API_KEY> em HTTP Header.",
-  "Please enter your own MX API KEY here": "Introduza aqui a sua própria MX API KEY"
+  "Please enter your own MX API KEY here": "Introduza aqui a sua própria MX API KEY",
+  "Work Mode supports text, PDF, Word (.doc/.docx), Excel (.xls/.xlsx), and PowerPoint (.ppt/.pptx) files.": "O modo Trabalho suporta ficheiros de texto, PDF, Word (.doc/.docx), Excel (.xls/.xlsx) e PowerPoint (.ppt/.pptx).",
+  "Sign in to Chatbox AI or activate a license to use cloud document parsing.": "Inicie sessão no Chatbox AI ou ative uma licença para analisar documentos na nuvem.",
+  "Cloud document parsing": "Análise de documentos na nuvem",
+  "Upload the original file \"{{filename}}\" to Chatbox AI for document parsing? This consumes compute points. The extracted text will be available to the model in this conversation.": "Carregar o ficheiro original \"{{filename}}\" para o Chatbox AI para análise? Isto consome pontos de computação. O texto extraído ficará disponível para o modelo desta conversa.",
+  "Upload and parse": "Carregar e analisar",
+  "Cloud document parsing was declined. The file has not been uploaded.": "A análise na nuvem foi recusada. O ficheiro não foi carregado.",
+  "No readable text was found in this file.": "Não foi encontrado texto legível neste ficheiro."
 }

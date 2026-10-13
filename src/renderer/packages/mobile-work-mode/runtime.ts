@@ -21,6 +21,7 @@ import * as settingActions from '@/stores/settingActions'
 import { settingsStore } from '@/stores/settingsStore'
 import { CapacitorWorkspace } from './CapacitorWorkspace'
 import { createCapacitorSystemToolGroups } from './capacitor-system-tools'
+import { capacitorDocumentParser } from './document-parser'
 import { capacitorExecution } from './execution-service'
 import { normalizeWorkImage } from './normalize-work-image'
 
@@ -49,7 +50,8 @@ export const capacitorWorkMode = new LocalWorkMode(
         ? rendererApplication.sessions.listArchivedSessionsMetaPage(cursor, limit)
         : rendererApplication.sessions.listSessionsMetaPage(cursor, limit),
     getChat: (id) => rendererApplication.sessionQueryBridge.getSession(id),
-  })
+  }),
+  capacitorDocumentParser
 )
 
 export function buildMobileWebTools(model: ModelInterface, enabled: boolean) {

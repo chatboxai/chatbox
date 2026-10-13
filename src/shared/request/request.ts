@@ -173,16 +173,33 @@ export function createAfetch(
   }
 }
 
-export async function uploadFile(file: File, url: string) {
+function createUploadAbortError(): Error {
+  const error = new Error('Upload canceled')
+  error.name = 'AbortError'
+  return error
+}
+
+export async function uploadFile(file: File, url: string, signal?: AbortSignal) {
   // COS 需要使用原始的 XMLHttpRequest（根据官网示例）
   // 如果使用 fetch，会导致上传的 excel、docx 格式不正确
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(createUploadAbortError())
+      return
+    }
     const xhr = new XMLHttpRequest()
+    const cleanup = () => signal?.removeEventListener('abort', abort)
+    const abort = () => {
+      cleanup()
+      xhr.abort()
+      reject(createUploadAbortError())
+    }
     xhr.open('PUT', url, true)
     xhr.upload.onprogress = () => {
       // do nothing
     }
     xhr.onload = () => {
+      cleanup()
       if (/^2\d\d$/.test(`${xhr.status}`)) {
         const ETag = xhr.getResponseHeader('etag')
         resolve({ url: url, ETag: ETag })
@@ -192,10 +209,21 @@ export async function uploadFile(file: File, url: string) {
       }
     }
     xhr.onerror = () => {
+      cleanup()
       const error = new NetworkError(`XMLHttpRequest failed, status code ${xhr.status}`, '')
       reject(error)
     }
-    xhr.send(file)
+    xhr.onabort = () => {
+      cleanup()
+      reject(createUploadAbortError())
+    }
+    signal?.addEventListener('abort', abort, { once: true })
+    try {
+      xhr.send(file)
+    } catch (error) {
+      cleanup()
+      reject(error)
+    }
   })
 }
 

@@ -286,7 +286,7 @@ function ExportAndImport(props: { onCancel: () => void }) {
         />
         <Tab
           value="import"
-          label={<span className="inline-flex justify-center items-center">{t('Data Restore')}</span>}
+          label={<span className="inline-flex justify-center items-center">{t('Import Backup')}</span>}
         />
       </Tabs>
       {tab === 'export' && (
@@ -321,12 +321,14 @@ function ExportAndImport(props: { onCancel: () => void }) {
       {tab === 'import' && (
         <Box>
           <Box className="p-1">
-            {t('Upon import, changes will take effect immediately and existing data will be overwritten')}
+            {t(
+              'Import takes effect immediately. Conversations, settings, and other data in the backup overwrite matching local records. Data not included in the backup is kept; importing does not clear all local data.'
+            )}
           </Box>
           {importTips && <Box className="p-1 text-red-600">{importTips}</Box>}
           <input style={{ display: 'none' }} type="file" ref={importInputRef} onChange={onImport} />
           <Button variant="contained" color="primary" onClick={() => importInputRef.current?.click()}>
-            {t('Import and Restore')}
+            {t('Import Backup')}
           </Button>
         </Box>
       )}

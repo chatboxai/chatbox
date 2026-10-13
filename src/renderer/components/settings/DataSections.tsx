@@ -570,7 +570,7 @@ export function BackupRestoreSections() {
       </SettingsSection>
 
       <SettingsSection
-        title={t('Restore')}
+        title={t('Import Backup')}
         tone="danger"
         description={t(
           'During restore, conversations cannot be changed. Leaving settings will interrupt the operation.'
@@ -578,8 +578,10 @@ export function BackupRestoreSections() {
       >
         <SettingRow
           id="import-data"
-          label={t('Import and Restore')}
-          description={t('Upon import, changes will take effect immediately and existing data will be overwritten')}
+          label={t('Import Backup')}
+          description={t(
+            'Import takes effect immediately. Conversations, settings, and other data in the backup overwrite matching local records. Data not included in the backup is kept; importing does not clear all local data.'
+          )}
           control={
             <Flex gap="xs">
               {isImporting && (
@@ -591,13 +593,19 @@ export function BackupRestoreSections() {
                 {(props) => <button type="button" hidden ref={importTriggerRef} {...props} />}
               </FileButton>
               <PopoverConfirm
-                title={String(t('Restoring replaces your current data with the backup. Continue?'))}
+                width={360}
+                styles={{ dropdown: { maxWidth: 'calc(100vw - 32px)' } }}
+                title={String(
+                  t(
+                    'Importing does not clear all local data. Content in the backup overwrites matching records, while content not included is kept. Continue?'
+                  )
+                )}
                 confirmButtonText={String(t('Choose backup file'))}
                 confirmButtonColor="chatbox-error"
                 onConfirm={() => importTriggerRef.current?.click()}
               >
                 <Button variant="outline" color="chatbox-error" size="xs" disabled={isLoading} loading={isImporting}>
-                  {isImporting ? t('Importing...') : t('Import and Restore')}
+                  {isImporting ? t('Importing...') : t('Import Backup')}
                 </Button>
               </PopoverConfirm>
             </Flex>

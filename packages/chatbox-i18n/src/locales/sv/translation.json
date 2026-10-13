@@ -1878,5 +1878,10 @@
   "This chat failed to open": "Det gick inte att öppna den här chatten",
   "This message has been deleted": "Det här meddelandet har raderats",
   "This will interrupt the import or export. Please wait while Chatbox finishes cleanup.": "Detta avbryter importen eller exporten. Vänta medan Chatbox slutför rensningen.",
-  "You have selected SearXNG as the search provider, but an instance URL has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your SearXNG instance URL, or choose a different search provider.": "Du har valt SearXNG som sökleverantör, men ingen instans-URL har angetts ännu. <OpenExtensionSettingButton>Klicka här för att öppna inställningarna</OpenExtensionSettingButton> och ange URL:en till din SearXNG-instans, eller välj en annan sökleverantör."
+  "You have selected SearXNG as the search provider, but an instance URL has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your SearXNG instance URL, or choose a different search provider.": "Du har valt SearXNG som sökleverantör, men ingen instans-URL har angetts ännu. <OpenExtensionSettingButton>Klicka här för att öppna inställningarna</OpenExtensionSettingButton> och ange URL:en till din SearXNG-instans, eller välj en annan sökleverantör.",
+  "Wolters Kluwer China": "Wolters Kluwer China",
+  "Eastmoney MX": "Eastmoney MX",
+  "Search Chinese laws, cases, and legal citations. Sign in with OAuth on desktop, or set Authorization=Bearer <YOUR_TOKEN> in HTTP Header.": "Sök efter kinesiska lagar, rättsfall och juridiska hänvisningar. Logga in med OAuth på datorn eller ange Authorization=Bearer <YOUR_TOKEN> i HTTP Header.",
+  "Access Eastmoney financial data. Enter your API key as em_api_key=<YOUR_API_KEY> in HTTP Header.": "Få tillgång till finansiella data från Eastmoney. Ange din API-nyckel som em_api_key=<YOUR_API_KEY> i HTTP Header.",
+  "Please enter your own MX API KEY here": "Ange din egen MX API KEY här"
 }

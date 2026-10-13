@@ -1878,5 +1878,10 @@
   "This chat failed to open": "تعذّر فتح هذه المحادثة",
   "This message has been deleted": "تم حذف هذه الرسالة",
   "This will interrupt the import or export. Please wait while Chatbox finishes cleanup.": "سيؤدي هذا إلى مقاطعة الاستيراد أو التصدير. يُرجى الانتظار حتى ينتهي Chatbox من التنظيف.",
-  "You have selected SearXNG as the search provider, but an instance URL has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your SearXNG instance URL, or choose a different search provider.": "لقد اخترت SearXNG كمزوّد للبحث، لكن لم يتم إدخال عنوان URL للمثيل بعد. يُرجى <OpenExtensionSettingButton>النقر هنا لفتح الإعدادات</OpenExtensionSettingButton> وإدخال عنوان URL لمثيل SearXNG الخاص بك، أو اختيار مزوّد بحث آخر."
+  "You have selected SearXNG as the search provider, but an instance URL has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your SearXNG instance URL, or choose a different search provider.": "لقد اخترت SearXNG كمزوّد للبحث، لكن لم يتم إدخال عنوان URL للمثيل بعد. يُرجى <OpenExtensionSettingButton>النقر هنا لفتح الإعدادات</OpenExtensionSettingButton> وإدخال عنوان URL لمثيل SearXNG الخاص بك، أو اختيار مزوّد بحث آخر.",
+  "Wolters Kluwer China": "Wolters Kluwer China",
+  "Eastmoney MX": "Eastmoney MX",
+  "Search Chinese laws, cases, and legal citations. Sign in with OAuth on desktop, or set Authorization=Bearer <YOUR_TOKEN> in HTTP Header.": "ابحث في القوانين الصينية والأحكام القضائية والمراجع القانونية. سجّل الدخول باستخدام OAuth على سطح المكتب، أو أدخل Authorization=Bearer <YOUR_TOKEN> في HTTP Header.",
+  "Access Eastmoney financial data. Enter your API key as em_api_key=<YOUR_API_KEY> in HTTP Header.": "يمكنك الوصول إلى بيانات Eastmoney المالية. أدخل مفتاح API الخاص بك بصيغة em_api_key=<YOUR_API_KEY> في HTTP Header.",
+  "Please enter your own MX API KEY here": "يرجى إدخال MX API KEY الخاص بك هنا"
 }

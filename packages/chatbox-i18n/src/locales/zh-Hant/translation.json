@@ -1878,5 +1878,10 @@
   "This chat failed to open": "此對話無法開啟",
   "This message has been deleted": "此訊息已被刪除",
   "This will interrupt the import or export. Please wait while Chatbox finishes cleanup.": "這將中斷匯入或匯出。請等待 Chatbox 完成清理。",
-  "You have selected SearXNG as the search provider, but an instance URL has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your SearXNG instance URL, or choose a different search provider.": "您已選擇 SearXNG 作為搜尋提供者，但尚未輸入執行個體 URL。請<OpenExtensionSettingButton>點擊此處開啟設定</OpenExtensionSettingButton>並輸入您的 SearXNG 執行個體 URL，或選擇其他搜尋提供者。"
+  "You have selected SearXNG as the search provider, but an instance URL has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your SearXNG instance URL, or choose a different search provider.": "您已選擇 SearXNG 作為搜尋提供者，但尚未輸入執行個體 URL。請<OpenExtensionSettingButton>點擊此處開啟設定</OpenExtensionSettingButton>並輸入您的 SearXNG 執行個體 URL，或選擇其他搜尋提供者。",
+  "Wolters Kluwer China": "威科先行",
+  "Eastmoney MX": "東方財富妙想",
+  "Search Chinese laws, cases, and legal citations. Sign in with OAuth on desktop, or set Authorization=Bearer <YOUR_TOKEN> in HTTP Header.": "檢索中國法規、案例和法律引用。桌面端可透過 OAuth 登入，也可在 HTTP Header 中填寫 Authorization=Bearer <YOUR_TOKEN>。",
+  "Access Eastmoney financial data. Enter your API key as em_api_key=<YOUR_API_KEY> in HTTP Header.": "存取東方財富金融資料。請在 HTTP Header 中填寫 em_api_key=<YOUR_API_KEY>。",
+  "Please enter your own MX API KEY here": "請在這裡填入你自己的妙想 API KEY"
 }

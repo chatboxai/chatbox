@@ -1878,5 +1878,10 @@
   "This chat failed to open": "No se pudo abrir este chat",
   "This message has been deleted": "Este mensaje se ha eliminado",
   "This will interrupt the import or export. Please wait while Chatbox finishes cleanup.": "Esto interrumpirá la importación o exportación. Espera mientras Chatbox termina la limpieza.",
-  "You have selected SearXNG as the search provider, but an instance URL has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your SearXNG instance URL, or choose a different search provider.": "Has seleccionado SearXNG como proveedor de búsqueda, pero aún no has introducido la URL de la instancia. <OpenExtensionSettingButton>Haz clic aquí para abrir los ajustes</OpenExtensionSettingButton> e introduce la URL de tu instancia de SearXNG, o elige otro proveedor de búsqueda."
+  "You have selected SearXNG as the search provider, but an instance URL has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your SearXNG instance URL, or choose a different search provider.": "Has seleccionado SearXNG como proveedor de búsqueda, pero aún no has introducido la URL de la instancia. <OpenExtensionSettingButton>Haz clic aquí para abrir los ajustes</OpenExtensionSettingButton> e introduce la URL de tu instancia de SearXNG, o elige otro proveedor de búsqueda.",
+  "Wolters Kluwer China": "Wolters Kluwer China",
+  "Eastmoney MX": "Eastmoney MX",
+  "Search Chinese laws, cases, and legal citations. Sign in with OAuth on desktop, or set Authorization=Bearer <YOUR_TOKEN> in HTTP Header.": "Busque leyes chinas, sentencias y referencias jurídicas. En escritorio, inicie sesión con OAuth o configure Authorization=Bearer <YOUR_TOKEN> en HTTP Header.",
+  "Access Eastmoney financial data. Enter your API key as em_api_key=<YOUR_API_KEY> in HTTP Header.": "Acceda a los datos financieros de Eastmoney. Introduzca su clave API como em_api_key=<YOUR_API_KEY> en HTTP Header.",
+  "Please enter your own MX API KEY here": "Introduzca aquí su propia MX API KEY"
 }

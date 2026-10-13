@@ -1878,5 +1878,10 @@
   "This chat failed to open": "이 채팅을 열지 못했습니다",
   "This message has been deleted": "이 메시지는 삭제되었습니다",
   "This will interrupt the import or export. Please wait while Chatbox finishes cleanup.": "가져오기 또는 내보내기가 중단됩니다. Chatbox가 정리를 마칠 때까지 기다려 주세요.",
-  "You have selected SearXNG as the search provider, but an instance URL has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your SearXNG instance URL, or choose a different search provider.": "검색 제공자로 SearXNG를 선택했지만 인스턴스 URL이 아직 입력되지 않았습니다. <OpenExtensionSettingButton>여기를 클릭하여 설정을 열고</OpenExtensionSettingButton> SearXNG 인스턴스 URL을 입력하거나 다른 검색 제공자를 선택하세요."
+  "You have selected SearXNG as the search provider, but an instance URL has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your SearXNG instance URL, or choose a different search provider.": "검색 제공자로 SearXNG를 선택했지만 인스턴스 URL이 아직 입력되지 않았습니다. <OpenExtensionSettingButton>여기를 클릭하여 설정을 열고</OpenExtensionSettingButton> SearXNG 인스턴스 URL을 입력하거나 다른 검색 제공자를 선택하세요.",
+  "Wolters Kluwer China": "Wolters Kluwer China",
+  "Eastmoney MX": "Eastmoney MX",
+  "Search Chinese laws, cases, and legal citations. Sign in with OAuth on desktop, or set Authorization=Bearer <YOUR_TOKEN> in HTTP Header.": "중국 법률, 판례 및 법률 인용을 검색합니다. 데스크톱에서 OAuth로 로그인하거나 HTTP Header에 Authorization=Bearer <YOUR_TOKEN>을 설정하세요.",
+  "Access Eastmoney financial data. Enter your API key as em_api_key=<YOUR_API_KEY> in HTTP Header.": "Eastmoney 금융 데이터에 액세스합니다. HTTP Header에 em_api_key=<YOUR_API_KEY> 형식으로 API 키를 입력하세요.",
+  "Please enter your own MX API KEY here": "여기에 본인의 MX API KEY를 입력하세요"
 }

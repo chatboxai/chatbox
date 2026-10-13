@@ -1,7 +1,7 @@
 import { Anchor, Badge, Button, Flex, Switch, Text } from '@mantine/core'
 import { spotlight } from '@mantine/spotlight'
 import { IconPlus } from '@tabler/icons-react'
-import { type FC, useCallback, useEffect, useState } from 'react'
+import { type FC, type ReactNode, useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { v4 as uuid } from 'uuid'
@@ -83,7 +83,29 @@ const CustomServersSection: FC<Props> = (props) => {
   const setSettings = useSettingsStore((state) => state.setSettings)
   const mcpSettings = useMcpSettings()
   const onEnabledChange = useToggleMCPServer()
-  const [modal, setModal] = useState<{ config: MCPServerConfig; mode: 'add' | 'edit' } | null>(null)
+  const [modal, setModal] = useState<{ config: MCPServerConfig; mode: 'add' | 'edit'; help?: ReactNode } | null>(null)
+  const presets = [
+    {
+      name: t('Wolters Kluwer China'),
+      description: t(
+        'Search Chinese laws, cases, and legal citations. Sign in with OAuth on desktop, or set Authorization=Bearer <YOUR_TOKEN> in HTTP Header.'
+      ),
+      documentationUrl: 'https://mcp.wkinfo.com.cn/docs',
+      transport: { type: 'http', url: 'https://mcp.wkinfo.com.cn/mcp-servers/integrated/' } as const,
+    },
+    {
+      name: t('Eastmoney MX'),
+      description: t(
+        'Access Eastmoney financial data. Enter your API key as em_api_key=<YOUR_API_KEY> in HTTP Header.'
+      ),
+      documentationUrl: 'https://choice.eastmoney.com/mcp/guide',
+      transport: {
+        type: 'http',
+        url: 'https://mxapi.eastmoney.com/mxds/mcp',
+        headers: { em_api_key: `<${t('Please enter your own MX API KEY here')}>` },
+      } as const,
+    },
+  ]
 
   useEffect(() => {
     if (props.installConfig) {
@@ -187,6 +209,44 @@ const CustomServersSection: FC<Props> = (props) => {
           </Button>
         }
       >
+        {presets.map((preset) => {
+          const help = (
+            <>
+              {preset.description}{' '}
+              <Anchor href={preset.documentationUrl} target="_blank" rel="noopener noreferrer" fz="inherit">
+                {t('Setup guide')}
+              </Anchor>
+            </>
+          )
+          return (
+            <SettingRow
+              key={preset.transport.url}
+              label={preset.name}
+              description={help}
+              control={
+                <Button
+                  variant="light"
+                  size="compact-sm"
+                  onClick={() =>
+                    setModal({
+                      mode: 'add',
+                      config: {
+                        id: uuid(),
+                        name: preset.name,
+                        enabled: true,
+                        protocolMode: 'auto',
+                        transport: preset.transport,
+                      },
+                      help,
+                    })
+                  }
+                >
+                  {t('Add')}
+                </Button>
+              }
+            />
+          )
+        })}
         {mcpSettings.servers.length === 0 && (
           <SettingsListItem>
             <Text fz={14} c="chatbox-tertiary">
@@ -207,6 +267,7 @@ const CustomServersSection: FC<Props> = (props) => {
       <ConfigModal
         mode={modal?.mode}
         config={modal ? modal.config : null}
+        help={modal?.help}
         onClose={() => setModal(null)}
         onSave={handleServerUpdate}
         onDelete={handleServerDelete}

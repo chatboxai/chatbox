@@ -1,3 +1,4 @@
+import { type MCPToolSummary, summarizeMCPTools } from '@chatbox/core/mcp'
 import {
   ActionIcon,
   Anchor,
@@ -12,10 +13,9 @@ import {
   Textarea,
   TextInput,
 } from '@mantine/core'
-import { type MCPToolSummary, summarizeMCPTools } from '@chatbox/core/mcp'
 import { useForm } from '@mantine/form'
 import { IconRefresh } from '@tabler/icons-react'
-import { type FC, useEffect, useRef, useState } from 'react'
+import { type FC, type ReactNode, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Modal } from '@/components/layout/Overlay'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
@@ -287,6 +287,7 @@ const ConfigForm: FC<{
 interface Props {
   mode?: 'add' | 'edit'
   config: MCPServerConfig | null
+  help?: ReactNode
   onClose: () => void
   onSave: (config: MCPServerConfig) => void
   onDelete: (id: string) => void
@@ -303,6 +304,11 @@ export const ConfigModal: FC<Props> = (props) => {
       centered
       overlayProps={{ backgroundOpacity: 0.35, blur: 7 }}
     >
+      {props.help && (
+        <Text fz="sm" c="chatbox-tertiary" mb="md">
+          {props.help}
+        </Text>
+      )}
       {props.mode && props.config && (
         <ConfigForm
           key={props.config.id}

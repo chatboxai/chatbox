@@ -1878,5 +1878,10 @@
   "This chat failed to open": "Impossible d'ouvrir cette discussion",
   "This message has been deleted": "Ce message a été supprimé",
   "This will interrupt the import or export. Please wait while Chatbox finishes cleanup.": "Cela interrompra l'importation ou l'exportation. Veuillez patienter pendant que Chatbox termine le nettoyage.",
-  "You have selected SearXNG as the search provider, but an instance URL has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your SearXNG instance URL, or choose a different search provider.": "Vous avez sélectionné SearXNG comme fournisseur de recherche, mais aucune URL d'instance n'a encore été saisie. Veuillez <OpenExtensionSettingButton>cliquer ici pour ouvrir les paramètres</OpenExtensionSettingButton> et saisir l'URL de votre instance SearXNG, ou choisir un autre fournisseur de recherche."
+  "You have selected SearXNG as the search provider, but an instance URL has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your SearXNG instance URL, or choose a different search provider.": "Vous avez sélectionné SearXNG comme fournisseur de recherche, mais aucune URL d'instance n'a encore été saisie. Veuillez <OpenExtensionSettingButton>cliquer ici pour ouvrir les paramètres</OpenExtensionSettingButton> et saisir l'URL de votre instance SearXNG, ou choisir un autre fournisseur de recherche.",
+  "Wolters Kluwer China": "Wolters Kluwer China",
+  "Eastmoney MX": "Eastmoney MX",
+  "Search Chinese laws, cases, and legal citations. Sign in with OAuth on desktop, or set Authorization=Bearer <YOUR_TOKEN> in HTTP Header.": "Recherchez des lois chinoises, des décisions de justice et des références juridiques. Sur ordinateur, connectez-vous avec OAuth ou définissez Authorization=Bearer <YOUR_TOKEN> dans HTTP Header.",
+  "Access Eastmoney financial data. Enter your API key as em_api_key=<YOUR_API_KEY> in HTTP Header.": "Accédez aux données financières Eastmoney. Saisissez votre clé API sous la forme em_api_key=<YOUR_API_KEY> dans HTTP Header.",
+  "Please enter your own MX API KEY here": "Veuillez saisir votre propre MX API KEY ici"
 }

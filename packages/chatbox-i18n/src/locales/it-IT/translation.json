@@ -1878,5 +1878,10 @@
   "This chat failed to open": "Impossibile aprire questa chat",
   "This message has been deleted": "Questo messaggio è stato eliminato",
   "This will interrupt the import or export. Please wait while Chatbox finishes cleanup.": "Questa operazione interromperà l'importazione o l'esportazione. Attendi che Chatbox completi la pulizia.",
-  "You have selected SearXNG as the search provider, but an instance URL has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your SearXNG instance URL, or choose a different search provider.": "Hai selezionato SearXNG come provider di ricerca, ma non hai ancora inserito l'URL dell'istanza. <OpenExtensionSettingButton>Fai clic qui per aprire le impostazioni</OpenExtensionSettingButton> e inserisci l'URL della tua istanza SearXNG, oppure scegli un altro provider di ricerca."
+  "You have selected SearXNG as the search provider, but an instance URL has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your SearXNG instance URL, or choose a different search provider.": "Hai selezionato SearXNG come provider di ricerca, ma non hai ancora inserito l'URL dell'istanza. <OpenExtensionSettingButton>Fai clic qui per aprire le impostazioni</OpenExtensionSettingButton> e inserisci l'URL della tua istanza SearXNG, oppure scegli un altro provider di ricerca.",
+  "Wolters Kluwer China": "Wolters Kluwer China",
+  "Eastmoney MX": "Eastmoney MX",
+  "Search Chinese laws, cases, and legal citations. Sign in with OAuth on desktop, or set Authorization=Bearer <YOUR_TOKEN> in HTTP Header.": "Cerca leggi cinesi, sentenze e citazioni giuridiche. Su desktop, accedi con OAuth oppure imposta Authorization=Bearer <YOUR_TOKEN> in HTTP Header.",
+  "Access Eastmoney financial data. Enter your API key as em_api_key=<YOUR_API_KEY> in HTTP Header.": "Accedi ai dati finanziari di Eastmoney. Inserisci la tua chiave API come em_api_key=<YOUR_API_KEY> in HTTP Header.",
+  "Please enter your own MX API KEY here": "Inserisci qui la tua MX API KEY personale"
 }

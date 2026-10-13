@@ -1878,5 +1878,10 @@
   "This chat failed to open": "このチャットを開けませんでした",
   "This message has been deleted": "このメッセージは削除されました",
   "This will interrupt the import or export. Please wait while Chatbox finishes cleanup.": "インポートまたはエクスポートが中断されます。Chatbox がクリーンアップを完了するまでお待ちください。",
-  "You have selected SearXNG as the search provider, but an instance URL has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your SearXNG instance URL, or choose a different search provider.": "SearXNG が検索プロバイダーとして選択されていますが、インスタンス URL がまだ入力されていません。<OpenExtensionSettingButton>ここをクリックして設定を開き</OpenExtensionSettingButton>、SearXNG のインスタンス URL を入力するか、別の検索プロバイダーを選択してください。"
+  "You have selected SearXNG as the search provider, but an instance URL has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your SearXNG instance URL, or choose a different search provider.": "SearXNG が検索プロバイダーとして選択されていますが、インスタンス URL がまだ入力されていません。<OpenExtensionSettingButton>ここをクリックして設定を開き</OpenExtensionSettingButton>、SearXNG のインスタンス URL を入力するか、別の検索プロバイダーを選択してください。",
+  "Wolters Kluwer China": "Wolters Kluwer China",
+  "Eastmoney MX": "Eastmoney 妙想",
+  "Search Chinese laws, cases, and legal citations. Sign in with OAuth on desktop, or set Authorization=Bearer <YOUR_TOKEN> in HTTP Header.": "中国の法令、判例、法的引用を検索します。デスクトップでは OAuth でログインするか、HTTP Header に Authorization=Bearer <YOUR_TOKEN> を設定してください。",
+  "Access Eastmoney financial data. Enter your API key as em_api_key=<YOUR_API_KEY> in HTTP Header.": "Eastmoney の金融データにアクセスします。HTTP Header に em_api_key=<YOUR_API_KEY> の形式で API キーを入力してください。",
+  "Please enter your own MX API KEY here": "ここにご自身の妙想 API KEY を入力してください"
 }

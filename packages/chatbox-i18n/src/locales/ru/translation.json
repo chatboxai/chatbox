@@ -1878,5 +1878,10 @@
   "This chat failed to open": "Не удалось открыть этот чат",
   "This message has been deleted": "Это сообщение было удалено",
   "This will interrupt the import or export. Please wait while Chatbox finishes cleanup.": "Импорт или экспорт будет прерван. Подождите, пока Chatbox завершит очистку.",
-  "You have selected SearXNG as the search provider, but an instance URL has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your SearXNG instance URL, or choose a different search provider.": "Вы выбрали SearXNG в качестве поискового провайдера, но ещё не указали URL экземпляра. <OpenExtensionSettingButton>Нажмите здесь, чтобы открыть настройки</OpenExtensionSettingButton>, и введите URL вашего экземпляра SearXNG или выберите другого поискового провайдера."
+  "You have selected SearXNG as the search provider, but an instance URL has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your SearXNG instance URL, or choose a different search provider.": "Вы выбрали SearXNG в качестве поискового провайдера, но ещё не указали URL экземпляра. <OpenExtensionSettingButton>Нажмите здесь, чтобы открыть настройки</OpenExtensionSettingButton>, и введите URL вашего экземпляра SearXNG или выберите другого поискового провайдера.",
+  "Wolters Kluwer China": "Wolters Kluwer China",
+  "Eastmoney MX": "Eastmoney MX",
+  "Search Chinese laws, cases, and legal citations. Sign in with OAuth on desktop, or set Authorization=Bearer <YOUR_TOKEN> in HTTP Header.": "Поиск китайских законов, судебных решений и правовых ссылок. На компьютере войдите через OAuth или укажите Authorization=Bearer <YOUR_TOKEN> в HTTP Header.",
+  "Access Eastmoney financial data. Enter your API key as em_api_key=<YOUR_API_KEY> in HTTP Header.": "Доступ к финансовым данным Eastmoney. Введите свой API-ключ в формате em_api_key=<YOUR_API_KEY> в HTTP Header.",
+  "Please enter your own MX API KEY here": "Введите здесь свой собственный MX API KEY"
 }

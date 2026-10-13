@@ -1874,5 +1874,10 @@
   "This chat failed to open": "Bu sohbet açılamadı",
   "This message has been deleted": "Bu mesaj silindi",
   "This will interrupt the import or export. Please wait while Chatbox finishes cleanup.": "Bu işlem içe veya dışa aktarmayı kesecek. Chatbox temizliği tamamlarken lütfen bekleyin.",
-  "You have selected SearXNG as the search provider, but an instance URL has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your SearXNG instance URL, or choose a different search provider.": "Arama sağlayıcısı olarak SearXNG'yi seçtiniz, ancak henüz bir örnek URL'si girilmedi. Lütfen <OpenExtensionSettingButton>ayarları açmak için buraya tıklayın</OpenExtensionSettingButton> ve SearXNG örnek URL'nizi girin ya da farklı bir arama sağlayıcısı seçin."
+  "You have selected SearXNG as the search provider, but an instance URL has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your SearXNG instance URL, or choose a different search provider.": "Arama sağlayıcısı olarak SearXNG'yi seçtiniz, ancak henüz bir örnek URL'si girilmedi. Lütfen <OpenExtensionSettingButton>ayarları açmak için buraya tıklayın</OpenExtensionSettingButton> ve SearXNG örnek URL'nizi girin ya da farklı bir arama sağlayıcısı seçin.",
+  "Wolters Kluwer China": "Wolters Kluwer China",
+  "Eastmoney MX": "Eastmoney MX",
+  "Search Chinese laws, cases, and legal citations. Sign in with OAuth on desktop, or set Authorization=Bearer <YOUR_TOKEN> in HTTP Header.": "Çin yasalarını, mahkeme kararlarını ve hukuki atıfları arayın. Masaüstünde OAuth ile oturum açın veya HTTP Header alanına Authorization=Bearer <YOUR_TOKEN> yazın.",
+  "Access Eastmoney financial data. Enter your API key as em_api_key=<YOUR_API_KEY> in HTTP Header.": "Eastmoney finansal verilerine erişin. HTTP Header alanına API anahtarınızı em_api_key=<YOUR_API_KEY> biçiminde girin.",
+  "Please enter your own MX API KEY here": "Lütfen kendi MX API KEY değerinizi buraya girin"
 }

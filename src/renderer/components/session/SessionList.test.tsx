@@ -135,6 +135,7 @@ vi.mock('@/stores/session/folders', () => ({
   renameSessionFolder: vi.fn(),
 }))
 vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => vi.fn(),
   useRouterState: () => ({ location: { pathname: '/session/session-1' } }),
 }))
 vi.mock('./SessionItem', async () => {

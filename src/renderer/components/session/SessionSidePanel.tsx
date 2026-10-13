@@ -5,7 +5,15 @@ import { BUILT_IN_BROWSER_MAX_TABS, type BuiltInBrowserTabs } from '@shared/buil
 import type { Session } from '@shared/types'
 import { IconAdjustmentsHorizontal, IconHistory, IconPlus, type IconProps, IconWorld, IconX } from '@tabler/icons-react'
 import clsx from 'clsx'
-import { type ElementType, type KeyboardEvent, type PointerEvent, useCallback, useEffect, useRef } from 'react'
+import {
+  type ElementType,
+  type KeyboardEvent,
+  type PointerEvent,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import { rendererApplication } from '@/app/renderer-application'
 import { BuiltInBrowserView, useBuiltInBrowserTabs } from '@/components/chat/BuiltInBrowserPanel'
@@ -107,7 +115,7 @@ function PanelTab({
       }}
       className={clsx(
         'group/tab relative flex h-8 shrink-0 cursor-pointer select-none items-center gap-1.5 rounded-md border border-solid outline-none focus-visible:ring-2 focus-visible:ring-chatbox-border-brand',
-        pinned ? 'w-8 justify-center' : 'min-w-[72px] max-w-[200px] ps-2 pe-1',
+        pinned ? 'w-8 justify-center' : 'min-w-[72px] max-w-[min(200px,100%)] ps-2 pe-1',
         active
           ? 'border-chatbox-border-primary bg-chatbox-background-primary text-chatbox-tint-primary'
           : 'border-transparent text-chatbox-tint-secondary hover:bg-chatbox-background-gray-secondary'
@@ -272,6 +280,7 @@ function OpenSessionPanel({
   const panel = useSessionPanel(session.id)
   const width = useUIStore((s) => s.sessionPanelWidth)
   const ref = useRef<HTMLElement>(null)
+  const tabStripRef = useRef<HTMLDivElement>(null)
   const startResize = useResizeHandle(ref)
   const mode = resolveSessionMode(useSessionAgentMode(session.id).value)
   const onEdit = usePersistedSessionEdit(session)
@@ -288,6 +297,34 @@ function OpenSessionPanel({
   const loadingPages = Boolean(builtInBrowser) && !browserTabs && panel.tab === 'web'
   const activeTab: PanelTabKey = tabs.includes(requested) || loadingPages ? requested : 'settings'
   const activePage = pages.find((page) => activeTab === `web:${page.id}`)
+
+  useLayoutEffect(() => {
+    const strip = tabStripRef.current
+    if (!strip) return
+    const revealActiveTab = () => {
+      strip
+        .querySelector<HTMLElement>('[aria-selected="true"]')
+        ?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    }
+    revealActiveTab()
+    const observer = new ResizeObserver(revealActiveTab)
+    observer.observe(strip)
+    return () => observer.disconnect()
+  }, [activeTab, activePage?.title, activePage?.url, pages.length])
+
+  useEffect(() => {
+    const strip = tabStripRef.current
+    if (!strip) return
+    const onWheel = (event: WheelEvent) => {
+      if (event.shiftKey || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return
+      const previous = strip.scrollLeft
+      const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? strip.clientWidth : 1)
+      strip.scrollLeft += delta
+      if (strip.scrollLeft !== previous) event.preventDefault()
+    }
+    strip.addEventListener('wheel', onWheel, { passive: false })
+    return () => strip.removeEventListener('wheel', onWheel)
+  }, [])
 
   const show = (key: PanelTabKey) => {
     if (key === 'settings' || key === 'threads') showSessionPanelTab(session.id, key)
@@ -355,7 +392,10 @@ function OpenSessionPanel({
           />
         )}
         {pages.length > 0 && <span className="mx-0.5 h-4 w-px shrink-0 bg-chatbox-border-primary" aria-hidden />}
-        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
+        <div
+          ref={tabStripRef}
+          className="flex h-full min-w-0 flex-1 items-center gap-1 overflow-x-auto overflow-y-hidden [scrollbar-width:thin]"
+        >
           {pages.map((page) => {
             const key = `web:${page.id}` as const
             const active = activeTab === key
@@ -379,20 +419,21 @@ function OpenSessionPanel({
               />
             )
           })}
-          {builtInBrowser && pages.length < BUILT_IN_BROWSER_MAX_TABS && (
-            <IconButton
-              icon={IconPlus}
-              iconSize={ICON_SIZE.inline}
-              className="shrink-0"
-              aria-label={t('New tab')}
-              data-testid={TestId.sessionPanel.newWebTab}
-              onClick={() => void openPage()}
-            />
-          )}
         </div>
+        {builtInBrowser && pages.length < BUILT_IN_BROWSER_MAX_TABS && (
+          <IconButton
+            icon={IconPlus}
+            iconSize={ICON_SIZE.inline}
+            className="shrink-0"
+            aria-label={t('New tab')}
+            data-testid={TestId.sessionPanel.newWebTab}
+            onClick={() => void openPage()}
+          />
+        )}
         <IconButton
           icon={IconX}
           iconSize={ICON_SIZE.inline}
+          className="shrink-0"
           aria-label={t('Close panel')}
           data-testid={TestId.sessionPanel.close}
           onClick={() => closeSessionPanel(session.id)}

@@ -16,16 +16,15 @@ export function AdaptiveModal({ opened, onClose, onExitTransitionEnd, children, 
 
   if (isSmallScreen) {
     return (
-      <Drawer.Root
-        open={opened}
-        onOpenChange={(open) => !open && onClose()}
-        onAnimationEnd={(open) => !open && onExitTransitionEnd?.()}
-        noBodyStyles
-        repositionInputs={false}
-      >
+      <Drawer.Root open={opened} onOpenChange={(open) => !open && onClose()} noBodyStyles repositionInputs={false}>
         <Drawer.Portal>
           <Drawer.Overlay className="fixed inset-0 bg-chatbox-background-mask-overlay" />
-          <Drawer.Content className="flex flex-col h-fit fixed bottom-0 left-0 right-0 outline-none bg-chatbox-background-primary rounded-t-lg">
+          <Drawer.Content
+            className="flex flex-col h-fit fixed bottom-0 left-0 right-0 outline-none bg-chatbox-background-primary rounded-t-lg"
+            onAnimationEnd={(event) => {
+              if (event.target === event.currentTarget && !opened) onExitTransitionEnd?.()
+            }}
+          >
             <Drawer.Handle />
             <Stack gap="md" p="sm" className="max-h-[85vh] overflow-y-auto">
               {title && typeof title === 'string' && (

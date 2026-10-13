@@ -101,18 +101,31 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('react-virtuoso', async () => {
   const React = await import('react')
-  type Item = { id: string }
   type VirtuosoProps = {
-    data: Item[]
-    itemContent: (index: number, item: Item) => React.ReactNode
+    groupCounts: number[]
+    groupContent: (index: number) => React.ReactNode
+    itemContent: (index: number, groupIndex: number) => React.ReactNode
   }
   return {
-    Virtuoso: ({ data, itemContent }: VirtuosoProps) =>
-      React.createElement(
+    GroupedVirtuoso: ({ groupCounts, groupContent, itemContent }: VirtuosoProps) => {
+      let offset = 0
+      return React.createElement(
         'div',
         { 'data-testid': 'session-list' },
-        data.map((item, index) => React.createElement(React.Fragment, { key: item.id }, itemContent(index, item)))
-      ),
+        groupCounts.map((count, groupIndex) => {
+          const start = offset
+          offset += count
+          return React.createElement(
+            React.Fragment,
+            { key: groupIndex },
+            groupContent(groupIndex),
+            Array.from({ length: count }, (_, index) =>
+              React.createElement(React.Fragment, { key: start + index }, itemContent(start + index, groupIndex))
+            )
+          )
+        })
+      )
+    },
   }
 })
 

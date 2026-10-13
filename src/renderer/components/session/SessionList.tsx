@@ -48,8 +48,9 @@ import {
   useState,
 } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Virtuoso } from 'react-virtuoso'
+import { GroupedVirtuoso } from 'react-virtuoso'
 import { rendererApplication } from '@/app/renderer-application'
+import { useAppTitleBarHeight } from '@/components/layout/AppTitleBar'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { useSessionSwitchHintDigits } from '@/hooks/useSessionSwitchHints'
 import { useTouchLayout } from '@/hooks/useTouchLayout'
@@ -73,6 +74,7 @@ const UNFILED_DROP_ID = 'section:chats'
 
 export interface Props {
   sessionListViewportRef: MutableRefObject<HTMLDivElement | null>
+  atTopStateChange?: (atTop: boolean) => void
 }
 
 const PROJECTS_SECTION_ID = 'section:projects'
@@ -159,8 +161,20 @@ function SessionListLoadingFooter() {
 }
 
 function SessionListSectionHeader(props: { label: string; testId?: string; children?: ReactNode }) {
+  const titleBarHeight = useAppTitleBarHeight()
   return (
-    <Flex align="center" justify="space-between" mih={34} pl="md" pr="xs" pt={4} className="group/section">
+    <Flex
+      align="center"
+      justify="space-between"
+      mih={34}
+      pl="md"
+      pr="xs"
+      pt={4}
+      className={clsx(
+        'group/section',
+        titleBarHeight ? 'bg-chatbox-background-primary-hover' : 'bg-chatbox-background-primary'
+      )}
+    >
       <Text data-testid={props.testId} size="xs" fw={600} c="chatbox-tertiary">
         {props.label}
       </Text>
@@ -300,6 +314,20 @@ export default function SessionList(props: Props) {
       chats: t('Chats'),
     })
   }, [sortedSessions, folders, collapsedFolderIds, hasNextPage, t])
+  const groupedItems = useMemo(() => {
+    const groups: { header: Extract<SessionListItem, { type: 'section' }>; count: number }[] = []
+    const items: Exclude<SessionListItem, { type: 'section' }>[] = []
+    for (const item of displayItems) {
+      if (item.type === 'section') {
+        groups.push({ header: item, count: 0 })
+      } else {
+        items.push(item)
+        const group = groups.at(-1)
+        if (group) group.count++
+      }
+    }
+    return { groups, items, counts: groups.map((group) => group.count) }
+  }, [displayItems])
   const sortableSessionIds = useMemo(
     () => displayItems.filter((item) => item.type === 'session').map((item) => item.id),
     [displayItems]
@@ -379,8 +407,10 @@ export default function SessionList(props: Props) {
               </Button>
             </Flex>
           )}
-          <Virtuoso
+          <GroupedVirtuoso
             className="sidebar-session-list"
+            atTopStateChange={props.atTopStateChange}
+            atTopThreshold={0}
             style={{
               flex: 1,
               ...(platform.type === 'web'
@@ -391,8 +421,8 @@ export default function SessionList(props: Props) {
                   }
                 : {}),
             }}
-            data={displayItems}
-            computeItemKey={(_index, item) => item.id}
+            groupCounts={groupedItems.counts}
+            computeItemKey={(index) => displayItems[index]?.id ?? index}
             scrollerRef={(ref) => {
               if (ref instanceof HTMLDivElement) {
                 props.sessionListViewportRef.current = ref
@@ -400,22 +430,24 @@ export default function SessionList(props: Props) {
             }}
             endReached={onEndReached}
             components={virtuosoComponents}
-            itemContent={(_index, item) => {
-              if (item.type === 'section') {
-                const header =
-                  item.id === UNFILED_DROP_ID ? (
-                    <SessionListSectionHeader label={item.label}>
-                      <ChatsSectionMenu />
-                    </SessionListSectionHeader>
-                  ) : item.id === PROJECTS_SECTION_ID ? (
-                    <SessionListSectionHeader label={item.label} testId={TestId.sidebar.projectsSection}>
-                      <CreateProjectButton />
-                    </SessionListSectionHeader>
-                  ) : (
-                    <SessionListSectionHeader label={item.label} testId={TestId.sidebar.pinnedSection} />
-                  )
-                return item.droppable ? <DropTarget id={item.id}>{header}</DropTarget> : header
-              }
+            groupContent={(index) => {
+              const item = groupedItems.groups[index].header
+              const header =
+                item.id === UNFILED_DROP_ID ? (
+                  <SessionListSectionHeader label={item.label} testId={TestId.sidebar.chatsSection}>
+                    <ChatsSectionMenu />
+                  </SessionListSectionHeader>
+                ) : item.id === PROJECTS_SECTION_ID ? (
+                  <SessionListSectionHeader label={item.label} testId={TestId.sidebar.projectsSection}>
+                    <CreateProjectButton />
+                  </SessionListSectionHeader>
+                ) : (
+                  <SessionListSectionHeader label={item.label} testId={TestId.sidebar.pinnedSection} />
+                )
+              return item.droppable ? <DropTarget id={item.id}>{header}</DropTarget> : header
+            }}
+            itemContent={(index) => {
+              const item = groupedItems.items[index]
               if (item.type === 'folder') {
                 return (
                   <FolderHeader

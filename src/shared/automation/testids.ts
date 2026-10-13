@@ -8,7 +8,7 @@
  */
 
 export const AUTOMATION_CONTRACT_ID = 'chatbox-ui'
-export const AUTOMATION_CONTRACT_VERSION = '1.12.2'
+export const AUTOMATION_CONTRACT_VERSION = '1.12.4'
 export const AUTOMATION_CONTRACT_VERSION_ATTRIBUTE = 'data-automation-contract-version'
 
 /** Adjacent identity attributes hosted on TestId elements. */
@@ -90,6 +90,7 @@ export const TestId = {
   },
   sidebar: {
     root: 'sidebar',
+    scrollDivider: 'sidebar-scroll-divider',
     clearSessionList: 'clear-session-list-button',
     chatsSectionMenu: 'sidebar-chats-section-menu',
     newChat: 'new-chat-button',
@@ -106,6 +107,7 @@ export const TestId = {
     sessionSwitchHint: 'session-switch-hint',
     pinnedSection: 'sidebar-pinned-section',
     projectsSection: 'sidebar-projects-section',
+    chatsSection: 'sidebar-chats-section',
     createProject: 'sidebar-create-project',
     /** Hosts AutomationAdjacentAttr.folderId. */
     projectHeader: 'sidebar-project-header',

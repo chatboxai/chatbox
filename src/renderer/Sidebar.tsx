@@ -70,6 +70,7 @@ export default function Sidebar() {
   const setOpenSearchDialog = useUIStore((s) => s.setOpenSearchDialog)
 
   const sessionListViewportRef = useRef<HTMLDivElement>(null)
+  const [isSessionListAtTop, setIsSessionListAtTop] = useState(true)
 
   const sidebarWidth = useSidebarWidth()
 
@@ -242,7 +243,7 @@ export default function Sidebar() {
         )}
         {!isSmallScreen && <Box h="xs" />}
 
-        <Stack gap={2} px="xs" pb="xs">
+        <Stack gap={2} px="xs" pb="xs" className="relative shrink-0">
           {!isSmallScreen && <NewChatButton onClick={handleCreateNewSession} />}
           <SidebarNavRow
             testId={TestId.sidebar.search}
@@ -265,9 +266,21 @@ export default function Sidebar() {
               closeOnSmallScreen()
             }}
           />
+          <Box
+            data-testid={TestId.sidebar.scrollDivider}
+            aria-hidden="true"
+            pos="absolute"
+            bottom={0}
+            left="var(--mantine-spacing-xs)"
+            right="var(--mantine-spacing-xs)"
+            className="pointer-events-none"
+            style={{ opacity: isSessionListAtTop ? 0 : 1 }}
+          >
+            <Divider />
+          </Box>
         </Stack>
 
-        <SessionList sessionListViewportRef={sessionListViewportRef} />
+        <SessionList sessionListViewportRef={sessionListViewportRef} atTopStateChange={setIsSessionListAtTop} />
 
         <SidebarUpdateBanner />
 

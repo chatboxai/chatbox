@@ -3,8 +3,8 @@
 import { MantineProvider } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import type { SessionFolder, SessionMetaRecord } from '@shared/types'
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
-import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { act, createEvent, fireEvent, render, screen, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 type DndContextHandlers = {
   onDragStart?: (event: { active: { id: string } }) => void
@@ -13,6 +13,8 @@ type DndContextHandlers = {
 
 const {
   dndContextState,
+  isSmallScreenMock,
+  platformMock,
   moveSessionToFolderMock,
   reorderSessionsMock,
   sessionListState,
@@ -21,6 +23,8 @@ const {
   useSortableMock,
 } = vi.hoisted(() => ({
   dndContextState: { handlers: null as DndContextHandlers | null },
+  isSmallScreenMock: vi.fn(() => true),
+  platformMock: { type: 'mobile' },
   moveSessionToFolderMock: vi.fn(),
   reorderSessionsMock: vi.fn(),
   sessionListState: {
@@ -44,18 +48,19 @@ vi.mock('../ActionMenu', async () => {
   const React = await import('react')
   type Item = { text?: string; testId?: string; onClick?: () => void }
   return {
-    default: ({ children, items }: { children: React.ReactNode; items: Item[] }) =>
+    default: ({ children, items, opened }: { children: React.ReactNode; items: Item[]; opened?: boolean }) =>
       React.createElement(
         React.Fragment,
         null,
         children,
-        items.map((item) =>
-          React.createElement(
-            'button',
-            { key: item.text, 'data-testid': item.testId, onClick: item.onClick, type: 'button' },
-            item.text
+        opened !== false &&
+          items.map((item) =>
+            React.createElement(
+              'button',
+              { key: item.text, 'data-testid': item.testId, onClick: item.onClick, type: 'button' },
+              item.text
+            )
           )
-        )
       ),
   }
 })
@@ -111,8 +116,8 @@ vi.mock('react-virtuoso', async () => {
   }
 })
 
-vi.mock('@/hooks/useScreenChange', () => ({ useIsSmallScreen: () => true }))
-vi.mock('@/platform', () => ({ default: { type: 'mobile' } }))
+vi.mock('@/hooks/useScreenChange', () => ({ useIsSmallScreen: isSmallScreenMock }))
+vi.mock('@/platform', () => ({ default: platformMock }))
 vi.mock('@/app/renderer-application', () => ({
   rendererApplication: {
     sessionHooks: {
@@ -166,6 +171,10 @@ vi.mock('./SessionItem', async () => {
 import { uiStore } from '@/stores/uiStore'
 import SessionList from './SessionList'
 
+afterEach(() => {
+  vi.useRealTimers()
+})
+
 const sessions: SessionMetaRecord[] = [
   { id: 'session-1', name: 'Pinned session', sortOrder: 1, starred: true, createdAt: 1 },
   { id: 'session-2', name: 'Regular session', sortOrder: 2, starred: false, createdAt: 2 },
@@ -191,6 +200,8 @@ function getSortableRow(sessionId: string): HTMLElement {
 describe('SessionList mobile reorder mode', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    platformMock.type = 'mobile'
+    isSmallScreenMock.mockReturnValue(true)
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
       value: vi.fn().mockImplementation((query: string) => ({
@@ -280,6 +291,8 @@ describe('SessionList mobile reorder mode', () => {
 describe('SessionList section headers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    platformMock.type = 'mobile'
+    isSmallScreenMock.mockReturnValue(true)
     sessionListState.sessions = sessions
     sessionListState.isLoading = false
     sessionListState.folders = []
@@ -344,6 +357,8 @@ describe('SessionList folders', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    platformMock.type = 'mobile'
+    isSmallScreenMock.mockReturnValue(true)
     dndContextState.handlers = null
     useSortableMock.mockImplementation(() => ({
       attributes: {},
@@ -374,6 +389,106 @@ describe('SessionList folders', () => {
     expect(screen.queryByText('Home chat')).toBeNull()
     expect(screen.getByText('Chats')).toBeTruthy()
     expect(screen.getByRole('button', { name: /Home/ }).getAttribute('aria-expanded')).toBe('false')
+  })
+
+  test('opens the project menu on long press and consumes the release click', () => {
+    vi.useFakeTimers()
+    renderList()
+    const header = screen.getAllByTestId(TestId.sidebar.projectHeader)[0]
+    const toggle = within(header).getByRole('button', { name: 'Work' })
+    expect(screen.queryByRole('button', { name: 'Project actions' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Rename' })).toBeNull()
+
+    fireEvent.pointerDown(toggle)
+    expect(header.className).toContain('bg-chatbox-background-gray-secondary')
+    act(() => vi.advanceTimersByTime(550))
+    fireEvent.pointerUp(toggle)
+    fireEvent.click(toggle)
+
+    expect(screen.getByRole('button', { name: 'Rename' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Delete project' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'New Chat' })).toBeNull()
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+
+    fireEvent.pointerDown(toggle)
+    fireEvent.pointerUp(toggle)
+    fireEvent.click(toggle)
+    expect(screen.queryByRole('button', { name: 'Rename' })).toBeNull()
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  test('keeps project taps available and cancels an unfinished long press', () => {
+    vi.useFakeTimers()
+    renderList()
+    const toggle = screen.getByRole('button', { name: 'Work' })
+    fireEvent.pointerDown(toggle)
+    act(() => vi.advanceTimersByTime(200))
+    fireEvent.pointerUp(toggle)
+    fireEvent.click(toggle)
+    act(() => vi.advanceTimersByTime(550))
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByRole('button', { name: 'Rename' })).toBeNull()
+  })
+
+  test('cancels the project long press when scrolling or the pointer is canceled', () => {
+    vi.useFakeTimers()
+    renderList()
+    const header = screen.getAllByTestId(TestId.sidebar.projectHeader)[0]
+    const down = createEvent.pointerDown(header)
+    Object.defineProperties(down, { clientX: { value: 10 }, clientY: { value: 10 } })
+    fireEvent(header, down)
+    const move = createEvent.pointerMove(header)
+    Object.defineProperties(move, { clientX: { value: 10 }, clientY: { value: 30 } })
+    fireEvent(header, move)
+    act(() => vi.advanceTimersByTime(550))
+    expect(screen.queryByRole('button', { name: 'Rename' })).toBeNull()
+    expect(header.className).not.toContain('bg-chatbox-background-gray-secondary')
+
+    fireEvent.pointerDown(header)
+    fireEvent.pointerCancel(header)
+    act(() => vi.advanceTimersByTime(550))
+    expect(screen.queryByRole('button', { name: 'Rename' })).toBeNull()
+  })
+
+  test('keeps the touch context menu open through its release click', () => {
+    renderList()
+    const toggle = screen.getByRole('button', { name: 'Work' })
+    const contextMenu = createEvent.contextMenu(toggle)
+    Object.defineProperty(contextMenu, 'pointerType', { value: 'touch' })
+    fireEvent(toggle, contextMenu)
+    fireEvent.click(toggle)
+    expect(screen.getByRole('button', { name: 'Rename' })).toBeTruthy()
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  test('preserves the directory project actions and rename dialog', () => {
+    sessionListState.folders = [{ ...folders[0], workingDirectory: '/projects/work' }]
+    renderList()
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'Work' }))
+    expect(screen.getByRole('button', { name: 'New Chat' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Rename' }))
+    expect(showModalMock).toHaveBeenCalledWith('session-folder-name', {
+      title: 'Rename project',
+      initialName: 'Work',
+    })
+  })
+
+  test('uses the project more button on desktop', () => {
+    platformMock.type = 'desktop'
+    isSmallScreenMock.mockReturnValue(false)
+    renderList()
+    expect(screen.getAllByRole('button', { name: 'Project actions' })).toHaveLength(2)
+  })
+
+  test('disables the project long press while reordering chats', () => {
+    vi.useFakeTimers()
+    renderList()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Enter reorder' })[0])
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Work' }))
+    act(() => vi.advanceTimersByTime(550))
+    expect(screen.queryByRole('button', { name: 'Rename' })).toBeNull()
   })
 
   test('indents only project children, not pinned or unfiled chats', () => {

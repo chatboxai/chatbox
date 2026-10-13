@@ -58,11 +58,12 @@ import { setSessionAgentMode } from '@/stores/session/agent-mode'
 import { reorderSessions } from '@/stores/session/crud'
 import { deleteSessionFolder, moveSessionToFolder, renameSessionFolder } from '@/stores/session/folders'
 import { useUIStore } from '@/stores/uiStore'
-import ActionMenu from '../ActionMenu'
+import ActionMenu, { type ActionMenuItemProps } from '../ActionMenu'
 import { ICON_SIZE, IconButton } from '../common/IconButton'
 import { ScalableIcon } from '../common/ScalableIcon'
 import Broom from '../icons/Broom'
 import SessionItem from './SessionItem'
+import { useSidebarContextMenu } from './useSidebarContextMenu'
 
 const useSessionList = () => rendererApplication.sessionHooks.useSessionList()
 const useSessionFolders = () => rendererApplication.sessionHooks.useSessionFolders()
@@ -421,6 +422,7 @@ export default function SessionList(props: Props) {
                     folder={item.folder}
                     collapsed={item.collapsed}
                     empty={item.empty}
+                    isReordering={isReordering}
                     onToggle={() => setSessionFolderCollapsed(item.folder.id, !item.collapsed)}
                   />
                 )
@@ -519,11 +521,28 @@ function DropTarget(props: { id: string; className?: string; children: React.Rea
   )
 }
 
-function FolderHeader(props: { folder: SessionFolder; collapsed: boolean; empty: boolean; onToggle: () => void }) {
+function FolderHeader(props: {
+  folder: SessionFolder
+  collapsed: boolean
+  empty: boolean
+  isReordering: boolean
+  onToggle: () => void
+}) {
   const { folder, collapsed, empty, onToggle } = props
   const { t } = useTranslation()
   const isSmallScreen = useIsSmallScreen()
   const touchLayout = useTouchLayout()
+  const {
+    menuOpened,
+    menuPortalTarget,
+    longPressing,
+    consumeClick,
+    handleContextMenu,
+    handleMenuChange,
+    handlePointerDown,
+    handlePointerMove,
+    clearLongPressTimer,
+  } = useSidebarContextMenu({ touchLayout, disabled: props.isReordering })
   const rename = async () => {
     const name = await NiceModal.show<string | null>('session-folder-name', {
       title: t('Rename project'),
@@ -542,63 +561,89 @@ function FolderHeader(props: { folder: SessionFolder; collapsed: boolean; empty:
     void navigate({ to: '/' })
     if (isSmallScreen) setShowSidebar(false)
   }
-  return (
-    <DropTarget id={`${FOLDER_DROP_PREFIX}${folder.id}`} className="mx-2">
-      <Flex
-        data-testid={TestId.sidebar.projectHeader}
-        {...{ [AutomationAdjacentAttr.folderId]: folder.id }}
-        align="center"
-        gap={4}
-        pl="xs"
-        pr={4}
-        className="group/folder-header rounded-md hover:bg-chatbox-background-gray-secondary"
+  const menuItems: ActionMenuItemProps[] = [
+    ...(workingDirectory
+      ? [{ text: t('New Chat'), icon: IconMessagePlus, onClick: () => startChat(workingDirectory) }]
+      : []),
+    { text: t('Rename'), icon: IconPencil, onClick: () => void rename() },
+    {
+      text: t('Delete project'),
+      icon: IconTrash,
+      color: 'chatbox-error',
+      doubleCheck: { text: t('Chats will be moved out of the project. Delete?') || undefined },
+      onClick: () => void deleteSessionFolder(folder.id),
+    },
+  ]
+  const header = (
+    <Flex
+      data-testid={TestId.sidebar.projectHeader}
+      {...{ [AutomationAdjacentAttr.folderId]: folder.id }}
+      align="center"
+      gap={4}
+      pl="xs"
+      pr={4}
+      className={clsx(
+        'group/folder-header rounded-md select-none',
+        touchLayout
+          ? longPressing && 'bg-chatbox-background-gray-secondary'
+          : 'hover:bg-chatbox-background-gray-secondary'
+      )}
+      onContextMenu={touchLayout ? handleContextMenu : undefined}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={clearLongPressTimer}
+      onPointerLeave={clearLongPressTimer}
+      onPointerCancel={clearLongPressTimer}
+    >
+      <UnstyledButton
+        aria-expanded={!collapsed}
+        title={folder.workingDirectory}
+        onClick={() => {
+          if (!consumeClick()) onToggle()
+        }}
+        className="flex min-w-0 flex-1 items-center gap-1.5 py-1.5"
       >
-        <UnstyledButton
-          aria-expanded={!collapsed}
-          title={folder.workingDirectory}
-          onClick={onToggle}
-          className="flex min-w-0 flex-1 items-center gap-1.5 py-1.5"
-        >
-          <ScalableIcon
-            icon={collapsed ? IconFolder : IconFolderOpen}
-            size={16}
-            className="shrink-0 text-chatbox-secondary"
-          />
-          <Text span size="sm" fw={500} c="chatbox-secondary" lineClamp={1}>
-            {folder.name}
-          </Text>
-        </UnstyledButton>
-        <ActionMenu
-          position="bottom-end"
-          items={[
-            ...(workingDirectory
-              ? [{ text: t('New Chat'), icon: IconMessagePlus, onClick: () => startChat(workingDirectory) }]
-              : []),
-            { text: t('Rename'), icon: IconPencil, onClick: () => void rename() },
-            {
-              text: t('Delete project'),
-              icon: IconTrash,
-              color: 'chatbox-error',
-              doubleCheck: { text: t('Chats will be moved out of the project. Delete?') || undefined },
-              onClick: () => void deleteSessionFolder(folder.id),
-            },
-          ]}
-        >
+        <ScalableIcon
+          icon={collapsed ? IconFolder : IconFolderOpen}
+          size={16}
+          className="shrink-0 text-chatbox-secondary"
+        />
+        <Text span size="sm" fw={500} c="chatbox-secondary" lineClamp={1}>
+          {folder.name}
+        </Text>
+      </UnstyledButton>
+      {!touchLayout && (
+        <ActionMenu position="bottom-end" items={menuItems}>
           <IconButton
             icon={IconDots}
             iconSize={ICON_SIZE.inline}
             size={isSmallScreen ? 'md' : 'sm'}
             color="chatbox-tertiary"
             aria-label={t('Project actions') || undefined}
-            // Touch screens have no hover, so the menu trigger stays visible there.
-            className={
-              touchLayout
-                ? undefined
-                : 'opacity-0 group-hover/folder-header:opacity-100 focus-visible:opacity-100 data-[expanded=true]:opacity-100'
-            }
+            className="opacity-0 group-hover/folder-header:opacity-100 focus-visible:opacity-100 data-[expanded=true]:opacity-100"
           />
         </ActionMenu>
-      </Flex>
+      )}
+    </Flex>
+  )
+  return (
+    <DropTarget id={`${FOLDER_DROP_PREFIX}${folder.id}`} className="mx-2">
+      {touchLayout ? (
+        <ActionMenu
+          type="contextual"
+          trigger="manual"
+          items={menuItems}
+          opened={menuOpened}
+          portalProps={{ target: menuPortalTarget }}
+          onChange={handleMenuChange}
+          position={isSmallScreen ? 'bottom-end' : 'bottom-start'}
+          offset={0}
+        >
+          {header}
+        </ActionMenu>
+      ) : (
+        header
+      )}
       {empty && !collapsed && (
         <Text size="xs" c="chatbox-tertiary" pl={30} pb={6}>
           {t('Drag chats here')}

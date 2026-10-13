@@ -158,6 +158,20 @@ describe('SessionItem', () => {
     expect(screen.getByText('Adjust order')).toBeTruthy()
   })
 
+  test('keeps the contextual menu inside the sidebar drawer', async () => {
+    isSmallScreenMock.mockReturnValue(true)
+    render(
+      <MantineProvider>
+        <div data-testid={TestId.sidebar.root}>
+          <SessionItem session={session} selected />
+        </div>
+      </MantineProvider>
+    )
+    fireEvent.contextMenu(screen.getByTestId(TestId.sidebar.sessionItem))
+    const moveAction = await screen.findByRole('button', { name: 'Move to project' })
+    expect(screen.getByTestId(TestId.sidebar.root).contains(moveAction)).toBe(true)
+  })
+
   test('keeps a touch long press menu open through the click that follows it', async () => {
     isSmallScreenMock.mockReturnValue(true)
     renderItem()

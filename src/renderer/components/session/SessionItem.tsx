@@ -1,4 +1,3 @@
-import { Haptics, ImpactStyle } from '@capacitor/haptics'
 import NiceModal from '@ebay/nice-modal-react'
 import { ActionIcon, Box, Flex, Input, Text } from '@mantine/core'
 import { AutomationAdjacentAttr, AutomationStateAttr, TestId } from '@shared/automation/testids'
@@ -22,7 +21,6 @@ import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { useTouchLayout } from '@/hooks/useTouchLayout'
 import { navigateToSettings } from '@/modals/settings-navigation'
-import platform from '@/platform'
 import { showSessionArchiveUndo } from '@/presentation/session/session-archive-notification'
 import { router } from '@/router'
 import { switchCurrentSession } from '@/stores/session/crud'
@@ -32,10 +30,9 @@ import { useUIStore } from '@/stores/uiStore'
 import ActionMenu, { type ActionMenuItemProps } from '../ActionMenu'
 import { AssistantAvatar } from '../common/Avatar'
 import { ScalableIcon } from '../common/ScalableIcon'
+import { useSidebarContextMenu } from './useSidebarContextMenu'
 
 const ARCHIVED_SESSION_CLEANUP_THRESHOLD = 600
-const MOBILE_LONG_PRESS_DELAY = 550
-const MOBILE_LONG_PRESS_MOVE_TOLERANCE = 10
 
 function formatSessionTime(createdAt: number) {
   const created = dayjs(createdAt)
@@ -47,16 +44,6 @@ function formatSessionTime(createdAt: number) {
     return created.format('MM/DD')
   }
   return created.format('YY/MM/DD')
-}
-
-function triggerLongPressHaptic() {
-  if (platform.type === 'mobile') {
-    void Haptics.impact({ style: ImpactStyle.Light }).catch(() => {
-      navigator.vibrate?.(10)
-    })
-    return
-  }
-  navigator.vibrate?.(10)
 }
 
 export interface Props {
@@ -97,14 +84,7 @@ function SessionItem(props: Props) {
     if (props.isReordering || renaming) {
       return
     }
-    if (longPressTriggeredRef.current) {
-      longPressTriggeredRef.current = false
-      return
-    }
-    // The menu does not treat its own row as outside, so a click on the row
-    // dismisses the menu instead of opening the chat.
-    if (menuOpened) {
-      setMenuOpened(false)
+    if (consumeClick()) {
       return
     }
     switchCurrentSession(session.id)
@@ -118,13 +98,23 @@ function SessionItem(props: Props) {
 
   const [archiving, setArchiving] = useState(false)
   const [actionTooltipDismissed, setActionTooltipDismissed] = useState(false)
-  const [menuOpened, setMenuOpened] = useState(false)
-  const [longPressing, setLongPressing] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [draftName, setDraftName] = useState('')
-  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const longPressTriggeredRef = useRef(false)
-  const longPressStartPointRef = useRef<{ x: number; y: number } | null>(null)
+  const {
+    menuOpened,
+    menuPortalTarget,
+    longPressing,
+    consumeClick,
+    handleContextMenu,
+    handleMenuChange,
+    handlePointerDown,
+    handlePointerMove,
+    clearLongPressTimer,
+  } = useSidebarContextMenu({
+    touchLayout,
+    disabled: props.isReordering || renaming || switchShortcutDigit !== undefined,
+    nativeContextMenu: renaming,
+  })
   const renameClickStartedOnSelectedSessionRef = useRef(selected)
 
   const stopItemClick = (event: MouseEvent | PointerEvent) => {
@@ -203,72 +193,9 @@ function SessionItem(props: Props) {
     setArchiving(false)
   }
 
-  const clearLongPressTimer = () => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current)
-      longPressTimerRef.current = null
-    }
-    longPressStartPointRef.current = null
-    setLongPressing(false)
-  }
-
-  const handlePointerDown = (event: PointerEvent) => {
-    // A consumed click belongs to one press; a long press that no click follows
-    // must not swallow the next one.
-    longPressTriggeredRef.current = false
-    if (!touchLayout || props.isReordering) {
-      return
-    }
-    clearLongPressTimer()
-    longPressStartPointRef.current = { x: event.clientX, y: event.clientY }
-    setLongPressing(true)
-    longPressTimerRef.current = setTimeout(() => {
-      longPressTriggeredRef.current = true
-      setLongPressing(false)
-      triggerLongPressHaptic()
-      setMenuOpened(true)
-    }, MOBILE_LONG_PRESS_DELAY)
-  }
-
-  const handlePointerMove = (event: PointerEvent) => {
-    if (!touchLayout || !longPressStartPointRef.current) {
-      return
-    }
-    const deltaX = Math.abs(event.clientX - longPressStartPointRef.current.x)
-    const deltaY = Math.abs(event.clientY - longPressStartPointRef.current.y)
-    if (deltaX > MOBILE_LONG_PRESS_MOVE_TOLERANCE || deltaY > MOBILE_LONG_PRESS_MOVE_TOLERANCE) {
-      clearLongPressTimer()
-    }
-  }
-
   const handlePointerLeave = () => {
     clearLongPressTimer()
     setActionTooltipDismissed(false)
-  }
-
-  const handleContextMenu = (event: MouseEvent) => {
-    // The rename input keeps the native edit menu.
-    if (renaming) {
-      return
-    }
-    event.preventDefault()
-    if (!props.isReordering && switchShortcutDigit === undefined) {
-      // Touch browsers also report a long press as a context menu, followed by a
-      // click that must not open the chat.
-      if ('pointerType' in event.nativeEvent && event.nativeEvent.pointerType === 'touch') {
-        clearLongPressTimer()
-        longPressTriggeredRef.current = true
-      }
-      setMenuOpened(true)
-    }
-  }
-
-  const handleMenuChange = (opened: boolean) => {
-    setMenuOpened(opened)
-    if (!opened) {
-      clearLongPressTimer()
-      longPressTriggeredRef.current = false
-    }
   }
 
   const menuItems: ActionMenuItemProps[] = [
@@ -506,6 +433,7 @@ function SessionItem(props: Props) {
       trigger="manual"
       items={menuItems}
       opened={menuOpened}
+      portalProps={{ target: menuPortalTarget }}
       onChange={handleMenuChange}
       position={isSmallScreen ? 'bottom-end' : 'bottom-start'}
       offset={0}

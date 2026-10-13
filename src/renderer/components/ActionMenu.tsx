@@ -127,6 +127,7 @@ const ContextualActionMenu: FC<ActionMenuProps> = ({
   position = 'right-start',
   offset = 6,
   withinPortal = true,
+  portalProps,
 }) => {
   const theme = useMantineTheme()
 
@@ -147,6 +148,7 @@ const ContextualActionMenu: FC<ActionMenuProps> = ({
       position={position}
       offset={offset}
       withinPortal={withinPortal}
+      portalProps={portalProps}
       shadow="md"
       radius="lg"
     >

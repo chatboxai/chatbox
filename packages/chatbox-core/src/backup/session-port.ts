@@ -43,6 +43,8 @@ export type BackupRow =
 export interface BackupSessionCandidate {
   appendPayload?(chunk: Uint8Array): Promise<void>
   append(row: BackupRow): Promise<void>
+  /** Persist buffered staging data before switching sessions, without publishing it. */
+  flush?(): Promise<void>
   publish(signal?: AbortSignal): Promise<void>
   rollback(): Promise<void>
   dispose(): Promise<void>

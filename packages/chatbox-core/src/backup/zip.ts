@@ -1,5 +1,6 @@
 import { Deflate, Inflate, Unzip, UnzipInflate, Zip, ZipDeflate, type ZipInputFile, ZipPassThrough } from 'fflate'
 import { throwIfAborted } from './abort'
+import { cacheBackupFileRanges } from './range-cache'
 import { createTaskYielder } from './task-yield'
 import { type BackupFile, readBackupFileBytes } from './types'
 
@@ -309,6 +310,7 @@ async function readBoundedZipFileEntries(
   onEntry: (entry: ReadZipEntry) => Promise<void> | void,
   options: ZipReadOptions = {}
 ): Promise<void> {
+  file = cacheBackupFileRanges(file, options.signal)
   const directory = await validateZipEndOfCentralDirectory(file)
   const limits = { ...DEFAULT_ZIP_LIMITS, ...options.limits }
   if (directory.entryCount > limits.maxEntries) throw new Error('ZIP contains too many entries')

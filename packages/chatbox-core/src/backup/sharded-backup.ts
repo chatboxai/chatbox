@@ -798,6 +798,7 @@ export async function importShardedBackup(
         if (entry.path === 'manifest.json' || globalPaths.has(entry.path)) return
         if (isBackupResourcePath(entry.path)) return
         if (entry.path.endsWith('/session.json')) {
+          await active?.candidate.flush?.()
           const restored = globals!.translate(
             rehydrateSessionAttachmentsAsInline(restoreSessionResourceKeys(singleTree(entry.data).session, keys))
           )
@@ -873,6 +874,7 @@ export async function importShardedBackup(
           throw new Error('Backup shard count mismatch')
         for (let row of batch) {
           if (row.kind === 'header') {
+            await active?.candidate.flush?.()
             activeSourceSession = { ...row.session, messages: [] }
             const { messages: _messages, threads: _threads, ...translated } = globals!.translate(activeSourceSession)
             row = { ...row, session: translated }
@@ -933,6 +935,7 @@ export async function importShardedBackup(
       },
       { ...readOptions, filter: (path) => !isBackupResourcePath(path) }
     )
+    await active?.candidate.flush?.()
     beginPhase('finishing')
     for (const [index, item] of candidates.entries()) {
       throwIfAborted(options.signal)

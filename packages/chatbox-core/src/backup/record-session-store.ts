@@ -118,6 +118,7 @@ export function createRecordBackupSessionStore(
       let rollbackFailed = false
       return {
         appendPayload: candidate.appendPayload?.bind(candidate),
+        flush: candidate.flush?.bind(candidate),
         async append(row) {
           await candidate.append(row)
           if (row.kind === 'header') header = row.record

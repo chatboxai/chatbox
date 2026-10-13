@@ -4,12 +4,14 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { type NodeSessionRowSqlDatabase, openNodeSessionRowDatabase } from '../persistence/node-sqlite.test-support'
 import { contextSession, contextSnapshot } from '../persistence/session-context-read.test-support'
 import { SqlSessionRowStore } from '../persistence/session-row-sql'
+import type { SessionRecordStorePort, StoredSessionRecord } from '../ports/session-record-store'
 import { SessionRowConflictError } from '../ports/session-row-store'
 import { decodeSessionTree } from '../session/session-tree/decode'
 import type { MessageRow } from '../session/session-tree/types'
 import { sha256Checksum } from './codec'
 import { exportBackupArchive } from './export-backup'
 import { importBackupArchive } from './import-backup'
+import { createRecordBackupSessionStore } from './record-session-store'
 import { DEFAULT_BACKUP_PAGE_LIMITS } from './session-port'
 import { MemoryMetaStorage, MemoryStorage } from './sharded.test-support'
 import type { BackupProgress } from './types'
@@ -696,4 +698,77 @@ it('rejects a revision change between complete-tree pages', async () => {
   await rows.next()
   await source.writeRows({ ...original, revision: 2 }, 1)
   await expect(rows.next()).rejects.toBeInstanceOf(SessionRowConflictError)
+})
+
+it('flushes each session before starting the next, while keeping every session unpublished until all sessions are staged', async () => {
+  const source = store()
+  const target = store()
+  await target.initialize()
+  const db = databases.at(-1)!
+  for (let i = 0; i < 12; i++) {
+    await source.writeRows(
+      contextSnapshot({
+        id: `session-${i}`,
+        name: `Session ${i}`,
+        messages: [{ id: 'message', role: 'user', contentParts: [{ type: 'text', text: 'sample' }] }],
+      })
+    )
+  }
+  const begin = target.beginBackupRestore.bind(target)
+  const storage = new MemoryStorage()
+  const records: SessionRecordStorePort = {
+    initialize: async () => {},
+    getRecord: (id) => storage.getItem<StoredSessionRecord | null>(`session:${id}`, null),
+    setRecord: (record) => storage.setItemNow(`session:${record.id}`, record),
+    removeRecord: (id) => storage.removeItem(`session:${id}`),
+    listIds: async () =>
+      [...storage.values.keys()].filter((key) => key.startsWith('session:')).map((key) => key.slice(8)),
+  }
+  const wrapped = createRecordBackupSessionStore(
+    target,
+    records,
+    {
+      stage: (token, session) => storage.setItemNow(token, session),
+      capture: async (id, token) => {
+        const record = await records.getRecord(id)
+        if (record) await storage.setItemNow(token, record)
+        return record !== null
+      },
+      restore: async (id, token, existed) => {
+        if (!existed) return records.removeRecord(id)
+        const record = await storage.getItem<StoredSessionRecord | null>(token, null)
+        if (!record) throw new Error('Missing test snapshot')
+        await records.setRecord(record)
+      },
+      remove: (token) => storage.removeItem(token),
+    },
+    { listSessionIds: () => records.listIds(), readValue: async () => null }
+  )
+  let started = 0
+  let flushed = 0
+  vi.spyOn(target, 'beginBackupRestore').mockImplementation(async (id) => {
+    expect(flushed).toBe(started)
+    expect(await db.query('SELECT COUNT(*) AS count FROM session_messages_staging')).toEqual([{ count: started }])
+    expect(await db.query('SELECT * FROM session_row_heads')).toEqual([])
+    expect(await records.listIds()).toEqual([])
+    started++
+    const candidate = await begin(id)
+    return {
+      ...candidate,
+      flush: async () => {
+        await candidate.flush?.()
+        flushed++
+      },
+    }
+  })
+  await importBackupArchive(await backup(source), {
+    storage,
+    metaStorage: new MemoryMetaStorage(),
+    sharded: { store: wrapped },
+  })
+  expect(started).toBe(12)
+  expect(flushed).toBe(12)
+  expect(await target.listSessionIds()).toHaveLength(12)
+  expect(await records.listIds()).toHaveLength(12)
+  expect([...storage.values.keys()].every((key) => !key.startsWith('__chatbox_backup_import:'))).toBe(true)
 })

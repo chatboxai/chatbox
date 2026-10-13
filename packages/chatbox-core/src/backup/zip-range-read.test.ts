@@ -53,3 +53,33 @@ it.each(['random', 'repeated'] as const)(
     expect(readBytes.mock.calls.length).toBeLessThanOrEqual(Math.ceil(archive.length / (64 * 1024)) + 8)
   }
 )
+
+it('coalesces small directory/header reads and starts each scan with fresh bytes', async () => {
+  const entries = Object.fromEntries(
+    Array.from({ length: 400 }, (_, i) => [`entry-${i}.txt`, new Uint8Array([1, 2, 3])])
+  )
+  let archive = zipSync(entries, { level: 0 })
+  const readBytes = vi.fn(async (offset: number, length: number) => archive.slice(offset, offset + length))
+  const file: BackupFile = { size: archive.length, readBytes, text: async () => '' }
+  let count = 0
+  await readZipFileEntries(
+    file,
+    (entry) => {
+      expect(entry.data).toEqual(new Uint8Array([1, 2, 3]))
+      count++
+    },
+    { bounded: true }
+  )
+  expect(count).toBe(400)
+  expect(readBytes.mock.calls.length).toBeLessThan(10)
+  archive = zipSync(Object.fromEntries(Object.keys(entries).map((name) => [name, new Uint8Array([4, 5, 6])])), {
+    level: 0,
+  })
+  await readZipFileEntries(
+    file,
+    (entry) => {
+      expect(entry.data).toEqual(new Uint8Array([4, 5, 6]))
+    },
+    { bounded: true }
+  )
+})

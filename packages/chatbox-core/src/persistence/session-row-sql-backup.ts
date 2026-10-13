@@ -1,8 +1,13 @@
 import { v4 as uuid } from 'uuid'
+import { throwIfAborted } from '../backup/abort'
 import type { BackupRow, BackupSessionCandidate } from '../backup/session-port'
 import { type SessionRowCommit, SessionRowConflictError } from '../ports/session-row-store'
 import type { MessageRow, ThreadRow } from '../session/session-tree/types'
 import type { SessionRowSqlDatabase, SessionRowSqlStatement } from './session-row-sql'
+
+const STAGING_BATCH_STATEMENTS = 128
+const STAGING_BATCH_BYTES = 384 * 1024
+const encoder = new TextEncoder()
 
 const columns = {
   threads:
@@ -33,6 +38,46 @@ export async function createSqlBackupCandidate(
   let commit: SessionRowCommit | undefined
   let published = false
   let disposed = false
+  let buffered: SessionRowSqlStatement[] = []
+  let bufferedBytes = 2
+  let failure: { error: unknown } | undefined
+  const discardBuffered = () => {
+    buffered = []
+    bufferedBytes = 2
+  }
+  const flush = async () => {
+    if (failure) throw failure.error
+    if (!buffered.length) return
+    const statements = buffered
+    discardBuffered()
+    try {
+      await database.executeBatch(statements)
+    } catch (error) {
+      failure = { error }
+      throw error
+    }
+  }
+  const stage = async (statements: Iterable<SessionRowSqlStatement>) => {
+    if (failure) throw failure.error
+    try {
+      for (const statement of statements) {
+        const bytes =
+          encoder.encode(JSON.stringify({ statement: statement.sql, values: statement.params })).byteLength + 1
+        if (
+          buffered.length &&
+          (buffered.length >= STAGING_BATCH_STATEMENTS || bufferedBytes + bytes > STAGING_BATCH_BYTES)
+        )
+          await flush()
+        buffered.push(statement)
+        bufferedBytes += bytes
+        if (bufferedBytes >= STAGING_BATCH_BYTES || buffered.length >= STAGING_BATCH_STATEMENTS) await flush()
+      }
+    } catch (error) {
+      discardBuffered()
+      failure = { error }
+      throw error
+    }
+  }
   let pending:
     | {
         id: string
@@ -71,6 +116,7 @@ export async function createSqlBackupCandidate(
     }))
   )
   return {
+    flush,
     async appendPayload(bytes) {
       if (published || disposed || !commit) throw new Error('Backup candidate is closed')
       if (!bytes.length || bytes.length > 128 * 1024) throw new Error('Backup payload block exceeds budget')
@@ -92,7 +138,7 @@ export async function createSqlBackupCandidate(
         })
         offset = end
       }
-      if (statements.length) await database.executeBatch(statements)
+      await stage(statements)
     },
     async append(row: BackupRow) {
       if (published || disposed) throw new Error('Backup candidate is closed')
@@ -108,7 +154,7 @@ export async function createSqlBackupCandidate(
         if (!pending || pending.bytes !== row.payload.size || pending.decoder.decode())
           throw new Error('Backup payload is incomplete')
         const m = row.message
-        await database.executeBatch([
+        await stage([
           {
             sql: `INSERT INTO session_messages_staging (mutation_id, ${columns.messages}) VALUES (${Array(15).fill('?').join(', ')})`,
             params: [
@@ -150,10 +196,13 @@ export async function createSqlBackupCandidate(
           } else yield statement
         }
       }
-      await database.executeBatch(staged())
+      await stage(staged())
     },
-    async publish() {
+    async publish(signal) {
+      throwIfAborted(signal)
       if (!commit || published || disposed || pending) throw new Error('Backup candidate is not publishable')
+      await flush()
+      throwIfAborted(signal)
       const actual =
         (
           await database.query<{ revision: number | null }>(
@@ -162,6 +211,7 @@ export async function createSqlBackupCandidate(
           )
         )[0]?.revision ?? null
       if (actual !== expected) throw new SessionRowConflictError(sessionId, expected, actual)
+      throwIfAborted(signal)
       await database.executeBatch([
         guard(expected),
         ...(['threads', 'messages'] as const).map((table) => ({
@@ -177,6 +227,7 @@ export async function createSqlBackupCandidate(
       published = true
     },
     async rollback() {
+      discardBuffered()
       if (!published) return
       await database.executeBatch([
         guard(revision),
@@ -191,6 +242,7 @@ export async function createSqlBackupCandidate(
       published = false
     },
     async dispose() {
+      discardBuffered()
       await database.executeBatch([
         ...removeStaging(mutation),
         ...removeStaging(previous),

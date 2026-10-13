@@ -1,4 +1,4 @@
-import { Flex, NumberInput, SegmentedControl, Select, Stack } from '@mantine/core'
+import { Flex, NumberInput, SegmentedControl, Select } from '@mantine/core'
 import { IconSelector } from '@tabler/icons-react'
 import clsx from 'clsx'
 import { useEffect, useId, useState } from 'react'
@@ -6,31 +6,9 @@ import { useTranslation } from 'react-i18next'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import SliderWithInput from '@/components/common/SliderWithInput'
 import { useFieldDraft } from '@/hooks/useFieldDraft'
-import { SettingRow, type SettingsDensity, useSettingsDensity } from './SettingsLayout'
+import { SettingRow, useSettingsDensity } from './SettingsLayout'
 
-const TEMPERATURE_PRESETS = [
-  { key: 'precise', label: 'Precise', value: 0.3 },
-  { key: 'balanced', label: 'Balanced', value: 1 },
-  { key: 'creative', label: 'Creative', value: 1.5 },
-] as const
-
-function hasTouchPresets(density: SettingsDensity, kind: 'temperature' | 'topP') {
-  return density === 'touch' && kind === 'temperature'
-}
-
-/**
- * Whether the control always shows its value field, so a row label can name it. Touch temperature
- * leads with presets and shows the field only under Custom.
- */
-export function useSamplingFieldShown(kind: 'temperature' | 'topP') {
-  return !hasTouchPresets(useSettingsDensity(), kind)
-}
-
-/**
- * Sampling parameter (temperature or top P). Wide layouts use a slider with a value field;
- * touch layouts pick temperature from Precise / Balanced / Creative and open the slider under
- * Custom. An unset value reads "Model default".
- */
+/** Sampling parameter with a slider, scale labels and value field. An unset value reads "Model default". */
 export function SamplingParamControl({
   kind,
   value,
@@ -49,16 +27,9 @@ export function SamplingParamControl({
   clearable?: boolean
 }) {
   const { t } = useTranslation()
-  const density = useSettingsDensity()
   const max = kind === 'temperature' ? 2 : 1
-  const matchedPreset =
-    kind === 'temperature' ? TEMPERATURE_PRESETS.find((preset) => preset.value === value)?.key : undefined
-  const [customOpen, setCustomOpen] = useState(value !== undefined && !matchedPreset)
-  useEffect(() => {
-    if (value !== undefined && !matchedPreset) setCustomOpen(true)
-  }, [value, matchedPreset])
 
-  const slider = (
+  return (
     <SliderWithInput
       inputId={inputId}
       inputTestId={inputTestId}
@@ -67,41 +38,12 @@ export function SamplingParamControl({
       max={max}
       inputWidth={96}
       clearable={clearable}
+      allowTouchTrackInteraction={kind === 'temperature'}
       marks={kind === 'temperature' ? [{ value: 0 }, { value: 1 }, { value: 2 }] : undefined}
       scaleLabels={
-        kind === 'temperature' && density !== 'touch'
-          ? [`0 ${t('Precise')}`, `1.0 ${t('Balanced')}`, `2.0 ${t('Creative')}`]
-          : undefined
+        kind === 'temperature' ? [`0 ${t('Precise')}`, `1.0 ${t('Balanced')}`, `2.0 ${t('Creative')}`] : undefined
       }
     />
-  )
-
-  if (!hasTouchPresets(density, kind)) return slider
-
-  return (
-    <Stack gap="xs">
-      <SegmentedControl
-        aria-label={t('Temperature') ?? undefined}
-        fullWidth
-        size="sm"
-        radius="md"
-        value={customOpen ? 'custom' : (matchedPreset ?? '')}
-        onChange={(key) => {
-          if (key === 'custom') {
-            setCustomOpen(true)
-            return
-          }
-          setCustomOpen(false)
-          const preset = TEMPERATURE_PRESETS.find((item) => item.key === key)
-          if (preset) onChange(preset.value)
-        }}
-        data={[
-          ...TEMPERATURE_PRESETS.map((preset) => ({ value: preset.key, label: t(preset.label) })),
-          { value: 'custom', label: t('Custom') },
-        ]}
-      />
-      {customOpen && slider}
-    </Stack>
   )
 }
 

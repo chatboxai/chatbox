@@ -28,7 +28,6 @@ import {
   describeSamplingValue,
   NO_CONTEXT_LIMIT,
   SamplingParamControl,
-  useSamplingFieldShown,
 } from '@/components/settings/ParamControl'
 import {
   InheritState,
@@ -119,7 +118,6 @@ export function SessionSettingsContent({
   const systemPrompt = useCommittedText(getSessionSystemPrompt(session), (value) => onEdit({ systemPrompt: value }))
 
   const setParam = (patch: Partial<SessionSettings>) => onEdit({ settings: patch })
-  const temperatureFieldShown = useSamplingFieldShown('temperature')
   const temperatureControl = (fieldId?: string) => (
     <SamplingParamControl
       inputId={fieldId}
@@ -259,7 +257,7 @@ export function SessionSettingsContent({
               TestId.sessionPanel.inheritTemperature
             )}
             controlLayout="block"
-            control={temperatureFieldShown ? temperatureControl : temperatureControl()}
+            control={temperatureControl}
           />
           <SettingRow
             label="Top P"

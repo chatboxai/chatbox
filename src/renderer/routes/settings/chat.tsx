@@ -5,12 +5,7 @@ import type { Settings } from '@shared/types'
 import { MAX_TOOL_CALLS_BEFORE_CONFIRMATION } from '@shared/utils/tool-call-limit-pause'
 import { createFileRoute } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
-import {
-  ContextLimitSettingRow,
-  NO_CONTEXT_LIMIT,
-  SamplingParamControl,
-  useSamplingFieldShown,
-} from '@/components/settings/ParamControl'
+import { ContextLimitSettingRow, NO_CONTEXT_LIMIT, SamplingParamControl } from '@/components/settings/ParamControl'
 import {
   SettingRow,
   SettingSwitchRow,
@@ -47,7 +42,6 @@ export function RouteComponent() {
   const { t } = useTranslation()
   const { setSettings, ...settings } = useSettingsStore((state) => state)
   const density = useSettingsDensity()
-  const temperatureFieldShown = useSamplingFieldShown('temperature')
   const temperatureControl = (fieldId?: string) => (
     <SamplingParamControl
       inputId={fieldId}
@@ -147,7 +141,7 @@ export function RouteComponent() {
           label={t('Temperature')}
           description={t('Lower is steadier, higher is more varied')}
           controlLayout="block"
-          control={temperatureFieldShown ? temperatureControl : temperatureControl()}
+          control={temperatureControl}
         />
         <SettingRow
           id="top-p"

@@ -22,6 +22,8 @@ export type Props = {
   scaleLabels?: string[]
   inputWidth?: number
   clearable?: boolean
+  /** Allow touching the track to set a value on small screens. */
+  allowTouchTrackInteraction?: boolean
 }
 
 // SliderChangeEnd触发 或者 input blur的时候才触发onChange
@@ -39,6 +41,7 @@ export default function SliderWithInput({
   scaleLabels,
   inputWidth = 64,
   clearable = true,
+  allowTouchTrackInteraction = false,
   inputId,
 }: Props) {
   const { t } = useTranslation()
@@ -96,15 +99,16 @@ export default function SliderWithInput({
           onChangeEnd={handleSliderChangeEnd}
           // An unset value has no position on the scale, so the thumb, filled track and filled
           // marks stay hidden instead of suggesting the minimum.
-          classNames={
-            unset
+          classNames={{
+            trackContainer: allowTouchTrackInteraction ? 'max-sm:!pointer-events-auto' : undefined,
+            ...(unset
               ? {
                   thumb: '!opacity-0',
                   bar: '!opacity-0',
                   mark: '!border-chatbox-border-primary !bg-chatbox-background-primary',
                 }
-              : undefined
-          }
+              : {}),
+          }}
         />
         {scaleLabels && (
           <Flex justify="space-between" gap="xs">

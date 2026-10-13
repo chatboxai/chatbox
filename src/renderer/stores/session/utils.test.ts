@@ -3,10 +3,7 @@
 import { ChatboxAIAPIError, MESSAGE_ERROR_CODES, OCRError } from '@shared/models/errors'
 import type { Message, Session, SessionSettings, Settings } from '@shared/types'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
-import {
-  isMessageReminderPresentation,
-  resolveMessageErrorPresentation,
-} from '@/components/chat/message-error-presentation'
+import { resolveMessageErrorPresentation } from '@/components/chat/message-error-presentation'
 
 const { reportErrorMock, trackEventMock } = vi.hoisted(() => ({
   reportErrorMock: vi.fn(),
@@ -112,7 +109,6 @@ describe('trackGenerateEvent', () => {
       const presentation = resolveMessageErrorPresentation(result)
 
       expect(presentation.kind).toBe('known-chatbox-api')
-      expect(isMessageReminderPresentation(presentation)).toBe(false)
     }
   )
 

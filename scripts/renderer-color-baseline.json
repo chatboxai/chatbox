@@ -3,7 +3,7 @@
   "src/renderer/components/Artifact.tsx": 22,
   "src/renderer/components/chat/AgentModeRewardQuotaCard.tsx": 2,
   "src/renderer/components/chat/CompactionStatus.tsx": 10,
-  "src/renderer/components/chat/GenericMessageError.tsx": 18,
+  "src/renderer/components/chat/GenericMessageError.tsx": 4,
   "src/renderer/components/chat/Message.tsx": 1,
   "src/renderer/components/chat/MessageList.tsx": 1,
   "src/renderer/components/chat/MessageLoading.tsx": 3,

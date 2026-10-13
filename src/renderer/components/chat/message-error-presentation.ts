@@ -168,7 +168,3 @@ export function resolveMessageErrorPresentation(
   }
   return { ...details, kind: 'unknown' }
 }
-
-export function isMessageReminderPresentation(presentation: MessageErrorPresentation): boolean {
-  return presentation.kind === 'quota' || presentation.kind === 'agent-mode-reward'
-}

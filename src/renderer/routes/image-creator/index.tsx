@@ -28,6 +28,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { JK_PAGE_NAMES } from '@/analytics/jk-events'
 import { ChatboxWelcomeCard } from '@/components/common/ChatboxWelcomeCard'
+import errorNoticeClasses from '@/components/common/ErrorNotice.module.css'
 import { ImageModelSelect } from '@/components/ImageModelSelect'
 import { SEND_BUTTON_BLOCKED_CLASS } from '@/components/InputBox/inputSurface'
 import Page from '@/components/layout/Page'
@@ -37,6 +38,7 @@ import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import useVersion from '@/hooks/useVersion'
 import { getLogger } from '@/lib/utils'
 import { resumeImageGenerationWithFollowUp } from '@/packages/chatbox-cli/image-task-follow-up'
+import imageFailurePlaceholder from '@/static/images/errors/img-fail-placeholder.png'
 import { useAuthInfoStore } from '@/stores/authInfoStore'
 import { cancelGeneration, createAndGenerate, retryGeneration } from '@/stores/imageGenerationActions'
 import {
@@ -478,6 +480,12 @@ function ImageCreatorPage() {
                 <Stack gap="lg" className="animate-in fade-in duration-300">
                   {currentRecord.status === 'generating' && currentRecord.generatedImages.length === 0 && (
                     <LoadingShimmer />
+                  )}
+
+                  {currentRecord.status === 'error' && currentRecord.generatedImages.length === 0 && (
+                    <div className={errorNoticeClasses.placeholder}>
+                      <img src={imageFailurePlaceholder} alt="" />
+                    </div>
                   )}
 
                   {currentRecord.generatedImages.length > 0 && (

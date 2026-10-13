@@ -82,15 +82,14 @@ import { MessageAttachmentGrid } from './MessageAttachmentGrid'
 import MessageErrTips from './MessageErrTips'
 import MessageStatuses, { PreparingToolCallStatus } from './MessageLoading'
 import { getMessageActionVisibilityClass, type MessageButtonGroup } from './message-action-state'
-import { isMessageReminderPresentation, resolveMessageErrorPresentation } from './message-error-presentation'
-import { shouldRightAlignMessage } from './message-layout'
+import { isErrorOnlyMessage, shouldRightAlignMessage } from './message-layout'
 import { getMessagePreviewText } from './message-navigation-utils'
 import { getMessageRoleClass } from './message-role-class'
 import { createCollapsedDisplayGroups, createMessageTimelineLayout } from './message-timeline'
 import { getMessageTokenDisplay } from './message-token-display'
 import { PictureGallery } from './PictureGallery'
-import { useReplyBelowAction } from './useReplyBelowAction'
 import { useProcessTimelineCollapse } from './useProcessTimelineCollapse'
+import { useReplyBelowAction } from './useReplyBelowAction'
 
 const useIsGenerationRuntimeActive = (sessionId: string, messageId: string) =>
   rendererApplication.generationHooks.useIsActive(sessionId, messageId)
@@ -804,7 +803,6 @@ const _Message: FC<Props> = (props) => {
   )
 
   const isUserBubble = isBubbleLayout && msg.role === 'user'
-  const isErrorReminder = msg.error ? isMessageReminderPresentation(resolveMessageErrorPresentation(msg)) : false
   const isClassicLayout = !isBubbleLayout
   const isClassicMessage = isClassicLayout && (msg.role === 'assistant' || msg.role === 'user')
   const isRightAlignedMessage = shouldRightAlignMessage(messageLayout, msg.role)
@@ -834,7 +832,6 @@ const _Message: FC<Props> = (props) => {
       msg={msg}
       sessionId={sessionId}
       onRetry={!readOnly && msg.role === 'assistant' ? handleErrorTipRetry : undefined}
-      isBubbleLayout={isBubbleLayout}
     />
   )
 
@@ -854,10 +851,8 @@ const _Message: FC<Props> = (props) => {
                 msg.role === 'user'
                   ? 'bg-[var(--mantine-color-chatbox-brand-filled)] text-white'
                   : msg.role === 'assistant'
-                    ? msg.error
-                      ? isErrorReminder
-                        ? '!p-0 !bg-transparent'
-                        : 'bg-chatbox-background-error-secondary border border-solid border-chatbox-border-error'
+                    ? isErrorOnlyMessage(msg)
+                      ? '!p-0 !bg-transparent'
                       : 'bg-chatbox-background-secondary'
                     : 'bg-chatbox-background-secondary rounded-lg'
               )

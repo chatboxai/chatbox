@@ -1,16 +1,26 @@
-import { ActionIcon, Flex, Loader, Text } from '@mantine/core'
+import { ActionIcon, Button, Flex, Loader, Text } from '@mantine/core'
 import { Link } from '@mui/material'
 import { TestId } from '@shared/automation/testids'
 import { aiProviderNameHash } from '@shared/models'
 import type { Message } from '@shared/types'
 import { ModelProviderEnum } from '@shared/types/provider'
-import { IconCheck, IconChevronDown, IconChevronUp, IconCopy, IconLanguage, IconReload } from '@tabler/icons-react'
+import {
+  IconArrowRight,
+  IconCheck,
+  IconChevronDown,
+  IconChevronRight,
+  IconCopy,
+  IconLanguage,
+  IconReload,
+} from '@tabler/icons-react'
 import type React from 'react'
 import { useCallback, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { trackJkClickEvent } from '@/analytics/jk'
 import { JK_EVENTS, JK_PAGE_NAMES } from '@/analytics/jk-events'
 import { ChatboxAIErrorMessage } from '@/components/common/ChatboxAIErrorMessage'
+import { ErrorNotice } from '@/components/common/ErrorNotice'
+import classes from '@/components/common/ErrorNotice.module.css'
 import LinkTargetBlank from '@/components/common/Link'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { useCopied } from '@/hooks/useCopied'
@@ -48,6 +58,12 @@ function getTruncatedText(text: string): string {
   return lines.length > MAX_LINES ? `${lines.slice(0, MAX_LINES).join('\n')}...` : text
 }
 
+const errorLinkStyle: React.CSSProperties = {
+  color: 'var(--chatbox-tint-brand)',
+  font: 'inherit',
+  fontStyle: 'normal',
+}
+
 function ErrorActionButtons(props: {
   showTranslateButton: boolean
   translatedText: string | null
@@ -59,16 +75,31 @@ function ErrorActionButtons(props: {
 }) {
   const { showTranslateButton, translatedText, isTranslating, copied, onTranslate, onCopy, t } = props
   return (
-    <Flex justify="flex-end" mt="xs" gap={4}>
+    <Flex gap={4} className={classes.actions}>
       {showTranslateButton && (
         <Tooltip label={translatedText ? t('Show original') : t('Translate')} withArrow openDelay={1000}>
-          <ActionIcon variant="subtle" size="sm" color="red" disabled={isTranslating} onClick={onTranslate}>
-            {isTranslating ? <Loader size={14} color="red" /> : <IconLanguage size={14} />}
+          <ActionIcon
+            className={classes.action}
+            variant="subtle"
+            size="sm"
+            color="gray"
+            disabled={isTranslating}
+            onClick={onTranslate}
+            aria-label={translatedText ? t('Show original') : t('Translate')}
+          >
+            {isTranslating ? <Loader size={14} color="gray" /> : <IconLanguage size={14} />}
           </ActionIcon>
         </Tooltip>
       )}
       <Tooltip label={t('Copy')} withArrow openDelay={1000}>
-        <ActionIcon variant="subtle" size="sm" color="red" onClick={onCopy}>
+        <ActionIcon
+          className={classes.action}
+          variant="subtle"
+          size="sm"
+          color="gray"
+          onClick={onCopy}
+          aria-label={copied ? t('Copied') : t('Copy')}
+        >
           {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
         </ActionIcon>
       </Tooltip>
@@ -93,7 +124,11 @@ function ErrorTip({ presentation, model }: { presentation: GenericPresentation; 
           values={{ aiProvider: presentation.provider }}
           components={{
             OpenSettingButton: (
-              <Link className="cursor-pointer italic" onClick={() => navigateToSettings('/default-models')} />
+              <Link
+                className="cursor-pointer"
+                style={errorLinkStyle}
+                onClick={() => navigateToSettings('/default-models')}
+              />
             ),
           }}
         />
@@ -113,7 +148,8 @@ function ErrorTip({ presentation, model }: { presentation: GenericPresentation; 
             components={{
               buttonOpenSettings: (
                 <a
-                  className="cursor-pointer underline font-bold hover:text-blue-600 transition-colors"
+                  className="cursor-pointer"
+                  style={errorLinkStyle}
                   onClick={() => navigateToSettings(`/provider/${ModelProviderEnum.ChatboxAI}`)}
                 />
               ),
@@ -128,7 +164,8 @@ function ErrorTip({ presentation, model }: { presentation: GenericPresentation; 
           components={{
             buttonOpenSettings: (
               <a
-                className="cursor-pointer underline font-bold hover:text-blue-600 transition-colors"
+                className="cursor-pointer"
+                style={errorLinkStyle}
                 onClick={() =>
                   navigateToSettings(presentation.providerId ? `/provider/${presentation.providerId}` : '/provider')
                 }
@@ -136,13 +173,19 @@ function ErrorTip({ presentation, model }: { presentation: GenericPresentation; 
             ),
             LinkToLicensePricing: (
               <LinkTargetBlank
-                className="!font-bold !text-gray-700 hover:!text-blue-600 transition-colors"
+                style={errorLinkStyle}
                 href={buildChatboxUrl(
                   `/redirect_app/advanced_url_processing/${settingActions.getLanguage()}?utm_source=app&utm_content=msg_bad_provider`
                 )}
               />
             ),
-            a: <a href={buildChatboxUrl(`/redirect_app/faqs/${settingActions.getLanguage()}`)} target="_blank" />,
+            a: (
+              <a
+                style={errorLinkStyle}
+                href={buildChatboxUrl(`/redirect_app/faqs/${settingActions.getLanguage()}`)}
+                target="_blank"
+              />
+            ),
           }}
         />
       )
@@ -161,7 +204,9 @@ function ErrorTip({ presentation, model }: { presentation: GenericPresentation; 
         <Trans
           i18nKey="ai provider no implemented paint tips"
           values={{ aiProvider: getProviderName(presentation.providerId) }}
-          components={[<Link key="link" className="cursor-pointer font-bold" onClick={() => navigateToSettings()} />]}
+          components={[
+            <Link key="link" className="cursor-pointer" style={errorLinkStyle} onClick={() => navigateToSettings()} />,
+          ]}
         />
       )
     case 'provider-missing':
@@ -169,7 +214,7 @@ function ErrorTip({ presentation, model }: { presentation: GenericPresentation; 
         <Trans i18nKey="The model provider used by this conversation has been removed. Please select another model and try again." />
       )
     case 'known-chatbox-api':
-      return <ChatboxAIErrorMessage errorCode={presentation.errorCode} model={model} />
+      return <ChatboxAIErrorMessage errorCode={presentation.errorCode} model={model} linkStyle={errorLinkStyle} />
     case 'unknown':
       return (
         <Trans
@@ -177,6 +222,7 @@ function ErrorTip({ presentation, model }: { presentation: GenericPresentation; 
           components={[
             <a
               key="a"
+              style={errorLinkStyle}
               href={buildChatboxUrl(
                 `/redirect_app/faqs/${settingActions.getLanguage()}?utm_source=app&utm_content=msg_error_unknown`
               )}
@@ -192,12 +238,12 @@ export function GenericMessageError(props: {
   msg: Message
   presentation: GenericPresentation
   onRetry?: () => void | Promise<void>
-  isBubbleLayout?: boolean
 }) {
-  const { msg, presentation, onRetry, isBubbleLayout } = props
+  const { msg, presentation, onRetry } = props
   const { t } = useTranslation()
   const licenseKey = useSettingsStore((state) => state.licenseKey)
   const language = useLanguage()
+  const [retrying, setRetrying] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const [translation, setTranslation] = useState<{ source: string; text: string } | null>(null)
   const [isTranslating, setIsTranslating] = useState(false)
@@ -225,94 +271,69 @@ export function GenericMessageError(props: {
   }, [language, presentation.errorMessage, translatedText])
 
   return (
-    <div
-      role="alert"
-      data-testid={TestId.message.errorTips}
-      className={`message-error-tips text-sm text-chatbox-tint-error ${isBubbleLayout ? 'py-2' : 'px-4 py-3 rounded-lg border border-solid border-chatbox-border-error bg-chatbox-background-error-secondary'}`}
-    >
-      <b>
+    <ErrorNotice testId={TestId.message.errorTips}>
+      <div className={classes.tip}>
         <ErrorTip presentation={presentation} model={msg.model} />
-      </b>
-      {onRetry && (
-        <Flex mt="xs" gap="xs" align="center">
-          <ActionIcon
-            variant="light"
-            size="sm"
-            color="red"
-            onClick={onRetry}
-            aria-label={t('Retry')}
-            data-testid={TestId.message.errorRetry}
-          >
-            <IconReload size={14} />
-          </ActionIcon>
-          <Text
-            component="button"
-            size="xs"
-            c="chatbox-tertiary"
-            className="cursor-pointer border-0 bg-transparent p-0"
-            onClick={onRetry}
-          >
-            {t('Retry')}
-          </Text>
-        </Flex>
-      )}
+      </div>
       {presentation.requestId && (
-        <Text size="xs" c="chatbox-tertiary" mt="xs" className="break-all select-text">
+        <Text size="sm" c="chatbox-tertiary" className="break-all select-text" lh="20px">
           {t('Request ID: {{requestId}}', { requestId: presentation.requestId })}
         </Text>
       )}
-      {!onlyShowTips && (
-        <>
-          <br />
-          <br />
-          {isTruncated ? (
-            <div
-              className="text-sm p-2 rounded-lg bg-red-50 dark:bg-red-900/20 cursor-pointer overflow-hidden"
+      {onRetry && (
+        <button
+          type="button"
+          className={classes.retry}
+          disabled={retrying}
+          aria-label={t('Retry') || undefined}
+          data-testid={TestId.message.errorRetry}
+          onClick={async () => {
+            setRetrying(true)
+            try {
+              await onRetry()
+            } finally {
+              setRetrying(false)
+            }
+          }}
+        >
+          {t('Retry')}
+          {retrying ? <Loader size={14} /> : <IconReload size={14} />}
+        </button>
+      )}
+      {!onlyShowTips && displayedErrorMessage && (
+        <div className={classes.details}>
+          {isTruncated && (
+            <ActionIcon
+              variant="transparent"
+              size={16}
+              color="gray"
+              className={classes.collapse}
+              aria-label={expanded ? t('Show less') : t('Show more')}
+              aria-expanded={expanded}
               onClick={() => setExpanded(!expanded)}
             >
-              <Flex align="flex-start" gap="xs" className="min-w-0">
-                <ActionIcon variant="transparent" size="xs" c="red" p={0} className="flex-shrink-0">
-                  {expanded ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />}
-                </ActionIcon>
-                <div className="flex-1 min-w-0 whitespace-pre-wrap break-all">
-                  {expanded ? displayedErrorMessage : getTruncatedText(displayedErrorMessage)}
-                </div>
-              </Flex>
-              <ErrorActionButtons
-                showTranslateButton={showTranslateButton}
-                translatedText={translatedText}
-                isTranslating={isTranslating}
-                copied={copied}
-                onTranslate={(event) => {
-                  event.stopPropagation()
-                  if (!expanded) setExpanded(true)
-                  void handleTranslate()
-                }}
-                onCopy={(event) => {
-                  event.stopPropagation()
-                  copy()
-                }}
-                t={t}
-              />
-            </div>
-          ) : (
-            <div className="text-sm p-2 rounded-lg bg-red-50 dark:bg-red-900/20 overflow-hidden">
-              <div className="whitespace-pre-wrap break-all">{displayedErrorMessage}</div>
-              <ErrorActionButtons
-                showTranslateButton={showTranslateButton}
-                translatedText={translatedText}
-                isTranslating={isTranslating}
-                copied={copied}
-                onTranslate={() => void handleTranslate()}
-                onCopy={copy}
-                t={t}
-              />
-            </div>
+              {expanded ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
+            </ActionIcon>
           )}
-        </>
+          <div className={classes.detailText}>
+            {isTruncated && !expanded ? getTruncatedText(displayedErrorMessage) : displayedErrorMessage}
+          </div>
+          <ErrorActionButtons
+            showTranslateButton={showTranslateButton}
+            translatedText={translatedText}
+            isTranslating={isTranslating}
+            copied={copied}
+            onTranslate={() => {
+              if (!expanded) setExpanded(true)
+              void handleTranslate()
+            }}
+            onCopy={copy}
+            t={t}
+          />
+        </div>
       )}
       {!licenseKey && msg.aiProvider !== ModelProviderEnum.ChatboxAI && (
-        <div className="mt-3 pt-3 border-t border-red-200 dark:border-red-800/30 text-right">
+        <div className={classes.trial}>
           <Tooltip
             label={t(
               'If you have never had a license before, you can claim it after logging in on the official website.'
@@ -320,11 +341,16 @@ export function GenericMessageError(props: {
             withArrow
             multiline
             maw={240}
-            position="bottom-end"
-            styles={{ tooltip: { backgroundColor: 'rgba(0, 0, 0, 0.75)', backdropFilter: 'blur(4px)' } }}
+            position="bottom-start"
           >
-            <span
-              className="text-sm font-medium text-blue-600 cursor-pointer hover:text-blue-700 hover:underline transition-colors"
+            <Button
+              variant="default"
+              size="xs"
+              radius="sm"
+              fw={400}
+              styles={{ label: { whiteSpace: 'normal', textAlign: 'start' }, root: { height: 'auto' } }}
+              leftSection={<span className={classes.trialDot} aria-hidden="true" />}
+              rightSection={<IconArrowRight size={14} />}
               onClick={() => {
                 trackJkClickEvent(JK_EVENTS.FREE_LICENSE_CLAIM_CLICK, {
                   pageName: JK_PAGE_NAMES.CHAT_PAGE,
@@ -333,11 +359,11 @@ export function GenericMessageError(props: {
                 platform.openLink('https://chatboxai.app/login')
               }}
             >
-              {t('Chatbox AI free trial available')} →
-            </span>
+              {t('Chatbox AI free trial available')}
+            </Button>
           </Tooltip>
         </div>
       )}
-    </div>
+    </ErrorNotice>
   )
 }

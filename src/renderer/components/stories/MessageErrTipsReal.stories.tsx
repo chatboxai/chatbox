@@ -53,14 +53,20 @@ export const GenericError: StoryObj<typeof MessageErrTips> = {
   },
 }
 
-export const GenericErrorBubbleLayout: StoryObj<typeof MessageErrTips> = {
-  name: 'Generic Error — Bubble Layout',
+export const CompactError: StoryObj<typeof MessageErrTips> = {
+  name: 'Generic Error — Compact Width',
+  decorators: [
+    (Story) => (
+      <Box maw={320}>
+        <Story />
+      </Box>
+    ),
+  ],
   args: {
     msg: makeErrorMessage({
       error: 'An unexpected error occurred while processing your request.',
     }),
     onRetry: () => alert('Retry clicked'),
-    isBubbleLayout: true,
   },
 }
 

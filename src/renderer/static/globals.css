@@ -50,6 +50,10 @@
   --chatbox-border-success: #12b886;
   --chatbox-border-brand: var(--chatbox-brand);
 
+  --chatbox-background-notice: #f9fafb;
+  --chatbox-border-notice: var(--chatbox-border-secondary);
+  --chatbox-shadow-notice: inset 0 4px 8px rgb(255 255 255 / 64%);
+
   --chatbox-background-primary: #ffffff;
   --chatbox-background-primary-hover: #f8f9fa;
   --chatbox-background-secondary: #f3f3f3;
@@ -133,6 +137,10 @@
   --chatbox-border-error: #f03e3e;
   --chatbox-border-success: #63e6be;
   --chatbox-border-brand: var(--chatbox-brand);
+
+  --chatbox-background-notice: var(--chatbox-background-primary);
+  --chatbox-border-notice: var(--chatbox-border-primary);
+  --chatbox-shadow-notice: inset 0 4px 8px rgb(255 255 255 / 3%);
 
   --chatbox-background-primary: #242424;
   --chatbox-background-primary-hover: #1f1f1f;

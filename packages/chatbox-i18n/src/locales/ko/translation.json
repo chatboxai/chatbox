@@ -1890,5 +1890,6 @@
   "Upload the original file \"{{filename}}\" to Chatbox AI for document parsing? This consumes compute points. The extracted text will be available to the model in this conversation.": "원본 파일 \"{{filename}}\"을 Chatbox AI에 업로드하여 분석할까요? 컴퓨팅 포인트가 소모됩니다. 추출된 텍스트는 이 대화의 모델에 제공됩니다.",
   "Upload and parse": "업로드 및 분석",
   "Cloud document parsing was declined. The file has not been uploaded.": "클라우드 문서 분석이 거절되었습니다. 파일은 업로드되지 않았습니다.",
-  "No readable text was found in this file.": "이 파일에서 읽을 수 있는 텍스트를 찾지 못했습니다."
+  "No readable text was found in this file.": "이 파일에서 읽을 수 있는 텍스트를 찾지 못했습니다.",
+  "Document parsing supports PDF, Word (.doc/.docx), Excel (.xls/.xlsx), and PowerPoint (.ppt/.pptx) files.": "문서 분석은 PDF, Word (.doc/.docx), Excel (.xls/.xlsx), PowerPoint (.ppt/.pptx) 파일을 지원합니다."
 }

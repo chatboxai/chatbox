@@ -1890,5 +1890,6 @@
   "Upload the original file \"{{filename}}\" to Chatbox AI for document parsing? This consumes compute points. The extracted text will be available to the model in this conversation.": "是否将原始文件“{{filename}}”上传至 Chatbox AI 进行文档解析？这会消耗计算点数。提取的文本将提供给本对话中的模型。",
   "Upload and parse": "上传并解析",
   "Cloud document parsing was declined. The file has not been uploaded.": "已拒绝云端文档解析。文件尚未上传。",
-  "No readable text was found in this file.": "此文件中未找到可读取的文本。"
+  "No readable text was found in this file.": "此文件中未找到可读取的文本。",
+  "Document parsing supports PDF, Word (.doc/.docx), Excel (.xls/.xlsx), and PowerPoint (.ppt/.pptx) files.": "文档解析支持 PDF、Word (.doc/.docx)、Excel (.xls/.xlsx) 和 PowerPoint (.ppt/.pptx) 文件。"
 }

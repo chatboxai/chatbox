@@ -1,16 +1,18 @@
 // @vitest-environment jsdom
 import NiceModal from '@ebay/nice-modal-react'
+import { translationResources, type TranslationKey } from '@chatbox/i18n'
+import { createInstance } from 'i18next'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { capacitorDocumentParser } from './document-parser'
 
-const mocks = vi.hoisted(() => ({ local: vi.fn(), pdf: vi.fn(), cloud: vi.fn(), license: vi.fn() }))
+const mocks = vi.hoisted(() => ({ local: vi.fn(), pdf: vi.fn(), cloud: vi.fn(), license: vi.fn(), t: vi.fn() }))
 vi.mock('./execution-service', () => ({ capacitorExecution: { parseDocument: mocks.local } }))
 vi.mock('@/packages/pdf-parser', () => ({ parsePdfFileLocally: mocks.pdf }))
 vi.mock('@/packages/remote', () => ({ uploadAndParseUserFile: mocks.cloud }))
 vi.mock('@/stores/settingActions', () => ({ getLicenseKey: mocks.license }))
 vi.mock('@ebay/nice-modal-react', () => ({ default: { show: vi.fn(), hide: vi.fn() } }))
 vi.mock('@/i18n', () => ({
-  default: { t: (key: string, args?: { filename?: string }) => key.replace('{{filename}}', args?.filename ?? '') },
+  default: { t: mocks.t },
 }))
 
 const parse = (name: string, signal = new AbortController().signal) =>
@@ -18,6 +20,9 @@ const parse = (name: string, signal = new AbortController().signal) =>
 
 beforeEach(() => {
   vi.resetAllMocks()
+  mocks.t.mockImplementation((key: string, args?: Record<string, string>) =>
+    key.replace(/{{(\w+)}}/g, (_, name: string) => args?.[name] ?? '')
+  )
   mocks.license.mockReturnValue('test-license')
   mocks.cloud.mockResolvedValue('Cloud document text')
   vi.mocked(NiceModal.show).mockResolvedValue(true)
@@ -74,9 +79,12 @@ describe('mobile work document parsing', () => {
     expect((await parse(name)).text).toBe('Cloud document text')
   })
 
-  it.each(['pdf_password_protected', 'local_parser_file_too_large'])('surfaces %s without uploading', async (code) => {
+  it.each([
+    ['pdf_password_protected', 'This PDF is password-protected'],
+    ['local_parser_file_too_large', 'Work Mode attachments must be 10 MB or smaller.'],
+  ])('surfaces %s without uploading', async (code, message) => {
     mocks.pdf.mockRejectedValue(new Error(code))
-    await expect(parse('report.pdf')).rejects.toThrow(code)
+    await expect(parse('report.pdf')).rejects.toThrow(message)
     expect(NiceModal.show).not.toHaveBeenCalled()
     expect(mocks.cloud).not.toHaveBeenCalled()
   })
@@ -139,5 +147,44 @@ describe('mobile work document parsing', () => {
     vi.mocked(NiceModal.show).mockClear()
     await expect(parse('archive.zip')).rejects.toThrow('Document parsing supports')
     expect(NiceModal.show).not.toHaveBeenCalled()
+  })
+})
+
+describe('localized mobile document errors', () => {
+  beforeEach(async () => {
+    const instance = createInstance()
+    await instance.init({ resources: translationResources, lng: 'zh-Hans', interpolation: { escapeValue: false } })
+    mocks.t.mockImplementation((key: TranslationKey, args?: Record<string, string>) => instance.t(key, args ?? {}))
+  })
+
+  it('shows the supported document formats in Chinese', async () => {
+    await expect(parse('archive.zip')).rejects.toThrow(
+      '文档解析支持 PDF、Word (.doc/.docx)、Excel (.xls/.xlsx) 和 PowerPoint (.ppt/.pptx) 文件。'
+    )
+    expect(NiceModal.show).not.toHaveBeenCalled()
+    expect(mocks.cloud).not.toHaveBeenCalled()
+  })
+
+  it('shows the interpolated size limit in Chinese for an oversized workspace file', async () => {
+    await expect(
+      capacitorDocumentParser.parse(
+        'input/report.pdf',
+        btoa('x'.repeat(10 * 1024 * 1024 + 1)),
+        new AbortController().signal
+      )
+    ).rejects.toThrow('工作模式附件不能超过 10 MB。')
+    expect(mocks.pdf).not.toHaveBeenCalled()
+    expect(NiceModal.show).not.toHaveBeenCalled()
+    expect(mocks.cloud).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['pdf_password_protected', '此 PDF 已加密，无法读取其内容。请移除密码后重新上传。'],
+    ['local_parser_file_too_large', '工作模式附件不能超过 10 MB。'],
+  ])('translates %s into an actionable Chinese error', async (code, message) => {
+    mocks.pdf.mockRejectedValue(new Error(code))
+    await expect(parse('report.pdf')).rejects.toThrow(message)
+    expect(NiceModal.show).not.toHaveBeenCalled()
+    expect(mocks.cloud).not.toHaveBeenCalled()
   })
 })

@@ -1890,5 +1890,6 @@
   "Upload the original file \"{{filename}}\" to Chatbox AI for document parsing? This consumes compute points. The extracted text will be available to the model in this conversation.": "Ladda upp originalfilen \"{{filename}}\" till Chatbox AI för tolkning? Detta förbrukar beräkningspoäng. Den extraherade texten blir tillgänglig för modellen i den här konversationen.",
   "Upload and parse": "Ladda upp och tolka",
   "Cloud document parsing was declined. The file has not been uploaded.": "Dokumenttolkning i molnet nekades. Filen har inte laddats upp.",
-  "No readable text was found in this file.": "Ingen läsbar text hittades i den här filen."
+  "No readable text was found in this file.": "Ingen läsbar text hittades i den här filen.",
+  "Document parsing supports PDF, Word (.doc/.docx), Excel (.xls/.xlsx), and PowerPoint (.ppt/.pptx) files.": "Dokumenttolkning stöder filer i formaten PDF, Word (.doc/.docx), Excel (.xls/.xlsx) och PowerPoint (.ppt/.pptx)."
 }

@@ -1890,5 +1890,6 @@
   "Upload the original file \"{{filename}}\" to Chatbox AI for document parsing? This consumes compute points. The extracted text will be available to the model in this conversation.": "Загрузить исходный файл «{{filename}}» в Chatbox AI для разбора? Это расходует вычислительные баллы. Извлечённый текст будет доступен модели в этом разговоре.",
   "Upload and parse": "Загрузить и разобрать",
   "Cloud document parsing was declined. The file has not been uploaded.": "Облачный разбор отклонён. Файл не был загружен.",
-  "No readable text was found in this file.": "В этом файле не найден читаемый текст."
+  "No readable text was found in this file.": "В этом файле не найден читаемый текст.",
+  "Document parsing supports PDF, Word (.doc/.docx), Excel (.xls/.xlsx), and PowerPoint (.ppt/.pptx) files.": "Для разбора документов поддерживаются файлы PDF, Word (.doc/.docx), Excel (.xls/.xlsx) и PowerPoint (.ppt/.pptx)."
 }

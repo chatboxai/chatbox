@@ -1890,5 +1890,6 @@
   "Upload the original file \"{{filename}}\" to Chatbox AI for document parsing? This consumes compute points. The extracted text will be available to the model in this conversation.": "Envoyer le fichier original « {{filename}} » à Chatbox AI pour analyse ? Cela consomme des points de calcul. Le texte extrait sera accessible au modèle de cette conversation.",
   "Upload and parse": "Envoyer et analyser",
   "Cloud document parsing was declined. The file has not been uploaded.": "L’analyse dans le cloud a été refusée. Le fichier n’a pas été envoyé.",
-  "No readable text was found in this file.": "Aucun texte lisible n’a été trouvé dans ce fichier."
+  "No readable text was found in this file.": "Aucun texte lisible n’a été trouvé dans ce fichier.",
+  "Document parsing supports PDF, Word (.doc/.docx), Excel (.xls/.xlsx), and PowerPoint (.ppt/.pptx) files.": "L’analyse des documents prend en charge les fichiers PDF, Word (.doc/.docx), Excel (.xls/.xlsx) et PowerPoint (.ppt/.pptx)."
 }

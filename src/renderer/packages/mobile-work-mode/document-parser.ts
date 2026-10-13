@@ -1,5 +1,8 @@
 import { isPdfFilePath } from '@shared/file-extensions'
-import { NON_RECOVERABLE_LOCAL_PARSER_ERROR_CODES } from '@shared/file-parse-errors'
+import {
+  LOCAL_PARSER_PDF_PASSWORD_PROTECTED_ERROR,
+  NON_RECOVERABLE_LOCAL_PARSER_ERROR_CODES,
+} from '@shared/file-parse-errors'
 import { throwIfWorkAborted } from '@shared/mobile-work/abort'
 import {
   isLocalDocument,
@@ -20,9 +23,13 @@ function boundText(text: string): ParsedLocalDocument {
   return { text: text.slice(0, MAX_PARSED_DOCUMENT_TEXT), truncated: text.length > MAX_PARSED_DOCUMENT_TEXT }
 }
 
+function fileSizeError(): Error {
+  return new Error(String(i18n.t('Work Mode attachments must be {{limit}} or smaller.', { limit: '10 MB' })))
+}
+
 function workspaceDocument(name: string, base64: string): File {
   const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0))
-  if (bytes.length > MAX_WORKSPACE_FILE_BYTES) throw new Error('File exceeds the 10 MB execution limit')
+  if (bytes.length > MAX_WORKSPACE_FILE_BYTES) throw fileSizeError()
   const extension = name.split('.').pop()?.toLowerCase() ?? ''
   const types: Record<string, string> = {
     pdf: 'application/pdf',
@@ -44,7 +51,14 @@ function workspaceDocument(name: string, base64: string): File {
 export const capacitorDocumentParser: WorkDocumentParser = {
   async parse(name, base64, signal) {
     throwIfWorkAborted(signal)
-    if (!isWorkDocument(name)) throw new Error('Document parsing supports PDF, DOC/DOCX, XLS/XLSX, and PPT/PPTX')
+    if (!isWorkDocument(name))
+      throw new Error(
+        String(
+          i18n.t(
+            'Document parsing supports PDF, Word (.doc/.docx), Excel (.xls/.xlsx), and PowerPoint (.ppt/.pptx) files.'
+          )
+        )
+      )
     const file = workspaceDocument(name, base64)
     try {
       const parsed = isLocalDocument(name)
@@ -56,7 +70,17 @@ export const capacitorDocumentParser: WorkDocumentParser = {
       if (parsed?.text.trim()) return parsed
     } catch (error) {
       throwIfWorkAborted(signal)
-      if (error instanceof Error && NON_RECOVERABLE_LOCAL_PARSER_ERROR_CODES.has(error.message)) throw error
+      if (error instanceof Error && NON_RECOVERABLE_LOCAL_PARSER_ERROR_CODES.has(error.message)) {
+        if (error.message === LOCAL_PARSER_PDF_PASSWORD_PROTECTED_ERROR)
+          throw new Error(
+            String(
+              i18n.t(
+                'This PDF is password-protected, so its content cannot be read. Remove the password and upload it again.'
+              )
+            )
+          )
+        throw fileSizeError()
+      }
     }
 
     const licenseKey = settingActions.getLicenseKey()

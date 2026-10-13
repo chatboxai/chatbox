@@ -1886,5 +1886,6 @@
   "Upload the original file \"{{filename}}\" to Chatbox AI for document parsing? This consumes compute points. The extracted text will be available to the model in this conversation.": "\"{{filename}}\" adlı özgün dosya ayrıştırılmak üzere Chatbox AI’a yüklensin mi? Bu işlem hesaplama puanı tüketir. Çıkarılan metin bu konuşmadaki modele sunulur.",
   "Upload and parse": "Yükle ve ayrıştır",
   "Cloud document parsing was declined. The file has not been uploaded.": "Bulutta belge ayrıştırma reddedildi. Dosya yüklenmedi.",
-  "No readable text was found in this file.": "Bu dosyada okunabilir metin bulunamadı."
+  "No readable text was found in this file.": "Bu dosyada okunabilir metin bulunamadı.",
+  "Document parsing supports PDF, Word (.doc/.docx), Excel (.xls/.xlsx), and PowerPoint (.ppt/.pptx) files.": "Belge ayrıştırma PDF, Word (.doc/.docx), Excel (.xls/.xlsx) ve PowerPoint (.ppt/.pptx) dosyalarını destekler."
 }

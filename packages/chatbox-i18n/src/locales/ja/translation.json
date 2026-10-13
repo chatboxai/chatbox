@@ -1890,5 +1890,6 @@
   "Upload the original file \"{{filename}}\" to Chatbox AI for document parsing? This consumes compute points. The extracted text will be available to the model in this conversation.": "元のファイル「{{filename}}」を Chatbox AI にアップロードして解析しますか？計算ポイントを消費します。抽出されたテキストは、この会話のモデルに提供されます。",
   "Upload and parse": "アップロードして解析",
   "Cloud document parsing was declined. The file has not been uploaded.": "クラウド文書解析が拒否されました。ファイルはアップロードされていません。",
-  "No readable text was found in this file.": "このファイルに読み取り可能なテキストが見つかりませんでした。"
+  "No readable text was found in this file.": "このファイルに読み取り可能なテキストが見つかりませんでした。",
+  "Document parsing supports PDF, Word (.doc/.docx), Excel (.xls/.xlsx), and PowerPoint (.ppt/.pptx) files.": "ドキュメント解析は PDF、Word (.doc/.docx)、Excel (.xls/.xlsx)、PowerPoint (.ppt/.pptx) ファイルに対応しています。"
 }

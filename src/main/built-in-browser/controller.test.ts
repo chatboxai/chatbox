@@ -1779,6 +1779,40 @@ describe('BuiltInBrowserController view', () => {
     return controller.setView(host as unknown as Host, { visible: true, bounds })
   }
 
+  it('takes a still while keeping the page visible until the renderer hides it', async () => {
+    await show()
+    const capture = controller.setView(host as unknown as Host, { visible: true, bounds, snapshot: true })
+    await flush()
+    expect(views[0].visible).toBe(true)
+    views[0].webContents.captures.shift()?.(image)
+
+    await expect(capture).resolves.toBe(`data:image/jpeg;base64,${Buffer.from('jpeg').toString('base64')}`)
+    expect(views[0].visible).toBe(true)
+    await controller.setView(host as unknown as Host, { visible: false })
+    expect(views[0].visible).toBe(false)
+  })
+
+  it('discards a visible capture when a newer placement arrives', async () => {
+    await show()
+    const capture = controller.setView(host as unknown as Host, { visible: true, bounds, snapshot: true })
+    await flush()
+    await show()
+    views[0].webContents.captures.shift()?.(image)
+
+    await expect(capture).resolves.toBeNull()
+    expect(views[0].visible).toBe(true)
+  })
+
+  it('keeps the page visible when its capture times out', async () => {
+    await show()
+    vi.useFakeTimers()
+    const capture = controller.setView(host as unknown as Host, { visible: true, bounds, snapshot: true })
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    await expect(capture).resolves.toBeNull()
+    expect(views[0].visible).toBe(true)
+  })
+
   it('hides the page after taking a still of it', async () => {
     await show()
     const hide = controller.setView(host as unknown as Host, { visible: false, snapshot: true })

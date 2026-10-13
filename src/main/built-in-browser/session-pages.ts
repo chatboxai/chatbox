@@ -111,7 +111,7 @@ export class SessionPages {
   setView(host: BrowserWindow, id: string, request: BuiltInBrowserViewRequest): Promise<string | null> {
     if (!request.visible) {
       // A page stepping aside for a menu or dialog, with a still in its place, is still in view.
-      if (this.shownTab === id && !request.snapshot) this.shownTab = undefined
+      if (this.shownTab === id && !request.snapshot && !request.keepViewing) this.shownTab = undefined
       return this.tabs.get(id)?.setView(host, request) ?? Promise.resolve(null)
     }
     // A placement can arrive just after the tab closed, such as when browser data is cleared.

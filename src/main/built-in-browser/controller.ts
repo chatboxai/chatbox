@@ -203,8 +203,8 @@ export class BuiltInBrowserController {
   }
 
   /**
-   * Attaches the view to `host` and places it, or hides it. A hide request with `snapshot`
-   * resolves to a still of the page taken just before it is hidden.
+   * Attaches the view to `host` and places it, or hides it. Snapshot requests resolve to a still
+   * of the page; visible captures let the renderer prepare its replacement before hiding the view.
    */
   async setView(host: BrowserWindow, request: BuiltInBrowserViewRequest): Promise<string | null> {
     if (this.restoreCapture && !request.visible) return null
@@ -235,7 +235,10 @@ export class BuiltInBrowserController {
       height: Math.max(0, Math.round(height)),
     })
     view.setVisible(true)
-    return null
+    if (!request.snapshot) return null
+    const captured = await captureWithin(view.webContents, SNAPSHOT_TIMEOUT_MS)
+    if (generation !== this.viewGeneration || !captured || captured.isEmpty()) return null
+    return `data:image/jpeg;base64,${captured.toJPEG(85).toString('base64')}`
   }
 
   navigate(host: BrowserWindow, url: string): void {

@@ -49,7 +49,7 @@ export interface BuiltInBrowserTabControls {
   goForward(): Promise<void>
   reload(): Promise<void>
   stop(): Promise<void>
-  /** Resolves to the page still when a hide request asks for one and the page was showing. */
+  /** Snapshot requests resolve to a still of the page; visible captures keep the page shown. */
   setView(request: BuiltInBrowserViewRequest): Promise<string | null>
 }
 

@@ -666,6 +666,7 @@ export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
             <div
               key={desktopDetail.key}
               ref={desktopDetailRef}
+              data-native-view-overlay
               className="absolute"
               style={{
                 left: desktopDetail.left,

@@ -139,6 +139,18 @@ describe('SessionPages routing', () => {
     expect(await read(pages, {})).toMatchObject({ tab: 't1' })
   })
 
+  it('keeps the viewed tab during a two-stage snapshot handoff', async () => {
+    const pages = pagesFor()
+    pages.openTab()
+    pages.openTab()
+    await pages.setView(host, 't2', { visible: true, bounds, snapshot: true })
+    await pages.setView(host, 't2', { visible: false, keepViewing: true })
+    expect(await read(pages, {})).toMatchObject({ tab: 't2', tabs: [{ tab: 't1' }, { tab: 't2', viewing: true }] })
+    expect(await pages.request(host, 1, { kind: 'snapshot', requestId: 'current-tab' })).toMatchObject({ tab: 't2' })
+    await pages.setView(host, 't2', { visible: false })
+    expect(await read(pages, {})).toMatchObject({ tab: 't1' })
+  })
+
   it('refuses unknown tabs, a new tab without a url, a read with no page and tabs beyond the limit', async () => {
     const pages = pagesFor()
     await expect(read(pages, {})).rejects.toThrow('pass a url')

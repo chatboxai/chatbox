@@ -43,7 +43,8 @@ export function useBuiltInBrowserTabs(builtInBrowser: BuiltInBrowser): BuiltInBr
   return tabs
 }
 
-const OVERLAY_SELECTOR = '[role="dialog"], [role="menu"], [role="listbox"], [data-radix-popper-content-wrapper]'
+const OVERLAY_SELECTOR =
+  '[role="dialog"], [role="menu"], [role="listbox"], [data-radix-popper-content-wrapper], [data-native-view-overlay]'
 // Modal dialogs dim the whole window, so the page steps aside for them wherever they sit.
 const MODAL_SELECTOR =
   '[role="dialog"][aria-modal="true"], [role="dialog"][data-state]:not([data-radix-popper-content-wrapper] *)'
@@ -119,7 +120,8 @@ export function BuiltInBrowserView({
   const [editingAddress, setEditingAddress] = useState(false)
   const [clearingData, setClearingData] = useState(false)
   const hasPage = Boolean(state.url)
-  const [snapshot, setSnapshot] = useState<string | null>(null)
+  const [snapshot, setSnapshot] = useState<{ src: string } | null>(null)
+  const snapshotRef = useRef<HTMLImageElement>(null)
   const overlayOpen = useOverlayOver(pageRef)
   const showPage = hasPage && !overlayOpen
 
@@ -131,25 +133,48 @@ export function BuiltInBrowserView({
   // overlay covers it, the placeholder shows a still of the page instead.
   useLayoutEffect(() => {
     const element = pageRef.current
-    if (!element || !showPage) {
-      let active = true
+    if (!element || !hasPage) {
+      setSnapshot(null)
+      void page.setView({ visible: false }).catch(() => undefined)
+      return
+    }
+    let active = true
+    let restoreFrame = 0
+    const rect = element.getBoundingClientRect()
+    const bounds = { x: rect.left, y: rect.top, width: rect.width, height: rect.height }
+    if (!showPage) {
+      setSnapshot(null)
       page
-        .setView({ visible: false, snapshot: hasPage })
+        .setView({ visible: true, bounds, snapshot: true })
         .then((image) => {
-          if (active) setSnapshot(image)
+          if (!active) return
+          if (image) setSnapshot({ src: image })
+          else void page.setView({ visible: false, keepViewing: true }).catch(() => undefined)
         })
-        .catch(() => undefined)
+        .catch(() => {
+          if (active) void page.setView({ visible: false, keepViewing: true }).catch(() => undefined)
+        })
       return () => {
         active = false
       }
     }
-    setSnapshot(null)
     const place = () => {
       const rect = element.getBoundingClientRect()
-      void page.setView({
-        visible: true,
-        bounds: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
-      })
+      void page
+        .setView({
+          visible: true,
+          bounds: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+        })
+        .then(() => {
+          if (!active || !snapshotRef.current) return
+          cancelAnimationFrame(restoreFrame)
+          restoreFrame = requestAnimationFrame(() => {
+            restoreFrame = requestAnimationFrame(() => {
+              if (active) setSnapshot(null)
+            })
+          })
+        })
+        .catch(() => undefined)
     }
     place()
     const observer = new ResizeObserver(place)
@@ -157,10 +182,35 @@ export function BuiltInBrowserView({
     observer.observe(document.body)
     window.addEventListener('resize', place)
     return () => {
+      active = false
+      cancelAnimationFrame(restoreFrame)
       observer.disconnect()
       window.removeEventListener('resize', place)
     }
   }, [page, showPage, hasPage])
+
+  useLayoutEffect(() => {
+    const image = snapshotRef.current
+    if (showPage || !snapshot || !image) return
+    let active = true
+    let frame = 0
+    const hide = () => {
+      if (active && hasOverlayOver(pageRef.current)) {
+        void page.setView({ visible: false, keepViewing: true }).catch(() => undefined)
+      }
+    }
+    // The decoded replacement gets a paint before the native view stops covering it.
+    void image.decode().then(() => {
+      if (!active) return
+      frame = requestAnimationFrame(() => {
+        frame = requestAnimationFrame(hide)
+      })
+    }, hide)
+    return () => {
+      active = false
+      cancelAnimationFrame(frame)
+    }
+  }, [page, showPage, snapshot])
 
   useEffect(() => () => void page.setView({ visible: false }), [page])
 
@@ -277,9 +327,10 @@ export function BuiltInBrowserView({
         </div>
       )}
       <div ref={pageRef} className="relative min-h-0 flex-1 bg-chatbox-background-secondary">
-        {hasPage && !showPage && snapshot && (
+        {hasPage && snapshot && (
           <img
-            src={snapshot}
+            ref={snapshotRef}
+            src={snapshot.src}
             alt=""
             className="pointer-events-none absolute inset-0 size-full object-cover object-left-top"
           />

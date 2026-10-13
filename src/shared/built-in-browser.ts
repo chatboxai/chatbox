@@ -364,9 +364,13 @@ export interface BuiltInBrowserViewBounds {
   height: number
 }
 
+/**
+ * Snapshot requests return a still of the page as a data URL. Visible captures keep the page shown.
+ * `keepViewing` hides the native view for an overlay while keeping the tab selected for model reads.
+ */
 export type BuiltInBrowserViewRequest =
-  /** With `snapshot`, a still of the page is taken before it is hidden and returned as a data URL. */
-  { visible: false; snapshot?: boolean } | { visible: true; bounds: BuiltInBrowserViewBounds }
+  | { visible: false; snapshot?: boolean; keepViewing?: boolean }
+  | { visible: true; bounds: BuiltInBrowserViewBounds; snapshot?: boolean }
 
 /** The one model tool of the built-in browser; `command` selects what it does. */
 export const BUILT_IN_BROWSER_TOOL_NAME = 'browser'

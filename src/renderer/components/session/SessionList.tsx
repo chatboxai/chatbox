@@ -31,11 +31,12 @@ import {
   IconFolderOpen,
   IconGripVertical,
   IconLoader2,
+  IconMessagePlus,
   IconPencil,
   IconPlus,
   IconTrash,
 } from '@tabler/icons-react'
-import { useRouterState } from '@tanstack/react-router'
+import { useNavigate, useRouterState } from '@tanstack/react-router'
 import clsx from 'clsx'
 import {
   type CSSProperties,
@@ -53,6 +54,7 @@ import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { useSessionSwitchHintDigits } from '@/hooks/useSessionSwitchHints'
 import { useTouchLayout } from '@/hooks/useTouchLayout'
 import platform from '@/platform'
+import { setSessionAgentMode } from '@/stores/session/agent-mode'
 import { reorderSessions } from '@/stores/session/crud'
 import { deleteSessionFolder, moveSessionToFolder, renameSessionFolder } from '@/stores/session/folders'
 import { useUIStore } from '@/stores/uiStore'
@@ -529,6 +531,17 @@ function FolderHeader(props: { folder: SessionFolder; collapsed: boolean; empty:
     })
     if (name && name !== folder.name) await renameSessionFolder(folder.id, name)
   }
+  const navigate = useNavigate()
+  const setNewSessionState = useUIStore((s) => s.setNewSessionState)
+  const setShowSidebar = useUIStore((s) => s.setShowSidebar)
+  // A Work Mode chat in the project's directory is filed into the project once created.
+  const { workingDirectory } = folder
+  const startChat = (workingDirectory: string) => {
+    setNewSessionState((prev) => ({ ...prev, workingDirectories: [workingDirectory] }))
+    void setSessionAgentMode('new', 'on')
+    void navigate({ to: '/' })
+    if (isSmallScreen) setShowSidebar(false)
+  }
   return (
     <DropTarget id={`${FOLDER_DROP_PREFIX}${folder.id}`} className="mx-2">
       <Flex
@@ -558,6 +571,9 @@ function FolderHeader(props: { folder: SessionFolder; collapsed: boolean; empty:
         <ActionMenu
           position="bottom-end"
           items={[
+            ...(workingDirectory
+              ? [{ text: t('New Chat'), icon: IconMessagePlus, onClick: () => startChat(workingDirectory) }]
+              : []),
             { text: t('Rename'), icon: IconPencil, onClick: () => void rename() },
             {
               text: t('Delete project'),

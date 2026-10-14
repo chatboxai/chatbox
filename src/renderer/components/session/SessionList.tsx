@@ -373,6 +373,20 @@ export default function SessionList(props: Props) {
         : {},
     [hasNextPage]
   )
+  const isEmpty = Boolean(sortedSessions) && groupedItems.items.length === 0
+  useEffect(() => {
+    if (isEmpty) props.atTopStateChange?.(true)
+  }, [isEmpty, props.atTopStateChange])
+
+  if (isEmpty) {
+    return (
+      <Flex direction="column" flex={1} className="sidebar-session-list" ref={props.sessionListViewportRef}>
+        <SessionListSectionHeader label={t('Projects')} testId={TestId.sidebar.projectsSection}>
+          <CreateProjectButton />
+        </SessionListSectionHeader>
+      </Flex>
+    )
+  }
 
   return (
     <DndContext
@@ -448,6 +462,7 @@ export default function SessionList(props: Props) {
             }}
             itemContent={(index) => {
               const item = groupedItems.items[index]
+              if (!item) return null
               if (item.type === 'folder') {
                 return (
                   <FolderHeader

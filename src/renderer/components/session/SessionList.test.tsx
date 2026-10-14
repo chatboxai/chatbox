@@ -108,6 +108,9 @@ vi.mock('react-virtuoso', async () => {
   }
   return {
     GroupedVirtuoso: ({ groupCounts, groupContent, itemContent }: VirtuosoProps) => {
+      if (groupCounts.length > 0 && groupCounts.every((count) => count === 0)) {
+        itemContent(0, 0)
+      }
       let offset = 0
       return React.createElement(
         'div',
@@ -182,7 +185,7 @@ vi.mock('./SessionItem', async () => {
 })
 
 import { uiStore } from '@/stores/uiStore'
-import SessionList from './SessionList'
+import SessionList, { type Props } from './SessionList'
 
 afterEach(() => {
   vi.useRealTimers()
@@ -193,11 +196,11 @@ const sessions: SessionMetaRecord[] = [
   { id: 'session-2', name: 'Regular session', sortOrder: 2, starred: false, createdAt: 2 },
 ]
 
-function renderList() {
+function renderList(props: Partial<Props> = {}) {
   const sessionListViewportRef = { current: null }
   return render(
     <MantineProvider>
-      <SessionList sessionListViewportRef={sessionListViewportRef} />
+      <SessionList sessionListViewportRef={sessionListViewportRef} {...props} />
     </MantineProvider>
   )
 }
@@ -602,10 +605,43 @@ describe('SessionList folders', () => {
   test('keeps the projects header when there are no chats or projects', () => {
     sessionListState.folders = []
     sessionListState.sessions = []
-    renderList()
+    const atTopStateChange = vi.fn()
+    const sessionListViewportRef = { current: null }
+    renderList({ atTopStateChange, sessionListViewportRef })
 
     expect(screen.getByTestId(TestId.sidebar.createProject)).toBeTruthy()
+    expect(screen.queryByTestId('session-list')).toBeNull()
     expect(screen.queryByText('Chats')).toBeNull()
+    expect(atTopStateChange).toHaveBeenCalledWith(true)
+    expect(sessionListViewportRef.current).toBe(
+      screen.getByTestId(TestId.sidebar.projectsSection).closest('.sidebar-session-list')
+    )
+    fireEvent.click(screen.getByTestId(TestId.sidebar.createProject))
+    expect(showModalMock).toHaveBeenCalledWith('session-folder-create')
+  })
+
+  test('switches between populated and empty lists as chats are archived and created', () => {
+    sessionListState.folders = []
+    sessionListState.sessions = [filed[2]]
+    const view = renderList()
+    const refresh = () =>
+      view.rerender(
+        <MantineProvider>
+          <SessionList sessionListViewportRef={{ current: null }} />
+        </MantineProvider>
+      )
+
+    expect(screen.getByText('Loose chat')).toBeTruthy()
+    sessionListState.sessions = []
+    refresh()
+    expect(screen.queryByText('Loose chat')).toBeNull()
+    expect(screen.queryByTestId('session-list')).toBeNull()
+    expect(screen.getByTestId(TestId.sidebar.createProject)).toBeTruthy()
+
+    sessionListState.sessions = [filed[2]]
+    refresh()
+    expect(screen.getByText('Loose chat')).toBeTruthy()
+    expect(screen.getByTestId('session-list')).toBeTruthy()
   })
 
   test('reorders across folders through the row the chat is dropped on', async () => {

@@ -58,7 +58,7 @@ import platform from '@/platform'
 import { setSessionAgentMode } from '@/stores/session/agent-mode'
 import { reorderSessions } from '@/stores/session/crud'
 import { deleteSessionFolder, moveSessionToFolder, renameSessionFolder } from '@/stores/session/folders'
-import { useUIStore } from '@/stores/uiStore'
+import { uiStore, useUIStore } from '@/stores/uiStore'
 import ActionMenu, { type ActionMenuItemProps } from '../ActionMenu'
 import { ICON_SIZE, IconButton } from '../common/IconButton'
 import { ScalableIcon } from '../common/ScalableIcon'
@@ -600,18 +600,20 @@ function FolderHeader(props: {
   const navigate = useNavigate()
   const setNewSessionState = useUIStore((s) => s.setNewSessionState)
   const setShowSidebar = useUIStore((s) => s.setShowSidebar)
-  // A Work Mode chat in the project's directory is filed into the project once created.
   const { workingDirectory } = folder
-  const startChat = (workingDirectory: string) => {
-    setNewSessionState((prev) => ({ ...prev, workingDirectories: [workingDirectory] }))
-    void setSessionAgentMode('new', 'on')
-    void navigate({ to: '/' })
+  const startChat = () => {
+    setNewSessionState((prev) => ({ ...prev, workingDirectories: workingDirectory ? [workingDirectory] : [] }))
+    if (workingDirectory) {
+      void setSessionAgentMode('new', 'on')
+    } else {
+      uiStore.getState().clearSessionAgentMode('new')
+    }
+    uiStore.getState().setSessionFolderCollapsed(folder.id, false)
+    void navigate({ to: '/', search: { folderId: folder.id } })
     if (isSmallScreen) setShowSidebar(false)
   }
   const menuItems: ActionMenuItemProps[] = [
-    ...(workingDirectory
-      ? [{ text: t('New Chat'), icon: IconMessagePlus, onClick: () => startChat(workingDirectory) }]
-      : []),
+    { text: t('New Chat'), icon: IconMessagePlus, onClick: startChat },
     { text: t('Rename'), icon: IconPencil, onClick: () => void rename() },
     {
       text: t('Delete project'),

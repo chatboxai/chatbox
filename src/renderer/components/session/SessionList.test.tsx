@@ -16,6 +16,7 @@ const {
   isSmallScreenMock,
   platformMock,
   moveSessionToFolderMock,
+  navigateMock,
   reorderSessionsMock,
   sessionListState,
   showModalMock,
@@ -26,6 +27,7 @@ const {
   isSmallScreenMock: vi.fn(() => true),
   platformMock: { type: 'mobile' },
   moveSessionToFolderMock: vi.fn(),
+  navigateMock: vi.fn(),
   reorderSessionsMock: vi.fn(),
   sessionListState: {
     sessions: [] as SessionMetaRecord[] | undefined,
@@ -156,7 +158,7 @@ vi.mock('@/stores/session/folders', () => ({
   renameSessionFolder: vi.fn(),
 }))
 vi.mock('@tanstack/react-router', () => ({
-  useNavigate: () => vi.fn(),
+  useNavigate: () => navigateMock,
   useRouterState: () => ({ location: { pathname: '/session/session-1' } }),
 }))
 vi.mock('./SessionItem', async () => {
@@ -388,7 +390,7 @@ describe('SessionList folders', () => {
     sessionListState.folders = folders
     sessionListState.hasNextPage = false
     sessionListState.isFetchNextPageError = false
-    uiStore.setState({ collapsedSessionFolderIds: [] })
+    uiStore.setState({ collapsedSessionFolderIds: [], newSessionState: {}, sessionAgentModeMap: {} })
   })
 
   const folderHeaders = () =>
@@ -423,7 +425,7 @@ describe('SessionList folders', () => {
 
     expect(screen.getByRole('button', { name: 'Rename' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Delete project' })).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'New Chat' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'New Chat' })).toBeTruthy()
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
 
     fireEvent.pointerDown(toggle)
@@ -496,6 +498,53 @@ describe('SessionList folders', () => {
     isSmallScreenMock.mockReturnValue(false)
     renderList()
     expect(screen.getAllByRole('button', { name: 'Project actions' })).toHaveLength(2)
+  })
+
+  test.each(['desktop', 'mobile'])('starts a chat in a project without a directory on %s', (platformType) => {
+    platformMock.type = platformType
+    isSmallScreenMock.mockReturnValue(platformType === 'mobile')
+    sessionListState.folders = [folders[0]]
+    uiStore.setState({
+      collapsedSessionFolderIds: ['work'],
+      newSessionState: { workingDirectories: ['/projects/previous'] },
+      sessionAgentModeMap: {},
+      showSidebar: true,
+    })
+    renderList()
+    if (platformType === 'mobile') fireEvent.contextMenu(screen.getByRole('button', { name: 'Work' }))
+    fireEvent.click(screen.getByRole('button', { name: 'New Chat' }))
+
+    expect(navigateMock).toHaveBeenCalledWith({ to: '/', search: { folderId: 'work' } })
+    expect(uiStore.getState().newSessionState.workingDirectories).toEqual([])
+    expect(uiStore.getState().sessionAgentModeMap.new).toBeUndefined()
+    expect(uiStore.getState().collapsedSessionFolderIds).not.toContain('work')
+    expect(uiStore.getState().showSidebar).toBe(platformType === 'desktop')
+  })
+
+  test('starts a Work Mode chat with the directory project selected', () => {
+    sessionListState.folders = [{ ...folders[0], workingDirectory: '/projects/work' }]
+    renderList()
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'Work' }))
+    fireEvent.click(screen.getByRole('button', { name: 'New Chat' }))
+
+    expect(navigateMock).toHaveBeenCalledWith({ to: '/', search: { folderId: 'work' } })
+    expect(uiStore.getState().newSessionState.workingDirectories).toEqual(['/projects/work'])
+    expect(uiStore.getState().sessionAgentModeMap.new?.value).toBe('on')
+  })
+
+  test('clears the directory project mode when starting a chat in a plain project', () => {
+    sessionListState.folders = [{ ...folders[0], workingDirectory: '/projects/work' }, folders[1]]
+    renderList()
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'Work' }))
+    fireEvent.click(screen.getByRole('button', { name: 'New Chat' }))
+    expect(uiStore.getState().sessionAgentModeMap.new?.value).toBe('on')
+
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'Home' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'New Chat' })[1])
+
+    expect(navigateMock).toHaveBeenLastCalledWith({ to: '/', search: { folderId: 'home' } })
+    expect(uiStore.getState().newSessionState.workingDirectories).toEqual([])
+    expect(uiStore.getState().sessionAgentModeMap.new).toBeUndefined()
   })
 
   test('disables the project long press while reordering chats', () => {

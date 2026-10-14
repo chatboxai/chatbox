@@ -66,6 +66,7 @@ export const Route = createFileRoute('/')({
       copilotId: z.string().optional(),
       copilot: z.string().optional(),
       settings: z.string().optional(),
+      folderId: z.string().optional(),
     })
   ),
 })
@@ -73,6 +74,7 @@ export const Route = createFileRoute('/')({
 function Index() {
   const { t, i18n } = useTranslation()
   const isSmallScreen = useIsSmallScreen()
+  const { folderId } = Route.useSearch()
 
   const newSessionState = useUIStore((s) => s.newSessionState)
   const setNewSessionState = useUIStore((s) => s.setNewSessionState)
@@ -294,6 +296,7 @@ function Index() {
         {
           name: options?.name ?? session.name,
           type: 'chat',
+          folderId,
           assistantAvatarKey: session.assistantAvatarKey,
           picUrl: session.picUrl,
           backgroundImage: session.backgroundImage,
@@ -344,7 +347,7 @@ function Index() {
       if (
         newSessionState.localWorkCapabilities !== undefined ||
         newSessionState.knowledgeBase ||
-        newSessionState.workingDirectories?.length ||
+        newSessionState.workingDirectories !== undefined ||
         newSessionState.agentFullAccess ||
         newSessionState.commandApprovalMode
       ) {
@@ -371,6 +374,7 @@ function Index() {
     },
     [
       session,
+      folderId,
       addSessionKnowledgeBase,
       newSessionState.localWorkCapabilities,
       newSessionState.knowledgeBase,

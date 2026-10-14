@@ -123,6 +123,7 @@ import ModelSelectorV2 from '../ModelSelectorV2'
 import AgentModeButton from './AgentModeButton'
 import { FileMiniCard, getParserTypeLabel, ImageMiniCard } from './Attachments'
 import { getAgentModeUIState } from './agentModeState'
+import { ComposerSettingsMenu } from './ComposerSettingsMenu'
 import { ImageUploadInput } from './ImageUploadInput'
 import {
   INPUT_SURFACE_CLASS_NAME,
@@ -2033,7 +2034,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   draftCopilotName={draftCopilotName}
                 />
 
-                {canCreateThread &&
+                {!isSmallScreen &&
+                  canCreateThread &&
                   (showRollbackThreadButton ? (
                     <Tooltip label={t('Rollback Thread')} position="top" withArrow>
                       <UnstyledButton
@@ -2072,29 +2074,42 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                     </Tooltip>
                   ))}
 
-                <Tooltip label={t('Conversation Settings')} position="top" withArrow>
-                  <UnstyledButton
-                    data-testid={TestId.chat.sessionSettings}
-                    aria-label={t('Conversation Settings') || undefined}
-                    onClick={onClickSessionSettings}
-                    disabled={!onClickSessionSettings}
-                    className="flex items-center gap-1 px-2 py-1 rounded-md hover:bg-[var(--chatbox-background-tertiary)] transition-colors disabled:opacity-50"
-                  >
-                    <span className="relative flex">
-                      <IconAdjustmentsHorizontal
-                        size={toolbarIconSize}
-                        strokeWidth={1.8}
-                        className="text-[var(--chatbox-tint-secondary)]"
-                      />
-                      {hasSessionOverrides && (
-                        <span
-                          data-testid={TestId.chat.sessionSettingsOverridden}
-                          className="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-chatbox-tint-brand"
+                {isSmallScreen ? (
+                  <ComposerSettingsMenu
+                    canCreateThread={canCreateThread}
+                    toolbarIconSize={toolbarIconSize}
+                    hasSessionOverrides={hasSessionOverrides}
+                    threadActionPending={threadActionPending}
+                    showRollbackThread={showRollbackThreadButton}
+                    onStartNewThread={onStartNewThread ? startNewThread : undefined}
+                    onRollbackThread={rollbackThread}
+                    onClickSessionSettings={onClickSessionSettings}
+                  />
+                ) : (
+                  <Tooltip label={t('Conversation Settings')} position="top" withArrow>
+                    <UnstyledButton
+                      data-testid={TestId.chat.sessionSettings}
+                      aria-label={t('Conversation Settings') || undefined}
+                      onClick={onClickSessionSettings}
+                      disabled={!onClickSessionSettings}
+                      className="flex items-center gap-1 px-2 py-1 rounded-md hover:bg-[var(--chatbox-background-tertiary)] transition-colors disabled:opacity-50"
+                    >
+                      <span className="relative flex">
+                        <IconAdjustmentsHorizontal
+                          size={toolbarIconSize}
+                          strokeWidth={1.8}
+                          className="text-[var(--chatbox-tint-secondary)]"
                         />
-                      )}
-                    </span>
-                  </UnstyledButton>
-                </Tooltip>
+                        {hasSessionOverrides && (
+                          <span
+                            data-testid={TestId.chat.sessionSettingsOverridden}
+                            className="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-chatbox-tint-brand"
+                          />
+                        )}
+                      </span>
+                    </UnstyledButton>
+                  </Tooltip>
+                )}
               </Flex>
 
               {/* Right Group: Token Count + Model Selector */}

@@ -18,7 +18,8 @@ vi.mock('@/stores/settingsStore', () => ({
 }))
 vi.mock('@/i18n/locales', () => ({ languageNameMap: { en: 'English' } }))
 vi.mock('@/hooks/useScreenChange', () => ({ useIsSmallScreen: () => false }))
-vi.mock('../layout/Overlay', () => ({
+vi.mock('../layout/Overlay', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../layout/Overlay')>()),
   Modal: ({ opened, children }: { opened: boolean; children: ReactNode }) => (opened ? <div>{children}</div> : null),
 }))
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))

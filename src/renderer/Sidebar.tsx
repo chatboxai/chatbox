@@ -17,6 +17,7 @@ import {
 } from '@tabler/icons-react'
 import { useNavigate, useRouterState } from '@tanstack/react-router'
 import clsx from 'clsx'
+import { useAtomValue } from 'jotai'
 import { type ElementType, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
@@ -27,6 +28,7 @@ import ThemeSwitchButton from './components/dev/ThemeSwitchButton'
 import { useAppTitleBarHeight } from './components/layout/AppTitleBar'
 import { SidebarDesktopDownloadCard, useWebAppDownloadPromptVisible } from './components/layout/DesktopDownloadReminder'
 import { SidebarLowQuotaReminder } from './components/layout/LowQuotaReminder'
+import { overlayStackAtom } from './components/layout/Overlay'
 import { formatShortcut } from './components/Shortcut'
 import SessionList from './components/session/SessionList'
 import { FORCE_ENABLE_DEV_PAGES } from './dev/devToolsConfig'
@@ -65,6 +67,7 @@ export default function Sidebar() {
   const language = useLanguage()
   const navigate = useNavigate()
   const showSidebar = useUIStore((s) => s.showSidebar)
+  const hasOverlay = useAtomValue(overlayStackAtom).length > 0
   const setShowSidebar = useUIStore((s) => s.setShowSidebar)
   const setSidebarWidth = useUIStore((s) => s.setSidebarWidth)
   const setOpenSearchDialog = useUIStore((s) => s.setOpenSearchDialog)
@@ -162,12 +165,12 @@ export default function Sidebar() {
   }, [isResizing, language, setSidebarWidth])
 
   useEffect(() => {
-    setIosTextInteractionEnabled(!(isSmallScreen && showSidebar))
+    setIosTextInteractionEnabled(!(isSmallScreen && showSidebar && !hasOverlay))
 
     return () => {
       setIosTextInteractionEnabled(true)
     }
-  }, [isSmallScreen, showSidebar])
+  }, [isSmallScreen, showSidebar, hasOverlay])
 
   return (
     <SwipeableDrawer

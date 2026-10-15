@@ -5,17 +5,18 @@ import {
   Client as NegotiatingMCPClient,
   SSEClientTransport as NegotiatingSSEClientTransport,
   type Transport as NegotiatingTransport,
+  SdkErrorCode,
   SdkHttpError,
   type StreamableHTTPClientTransportOptions,
   UnauthorizedError,
 } from '@modelcontextprotocol/client'
 import { SSEClientTransport as LegacySSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
 import { StreamableHTTPClientTransport as LegacyHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import { formatMCPError } from './error'
-import { mcpToolSchema } from './mcp-tool-schema'
 import { type JSONValue as AIToolJSONValue, dynamicTool, type ToolSet } from 'ai'
 import Emittery from 'emittery'
 import { isEqual } from 'lodash'
+import { formatMCPError } from './error'
+import { mcpToolSchema } from './mcp-tool-schema'
 import { createMCPFetch, type MCPAuthorizationProvider, type MCPPlatformDependencies } from './platform'
 import type { MCPProtocolMode, MCPServerConfig, MCPServerStatus } from './types'
 
@@ -209,6 +210,16 @@ async function connectStreamableHttpClient(
       // Some gateways reject the `server/discover` negotiation probe with 401 even though the bearer
       // token is valid. Skip the probe and open the session with the `initialize` handshake instead.
       return connectStreamableHttpClient(url, options, name, 'legacy', register, closeLegacyOnAbort, report)
+    }
+    if (error instanceof SdkHttpError && error.code === SdkErrorCode.EraNegotiationFailed && protocolMode === 'auto') {
+      // Some legacy servers answer the unknown `server/discover` method with HTTP 5xx instead of a
+      // JSON-RPC error. Retry with the `initialize` handshake; if that fails too, the server is
+      // genuinely failing and the probe error carries the HTTP status.
+      return connectStreamableHttpClient(url, options, name, 'legacy', register, closeLegacyOnAbort, report).catch(
+        () => {
+          throw error
+        }
+      )
     }
     if (!(error instanceof UnauthorizedError)) {
       throw error

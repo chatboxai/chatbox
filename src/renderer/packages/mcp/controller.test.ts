@@ -609,39 +609,107 @@ describe('MCPServer HTTP transport', () => {
   })
 
   it.each([
-    { status: 401, statusText: 'Unauthorized' },
-    { status: 500, statusText: 'Internal Server Error' },
-  ])('does not treat HTTP $status as evidence for an SSE fallback', async ({ status, statusText }) => {
+    { status: 401, statusText: 'Unauthorized', error: '401', rpcMethods: ['server/discover'] },
+    {
+      status: 500,
+      statusText: 'Internal Server Error',
+      error: 'answered the probe with HTTP 500',
+      rpcMethods: ['server/discover', 'initialize'],
+    },
+  ])(
+    'does not treat HTTP $status as evidence for an SSE fallback',
+    async ({ status, statusText, error, rpcMethods }) => {
+      const requests: RecordedRequest[] = []
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+          requests.push(recordRequest(input, init))
+          return new Response(null, { status, statusText })
+        })
+      )
+
+      const server = new MCPServer({
+        id: `http-error-${status}`,
+        name: `HTTP Error ${status}`,
+        enabled: true,
+        protocolMode: 'auto',
+        transport: {
+          type: 'http',
+          url: `https://http-${status}.example.com/mcp`,
+        },
+      })
+
+      await server.start()
+
+      expect(server.status.state).toBe('idle')
+      expect(server.status.error).toContain(error)
+      // A 401 additionally triggers OAuth discovery (.well-known lookups and a registration attempt);
+      // the MCP endpoint itself must only see POSTs (a 5xx probe retries with `initialize`), never an SSE fallback.
+      const endpointRequests = requests.filter((request) => request.url === `https://http-${status}.example.com/mcp`)
+      expect(endpointRequests.map((request) => request.body?.method)).toEqual(rpcMethods)
+      expect(endpointRequests.every((request) => request.method === 'POST')).toBe(true)
+    }
+  )
+
+  it('falls back to the initialize handshake when the probe is answered with HTTP 500', async () => {
+    const origin = 'https://probe-500.example.com'
     const requests: RecordedRequest[] = []
     vi.stubGlobal(
       'fetch',
       vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        requests.push(recordRequest(input, init))
-        return new Response(null, { status, statusText })
+        const request = recordRequest(input, init)
+        requests.push(request)
+        if (request.method === 'GET') {
+          return new Response(null, { status: 405, statusText: 'Method Not Allowed' })
+        }
+
+        const body = request.body
+        // Mirrors legacy servers that surface the unknown method as a serialized exception, not a JSON-RPC error
+        if (body?.method === 'server/discover') {
+          return Response.json(
+            { jsonRpcError: { code: -32603, message: 'Missing handler for request type: server/discover' } },
+            { status: 500 }
+          )
+        }
+        if (body?.method === 'initialize') {
+          return Response.json({
+            jsonrpc: '2.0',
+            id: body.id,
+            result: {
+              protocolVersion: '2025-06-18',
+              capabilities: { tools: {} },
+              serverInfo: { name: 'probe-500-fixture', version: '1.0.0' },
+            },
+          })
+        }
+        if (body?.method === 'notifications/initialized') {
+          return new Response(null, { status: 202 })
+        }
+        if (body?.method === 'tools/list') {
+          return Response.json({ jsonrpc: '2.0', id: body.id, result: { tools: [] } })
+        }
+        return new Response(null, { status: 500 })
       })
     )
 
     const server = new MCPServer({
-      id: `http-error-${status}`,
-      name: `HTTP Error ${status}`,
+      id: 'probe-500-http',
+      name: 'Probe 500 HTTP',
       enabled: true,
       protocolMode: 'auto',
-      transport: {
-        type: 'http',
-        url: `https://http-${status}.example.com/mcp`,
-      },
+      transport: { type: 'http', url: `${origin}/mcp` },
     })
 
     await server.start()
 
-    expect(server.status.state).toBe('idle')
-    expect(server.status.error).toContain(String(status))
-    // A 401 additionally triggers OAuth discovery (.well-known lookups and a registration attempt);
-    // the MCP endpoint itself must only see the discover probe, never an SSE fallback.
-    const endpointRequests = requests.filter((request) => request.url === `https://http-${status}.example.com/mcp`)
-    expect(endpointRequests).toHaveLength(1)
-    expect(endpointRequests[0].body?.method).toBe('server/discover')
-    expect(endpointRequests[0].method).toBe('POST')
+    expect(server.status).toEqual({ state: 'running' })
+    expect(requests.filter((request) => request.body?.method).map((request) => request.body?.method)).toEqual([
+      'server/discover',
+      'initialize',
+      'notifications/initialized',
+      'tools/list',
+    ])
+    await server.stop()
   })
 
   it('falls back to the initialize handshake when the probe is rejected with 401 despite a valid token', async () => {

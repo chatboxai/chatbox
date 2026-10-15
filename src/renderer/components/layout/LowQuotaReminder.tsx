@@ -12,7 +12,7 @@ import { uiStore, useUIStore } from '@/stores/uiStore'
 
 const LOW_QUOTA_RATIO = 0.1
 
-/** Sidebar card shown while the active Chatbox AI license has 10% or less of its points left. */
+/** Sidebar card for low license points when no expansion-pack points remain. */
 export function SidebarLowQuotaReminder() {
   const { t, i18n } = useTranslation()
   const language = useLanguage()
@@ -27,10 +27,10 @@ export function SidebarLowQuotaReminder() {
     // Poll fast once points get close to the threshold so the bar moves while a reply is generating.
     refetchInterval: (query) =>
       query.state.data && getComputePointsRemainingRatio(query.state.data) <= LOW_QUOTA_RATIO * 2 ? 30_000 : 5 * 60_000,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: 'always',
   })
 
-  if (!detail) return null
+  if (!detail || detail.expansion_pack_limit - detail.expansion_pack_usage > 0) return null
   const ratio = getComputePointsRemainingRatio(detail)
   // A new quota period gets a fresh reminder.
   const period = `${licenseKey}:${detail.token_refreshed_time}`
@@ -47,7 +47,7 @@ export function SidebarLowQuotaReminder() {
     >
       <Flex justify="space-between" align="baseline" gap="xs">
         <Text size="sm" fw={500} c="chatbox-error" truncate>
-          {t('Points running low')}
+          {ratio <= 0 ? t('Your points are used up') : t('Points running low')}
         </Text>
         <Text size="xs" c="chatbox-tertiary" className="tabular-nums shrink-0">
           {percent}

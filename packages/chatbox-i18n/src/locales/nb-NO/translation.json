@@ -1520,6 +1520,7 @@
   "Configure Web Search to use this capability.": "Konfigurer nettsøk for å bruke denne funksjonen.",
   "Web Search Settings": "Innstillinger for nettsøk",
   "Unable to open file": "Kan ikke åpne filen",
+  "Share failed": "Deling mislyktes",
   "Save / Share": "Lagre / Del",
   "Health": "Helse",
   "Health information returned by this tool will be sent to {{provider}} for this conversation.": "Helseopplysninger som returneres av dette verktøyet, sendes til {{provider}} for denne samtalen.",

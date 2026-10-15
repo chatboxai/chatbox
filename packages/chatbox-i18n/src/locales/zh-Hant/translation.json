@@ -1520,6 +1520,7 @@
   "Configure Web Search to use this capability.": "設定網路搜尋以使用此功能。",
   "Web Search Settings": "網路搜尋設定",
   "Unable to open file": "無法開啟檔案",
+  "Share failed": "分享失敗",
   "Save / Share": "儲存 / 分享",
   "Health": "健康",
   "Health information returned by this tool will be sent to {{provider}} for this conversation.": "此工具傳回的健康資訊將傳送給 {{provider}}，用於目前對話。",

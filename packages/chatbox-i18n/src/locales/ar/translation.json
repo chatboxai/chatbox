@@ -1520,6 +1520,7 @@
   "Configure Web Search to use this capability.": "اضبط البحث على الويب لاستخدام هذه الميزة.",
   "Web Search Settings": "إعدادات البحث على الويب",
   "Unable to open file": "تعذّر فتح الملف",
+  "Share failed": "فشلت المشاركة",
   "Save / Share": "حفظ / مشاركة",
   "Health": "الصحة",
   "Health information returned by this tool will be sent to {{provider}} for this conversation.": "ستُرسل المعلومات الصحية التي تُرجعها هذه الأداة إلى {{provider}} لهذه المحادثة.",

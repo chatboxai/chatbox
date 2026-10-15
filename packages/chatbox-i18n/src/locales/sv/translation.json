@@ -1520,6 +1520,7 @@
   "Configure Web Search to use this capability.": "Konfigurera webbsökning för att använda den här funktionen.",
   "Web Search Settings": "Inställningar för webbsökning",
   "Unable to open file": "Det går inte att öppna filen",
+  "Share failed": "Delningen misslyckades",
   "Save / Share": "Spara / Dela",
   "Health": "Hälsa",
   "Health information returned by this tool will be sent to {{provider}} for this conversation.": "Hälsouppgifter som returneras av det här verktyget skickas till {{provider}} för den här konversationen.",

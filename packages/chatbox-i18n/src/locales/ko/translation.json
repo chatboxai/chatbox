@@ -1520,6 +1520,7 @@
   "Configure Web Search to use this capability.": "이 기능을 사용하려면 웹 검색을 설정하세요.",
   "Web Search Settings": "웹 검색 설정",
   "Unable to open file": "파일을 열 수 없습니다",
+  "Share failed": "공유 실패",
   "Save / Share": "저장 / 공유",
   "Health": "건강",
   "Health information returned by this tool will be sent to {{provider}} for this conversation.": "이 도구가 반환하는 건강 정보는 현재 대화를 위해 {{provider}}에 전송됩니다.",

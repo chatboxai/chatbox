@@ -1520,6 +1520,7 @@
   "Configure Web Search to use this capability.": "配置联网搜索以使用此功能。",
   "Web Search Settings": "联网搜索设置",
   "Unable to open file": "无法打开文件",
+  "Share failed": "分享失败",
   "Save / Share": "保存 / 分享",
   "Health": "健康",
   "Health information returned by this tool will be sent to {{provider}} for this conversation.": "此工具返回的健康信息将发送给 {{provider}}，用于当前对话。",

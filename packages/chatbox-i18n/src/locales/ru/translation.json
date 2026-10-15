@@ -1520,6 +1520,7 @@
   "Configure Web Search to use this capability.": "Настройте поиск в интернете, чтобы использовать эту функцию.",
   "Web Search Settings": "Настройки поиска в интернете",
   "Unable to open file": "Не удалось открыть файл",
+  "Share failed": "Не удалось поделиться",
   "Save / Share": "Сохранить / Поделиться",
   "Health": "Здоровье",
   "Health information returned by this tool will be sent to {{provider}} for this conversation.": "Данные о здоровье, полученные этим инструментом, будут отправлены {{provider}} для этого разговора.",

@@ -1516,6 +1516,7 @@
   "Configure Web Search to use this capability.": "Bu özelliği kullanmak için web aramasını yapılandırın.",
   "Web Search Settings": "Web Araması Ayarları",
   "Unable to open file": "Dosya açılamıyor",
+  "Share failed": "Paylaşım başarısız oldu",
   "Save / Share": "Kaydet / Paylaş",
   "Health": "Sağlık",
   "Health information returned by this tool will be sent to {{provider}} for this conversation.": "Bu aracın döndürdüğü sağlık bilgileri, bu görüşme için {{provider}} sağlayıcısına gönderilecektir.",

@@ -49,7 +49,7 @@ export function MobileWorkArtifactsUI({ artifacts, sessionId }: { artifacts: Wor
       if (action === 'preview') setPreview({ artifact, html: localWorkPreviewDocument(base64) })
       else await shareLocalWorkArtifact(artifact, base64)
     } catch {
-      setError(String(t('Unable to open file')))
+      setError(String(action === 'share' ? t('Share failed') : t('Unable to open file')))
     } finally {
       setPending(undefined)
     }

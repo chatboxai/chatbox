@@ -1520,6 +1520,7 @@
   "Configure Web Search to use this capability.": "Configura la búsqueda web para usar esta función.",
   "Web Search Settings": "Ajustes de búsqueda web",
   "Unable to open file": "No se puede abrir el archivo",
+  "Share failed": "Error al compartir",
   "Save / Share": "Guardar / Compartir",
   "Health": "Salud",
   "Health information returned by this tool will be sent to {{provider}} for this conversation.": "La información de salud que devuelva esta herramienta se enviará a {{provider}} para esta conversación.",

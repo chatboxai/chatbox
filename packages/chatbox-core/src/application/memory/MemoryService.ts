@@ -192,13 +192,17 @@ export class MemoryService {
       return result
     })
   }
-  deleteMemory(id: string): Promise<boolean> {
+  async deleteMemory(id: string): Promise<boolean> {
+    return Boolean(await this.deleteMemoryEntry(id))
+  }
+  private deleteMemoryEntry(id: string): Promise<MemoryEntry | undefined> {
     return this.enqueue(async () => {
       const memories = await this.readMemories()
       const next = memories.filter((entry) => entry.id !== id)
-      if (next.length === memories.length) return false
+      const deleted = memories.find((entry) => entry.id === id)
+      if (!deleted) return undefined
       await this.writeMemories(next)
-      return true
+      return deleted
     })
   }
   importMemories(contents: string[]): Promise<ImportMemoriesResult> {
@@ -255,16 +259,25 @@ export class MemoryService {
     epoch: number = this.copilotMemoryEpoch(id),
     lifecycleToken?: string
   ): Promise<boolean> {
+    return Boolean(await this.deleteCopilotMemoryEntry(id, memoryId, epoch, lifecycleToken))
+  }
+  private async deleteCopilotMemoryEntry(
+    id: string,
+    memoryId: string,
+    epoch: number,
+    lifecycleToken?: string
+  ): Promise<MemoryEntry | undefined> {
     const deleted = await this.enqueue(async () => {
       if (!(await this.isCurrentCopilotScope(id, epoch, lifecycleToken))) return new MemoryContextUnavailableError()
       const record = await this.readCopilotMemories()
       const memories = record[id] ?? []
       const next = memories.filter((entry) => entry.id !== memoryId)
-      if (next.length === memories.length) return false
+      const entry = memories.find((entry) => entry.id === memoryId)
+      if (!entry) return undefined
       const updated = { ...record, [id]: next }
       if (next.length === 0) delete updated[id]
       await this.writeCopilotMemories(updated)
-      return true
+      return entry
     })
     if (deleted instanceof MemoryContextUnavailableError) throw deleted
     return deleted
@@ -323,10 +336,10 @@ export class MemoryService {
       ? this.addCopilotMemory(scope.copilotId, content, scope.epoch, scope.lifecycleToken ?? '')
       : this.addMemory(content)
   }
-  deleteMemoryForScope(scope: MemoryScope, id: string): Promise<boolean> {
+  deleteMemoryForScope(scope: MemoryScope, id: string): Promise<MemoryEntry | undefined> {
     return scope.type === 'copilot'
-      ? this.deleteCopilotMemory(scope.copilotId, id, scope.epoch, scope.lifecycleToken ?? '')
-      : this.deleteMemory(id)
+      ? this.deleteCopilotMemoryEntry(scope.copilotId, id, scope.epoch, scope.lifecycleToken ?? '')
+      : this.deleteMemoryEntry(id)
   }
 
   private async isCurrentCopilotScope(id: string, epoch: number, lifecycleToken: string | undefined): Promise<boolean> {

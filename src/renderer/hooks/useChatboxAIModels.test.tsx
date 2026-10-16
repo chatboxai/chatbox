@@ -83,6 +83,19 @@ afterEach(() => {
 })
 
 describe('Chatbox AI entitlement refresh', () => {
+  it('preserves image model descriptions for the image picker', async () => {
+    mocks.getModelManifest.mockResolvedValue({
+      models: [],
+      imageModels: [{ modelId: 'image', modelName: 'Image', description: 'Localized description' }],
+    })
+    const { result } = mount()
+    await waitFor(() =>
+      expect(result.current.chatboxAIImageModels).toEqual([
+        expect.objectContaining({ modelId: 'image', nickname: 'Image', description: 'Localized description' }),
+      ])
+    )
+  })
+
   it('unlocks a fresh cached catalog when the same key upgrades and relocks after a downgrade', async () => {
     const { result, rerender } = mount()
     await waitFor(() => expect(result.current.chatboxAIModelList?.license.plan).toBe('free'))

@@ -23,6 +23,7 @@ export async function loadProviderImageModels(
       return models.map((model) => ({
         modelId: model.modelId,
         displayName: model.nickname,
+        ...(model.description ? { description: model.description } : {}),
         capabilities: model.capabilities,
       }))
     } catch {
@@ -38,5 +39,6 @@ export async function loadProviderImageModels(
   return manifest.imageModels.map((model) => ({
     modelId: model.modelId,
     displayName: model.modelName || model.modelId,
+    ...(model.description ? { description: model.description } : {}),
   }))
 }

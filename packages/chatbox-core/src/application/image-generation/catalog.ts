@@ -14,13 +14,14 @@ import { z } from 'zod'
 export interface ImageModelOption {
   modelId: string
   displayName: string
+  description?: string
   capabilities?: ImageModelCapabilities
 }
 
 const imageModelManifestResponseSchema = z.object({
   data: z.object({
     imageModels: z
-      .array(z.object({ modelId: z.string(), modelName: z.string().optional() }))
+      .array(z.object({ modelId: z.string(), modelName: z.string().optional(), description: z.string().optional() }))
       .optional()
       .default([]),
   }),
@@ -30,6 +31,7 @@ export function parseImageModelManifestResponse(payload: unknown): ImageModelOpt
   return imageModelManifestResponseSchema.parse(payload).data.imageModels.map((model) => ({
     modelId: model.modelId,
     displayName: model.modelName || model.modelId,
+    ...(model.description ? { description: model.description } : {}),
   }))
 }
 
@@ -49,8 +51,12 @@ export interface ImageModelGroup {
 
 export type RemoteImageModels = Partial<Record<ModelProviderEnum, readonly ImageModelOption[]>>
 
-export function manualImageModelToOption(model: ProviderModelInfo): ImageModelOption {
-  return { modelId: model.modelId, displayName: model.nickname || model.modelId }
+export function manualImageModelToOption(model: ProviderModelInfo & { description?: string }): ImageModelOption {
+  return {
+    modelId: model.modelId,
+    displayName: model.nickname || model.modelId,
+    ...(model.description ? { description: model.description } : {}),
+  }
 }
 
 export function mergeImageModels(

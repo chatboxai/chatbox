@@ -33,6 +33,7 @@ import {
   getImageModelCapabilities,
   providerImageModelsQueryOptions,
 } from './image-model-catalog'
+import { loadProviderImageModels } from './image-model-provider'
 
 function manifest(imageModels: Array<{ modelId: string; modelName: string }>) {
   return { groupName: 'Images', models: [], imageModels }
@@ -47,6 +48,30 @@ describe('image model catalog', () => {
     vi.clearAllMocks()
     queryClient.clear()
     createModelDependenciesMock.mockResolvedValue({ request: {} })
+  })
+
+  it('preserves OpenRouter descriptions and accepts models that omit them', async () => {
+    const capabilities = { aspectRatio: null, inputReferences: null }
+    fetchOpenRouterImageModelsMock.mockResolvedValue([
+      {
+        modelId: 'described-image',
+        nickname: 'Described Image',
+        description: 'Generate images from text and reference images.',
+        capabilities,
+      },
+      { modelId: 'legacy-image', nickname: 'Legacy Image', capabilities },
+    ])
+
+    await expect(loadProviderImageModels(ModelProviderEnum.OpenRouter, { apiKey: 'openrouter-key' })).resolves.toEqual([
+      {
+        modelId: 'described-image',
+        displayName: 'Described Image',
+        description: 'Generate images from text and reference images.',
+        capabilities,
+      },
+      { modelId: 'legacy-image', displayName: 'Legacy Image', capabilities },
+    ])
+    expect(getModelManifestMock).not.toHaveBeenCalled()
   })
 
   it('loads the Chatbox manifest, applies exclusions, and preserves server order', async () => {

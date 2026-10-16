@@ -118,11 +118,12 @@ const useChatboxAIModels = () => {
           ({
             modelId: item.modelId,
             nickname: item.modelName,
+            description: item.description,
             labels: item.labels,
             capabilities: item.capabilities,
             type: item.type || 'image',
             contextWindow: item.contextWindow || undefined,
-          }) as ProviderModelInfo
+          }) satisfies ProviderModelInfo & { description?: string }
       ) || [],
     [data]
   )

@@ -30,6 +30,7 @@ describe('OpenRouter image model discovery', () => {
             {
               id: 'bytedance-seed/seedream-4.5',
               name: 'Seedream 4.5',
+              description: 'Generate images from text and reference images.',
               supported_parameters: {
                 aspect_ratio: { type: 'enum', values: ['1:1', '16:9'] },
                 input_references: { type: 'range', min: 1, max: 4 },
@@ -45,6 +46,7 @@ describe('OpenRouter image model discovery', () => {
       {
         modelId: 'bytedance-seed/seedream-4.5',
         nickname: 'Seedream 4.5',
+        description: 'Generate images from text and reference images.',
         capabilities: {
           aspectRatio: { values: ['1:1', '16:9'] },
           inputReferences: { min: 1, max: 4 },

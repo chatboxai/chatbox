@@ -30,7 +30,13 @@ const incompatibleModels = [
   { modelId: 'malformed' },
   null,
 ]
-const image = { modelId: 'image', modelName: 'Image', type: 'image', apiStyle: 'openai' }
+const image = {
+  modelId: 'image',
+  modelName: 'Image',
+  type: 'image',
+  apiStyle: 'openai',
+  description: 'Create detailed images from text and reference images.',
+}
 
 function respond(data: unknown) {
   afetch.mockResolvedValue({ json: async () => ({ success: true, data }) })

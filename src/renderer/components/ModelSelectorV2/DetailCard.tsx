@@ -308,7 +308,8 @@ export function DetailCard({
       className={clsx(
         'relative border border-solid text-chatbox-tint-primary',
         MODEL_SELECTOR_SURFACE_CLASS,
-        mobile ? 'm-[4px] border-0 px-4 pb-4 pt-3 rounded-[12px]' : 'm-[4px] w-[320px] rounded-[12px] px-4 pb-4 pt-4'
+        mobile ? 'm-[4px] border-0 px-4 pb-4 pt-3 rounded-[12px]' : 'm-[4px] w-[320px] rounded-[12px] px-4 pb-4 pt-4',
+        model.type === 'image' && 'max-h-[80vh] overflow-y-auto'
       )}
       style={mobile ? undefined : CARD_SURFACE_STYLE}
     >
@@ -319,21 +320,27 @@ export function DetailCard({
         </Text>
       </Flex>
       {model.description && (
-        <Text size={mobile ? 'md' : 'sm'} c="chatbox-secondary" className="leading-relaxed">
+        <Text
+          size={mobile ? 'md' : 'sm'}
+          c="chatbox-secondary"
+          className={clsx('leading-relaxed', model.type === 'image' && 'break-words')}
+        >
           {model.description}
         </Text>
       )}
-      {model.providerId === ModelProviderEnum.ChatboxAI && (
+      {model.type !== 'image' && model.providerId === ModelProviderEnum.ChatboxAI && (
         <CostLevelIndicator costLevel={model.costLevel} costLabel={costLabel} t={t} />
       )}
       {/* Temporarily hide model pricing information. */}
       {showPricing && <PricingBlock model={model} mobile={mobile} t={t} isCN={isCN} />}
-      <Stack gap="xs" mt="sm">
-        <Text size="sm" fw={750} c="chatbox-secondary">
-          {t('Capabilities')}
-        </Text>
-        <CapabilityIconRow capabilities={model.capabilities} />
-      </Stack>
+      {model.type !== 'image' && (
+        <Stack gap="xs" mt="sm">
+          <Text size="sm" fw={750} c="chatbox-secondary">
+            {t('Capabilities')}
+          </Text>
+          <CapabilityIconRow capabilities={model.capabilities} />
+        </Stack>
+      )}
       {model.locked && (
         <Text size="sm" c="chatbox-tertiary" ta="center" mt={mobile ? 'xs' : 0}>
           {t('Available on Pro and above')}

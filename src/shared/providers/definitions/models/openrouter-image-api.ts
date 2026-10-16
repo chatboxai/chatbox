@@ -8,6 +8,7 @@ const OPENROUTER_API_BASE_URL = 'https://openrouter.ai/api/v1'
 export interface OpenRouterImageModelInfo {
   modelId: string
   nickname: string
+  description?: string
   capabilities: ImageModelCapabilities
 }
 
@@ -32,6 +33,7 @@ const OpenRouterImageModelsResponseSchema = z.object({
     z.object({
       id: z.string().min(1),
       name: z.string().optional(),
+      description: z.string().optional(),
       supported_parameters: z.record(z.string(), OpenRouterImageParameterSchema).optional().default({}),
     })
   ),
@@ -58,6 +60,7 @@ export async function fetchOpenRouterImageModels(
     return {
       modelId: model.id,
       nickname: model.name || model.id,
+      ...(model.description ? { description: model.description } : {}),
       capabilities: {
         aspectRatio: aspectRatio ? { values: aspectRatio.values } : null,
         inputReferences: inputReferences ? { min: inputReferences.min, max: inputReferences.max } : null,

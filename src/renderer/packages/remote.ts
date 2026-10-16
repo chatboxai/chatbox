@@ -644,6 +644,7 @@ export async function validateLicense(params: { licenseKey: string; instanceId: 
 const RemoteModelInfoSchema = z.object({
   modelId: z.string(),
   modelName: z.string(),
+  description: z.string().optional(),
   labels: z.array(z.string()).optional(),
   type: z.enum(['chat', 'embedding', 'rerank', 'image']).optional(),
   apiStyle: z.enum(['google', 'openai', 'openai-responses', 'anthropic']).optional(),

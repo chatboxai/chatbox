@@ -29,20 +29,25 @@ describe('shared image catalog', () => {
     expect(parseImageModelManifestResponse({ data: { imageModels: [{ modelId: 'image' }] } })).toEqual([
       { modelId: 'image', displayName: 'image' },
     ])
+    expect(
+      parseImageModelManifestResponse({
+        data: { imageModels: [{ modelId: 'image', modelName: 'Image', description: 'Localized description' }] },
+      })
+    ).toEqual([{ modelId: 'image', displayName: 'Image', description: 'Localized description' }])
     expect(() => parseImageModelManifestResponse({ data: { imageModels: [{ id: 'image' }] } })).toThrow()
   })
 
-  it('merges manual display names while preserving remote capabilities and order', () => {
+  it('merges manual display names while preserving remote metadata and order', () => {
     expect(
       mergeImageModels(
-        [{ modelId: 'remote', displayName: 'Remote', capabilities }],
+        [{ modelId: 'remote', displayName: 'Remote', description: 'Remote description', capabilities }],
         [
           { modelId: 'remote', displayName: 'Renamed' },
           { modelId: 'manual', displayName: 'Manual' },
         ]
       )
     ).toEqual([
-      { modelId: 'remote', displayName: 'Renamed', capabilities },
+      { modelId: 'remote', displayName: 'Renamed', description: 'Remote description', capabilities },
       { modelId: 'manual', displayName: 'Manual' },
     ])
   })

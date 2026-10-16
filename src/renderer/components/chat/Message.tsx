@@ -948,34 +948,29 @@ const _Message: FC<Props> = (props) => {
                         className="w-full max-w-[760px] bg-chatbox-background-secondary border border-solid border-chatbox-border-primary rounded-lg shadow-sm overflow-hidden"
                         align="stretch"
                       >
-                        <div className="w-1 bg-chatbox-tint-brand" />
-                        <Flex
-                          align="center"
-                          gap="sm"
-                          px="sm"
-                          py="sm"
-                          className="min-w-0 flex-1"
-                          wrap={{ base: 'wrap', sm: 'nowrap' }}
-                        >
-                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-chatbox-background-brand-secondary text-chatbox-tint-brand">
-                            <ScalableIcon icon={IconRobot} size={18} />
-                          </div>
-                          <Stack gap={2} className="min-w-0 flex-1">
-                            <Text size="sm" fw={600} c="chatbox-primary">
-                              {t('Work Mode suggested')}
-                            </Text>
-                            {item.reason && (
-                              <Text size="xs" c="chatbox-secondary" className="break-words [overflow-wrap:anywhere]">
-                                {item.reason}
+                        <div className="w-1 shrink-0 bg-chatbox-tint-brand" />
+                        <Flex align="center" gap="sm" px="sm" py="sm" className="min-w-0 flex-1" wrap="wrap">
+                          <Flex align="center" gap="sm" className="min-w-0 max-w-full flex-1 basis-[240px]">
+                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-chatbox-background-brand-secondary text-chatbox-tint-brand">
+                              <ScalableIcon icon={IconRobot} size={18} />
+                            </div>
+                            <Stack gap={2} className="min-w-0 flex-1">
+                              <Text size="sm" fw={600} c="chatbox-primary">
+                                {t('Work Mode suggested')}
                               </Text>
-                            )}
-                          </Stack>
-                          <Flex gap="xs" className="shrink-0" wrap="nowrap">
+                              {item.reason && (
+                                <Text size="xs" c="chatbox-secondary" className="break-words [overflow-wrap:anywhere]">
+                                  {item.reason}
+                                </Text>
+                              )}
+                            </Stack>
+                          </Flex>
+                          <Flex gap="xs" className="max-w-full" wrap="wrap">
                             <Button
                               size="xs"
                               variant="subtle"
                               color="gray"
-                              className="shrink-0"
+                              className="max-w-full shrink-0"
                               onClick={handleContinueNormalResponse}
                             >
                               {t('Continue in Chat Mode')}
@@ -984,7 +979,7 @@ const _Message: FC<Props> = (props) => {
                               size="xs"
                               variant="light"
                               color="chatbox-brand"
-                              className="shrink-0"
+                              className="max-w-full shrink-0"
                               leftSection={<IconRobot size={14} />}
                               onClick={handleStartAgentModeResponse}
                             >

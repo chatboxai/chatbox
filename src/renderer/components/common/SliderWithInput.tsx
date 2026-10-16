@@ -46,8 +46,14 @@ export default function SliderWithInput({
 }: Props) {
   const { t } = useTranslation()
   const [tempSliderValue, setTempSliderValue] = useState<number>()
-  const sliderValue = useMemo(() => tempSliderValue ?? value ?? min, [tempSliderValue, value, min])
-  const unset = value === undefined && tempSliderValue === undefined
+  // A save can land after onChange returns (conversation settings write to storage first). The released value
+  // stays on screen while `value` is still the one it replaced, instead of snapping back until the save lands.
+  const [released, setReleased] = useState<{ value: number; replaced?: number }>()
+  if (released && released.replaced !== value) setReleased(undefined)
+  const releasedValue = released && released.replaced === value ? released.value : undefined
+  const shownValue = tempSliderValue ?? releasedValue
+  const sliderValue = useMemo(() => shownValue ?? value ?? min, [shownValue, value, min])
+  const unset = value === undefined && shownValue === undefined
   const handleSliderChange = useCallback((v: number) => {
     setTempSliderValue(v)
   }, [])
@@ -56,10 +62,11 @@ export default function SliderWithInput({
       // 有概率会出现SliderChangeEnd事件之后又产生一个SliderChange，所以延时处理
       setTimeout(() => {
         setTempSliderValue(undefined)
+        setReleased({ value: v, replaced: value })
         onChange?.(v)
       }, 100)
     },
-    [onChange]
+    [onChange, value]
   )
 
   const committedText = value === undefined ? '' : `${value}`
@@ -75,9 +82,12 @@ export default function SliderWithInput({
     return 'applied'
   })
   const editingInput = inputDraft !== committedText
-  const inputValue = tempSliderValue !== undefined ? `${tempSliderValue}` : inputDraft
+  const inputValue = shownValue !== undefined ? `${shownValue}` : inputDraft
   const handleInputChange = useCallback(
-    (e: ChangeEvent<HTMLInputElement>) => setInputDraft(e.currentTarget.value),
+    (e: ChangeEvent<HTMLInputElement>) => {
+      setReleased(undefined)
+      setInputDraft(e.currentTarget.value)
+    },
     [setInputDraft]
   )
   const handleInputKeyUp = useCallback((e: KeyboardEvent<HTMLInputElement>) => {

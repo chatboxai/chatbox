@@ -332,6 +332,34 @@ export interface DialogConfig {
   buttons: { label: string; url: string }[]
 }
 
+const ClientNotificationSchema = z.object({
+  cover_image_url: z.string().optional(),
+  batch_id: z.string().uuid(),
+  title: z.string().min(1).max(200),
+  subtitle: z.string().max(400).optional(),
+  body_markdown: z
+    .string()
+    .min(1)
+    .max(32 * 1024),
+  content_language: z.enum(['zh', 'en']),
+})
+
+const ClientNotificationResponseSchema = z.object({
+  data: ClientNotificationSchema.nullable(),
+})
+
+export type ClientNotification = z.infer<typeof ClientNotificationSchema>
+
+export async function getNextClientNotification(params: { locale: string; displayed_batch_ids: string[] }) {
+  const response = await ofetch<unknown>(`${getAPIOrigin()}/api/client_notifications/next`, {
+    method: 'POST',
+    retry: 0,
+    body: params,
+    headers: await getChatboxHeaders(),
+  })
+  return ClientNotificationResponseSchema.parse(response).data
+}
+
 export async function getDialogConfig(params: { uuid: string; language: string; version: string }) {
   type Response = {
     data: null | DialogConfig

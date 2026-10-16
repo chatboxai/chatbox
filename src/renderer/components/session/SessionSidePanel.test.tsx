@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
 
+import type { SessionHeader } from '@chatbox/core/ports'
 import { type BuiltInBrowserTabs, EMPTY_BUILT_IN_BROWSER_STATE } from '@shared/built-in-browser'
+import { createMessage, type Session } from '@shared/types'
 import { renderHook } from '@testing-library/react'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { rendererApplication } from '@/app/renderer-application'
 import { DEFAULT_SESSION_PANEL, uiStore } from '@/stores/uiStore'
-import { useBrowserTabPanelSync } from './SessionSidePanel'
+import { useBrowserTabPanelSync, usePersistedSessionEdit } from './SessionSidePanel'
 
 const panel = () => uiStore.getState().sessionPanels.s1 ?? DEFAULT_SESSION_PANEL
 
@@ -79,5 +82,38 @@ describe('browser tabs in the conversation panel', () => {
 
     rerender({ state: tabs([]) })
     expect(panel()).toMatchObject({ tab: 'settings', webTab: undefined })
+  })
+})
+
+describe('conversation settings edits', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const session: Session = {
+    id: 's1',
+    name: 'Pricing',
+    type: 'chat',
+    settings: { temperature: 0.3, topP: 0.9 },
+    messages: [createMessage('system', 'Be concise.'), createMessage('user', 'Hello')],
+  }
+
+  it('commits header fields alone and writes only the system prompt with the messages', async () => {
+    const updateHeader = vi.spyOn(rendererApplication.sessions, 'updateSessionHeader').mockResolvedValue()
+    const updateWithMessages = vi
+      .spyOn(rendererApplication.sessions, 'updateSessionWithMessages')
+      .mockResolvedValue(session)
+    const { result } = renderHook(() => usePersistedSessionEdit(session))
+
+    await result.current({ settings: { temperature: undefined, stream: false }, name: ' Plans ' })
+    expect(updateWithMessages).not.toHaveBeenCalled()
+    const headerUpdater = updateHeader.mock.calls[0][1] as (header: SessionHeader) => SessionHeader
+    const { messages: _messages, ...header } = session
+    expect(headerUpdater(header)).toEqual({ ...header, name: 'Plans', settings: { topP: 0.9, stream: false } })
+
+    await result.current({ systemPrompt: 'Answer in French.' })
+    expect(updateHeader).toHaveBeenCalledTimes(1)
+    const messagesUpdater = updateWithMessages.mock.calls[0][1] as (stored: Session) => Session
+    expect(messagesUpdater(session).messages[0].contentParts).toEqual([{ type: 'text', text: 'Answer in French.' }])
   })
 })

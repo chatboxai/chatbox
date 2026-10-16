@@ -16,7 +16,8 @@ import { TestId } from '@shared/automation/testids'
 import { isChatSession, ModelProviderEnum, type Session, type SessionSettings } from '@shared/types'
 import { MAX_TOOL_CALLS_BEFORE_CONFIRMATION, shouldPauseOnToolCallLimit } from '@shared/utils/tool-call-limit-pause'
 import { IconArrowBackUp, IconTrash } from '@tabler/icons-react'
-import { useEffect, useMemo, useState } from 'react'
+import { isEqual, omit } from 'lodash'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
 import { AssistantAvatar } from '@/components/common/Avatar'
@@ -84,6 +85,52 @@ function useModelLabel(settings: SessionSettings | undefined) {
   }, [providers, settings?.provider, settings?.modelId])
 }
 
+type SettingKey = keyof SessionSettings
+/** Each shown value remembers which edit set it, so a failed save reverts only its own value. */
+type PendingSettings = { values: Partial<Record<SettingKey, { value: unknown; edit: number }>>; saving: number }
+
+const settingKeys = (values: object) => Object.keys(values) as SettingKey[]
+
+/**
+ * Shows parameter changes at once while their saves are on the way. Once every save has settled,
+ * each value gives way to the stored one as it arrives; a value whose save failed reverts.
+ */
+function useOptimisticSettings(
+  stored: SessionSettings | undefined,
+  save: (patch: Partial<SessionSettings>) => Promise<boolean>
+) {
+  const [pending, setPending] = useState<PendingSettings>({ values: {}, saving: 0 })
+  const lastEdit = useRef(0)
+  // Waiting for every save keeps an earlier save that lands first from flashing its older value.
+  const caughtUp =
+    pending.saving === 0
+      ? settingKeys(pending.values).filter((key) => isEqual(stored?.[key], pending.values[key]?.value))
+      : []
+  // Updating state while rendering is safe here: the pruned keys no longer match, so it settles in one pass.
+  if (caughtUp.length > 0) setPending({ values: omit(pending.values, caughtUp), saving: 0 })
+
+  const update = (patch: Partial<SessionSettings>) => {
+    const edit = ++lastEdit.current
+    const values = Object.fromEntries(settingKeys(patch).map((key) => [key, { value: patch[key], edit }]))
+    setPending((current) => ({ values: { ...current.values, ...values }, saving: current.saving + 1 }))
+    void save(patch).then((saved) =>
+      setPending((current) => ({
+        values: saved
+          ? current.values
+          : omit(
+              current.values,
+              settingKeys(patch).filter((key) => current.values[key]?.edit === edit)
+            ),
+        saving: current.saving - 1,
+      }))
+    )
+  }
+  const shown = Object.fromEntries(settingKeys(pending.values).map((key) => [key, pending.values[key]?.value]))
+  const settings: SessionSettings | undefined =
+    Object.keys(shown).length > 0 ? { ...stored, ...(shown as Partial<SessionSettings>) } : stored
+  return [settings, update] as const
+}
+
 /**
  * Conversation settings shared by the desktop side panel, the small-screen bottom sheet and the
  * new-chat dialog. Every change applies immediately through `onEdit`; each parameter says whether
@@ -96,7 +143,7 @@ export function SessionSettingsContent({
 }: {
   session: Session
   mode: SessionMode
-  onEdit: (edit: SessionEdit) => void
+  onEdit: (edit: SessionEdit) => unknown
 }) {
   const { t } = useTranslation()
   const density = useSettingsDensity()
@@ -107,17 +154,26 @@ export function SessionSettingsContent({
     stream: useSettingsStore((s) => s.stream),
     pauseOnToolCallLimit: useSettingsStore((s) => s.pauseOnToolCallLimit),
   }
-  const settings = session.settings
+  /** Resolves whether the edit was saved; a failed save is reported here for every field. */
+  const save = (edit: SessionEdit) =>
+    Promise.resolve(onEdit(edit)).then(
+      () => true,
+      (error: unknown) => {
+        console.error('Failed to save conversation settings', error)
+        addToast(t('Failed to save settings'))
+        return false
+      }
+    )
+  const [settings, setParam] = useOptimisticSettings(session.settings, (patch) => save({ settings: patch }))
   const modelLabel = useModelLabel(settings)
   const keys = visibleSessionParameterKeys(settings)
   const overrideCount = countSessionDifferences(settings, keys, global)
   const isChat = isChatSession(session)
   const showSystemPrompt = isActionAvailableInMode('session-system-prompt', mode)
 
-  const name = useCommittedText(session.name, (value) => onEdit({ name: value }), false)
-  const systemPrompt = useCommittedText(getSessionSystemPrompt(session), (value) => onEdit({ systemPrompt: value }))
+  const name = useCommittedText(session.name, (value) => void save({ name: value }), false)
+  const systemPrompt = useCommittedText(getSessionSystemPrompt(session), (value) => void save({ systemPrompt: value }))
 
-  const setParam = (patch: Partial<SessionSettings>) => onEdit({ settings: patch })
   const temperatureControl = (fieldId?: string) => (
     <SamplingParamControl
       inputId={fieldId}
@@ -160,7 +216,7 @@ export function SessionSettingsContent({
             handleImageInputAndSave(
               file,
               key,
-              () => onEdit({ assistantAvatarKey: key }),
+              () => void save({ assistantAvatarKey: key }),
               (k, v) => currentBlobStorage.set(k, v)
             )
           }}
@@ -195,7 +251,7 @@ export function SessionSettingsContent({
             variant="subtle"
             color="chatbox-gray"
             size="compact-xs"
-            onClick={() => onEdit({ assistantAvatarKey: null })}
+            onClick={() => void save({ assistantAvatarKey: null })}
           >
             {t('Reset avatar')}
           </Button>
@@ -365,7 +421,7 @@ export function SessionSettingsContent({
                   handleImageInputAndSave(
                     file,
                     key,
-                    () => onEdit({ backgroundImage: { type: 'storage-key', storageKey: key } }),
+                    () => void save({ backgroundImage: { type: 'storage-key', storageKey: key } }),
                     (k, v) => currentBlobStorage.set(k, v)
                   )
                 }}
@@ -382,7 +438,7 @@ export function SessionSettingsContent({
                   color="chatbox-gray"
                   size="compact-sm"
                   aria-label={t('Remove') ?? undefined}
-                  onClick={() => onEdit({ backgroundImage: null })}
+                  onClick={() => void save({ backgroundImage: null })}
                 >
                   <ScalableIcon icon={IconTrash} size={14} />
                 </Button>

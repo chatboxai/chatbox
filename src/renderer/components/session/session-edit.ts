@@ -1,3 +1,4 @@
+import type { SessionHeader } from '@chatbox/core/ports'
 import { createMessage, type Session, type SessionSettings } from '@shared/types'
 import { getMessageText } from '@shared/utils/message'
 
@@ -12,16 +13,16 @@ export interface SessionEdit {
   backgroundImage?: Session['backgroundImage'] | null
 }
 
+/** Every edit except the system prompt, which lives in the conversation's messages. */
+export type SessionHeaderEdit = Omit<SessionEdit, 'systemPrompt'>
+
 export function getSessionSystemPrompt(session: Pick<Session, 'messages'>): string {
   const systemMessage = session.messages.find((message) => message.role === 'system')
   return systemMessage ? getMessageText(systemMessage) : ''
 }
 
 export function applySessionEdit(session: Session, edit: SessionEdit): Session {
-  const next: Session = { ...session }
-  if (edit.name !== undefined) {
-    next.name = edit.name.trim() || session.name
-  }
+  const next = applySessionHeaderEdit(session, edit)
   if (edit.systemPrompt !== undefined) {
     const prompt = edit.systemPrompt.trim()
     const messages = [...session.messages]
@@ -35,8 +36,16 @@ export function applySessionEdit(session: Session, edit: SessionEdit): Session {
       next.messages = [createMessage('system', prompt), ...messages]
     }
   }
+  return next
+}
+
+export function applySessionHeaderEdit<T extends SessionHeader>(header: T, edit: SessionHeaderEdit): T {
+  const next: T = { ...header }
+  if (edit.name !== undefined) {
+    next.name = edit.name.trim() || header.name
+  }
   if (edit.settings) {
-    const settings: SessionSettings = { ...session.settings }
+    const settings: SessionSettings = { ...header.settings }
     for (const [key, value] of Object.entries(edit.settings) as [keyof SessionSettings, unknown][]) {
       if (value === undefined) delete settings[key]
       else Object.assign(settings, { [key]: value })

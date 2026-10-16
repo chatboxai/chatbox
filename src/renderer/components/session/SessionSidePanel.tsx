@@ -26,7 +26,7 @@ import { useSessionAgentMode } from '@/stores/session/agent-mode'
 import * as toastActions from '@/stores/toastActions'
 import { DEFAULT_SESSION_PANEL, type SessionPanelTab, uiStore, useUIStore } from '@/stores/uiStore'
 import { SessionSettingsContent } from './SessionSettingsContent'
-import { applySessionEdit, type SessionEdit } from './session-edit'
+import { applySessionEdit, applySessionHeaderEdit, type SessionEdit } from './session-edit'
 import ThreadHistoryList from './ThreadHistoryList'
 
 export const SESSION_PANEL_MIN_WIDTH = 320
@@ -44,14 +44,30 @@ const SESSION_PANEL_MAX_RATIO = 0.7
 export function usePersistedSessionEdit(session: Session) {
   const sessionRef = useRef(session)
   sessionRef.current = session
-  return useCallback((edit: SessionEdit) => {
+  return useCallback(async (edit: SessionEdit) => {
     const current = sessionRef.current
-    // A reply may be streaming while settings change; keep its cached chunks in the written snapshot.
-    void rendererApplication.sessions.updateSessionWithMessages(
-      current.id,
-      (stored) => applySessionEdit(stored ?? current, edit),
-      { preserveCachedGeneratingMessages: true }
-    )
+    const { systemPrompt, ...headerEdit } = edit
+    const writes: Promise<unknown>[] = []
+    if (systemPrompt !== undefined) {
+      // A reply may be streaming while settings change; keep its cached chunks in the written snapshot.
+      writes.push(
+        rendererApplication.sessions.updateSessionWithMessages(
+          current.id,
+          (stored) => applySessionEdit(stored ?? current, { systemPrompt }),
+          { preserveCachedGeneratingMessages: true }
+        )
+      )
+    }
+    if (Object.keys(headerEdit).length > 0) {
+      // Header-only edits commit the session record alone, without reading or rewriting its messages.
+      writes.push(
+        rendererApplication.sessions.updateSessionHeader(current.id, (stored) => {
+          if (!stored) throw new Error('Session not found')
+          return applySessionHeaderEdit(stored, headerEdit)
+        })
+      )
+    }
+    await Promise.all(writes)
   }, [])
 }
 

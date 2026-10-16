@@ -2,7 +2,7 @@
 
 import { MantineProvider } from '@mantine/core'
 import { createMessage, type Session } from '@shared/types'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { type ReactNode, useState } from 'react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
@@ -57,8 +57,10 @@ vi.mock('@/components/ui/tooltip', () => ({ AppTooltip: ({ children }: { childre
 vi.mock('@/adapters/CurrentBlobStorage', () => ({ currentBlobStorage: { set: vi.fn() } }))
 vi.mock('@/storage/StoreStorage', () => ({ StorageKeyGenerator: { picture: (key: string) => `picture:${key}` } }))
 
+import { add as addToast } from '@/stores/toastActions'
 import { ContextLimitSettingRow } from '../settings/ParamControl'
 import { SessionSettingsContent } from './SessionSettingsContent'
+import type { SessionEdit } from './session-edit'
 
 function makeSession(settings: Session['settings']): Session {
   return {
@@ -148,6 +150,91 @@ describe('SessionSettingsContent', () => {
     )
     fireEvent.click(screen.getByTestId('session-panel-undo-restore'))
     expect(onEdit).toHaveBeenLastCalledWith({ settings: expect.objectContaining({ temperature: 0.3 }) })
+  })
+
+  test('shows a switch change at once and follows the stored value once its save settles', async () => {
+    let finishSave = () => {}
+    const onEdit = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishSave = resolve
+        })
+    )
+    const renderWith = (session: Session) => (
+      <MantineProvider>
+        <SessionSettingsContent session={session} mode="chat" onEdit={onEdit} />
+      </MantineProvider>
+    )
+    const view = render(renderWith(makeSession({})))
+    const streamSwitch = () => screen.getByRole('switch', { name: 'Stream output' }) as HTMLInputElement
+    fireEvent.click(streamSwitch())
+    expect(onEdit).toHaveBeenLastCalledWith({ settings: { stream: false } })
+    expect(streamSwitch().checked).toBe(false)
+    await act(async () => finishSave())
+    expect(streamSwitch().checked).toBe(false)
+    view.rerender(renderWith(makeSession({ stream: false })))
+    expect(streamSwitch().checked).toBe(false)
+    view.rerender(renderWith(makeSession({ stream: true })))
+    expect(streamSwitch().checked).toBe(true)
+  })
+
+  test('a failed save reverts only its own change and reports it', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const saves: { resolve: () => void; reject: (error: Error) => void }[] = []
+    const onEdit = vi.fn(
+      (_edit: SessionEdit) =>
+        new Promise<void>((resolve, reject) => {
+          saves.push({ resolve, reject })
+        })
+    )
+    const renderWith = (session: Session) => (
+      <MantineProvider>
+        <SessionSettingsContent session={session} mode="chat" onEdit={onEdit} />
+      </MantineProvider>
+    )
+    const view = render(renderWith(makeSession({})))
+    const streamSwitch = () => screen.getByRole('switch', { name: 'Stream output' }) as HTMLInputElement
+    fireEvent.click(streamSwitch())
+    fireEvent.click(streamSwitch())
+    fireEvent.click(streamSwitch())
+    expect(onEdit.mock.calls.map(([edit]) => edit)).toEqual([
+      { settings: { stream: false } },
+      { settings: { stream: true } },
+      { settings: { stream: false } },
+    ])
+    await act(async () => saves[0].reject(new Error('Disk full')))
+    expect(addToast).toHaveBeenLastCalledWith('Failed to save settings')
+    expect(streamSwitch().checked).toBe(false)
+    await act(() => {
+      saves[1].resolve()
+      saves[2].resolve()
+      return Promise.resolve()
+    })
+    view.rerender(renderWith(makeSession({ stream: false })))
+    expect(streamSwitch().checked).toBe(false)
+
+    await act(() => {
+      fireEvent.click(streamSwitch())
+      saves[3].reject(new Error('Disk full'))
+      return Promise.resolve()
+    })
+    expect(streamSwitch().checked).toBe(false)
+  })
+
+  test('reports a failed name save', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(addToast).mockClear()
+    const onEdit = vi.fn(() => Promise.reject(new Error('Session not found')))
+    render(
+      <MantineProvider>
+        <SessionSettingsContent session={makeSession({})} mode="chat" onEdit={onEdit} />
+      </MantineProvider>
+    )
+    const name = screen.getByTestId('session-settings-name')
+    fireEvent.change(name, { target: { value: 'Renamed chat' } })
+    await act(async () => fireEvent.blur(name))
+    expect(onEdit).toHaveBeenCalledWith({ name: 'Renamed chat' })
+    expect(addToast).toHaveBeenCalledWith('Failed to save settings')
   })
 
   test('offers the persona instead of a system prompt in Work Mode', () => {

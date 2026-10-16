@@ -81,4 +81,12 @@ describe('ComposerSettingsMenu', () => {
     expect(onRollbackThread).toHaveBeenCalledOnce()
     expect(screen.queryByTestId(TestId.chat.newThread)).toBeNull()
   })
+  it('opens conversation settings directly where threads are unavailable', () => {
+    const onClickSessionSettings = vi.fn()
+    renderMenu({ canCreateThread: false, onClickSessionSettings })
+    fireEvent.click(screen.getByTestId(TestId.chat.sessionSettings))
+    expect(onClickSessionSettings).toHaveBeenCalledOnce()
+    expect(screen.queryByTestId('composer-settings-menu')).toBeNull()
+    expect(screen.queryByTestId(TestId.chat.newThread)).toBeNull()
+  })
 })

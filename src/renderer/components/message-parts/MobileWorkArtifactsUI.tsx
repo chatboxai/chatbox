@@ -152,12 +152,17 @@ export function MobileWorkArtifactsUI({ artifacts, sessionId }: { artifacts: Wor
         onClose={() => setPreview(undefined)}
         title={preview?.artifact.name}
         fullScreen
+        closeButtonProps={{ 'aria-label': String(t('Close')) }}
+        transitionProps={{ transition: 'slide-up', duration: 200 }}
         styles={{
+          content: { display: 'flex', flexDirection: 'column' },
+          header: { paddingTop: 'calc(var(--mobile-safe-area-inset-top, 0px) + var(--mantine-spacing-md))' },
           body: {
             display: 'flex',
             flexDirection: 'column',
-            height: 'calc(100dvh - 80px - env(safe-area-inset-top) - env(safe-area-inset-bottom))',
-            paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
+            flex: 1,
+            minHeight: 0,
+            paddingBottom: 'calc(var(--mobile-safe-area-inset-bottom, 0px) + var(--mantine-spacing-md))',
           },
         }}
       >

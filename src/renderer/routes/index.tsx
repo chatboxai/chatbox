@@ -534,7 +534,6 @@ function Index() {
               sessionId="new"
               draftCopilotId={session.copilotId}
               draftCopilotName={session.copilotId ? session.name : undefined}
-              draftSessionSettings={session.settings}
               model={selectedModel}
               // fullWidth
               onSelectModel={onSelectModel}

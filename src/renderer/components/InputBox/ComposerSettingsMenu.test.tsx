@@ -64,6 +64,13 @@ describe('ComposerSettingsMenu', () => {
     expect(screen.getByTestId(TestId.chat.sessionSettings)).toBeTruthy()
     expect(dropdown.getAttribute('data-position')).toBe('top-start')
   })
+  it('opens conversation settings from the chat menu', async () => {
+    const onClickSessionSettings = vi.fn()
+    renderMenu({ onClickSessionSettings })
+    fireEvent.click(screen.getByRole('button', { name: 'Conversation Settings' }))
+    fireEvent.click(await screen.findByTestId(TestId.chat.sessionSettings))
+    expect(onClickSessionSettings).toHaveBeenCalledOnce()
+  })
   it('disables new thread while the creation is pending', async () => {
     const onStartNewThread = vi.fn()
     renderMenu({ threadActionPending: true, onStartNewThread })

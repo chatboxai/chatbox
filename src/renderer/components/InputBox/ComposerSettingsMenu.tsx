@@ -8,7 +8,6 @@ import { ScalableIcon } from '../common/ScalableIcon'
 type ComposerSettingsMenuProps = {
   canCreateThread: boolean
   toolbarIconSize: number
-  hasSessionOverrides?: boolean
   threadActionPending?: boolean
   showRollbackThread?: boolean
   onStartNewThread?: () => void
@@ -26,7 +25,6 @@ const TRIGGER_CLASS_NAME =
 export const ComposerSettingsMenu: FC<ComposerSettingsMenuProps> = ({
   canCreateThread,
   toolbarIconSize,
-  hasSessionOverrides,
   threadActionPending,
   showRollbackThread,
   onStartNewThread,
@@ -36,15 +34,7 @@ export const ComposerSettingsMenu: FC<ComposerSettingsMenuProps> = ({
   const { t } = useTranslation()
 
   const triggerIcon = (TriggerIcon: Icon) => (
-    <span className="relative flex">
-      <TriggerIcon size={toolbarIconSize} strokeWidth={1.8} className="text-[var(--chatbox-tint-secondary)]" />
-      {hasSessionOverrides && (
-        <span
-          data-testid={TestId.chat.sessionSettingsOverridden}
-          className="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-chatbox-tint-brand"
-        />
-      )}
-    </span>
+    <TriggerIcon size={toolbarIconSize} strokeWidth={1.8} className="text-[var(--chatbox-tint-secondary)]" />
   )
 
   if (!canCreateThread) {

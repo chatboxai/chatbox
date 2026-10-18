@@ -8,7 +8,7 @@
  */
 
 export const AUTOMATION_CONTRACT_ID = 'chatbox-ui'
-export const AUTOMATION_CONTRACT_VERSION = '1.12.4'
+export const AUTOMATION_CONTRACT_VERSION = '1.12.5'
 export const AUTOMATION_CONTRACT_VERSION_ATTRIBUTE = 'data-automation-contract-version'
 
 /** Adjacent identity attributes hosted on TestId elements. */
@@ -58,7 +58,6 @@ export const TestId = {
     newThread: 'new-thread-button',
     rollbackThread: 'rollback-thread-button',
     sessionSettings: 'session-settings-trigger',
-    sessionSettingsOverridden: 'session-settings-overridden',
   },
   model: {
     selectorTrigger: 'model-selector-trigger',

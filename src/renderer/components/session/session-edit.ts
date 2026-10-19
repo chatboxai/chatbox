@@ -1,6 +1,4 @@
-import type { SessionHeader } from '@chatbox/core/ports'
-import { createMessage, type Session, type SessionSettings } from '@shared/types'
-import { getMessageText } from '@shared/utils/message'
+import { type SessionHeader, type SessionSettings } from '@shared/types'
 
 /** One change made from the conversation settings panel; applied immediately. */
 export interface SessionEdit {
@@ -10,42 +8,14 @@ export interface SessionEdit {
   /** Keys set to undefined return to the inherited value. */
   settings?: Partial<SessionSettings>
   assistantAvatarKey?: string | null
-  backgroundImage?: Session['backgroundImage'] | null
+  backgroundImage?: SessionHeader['backgroundImage'] | null
 }
 
-/** Every edit except the system prompt, which lives in the conversation's messages. */
-export type SessionHeaderEdit = Omit<SessionEdit, 'systemPrompt'>
-
-export function getSessionSystemPrompt(session: Pick<Session, 'messages'>): string {
-  const systemMessage = session.messages.find((message) => message.role === 'system')
-  return systemMessage ? getMessageText(systemMessage) : ''
-}
-
-export function applySessionEdit(session: Session, edit: SessionEdit): Session {
-  const next = applySessionHeaderEdit(session, edit)
-  if (edit.systemPrompt !== undefined) {
-    const prompt = edit.systemPrompt.trim()
-    const messages = [...session.messages]
-    const index = messages.findIndex((message) => message.role === 'system')
-    if (prompt === '') {
-      next.messages = messages.filter((message) => message.role !== 'system')
-    } else if (index >= 0) {
-      messages[index] = { ...messages[index], contentParts: [{ type: 'text', text: prompt }] }
-      next.messages = messages
-    } else {
-      next.messages = [createMessage('system', prompt), ...messages]
-    }
-  }
-  return next
-}
-
-export function applySessionHeaderEdit<T extends SessionHeader>(header: T, edit: SessionHeaderEdit): T {
-  const next: T = { ...header }
-  if (edit.name !== undefined) {
-    next.name = edit.name.trim() || header.name
-  }
+export function applySessionEdit(session: SessionHeader, edit: SessionEdit): SessionHeader {
+  const next: SessionHeader = { ...session }
+  if (edit.name !== undefined) next.name = edit.name.trim() || session.name
   if (edit.settings) {
-    const settings: SessionSettings = { ...header.settings }
+    const settings: SessionSettings = { ...session.settings }
     for (const [key, value] of Object.entries(edit.settings) as [keyof SessionSettings, unknown][]) {
       if (value === undefined) delete settings[key]
       else Object.assign(settings, { [key]: value })

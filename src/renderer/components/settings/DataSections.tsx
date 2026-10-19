@@ -237,7 +237,7 @@ export function BackupRestoreSections() {
       const date = new Date()
       const result = await runRendererBackupOperation('export', (signal) =>
         rendererApplication.sessionWrites.withBackupAccess(() =>
-          sessionRepository.withBackupStorageAccess(async (readSession, metaStorage, sessionStore) => {
+          sessionRepository.withBackupStorageAccess(async (metaStorage, sessionStore) => {
             setBackupReady(true)
             const options = {
               exportItems,
@@ -247,13 +247,12 @@ export function BackupRestoreSections() {
               exportedAt: date,
               storage,
               metaStorage,
-              readSession,
               sessionStore,
               application: { version: platform.getVersion(), platform: platform.getPlatform() },
               signal,
               onProgress,
             }
-            const prepared = sessionStore ? await prepareBackupExport({ ...options, sessionStore }) : undefined
+            const prepared = await prepareBackupExport(options)
             if (prepared) {
               throwIfAborted(signal)
               setExportPlan(prepared)
@@ -349,7 +348,7 @@ export function BackupRestoreSections() {
         // Direct-to-storage imports must discard retained session views so
         // subsequent reads use the newly published rows.
         const forgetImportedSessionState = async () => {
-          sessionRepository.forgetAllBaselines()
+          rendererApplication.sessions.resetGenerationRecovery(Date.now())
           const sessionIds = await sessionRepository.getAllSessionIds()
           for (const sessionId of sessionIds) {
             rendererApplication.sessionWrites.forget(sessionId)
@@ -360,9 +359,9 @@ export function BackupRestoreSections() {
           // Restoring writes agent-soul/agent-memories directly through storage;
           // holding the persona locks queues concurrent save_memory / Soul edits
           // until the import transaction finishes so neither side is clobbered.
-          const result = await rendererApplication.sessionWrites.withBackupAccess(() =>
-            sessionRepository.withBackupStorageAccess(async (_readSession, metaStorage, sessionStore) => {
-              try {
+          const result = await rendererApplication.sessionWrites
+            .withBackupAccess(() =>
+              sessionRepository.withBackupStorageAccess(async (metaStorage, sessionStore) => {
                 return await withAgentPersonaLocks(async () =>
                   importBackupArchive(file, {
                     storage,
@@ -370,14 +369,12 @@ export function BackupRestoreSections() {
                     signal,
                     onProgress,
                     rehydrateSession: rehydrateImportedSession,
-                    sharded: sessionStore ? { store: sessionStore } : undefined,
+                    sharded: { store: sessionStore },
                   })
                 )
-              } finally {
-                await forgetImportedSessionState()
-              }
-            }, signal)
-          )
+              }, signal)
+            )
+            .finally(forgetImportedSessionState)
           await compactStoreAfterRestore()
           const requiresRestart = await refreshBackupState(result.manifest)
           if (result.warnings.length > 0) {
@@ -402,21 +399,20 @@ export function BackupRestoreSections() {
           }
           return requiresRestart
         } else {
-          await rendererApplication.sessionWrites.withBackupAccess(() =>
-            sessionRepository.withBackupStorageAccess(async (_readSession, metaStorage) => {
-              try {
+          await rendererApplication.sessionWrites
+            .withBackupAccess(() =>
+              sessionRepository.withBackupStorageAccess(async (metaStorage, sessionStore) => {
                 await importRendererLegacyJsonBackup(file, {
+                  sessions: sessionStore,
                   storage,
                   metaStorage,
                   signal,
                   migrateData: (dataStore) => migrateOnData(dataStore, false),
                   recoverSessionList: async () => {},
                 })
-              } finally {
-                await forgetImportedSessionState()
-              }
-            }, signal)
-          )
+              }, signal)
+            )
+            .finally(forgetImportedSessionState)
           await compactStoreAfterRestore()
           await rendererApplication.settings.reloadFromStorage()
           await reloadCopilotState()

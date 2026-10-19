@@ -131,6 +131,7 @@ describe('portable memory snapshot capture', () => {
         userMessageCount: 10,
         hasLegacyCommandHistory: false,
         sandboxSeedAttachments: [],
+        fileResourceKeys: [],
       },
     }
     expect(await resolveSessionPromptContextSnapshot(options, dependencies)).toBeUndefined()

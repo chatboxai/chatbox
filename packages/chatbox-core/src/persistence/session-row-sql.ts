@@ -1,13 +1,46 @@
+import { queryRowMetadata, sqlMetadataStringBytes } from './session-row-metadata-sql'
+import { SESSION_TOKEN_CACHE_SQL, readSqlTokenCache, acceptSqlTokenCache } from './session-token-cache-sql'
+import {
+  validateTokenCacheRequest,
+  type SessionTokenCacheRequest,
+  type SessionTokenCacheResult,
+} from '../ports/session-token-cache'
+import { readBranchMessagesPage, validateBranchMessagesRequest } from './session-branch-reader'
+import type { SessionBranchMessagesRequest, SessionBranchPreviewRequest } from '../ports/session-branch-source'
+import { validateBranchPreviewRequest } from './session-branch-preview'
+import { readSqlBranchPreview } from './session-branch-preview-sql'
+import { applySqlLocalMutation } from './session-row-local-sql'
+import { readMetadataSelection, readRelationsPage } from './session-row-relations-read'
+import { sqlRelationReader } from './session-row-relations-sql'
+import type {
+  SessionMessageMetadataRequest,
+  SessionMessageRelationsRequest,
+  SessionThreadStateRequest,
+} from '../ports/session-row-relations'
+import { initializeRowProjectionSchema, rowExtra, parseRowExtra, selectedDepths } from './session-row-projection-sql'
+import type {
+  SessionNavigationRepairRequest,
+  SessionThreadRequest,
+  SessionTranscriptRequest,
+} from '../ports/session-transcript-source'
+import { navigationProjection, validateNavigationRepair, validateTranscriptRequest } from './session-transcript-read'
+import {
+  SESSION_TRANSCRIPT_SCHEMA_SQL,
+  INSERT_MESSAGE_NAVIGATION_SQL,
+  withSqlTranscriptCommit,
+  sqlTranscriptReader,
+  readSqlTranscriptThread,
+  readTranscriptPage,
+  readNavigationPage,
+} from './session-transcript-sql'
 import { throwIfAborted } from '../backup/abort'
 import { type BackupPageLimits, type BackupRow, backupPageLimits } from '../backup/session-port'
-import type { SessionContextMessage, SessionContextRequest, SessionContextRows } from '../ports/session-context-source'
 import {
   type GeneratingMessageRef,
   type SessionMessagesRequest,
   type SessionMessagesSnapshot,
-  type SessionMessageWindow,
-  type SessionMessageWindowRequest,
   type SessionRowCommit,
+  type SessionRowMutationResult,
   SessionRowConflictError,
   type SessionRowSnapshot,
   SessionRowStoreError,
@@ -15,10 +48,8 @@ import {
   type SessionRowStorePort,
   type SessionRows,
   type SessionRowsDiff,
-  type SessionStructureSnapshot,
   type SessionThreadPage,
   type SessionThreadPageRequest,
-  type SessionThreadSuffixRequest,
 } from '../ports/session-row-store'
 import type { SessionTextTokenRead, SessionTextTokenResult, SessionTextTokenSource } from '../ports/session-text-tokens'
 import type {
@@ -31,19 +62,7 @@ import type {
 } from '../session/session-tree/types'
 import type { CompactionPoint, Message, SessionThread } from '../types/session'
 import { CAPACITOR_MESSAGE_ROWS_SCHEMA_SQL } from './capacitor-compatible-schema'
-import {
-  finishSessionContextRead,
-  planSessionContextRead,
-  SessionContextPathTraversal,
-  type SessionContextReadPlan,
-  validateSessionContextRequest,
-} from './session-context-read'
 import { assertSessionReadRevision, validateSessionMessagesRequest } from './session-message-selection'
-import {
-  assertMessageWindowRevision,
-  SessionMessageWindowTraversal,
-  validateMessageWindowRequest,
-} from './session-message-window'
 import { createSqlBackupCandidate } from './session-row-sql-backup'
 import {
   createTextTokenSource,
@@ -63,20 +82,17 @@ export interface SessionRowSqlStatement {
     | 'delete-session-messages'
     | 'guard-revision-exhaustion'
     | 'advance-session-revision'
-    | 'update-session-commit'
     | 'upsert-thread'
     | 'upsert-message'
-    | 'upsert-message-metadata'
     | 'insert-message-payload-chunk'
+    | 'insert-message-navigation'
     | 'delete-orphan-message-payloads'
     | 'delete-stale-text-tokens'
-    | 'delete-thread'
-    | 'delete-message'
 }
 
 export interface SessionRowSqlBatchOptions {
   sessionId: string
-  mode: 'replace' | 'diff' | 'delete'
+  mode: 'replace' | 'delete' | 'local-diff'
   expectedRevision?: number | null
   resultRevision?: number
 }
@@ -106,9 +122,11 @@ interface ThreadRecord {
   session_prompt_context_snapshot_json: string | null
   session_record_json: string | null
   commit_revision: number | null
+  projection_json: string | null
 }
 
 interface ThreadMetadataRecord {
+  projection_json: string | null
   session_id: string
   thread_id: string
   seq: number
@@ -143,6 +161,8 @@ interface ContextMessageRecord extends MessagePayloadRecord {
 }
 
 interface MessageRecord extends ContextMessageRecord {
+  row_metadata_json: string | null
+  selected_depth: number | null
   session_id: string
   thread_id: string
   active_child_id: string | null
@@ -179,15 +199,11 @@ interface SessionIdRecord {
 }
 
 const THREAD_COLUMNS =
-  'session_id, thread_id, seq, name, created_at, root_message_id, active_leaf_message_id, compaction_points_json, session_prompt_context_snapshot_json, session_record_json, commit_revision'
+  'session_id, thread_id, seq, name, created_at, root_message_id, active_leaf_message_id, compaction_points_json, session_prompt_context_snapshot_json, session_record_json, commit_revision, projection_json'
 const MESSAGE_COLUMNS =
-  'session_id, message_id, thread_id, parent_message_id, active_child_id, seq, kind, status, created_at, updated_at, branch_id, payload_id, payload_chunk_count, payload_utf8_length'
-const CONTEXT_MESSAGE_COLUMNS =
-  'message_id, parent_message_id, seq, payload_id, payload_chunk_count, payload_utf8_length'
-const CONTEXT_MESSAGE_WIRE_ALIASES = ['i', 'p', 's', 'v', 'c', 'l'] as const
-
-const UPSERT_THREAD_SQL = `INSERT OR REPLACE INTO session_threads (${THREAD_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-const UPSERT_MESSAGE_SQL = `INSERT OR REPLACE INTO session_messages (${MESSAGE_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  'session_id, message_id, thread_id, parent_message_id, active_child_id, seq, kind, status, created_at, updated_at, branch_id, payload_id, payload_chunk_count, payload_utf8_length, row_metadata_json, selected_depth'
+const UPSERT_THREAD_SQL = `INSERT OR REPLACE INTO session_threads (${THREAD_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+const UPSERT_MESSAGE_SQL = `INSERT OR REPLACE INTO session_messages (${MESSAGE_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 const INSERT_MESSAGE_PAYLOAD_CHUNK_SQL =
   'INSERT OR REPLACE INTO session_message_payload_chunks (session_id, payload_id, chunk_index, value) VALUES (?, ?, ?, ?)'
 const DELETE_SESSION_THREADS_SQL = 'DELETE FROM session_threads WHERE session_id = ?'
@@ -196,16 +212,12 @@ const GUARD_REVISION_EXHAUSTION_SQL =
   'INSERT INTO session_row_revision_guard (value) SELECT 1 FROM session_row_heads WHERE session_id = ? AND revision >= ?'
 const ADVANCE_SESSION_REVISION_SQL =
   'UPDATE session_row_heads SET revision = revision + 1, mutation_id = ? WHERE session_id = ?'
-const DELETE_THREAD_SQL = 'DELETE FROM session_threads WHERE session_id = ? AND thread_id = ?'
-const DELETE_MESSAGE_SQL = 'DELETE FROM session_messages WHERE session_id = ? AND message_id = ?'
-const UPDATE_SESSION_COMMIT_SQL =
-  'UPDATE session_threads SET session_record_json = ?, commit_revision = ? WHERE session_id = ? AND thread_id = ?'
 // Four inline fields across eight threads leave room for escaped structural IDs
 // within the metadata response budget. Larger text stays on the sliced path.
 const THREAD_INLINE_TEXT_BYTES = 512
 function threadMetadataColumns(bounded = true): string {
   return (
-    'session_id, thread_id, seq, length(name) AS name_length, created_at, root_message_id, active_leaf_message_id, length(compaction_points_json) AS compaction_points_json_length, length(session_prompt_context_snapshot_json) AS session_prompt_context_snapshot_json_length, length(session_record_json) AS session_record_json_length, commit_revision, ' +
+    'session_id, thread_id, seq, length(name) AS name_length, created_at, root_message_id, active_leaf_message_id, length(compaction_points_json) AS compaction_points_json_length, length(session_prompt_context_snapshot_json) AS session_prompt_context_snapshot_json_length, length(session_record_json) AS session_record_json_length, commit_revision, projection_json, ' +
     ['name', 'compaction_points_json', 'session_prompt_context_snapshot_json', 'session_record_json']
       .map((column) =>
         bounded
@@ -256,38 +268,26 @@ function messageRecordEstimatedJsonBytes(prefix = ''): string {
     'status',
     'branch_id',
     'payload_id',
+    'row_metadata_json',
   ]
-    .map((column) => sqlJsonStringBytes(prefix + column))
+    .map((column) =>
+      column === 'row_metadata_json' ? sqlMetadataStringBytes(prefix + column) : sqlJsonStringBytes(prefix + column)
+    )
     .join(' + ')}`
 }
 const MESSAGE_RECORD_ESTIMATED_JSON_BYTES = messageRecordEstimatedJsonBytes()
 // Carry the cumulative budget through recursion so a wide row stops lookahead
 // before traversing the remainder of the requested window.
-function selectWindowMessagePathSql(forward: boolean, bounded = true): string {
-  return `WITH RECURSIVE path AS (
-  SELECT m.*, 0 AS depth${bounded ? `, ${messageRecordEstimatedJsonBytes('m.')} AS response_bytes` : ''}
-  FROM session_messages m
-  WHERE m.session_id = ? AND m.thread_id = ? AND m.message_id = ?
-  UNION ALL
-  SELECT m.*, path.depth + 1${bounded ? `, path.response_bytes + ${messageRecordEstimatedJsonBytes('m.')}` : ''}
-  FROM path JOIN session_messages m
-    ON m.session_id = path.session_id AND m.thread_id = path.thread_id AND m.message_id = path.${forward ? 'active_child_id' : 'parent_message_id'}
-  WHERE path.depth + 1 < ? AND m.seq ${forward ? '>' : '<'} path.seq${bounded ? ' AND path.response_bytes < ?' : ''}
-)
-SELECT ${MESSAGE_COLUMNS} FROM path${bounded ? ' WHERE response_bytes <= ? OR depth = 0' : ''} ORDER BY depth`
-}
-const SELECT_WINDOW_MESSAGE_ANCESTORS_SQL = selectWindowMessagePathSql(false)
-const SELECT_WINDOW_MESSAGE_DESCENDANTS_SQL = selectWindowMessagePathSql(true)
-function selectMessagePageSql(hasCursor: boolean, suffix = false, bounded = true): string {
+function selectMessagePageSql(hasCursor: boolean, bounded = true, threadOnly = false): string {
   if (!bounded) {
     return `SELECT ${MESSAGE_COLUMNS} FROM session_messages
-      WHERE session_id = ?${suffix ? ' AND thread_id = ? AND seq > ?' : ''}${hasCursor ? ' AND (thread_id, seq, message_id) > (?, ?, ?)' : ''}
+      WHERE session_id = ?${threadOnly ? ' AND thread_id = ?' : ''}${hasCursor ? ' AND (thread_id, seq, message_id) > (?, ?, ?)' : ''}
       ORDER BY thread_id, seq, message_id LIMIT ?`
   }
   return `WITH page AS (
     SELECT ${MESSAGE_COLUMNS}
     FROM session_messages
-    WHERE session_id = ?${suffix ? ' AND thread_id = ? AND seq > ?' : ''}${hasCursor ? ' AND (thread_id, seq, message_id) > (?, ?, ?)' : ''}
+    WHERE session_id = ?${threadOnly ? ' AND thread_id = ?' : ''}${hasCursor ? ' AND (thread_id, seq, message_id) > (?, ?, ?)' : ''}
     ORDER BY thread_id, seq, message_id
     LIMIT ?
   ), sized AS (
@@ -337,67 +337,6 @@ const MESSAGE_PAGE_MAX_ROWS = Math.floor(MESSAGE_PAGE_RESPONSE_BUDGET / 512)
 const MESSAGE_ID_REQUEST_BUDGET = 384 * 1024
 const THREAD_TEXT_SLICE_CHARACTERS = 32 * 1024
 const STRUCTURAL_ID_BYTES = 1024
-// At most eight metadata rows, even with 1 KiB ids and six-times JSON escaping,
-// fit within MESSAGE_PAGE_RESPONSE_BUDGET. Payloads use their own chunk budget.
-const MESSAGE_ANCESTOR_BATCH_SIZE = 8
-// Short keys, safe integers, the response envelope and iOS column-name prelude.
-const CONTEXT_MESSAGE_FIXED_JSON_BYTES = 160
-const CONTEXT_MESSAGE_MAX_ROWS = Math.floor(MESSAGE_PAGE_RESPONSE_BUDGET / CONTEXT_MESSAGE_FIXED_JSON_BYTES)
-const CONTEXT_MESSAGE_INITIAL_ROWS = Math.min(1536, CONTEXT_MESSAGE_MAX_ROWS)
-const CONTEXT_MESSAGE_VALID_TYPES = [
-  "typeof(message_id) = 'text'",
-  "typeof(parent_message_id) IN ('text', 'null')",
-  "typeof(payload_id) = 'text'",
-  ...(
-    [
-      ['seq', 0],
-      ['payload_chunk_count', 1],
-      ['payload_utf8_length', 0],
-    ] as const
-  ).map(
-    ([column, minimum]) =>
-      `(typeof(${column}) IN ('integer', 'real') AND ${column} BETWEEN ${minimum} AND ${Number.MAX_SAFE_INTEGER}
-        AND ${column} = CAST(${column} AS INTEGER))`
-  ),
-].join(' AND ')
-const CONTEXT_MESSAGE_ESTIMATED_JSON_BYTES = `CASE WHEN ${CONTEXT_MESSAGE_VALID_TYPES}
-  THEN ${CONTEXT_MESSAGE_FIXED_JSON_BYTES} + ${['message_id', 'parent_message_id', 'payload_id']
-    .map(sqlJsonStringBytes)
-    .join(' + ')} ELSE ${MESSAGE_PAGE_RESPONSE_BUDGET + 1} END`
-const CONTEXT_PATH_COLUMNS = ['session_id', 'thread_id', ...CONTEXT_MESSAGE_COLUMNS.split(', ')]
-  .map((column) => `m.${column}`)
-  .join(', ')
-function selectContextAncestorsSql(bounded = true): string {
-  const path = `WITH RECURSIVE path AS (
-  SELECT ${CONTEXT_PATH_COLUMNS}, 0 AS depth FROM session_messages m
-  WHERE m.session_id = ? AND m.thread_id = ? AND m.message_id = ?
-  UNION ALL
-  SELECT ${CONTEXT_PATH_COLUMNS}, path.depth + 1 FROM path JOIN session_messages m
-    ON m.session_id = path.session_id AND m.thread_id = path.thread_id AND m.message_id = path.parent_message_id
-  WHERE path.depth + 1 < ? AND m.seq < path.seq
-)`
-  if (!bounded) {
-    return `${path} SELECT ${CONTEXT_MESSAGE_COLUMNS.split(', ')
-      .map((column, index) => `${column} AS ${CONTEXT_MESSAGE_WIRE_ALIASES[index]}`)
-      .join(', ')}, CASE WHEN ${CONTEXT_MESSAGE_VALID_TYPES} THEN 0 ELSE 1 END AS x FROM path ORDER BY depth`
-  }
-  return `${path}, sized AS (
-  SELECT ${CONTEXT_MESSAGE_COLUMNS}, depth,
-    SUM(${CONTEXT_MESSAGE_ESTIMATED_JSON_BYTES}) OVER (ORDER BY depth) AS response_bytes
-  FROM path
-)
-SELECT ${CONTEXT_MESSAGE_COLUMNS.split(', ')
-    .map(
-      (column, index) =>
-        `CASE WHEN response_bytes <= ${MESSAGE_PAGE_RESPONSE_BUDGET} THEN ${column} END AS ${CONTEXT_MESSAGE_WIRE_ALIASES[index]}`
-    )
-    .join(', ')},
-  (response_bytes > ${MESSAGE_PAGE_RESPONSE_BUDGET}) AS x
-FROM sized WHERE response_bytes <= ${MESSAGE_PAGE_RESPONSE_BUDGET} OR depth = 0
-ORDER BY depth`
-}
-const SELECT_CONTEXT_ANCESTORS_SQL = selectContextAncestorsSql()
-const SELECT_NATIVE_CONTEXT_ANCESTORS_SQL = selectContextAncestorsSql(false)
 const textEncoder = new TextEncoder()
 let payloadSequence = 0
 
@@ -488,18 +427,6 @@ function jsonStringResponseBytes(value: string): number {
 }
 
 type SelectedPayloadWireRecord = { i: number; c: number; v: string; x: 0 } | { x: 1 }
-type SelectedContextMessageRecord =
-  | {
-      i: string
-      p: string | null
-      s: number
-      v: string
-      c: number
-      l: number
-      x: 0
-    }
-  | { x: 1 }
-
 type SelectedMessageRecord = { request_index: number; last_request_index: number } & (
   | (MessageRecord & { metadata_oversized: 0 })
   | { metadata_oversized: 1 }
@@ -560,13 +487,20 @@ function validateMessageRow(message: MessageRowMetadata, sessionId: string): voi
   requireStructuralId(message.messageId, 'messageId')
   requireStructuralId(message.parentMessageId, `message ${message.messageId} parentMessageId`)
   requireStructuralId(message.activeChildId, `message ${message.messageId} activeChildId`)
+  requireStructuralId(message.pendingBranchId ?? null, `message ${message.messageId} pendingBranchId`)
+  requireStructuralId(message.forkPivotId ?? null, `message ${message.messageId} forkPivotId`)
+  if (message.fork) {
+    requireStructuralId(message.fork.pivotId, 'fork pivotId')
+    requireStructuralId(message.fork.branchPointId, 'fork branchPointId')
+    requireStructuralId(message.fork.selectedBranchId, 'fork selectedBranchId')
+  }
   requireStructuralId(message.branchId, `message ${message.messageId} branchId`)
   if (message.sessionId !== sessionId) {
     throw new Error(`message ${message.messageId} belongs to session ${message.sessionId}`)
   }
 }
 
-function threadStatement(thread: ThreadRow, commit?: SessionRowCommit): SessionRowSqlStatement {
+export function threadStatement(thread: ThreadRow, commit?: SessionRowCommit): SessionRowSqlStatement {
   const activeCommit = thread.seq === -1 ? commit : undefined
   return {
     kind: 'upsert-thread',
@@ -585,6 +519,7 @@ function threadStatement(thread: ThreadRow, commit?: SessionRowCommit): SessionR
         : serializeJson(thread.sessionPromptContextSnapshot, `thread ${thread.threadId} prompt context snapshot`),
       activeCommit ? serializeJson(activeCommit.record, `thread ${thread.threadId} session record`) : null,
       activeCommit?.revision ?? null,
+      thread.summary || thread.control ? JSON.stringify({ summary: thread.summary, control: thread.control }) : null,
     ],
   }
 }
@@ -617,40 +552,9 @@ function* splitPayload(value: string): Generator<string> {
   if (current || value.length === 0) yield current
 }
 
-/** Scalar subqueries preserve the payload manifest; a missing source violates its NOT NULL constraint. */
-function messageMetadataStatement(message: MessageRowMetadata): SessionRowSqlStatement {
-  return {
-    kind: 'upsert-message-metadata',
-    sql: `INSERT OR REPLACE INTO session_messages (${MESSAGE_COLUMNS}) VALUES (
-      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-      (SELECT payload_id FROM session_messages WHERE session_id = ? AND message_id = ?),
-      (SELECT payload_chunk_count FROM session_messages WHERE session_id = ? AND message_id = ?),
-      (SELECT payload_utf8_length FROM session_messages WHERE session_id = ? AND message_id = ?)
-    )`,
-    params: [
-      message.sessionId,
-      message.messageId,
-      message.threadId,
-      message.parentMessageId,
-      message.activeChildId,
-      message.seq,
-      message.kind,
-      message.status,
-      message.createdAt,
-      message.updatedAt,
-      message.branchId,
-      message.sessionId,
-      message.messageId,
-      message.sessionId,
-      message.messageId,
-      message.sessionId,
-      message.messageId,
-    ],
-  }
-}
-
-function* messageStatements(message: MessageRow): Generator<SessionRowSqlStatement> {
-  const serialized = serializeJson(message.message, `message ${message.messageId}`)
+export function* messageStatements(message: MessageRow, selectedDepth?: number): Generator<SessionRowSqlStatement> {
+  const payload = { ...message.message }
+  const serialized = serializeJson(payload, `message ${message.messageId}`)
   const payloadId = createPayloadId(message)
   let chunkCount = 0
   let utf8Length = 0
@@ -661,6 +565,12 @@ function* messageStatements(message: MessageRow): Generator<SessionRowSqlStateme
       sql: INSERT_MESSAGE_PAYLOAD_CHUNK_SQL,
       params: [message.sessionId, payloadId, chunkCount++, chunk],
     }
+  }
+  const projection = navigationProjection(payload)
+  yield {
+    kind: 'insert-message-navigation',
+    sql: INSERT_MESSAGE_NAVIGATION_SQL,
+    params: [payloadId, projection.role, Number(projection.eligible), projection.preview],
   }
   yield {
     kind: 'upsert-message',
@@ -680,6 +590,8 @@ function* messageStatements(message: MessageRow): Generator<SessionRowSqlStateme
       payloadId,
       chunkCount,
       utf8Length,
+      rowExtra(message),
+      selectedDepth ?? null,
     ],
   }
 }
@@ -703,6 +615,7 @@ function toThreadRow(record: ThreadRecord): ThreadRow {
       record.session_prompt_context_snapshot_json
     ) as SessionThread['sessionPromptContextSnapshot']
   }
+  if (record.projection_json) Object.assign(thread, JSON.parse(record.projection_json))
   return thread
 }
 
@@ -744,19 +657,6 @@ function validateCommit(sessionId: string, threads: ThreadRow[], commit: Session
   }
 }
 
-function updateCommitStatement(sessionId: string, commit: SessionRowCommit): SessionRowSqlStatement {
-  return {
-    kind: 'update-session-commit',
-    sql: UPDATE_SESSION_COMMIT_SQL,
-    params: [
-      serializeJson(commit.record, `session ${sessionId} record`),
-      commit.revision,
-      sessionId,
-      commit.record.activeThreadId,
-    ],
-  }
-}
-
 function toMessageRow(record: MessageRecord, message: Message): MessageRow {
   return { ...toMessageMetadata(record), message }
 }
@@ -774,6 +674,7 @@ function toMessageMetadata(record: MessageRecord): MessageRowMetadata {
     createdAt: Number(record.created_at),
     updatedAt: Number(record.updated_at),
     branchId: record.branch_id ?? null,
+    ...parseRowExtra(record.row_metadata_json),
   }
 }
 
@@ -807,7 +708,13 @@ export class SqlSessionRowStore implements SessionRowStorePort {
   initialize(): Promise<void> {
     if (!this.initializePromise) {
       this.initializePromise = this.database
-        .execute(CAPACITOR_MESSAGE_ROWS_SCHEMA_SQL + SESSION_TEXT_TOKEN_SCHEMA_SQL)
+        .execute(
+          CAPACITOR_MESSAGE_ROWS_SCHEMA_SQL +
+            SESSION_TEXT_TOKEN_SCHEMA_SQL +
+            SESSION_TRANSCRIPT_SCHEMA_SQL +
+            SESSION_TOKEN_CACHE_SQL
+        )
+        .then(() => initializeRowProjectionSchema(this.database))
         .catch((error: unknown) => {
           this.initializePromise = null
           throw new SessionRowStoreError('initialize', error)
@@ -816,20 +723,232 @@ export class SqlSessionRowStore implements SessionRowStorePort {
     return this.initializePromise
   }
 
-  async beginBackupRestore(sessionId: string) {
+  private transcriptReader(sessionId: string) {
+    return sqlTranscriptReader(
+      this.database,
+      sessionId,
+      async (ids) => this.readMessageRows(await this.readMessageRecordsByIds(sessionId, ids), null),
+      this.boundedReads
+    )
+  }
+
+  async readMessageMetadata(request: SessionMessageMetadataRequest) {
+    return this.run('read-message-metadata', request.sessionId, () =>
+      withSqlTranscriptCommit(
+        this.database,
+        request,
+        () => this.readRevision(request.sessionId),
+        (commit) =>
+          readMetadataSelection(
+            request,
+            commit,
+            sqlRelationReader(this.database, request.sessionId, this.boundedReads)
+          ),
+        this.boundedReads
+      )
+    )
+  }
+
+  async readMessageRelationsPage(request: SessionMessageRelationsRequest) {
+    return this.run('read-message-relations', request.sessionId, () =>
+      withSqlTranscriptCommit(
+        this.database,
+        { sessionId: request.sessionId, expectedRevision: request.expectedRevision },
+        () => this.readRevision(request.sessionId),
+        (commit) =>
+          readRelationsPage(request, commit, sqlRelationReader(this.database, request.sessionId, this.boundedReads)),
+        this.boundedReads
+      )
+    )
+  }
+
+  async readThreadState(request: SessionThreadStateRequest) {
+    return this.run('read-thread', request.sessionId, () =>
+      withSqlTranscriptCommit(
+        this.database,
+        request,
+        () => this.readRevision(request.sessionId),
+        async (commit) => {
+          const threadId = request.threadId ?? commit.record.activeThreadId
+          const metadata = await this.database.query<ThreadMetadataRecord>(
+            `SELECT ${threadMetadataColumns(this.boundedReads)} FROM session_threads WHERE session_id=? AND thread_id=?`,
+            [request.sessionId, threadId]
+          )
+          const [stored] = await this.readThreadRecords(metadata)
+          if (!stored) return null
+          const thread = toThreadRow(stored)
+          return thread.summary
+            ? { ...commit, status: 'ready' as const, thread: { ...thread, summary: thread.summary } }
+            : { ...commit, status: 'projection-unavailable' as const, messageIds: [], threadIds: [threadId] }
+        },
+        this.boundedReads
+      )
+    )
+  }
+
+  async readThreadSummariesPage(request: SessionThreadPageRequest) {
+    validateSessionThreadPageRequest(request)
+    return this.run('read-thread-page', request.sessionId, () =>
+      withSqlTranscriptCommit(
+        this.database,
+        { sessionId: request.sessionId, expectedRevision: request.cursor?.revision },
+        () => this.readRevision(request.sessionId),
+        async (commit) => {
+          const records = await this.database.query<{ thread_id: string }>(
+            `SELECT thread_id FROM session_threads WHERE session_id=? ORDER BY ${SEARCH_THREAD_ORDER} LIMIT ? OFFSET ?`,
+            [request.sessionId, request.limit + 1, request.cursor?.offset ?? 0]
+          )
+          const threads = []
+          const reader = this.transcriptReader(request.sessionId)
+          for (const record of records.slice(0, request.limit)) {
+            const thread = await reader.thread(record.thread_id)
+            if (!thread) throw new Error('Thread summary disappeared')
+            threads.push(thread)
+          }
+          return {
+            ...commit,
+            threads,
+            nextCursor:
+              records.length > request.limit
+                ? {
+                    sessionId: request.sessionId,
+                    revision: commit.revision,
+                    offset: (request.cursor?.offset ?? 0) + request.limit,
+                  }
+                : null,
+          }
+        },
+        this.boundedReads
+      )
+    )
+  }
+
+  async readCommit(sessionId: string) {
+    return this.run('read-commit', sessionId, () =>
+      withSqlTranscriptCommit(
+        this.database,
+        { sessionId },
+        () => this.readRevision(sessionId),
+        async (commit) => commit,
+        this.boundedReads
+      )
+    )
+  }
+
+  async readThread(request: SessionThreadRequest) {
+    return this.run('read-thread', request.sessionId, () =>
+      withSqlTranscriptCommit(
+        this.database,
+        request,
+        () => this.readRevision(request.sessionId),
+        (commit) => readSqlTranscriptThread(request, commit, this.transcriptReader(request.sessionId)),
+        this.boundedReads
+      )
+    )
+  }
+
+  async readBranchPreview(request: SessionBranchPreviewRequest) {
+    validateBranchPreviewRequest(request)
+    return this.run('read-transcript', request.sessionId, () =>
+      withSqlTranscriptCommit(
+        this.database,
+        request,
+        () => this.readRevision(request.sessionId),
+        (commit) => readSqlBranchPreview(this.database, request, commit, this.boundedReads),
+        this.boundedReads
+      )
+    )
+  }
+
+  async readBranchMessagesPage(request: SessionBranchMessagesRequest) {
+    validateBranchMessagesRequest(request)
+    return this.run('read-transcript', request.sessionId, () =>
+      withSqlTranscriptCommit(
+        this.database,
+        { sessionId: request.sessionId, expectedRevision: request.expectedRevision ?? request.cursor?.revision },
+        () => this.readRevision(request.sessionId),
+        (commit) => readBranchMessagesPage(request, commit, this.transcriptReader(request.sessionId)),
+        this.boundedReads
+      )
+    )
+  }
+
+  async readTranscriptWindow(request: SessionTranscriptRequest) {
+    validateTranscriptRequest(request)
+    return this.run('read-transcript', request.sessionId, () =>
+      withSqlTranscriptCommit(
+        this.database,
+        request,
+        () => this.readRevision(request.sessionId),
+        (commit) => readTranscriptPage(request, commit, this.transcriptReader(request.sessionId)),
+        this.boundedReads
+      )
+    )
+  }
+
+  async readNavigationPage(request: SessionTranscriptRequest) {
+    validateTranscriptRequest(request)
+    return this.run('read-navigation', request.sessionId, () =>
+      withSqlTranscriptCommit(
+        this.database,
+        request,
+        () => this.readRevision(request.sessionId),
+        (commit) => readNavigationPage(request, commit, this.transcriptReader(request.sessionId)),
+        this.boundedReads
+      )
+    )
+  }
+
+  async repairNavigationProjections(request: SessionNavigationRepairRequest): Promise<void> {
+    validateNavigationRepair(request)
+    await this.run('read-navigation', request.sessionId, () =>
+      withSqlTranscriptCommit(
+        this.database,
+        request,
+        () => this.readRevision(request.sessionId),
+        async () => {
+          const records = await this.readMessageRecordsByIds(request.sessionId, request.messageIds)
+          const statements: SessionRowSqlStatement[] = []
+          for (const record of records) {
+            const [row] = await this.readMessageRows([record], null)
+            const projection = navigationProjection(row.message)
+            statements.push({
+              kind: 'insert-message-navigation',
+              sql: 'INSERT OR REPLACE INTO session_message_navigation (payload_id,role,eligible,preview) SELECT ?,?,?,? WHERE EXISTS (SELECT 1 FROM session_messages WHERE session_id = ? AND message_id = ? AND payload_id = ?)',
+              params: [
+                record.payload_id,
+                projection.role,
+                Number(projection.eligible),
+                projection.preview,
+                request.sessionId,
+                row.messageId,
+                record.payload_id,
+              ],
+            })
+          }
+          await this.database.executeBatch(statements)
+        },
+        this.boundedReads
+      )
+    )
+  }
+
+  async beginBackupRestore(sessionId: string, expectedRevision?: number | null) {
     await this.initialize()
     return createSqlBackupCandidate(
       this.database,
       sessionId,
       { thread: threadStatement, message: messageStatements },
-      this.createBackupId
+      this.createBackupId,
+      expectedRevision
     )
   }
 
   async *iterateBackupRows(
     sessionId: string,
     requested: BackupPageLimits,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    threadId?: string
   ): AsyncGenerator<BackupRow> {
     const limits = backupPageLimits(requested)
     await this.initialize()
@@ -865,7 +984,12 @@ export class SqlSessionRowStore implements SessionRowStorePort {
     yield bounded({ kind: 'header', record })
     for (let offset = 0; ; offset++) {
       await assertRevision()
-      const page = await this.database.query<ThreadMetadataRecord>(SELECT_THREADS_PAGE_SQL, [sessionId, 1, offset])
+      const page = await this.database.query<ThreadMetadataRecord>(
+        threadId
+          ? SELECT_THREADS_PAGE_SQL.replace('session_id = ?', 'session_id = ? AND thread_id = ?')
+          : SELECT_THREADS_PAGE_SQL,
+        threadId ? [sessionId, threadId, 1, offset] : [sessionId, 1, offset]
+      )
       if (!page.length) break
       page.forEach(checkThread)
       const threads = await this.readThreadRecords(page, true)
@@ -875,10 +999,13 @@ export class SqlSessionRowStore implements SessionRowStorePort {
     let cursor: MessageRecord | undefined
     for (;;) {
       await assertRevision()
-      const params: SessionRowSqlBindValue[] = [sessionId]
+      const params: SessionRowSqlBindValue[] = threadId ? [sessionId, threadId] : [sessionId]
       if (cursor) params.push(cursor.thread_id, cursor.seq, cursor.message_id)
       params.push(limits.maxPageRows, Math.min(limits.maxPageBytes, MESSAGE_PAGE_RESPONSE_BUDGET))
-      const page = await this.database.query<MessageRecord>(selectMessagePageSql(cursor !== undefined), params)
+      const page = await this.database.query<MessageRecord>(
+        selectMessagePageSql(cursor !== undefined, true, Boolean(threadId)),
+        params
+      )
       if (!page.length) break
       const shells = page.map((entry) => toMessageRow(entry, { id: entry.message_id, role: 'user', contentParts: [] }))
       const oversized = page.map(
@@ -1060,261 +1187,42 @@ export class SqlSessionRowStore implements SessionRowStorePort {
     })
   }
 
-  async readMessageWindow(request: SessionMessageWindowRequest): Promise<SessionMessageWindow | null> {
-    const { sessionId } = request
-    return this.run('read-message-window', sessionId, async () => {
-      validateMessageWindowRequest(request)
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        const before = await this.readRevision(sessionId)
-        assertMessageWindowRevision(request, before)
-        let window: SessionMessageWindow | null
-        try {
-          const metadata = await this.database.query<ThreadMetadataRecord>(this.windowThreadsSql, [
-            sessionId,
-            request.threadId ?? request.cursor?.threadId ?? null,
-          ])
-          if (metadata.length === 0) {
-            window = null
-          } else {
-            const records = await this.readThreadRecords(metadata)
-            const commit = readCommitMetadata(sessionId, records, before)
-            const threadId = request.threadId ?? request.cursor?.threadId ?? commit.record.activeThreadId
-            const thread = records.find((row) => row.thread_id === threadId)
-            if (!thread) throw new Error('Message window thread is missing')
-            const traversal = new SessionMessageWindowTraversal(request, commit, toThreadRow(thread))
-            const selected: MessageRecord[] = []
-            while (traversal.nextMessageId !== null && traversal.remaining > 0) {
-              const ancestors = await this.database.query<MessageRecord>(
-                this.boundedReads
-                  ? traversal.forward
-                    ? SELECT_WINDOW_MESSAGE_DESCENDANTS_SQL
-                    : SELECT_WINDOW_MESSAGE_ANCESTORS_SQL
-                  : selectWindowMessagePathSql(traversal.forward, false),
-                [
-                  sessionId,
-                  threadId,
-                  traversal.nextMessageId,
-                  Math.min(traversal.remaining, MESSAGE_PAGE_MAX_ROWS),
-                  ...(this.boundedReads ? [MESSAGE_PAGE_RESPONSE_BUDGET, MESSAGE_PAGE_RESPONSE_BUDGET] : []),
-                ]
-              )
-              if (ancestors.length === 0) traversal.accept(undefined)
-              for (const row of ancestors) {
-                if (
-                  traversal.accept({
-                    sessionId: row.session_id,
-                    threadId: row.thread_id,
-                    messageId: row.message_id,
-                    parentMessageId: row.parent_message_id,
-                    activeChildId: row.active_child_id,
-                    seq: Number(row.seq),
-                  })
-                )
-                  selected.push(row)
-              }
-            }
-            const sources: Record<string, SessionTextTokenSource> = Object.create(null)
-            window = {
-              ...traversal.finish(await this.readMessageRows(selected, sources)),
-              textTokens: await this.readTokenSnapshot(sources),
-            }
-          }
-        } catch (error) {
-          const afterFailure = await this.readRevision(sessionId)
-          assertMessageWindowRevision(request, afterFailure)
-          if (before !== afterFailure) continue
-          throw error
-        }
-        const after = await this.readRevision(sessionId)
-        assertMessageWindowRevision(request, after)
-        if (before !== after) continue
-        return window
-      }
-      throw new Error(`session ${sessionId} changed repeatedly while its message window was being read`)
-    })
+  async readTokenCache(request: SessionTokenCacheRequest) {
+    validateTokenCacheRequest(request)
+    return this.run('read-messages', request.sessionId, () =>
+      withSqlTranscriptCommit(
+        this.database,
+        request,
+        () => this.readRevision(request.sessionId),
+        async (commit) => ({ ...commit, entries: await readSqlTokenCache(this.database, request) }),
+        this.boundedReads
+      )
+    )
+  }
+
+  async acceptTokenCache(results: readonly SessionTokenCacheResult[]): Promise<void> {
+    await this.initialize()
+    await acceptSqlTokenCache(this.database, results)
   }
 
   async readMessages(request: SessionMessagesRequest): Promise<SessionMessagesSnapshot | null> {
     return this.run('read-messages', request.sessionId, async () => {
       validateSessionMessagesRequest(request)
-      return this.readSelectedSnapshot(request, async (commit) => {
-        const sources: Record<string, SessionTextTokenSource> = Object.create(null)
-        const messages = await this.readMessageRows(
-          await this.readMessageRecordsByIds(request.sessionId, request.messageIds),
-          sources
-        )
-        return { ...commit, messages, textTokens: await this.readTokenSnapshot(sources) }
-      })
-    })
-  }
-
-  async readStructure(request: {
-    sessionId: string
-    expectedRevision?: number
-  }): Promise<SessionStructureSnapshot | null> {
-    return this.run('read-messages', request.sessionId, () =>
-      this.readSelectedSnapshot(request, async (commit, threads) => ({
-        ...commit,
-        threads,
-        messages: (await this.readMessageRecords(request.sessionId)).map(toMessageMetadata),
-      }))
-    )
-  }
-
-  async readThreadSuffix(request: SessionThreadSuffixRequest): Promise<SessionMessagesSnapshot | null> {
-    if (!request.threadId || !Number.isSafeInteger(request.afterSeq) || request.afterSeq < -1)
-      throw new Error('Invalid thread suffix request')
-    return this.run('read-messages', request.sessionId, () =>
-      this.readSelectedSnapshot(request, async (commit) => ({
-        ...commit,
-        messages: await this.readMessageRows(
-          await this.readMessageRecords(request.sessionId, request),
-          Object.create(null)
-        ),
-      }))
-    )
-  }
-
-  async readContext(
-    request: SessionContextRequest,
-    knownSnapshot?: Pick<SessionRowSnapshot, 'rows' | 'revision'>
-  ): Promise<SessionContextRows | null> {
-    return this.run('read-context', request.sessionId, async () => {
-      validateSessionContextRequest(request)
-      return this.readSelectedSnapshot(request, async (commit, threads) => {
-        const sources: Record<string, SessionTextTokenSource> = Object.create(null)
-        const knownMessages =
-          knownSnapshot?.rows.sessionId === request.sessionId && knownSnapshot.revision === commit.revision
-            ? new Map(knownSnapshot.rows.messages.map((row) => [row.messageId, row.message]))
-            : undefined
-        const selectedThread = threads.find(
-          (thread) => thread.threadId === (request.threadId ?? commit.record.activeThreadId)
-        )
-        const targetId = request.targetMessageId ?? selectedThread?.activeLeafMessageId
-        const targetRecords = targetId ? await this.readMessageRecordsByIds(request.sessionId, [targetId]) : []
-        const target = (await this.readMessageRows(targetRecords, sources, knownMessages))[0]
-        let plan = planSessionContextRead(request, commit, threads, target)
-        const readPlan = async (current: SessionContextReadPlan) => {
-          const traversal = new SessionContextPathTraversal(request.sessionId, current)
-          const selected: ContextMessageRecord[] = []
-          let contextPageSize = CONTEXT_MESSAGE_INITIAL_ROWS
-          while (traversal.nextMessageId !== null) {
-            const ancestors = await this.database.query<SelectedContextMessageRecord>(
-              this.boundedReads ? SELECT_CONTEXT_ANCESTORS_SQL : SELECT_NATIVE_CONTEXT_ANCESTORS_SQL,
-              [
-                request.sessionId,
-                current.thread.threadId,
-                traversal.nextMessageId,
-                current.checkpoint ? MESSAGE_ANCESTOR_BATCH_SIZE : contextPageSize,
-              ]
-            )
-            if (ancestors.length === 0) traversal.accept(undefined)
-            for (const wireRow of ancestors) {
-              if (traversal.nextMessageId === null) break
-              if (wireRow.x === 1)
-                throw new Error(
-                  this.boundedReads ? 'Context metadata exceeds the native response budget' : 'Invalid context metadata'
-                )
-              const row: ContextMessageRecord = {
-                message_id: wireRow.i,
-                parent_message_id: wireRow.p,
-                seq: wireRow.s,
-                payload_id: wireRow.v,
-                payload_chunk_count: wireRow.c,
-                payload_utf8_length: wireRow.l,
-              }
-              traversal.accept({
-                sessionId: request.sessionId,
-                threadId: current.thread.threadId,
-                messageId: row.message_id,
-                parentMessageId: row.parent_message_id,
-                seq: Number(row.seq),
-              })
-              selected.push(row)
-            }
-            if (!current.checkpoint && ancestors.length > 0) {
-              // Bound repeated recursive work while allowing denser pages to grow.
-              contextPageSize = Math.max(
-                MESSAGE_ANCESTOR_BATCH_SIZE,
-                Math.min(CONTEXT_MESSAGE_MAX_ROWS, Math.ceil(ancestors.length * 1.1))
-              )
-            }
-          }
-          const path = (
-            await this.readMessagePayloads(
-              selected,
-              (row, message): SessionContextMessage => ({
-                sessionId: request.sessionId,
-                threadId: current.thread.threadId,
-                messageId: row.message_id,
-                parentMessageId: row.parent_message_id,
-                seq: Number(row.seq),
-                message,
-              }),
-              sources,
-              request.sessionId,
-              knownMessages
-            )
-          ).reverse()
-          const extras = current.checkpoint
-            ? [current.checkpoint.point.summaryMessageId, current.checkpoint.systemMessageId].filter(
-                (id): id is string => Boolean(id) && !selected.some((row) => row.message_id === id)
-              )
-            : []
-          const result = finishSessionContextRead(
-            request,
-            commit,
-            current,
-            path,
-            await this.readMessageRows(
-              await this.readMessageRecordsByIds(request.sessionId, extras),
-              sources,
-              knownMessages
-            )
+      return withSqlTranscriptCommit(
+        this.database,
+        request,
+        () => this.readRevision(request.sessionId),
+        async (commit) => {
+          const sources: Record<string, SessionTextTokenSource> = Object.create(null)
+          const messages = await this.readMessageRows(
+            await this.readMessageRecordsByIds(request.sessionId, request.messageIds),
+            sources
           )
-          return result ? { ...result, textTokens: await this.readTokenSnapshot(sources) } : result
-        }
-        const result = await readPlan(plan)
-        if (result) return result
-        plan = { ...plan, checkpoint: undefined }
-        const fallback = await readPlan(plan)
-        if (!fallback) throw new Error('Context fallback is incomplete')
-        return fallback
-      })
+          return { ...commit, messages, textTokens: await this.readTokenSnapshot(sources) }
+        },
+        this.boundedReads
+      )
     })
-  }
-
-  private async readSelectedSnapshot<Result>(
-    request: { sessionId: string; expectedRevision?: number },
-    select: (commit: SessionRowCommit, threads: ThreadRow[]) => Promise<Result>
-  ): Promise<Result | null> {
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const before = await this.readRevision(request.sessionId)
-      assertSessionReadRevision(request, before)
-      let result: Result | null
-      try {
-        const metadata = await this.readPages<ThreadMetadataRecord>(
-          this.threadsPageSql,
-          request.sessionId,
-          THREAD_PAGE_SIZE
-        )
-        const records = await this.readThreadRecords(metadata)
-        result =
-          records.length === 0
-            ? null
-            : await select(readCommitMetadata(request.sessionId, records, before), records.map(toThreadRow))
-      } catch (error) {
-        const afterFailure = await this.readRevision(request.sessionId)
-        assertSessionReadRevision(request, afterFailure)
-        if (before !== afterFailure) continue
-        throw error
-      }
-      const after = await this.readRevision(request.sessionId)
-      assertSessionReadRevision(request, after)
-      if (before !== after) continue
-      return result
-    }
-    throw new Error(`session ${request.sessionId} changed repeatedly during its selected read`)
   }
 
   private async readMessageRecordsByIds(sessionId: string, ids: string[]): Promise<MessageRecord[]> {
@@ -1343,10 +1251,18 @@ export class SqlSessionRowStore implements SessionRowStorePort {
         const records = await this.database.query<SelectedMessageRecord>(sql, [...batch, sessionId, cursor])
         if (records.length === 0) break
         for (const record of records) {
-          // A corrupt oversized metadata row returns only its integer cursor,
-          // so reporting the failure never sends that row over the bridge.
-          if (record.metadata_oversized === 1) throw new Error('Message metadata exceeds the native response budget')
-          found.set(record.message_id, record)
+          if (record.metadata_oversized === 1) {
+            const [sliced] = await queryRowMetadata<MessageRecord>(
+              this.database,
+              `SELECT ${MESSAGE_COLUMNS} FROM session_messages WHERE session_id=? AND message_id=?`,
+              [sessionId, batch[Number(record.request_index)]],
+              MESSAGE_COLUMNS.split(', '),
+              true
+            )
+            if (!sliced) throw new Error('Message metadata changed during a read')
+            validateMessageRow(toMessageMetadata(sliced), sessionId)
+            found.set(sliced.message_id, sliced)
+          } else found.set(record.message_id, record)
         }
         const last = records[records.length - 1]
         cursor = Number(last.request_index) + 1
@@ -1386,15 +1302,52 @@ export class SqlSessionRowStore implements SessionRowStorePort {
     return { sources, results: await this.readTextTokenResults(Object.values(sources)) }
   }
 
-  async applyDiff(diff: SessionRowsDiff, commit: SessionRowCommit, expectedRevision?: number): Promise<void> {
-    const statements = this.buildDiffStatements(diff, commit, expectedRevision !== undefined)
-    await this.run('apply-diff', diff.sessionId, () =>
-      this.database.executeBatch(statements, {
-        sessionId: diff.sessionId,
-        mode: 'diff',
-        expectedRevision,
-        resultRevision: commit.revision,
+  async applyDiff(
+    diff: SessionRowsDiff,
+    commit: SessionRowCommit,
+    expectedRevision?: number
+  ): Promise<SessionRowMutationResult> {
+    if (commit.record.rowFormatVersion === 3) {
+      requireSessionId(diff.sessionId, 'diff')
+      if (commit.record.id !== diff.sessionId || !Number.isSafeInteger(commit.revision) || commit.revision < 1)
+        throw new SessionRowStoreError('apply-diff', new Error('Invalid commit metadata'), diff.sessionId)
+      if (expectedRevision === undefined)
+        throw new SessionRowStoreError(
+          'apply-diff',
+          new Error('Local row edits require an expected revision'),
+          diff.sessionId
+        )
+      return this.run('apply-diff', diff.sessionId, async () => {
+        assertSessionReadRevision(
+          { sessionId: diff.sessionId, expectedRevision },
+          await this.readRevision(diff.sessionId)
+        )
+        try {
+          return await applySqlLocalMutation(
+            this.database,
+            diff,
+            commit,
+            expectedRevision,
+            async (threadId) => {
+              const result = await this.readThreadState({ sessionId: diff.sessionId, threadId, expectedRevision })
+              if (result?.status === 'projection-unavailable') throw new Error('Thread projection is unavailable')
+              return result?.thread ?? null
+            },
+            this.boundedReads
+          )
+        } catch (error) {
+          assertSessionReadRevision(
+            { sessionId: diff.sessionId, expectedRevision },
+            await this.readRevision(diff.sessionId)
+          )
+          throw error
+        }
       })
+    }
+    throw new SessionRowStoreError(
+      'apply-diff',
+      new Error('Session rows require a format upgrade before editing'),
+      diff.sessionId
     )
   }
 
@@ -1463,9 +1416,10 @@ export class SqlSessionRowStore implements SessionRowStorePort {
         validateThreadRow(thread, rows.sessionId)
         yield threadStatement(thread, commit)
       }
+      const depths = selectedDepths(rows)
       for (const message of rows.messages) {
         validateMessageRow(message, rows.sessionId)
-        yield* messageStatements(message)
+        yield* messageStatements(message, depths.get(message.messageId))
       }
       yield {
         kind: 'delete-orphan-message-payloads',
@@ -1475,61 +1429,6 @@ export class SqlSessionRowStore implements SessionRowStorePort {
       yield textTokenCleanupStatement(rows.sessionId)
     } catch (error) {
       throw new SessionRowStoreError('write-rows', error, rows.sessionId)
-    }
-  }
-
-  private buildDiffStatements(
-    diff: SessionRowsDiff,
-    commit: SessionRowCommit,
-    reusePayload: boolean
-  ): SessionRowSqlStatement[] {
-    try {
-      requireSessionId(diff.sessionId, 'diff')
-      if (!Number.isSafeInteger(commit.revision) || commit.revision <= 0 || commit.record.id !== diff.sessionId) {
-        throw new Error(`session ${diff.sessionId} has invalid commit metadata`)
-      }
-      if (diff.messageMetadataUpsert?.length && !reusePayload)
-        throw new Error('Structural edits require an expected revision')
-      const statements: SessionRowSqlStatement[] = []
-      for (const row of diff.messageMetadataUpsert ?? []) {
-        validateMessageRow(row, diff.sessionId)
-        statements.push(messageMetadataStatement(row))
-      }
-      for (const thread of diff.threads.upsert) {
-        validateThreadRow(thread, diff.sessionId)
-        statements.push(threadStatement(thread, commit))
-      }
-      const unchangedPayloadIds = new Set(reusePayload ? diff.unchangedPayloadMessageIds : [])
-      for (const message of diff.messages.upsert) {
-        validateMessageRow(message, diff.sessionId)
-        if (unchangedPayloadIds.has(message.messageId)) {
-          statements.push(messageMetadataStatement(message))
-        } else {
-          statements.push(...messageStatements(message))
-        }
-      }
-      for (const threadId of diff.threads.delete) {
-        statements.push({ kind: 'delete-thread', sql: DELETE_THREAD_SQL, params: [diff.sessionId, threadId] })
-      }
-      for (const messageId of diff.messages.delete) {
-        statements.push({ kind: 'delete-message', sql: DELETE_MESSAGE_SQL, params: [diff.sessionId, messageId] })
-      }
-      const changedIds = new Set([
-        ...diff.messages.upsert
-          .filter((message) => !unchangedPayloadIds.has(message.messageId))
-          .map((message) => message.messageId),
-        ...diff.messages.delete,
-      ])
-      for (const messageId of changedIds) statements.push(textTokenCleanupStatement(diff.sessionId, messageId))
-      statements.push(updateCommitStatement(diff.sessionId, commit))
-      statements.push({
-        kind: 'delete-orphan-message-payloads',
-        sql: DELETE_ORPHAN_MESSAGE_PAYLOADS_SQL,
-        params: [diff.sessionId],
-      })
-      return statements
-    } catch (error) {
-      throw new SessionRowStoreError('apply-diff', error, diff.sessionId)
     }
   }
 
@@ -1563,17 +1462,16 @@ export class SqlSessionRowStore implements SessionRowStorePort {
     }
   }
 
-  private async readMessageRecords(sessionId: string, suffix?: SessionThreadSuffixRequest): Promise<MessageRecord[]> {
+  private async readMessageRecords(sessionId: string): Promise<MessageRecord[]> {
     const records: MessageRecord[] = []
     let cursor: MessageRecord | undefined
     for (;;) {
       const params: SessionRowSqlBindValue[] = [sessionId]
-      if (suffix) params.push(suffix.threadId, suffix.afterSeq)
       if (cursor) params.push(cursor.thread_id, cursor.seq, cursor.message_id)
       params.push(MESSAGE_PAGE_MAX_ROWS)
       if (this.boundedReads) params.push(MESSAGE_PAGE_RESPONSE_BUDGET)
       const page = await this.database.query<MessageRecord>(
-        selectMessagePageSql(cursor !== undefined, Boolean(suffix), this.boundedReads),
+        selectMessagePageSql(cursor !== undefined, this.boundedReads),
         params
       )
       if (page.length === 0) return records
@@ -1663,6 +1561,7 @@ export class SqlSessionRowStore implements SessionRowStorePort {
         session_prompt_context_snapshot_json: promptSnapshot,
         session_record_json: sessionRecord,
         commit_revision: record.commit_revision,
+        projection_json: record.projection_json,
       })
     }
     return hydrated
@@ -1672,6 +1571,7 @@ export class SqlSessionRowStore implements SessionRowStorePort {
     const chunkCount = Number(record.payload_chunk_count)
     const expectedLength = Number(record.payload_utf8_length)
     if (
+      typeof record.payload_id !== 'string' ||
       !record.payload_id ||
       !Number.isSafeInteger(chunkCount) ||
       chunkCount < 1 ||
@@ -1725,7 +1625,7 @@ export class SqlSessionRowStore implements SessionRowStorePort {
 
   private async readMessageRows(
     records: MessageRecord[],
-    sources: Record<string, SessionTextTokenSource>,
+    sources: Record<string, SessionTextTokenSource> | null,
     knownMessages?: ReadonlyMap<string, Message>
   ): Promise<MessageRow[]> {
     return this.readMessagePayloads(records, toMessageRow, sources, records[0]?.session_id ?? '', knownMessages)
@@ -1761,7 +1661,7 @@ export class SqlSessionRowStore implements SessionRowStorePort {
   private async readMessagePayloads<Record extends MessagePayloadRecord, Result>(
     records: Record[],
     project: (record: Record, message: Message) => Result,
-    sources: { [messageId: string]: SessionTextTokenSource },
+    sources: { [messageId: string]: SessionTextTokenSource } | null,
     sessionId: string,
     knownMessages?: ReadonlyMap<string, Message>
   ): Promise<Result[]> {
@@ -1877,8 +1777,10 @@ export class SqlSessionRowStore implements SessionRowStorePort {
       const message = known
         ? structuredClone(known)
         : this.parseMessagePayload(record, payloads.get(record.payload_id) ?? [])
-      const source = createTextTokenSource(sessionId, message, record.payload_id)
-      if (source) sources[record.message_id] = source
+      if (sources) {
+        const source = createTextTokenSource(sessionId, message, record.payload_id)
+        if (source) sources[record.message_id] = source
+      }
       return project(record, message)
     })
   }

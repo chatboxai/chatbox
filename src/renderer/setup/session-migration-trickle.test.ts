@@ -1,5 +1,5 @@
 import { BackupOperationBusyError } from '@chatbox/core/backup'
-import type { SessionMigrationOutcome } from '@chatbox/core/application/session'
+import type { SessionMigrationOutcome } from '@/adapters/CurrentSessionRepository'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { type SessionMigrationTrickleOptions, startSessionMigrationTrickle } from './session-migration-trickle'
 
@@ -65,7 +65,8 @@ function start(
 function createRepository(outcomes: Record<string, SessionMigrationOutcome | Error>) {
   const ids = Object.keys(outcomes)
   return {
-    listUnmigratedSessionIds: vi.fn(() => Promise.resolve(ids)),
+    listSessionMigrationCandidates: vi.fn(() => Promise.resolve(ids.map((id) => ({ id, recordExists: true })))),
+    requiresSessionMigration: vi.fn(async (_candidate: { id: string; recordExists: boolean }) => true),
     migrateSession: vi.fn((id: string) => {
       const outcome = outcomes[id]
       return outcome instanceof Error ? Promise.reject(outcome) : Promise.resolve(outcome)
@@ -101,11 +102,12 @@ describe('startSessionMigrationTrickle', () => {
     })
     const { scheduler, handle } = start({
       repository: {
-        listUnmigratedSessionIds: async () => {
+        listSessionMigrationCandidates: async () => {
           await scan
           if (outcome === 'failed') throw new Error('scan failed')
           return []
         },
+        requiresSessionMigration: async () => true,
         migrateSession: async () => 'migrated',
       },
     })
@@ -131,7 +133,8 @@ describe('startSessionMigrationTrickle', () => {
     const migrated: string[] = []
     const { scheduler, handle } = start({
       repository: {
-        listUnmigratedSessionIds: async () => ['a'],
+        listSessionMigrationCandidates: async () => [{ id: 'a', recordExists: true }],
+        requiresSessionMigration: async () => true,
         migrateSession: async (id) => {
           migrated.push(id)
           return 'migrated'
@@ -163,7 +166,11 @@ describe('startSessionMigrationTrickle', () => {
     const migrated: string[] = []
     const { scheduler, handle } = start({
       repository: {
-        listUnmigratedSessionIds: async () => ['a', 'b'],
+        listSessionMigrationCandidates: async () => [
+          { id: 'a', recordExists: true },
+          { id: 'b', recordExists: true },
+        ],
+        requiresSessionMigration: async () => true,
         migrateSession: async (id) => {
           if (id === 'a') await activeMigration
           migrated.push(id)
@@ -200,17 +207,18 @@ describe('startSessionMigrationTrickle', () => {
     expect(migrated).toEqual(['a', 'b'])
   })
 
-  test('keeps protected sessions out of the initial scan and prevents full maintenance afterward', async () => {
+  test('skips inspecting protected candidates and prevents full maintenance afterward', async () => {
     const repository = {
-      listUnmigratedSessionIds: vi.fn(async (shouldSkip?: (id: string) => Promise<boolean>) =>
-        (await shouldSkip?.('blocked')) ? [] : ['blocked']
-      ),
+      listSessionMigrationCandidates: vi.fn(async () => [{ id: 'blocked', recordExists: true }]),
+      requiresSessionMigration: vi.fn(async (_candidate: { id: string; recordExists: boolean }) => true),
       migrateSession: vi.fn(async (): Promise<SessionMigrationOutcome> => 'migrated'),
     }
     const { scheduler, handle } = start({ repository, shouldSkipSession: async () => true })
 
     await scheduler.run()
+    await scheduler.run()
 
+    expect(repository.requiresSessionMigration).not.toHaveBeenCalled()
     expect(repository.migrateSession).not.toHaveBeenCalled()
     await expect(handle.readyForFullScan).resolves.toBe(false)
   })
@@ -224,7 +232,97 @@ describe('startSessionMigrationTrickle', () => {
 
     await scheduler.run()
 
+    expect(repository.requiresSessionMigration).not.toHaveBeenCalled()
     expect(repository.migrateSession).not.toHaveBeenCalled()
+    await expect(handle.readyForFullScan).resolves.toBe(false)
+  })
+
+  test('inspects at most one published candidate per tick and yields to foreground reads', async () => {
+    const repository = createRepository({ a: 'already', b: 'already', c: 'already' })
+    repository.requiresSessionMigration.mockResolvedValue(false)
+    let busy = false
+    const { scheduler } = start({ repository, isBusy: () => busy })
+    await scheduler.run()
+    expect(repository.requiresSessionMigration).not.toHaveBeenCalled()
+    await scheduler.run()
+    expect(repository.requiresSessionMigration.mock.calls.map(([candidate]) => candidate.id)).toEqual(['a'])
+    busy = true
+    await scheduler.run()
+    await scheduler.run()
+    expect(repository.requiresSessionMigration).toHaveBeenCalledTimes(1)
+    busy = false
+    await scheduler.run()
+    expect(repository.requiresSessionMigration.mock.calls.map(([candidate]) => candidate.id)).toEqual(['a', 'b'])
+    expect(repository.migrateSession).not.toHaveBeenCalled()
+  })
+
+  test('defers migration if a foreground read starts during the candidate check', async () => {
+    const repository = createRepository({ a: 'migrated', b: 'migrated' })
+    let busy = false
+    let release = () => {}
+    repository.requiresSessionMigration.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          release = () => resolve(true)
+        })
+    )
+    const { scheduler, handle } = start({ repository, isBusy: () => busy })
+    await scheduler.run()
+    await scheduler.run()
+    busy = true
+    release()
+    await flush()
+    expect(repository.migrateSession).not.toHaveBeenCalled()
+    await scheduler.run()
+    expect(repository.requiresSessionMigration).toHaveBeenCalledTimes(1)
+    busy = false
+    await scheduler.run()
+    expect(repository.migrateSession.mock.calls.map(([id]) => id)).toEqual(['a'])
+    handle.stop()
+  })
+
+  test('pausing during one candidate inspection drains only that read and resumes the same candidate', async () => {
+    const repository = createRepository({ a: 'migrated', b: 'migrated' })
+    let release = () => {}
+    repository.requiresSessionMigration.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          release = () => resolve(true)
+        })
+    )
+    const { scheduler, handle } = start({ repository })
+    await scheduler.run()
+    await scheduler.run()
+    const paused = handle.pauseAndDrain()
+    release()
+    await paused
+    expect(repository.requiresSessionMigration).toHaveBeenCalledTimes(1)
+    expect(repository.migrateSession).not.toHaveBeenCalled()
+    expect(scheduler.pending()).toBeNull()
+    handle.resume()
+    await scheduler.run()
+    expect(repository.migrateSession).toHaveBeenCalledWith('a')
+    handle.stop()
+  })
+
+  test('stop during candidate inspection never reads the next candidate or migrates', async () => {
+    const repository = createRepository({ a: 'migrated', b: 'migrated' })
+    let release = () => {}
+    repository.requiresSessionMigration.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          release = () => resolve(true)
+        })
+    )
+    const { scheduler, handle } = start({ repository })
+    await scheduler.run()
+    await scheduler.run()
+    handle.stop()
+    release()
+    await flush()
+    expect(repository.requiresSessionMigration).toHaveBeenCalledTimes(1)
+    expect(repository.migrateSession).not.toHaveBeenCalled()
+    expect(scheduler.pending()).toBeNull()
     await expect(handle.readyForFullScan).resolves.toBe(false)
   })
 
@@ -237,11 +335,11 @@ describe('startSessionMigrationTrickle', () => {
     const { scheduler } = start({ repository, initialDelayMs: 15_000, intervalMs: 1000 })
 
     expect(scheduler.pending()?.delayMs).toBe(15_000)
-    expect(repository.listUnmigratedSessionIds).not.toHaveBeenCalled()
+    expect(repository.listSessionMigrationCandidates).not.toHaveBeenCalled()
 
     await scheduler.run()
 
-    expect(repository.listUnmigratedSessionIds).toHaveBeenCalledOnce()
+    expect(repository.listSessionMigrationCandidates).toHaveBeenCalledOnce()
     expect(repository.migrateSession).not.toHaveBeenCalled()
     expect(scheduler.pending()?.delayMs).toBe(1000)
   })
@@ -256,7 +354,7 @@ describe('startSessionMigrationTrickle', () => {
 
     await scheduler.run()
     expect(repository.migrateSession.mock.calls.map((call) => call[0])).toEqual(['a', 'b'])
-    expect(repository.listUnmigratedSessionIds).toHaveBeenCalledOnce()
+    expect(repository.listSessionMigrationCandidates).toHaveBeenCalledOnce()
     expect(scheduler.pending()).toBeNull()
   })
 
@@ -280,7 +378,9 @@ describe('startSessionMigrationTrickle', () => {
     expect(repository.migrateSession).not.toHaveBeenCalled()
     expect(scheduler.pending()).not.toBeNull()
 
+    expect(repository.listSessionMigrationCandidates).not.toHaveBeenCalled()
     busy = false
+    await scheduler.run()
     await scheduler.run()
     expect(repository.migrateSession).toHaveBeenCalledWith('a')
   })
@@ -333,19 +433,20 @@ describe('startSessionMigrationTrickle', () => {
     expect(repository.migrateSession.mock.calls.map((call) => call[0])).toEqual(['a', 'b'])
   })
 
-  test('warns about a session that cannot be converted', async () => {
-    const repository = createRepository({ a: 'skipped' })
-    const { scheduler, log } = start({ repository })
+  test('warns when a recovery-protected session is deferred', async () => {
+    const repository = createRepository({ a: 'migrated' })
+    const { scheduler, log } = start({ repository, shouldSkipSession: async () => true })
 
     await scheduler.run()
     await scheduler.run()
 
-    expect(messages(log, 'warn')).toContain('skipped session a')
+    expect(repository.migrateSession).not.toHaveBeenCalled()
+    expect(messages(log, 'warn')).toContain('deferred recovery-protected session a')
   })
 
   test('stops when the scan fails', async () => {
     const repository = createRepository({ a: 'migrated' })
-    repository.listUnmigratedSessionIds.mockRejectedValue(new Error('records unavailable'))
+    repository.listSessionMigrationCandidates.mockRejectedValue(new Error('records unavailable'))
     const { scheduler, log } = start({ repository })
 
     await scheduler.run()
@@ -416,7 +517,7 @@ describe('startSessionMigrationTrickle', () => {
 
     test('resolves when the scan fails', async () => {
       const repository = createRepository({ a: 'migrated' })
-      repository.listUnmigratedSessionIds.mockRejectedValue(new Error('records unavailable'))
+      repository.listSessionMigrationCandidates.mockRejectedValue(new Error('records unavailable'))
       const { scheduler, handle } = start({ repository })
 
       await scheduler.run()
@@ -455,18 +556,22 @@ describe('startSessionMigrationTrickle', () => {
   test('summarizes the outcomes of the run', async () => {
     const repository = createRepository({
       a: 'migrated',
-      b: 'skipped',
+      b: 'migrated',
       c: 'already',
       d: 'missing',
       e: new Error('transient'),
     })
-    const { scheduler, log } = start({ repository, maxConsecutiveFailures: 3 })
+    const { scheduler, log } = start({
+      repository,
+      maxConsecutiveFailures: 3,
+      shouldSkipSession: async (id) => id === 'b',
+    })
 
     await scheduler.run()
     for (let index = 0; index < 5; index += 1) {
       await scheduler.run()
     }
 
-    expect(messages(log, 'info')).toContain('1 migrated, 1 skipped, 1 already migrated, 1 missing, 1 failed')
+    expect(messages(log, 'info')).toContain('1 migrated, 1 recovery-protected, 1 already migrated, 1 missing, 1 failed')
   })
 })

@@ -1,4 +1,4 @@
-import type { CopilotDetail, Session, SessionMetaRecord, Settings } from '@shared/types'
+import type { CopilotDetail, SessionHeader, SessionMetaRecord, Settings } from '@shared/types'
 import { throwIfAborted } from './abort'
 import {
   BACKUP_COPILOTS_PATH,
@@ -6,29 +6,18 @@ import {
   BACKUP_SESSION_SETTINGS_PATH,
   BACKUP_SETTINGS_PATH,
   backupEntryByteLimit,
-  isBackupSession,
 } from './archive-layout'
 import { sha256Checksum } from './codec'
 import { normalizeBackupExportItems } from './export-items'
-import {
-  type BackupExportPlan,
-  type PreparedSessionEntry,
-  prepareBackupExport,
-  preparedSessionReader,
-} from './preflight'
+import { type BackupExportPlan, prepareBackupExport, preparedEntryReader } from './preflight'
 import { BackupReadError } from './read-error'
 import { BackupResourceBudgetError, BackupResourceCatalog } from './resource-catalog'
-import { collectGlobalResourceReferences, collectSessionResourceReferences, prepareSessionForBackup } from './resources'
+import { collectGlobalResourceReferences } from './resources'
 import type { BackupSessionStore } from './session-port'
 import { settingsPayloadForBackup } from './settings-payload'
 import { exportShardedBackup, type ShardedBackupOptions } from './sharded-backup'
 import type { BackupManifestV3 } from './sharded-format'
-import {
-  AGENT_PERSONA_BACKUP_KEYS,
-  BackupStorageKey,
-  backupSessionStorageKey,
-  COPILOT_BACKUP_KEYS,
-} from './storage-keys'
+import { AGENT_PERSONA_BACKUP_KEYS, BackupStorageKey, COPILOT_BACKUP_KEYS } from './storage-keys'
 import {
   BACKUP_FORMAT,
   BACKUP_FORMAT_VERSION,
@@ -63,8 +52,6 @@ export interface BackupExportWriteResult {
 export interface BackupExportOptions {
   sessionStore?: BackupSessionStore
   prepared?: BackupExportPlan
-  /** Archive entries completed during preparation; each is removed once written. */
-  preparedSessionEntries?: Map<string, PreparedSessionEntry>
   /** Payloads up to this many bytes are parsed natively during classification and export. */
   nativePayloadLimit?: number
   legacyTopologies?: ReadonlyMap<string, string>
@@ -81,15 +68,6 @@ export interface BackupExportOptions {
   exportedAt?: Date
   storage: BackupStorage
   metaStorage: BackupMetaStorage | Promise<BackupMetaStorage>
-  /**
-   * Reads one whole session. Hosts whose session records hold no messages must
-   * pass their repository here; without it a session is read straight from the
-   * key-value storage.
-   */
-  readSession?: (
-    sessionId: string,
-    onWarnings?: (warnings: import('./types').BackupWarning[]) => void
-  ) => Promise<Session | null>
   application: { version: string | Promise<string>; platform: string | Promise<string> }
   signal?: AbortSignal
   onProgress?: (progress: BackupProgress) => void
@@ -102,13 +80,19 @@ export interface BackupExportResult extends BackupExportWriteResult {
 }
 
 export async function safeSessionPathComponent(sessionId: string, checksum: typeof sha256Checksum): Promise<string> {
-  const encoded = encodeURIComponent(sessionId).replaceAll('.', '%2E')
+  let encoded: string
+  try {
+    encoded = encodeURIComponent(sessionId).replaceAll('.', '%2E')
+  } catch {
+    const result = await checksum(new TextEncoder().encode(JSON.stringify(sessionId)))
+    return `id-${result.value}`
+  }
   if (new TextEncoder().encode(encoded).length <= 200) return encoded
-  const result = await checksum(new TextEncoder().encode(sessionId))
+  const result = await checksum(new TextEncoder().encode(JSON.stringify(sessionId)))
   return `id-${result.value}`
 }
 
-export function deriveSessionMeta(session: Session, existing?: SessionMetaRecord): SessionMetaRecord {
+export function deriveSessionMeta(session: SessionHeader, existing?: SessionMetaRecord): SessionMetaRecord {
   const preserveRecoveryArchive = existing?.recoveryArchived === true
   return {
     id: session.id,
@@ -263,26 +247,36 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
         nativePayloadLimit: options.nativePayloadLimit,
       })
     }
-    return exportBackupArchive({
-      ...options,
-      sessionStore: undefined,
-      prepared: undefined,
-      sharded: undefined,
-      selectedSessionIds: prepared.sessions.map((session) => session.id),
-      sourceWarnings: prepared.warnings.filter(
-        (warning) => warning.code === 'session-read-failed' || warning.code === 'external-resource-skipped'
-      ),
-      strictSessions: true,
-      legacyTopologies: new Map(
-        prepared.sessions.flatMap((session) =>
-          session.layout === 'single' && session.legacyTopology ? [[session.id, session.legacyTopology] as const] : []
-        )
-      ),
-      readSession: preparedSessionReader({ ...options, sessionStore: options.sessionStore }, prepared),
-      preparedSessionEntries: prepared.entries,
-    })
+    return exportSingleFileBackup(
+      {
+        ...options,
+        sessionStore: undefined,
+        prepared,
+        sharded: undefined,
+        selectedSessionIds: prepared.sessions.map((session) => session.id),
+        sourceWarnings: prepared.warnings.filter(
+          (warning) => warning.code === 'session-read-failed' || warning.code === 'external-resource-skipped'
+        ),
+        strictSessions: true,
+        legacyTopologies: new Map(
+          prepared.sessions.flatMap((session) =>
+            session.layout === 'single' && session.legacyTopology ? [[session.id, session.legacyTopology] as const] : []
+          )
+        ),
+      },
+      preparedEntryReader({ ...options, sessionStore: options.sessionStore }, prepared)
+    )
   }
   if (options.sharded) return exportShardedBackup(options, options.sharded)
+  if (normalizeBackupExportItems(options.exportItems).includes('conversations'))
+    throw new Error('Conversation backup requires a row source')
+  return exportSingleFileBackup(options)
+}
+
+async function exportSingleFileBackup(
+  options: BackupExportOptions,
+  readPrepared?: ReturnType<typeof preparedEntryReader>
+): Promise<BackupExportResult> {
   let completedManifest: BackupManifest | undefined
   const exportedAt = options.exportedAt ?? new Date()
   const checksum = options.checksum ?? sha256Checksum
@@ -328,9 +322,9 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
           total: sessionIds.length,
           label: metaById.get(sessionId)?.name,
         })
-        const prepared = options.preparedSessionEntries?.get(sessionId)
+        const prepared = options.prepared?.entries?.get(sessionId)
         if (prepared) {
-          options.preparedSessionEntries?.delete(sessionId)
+          options.prepared?.entries?.delete(sessionId)
           warnings.addAll(prepared.sourceWarnings)
           warnings.addAll(prepared.warnings)
           catalog.add(prepared.references)
@@ -342,7 +336,7 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
               checksum: prepared.checksum,
               legacyTopology: options.legacyTopologies?.get(sessionId),
               id: sessionId,
-              meta: deriveSessionMeta(prepared.session, metaById.get(sessionId)),
+              meta: deriveSessionMeta(prepared.header, metaById.get(sessionId)),
               resourceIds: [],
             },
             resourceStorageKeys: new Set(prepared.references.map((reference) => reference.storageKey)),
@@ -351,31 +345,23 @@ export async function exportBackupArchive(options: BackupExportOptions): Promise
           continue
         }
         try {
-          const session = options.readSession
-            ? await options.readSession(sessionId, (sourceWarnings) => warnings.addAll(sourceWarnings))
-            : await options.storage.getItem<Session | null>(backupSessionStorageKey(sessionId), null)
-          if (session === null && !metaById.has(sessionId) && !options.selectedSessionIds) continue
-          if (session === null) throw new BackupReadError('session-missing', 'Session data is missing')
-          if (!isBackupSession(session)) throw new Error('Session is invalid')
-          if (session.id !== sessionId)
-            throw new BackupReadError('session-id-mismatch', 'Session id does not match its storage key')
-          const collected = collectSessionResourceReferences(session)
-          const preparedSession = prepareSessionForBackup(session)
-          const path = `sessions/${await safeSessionPathComponent(session.id, checksum)}/session.json`
-          const { archive, descriptor } = await jsonEntry(path, preparedSession, checksum)
-          warnings.addAll(collected.warnings)
-          catalog.add(collected.references)
+          if (!readPrepared) throw new Error('Conversation backup requires a row source')
+          const source = await readPrepared(sessionId)
+          const path = `sessions/${await safeSessionPathComponent(sessionId, checksum)}/session.json`
+          const descriptor = { path, size: source.size, checksum: await checksum(source.bytes) }
+          warnings.addAll(source.warnings)
+          catalog.add(source.references)
           sessions.push({
             entry: {
               ...descriptor,
               legacyTopology: options.legacyTopologies?.get(sessionId),
-              id: session.id,
-              meta: deriveSessionMeta(preparedSession, metaById.get(session.id)),
+              id: sessionId,
+              meta: deriveSessionMeta(source.header, metaById.get(sessionId)),
               resourceIds: [],
             },
-            resourceStorageKeys: new Set(collected.references.map((reference) => reference.storageKey)),
+            resourceStorageKeys: new Set(source.references.map((reference) => reference.storageKey)),
           })
-          yield archive
+          yield { path, data: source.bytes, compress: true }
         } catch (error) {
           if (
             options.strictSessions ||

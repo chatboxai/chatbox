@@ -3,15 +3,17 @@ import type {
   GenerationRuntimeStore,
   GenerationSessionStopGate,
 } from '../../generation/runtime-store'
-import { findMessageLocation } from '../../session/message-forks'
-import { getCurrentConversationMessages } from '../../session/generation-state'
-import type { Session } from '../../types'
 import type { SessionEventBus } from './session-events'
 
 export type GenerationStopRecoveryRuntime = Pick<
   GenerationRuntimeStore,
   'get' | 'list' | 'clear' | 'clearSessionStop' | 'isSessionStopRequested' | 'subscribe'
 >
+
+export interface GenerationStopRecoveryDurableState {
+  generatingMessageIds: readonly string[]
+  currentConversationGeneratingCount: number
+}
 
 interface GenerationStopRecoveryOptions {
   runtime: GenerationStopRecoveryRuntime
@@ -20,7 +22,7 @@ interface GenerationStopRecoveryOptions {
   targetMessageId?: string
   stopGate?: GenerationSessionStopGate
   preparationBarrier?: Promise<void>
-  readDurableSession?: () => Promise<Session | null>
+  readDurableState: () => Promise<GenerationStopRecoveryDurableState | null>
   stoppingRuntimes: ReadonlyMap<string, GenerationRuntimeState>
 }
 
@@ -48,9 +50,9 @@ export function createGenerationStopRecovery(options: GenerationStopRecoveryOpti
   let reconciling = false
   let preparationFinished = !options.preparationBarrier
   let durableEpoch = 0
-  let needsDurableRead = false
+  let needsDurableRead = true
   let readingDurable = false
-  let durableSession: Session | null | undefined
+  let durableState: GenerationStopRecoveryDurableState | null | undefined
   let unsubscribeEvents = () => {}
   let unsubscribeRuntime = () => {}
   const dispose = () => {
@@ -81,26 +83,15 @@ export function createGenerationStopRecovery(options: GenerationStopRecoveryOpti
       dispose()
       return
     }
-    if (durableSession === undefined) return
-    const isTerminal = (messageId: string) => {
-      if (!durableSession) return true
-      const location = findMessageLocation(durableSession, messageId)
-      return !location?.list[location.index].generating
-    }
+    if (durableState === undefined) return
+    const isTerminal = (messageId: string) => !durableState?.generatingMessageIds.includes(messageId)
     reconciling = true
     try {
       for (const [messageId, expected] of stoppingRuntimes) {
         if (isTerminal(messageId)) runtime.clear(sessionId, messageId, expected)
       }
       if (stopGate) {
-        const hasGeneratingMessage =
-          durableSession &&
-          getCurrentConversationMessages(durableSession).some(
-            (message) =>
-              message.role === 'assistant' &&
-              message.generating &&
-              runtime.get(sessionId, message.id)?.phase !== 'paused'
-          )
+        const hasGeneratingMessage = (durableState?.currentConversationGeneratingCount ?? 0) > 0
         if (
           !preparationFinished ||
           hasGeneratingMessage ||
@@ -116,17 +107,17 @@ export function createGenerationStopRecovery(options: GenerationStopRecoveryOpti
     }
   }
 
-  const refreshDurableSession = () => {
-    if (disposed || !failed || !needsDurableRead || readingDurable || !options.readDurableSession) return
+  const refreshDurableState = () => {
+    if (disposed || !failed || !needsDurableRead || readingDurable || !options.readDurableState) return
     readingDurable = true
     needsDurableRead = false
     const epoch = durableEpoch
     void options
-      .readDurableSession()
+      .readDurableState()
       .then(
         (session) => {
           if (disposed || epoch !== durableEpoch) return
-          durableSession = session
+          durableState = session
           reconcile()
         },
         () => {
@@ -135,20 +126,19 @@ export function createGenerationStopRecovery(options: GenerationStopRecoveryOpti
       )
       .finally(() => {
         readingDurable = false
-        refreshDurableSession()
+        refreshDurableState()
       })
   }
 
   unsubscribeEvents = events.subscribe((event) => {
     if (event.type === 'session-command-committed' && event.delta.sessionId === sessionId) {
       durableEpoch += 1
-      durableSession = undefined
+      durableState = undefined
       needsDurableRead = true
-      refreshDurableSession()
+      refreshDurableState()
       return
     }
-    if (event.type === 'session-updated' && event.session.id === sessionId) durableSession = event.session
-    else if (event.type === 'session-deleted' && event.ids.includes(sessionId)) durableSession = null
+    if (event.type === 'session-deleted' && event.ids.includes(sessionId)) durableState = null
     else return
     durableEpoch += 1
     needsDurableRead = false
@@ -166,7 +156,7 @@ export function createGenerationStopRecovery(options: GenerationStopRecoveryOpti
     recover() {
       failed = true
       reconcile()
-      refreshDurableSession()
+      refreshDurableState()
     },
   }
 }

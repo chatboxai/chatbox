@@ -1,5 +1,5 @@
 import type { CompactionPoint, Message, Session, SessionThread } from '../../types/session'
-import { forkTailStartIndex } from '../message-forks'
+import { forkTailStartIndex } from '@shared/session/message-forks'
 import { repairSessionV1 } from './repair'
 
 type MessageForkEntry = NonNullable<Session['messageForksHash']>[string]

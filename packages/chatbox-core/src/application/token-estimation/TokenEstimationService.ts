@@ -1,3 +1,5 @@
+import { planMessageAttachments } from '@shared/context/attachments'
+import { SESSION_TOKEN_CACHE_VERSION, type SessionTokenCacheResult } from '../../ports/session-token-cache'
 import { injectAttachments, selectContextMessages } from '@shared/context'
 import { estimateMessageToolCallTokens } from '@shared/context/tool-tokens'
 import { getRegistryModelMeta, getUnambiguousRegistryModelContextWindow } from '@shared/model-registry'
@@ -9,10 +11,13 @@ import {
 } from '@shared/token-estimation/tokenizer'
 import { getMessageText } from '@shared/utils/message'
 import type { BlobStoragePort } from '../../ports'
-import type { SessionContextSource } from '../../ports/session-context-source'
-import type { SessionTextTokenRepositoryPort, SessionTextTokenResult } from '../../ports/session-text-tokens'
-import type { Message, Session, Settings } from '../../types'
-import { findLastCompactionBoundaryMessage } from '../context/compaction-boundary'
+import type { SessionTokenPlan, SessionTokenRepositoryPort } from '../../ports/session-token-source'
+import type {
+  SessionTextTokenRepositoryPort,
+  SessionTextTokenResult,
+  SessionTextTokenRead,
+} from '../../ports/session-text-tokens'
+import type { Message, CompactionPoint, Settings } from '../../types'
 
 import {
   estimateDraftTokensImmediately,
@@ -28,8 +33,6 @@ export {
   LONG_DRAFT_TOKENIZATION_THRESHOLD,
   OUTPUT_RESERVE_TOKENS,
 } from './math'
-const RAW_TAIL_BUDGET_RATIO = 0.5
-const MAX_HISTORY_CACHE_ENTRIES = 1_000
 
 export interface TokenEstimationModel {
   provider: string
@@ -62,8 +65,11 @@ export interface PortableTokenEstimationResult {
 }
 
 export interface TokenEstimationRequest {
-  contextSource?: SessionContextSource | null
-  session?: Session | null
+  sessionId?: string | null
+  modelSupportToolUseForFile?: boolean
+  sandboxMode?: boolean
+  /** Resolved from lightweight history facts after the independent job starts. */
+  resolveInstructions?: (plan: SessionTokenPlan | null) => Promise<string>
   constructedMessage?: Message
   model?: TokenEstimationModel
   maxContextMessageCount?: number
@@ -116,25 +122,19 @@ interface HydratedBreakdown {
 }
 
 function estimateBoundedText(text: string, tokenizerType: TokenizerType): { approximate: boolean; tokens: number } {
+  if (text.length === 0) return { approximate: false, tokens: 0 }
   return text.length >= LONG_DRAFT_TOKENIZATION_THRESHOLD
     ? { approximate: true, tokens: estimateDraftTokensImmediately(text, tokenizerType) }
     : { approximate: false, tokens: estimateTokensForTokenizerType(text, tokenizerType) }
 }
 
-function estimateBoundedMessagesText(messages: Message[], tokenizerType: TokenizerType, useCached = false) {
+function estimateBoundedMessagesText(messages: Message[], tokenizerType: TokenizerType) {
   let tokens = 0
   let approximate = false
   const texts: string[] = []
   for (const message of messages) {
     const text = getMessageText(message, true, true)
-    const cached = useCached ? message.tokenCountMap?.[tokenizerType] : undefined
-    const estimate =
-      cached === undefined
-        ? estimateBoundedText(text, tokenizerType)
-        : {
-            tokens: cached,
-            approximate: message.tokenCountApproximate?.[tokenizerType] === true,
-          }
+    const estimate = estimateBoundedText(text, tokenizerType)
     texts.push(text)
     tokens += estimate.tokens
     approximate ||= estimate.approximate
@@ -145,9 +145,16 @@ function estimateBoundedMessagesText(messages: Message[], tokenizerType: Tokeniz
 function hydratedBreakdown(
   original: Message[],
   withAttachments: Message[],
-  tokenizerType: TokenizerType
+  tokenizerType: TokenizerType,
+  cachedText?: { tokens: number; approximate?: boolean }
 ): HydratedBreakdown {
-  const textWithoutAttachments = estimateBoundedMessagesText(original, tokenizerType, true)
+  const textWithoutAttachments = cachedText
+    ? {
+        texts: original.map((message) => getMessageText(message, true, true)),
+        tokens: cachedText.tokens,
+        approximate: cachedText.approximate === true,
+      }
+    : estimateBoundedMessagesText(original, tokenizerType)
   const imageTokens = original.reduce((total, message) => total + estimateImageTokens(message), 0)
   const hydratedTexts = withAttachments.map((message) => getMessageText(message, true, true))
   const textWithAttachments = textWithoutAttachments.texts.every((text, index) => text === hydratedTexts[index])
@@ -163,45 +170,18 @@ function hydratedBreakdown(
   }
 }
 
-function messageContentFingerprint(message: Message): string | null {
-  let serialized: string
-  try {
-    serialized = JSON.stringify({
-      contentParts: message.contentParts,
-      files: message.files,
-      links: message.links,
-      role: message.role,
-      tokenCountMap: message.tokenCountMap,
-      tokenCountApproximate: message.tokenCountApproximate,
-    })
-  } catch {
-    return null
-  }
-
-  let hash = 2166136261
-  for (let index = 0; index < serialized.length; index += 1) {
-    hash ^= serialized.charCodeAt(index)
-    hash = Math.imul(hash, 16777619)
-  }
-  return `${serialized.length}:${hash >>> 0}`
-}
-
-function canCompactSession(session: Pick<Session, 'messages' | 'compactionPoints'> | null | undefined): boolean {
-  return Boolean(findLastCompactionBoundaryMessage(selectTokenEstimationContext(session)))
-}
-
 export function selectTokenEstimationContext(
-  session: Pick<Session, 'messages' | 'compactionPoints'> | null | undefined,
+  context: { messages: readonly Message[]; compactionPoints?: CompactionPoint[] } | null | undefined,
   maxContextMessageCount?: number,
   constructedMessage?: Message
 ): Message[] {
-  if (!session) return []
-  const currentInput =
+  if (!context) return []
+  const input =
     constructedMessage ?? ({ id: 'token-estimation-current-input', role: 'user', contentParts: [] } satisfies Message)
-  return selectContextMessages([...session.messages, currentInput], {
-    compactionPoints: session.compactionPoints,
+  return selectContextMessages([...context.messages, input], {
+    compactionPoints: context.compactionPoints,
     maxContextMessageCount,
-  }).filter((message) => message !== currentInput)
+  }).filter((message) => message !== input)
 }
 
 export function resolveModelContextWindow(model: TokenEstimationModel | undefined): number | null {
@@ -220,18 +200,6 @@ export function getCompactionThresholdTokens(options: {
   return getCompactionThresholdForContextWindow(contextWindow, options.compactionThreshold)
 }
 
-export function getRawTailTokenBudget(options: {
-  model: TokenEstimationModel
-  compactionThreshold?: Settings['compactionThreshold']
-}): number {
-  return Math.floor(getCompactionThresholdTokens(options) * RAW_TAIL_BUDGET_RATIO)
-}
-
-function estimationContext(request: TokenEstimationRequest) {
-  const source = request.contextSource
-  return source ? { messages: source.candidateMessages, compactionPoints: source.compactionPoints } : request.session
-}
-
 function assertEstimationActive(signal?: AbortSignal): void {
   if (!signal?.aborted) return
   const error = new Error('Token estimation was cancelled')
@@ -240,39 +208,27 @@ function assertEstimationActive(signal?: AbortSignal): void {
 }
 
 export class TokenEstimationService {
-  private readonly immediateHistoricalByObject = new WeakMap<Message, Map<TokenizerType, TokenBreakdown>>()
-  private readonly immediateHistoricalByIdentity = new Map<string, { fingerprint: string; value: TokenBreakdown }>()
-  private readonly historicalByObject = new WeakMap<Message, Map<TokenizerType, Promise<HydratedBreakdown>>>()
-  private readonly historicalByIdentity = new Map<string, { fingerprint: string; value: Promise<HydratedBreakdown> }>()
-
   constructor(
     private readonly blobs: Pick<BlobStoragePort, 'get'>,
-    private readonly textTokenRepository?: SessionTextTokenRepositoryPort
+    private readonly repository?: SessionTokenRepositoryPort & SessionTextTokenRepositoryPort
   ) {}
 
+  /** Synchronous work is restricted to the current draft and explicit instructions. */
   estimateImmediately(request: TokenEstimationRequest): PortableTokenEstimationResult {
-    const tokenizerType = getTokenizerType(request.model)
-    const contextMessages = selectTokenEstimationContext(
-      estimationContext(request),
-      request.maxContextMessageCount,
-      request.constructedMessage
-    )
+    const type = getTokenizerType(request.model)
     const currentInput = request.constructedMessage
-      ? estimateMessageImmediately(request.constructedMessage, tokenizerType)
+      ? estimateMessageImmediately(request.constructedMessage, type)
       : emptyBreakdown()
-    const instructionEstimate = estimateBoundedText(request.additionalInstructions ?? '', tokenizerType)
-    const context = mergeExactBreakdowns([
-      { ...emptyBreakdown(), text: instructionEstimate.tokens },
-      ...contextMessages.map((message) => this.estimateHistoricalMessageImmediately(message, tokenizerType)),
-    ])
+    const instructions = estimateBoundedText(request.additionalInstructions ?? '', type)
+    const context = { ...emptyBreakdown(), text: instructions.tokens }
     const currentInputTokens = totalBreakdown(currentInput)
     const contextTokens = totalBreakdown(context)
     return {
       currentInputTokens,
       contextTokens,
       totalTokens: currentInputTokens + contextTokens,
-      contextMessageCount: contextMessages.length,
-      canManualCompact: canCompactSession(estimationContext(request)),
+      contextMessageCount: 0,
+      canManualCompact: false,
       breakdown: { currentInput, context },
       approximation: {
         currentInput: Boolean(
@@ -280,7 +236,7 @@ export class TokenEstimationService {
             (getMessageText(request.constructedMessage, true, true).length >= LONG_DRAFT_TOKENIZATION_THRESHOLD ||
               estimateImageTokens(request.constructedMessage) > 0)
         ),
-        context: contextMessages.length > 0 || instructionEstimate.approximate,
+        context: Boolean(request.sessionId) || instructions.approximate,
       },
     }
   }
@@ -292,201 +248,151 @@ export class TokenEstimationService {
       onProgress?: (result: PortableTokenEstimationResult, completed: number, total: number) => void
     } = {}
   ): Promise<PortableTokenEstimationResult> {
-    const tokenizerType = getTokenizerType(request.model)
-    const contextMessages = selectTokenEstimationContext(
-      estimationContext(request),
-      request.maxContextMessageCount,
-      request.constructedMessage
+    const type = getTokenizerType(request.model)
+    const check = () => assertEstimationActive(options.signal)
+    check()
+    if (request.sessionId && !this.repository) throw new Error('Row token source is required for historical estimates')
+    const plan = request.sessionId
+      ? await this.repository!.createSessionTokenPlan({
+          sessionId: request.sessionId,
+          maxContextMessageCount: request.maxContextMessageCount,
+        })
+      : null
+    check()
+    const additional = request.resolveInstructions
+      ? await request.resolveInstructions(plan)
+      : (request.additionalInstructions ?? '')
+    check()
+    const input = await this.estimateDraftMessages(
+      request.constructedMessage ? [request.constructedMessage] : [],
+      type,
+      request
     )
-    const canManualCompact = canCompactSession(estimationContext(request))
-    const currentMessages = request.constructedMessage ? [request.constructedMessage] : []
-    assertEstimationActive(options.signal)
-    const currentInputEstimate = await this.estimateDraftMessages(currentMessages, tokenizerType)
-    assertEstimationActive(options.signal)
-    const contextEstimates: HydratedBreakdown[] = []
-    const textResults: SessionTextTokenResult[] = []
-    const instructionEstimate = estimateBoundedText(request.additionalInstructions ?? '', tokenizerType)
-    const instructionBreakdown = { ...emptyBreakdown(), text: instructionEstimate.tokens }
-    let progressiveContext = instructionBreakdown
-    let lastYieldAt = Date.now()
-    for (let offset = 0; offset < contextMessages.length; offset += 16) {
-      assertEstimationActive(options.signal)
-      const batch = await Promise.all(
-        contextMessages
-          .slice(offset, offset + 16)
-          .map((message) => this.estimateHistoricalMessage(message, tokenizerType))
-      )
-      contextEstimates.push(...batch)
-      if (this.textTokenRepository && request.contextSource?.textTokens) {
-        for (let index = 0; index < batch.length; index++) {
-          const message = contextMessages[offset + index]
-          const source = request.contextSource.textTokens.sources[message.id]
-          if (!source || message.tokenCountMap?.[tokenizerType] !== undefined) continue
-          if (source.text !== getMessageText(message, true, true)) continue
+    check()
+    const instructions = estimateBoundedText(additional, type)
+    let context = { ...emptyBreakdown(), text: instructions.tokens }
+    let approximate = instructions.approximate
+    let missingAttachments = false
+    let completed = 0
+    const total = plan?.messageIds.length ?? 0
+    const result = (pending: boolean): PortableTokenEstimationResult => {
+      const currentInputTokens = totalBreakdown(input.breakdown)
+      const contextTokens = totalBreakdown(context)
+      return {
+        currentInputTokens,
+        contextTokens,
+        totalTokens: currentInputTokens + contextTokens,
+        contextMessageCount: total,
+        canManualCompact: plan?.canManualCompact ?? false,
+        missingAttachments: { currentInput: input.hasMissingAttachments === true, context: missingAttachments },
+        breakdown: { currentInput: input.breakdown, context: { ...context } },
+        approximation: { currentInput: input.approximate, context: pending || approximate },
+      }
+    }
+    const cacheKey = `${SESSION_TOKEN_CACHE_VERSION}:${type}:${Number(request.modelSupportToolUseForFile === true)}:${Number(request.sandboxMode === true)}`
+    let offset: number | null = plan && total ? 0 : null
+    while (plan && offset !== null) {
+      check()
+      const page = await this.repository!.readSessionTokenPage({ plan, offset, limit: 16, cacheKey })
+      check()
+      const cacheResults: SessionTokenCacheResult[] = []
+      const textResults: SessionTextTokenResult[] = []
+      for (const entry of page.entries) {
+        if (!entry.value) continue
+        context = mergeExactBreakdowns([context, entry.value])
+        approximate ||= entry.value.approximate
+        completed++
+      }
+      let yieldedAt = Date.now()
+      for (const message of page.messages) {
+        check()
+        const estimate = await this.estimateHistoricalMessage(message, type, page.textTokens, request)
+        check()
+        context = mergeExactBreakdowns([context, estimate.breakdown])
+        approximate ||= estimate.approximate
+        missingAttachments ||= estimate.hasMissingAttachments === true
+        completed++
+        const identity = page.entries.find((entry) => entry.messageId === message.id)
+        if (!identity) throw new Error('Token payload identity is missing')
+        const externalContent = planMessageAttachments(message, request).some(
+          (attachment) => attachment.kind === 'content'
+        )
+        if (!externalContent && !estimate.hasMissingAttachments)
+          cacheResults.push({ identity, cacheKey, value: { ...estimate.breakdown, approximate: estimate.approximate } })
+        const source = page.textTokens?.sources[message.id]
+        if (
+          source &&
+          !page.textTokens?.results.some(
+            (entry) => entry.source.payloadId === source.payloadId && entry.value.tokenizerType === type
+          )
+        ) {
           textResults.push({
             source,
             value: {
-              tokenizerType,
+              tokenizerType: type,
               sourceDigest: source.textDigest,
-              tokens: batch[index].breakdown.text,
+              tokens: estimate.breakdown.text,
               calculatedAt: Date.now(),
               approximate: source.text.length >= LONG_DRAFT_TOKENIZATION_THRESHOLD,
             },
           })
         }
+        if (Date.now() - yieldedAt >= 8) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 0))
+          yieldedAt = Date.now()
+        }
       }
-      assertEstimationActive(options.signal)
-      const context = mergeExactBreakdowns([progressiveContext, ...batch.map((estimate) => estimate.breakdown)])
-      progressiveContext = context
-      const currentInputTokens = totalBreakdown(currentInputEstimate.breakdown)
-      const contextTokens = totalBreakdown(context)
-      options.onProgress?.(
-        {
-          currentInputTokens,
-          contextTokens,
-          totalTokens: currentInputTokens + contextTokens,
-          contextMessageCount: contextMessages.length,
-          canManualCompact,
-          breakdown: { currentInput: currentInputEstimate.breakdown, context },
-          approximation: { currentInput: currentInputEstimate.approximate, context: true },
-        },
-        contextEstimates.length,
-        contextMessages.length
-      )
-      if (offset + 16 < contextMessages.length && Date.now() - lastYieldAt >= 8) {
-        await new Promise<void>((resolve) => setTimeout(resolve, 0))
-        lastYieldAt = Date.now()
-      }
+      check()
+      if (cacheResults.length)
+        await this.repository!.acceptSessionTokenCacheResults(plan.sessionId, cacheResults).catch(() => undefined)
+      if (textResults.length)
+        await this.repository!.acceptSessionTextTokenResults(plan.sessionId, textResults).catch(() => undefined)
+      check()
+      options.onProgress?.(result(page.nextOffset !== null), completed, total)
+      offset = page.nextOffset
+      if (offset !== null) await new Promise<void>((resolve) => setTimeout(resolve, 0))
     }
-    assertEstimationActive(options.signal)
-    if (textResults.length && request.contextSource && this.textTokenRepository) {
-      // Numerical caches are source-bound and rebuildable; a failed cache write must not fail estimation.
-      await this.textTokenRepository
-        .acceptSessionTextTokenResults(request.contextSource.header.id, textResults)
-        .catch(() => undefined)
-    }
-    const currentInput = currentInputEstimate.breakdown
-    const contextBreakdowns = contextEstimates.map((estimate) => estimate.breakdown)
-    const context = mergeExactBreakdowns([instructionBreakdown, ...contextBreakdowns])
-    const currentInputTokens = totalBreakdown(currentInput)
-    const contextTokens = totalBreakdown(context)
-    return {
-      missingAttachments: {
-        currentInput: currentInputEstimate.hasMissingAttachments === true,
-        context: contextEstimates.some((value) => value.hasMissingAttachments),
-      },
-      currentInputTokens,
-      contextTokens,
-      totalTokens: currentInputTokens + contextTokens,
-      contextMessageCount: contextMessages.length,
-      canManualCompact,
-      breakdown: { currentInput, context },
-      approximation: {
-        currentInput: currentInputEstimate.approximate,
-        context: instructionEstimate.approximate || contextEstimates.some((estimate) => estimate.approximate),
-      },
-    }
+    check()
+    return result(false)
   }
 
   estimateMessagesTokens(messages: Message[], model?: TokenEstimationModel): number {
     return totalBreakdown(mergeBreakdowns(messages, getTokenizerType(model)))
   }
 
-  async createMessagesTokenEstimator(
+  private async estimateDraftMessages(
     messages: Message[],
-    model?: TokenEstimationModel
-  ): Promise<(messages: Message[]) => number> {
-    const tokenizerType = getTokenizerType(model)
-    const totals = new Map<Message, number>()
-    await Promise.all(
-      messages.map(async (message) => {
-        totals.set(message, totalBreakdown((await this.estimateHistoricalMessage(message, tokenizerType)).breakdown))
-      })
+    type: TokenizerType,
+    request: Pick<TokenEstimationRequest, 'modelSupportToolUseForFile' | 'sandboxMode'>,
+    text?: { tokens: number; approximate?: boolean }
+  ): Promise<HydratedBreakdown> {
+    if (!messages.length) return { breakdown: emptyBreakdown(), approximate: false }
+    let missing = false
+    const hydrated = await injectAttachments(
+      messages,
+      { read: (key) => this.blobs.get(key) },
+      request.modelSupportToolUseForFile === true,
+      request.sandboxMode === true,
+      () => {
+        missing = true
+      }
     )
-    return (selected) => selected.reduce((total, message) => total + (totals.get(message) ?? 0), 0)
+    const estimate = hydratedBreakdown(messages, hydrated, type, text)
+    return { ...estimate, hasMissingAttachments: missing, approximate: estimate.approximate || missing }
   }
 
-  private hydrateMessagesWithAttachments(messages: Message[]): Promise<Message[]> {
-    if (messages.length === 0) return Promise.resolve([])
-    return injectAttachments(messages, { read: (storageKey) => this.blobs.get(storageKey) }, false, false)
-  }
-
-  private async estimateDraftMessages(messages: Message[], tokenizerType: TokenizerType): Promise<HydratedBreakdown> {
-    if (messages.length === 0) return { breakdown: emptyBreakdown(), approximate: false }
-    let hasMissingAttachments = false
-    const hydrated = await injectAttachments(messages, { read: (key) => this.blobs.get(key) }, false, false, () => {
-      hasMissingAttachments = true
-    })
-    const result = hydratedBreakdown(messages, hydrated, tokenizerType)
-    return { ...result, hasMissingAttachments, approximate: result.approximate || hasMissingAttachments }
-  }
-
-  private estimateHistoricalMessageImmediately(message: Message, tokenizerType: TokenizerType): TokenBreakdown {
-    const objectEntries = this.immediateHistoricalByObject.get(message)
-    const objectEntry = objectEntries?.get(tokenizerType)
-    if (objectEntry) return objectEntry
-
-    const fingerprint = messageContentFingerprint(message)
-    const identityKey = `${tokenizerType}:${message.id}`
-    const identityEntry = fingerprint === null ? undefined : this.immediateHistoricalByIdentity.get(identityKey)
-    const value =
-      identityEntry?.fingerprint === fingerprint
-        ? identityEntry.value
-        : estimateMessageImmediately(message, tokenizerType)
-    const entries = objectEntries ?? new Map()
-    entries.set(tokenizerType, value)
-    this.immediateHistoricalByObject.set(message, entries)
-    if (fingerprint !== null && identityEntry?.fingerprint !== fingerprint) {
-      this.immediateHistoricalByIdentity.delete(identityKey)
-      this.immediateHistoricalByIdentity.set(identityKey, { fingerprint, value })
-      while (this.immediateHistoricalByIdentity.size > MAX_HISTORY_CACHE_ENTRIES) {
-        const oldestKey = this.immediateHistoricalByIdentity.keys().next().value
-        if (oldestKey === undefined) break
-        this.immediateHistoricalByIdentity.delete(oldestKey)
-      }
-    }
-    return value
-  }
-
-  private estimateHistoricalMessage(message: Message, tokenizerType: TokenizerType): Promise<HydratedBreakdown> {
-    const objectEntries = this.historicalByObject.get(message)
-    const objectEntry = objectEntries?.get(tokenizerType)
-    if (objectEntry) return objectEntry
-
-    const fingerprint = messageContentFingerprint(message)
-    const identityKey = `${tokenizerType}:${message.id}`
-    const identityEntry = fingerprint === null ? undefined : this.historicalByIdentity.get(identityKey)
-    if (identityEntry?.fingerprint === fingerprint) {
-      const entries = objectEntries ?? new Map()
-      entries.set(tokenizerType, identityEntry.value)
-      this.historicalByObject.set(message, entries)
-      return identityEntry.value
-    }
-
-    const value = this.estimateDraftMessages([message], tokenizerType)
-    const entries = objectEntries ?? new Map()
-    entries.set(tokenizerType, value)
-    this.historicalByObject.set(message, entries)
-    if (fingerprint !== null) {
-      this.historicalByIdentity.delete(identityKey)
-      this.historicalByIdentity.set(identityKey, { fingerprint, value })
-      while (this.historicalByIdentity.size > MAX_HISTORY_CACHE_ENTRIES) {
-        const oldestKey = this.historicalByIdentity.keys().next().value
-        if (oldestKey === undefined) break
-        this.historicalByIdentity.delete(oldestKey)
-      }
-    }
-    const evict = () => {
-      if (this.historicalByObject.get(message)?.get(tokenizerType) === value) {
-        this.historicalByObject.get(message)?.delete(tokenizerType)
-      }
-      if (this.historicalByIdentity.get(identityKey)?.value === value) {
-        this.historicalByIdentity.delete(identityKey)
-      }
-    }
-    void value.then((result) => {
-      if (result.hasMissingAttachments) evict()
-    }, evict)
-    return value
+  private estimateHistoricalMessage(
+    message: Message,
+    type: TokenizerType,
+    tokens: SessionTextTokenRead | undefined,
+    request: TokenEstimationRequest
+  ): Promise<HydratedBreakdown> {
+    const source = tokens?.sources[message.id]
+    const text = source
+      ? tokens?.results.find(
+          (entry) => entry.source.payloadId === source.payloadId && entry.value.tokenizerType === type
+        )?.value
+      : undefined
+    return this.estimateDraftMessages([message], type, request, text)
   }
 }

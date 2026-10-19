@@ -1,3 +1,5 @@
+import { projectRowFixture } from '../../../../packages/chatbox-core/src/ports/testing/session-row-fixtures'
+import { readRowContextSource } from '../../../../packages/chatbox-core/src/application/session/row-context'
 import 'fake-indexeddb/auto'
 import type { SessionRowCommit, SessionRowSnapshot, SessionRows } from '@chatbox/core/ports'
 import { createSessionRowStoreContract } from '@chatbox/core/ports/testing/session-row-store-contract'
@@ -50,14 +52,22 @@ function messageRow(
 function commit(sessionId: string, revision: number, activeThreadId: string): SessionRowCommit {
   return {
     revision,
-    record: { id: sessionId, type: 'chat', name: sessionId, activeThreadId, storageFormat: 'rows' },
+    record: {
+      id: sessionId,
+      type: 'chat',
+      name: sessionId,
+      activeThreadId,
+      storageFormat: 'rows',
+      rowFormatVersion: 3,
+      rowAuthority: 1,
+    },
   }
 }
 
 function snapshot(rows: SessionRows, revision: number): SessionRowSnapshot {
   const activeThreadId = rows.threads.find((thread) => thread.seq === -1)?.threadId ?? rows.threads[0]?.threadId
   if (!activeThreadId) throw new Error(`no active thread for ${rows.sessionId}`)
-  return { rows, ...commit(rows.sessionId, revision, activeThreadId) }
+  return projectRowFixture({ rows, ...commit(rows.sessionId, revision, activeThreadId) })
 }
 
 /** A row carrying a function, which structured clone rejects inside `put`. */
@@ -84,9 +94,11 @@ describe('IndexedDBSessionRowStore', () => {
     const get = vi.spyOn(IDBObjectStore.prototype, 'get')
     const getAll = vi.spyOn(IDBIndex.prototype, 'getAll')
     try {
-      const context = await store.readContext({ sessionId: snapshot.record.id, targetMessageId: 'target' })
+      const context = await readRowContextSource(store, { sessionId: snapshot.record.id, targetMessageId: 'target' })
       expect(context?.mode).toBe('compacted')
-      const ids = get.mock.calls.map(([key]) => (key as string[])[1])
+      const ids = get.mock.calls
+        .filter((_call, index) => (get.mock.contexts[index] as IDBObjectStore).name === 'messages')
+        .map(([key]) => (key as string[])[1])
       expect([...new Set(ids)].sort()).toEqual(['boundary', 'question', 'summary', 'system', 'target'])
       const bytes = ids.reduce(
         (total, id) =>
@@ -97,7 +109,11 @@ describe('IndexedDBSessionRowStore', () => {
       expect(getAll.mock.contexts.every((index) => (index as IDBIndex).objectStore.name === 'threads')).toBe(true)
       get.mockClear()
       await store.readMessages({ sessionId: snapshot.record.id, messageIds: ['question', 'question', 'missing'] })
-      expect(get.mock.calls.map(([key]) => (key as string[])[1])).toEqual(['question', 'missing'])
+      expect(
+        get.mock.calls
+          .filter((_call, index) => (get.mock.contexts[index] as IDBObjectStore).name === 'messages')
+          .map(([key]) => (key as string[])[1])
+      ).toEqual(['question', 'missing'])
     } finally {
       get.mockRestore()
       getAll.mockRestore()
@@ -126,9 +142,9 @@ describe('IndexedDBSessionRowStore', () => {
     const indexGetAll = vi.spyOn(IDBIndex.prototype, 'getAll')
     const storeGetAll = vi.spyOn(IDBObjectStore.prototype, 'getAll')
     try {
-      const tail = await store.readMessageWindow({ sessionId: 'session-1', limit: 5 })
+      const tail = await store.readTranscriptWindow({ sessionId: 'session-1', limit: 5 })
       expect(tail?.messages).toEqual(messages.slice(-5))
-      expect(get).toHaveBeenCalledTimes(8)
+      expect(get.mock.contexts.filter((context) => (context as IDBObjectStore).name === 'messages')).toHaveLength(5)
       expect(indexGetAll).not.toHaveBeenCalled()
       expect(storeGetAll).not.toHaveBeenCalled()
     } finally {

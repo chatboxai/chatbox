@@ -1,18 +1,12 @@
 import { escapeSearchInput } from '@shared/services/native-session-search'
 import { getMessageText } from '@shared/utils/message'
-import type { SessionSearchThreadsPage, SessionSearchThreadsPageRequest } from '../../ports/session-read-model'
-import {
-  type SessionMessageWindow,
-  type SessionMessageWindowRequest,
-  SessionRowConflictError,
-} from '../../ports/session-row-store'
+import type { SessionSearchRepositoryPort, SessionSearchWindowRequest } from '../../ports/session-search-source'
+import { SessionRowConflictError } from '../../ports/session-row-store'
 import { isActionAvailableInMode, resolveSessionMode } from '../../session/mode-policy'
-import type { Message, SessionMetaPage } from '../../types'
+import type { Message, SessionHeader, SessionMetaPage } from '../../types'
 
-export interface SessionSearchPort {
+export interface SessionSearchPort extends SessionSearchRepositoryPort {
   listSessionsMetaPage(cursor: number, limit?: number): Promise<SessionMetaPage>
-  readSessionSearchThreadsPage(request: SessionSearchThreadsPageRequest): Promise<SessionSearchThreadsPage | null>
-  readSessionMessageWindow(request: SessionMessageWindowRequest): Promise<SessionMessageWindow | null>
 }
 
 export interface SessionSearchHit {
@@ -30,7 +24,8 @@ export interface SessionSearchResult {
 
 export interface SessionSearchOptions {
   sessionId?: string
-  hideSystemPromptMessage?: boolean
+  hideSystemPromptMessage?: boolean | ((header: SessionHeader) => boolean)
+  conversationOnly?: boolean
   limit?: number
   signal?: AbortSignal
   onProgress?(result: SessionSearchResult): void
@@ -47,9 +42,8 @@ function previewAt(text: string, index: number): string {
 }
 
 /**
- * Searches selected paths one message window and thread page at a time, with one
- * revision fence per conversation. Stores without thread paging provide a complete
- * compatibility source.
+ * Searches current selected paths in bounded batches, newest first. Each batch
+ * releases the command queue; candidates are rechecked before publication.
  */
 export class SessionSearchService {
   constructor(
@@ -79,110 +73,124 @@ export class SessionSearchService {
         const pending: SessionSearchHit[] = []
         try {
           checkAborted(options.signal)
-          const model = await this.sessions.readSessionSearchThreadsPage({ sessionId, limit: 20 })
+          const initial = await this.sessions.readSessionSearchCandidates({
+            sessionId,
+            messageIds: [],
+            signal: options.signal,
+          })
           checkAborted(options.signal)
-          if (!model) return
-          const header = model.kind === 'full' ? model.session : model.header
-          const hidesPrompt =
-            Boolean(options.hideSystemPromptMessage) ||
-            !isActionAvailableInMode('session-system-prompt', resolveSessionMode(header.settings?.agentMode?.value))
-          const seenMessages = new Set<string>()
-          const matchMessage = (message: Message) => {
+          if (!initial) return
+          const visible = (role: Message['role'], hasBackgroundTask: boolean, header: SessionHeader) => {
+            const hidesPrompt =
+              (typeof options.hideSystemPromptMessage === 'function'
+                ? options.hideSystemPromptMessage(header)
+                : Boolean(options.hideSystemPromptMessage)) ||
+              !isActionAvailableInMode('session-system-prompt', resolveSessionMode(header.settings?.agentMode?.value))
+            return (
+              !(hidesPrompt && role === 'system') &&
+              !(options.conversationOnly && (hasBackgroundTask || (role !== 'user' && role !== 'assistant')))
+            )
+          }
+          const matchMessage = (message: Message, header: SessionHeader): SessionSearchHit | undefined => {
             checkAborted(options.signal)
-            if (seenMessages.has(message.id) || (hidesPrompt && message.role === 'system')) return
-            seenMessages.add(message.id)
+            if (!visible(message.role, Boolean(message.backgroundTask), header)) return
             const text = getMessageText(message)
             const match = matcher.exec(text)
-            if (!match) return
-            pending.push({
-              sessionId,
-              sessionName: header.name,
-              messageId: message.id,
-              preview: previewAt(text, match.index),
-            })
+            if (match)
+              return {
+                sessionId,
+                sessionName: header.name,
+                messageId: message.id,
+                preview: previewAt(text, match.index),
+              }
           }
           const full = () => hits.length + pending.length >= limit
-          const scan = async (messages: readonly Message[]) => {
-            for (let index = messages.length - 1; index >= 0 && !full(); index--) {
-              matchMessage(messages[index])
+          const titleMatch = matcher.exec(initial.current.header.name)
+          if (titleMatch)
+            pending.push({
+              sessionId,
+              sessionName: initial.current.header.name,
+              preview: previewAt(initial.current.header.name, titleMatch.index),
+            })
+          let request: SessionSearchWindowRequest = { sessionId, signal: options.signal }
+          let previousCursor: string | undefined
+          while (!full()) {
+            checkAborted(options.signal)
+            const batch = await this.sessions.readSessionSearchWindow(request)
+            checkAborted(options.signal)
+            if (!batch?.page) throw new Error('Conversation disappeared while searching')
+            const window = batch.page
+            for (let index = window.messages.length - 1; index >= 0 && !full(); index--) {
+              const hit = matchMessage(window.messages[index].message, batch.current.header)
+              if (hit && !pending.some((candidate) => candidate.messageId === hit.messageId)) pending.push(hit)
               if (index % 50 === 0) {
                 options.onProgress?.(snapshot(pending))
                 await this.yieldControl()
                 checkAborted(options.signal)
               }
             }
+            if (full() || !window.older) break
+            const { threadId, threadSeq, messageId, direction } = window.older
+            const cursorKey = JSON.stringify([threadId, threadSeq, messageId, direction])
+            if (cursorKey === previousCursor) throw new Error('Message search cursor did not advance')
+            previousCursor = cursorKey
+            request = { sessionId, cursor: window.older, signal: options.signal }
+            await this.yieldControl()
           }
-          const titleMatch = matcher.exec(header.name)
-          if (titleMatch)
-            pending.push({ sessionId, sessionName: header.name, preview: previewAt(header.name, titleMatch.index) })
-          if (model.kind === 'full') {
-            await scan(model.session.messages)
-            const threads = model.session.threads ?? []
-            for (let index = threads.length - 1; index >= 0 && !full(); index--) await scan(threads[index].messages)
-          } else {
-            let threadPage = model
-            const threadCursors = new Set<string>()
-            while (!full()) {
-              for (const threadId of threadPage.threadIds) {
-                if (full()) break
-                checkAborted(options.signal)
-                let window: SessionMessageWindow | null = await this.sessions.readSessionMessageWindow({
-                  sessionId,
-                  threadId,
-                  limit: 50,
-                  expectedRevision: model.revision,
-                })
-                const messageCursors = new Set<string>()
-                while (!full()) {
-                  checkAborted(options.signal)
-                  if (!window) throw new Error('Conversation disappeared while searching')
-                  if (window.revision !== model.revision) {
-                    throw new SessionRowConflictError(sessionId, model.revision, window.revision)
-                  }
-                  await scan(window.messages.map((row) => row.message))
-                  if (full() || !window.older) break
-                  const cursorKey = JSON.stringify(window.older)
-                  if (messageCursors.has(cursorKey)) throw new Error('Message search cursor did not advance')
-                  messageCursors.add(cursorKey)
-                  checkAborted(options.signal)
-                  window = await this.sessions.readSessionMessageWindow({
-                    sessionId,
-                    limit: 50,
-                    cursor: window.older,
-                    expectedRevision: model.revision,
-                  })
-                }
-              }
-              if (full() || !threadPage.nextCursor) break
-              const cursorKey = JSON.stringify(threadPage.nextCursor)
-              if (threadCursors.has(cursorKey)) throw new Error('Thread search cursor did not advance')
-              threadCursors.add(cursorKey)
-              await this.yieldControl()
-              checkAborted(options.signal)
-              const nextPage = await this.sessions.readSessionSearchThreadsPage({
-                sessionId,
-                limit: 20,
-                cursor: threadPage.nextCursor,
-              })
-              checkAborted(options.signal)
-              if (!nextPage) throw new Error('Conversation disappeared while searching')
-              if (nextPage.kind !== 'rows' || nextPage.revision !== model.revision) {
-                throw new SessionRowConflictError(
-                  sessionId,
-                  model.revision,
-                  nextPage.kind === 'rows' ? nextPage.revision : null
-                )
-              }
-              threadPage = nextPage
+          // Recheck bodies one at a time so even a page of oversized matches cannot
+          // retain an unbounded body batch or hold the command queue for the scan.
+          const checked: Array<{
+            hit: SessionSearchHit
+            role: Message['role']
+            hasBackgroundTask: boolean
+          }> = []
+          for (const candidate of pending) {
+            if (!candidate.messageId) continue
+            checkAborted(options.signal)
+            const batch = await this.sessions.readSessionSearchWindow({
+              sessionId,
+              messageId: candidate.messageId,
+              signal: options.signal,
+            })
+            checkAborted(options.signal)
+            const message = batch?.page?.messages.find((row) => row.messageId === candidate.messageId)?.message
+            if (message && batch) {
+              const hit = matchMessage(message, batch.current.header)
+              if (hit) checked.push({ hit, role: message.role, hasBackgroundTask: Boolean(message.backgroundTask) })
             }
+            await this.yieldControl()
+          }
+          const final = await this.sessions.readSessionSearchCandidates({
+            sessionId,
+            messageIds: checked.map(({ hit }) => hit.messageId!),
+            signal: options.signal,
+          })
+          checkAborted(options.signal)
+          if (!final) throw new Error('Conversation disappeared while searching')
+          const hadTitle = pending.some((hit) => hit.messageId === undefined)
+          pending.length = 0
+          const finalTitle = hadTitle && matcher.exec(final.current.header.name)
+          if (finalTitle)
+            pending.push({
+              sessionId,
+              sessionName: final.current.header.name,
+              preview: previewAt(final.current.header.name, finalTitle.index),
+            })
+          const selected = new Set(final.selectedMessageIds)
+          for (const candidate of checked) {
+            if (
+              selected.has(candidate.hit.messageId!) &&
+              visible(candidate.role, candidate.hasBackgroundTask, final.current.header)
+            )
+              pending.push({ ...candidate.hit, sessionName: final.current.header.name })
           }
           hits.push(...pending)
           options.onProgress?.(snapshot())
           return
         } catch (error) {
           checkAborted(options.signal)
-          // A live write invalidates the cursor. Discard only this session's
-          // provisional hits and restart once; never combine committed revisions.
+          // A changed selected anchor or an external writer may invalidate a
+          // batch. Retry once, discarding this session's provisional results.
           options.onProgress?.(snapshot())
           if (error instanceof SessionRowConflictError && attempt === 0) continue
           failedSessionIds.add(sessionId)

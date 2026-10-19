@@ -41,13 +41,19 @@ vi.mock('@capacitor/core', () => ({
 }))
 vi.mock('@/app/renderer-application', () => ({
   rendererApplication: {
-    sessions: { updateSession: mocks.updateSession },
+    sessions: { updateSessionHeader: mocks.updateSession },
     generationHooks: { useVersion: () => 0 },
     generationRuntime: { getActiveMessageIds: () => new Set(mocks.active ? ['running'] : []) },
   },
 }))
 vi.mock('@/hooks/useSessionPresentation', () => ({
-  useSessionPresentation: () => ({ readModel: { kind: 'full', session: mocks.session }, header: mocks.session }),
+  useSessionPresentation: () => ({
+    read: {
+      header: mocks.session,
+      summary: { userMessageCount: mocks.session.messages.filter((message) => message.role === 'user').length },
+    },
+    header: mocks.session,
+  }),
 }))
 vi.mock('@/hooks/useSessionLockState', () => ({
   useSessionLockState: () => ({ anyReplyGenerating: false, compactionRunning: false, awaitingPauseDecision: false }),

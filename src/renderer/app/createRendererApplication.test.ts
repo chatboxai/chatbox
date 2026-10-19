@@ -1,8 +1,9 @@
 /** biome-ignore-all lint/suspicious/useAwait: In-memory async adapters mirror Promise-based host ports. */
 
-import type { SessionRepositoryPort, SettingsStoragePort } from '@chatbox/core/ports'
+import type { SessionHeaderRead, SettingsStoragePort } from '@chatbox/core/ports'
 import { createAuthInfoStore, createChatQueryClient, createLastUsedModelStore, QueryKeys } from '@chatbox/react'
-import type { Session, SessionMetaPage, SessionMetaRecord } from '@shared/types'
+import type { Session } from '@shared/types'
+import { InMemorySessionRepository } from '@chatbox/core/testing'
 import { describe, expect, test, vi } from 'vitest'
 import type { PersistStorage, StorageValue } from 'zustand/middleware'
 import {
@@ -41,61 +42,11 @@ class MemorySettingsStorage implements SettingsStoragePort {
   }
 }
 
-class MemorySessionRepository implements SessionRepositoryPort {
-  readonly sessions = new Map<string, Session>()
-  readonly records = new Map<string, SessionMetaRecord>()
+class MemorySessionRepository extends InMemorySessionRepository {
   initializeCount = 0
-
-  readonly meta = {
-    initialize: async () => {
-      this.initializeCount += 1
-    },
-    create: async (record: SessionMetaRecord) => {
-      this.records.set(record.id, record)
-    },
-    createMany: async (records: SessionMetaRecord[]) => {
-      for (const record of records) this.records.set(record.id, record)
-    },
-    update: async (id: string, update: Partial<SessionMetaRecord>) => {
-      const current = this.records.get(id)
-      if (!current) return null
-      const next = { ...current, ...update }
-      this.records.set(id, next)
-      return next
-    },
-    getById: async (id: string) => this.records.get(id) ?? null,
-    delete: async (id: string) => {
-      this.records.delete(id)
-    },
-    deleteMany: async (ids: string[]) => {
-      for (const id of ids) this.records.delete(id)
-    },
-    getAll: async () => [...this.records.values()],
-    getAllIncludingHidden: async () => [...this.records.values()],
-    getArchived: async () => [],
-    getArchivedPage: async (): Promise<SessionMetaPage> => ({ items: [], nextCursor: null, total: 0 }),
-    getPage: async (): Promise<SessionMetaPage> => ({
-      items: [...this.records.values()],
-      nextCursor: null,
-      total: this.records.size,
-    }),
-    getTotal: async () => this.records.size,
-    getAllTotal: async () => this.records.size,
-    getArchivedTotal: async () => 0,
-    clear: async () => {
-      this.records.clear()
-    },
+  readonly initialize = async () => {
+    this.initializeCount++
   }
-
-  initialize = () => this.meta.initialize()
-  getSession = async (id: string) => this.sessions.get(id) ?? null
-  setSession = async (session: Session) => {
-    this.sessions.set(session.id, session)
-  }
-  deleteSession = async (id: string) => {
-    this.sessions.delete(id)
-  }
-  getAllSessionIds = async () => [...this.sessions.keys()]
 }
 
 function createDependencies() {
@@ -150,7 +101,7 @@ async function runRendererApplicationContract(application: RendererApplication, 
   expect(application.settingsStore.getState().hydrationStatus).toBe('hydrated')
 
   const session = await application.sessions.createSession({ name: expectedKind, type: 'chat', messages: [] })
-  expect((await application.sessions.getSession(session.id))?.name).toBe(expectedKind)
+  expect((await application.sessions.getSessionHeader(session.id))?.header.name).toBe(expectedKind)
   application.generationRuntime.start(session.id, 'message')
   application.dispose()
   expect(application.generationRuntime.get(session.id)).toBeUndefined()
@@ -176,36 +127,34 @@ describe('Renderer Composition Roots', () => {
       type: 'chat',
       messages: [],
     }
-    repository.sessions.set(original.id, original)
-
-    let resolveFirstRead: (session: Session | null) => void = () => undefined
-    const firstRead = new Promise<Session | null>((resolve) => {
+    await repository.seedSession(original)
+    const originalRead = await repository.getSessionHeader(original.id)
+    let resolveFirstRead: (read: SessionHeaderRead | null) => void = () => undefined
+    const firstRead = new Promise<SessionHeaderRead | null>((resolve) => {
       resolveFirstRead = resolve
     })
-    let getSessionCalls = 0
-    repository.getSession = vi.fn(async () => {
-      getSessionCalls += 1
-      if (getSessionCalls === 1) return firstRead
-      return repository.sessions.get(original.id) ?? null
-    })
+    const readHeader = repository.getSessionHeader.bind(repository)
+    vi.spyOn(repository, 'getSessionHeader')
+      .mockImplementationOnce(() => firstRead)
+      .mockImplementation(readHeader)
 
     const application = createRendererApplication({ ...options, host: createHostDescriptor('desktop') })
-    const pendingQuery = application.sessionQueryBridge.getSession(original.id)
+    const pendingQuery = application.queryClient.fetchQuery(
+      application.sessionQueryBridge.definitions.header(original.id)
+    )
     const pendingQueryResult = pendingQuery.catch((error: unknown) => error)
-    await vi.waitFor(() => expect(repository.getSession).toHaveBeenCalledTimes(1))
-    const pendingUpdate = application.sessions.updateSession(original.id, { name: 'After update' })
+    await vi.waitFor(() => expect(repository.getSessionHeader).toHaveBeenCalledTimes(1))
+    const pendingUpdate = application.sessions.updateSessionHeader(original.id, { name: 'After update' })
 
     try {
-      // A cancelled explicit reader can retry while the writer loads its own current snapshot.
-      await vi.waitFor(() => expect(repository.getSession).toHaveBeenNthCalledWith(2, original.id))
-
-      resolveFirstRead(original)
-      await Promise.all([pendingQueryResult, pendingUpdate])
-      expect(application.queryClient.getQueryData<Session>(QueryKeys.ChatSession(original.id))?.name).toBe(
-        'After update'
-      )
+      await pendingUpdate
+      resolveFirstRead(originalRead)
+      await pendingQueryResult
+      expect(
+        application.queryClient.getQueryData<SessionHeaderRead>(QueryKeys.ChatSessionHeader(original.id))?.header.name
+      ).toBe('After update')
     } finally {
-      resolveFirstRead(original)
+      resolveFirstRead(originalRead)
       await Promise.allSettled([pendingQueryResult, pendingUpdate])
       application.dispose()
     }

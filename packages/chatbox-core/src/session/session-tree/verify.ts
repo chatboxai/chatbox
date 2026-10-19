@@ -1,3 +1,4 @@
+import { MessageSchema } from '@shared/types'
 import type { Message, Session } from '../../types/session'
 import { decodeSessionTree } from './decode'
 import { type EncodeSessionTreeOptions, encodeSessionTree } from './encode'
@@ -8,7 +9,7 @@ export type VerifySessionTreeRoundTripResult =
   | {
       ok: true
       tree: SessionTree
-      /** The normalized session the tree decodes back to; stores keep it when `reshaped` is true. */
+      /** The normalized external value used to verify lossless conversion. */
       session: Session
       reshaped: boolean
     }
@@ -164,6 +165,13 @@ export function verifySessionTreeRoundTrip(
   const encoded = encodeSessionTree(session, options)
   if (!encoded.ok) {
     return encoded
+  }
+  for (const row of encoded.tree.messages) {
+    const validation = MessageSchema.safeParse(row.message)
+    if (!validation.success) {
+      const path = validation.error.issues[0]?.path.join('.') || 'message'
+      return { ok: false, reason: `invalid message ${row.messageId} at ${path}` }
+    }
   }
   const validation = validateSessionTree(encoded.tree)
   if (!validation.ok) {

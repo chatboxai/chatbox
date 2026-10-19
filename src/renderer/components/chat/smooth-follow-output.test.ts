@@ -47,6 +47,22 @@ describe('smooth follow output controller', () => {
     expect(scrollToBottom).not.toHaveBeenCalled()
   })
 
+  it('synchronizes layout geometry without changing the navigation follow intent', () => {
+    const { controller, scrollToBottom, stopScrolling, runFrames } = createHarness()
+    controller.handleScroll(900, 1000)
+    controller.resume()
+    controller.syncScrollPosition(400, 1000)
+    expect(controller.isFollowing()).toBe(true)
+    expect(stopScrolling).not.toHaveBeenCalled()
+    controller.handleHeightChange(1600)
+    controller.handleHeightChange(1700)
+    runFrames()
+    expect(scrollToBottom).toHaveBeenCalledOnce()
+    controller.pause()
+    controller.syncScrollPosition(500, 500)
+    expect(controller.isFollowing()).toBe(false)
+  })
+
   it('recognizes only a bottom position clamped by a smaller scroll range', () => {
     expect(isLayoutClampedScroll(8124, 8125, 0, 8124)).toBe(false)
     expect(isLayoutClampedScroll(200, 200, 150, 150)).toBe(true)

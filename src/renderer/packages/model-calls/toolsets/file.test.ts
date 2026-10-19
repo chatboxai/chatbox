@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from 'vitest'
+import { InMemorySessionRepository } from '@chatbox/core/testing'
 
 vi.mock('@/platform', () => ({
   default: {
@@ -161,40 +162,27 @@ describe('virtual file routing', () => {
 })
 
 test('resolves an attachment omitted by the real compacted repository source on demand', async () => {
-  const { RowBackedSessionRepository } = await import(
-    '../../../../../packages/chatbox-core/src/application/session/RowBackedSessionRepository'
-  )
-  const { InMemorySessionRowStore } = await import(
-    '../../../../../packages/chatbox-core/src/testing/InMemorySessionRowStore'
-  )
-  const { InMemorySessionRecordStore } = await import(
-    '../../../../../packages/chatbox-core/src/testing/InMemorySessionRecordStore'
-  )
   const { contextSession } = await import(
     '../../../../../packages/chatbox-core/src/persistence/session-context-read.test-support'
   )
-  const { loadBranchFileMessages } = await import('./file-history')
   const session = contextSession()
   session.messages[1].files = [{ id: 'old', name: 'older.txt', fileType: 'txt', storageKey: 'older' }]
-  const repo = new RowBackedSessionRepository({
-    rows: new InMemorySessionRowStore(),
-    records: new InMemorySessionRecordStore(),
-  })
-  await repo.setSession(session)
+  const repo = new InMemorySessionRepository()
+  await repo.seedSession(session)
   const source = await repo.getSessionContextSource({ sessionId: session.id, targetMessageId: 'target' })
   expect(source?.mode).toBe('compacted')
   expect(source?.candidateMessages.flatMap((message) => message.files ?? [])).toEqual([])
-  const load = vi.fn(() => loadBranchFileMessages(() => repo.getSession(session.id), 'target'))
-  const tool = buildFileTools(source?.candidateMessages ?? [], undefined, load).tools.read_file
-  expect(load).not.toHaveBeenCalled()
+  const readBodies = vi.spyOn(repo.rowStore, 'readMessages')
+  const tool = buildFileTools(source?.candidateMessages ?? [], undefined, source?.beforeTarget.fileResourceKeys).tools
+    .read_file
   vi.mocked(platform.getStoreBlob).mockResolvedValue('archived attachment')
   const input = { file_path: uploadedFilePath('older') }
   const options = { toolCallId: 'old', messages: [], context: undefined }
   expect(await tool.execute?.(input, options)).toMatchObject({ content: '     1\tarchived attachment' })
   await tool.execute?.(input, options)
-  expect(load).toHaveBeenCalledTimes(1)
+  expect(readBodies).not.toHaveBeenCalled()
   expect(await tool.execute?.({ file_path: uploadedFilePath('other-branch') }, options)).toContain('File not found')
-  expect(load).toHaveBeenCalledTimes(1)
+  expect(readBodies).not.toHaveBeenCalled()
 })
 
 test('does not disclose host paths in virtual identifiers', () => {
@@ -224,25 +212,15 @@ test('retrieval attachments cannot be read through the virtual registry', async 
   expect(platform.getStoreBlob).not.toHaveBeenCalled()
 })
 
-test('recovers from a rejected history read on the next call', async () => {
-  const load = vi
-    .fn()
-    .mockRejectedValueOnce(new Error('storage unavailable'))
-    .mockResolvedValueOnce([
-      {
-        id: 'm',
-        role: 'user',
-        contentParts: [],
-        files: [{ id: 'f', name: 'report', fileType: 'txt', storageKey: 'report' }],
-      },
-    ])
-  const tool = buildFileTools([], undefined, load).tools.read_file
+test('retries resource reads after transient blob storage failure', async () => {
+  const tool = buildFileTools([], undefined, ['report']).tools.read_file
   const input = { file_path: uploadedFilePath('report') }
   const options = { toolCallId: 'retry', messages: [], context: undefined }
-  await expect(tool.execute?.(input, options)).resolves.toContain('File not found')
-  vi.mocked(platform.getStoreBlob).mockResolvedValue('recovered')
+  vi.mocked(platform.getStoreBlob)
+    .mockRejectedValueOnce(new Error('storage unavailable'))
+    .mockResolvedValueOnce('recovered')
+  await expect(tool.execute?.(input, options)).rejects.toThrow('storage unavailable')
   await expect(tool.execute?.(input, options)).resolves.toMatchObject({ content: '     1\trecovered' })
-  expect(load).toHaveBeenCalledTimes(2)
 })
 
 test('reports a past-EOF offset and rejects oversized line counts', async () => {
@@ -255,8 +233,7 @@ test('reports a past-EOF offset and rejects oversized line counts', async () => 
   expect((await schema.validate?.({ file_path: uploadedFilePath('report'), limit: 2001 }))?.success).toBe(false)
 })
 
-test('lazy history cannot expose an attachment from a sibling branch', async () => {
-  const { loadBranchFileMessages } = await import('./file-history')
+test('row resource references cannot expose an attachment from a sibling branch', async () => {
   const session: import('@shared/types').Session = {
     id: 's',
     name: 'branches',
@@ -293,8 +270,10 @@ test('lazy history cannot expose an attachment from a sibling branch', async () 
     },
   }
   vi.mocked(platform.getStoreBlob).mockClear().mockResolvedValue('branch content')
-  const tool = buildFileTools([], undefined, () => loadBranchFileMessages(async () => session, 'target-b')).tools
-    .read_file
+  const repository = new InMemorySessionRepository()
+  await repository.seedSession(session)
+  const source = await repository.getSessionContextSource({ sessionId: session.id, targetMessageId: 'target-b' })
+  const tool = buildFileTools([], undefined, source?.beforeTarget.fileResourceKeys).tools.read_file
   const options = { toolCallId: 'branch', messages: [], context: undefined }
   expect(await tool.execute?.({ file_path: uploadedFilePath('a') }, options)).toContain('File not found')
   expect(platform.getStoreBlob).not.toHaveBeenCalled()

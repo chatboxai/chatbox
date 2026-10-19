@@ -1,12 +1,11 @@
-import type { Session } from '@shared/types'
-import { RowBackedSessionRepository, SessionWriteCoordinator } from '@chatbox/core/application/session'
-import { InMemorySessionRecordStore, InMemorySessionRepository, InMemorySessionRowStore } from '@chatbox/core/testing'
+import type { Session, SessionHeader, Updater } from '@shared/types'
+import { InMemorySessionRepository } from '@chatbox/core/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { getSessionMock, updateSessionMock, updateSessionCacheMock, uiStoreState } = vi.hoisted(() => ({
+const { getSessionMock, readThreadsMock, updateSessionMock, uiStoreState } = vi.hoisted(() => ({
   getSessionMock: vi.fn(),
   updateSessionMock: vi.fn(),
-  updateSessionCacheMock: vi.fn(),
+  readThreadsMock: vi.fn(),
   uiStoreState: {
     sessionAgentModeMap: {} as Record<string, unknown>,
     agentModeSmartSwitchingDefault: false,
@@ -17,8 +16,11 @@ const { getSessionMock, updateSessionMock, updateSessionCacheMock, uiStoreState 
 
 vi.mock('@/app/renderer-application', () => ({
   rendererApplication: {
-    sessionQueryBridge: { getSession: getSessionMock, updateSessionCache: updateSessionCacheMock },
-    sessions: { updateSession: updateSessionMock },
+    sessions: {
+      getSessionHeader: getSessionMock,
+      readSessionThreadSummariesPage: readThreadsMock,
+      updateSessionHeader: updateSessionMock,
+    },
   },
 }))
 vi.mock('../uiStore', () => ({
@@ -29,51 +31,41 @@ vi.mock('../uiStore', () => ({
 import { lockSessionAgentMode, setSessionAgentMode } from './agent-mode'
 
 function session(overrides: Partial<Session>): Session {
-  return { id: 'session-1', name: 'S', messages: [], ...overrides } as Session
+  return { id: 'session-1', name: 'S', messages: [], ...overrides }
 }
 
-const userMsg = { id: 'u1', role: 'user', contentParts: [] } as unknown as Session['messages'][number]
+const userMsg: Session['messages'][number] = { id: 'u1', role: 'user', contentParts: [] }
+let repository: InMemorySessionRepository
+async function seed(value: Session) {
+  await repository.seedSession(value)
+}
 
 describe('setSessionAgentMode cross-mode freeze', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    updateSessionMock.mockImplementation(async (_id: string, updater: (s: Session) => Session) =>
-      updater(getSessionMock.mock.results[0]?.value ? await getSessionMock.mock.results[0].value : session({}))
+    repository = new InMemorySessionRepository()
+    getSessionMock.mockImplementation((id: string) => repository.getSessionHeader(id))
+    readThreadsMock.mockImplementation((request) => repository.readSessionThreadSummariesPage(request))
+    updateSessionMock.mockImplementation(
+      async (id: string, updater: Updater<SessionHeader>, options?: { expectedRevision?: number }) =>
+        (await repository.executeSessionCommand(id, { type: 'header', updater }, options?.expectedRevision)).delta
+          .header
     )
   })
 
   it.each(['legacy', 'rows'] as const)(
     'persists the first mode change after reopening a %s session',
     async (format) => {
-      const records = new InMemorySessionRecordStore()
-      const repository = Object.assign(
-        new RowBackedSessionRepository({ records, rows: new InMemorySessionRowStore() }),
-        {
-          meta: new InMemorySessionRepository().meta,
-        }
-      )
-      await repository.initialize()
-      await records.setRecord(
-        session({ type: 'chat', settings: { agentMode: { value: 'off', locked: false, lockReason: null } } })
-      )
-      if (format === 'rows') await repository.migrateSession('session-1')
-      let cached = await repository.getSession('session-1')
-      const writes = new SessionWriteCoordinator(repository, { readCurrentSession: () => Promise.resolve(cached) })
-      getSessionMock.mockImplementation(() => Promise.resolve(cached))
-      updateSessionCacheMock.mockImplementation((_id, updater) => {
-        cached = updater(cached)
+      const value = session({
+        type: 'chat',
+        settings: { agentMode: { value: 'off', locked: false, lockReason: null } },
       })
-      updateSessionMock.mockImplementation(async (id, updater) => {
-        const result = await writes.update(id, updater)
-        cached = result.session
-        return cached
-      })
-
-      await expect(setSessionAgentMode('session-1', 'auto')).resolves.toMatchObject({ value: 'auto' })
-      expect((await repository.getSession('session-1'))?.settings?.agentMode?.value).toBe('auto')
-      writes.forget('session-1')
-      await expect(lockSessionAgentMode('session-1', 'message_sent')).resolves.toMatchObject({ locked: true })
-      expect((await repository.getSession('session-1'))?.settings?.agentMode).toMatchObject({
+      if (format === 'legacy') await repository.recordStore.setRecord(value)
+      else await seed(value)
+      await expect(setSessionAgentMode(value.id, 'auto')).resolves.toMatchObject({ value: 'auto' })
+      expect((await repository.getSessionHeader(value.id))?.header.settings?.agentMode?.value).toBe('auto')
+      await expect(lockSessionAgentMode(value.id, 'message_sent')).resolves.toMatchObject({ locked: true })
+      expect((await repository.getSessionHeader(value.id))?.header.settings?.agentMode).toMatchObject({
         value: 'on',
         locked: true,
       })
@@ -81,7 +73,7 @@ describe('setSessionAgentMode cross-mode freeze', () => {
   )
 
   it('refuses a manual chat→work switch once the conversation has started', async () => {
-    getSessionMock.mockResolvedValue(
+    await seed(
       session({ messages: [userMsg], settings: { agentMode: { value: 'off', locked: false, lockReason: null } } })
     )
 
@@ -89,13 +81,10 @@ describe('setSessionAgentMode cross-mode freeze', () => {
 
     expect(entry.value).toBe('off')
     expect(updateSessionMock).not.toHaveBeenCalled()
-    expect(updateSessionCacheMock).not.toHaveBeenCalled()
   })
 
   it('still allows manual cross-mode switching before the first user message', async () => {
-    getSessionMock.mockResolvedValue(
-      session({ messages: [], settings: { agentMode: { value: 'off', locked: false, lockReason: null } } })
-    )
+    await seed(session({ messages: [], settings: { agentMode: { value: 'off', locked: false, lockReason: null } } }))
 
     await setSessionAgentMode('session-1', 'on')
 
@@ -103,7 +92,7 @@ describe('setSessionAgentMode cross-mode freeze', () => {
   })
 
   it('lets system-source resolution cross modes mid-conversation (suggestion decline)', async () => {
-    getSessionMock.mockResolvedValue(
+    await seed(
       session({ messages: [userMsg], settings: { agentMode: { value: 'auto', locked: false, lockReason: null } } })
     )
 
@@ -113,7 +102,7 @@ describe('setSessionAgentMode cross-mode freeze', () => {
   })
 
   it('treats auto ↔ off as a chat-internal toggle, not a mode change', async () => {
-    getSessionMock.mockResolvedValue(
+    await seed(
       session({ messages: [userMsg], settings: { agentMode: { value: 'auto', locked: false, lockReason: null } } })
     )
 
@@ -123,7 +112,7 @@ describe('setSessionAgentMode cross-mode freeze', () => {
   })
 
   it('keeps the locked work session refusal ahead of the freeze rule', async () => {
-    getSessionMock.mockResolvedValue(
+    await seed(
       session({
         messages: [userMsg],
         settings: { agentMode: { value: 'on', locked: true, lockReason: 'message_sent' } },

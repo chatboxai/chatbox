@@ -41,7 +41,6 @@ import './setup/protect'
 // }
 
 // Token estimation system initialization (runs in all environments)
-void import('./setup/token_estimation_init')
 
 // 引入移动端安全区域代码，主要为了解决异形屏幕的问题
 let androidStatusBarSetup: Promise<typeof import('./setup/mobile_status_bar')> | undefined

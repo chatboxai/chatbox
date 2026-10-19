@@ -2,7 +2,10 @@ import type { Message } from '@shared/types'
 import type { ModelMessage } from 'ai'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { getSessionMock, warnMock } = vi.hoisted(() => ({ getSessionMock: vi.fn(), warnMock: vi.fn() }))
+const { readConversationStateMock, warnMock } = vi.hoisted(() => ({
+  readConversationStateMock: vi.fn(),
+  warnMock: vi.fn(),
+}))
 
 vi.mock('@/lib/utils', () => ({
   getLogger: () => ({ error: vi.fn(), warn: warnMock }),
@@ -12,7 +15,7 @@ vi.mock('@/app/renderer-application', async () => {
   return {
     rendererApplication: {
       generationRuntime: new GenerationRuntimeStore(),
-      sessionQueryBridge: { getSession: getSessionMock },
+      sessions: { readSessionConversationState: readConversationStateMock },
     },
   }
 })
@@ -81,10 +84,12 @@ describe('steering consumer', () => {
     resetMessageQueueForTests()
     resetSteeringForTests()
     persistMock.mockResolvedValue(undefined)
-    getSessionMock.mockResolvedValue({
-      id: 'session-1',
-      name: 'Session',
-      messages: [
+    readConversationStateMock.mockResolvedValue({
+      header: { id: 'session-1', name: 'Session' },
+      revision: 1,
+      activeThreadId: 'thread-active',
+      matchedMessageIds: [],
+      tailMessages: [
         { id: 'prompt-1', role: 'user', contentParts: [{ type: 'text', text: 'do the task' }] },
         { id: 'anchor-live', role: 'assistant', contentParts: [], generating: true },
       ],
@@ -234,10 +239,12 @@ describe('steering consumer', () => {
 
     // The generation finalized segment a1, created continuation a2, and passes
     // it as the anchor of the next boundary.
-    getSessionMock.mockResolvedValue({
-      id: 'session-1',
-      name: 'Session',
-      messages: [{ id: 'a2', role: 'assistant', contentParts: [], generating: true }],
+    readConversationStateMock.mockResolvedValue({
+      header: { id: 'session-1', name: 'Session' },
+      revision: 1,
+      activeThreadId: 'thread-active',
+      matchedMessageIds: [],
+      tailMessages: [{ id: 'a2', role: 'assistant', contentParts: [], generating: true }],
     })
     consumer.admitAnchor('a2')
     await enqueueRequested('session-1', userMessage('m2'))
@@ -318,10 +325,12 @@ describe('steering consumer', () => {
   it('does not steer a message queued for another conversation (fork switch)', async () => {
     // The user switched forks: the active conversation's newest message is not
     // part of this generation's conversation.
-    getSessionMock.mockResolvedValue({
-      id: 'session-1',
-      name: 'Session',
-      messages: [{ id: 'other-fork-tip', role: 'assistant', contentParts: [], generating: true }],
+    readConversationStateMock.mockResolvedValue({
+      header: { id: 'session-1', name: 'Session' },
+      revision: 1,
+      activeThreadId: 'thread-active',
+      matchedMessageIds: [],
+      tailMessages: [{ id: 'other-fork-tip', role: 'assistant', contentParts: [], generating: true }],
     })
     await enqueueStamped('session-1', userMessage('m1'))
     requestSteerQueuedMessage('session-1', 'm1')
@@ -353,10 +362,12 @@ describe('steering consumer', () => {
     await consumer.inject(baseMessages, 'a1')
 
     // A follow-up queued while the steered message is the newest conversation message.
-    getSessionMock.mockResolvedValue({
-      id: 'session-1',
-      name: 'Session',
-      messages: [{ id: 'm1', role: 'user', contentParts: [{ type: 'text', text: 'text-m1' }] }],
+    readConversationStateMock.mockResolvedValue({
+      header: { id: 'session-1', name: 'Session' },
+      revision: 1,
+      activeThreadId: 'thread-active',
+      matchedMessageIds: [],
+      tailMessages: [{ id: 'm1', role: 'user', contentParts: [{ type: 'text', text: 'text-m1' }] }],
     })
     await enqueueRequested('session-1', userMessage('m2'))
     const result = await consumer.inject([...baseMessages], 'a2')

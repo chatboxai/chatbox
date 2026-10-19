@@ -1,6 +1,9 @@
+import { SESSION_ROW_TOKEN_CACHE_STORE } from './session-row-idb-records'
+import { navigationProjection } from '@chatbox/core/persistence'
+import { putTranscriptMessage, TRANSCRIPT_MESSAGES } from './session-row-idb-transcript'
 import { v4 as uuid } from 'uuid'
 import { fitsInlineBackupJson, jsonUtf8Blocks, throwIfAborted } from '@chatbox/core/backup'
-import type { MessageRow } from '@chatbox/core/session/session-tree'
+import type { MessageRow, MessageRowMetadata } from '@chatbox/core/session/session-tree'
 import {
   SESSION_ROW_MESSAGE_STORE as MESSAGES,
   SESSION_ROW_PAYLOAD_STORE as PAYLOADS,
@@ -40,8 +43,23 @@ export function readStoredMessage(
   done: (row: MessageRow) => void,
   fail: (error: unknown) => void
 ) {
+  const complete = (value: MessageRow) => {
+    const request = tx.objectStore(TRANSCRIPT_MESSAGES).get([row.sessionId, row.messageId])
+    request.onerror = () => fail(request.error)
+    request.onsuccess = () => {
+      if (!request.result && row.selected !== undefined) {
+        fail(new Error('Message metadata is missing'))
+        return
+      }
+      done({
+        ...messageMetadata(value),
+        ...(request.result ? messageMetadata(request.result) : {}),
+        message: value.message,
+      })
+    }
+  }
   if (!row.payload) {
-    done(row as MessageRow)
+    complete(row as MessageRow)
     return
   }
   const ref = row.payload
@@ -63,7 +81,7 @@ export function readStoredMessage(
         if (count !== ref.count || size !== ref.size) throw new Error('IndexedDB message payload is incomplete')
         parts.push(decoder.decode())
         const { payload, ...metadata } = row
-        done({ ...metadata, message: JSON.parse(parts.join('')) as MessageRow['message'] })
+        complete({ ...metadata, message: JSON.parse(parts.join('')) as MessageRow['message'] })
         return
       }
       const chunk = cursor.value as PayloadChunk
@@ -100,7 +118,8 @@ export function putStoredMessages(
   tx: IDBTransaction,
   rows: Iterable<MessageRow>,
   done: () => void,
-  fail: (error: unknown) => void
+  fail: (error: unknown) => void,
+  publishMetadata = true
 ) {
   const iterator = rows[Symbol.iterator]()
   const nextRow = () => {
@@ -113,6 +132,7 @@ export function putStoredMessages(
       const row = next.value
       deleteOldPayload(tx, row.sessionId, row.messageId)
       if (fitsInlineBackupJson(row, 128 * 1024)) {
+        if (publishMetadata) putTranscriptMessage(tx, row)
         tx.objectStore(MESSAGES).put(row).onsuccess = nextRow
         return
       }
@@ -123,7 +143,9 @@ export function putStoredMessages(
           const part = chunks.next()
           if (part.done) {
             const { message, ...metadata } = row
-            tx.objectStore(MESSAGES).put({ ...metadata, payload } satisfies StoredMessageRow).onsuccess = nextRow
+            const stored = { ...metadata, payload } satisfies StoredMessageRow
+            if (publishMetadata) putTranscriptMessage(tx, stored, navigationProjection(message))
+            tx.objectStore(MESSAGES).put(stored).onsuccess = nextRow
             return
           }
           if (payload.count >= 100_000) throw new Error('IndexedDB message payload exceeds block budget')
@@ -149,6 +171,10 @@ export function putStoredMessages(
 export function deleteStoredMessage(tx: IDBTransaction, sessionId: string, messageId: string) {
   deleteOldPayload(tx, sessionId, messageId)
   tx.objectStore(MESSAGES).delete([sessionId, messageId])
+  tx.objectStore(TRANSCRIPT_MESSAGES).delete([sessionId, messageId])
+  tx.objectStore(SESSION_ROW_TOKEN_CACHE_STORE).delete(
+    IDBKeyRange.bound([sessionId, messageId], [sessionId, messageId, []])
+  )
 }
 
 export async function* readBackupPayload(
@@ -186,4 +212,33 @@ export async function* readBackupPayload(
     yield chunk.data
   }
   if (size !== ref.size) throw new Error('IndexedDB backup payload is incomplete')
+}
+
+/** Physical index fields are not part of a logical message row. */
+export function messageMetadata(
+  value: MessageRowMetadata & {
+    navigation?: unknown
+    tokenPayloadId?: string
+    payloadBytes?: number
+    selectedDepth?: number | null
+    parentKey?: string
+    branchKey?: string
+    pausedKey?: number
+    conversationKey?: number
+    namingRole?: string
+  }
+): MessageRowMetadata {
+  const {
+    navigation: _navigation,
+    tokenPayloadId: _tokenPayloadId,
+    payloadBytes: _bytes,
+    selectedDepth: _depth,
+    parentKey: _parent,
+    branchKey: _branch,
+    pausedKey: _paused,
+    conversationKey: _conversation,
+    namingRole: _naming,
+    ...metadata
+  } = value
+  return metadata
 }

@@ -28,10 +28,11 @@ const { getSessionMock, submitMock, insertMessageMock, generateMock, runCompacti
 
 vi.mock('@/app/renderer-application', async () => {
   const { GenerationRuntimeStore } = await import('@chatbox/core/generation')
+  const { createRowSessionFixtureReads } = await import('./testing/row-session-fixture')
   return {
     rendererApplication: {
       generationRuntime: new GenerationRuntimeStore(),
-      sessionQueryBridge: { getSession: getSessionMock },
+      sessions: createRowSessionFixtureReads(getSessionMock),
     },
   }
 })
@@ -57,7 +58,7 @@ import { rendererApplication } from '@/app/renderer-application'
 import {
   clearPendingQueuedMessages,
   clearQueue,
-  conversationAnchorIdOf,
+  readConversationAnchorId,
   enqueueCompactionRequest,
   enqueueUserMessage,
   flushMessageQueueForTests,
@@ -133,6 +134,7 @@ describe('message queue', () => {
     generateMock.mockResolvedValue(undefined)
     runCompactionMock.mockResolvedValue({
       status: 'compacted',
+      revision: 1,
       summaryMessageId: 'summary-1',
       summary: 'Summary',
       coverage: { kind: 'conversation', boundaryMessageId: 'assistant' },
@@ -619,7 +621,9 @@ describe('message queue', () => {
   describe('manual steering (requestSteerQueuedMessage / takeRequestedSteerableMessage)', () => {
     /** Wait for the async conversation-anchor stamp without firing drain timers. */
     async function flushMicrotasks(): Promise<void> {
-      for (let i = 0; i < 5; i += 1) await Promise.resolve()
+      for (let i = 0; i < 1000 && getQueuedMessages().some((item) => !item.conversationAnchorId); i += 1)
+        await Promise.resolve()
+      expect(getQueuedMessages().every((item) => item.conversationAnchorId)).toBe(true)
     }
     const acceptAll = () => true
 
@@ -805,6 +809,7 @@ describe('message queue', () => {
         order.push('compaction')
         return Promise.resolve({
           status: 'compacted',
+          revision: 1,
           summaryMessageId: 'summary-1',
           summary: 'Summary',
           coverage: { kind: 'conversation', boundaryMessageId: 'assistant' },
@@ -1031,7 +1036,7 @@ describe('message queue', () => {
       expect(hasQueuedWork('session-1')).toBe(true)
     })
 
-    it('anchors a conversation on the newest message that is not still streaming', () => {
+    it('anchors a conversation on the newest message that is not still streaming', async () => {
       const session: Session = {
         id: 'session-1',
         name: 'Session',
@@ -1043,8 +1048,10 @@ describe('message queue', () => {
 
       // Stopping a reply before any text arrives removes it, so the streaming
       // placeholder cannot be the conversation's identity.
-      expect(conversationAnchorIdOf(session)).toBe('u1')
-      expect(conversationAnchorIdOf({ ...session, messages: [] })).toBeUndefined()
+      getSessionMock.mockResolvedValue(session)
+      expect(await readConversationAnchorId('session-1')).toBe('u1')
+      getSessionMock.mockResolvedValue({ ...session, messages: [] })
+      expect(await readConversationAnchorId('session-1')).toBeUndefined()
     })
   })
 })

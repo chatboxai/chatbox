@@ -2,6 +2,7 @@
 
 import { ChatboxAIAPIError, MESSAGE_ERROR_CODES, OCRError } from '@shared/models/errors'
 import type { Message, Session, SessionSettings, Settings } from '@shared/types'
+import { InMemorySessionRepository } from '@chatbox/core/testing'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { resolveMessageErrorPresentation } from '@/components/chat/message-error-presentation'
 
@@ -21,12 +22,7 @@ vi.mock('@/app/renderer-application', () => ({
 }))
 
 import { uiStore } from '../uiStore'
-import {
-  getCompactionPointsForTarget,
-  handleGenerationError,
-  initializeTargetMessage,
-  trackGenerateEvent,
-} from './utils'
+import { handleGenerationError, initializeTargetMessage, trackGenerateEvent } from './utils'
 
 describe('trackGenerateEvent', () => {
   beforeEach(() => {
@@ -213,7 +209,7 @@ describe('trackGenerateEvent', () => {
   })
 })
 
-describe('getCompactionPointsForTarget', () => {
+describe('row context compaction ownership', () => {
   const sessionPoint = { summaryMessageId: 'active-summary', boundaryMessageId: 'active-a1', createdAt: 2000 }
   const threadPoint = { summaryMessageId: 'thread-summary', boundaryMessageId: 'thread-a1', createdAt: 1000 }
 
@@ -251,20 +247,26 @@ describe('getCompactionPointsForTarget', () => {
     }
   }
 
-  test('uses session points for active-conversation messages', () => {
-    expect(getCompactionPointsForTarget(makeSessionWithThread(), 'active-a1')).toEqual([sessionPoint])
+  async function readTargetContext(targetMessageId: string) {
+    const repository = new InMemorySessionRepository()
+    await repository.seedSession(makeSessionWithThread())
+    return repository.getSessionContextSource({ sessionId: 'session-1', targetMessageId })
+  }
+
+  test('uses the active thread points for active-conversation messages', async () => {
+    expect((await readTargetContext('active-a1'))?.compactionPoints).toEqual([sessionPoint])
   })
 
-  test('uses the archived thread points when retrying from a thread', () => {
-    expect(getCompactionPointsForTarget(makeSessionWithThread(), 'thread-a1')).toEqual([threadPoint])
+  test('uses the archived thread points when retrying from a thread', async () => {
+    expect((await readTargetContext('thread-a1'))?.compactionPoints).toEqual([threadPoint])
   })
 
-  test('uses the thread points for fork branches reachable from the thread', () => {
-    expect(getCompactionPointsForTarget(makeSessionWithThread(), 'thread-fork-alt')).toEqual([threadPoint])
+  test('uses the owning thread points for its inactive branch', async () => {
+    expect((await readTargetContext('thread-fork-alt'))?.compactionPoints).toEqual([threadPoint])
   })
 
-  test('falls back to session points for unknown messages', () => {
-    expect(getCompactionPointsForTarget(makeSessionWithThread(), 'missing')).toEqual([sessionPoint])
+  test('rejects an unknown message target', async () => {
+    await expect(readTargetContext('missing')).rejects.toThrow('Context target is missing')
   })
 })
 

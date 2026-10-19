@@ -1,3 +1,4 @@
+import { deriveMessageFacts } from '../session/message-facts'
 import type { Message } from '@shared/types'
 import { migrateMessage } from '@shared/utils/message'
 import { describe, expect, it } from 'vitest'
@@ -10,6 +11,30 @@ function validate(message: Message) {
 }
 
 describe('complex backup messages', () => {
+  it('derives facts from streamed values beyond the compact body projection', () => {
+    const message: Message = {
+      id: 'facts',
+      role: 'assistant',
+      steered: true,
+      finishReason: 'stop',
+      contentParts: [
+        { type: 'text', text: ' '.repeat(180000) + 'answer' },
+        { type: 'reasoning', text: 'x'.repeat(8000) },
+        {
+          type: 'tool-call',
+          toolCallId: 'call',
+          toolName: 'user_exec',
+          state: 'result',
+          args: {},
+          result: { value: 'done' },
+        },
+      ],
+    }
+    const validator = new BackupMessageValidator()
+    for (const block of serializeBackupPayload(message).blocks) validator.write(block)
+    expect(validator.finishFacts()).toEqual(deriveMessageFacts(message))
+  })
+
   it('validates many text parts without accumulating their prefixes', () => {
     const message: Message = {
       id: 'many-parts',

@@ -12,6 +12,12 @@ export interface SessionContextRequest {
   /** A specified target is excluded by default, as required for retry/generation. */
   includeTarget?: boolean
   expectedRevision?: number
+  /** Apply the resolved send history limit before reading message bodies. Omission means unlimited. */
+  maxContextMessageCount?: number
+  /** Reserve the current-input slot when the caller will append a pending user turn. */
+  reserveCurrentInput?: boolean
+  /** Freeze the target's isolated conversation identities for generation steering. */
+  includeConversationIds?: boolean
 }
 
 export interface SessionContextSeedAttachment {
@@ -29,6 +35,7 @@ export interface SessionContextBeforeTarget {
   hasLegacyCommandHistory: boolean
   lastUserMessageId?: string
   sandboxSeedAttachments: SessionContextSeedAttachment[]
+  fileResourceKeys: string[]
 }
 
 /** Validated causal identity and complete content for reading, not a writable row. */
@@ -60,7 +67,9 @@ export interface SessionContextSource {
   mode: 'compacted' | 'full-path'
   beforeTarget: SessionContextBeforeTarget
   effectiveCompactionPoint?: CompactionPoint
-  topologyFingerprint?: string
+  /** Identities of the causal path, including entries omitted by compaction. */
+  pathMessageIds: readonly string[]
+  conversationMessageIds?: readonly string[]
 }
 
 export interface SessionContextRepositoryPort {

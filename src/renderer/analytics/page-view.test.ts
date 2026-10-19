@@ -1,178 +1,93 @@
-import type { Session } from '@chatbox/core'
-import type { SessionMessagesSource, SessionReadModel } from '@chatbox/core/ports'
+import type { SessionHeaderRead } from '@chatbox/core/ports'
 import { QueryKeys } from '@chatbox/react/query'
 import { QueryClient } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({
-  readSessionMessages: vi.fn(),
-  getSession: vi.fn(),
-  getCachedSession: vi.fn(),
-  getQueryData: vi.fn(),
-  trackJkViewEvent: vi.fn(),
-}))
-
+const mocks = vi.hoisted(() => ({ getSessionHeader: vi.fn(), getQueryData: vi.fn(), trackJkViewEvent: vi.fn() }))
 vi.mock('@/app/renderer-application', () => ({
   rendererApplication: {
-    sessions: { readSessionMessages: mocks.readSessionMessages },
+    sessions: { getSessionHeader: mocks.getSessionHeader },
     queryClient: { getQueryData: mocks.getQueryData },
-    sessionQueryBridge: { getSession: mocks.getSession, getCachedSession: mocks.getCachedSession },
   },
 }))
 vi.mock('./jk', () => ({ trackJkViewEvent: mocks.trackJkViewEvent }))
-
 import { JK_EVENTS, JK_PAGE_NAMES } from './jk-events'
 import { trackPageView } from './page-view'
 
-function session(name = 'Session name'): Session {
-  return { id: 'session-1', name, type: 'chat', threadName: 'Thread name', messages: [] }
-}
-
-function windowModel(name = 'Window session name'): SessionReadModel {
-  const { messages: _messages, ...header } = session(name)
+function header(name = 'Session name'): SessionHeaderRead {
   return {
-    kind: 'window',
-    header,
+    header: { id: 'session-1', name, type: 'chat', threadName: 'Thread name' },
+    revision: 25,
+    activeThreadId: 'active',
+    control: { generatingAssistantCount: 0 },
     summary: {
+      hasAutoTitleContent: false,
       messageCount: 0,
       userMessageCount: 0,
+      assistantMessageCount: 0,
       fileMessageCount: 0,
       generatingMessageCount: 0,
       pausedMessageCount: 0,
-      hasThreads: false,
-      hasForks: false,
-    },
-    window: {
-      revision: 25,
-      record: { id: header.id, name, type: 'chat', activeThreadId: 'active', storageFormat: 'rows' },
-      thread: {
-        sessionId: header.id,
-        threadId: 'active',
-        seq: -1,
-        name: 'Thread name',
-        createdAt: 1,
-        rootMessageId: null,
-        activeLeafMessageId: null,
-        compactionPoints: [],
-      },
-      messages: [],
-      older: null,
-      newer: null,
+      webSearchSignInErrorCount: 0,
+      legacyCommandMessageCount: 0,
+      steeredMessageCount: 0,
     },
   }
 }
-
 describe('page view session content', () => {
-  let queryClient: QueryClient
+  let client: QueryClient
   beforeEach(() => {
     vi.resetAllMocks()
-    queryClient = new QueryClient()
-    mocks.getQueryData.mockImplementation((key) => queryClient.getQueryData(key))
-    mocks.getCachedSession.mockImplementation((id: string) => queryClient.getQueryData(QueryKeys.ChatSession(id)))
-    mocks.readSessionMessages.mockResolvedValue({
-      header: { id: 'session-1', name: 'Stored name', type: 'chat' },
-      revision: 25,
-      messages: [],
-    } satisfies SessionMessagesSource)
+    client = new QueryClient()
+    mocks.getQueryData.mockImplementation((key) => client.getQueryData(key))
+    mocks.getSessionHeader.mockResolvedValue(header('Stored name'))
   })
-
-  it.each(['window', 'full'] as const)('tracks a warm %s read model from cache', async (kind) => {
-    const model: SessionReadModel =
-      kind === 'window' ? windowModel() : { kind: 'full', session: session('Full model name') }
-    queryClient.setQueryData(QueryKeys.ChatSessionReadModel('session-1'), model)
-    queryClient.setQueryData(QueryKeys.ChatSession('session-1'), session('Older complete cache'))
-
+  it.each(['Cached name', ''])('uses the cached header name %s', async (name) => {
+    client.setQueryData(QueryKeys.ChatSessionHeader('session-1'), header(name))
     await trackPageView(JK_PAGE_NAMES.CHAT_PAGE, 'session-1')
-
-    expect(mocks.readSessionMessages).not.toHaveBeenCalled()
-    expect(mocks.getSession).not.toHaveBeenCalled()
-    expect(mocks.getCachedSession).not.toHaveBeenCalled()
+    expect(mocks.getSessionHeader).not.toHaveBeenCalled()
     expect(mocks.trackJkViewEvent).toHaveBeenCalledExactlyOnceWith(JK_EVENTS.PAGE_VIEW, {
       pageName: JK_PAGE_NAMES.CHAT_PAGE,
-      content: kind === 'window' ? 'Window session name' : 'Full model name',
+      content: name,
     })
   })
-
-  it('uses the complete-session cache when a read model has not loaded', async () => {
-    queryClient.setQueryData(QueryKeys.ChatSession('session-1'), session('Complete session name'))
+  it('honors the header deletion tombstone', async () => {
+    client.setQueryData(QueryKeys.ChatSessionHeader('session-1'), null)
     await trackPageView(JK_PAGE_NAMES.CHAT_PAGE, 'session-1')
-    expect(mocks.readSessionMessages).not.toHaveBeenCalled()
-    expect(mocks.getSession).not.toHaveBeenCalled()
-    expect(mocks.trackJkViewEvent).toHaveBeenCalledExactlyOnceWith(JK_EVENTS.PAGE_VIEW, {
-      pageName: JK_PAGE_NAMES.CHAT_PAGE,
-      content: 'Complete session name',
-    })
-  })
-
-  it.each(['read-model', 'full-session'] as const)('honors a %s deletion tombstone', async (kind) => {
-    if (kind === 'read-model') {
-      queryClient.setQueryData(QueryKeys.ChatSessionReadModel('session-1'), null)
-      queryClient.setQueryData(QueryKeys.ChatSession('session-1'), session('Stale name'))
-    } else queryClient.setQueryData(QueryKeys.ChatSession('session-1'), null)
-    await trackPageView(JK_PAGE_NAMES.CHAT_PAGE, 'session-1')
-    expect(mocks.readSessionMessages).not.toHaveBeenCalled()
-    expect(mocks.getSession).not.toHaveBeenCalled()
+    expect(mocks.getSessionHeader).not.toHaveBeenCalled()
     expect(mocks.trackJkViewEvent).toHaveBeenCalledExactlyOnceWith(JK_EVENTS.PAGE_VIEW, {
       pageName: JK_PAGE_NAMES.CHAT_PAGE,
       content: undefined,
     })
   })
-
-  it('uses a renamed session on the next page view', async () => {
-    queryClient.setQueryData(QueryKeys.ChatSessionReadModel('session-1'), windowModel('First name'))
+  it('uses the renamed header on the next visit', async () => {
+    client.setQueryData(QueryKeys.ChatSessionHeader('session-1'), header('First name'))
     await trackPageView(JK_PAGE_NAMES.CHAT_PAGE, 'session-1')
-    queryClient.setQueryData(QueryKeys.ChatSessionReadModel('session-1'), windowModel('Renamed session'))
+    client.setQueryData(QueryKeys.ChatSessionHeader('session-1'), header('Renamed'))
     await trackPageView(JK_PAGE_NAMES.CHAT_PAGE, 'session-1')
-    expect(mocks.readSessionMessages).not.toHaveBeenCalled()
-    expect(mocks.trackJkViewEvent.mock.calls.map((call) => call[1].content)).toEqual(['First name', 'Renamed session'])
+    expect(mocks.getSessionHeader).not.toHaveBeenCalled()
+    expect(mocks.trackJkViewEvent.mock.calls.map((call) => call[1].content)).toEqual(['First name', 'Renamed'])
   })
-
-  it('preserves an empty session name instead of using its thread name or reading storage', async () => {
-    queryClient.setQueryData(QueryKeys.ChatSessionReadModel('session-1'), windowModel(''))
+  it('reads only the header on a cold visit', async () => {
     await trackPageView(JK_PAGE_NAMES.CHAT_PAGE, 'session-1')
-    expect(mocks.readSessionMessages).not.toHaveBeenCalled()
+    expect(mocks.getSessionHeader).toHaveBeenCalledExactlyOnceWith('session-1')
     expect(mocks.trackJkViewEvent).toHaveBeenCalledExactlyOnceWith(JK_EVENTS.PAGE_VIEW, {
       pageName: JK_PAGE_NAMES.CHAT_PAGE,
-      content: '',
+      content: 'Stored name',
     })
   })
-
-  it('reads only the header for the session page name', async () => {
-    const source: SessionMessagesSource = {
-      header: { id: 'session-1', name: 'Long conversation', type: 'chat', threadName: 'Current thread' },
-      revision: 25,
-      messages: [],
-    }
-    mocks.readSessionMessages.mockResolvedValue(source)
-
-    await trackPageView(JK_PAGE_NAMES.CHAT_PAGE, 'session-1')
-
-    expect(mocks.readSessionMessages).toHaveBeenCalledExactlyOnceWith({ sessionId: 'session-1', messageIds: [] })
-    expect(mocks.getSession).not.toHaveBeenCalled()
-    expect(mocks.trackJkViewEvent).toHaveBeenCalledExactlyOnceWith(JK_EVENTS.PAGE_VIEW, {
-      pageName: JK_PAGE_NAMES.CHAT_PAGE,
-      content: 'Long conversation',
-    })
-  })
-
   it('does not read a session for other pages', async () => {
     await trackPageView(JK_PAGE_NAMES.ABOUT_PAGE)
-
-    expect(mocks.readSessionMessages).not.toHaveBeenCalled()
-    expect(mocks.getSession).not.toHaveBeenCalled()
+    expect(mocks.getSessionHeader).not.toHaveBeenCalled()
     expect(mocks.trackJkViewEvent).toHaveBeenCalledExactlyOnceWith(JK_EVENTS.PAGE_VIEW, {
       pageName: JK_PAGE_NAMES.ABOUT_PAGE,
       content: undefined,
     })
   })
-
-  it.each(['missing', 'failed'])('still tracks the page when its session read is %s', async (outcome) => {
-    if (outcome === 'missing') mocks.readSessionMessages.mockResolvedValue(null)
-    else mocks.readSessionMessages.mockRejectedValue(new Error('Storage unavailable'))
-
+  it.each(['missing', 'failed'])('tracks a visit when the header is %s', async (outcome) => {
+    if (outcome === 'missing') mocks.getSessionHeader.mockResolvedValue(null)
+    else mocks.getSessionHeader.mockRejectedValue(new Error('Storage unavailable'))
     await trackPageView(JK_PAGE_NAMES.CHAT_PAGE, 'session-1')
-
-    expect(mocks.getSession).not.toHaveBeenCalled()
     expect(mocks.trackJkViewEvent).toHaveBeenCalledExactlyOnceWith(JK_EVENTS.PAGE_VIEW, {
       pageName: JK_PAGE_NAMES.CHAT_PAGE,
       content: undefined,

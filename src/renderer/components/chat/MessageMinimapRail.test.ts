@@ -52,6 +52,78 @@ describe('getMinimapRenderRange', () => {
     expect(getMinimapRenderRange(0, 0, 0)).toEqual({ start: 0, end: 0 })
   })
 
+  test('pages with wheel and keyboard input while rendering only message anchors', () => {
+    const onLoadOlder = vi.fn()
+    const onLoadNewer = vi.fn()
+    const { container } = render(
+      createElement(MessageMinimapRail, {
+        anchors: createAnchors(3),
+        hasOlder: true,
+        hasNewer: true,
+        onLoadOlder,
+        onLoadNewer,
+      })
+    )
+    expect(screen.getAllByRole('button')).toHaveLength(3)
+    const scroller = container.querySelector<HTMLElement>('.overflow-y-auto')!
+    Object.defineProperties(scroller, { clientHeight: { value: 100 }, scrollHeight: { value: 300 } })
+    scroller.scrollTop = 0
+    fireEvent.wheel(scroller, { deltaY: -80 })
+    expect(onLoadOlder).toHaveBeenCalledTimes(1)
+    scroller.scrollTop = 200
+    fireEvent.wheel(scroller, { deltaY: 80 })
+    expect(onLoadNewer).toHaveBeenCalledTimes(1)
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Jump to message 1' }), { key: 'ArrowUp' })
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Jump to message 3' }), { key: 'ArrowDown' })
+    expect(onLoadOlder).toHaveBeenCalledTimes(2)
+    expect(onLoadNewer).toHaveBeenCalledTimes(2)
+  })
+  test('retries failed navigation through wheel and keyboard input', () => {
+    const onRetry = vi.fn()
+    const onLoadOlder = vi.fn()
+    const onEdge = vi.fn()
+    const props = {
+      anchors: createAnchors(3),
+      hasOlder: true,
+      error: new Error('read failed'),
+      onRetry,
+      onLoadOlder,
+      onEdge,
+    }
+    const view = render(createElement(MessageMinimapRail, props))
+    expect(screen.getAllByRole('button')).toHaveLength(3)
+    const scroller = view.container.querySelector<HTMLElement>('.overflow-y-auto')!
+    fireEvent.wheel(scroller, { deltaY: -80 })
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Jump to message 1' }), { key: 'Home' })
+    expect(onRetry).toHaveBeenCalledTimes(2)
+    expect(onLoadOlder).not.toHaveBeenCalled()
+    expect(onEdge).not.toHaveBeenCalled()
+    view.rerender(createElement(MessageMinimapRail, { ...props, loading: true }))
+    fireEvent.wheel(scroller, { deltaY: -80 })
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Jump to message 1' }), { key: 'ArrowUp' })
+    expect(onRetry).toHaveBeenCalledTimes(2)
+  })
+
+  test('makes an empty failed rail keyboard-retryable until anchors are available', () => {
+    const onRetry = vi.fn()
+    const props = { anchors: [], error: new Error('read failed'), onRetry }
+    const view = render(createElement(MessageMinimapRail, props))
+    const scroller = screen.getByRole('group', { name: 'Try Again' })
+    expect(scroller.tabIndex).toBe(0)
+    scroller.focus()
+    expect(document.activeElement).toBe(scroller)
+    fireEvent.keyDown(scroller, { key: 'ArrowUp' })
+    expect(onRetry).toHaveBeenCalledTimes(1)
+    expect(screen.queryAllByRole('button')).toHaveLength(0)
+    view.rerender(createElement(MessageMinimapRail, { ...props, loading: true }))
+    fireEvent.keyDown(scroller, { key: 'End' })
+    expect(onRetry).toHaveBeenCalledTimes(1)
+    view.rerender(createElement(MessageMinimapRail, { anchors: createAnchors(3), onRetry }))
+    expect(scroller.tabIndex).toBe(-1)
+    expect(scroller.hasAttribute('aria-label')).toBe(false)
+    expect(screen.getAllByRole('button')).toHaveLength(3)
+  })
+
   test('moves keyboard focus to anchors outside the rendered window', async () => {
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       callback(0)

@@ -2,7 +2,9 @@ import { describe, expect, test, vi } from 'vitest'
 import { InMemorySessionRepository } from '../../testing/InMemorySessionRepository'
 import type { Session } from '../../types'
 import { SessionWriteCoordinator } from './SessionWriteCoordinator'
-import { getCurrentThreadTarget, ThreadService } from './ThreadService'
+import { ThreadService } from './ThreadService'
+import { SessionService } from './SessionService'
+import { SessionEventBus } from './session-events'
 
 async function harness() {
   const original: Session = {
@@ -15,28 +17,18 @@ async function harness() {
     ],
   }
   const repository = new InMemorySessionRepository()
-  await repository.setSession(original)
+  await repository.seedSession(original)
   const writes = new SessionWriteCoordinator(repository)
   let id = 0
   const service = new ThreadService({
-    sessions: {
-      getSession: (sessionId) => repository.getSession(sessionId),
-      updateSession: async (sessionId, updater) =>
-        (
-          await writes.update(sessionId, (current) => {
-            if (!current) throw new Error('Expected session')
-            return { ...current, ...(typeof updater === 'function' ? updater(current) : updater) }
-          })
-        ).session,
-      updateSessionWithMessages: async (sessionId, updater) => (await writes.update(sessionId, updater)).session,
-    },
+    sessions: new SessionService(repository, writes, new SessionEventBus(), { createId: () => 'new', now: () => 1 }),
     createId: () => `id-${++id}`,
     now: () => id,
     getDefaultSystemPrompt: () => 'Prompt',
-    cancelMessages: vi.fn(),
-    copySession: async (source) => source,
+    cancelMessageIds: vi.fn(),
+    copyThread: async () => ({ id: 'copy', name: 'Copied' }),
   })
-  return { original, repository, writes, service, read: () => repository.getSession('s') }
+  return { original, repository, writes, service, read: async () => repository.inspectSession('s') }
 }
 
 describe('thread deletion safety with queued persistence', () => {
@@ -62,15 +54,16 @@ describe('thread deletion safety with queued persistence', () => {
     await h.service.refreshContextAndCreateNew('s')
     const created = await h.read()
     if (!created) throw new Error('Expected session')
-    const target = getCurrentThreadTarget(created)
-    expect(await h.service.remove('s', 's', target)).toBe(true)
-    expect(await h.service.remove('s', 's', target)).toBe(false)
+    const target = await h.repository.getCurrentThreadIdentity('s')
+    if (!target) throw new Error('Expected identity')
+    expect(await h.service.removeCurrent('s', target)).toBe(true)
+    expect(await h.service.removeCurrent('s', target)).toBe(false)
     expect((await h.read())?.messages).toEqual(h.original.messages)
   })
 
   test('failed creation preserves old messages and returns no receipt', async () => {
     const h = await harness()
-    vi.spyOn(h.repository, 'setSession').mockRejectedValueOnce(new Error('Disk write failed'))
+    vi.spyOn(h.repository.rowStore, 'applyDiff').mockRejectedValueOnce(new Error('Disk write failed'))
     await expect(h.service.createWithRollback('s')).rejects.toThrow('Disk write failed')
     expect((await h.read())?.messages).toEqual(h.original.messages)
   })
@@ -79,9 +72,9 @@ describe('thread deletion safety with queued persistence', () => {
     const h = await harness()
     const target = await h.service.createWithRollback('s')
     if (!target) throw new Error('Expected rollback receipt')
-    await h.writes.update('s', (session) => {
-      if (!session) throw new Error('Expected session')
-      return { ...session, messages: [...session.messages, { id: 'new-question', role: 'user', contentParts: [] }] }
+    await h.repository.executeSessionCommand('s', {
+      type: 'append',
+      messages: [{ id: 'new-question', role: 'user', contentParts: [] }],
     })
     expect(await h.service.rollbackCreated(target)).toBe(false)
     expect((await h.read())?.messages.at(-1)?.id).toBe('new-question')
@@ -116,7 +109,7 @@ describe('thread deletion safety with queued persistence', () => {
     if (!created?.threads?.[0]) throw new Error('Expected archived thread')
     await h.service.remove('s', created.threads[0].id)
     expect((await h.read())?.messages).toEqual(created.messages)
-    expect((await h.read())?.threads).toEqual([])
+    expect((await h.read())?.threads ?? []).toEqual([])
   })
 
   test('undo does not clear the current conversation when the archived source was deleted', async () => {

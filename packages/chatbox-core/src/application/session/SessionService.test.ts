@@ -5,12 +5,7 @@ import { SessionService } from './SessionService'
 import { SessionNotFoundError, SessionWriteCoordinator } from './SessionWriteCoordinator'
 import { type SessionApplicationEvent, SessionEventBus } from './session-events'
 
-function createHarness(
-  repairSessionOnRead?: (session: ReturnType<typeof createTestSession>) => {
-    session: ReturnType<typeof createTestSession>
-    changed: boolean
-  }
-) {
+function createHarness() {
   const repository = new InMemorySessionRepository()
   const events = new SessionEventBus()
   const published: SessionApplicationEvent[] = []
@@ -26,7 +21,6 @@ function createHarness(
     getLastUsedModels: () => ({
       chat: { provider: 'openai', modelId: 'last-used-model' },
     }),
-    repairSessionOnRead,
   })
   return { repository, events, log, published, service, writes }
 }
@@ -52,7 +46,7 @@ describe('SessionService', () => {
       ['c', 1],
     ] as const) {
       const session = createTestSession(id)
-      repository.sessions.set(id, session)
+      await repository.seedSession(session)
       repository.records.set(id, createTestRecord(session, sortOrder))
     }
 
@@ -61,7 +55,7 @@ describe('SessionService', () => {
     expect(published.map((event) => event.type)).toEqual(['session-folders-changed', 'session-list-reset'])
 
     await folderService.moveSessionToFolder('c', 'f')
-    expect((await repository.getSession('c'))?.folderId).toBe('f')
+    expect((await repository.getSessionHeader('c'))?.header.folderId).toBe('f')
     expect(repository.records.get('c')?.folderId).toBe('f')
     expect((await folderService.listSessionsMetaPage(0, 3)).items.map((item) => item.id)).toEqual(['c', 'a', 'b'])
 
@@ -71,7 +65,8 @@ describe('SessionService', () => {
     expect((await folderService.listSessionsMetaPage(0, 3)).items.map((item) => item.id)).toEqual(['a', 'b', 'c'])
 
     await folderService.moveSessionToFolder('a', undefined, 0)
-    expect(repository.records.get('a')).toMatchObject({ folderId: undefined, sortOrder: 0 })
+    expect(repository.records.get('a')?.folderId).toBeUndefined()
+    expect(repository.records.get('a')?.sortOrder).toBe(0)
   })
 
   test('does not create or reorder sessions while backup storage access is active', async () => {
@@ -85,51 +80,54 @@ describe('SessionService', () => {
         name: 'BackupOperationBusyError',
       })
     })
-    expect((await service.getSession(session.id))?.name).toBe('Original')
+    expect((await service.getSessionHeader(session.id))?.header.name).toBe('Original')
   })
 
-  test('repairs a complete read model without reading its session a second time', async () => {
-    const repair = vi.fn((session: Session) => ({ session, changed: false }))
-    const harness = createHarness(repair)
-    const session = createTestSession('read-once')
-    const readModel = vi.fn(async () => ({ kind: 'full' as const, session }))
-    Object.assign(harness.repository, { getSessionReadModel: readModel })
-    const fullRead = vi.spyOn(harness.repository, 'getSession')
-    expect(await harness.service.getSessionReadModel(session.id)).toEqual({ kind: 'full', session })
-    expect(readModel).toHaveBeenCalledTimes(1)
-    expect(fullRead).not.toHaveBeenCalled()
-    expect(repair).toHaveBeenCalledWith(session)
-  })
-  test('names the changed message only for writes that replace one message in place', async () => {
+  test('reads a session header and summaries without hydrating message payloads', async () => {
     const harness = createHarness()
-    const persisted: Session = {
+    await harness.repository.seedSession({
+      ...createTestSession('header'),
+      messages: [{ id: 'message', role: 'user', contentParts: [{ type: 'text', text: 'body' }] }],
+    })
+    const payloads = vi.spyOn(harness.repository.rowStore, 'readMessages')
+    const mutation = vi.spyOn(harness.repository.rowStore, 'applyDiff')
+    expect(await harness.service.getSessionHeader('header')).toMatchObject({
+      header: { id: 'header', name: 'header' },
+      summary: { messageCount: 1 },
+      revision: 1,
+    })
+    expect(payloads).not.toHaveBeenCalled()
+    expect(mutation).not.toHaveBeenCalled()
+    expect(harness.published).toEqual([])
+  })
+
+  test('publishes the precise local command delta for message and header writes', async () => {
+    const harness = createHarness()
+    const session = {
       ...createTestSession('session-1'),
-      messages: [{ id: 'assistant-1', role: 'assistant', contentParts: [{ type: 'text', text: 'hi' }] }],
+      messages: [{ id: 'assistant-1', role: 'assistant' as const, contentParts: [] }],
     }
-    harness.repository.sessions.set(persisted.id, persisted)
-    harness.repository.records.set(persisted.id, createTestRecord(persisted, 1))
-
-    await harness.service.updateMessage(persisted.id, 'assistant-1', { generating: false })
-    await harness.service.insertMessage(persisted.id, { id: 'user-2', role: 'user', contentParts: [] })
-    await harness.service.removeMessage(persisted.id, 'user-2')
-    await harness.service.updateSession(persisted.id, { name: 'Renamed' })
-
-    expect(harness.repository.writeOptions.map((options) => ({ changedMessageId: options?.changedMessageId }))).toEqual(
-      [
-        { changedMessageId: 'assistant-1' },
-        { changedMessageId: undefined },
-        { changedMessageId: undefined },
-        { changedMessageId: undefined },
-      ]
-    )
+    await harness.repository.seedSession(session)
+    harness.repository.records.set(session.id, createTestRecord(session, 1))
+    await harness.service.updateMessage(session.id, 'assistant-1', { generating: false })
+    await harness.service.insertMessage(session.id, { id: 'user-2', role: 'user', contentParts: [] })
+    await harness.service.removeMessage(session.id, 'user-2')
+    await harness.service.updateSessionHeader(session.id, { name: 'Renamed' })
+    const committed = harness.published.filter((event) => event.type === 'session-command-committed')
+    expect(committed).toHaveLength(4)
+    expect(committed[0].delta.diff.messages.upsert?.map((row) => row.messageId)).toEqual(['assistant-1'])
+    expect(committed[1].delta.appendedMessageIds).toEqual(['user-2'])
+    expect(committed[2].delta.diff.messages.delete).toContain('user-2')
+    expect(committed[3].delta.header.name).toBe('Renamed')
+    expect(committed[3].delta.diff.messages.upsert ?? []).toEqual([])
   })
 
   test('logs session read failures before rethrowing the repository error', async () => {
     const harness = createHarness()
     const error = new Error('read failed')
-    vi.spyOn(harness.repository, 'getSession').mockRejectedValue(error)
+    vi.spyOn(harness.repository, 'getSessionHeader').mockRejectedValue(error)
 
-    await expect(harness.service.getSession('session-1')).rejects.toBe(error)
+    await expect(harness.service.getSessionHeader('session-1')).rejects.toBe(error)
     expect(harness.log).toHaveBeenCalledWith(
       'error',
       'Failed to read session from repository',
@@ -153,37 +151,15 @@ describe('SessionService', () => {
     )
   })
 
-  test('persists read repairs through the write coordinator and publishes the repaired session', async () => {
-    const harness = createHarness((session) => ({
-      session: session.name === 'Recovered' ? session : { ...session, name: 'Recovered' },
-      changed: session.name !== 'Recovered',
-    }))
-    const persisted = createTestSession('session-1')
-    harness.repository.sessions.set(persisted.id, persisted)
-    const setSession = vi.spyOn(harness.repository, 'setSession')
-
-    await expect(harness.service.getSession(persisted.id)).resolves.toMatchObject({ name: 'Recovered' })
-
-    expect(setSession).toHaveBeenCalledOnce()
-    expect(harness.repository.sessions.get(persisted.id)?.name).toBe('Recovered')
-    expect(harness.published.at(-1)).toMatchObject({
-      type: 'session-updated',
-      session: { id: persisted.id, name: 'Recovered' },
-      meta: null,
-      preserveCachedGeneratingMessages: true,
-    })
-
-    await harness.service.getSession(persisted.id)
-    expect(setSession).toHaveBeenCalledOnce()
-  })
-
   test('logs each unreadable session and a recovery summary', async () => {
     const harness = createHarness()
     const readable = createTestSession('readable')
+    await harness.repository.seedSession(readable)
+    const read = await harness.repository.getSessionHeader(readable.id)
     vi.spyOn(harness.repository, 'getAllSessionIds').mockResolvedValue(['unreadable', 'readable'])
-    vi.spyOn(harness.repository, 'getSession').mockImplementation((sessionId) => {
+    vi.spyOn(harness.repository, 'getSessionHeader').mockImplementation((sessionId) => {
       if (sessionId === 'unreadable') return Promise.reject(new Error('large IndexedDB value'))
-      return Promise.resolve(readable)
+      return Promise.resolve(read)
     })
 
     await expect(harness.service.recoverSessionList()).resolves.toEqual({ recovered: 1, failed: 1 })
@@ -198,7 +174,7 @@ describe('SessionService', () => {
     })
   })
 
-  test('creates full session data and meta before publishing a precise event', async () => {
+  test('creates session rows and meta before publishing a precise event', async () => {
     const harness = createHarness()
 
     const created = await harness.service.createSession({
@@ -214,7 +190,7 @@ describe('SessionService', () => {
       modelId: 'last-used-model',
       temperature: 0.3,
     })
-    expect(harness.repository.sessions.get(created.id)).toBe(created)
+    expect(harness.repository.inspectSession(created.id)).toMatchObject(created)
     expect(harness.repository.records.get(created.id)).toMatchObject({
       id: created.id,
       sortOrder: 100,
@@ -227,7 +203,7 @@ describe('SessionService', () => {
     const harness = createHarness()
     for (const sortOrder of [6000, 5000, 4000]) {
       const session = createTestSession(`session-${sortOrder}`)
-      harness.repository.sessions.set(session.id, session)
+      await harness.repository.seedSession(session)
       harness.repository.records.set(session.id, createTestRecord(session, sortOrder))
     }
 
@@ -250,7 +226,7 @@ describe('SessionService', () => {
       ['chat-recent', 10000, false],
     ] as const) {
       const session = { ...createTestSession(id), ...(starred ? { starred } : {}) }
-      harness.repository.sessions.set(session.id, session)
+      await harness.repository.seedSession(session)
       harness.repository.records.set(session.id, {
         ...createTestRecord(session, sortOrder),
         ...(starred ? { starred } : {}),
@@ -274,10 +250,10 @@ describe('SessionService', () => {
   test('uses the opposite pin group as a numeric lower bound', async () => {
     const harness = createHarness()
     const pinned = { ...createTestSession('pinned'), starred: true }
-    harness.repository.sessions.set(pinned.id, pinned)
+    await harness.repository.seedSession(pinned)
     harness.repository.records.set(pinned.id, { ...createTestRecord(pinned, 5000), starred: true })
     const regular = createTestSession('regular')
-    harness.repository.sessions.set(regular.id, regular)
+    await harness.repository.seedSession(regular)
     harness.repository.records.set(regular.id, createTestRecord(regular, 3000))
 
     const created = await harness.service.createSession(
@@ -292,10 +268,10 @@ describe('SessionService', () => {
   test('midpoints against a hidden record below a predecessor with no visible successor', async () => {
     const harness = createHarness()
     const visible = createTestSession('visible')
-    harness.repository.sessions.set(visible.id, visible)
+    await harness.repository.seedSession(visible)
     harness.repository.records.set(visible.id, createTestRecord(visible, 5000))
     const archived = createTestSession('archived')
-    harness.repository.sessions.set(archived.id, { ...archived, hidden: true, archivedAt: 1 })
+    await harness.repository.seedSession({ ...archived, hidden: true, archivedAt: 1 })
     harness.repository.records.set(archived.id, { ...createTestRecord(archived, 3000), hidden: true, archivedAt: 1 })
 
     const created = await harness.service.createSession({ name: 'Copy', type: 'chat', messages: [] }, 'visible')
@@ -311,7 +287,7 @@ describe('SessionService', () => {
       ['bottom', 3000, false],
     ] as const) {
       const session = { ...createTestSession(id), ...(hidden ? { hidden, archivedAt: 1 } : {}) }
-      harness.repository.sessions.set(session.id, session)
+      await harness.repository.seedSession(session)
       harness.repository.records.set(session.id, {
         ...createTestRecord(session, sortOrder),
         ...(hidden ? { hidden, archivedAt: 1 } : {}),
@@ -326,7 +302,7 @@ describe('SessionService', () => {
   test('places a created session below a predecessor with no successor', async () => {
     const harness = createHarness()
     const only = createTestSession('only')
-    harness.repository.sessions.set(only.id, only)
+    await harness.repository.seedSession(only)
     harness.repository.records.set(only.id, createTestRecord(only, 5000))
 
     const created = await harness.service.createSession({ name: 'Copy', type: 'chat', messages: [] }, 'only')
@@ -370,69 +346,30 @@ describe('SessionService', () => {
       settings: {},
     })
 
-    expect(harness.repository.sessions.get(created.id)).toBe(created)
+    expect(harness.repository.inspectSession(created.id)).toMatchObject(created)
     expect(harness.repository.records.has(created.id)).toBe(true)
   })
 
-  test.each(['success', 'metadata-failure', 'storage-failure'] as const)(
-    'only signals durable message removal after the session write: %s',
-    async (outcome) => {
-      const harness = createHarness()
-      const session = createTestSession('session-1')
-      session.messages = [{ id: 'reply-1', role: 'assistant', contentParts: [] }]
-      harness.repository.sessions.set(session.id, session)
-      harness.repository.records.set(session.id, createTestRecord(session, 1))
-      const onPersisted = vi.fn()
-      if (outcome === 'metadata-failure') {
-        vi.spyOn(harness.repository.meta, 'update').mockRejectedValueOnce(new Error('metadata failed'))
-      } else if (outcome === 'storage-failure') {
-        vi.spyOn(harness.repository, 'setSession').mockRejectedValueOnce(new Error('storage failed'))
-      }
-
-      const removal = harness.service.removeMessage(session.id, 'reply-1', onPersisted)
-      if (outcome === 'success') {
-        await removal
-      } else {
-        await expect(removal).rejects.toThrow(outcome === 'metadata-failure' ? 'metadata failed' : 'storage failed')
-      }
-      if (outcome === 'storage-failure') {
-        expect(onPersisted).not.toHaveBeenCalled()
-        expect(harness.repository.sessions.get(session.id)?.messages).toHaveLength(1)
-      } else {
-        expect(onPersisted).toHaveBeenCalledOnce()
-        expect(onPersisted).toHaveBeenCalledWith(expect.objectContaining({ messages: [] }))
-        expect(harness.repository.sessions.get(session.id)?.messages).toHaveLength(0)
-      }
-    }
-  )
-
-  test('archives and restores full data and meta together', async () => {
+  test('archives and restores the header and meta together', async () => {
     const harness = createHarness()
     const session = createTestSession('session-1')
-    harness.repository.sessions.set(session.id, session)
+    await harness.repository.seedSession(session)
     harness.repository.records.set(session.id, createTestRecord(session, 1))
 
     await harness.service.archiveSession(session.id)
-    expect(harness.repository.sessions.get(session.id)).toMatchObject({ hidden: true, archivedAt: 100 })
+    expect(harness.repository.inspectSession(session.id)).toMatchObject({ hidden: true, archivedAt: 100 })
     expect(harness.repository.records.get(session.id)).toMatchObject({ hidden: true, archivedAt: 100 })
     expect(harness.repository.records.get(session.id)?.recoveryArchived).toBeUndefined()
 
     await harness.service.restoreSession(session.id)
-    expect(harness.repository.sessions.get(session.id)?.hidden).toBe(false)
-    expect(harness.repository.sessions.get(session.id)?.archivedAt).toBeUndefined()
+    expect(harness.repository.inspectSession(session.id)?.hidden).toBe(false)
+    expect(harness.repository.inspectSession(session.id)?.archivedAt).toBeUndefined()
     expect(harness.repository.records.get(session.id)?.hidden).toBe(false)
     expect(harness.repository.records.get(session.id)?.archivedAt).toBeUndefined()
   })
 
-  test('rejects recovery archive and restore when metadata is missing', async () => {
-    const harness = createHarness()
-
-    await expect(harness.service.archiveSessionWithoutLoading('missing')).rejects.toBeInstanceOf(SessionNotFoundError)
-    await expect(harness.service.restoreSessionWithoutLoading('missing')).rejects.toBeInstanceOf(SessionNotFoundError)
-  })
-
   test.each(['archiveSession', 'restoreSession'] as const)(
-    '%s rejects a full-session write failure and retains the persisted state',
+    '%s rejects a row command failure and retains the persisted state',
     async (operation) => {
       const harness = createHarness()
       const session = {
@@ -445,15 +382,15 @@ describe('SessionService', () => {
         hidden: session.hidden,
         archivedAt: session.archivedAt,
       }
-      harness.repository.sessions.set(session.id, session)
+      await harness.repository.seedSession(session)
       harness.repository.records.set(session.id, record)
-      const writeError = new Error('full-session write failed')
-      vi.spyOn(harness.repository, 'setSession').mockRejectedValueOnce(writeError)
+      const writeError = new Error('row command failed')
+      vi.spyOn(harness.repository, 'executeSessionCommand').mockRejectedValueOnce(writeError)
       const updateMeta = vi.spyOn(harness.repository.meta, 'update')
 
       await expect(harness.service[operation](session.id)).rejects.toBe(writeError)
 
-      expect(harness.repository.sessions.get(session.id)).toEqual(session)
+      expect(harness.repository.inspectSession(session.id)).toEqual(session)
       expect(harness.repository.records.get(session.id)).toEqual(record)
       expect(updateMeta).not.toHaveBeenCalled()
       expect(harness.published).toEqual([])
@@ -472,7 +409,7 @@ describe('SessionService', () => {
       hidden: operation === 'restoreSession',
       archivedAt: operation === 'restoreSession' ? 50 : undefined,
     }
-    harness.repository.sessions.set(session.id, session)
+    await harness.repository.seedSession(session)
     harness.repository.records.set(session.id, {
       ...createTestRecord(session, 1),
       hidden: session.hidden,
@@ -480,7 +417,7 @@ describe('SessionService', () => {
     })
     const pageError = new Error('list page failed')
     vi.spyOn(harness.repository.meta, pageMethod).mockRejectedValueOnce(pageError)
-    const setSession = vi.spyOn(harness.repository, 'setSession')
+    const executeCommand = vi.spyOn(harness.repository, 'executeSessionCommand')
 
     await expect(harness.service[operation](session.id)).resolves.toBeUndefined()
 
@@ -488,11 +425,14 @@ describe('SessionService', () => {
       hidden: operation === 'archiveSession',
       archivedAt: operation === 'archiveSession' ? 100 : undefined,
     }
-    expect(harness.repository.sessions.get(session.id)).toMatchObject(expected)
+    expect(harness.repository.inspectSession(session.id)).toMatchObject(expected)
     expect(harness.repository.records.get(session.id)).toMatchObject(expected)
-    expect(setSession).toHaveBeenCalledOnce()
+    expect(executeCommand).toHaveBeenCalledOnce()
     expect(harness.published).toContainEqual(
-      expect.objectContaining({ type: 'session-updated', session: expect.objectContaining(expected) })
+      expect.objectContaining({
+        type: 'session-command-committed',
+        delta: expect.objectContaining({ header: expect.objectContaining(expected) }),
+      })
     )
     expect(harness.log).toHaveBeenCalledWith(
       'warn',
@@ -513,7 +453,7 @@ describe('SessionService', () => {
       hidden: operation === 'restoreSession',
       archivedAt: operation === 'restoreSession' ? 50 : undefined,
     }
-    harness.repository.sessions.set(session.id, session)
+    await harness.repository.seedSession(session)
     harness.repository.records.set(session.id, {
       ...createTestRecord(session, 1),
       hidden: session.hidden,
@@ -532,7 +472,7 @@ describe('SessionService', () => {
       hidden: operation === 'archiveSession',
       archivedAt: operation === 'archiveSession' ? 100 : undefined,
     }
-    expect(harness.repository.sessions.get(session.id)).toMatchObject(expected)
+    expect(harness.repository.inspectSession(session.id)).toMatchObject(expected)
     expect(harness.repository.records.get(session.id)).toMatchObject(expected)
     expect(harness.log).toHaveBeenCalledWith(
       'warn',
@@ -546,7 +486,7 @@ describe('SessionService', () => {
     try {
       const harness = createHarness()
       const session = createTestSession('session-1')
-      harness.repository.sessions.set(session.id, session)
+      await harness.repository.seedSession(session)
       harness.repository.records.set(session.id, createTestRecord(session, 1))
       await harness.service.archiveSessionWithoutLoading(session.id)
       expect(harness.repository.records.get(session.id)).toMatchObject({
@@ -557,12 +497,12 @@ describe('SessionService', () => {
       harness.published.length = 0
       const metadataError = new Error('metadata update failed')
       const updateMeta = vi.spyOn(harness.repository.meta, 'update').mockRejectedValueOnce(metadataError)
-      const setSession = vi.spyOn(harness.repository, 'setSession')
+      const executeCommand = vi.spyOn(harness.repository, 'executeSessionCommand')
 
       await expect(harness.service.restoreSession(session.id)).resolves.toBeUndefined()
 
-      expect(harness.repository.sessions.get(session.id)).toMatchObject({ hidden: false })
-      expect(harness.repository.sessions.get(session.id)?.archivedAt).toBeUndefined()
+      expect(harness.repository.inspectSession(session.id)).toMatchObject({ hidden: false })
+      expect(harness.repository.inspectSession(session.id)?.archivedAt).toBeUndefined()
       expect(harness.repository.records.get(session.id)).toMatchObject({
         hidden: true,
         archivedAt: 100,
@@ -570,21 +510,22 @@ describe('SessionService', () => {
       })
       expect(harness.published).toEqual([
         expect.objectContaining({
-          type: 'session-updated',
-          session: expect.objectContaining({ hidden: false }),
-          meta: expect.objectContaining({ hidden: false, archivedAt: undefined, recoveryArchived: undefined }),
+          type: 'session-command-committed',
+          delta: expect.objectContaining({ header: expect.objectContaining({ hidden: false }) }),
+          meta: null,
+          metaRevision: null,
         }),
       ])
       expect(harness.log).toHaveBeenCalledWith(
         'warn',
-        'Failed to project committed session archive state',
-        expect.objectContaining({ sessionId: session.id, hidden: false })
+        'Session rows committed; metadata projection will be retried',
+        expect.objectContaining({ sessionId: session.id })
       )
 
       await vi.advanceTimersByTimeAsync(1000)
 
       expect(updateMeta).toHaveBeenCalledTimes(2)
-      expect(setSession).toHaveBeenCalledOnce()
+      expect(executeCommand).toHaveBeenCalledOnce()
       expect(harness.repository.records.get(session.id)?.hidden).toBe(false)
       expect(harness.repository.records.get(session.id)?.archivedAt).toBeUndefined()
       expect(harness.repository.records.get(session.id)?.recoveryArchived).toBeUndefined()
@@ -601,16 +542,16 @@ describe('SessionService', () => {
   test('archives an unreadable session through metadata without loading its full record', async () => {
     const harness = createHarness()
     const session = createTestSession('session-1')
-    harness.repository.sessions.set(session.id, session)
+    await harness.repository.seedSession(session)
     harness.repository.records.set(session.id, createTestRecord(session, 1))
-    const getSession = vi.spyOn(harness.repository, 'getSession').mockRejectedValue(new Error('read failed'))
-    const setSession = vi.spyOn(harness.repository, 'setSession')
+    const getSession = vi.spyOn(harness.repository, 'getSessionHeader').mockRejectedValue(new Error('read failed'))
+    const executeCommand = vi.spyOn(harness.repository, 'executeSessionCommand')
 
     await harness.service.archiveSessionWithoutLoading(session.id)
 
     expect(getSession).not.toHaveBeenCalled()
-    expect(setSession).not.toHaveBeenCalled()
-    expect(harness.repository.sessions.get(session.id)).not.toHaveProperty('archivedAt')
+    expect(executeCommand).not.toHaveBeenCalled()
+    expect(harness.repository.inspectSession(session.id)).not.toHaveProperty('archivedAt')
     expect(harness.repository.records.get(session.id)).toMatchObject({
       hidden: true,
       archivedAt: 100,
@@ -626,17 +567,17 @@ describe('SessionService', () => {
   test('restores a recovery archive through metadata without loading its full record', async () => {
     const harness = createHarness()
     const session = createTestSession('session-1')
-    harness.repository.sessions.set(session.id, session)
+    await harness.repository.seedSession(session)
     harness.repository.records.set(session.id, createTestRecord(session, 1))
     await harness.service.archiveSessionWithoutLoading(session.id)
-    const getSession = vi.spyOn(harness.repository, 'getSession').mockRejectedValue(new Error('read failed'))
-    const setSession = vi.spyOn(harness.repository, 'setSession')
+    const getSession = vi.spyOn(harness.repository, 'getSessionHeader').mockRejectedValue(new Error('read failed'))
+    const executeCommand = vi.spyOn(harness.repository, 'executeSessionCommand')
 
     await harness.service.restoreSessionWithoutLoading(session.id)
 
     expect(getSession).not.toHaveBeenCalled()
-    expect(setSession).not.toHaveBeenCalled()
-    expect(harness.repository.sessions.get(session.id)).not.toHaveProperty('archivedAt')
+    expect(executeCommand).not.toHaveBeenCalled()
+    expect(harness.repository.inspectSession(session.id)).not.toHaveProperty('archivedAt')
     expect(harness.repository.records.get(session.id)).toMatchObject({ hidden: false })
     expect(harness.repository.records.get(session.id)?.archivedAt).toBeUndefined()
     expect(harness.repository.records.get(session.id)?.recoveryArchived).toBeUndefined()
@@ -650,7 +591,7 @@ describe('SessionService', () => {
   test('preserves a metadata-only archive when rebuilding the session list', async () => {
     const harness = createHarness()
     const session = createTestSession('session-1')
-    harness.repository.sessions.set(session.id, session)
+    await harness.repository.seedSession(session)
     harness.repository.records.set(session.id, createTestRecord(session, 1))
 
     await harness.service.archiveSessionWithoutLoading(session.id)
@@ -663,24 +604,24 @@ describe('SessionService', () => {
     })
   })
 
-  test('clears the recovery archive marker when the full session is restored', async () => {
+  test('clears the recovery archive marker when the session header is restored', async () => {
     const harness = createHarness()
     const session = createTestSession('session-1')
-    harness.repository.sessions.set(session.id, session)
+    await harness.repository.seedSession(session)
     harness.repository.records.set(session.id, createTestRecord(session, 1))
     await harness.service.archiveSessionWithoutLoading(session.id)
 
     await harness.service.restoreSession(session.id)
 
-    expect(harness.repository.sessions.get(session.id)?.hidden).toBe(false)
+    expect(harness.repository.inspectSession(session.id)?.hidden).toBe(false)
     expect(harness.repository.records.get(session.id)?.hidden).toBe(false)
     expect(harness.repository.records.get(session.id)?.recoveryArchived).toBeUndefined()
   })
 
-  test('does not preserve an ordinary archived projection over readable full data', async () => {
+  test('does not preserve an ordinary archived projection over the readable header', async () => {
     const harness = createHarness()
     const session = createTestSession('session-1')
-    harness.repository.sessions.set(session.id, session)
+    await harness.repository.seedSession(session)
     harness.repository.records.set(session.id, {
       ...createTestRecord(session, 1),
       hidden: true,
@@ -696,10 +637,10 @@ describe('SessionService', () => {
   test('retains archived metadata for an unreadable session when rebuilding the session list', async () => {
     const harness = createHarness()
     const session = createTestSession('session-1')
-    harness.repository.sessions.set(session.id, session)
+    await harness.repository.seedSession(session)
     harness.repository.records.set(session.id, createTestRecord(session, 1))
     await harness.service.archiveSessionWithoutLoading(session.id)
-    vi.spyOn(harness.repository, 'getSession').mockRejectedValue(new Error('read failed'))
+    vi.spyOn(harness.repository, 'getSessionHeader').mockRejectedValue(new Error('read failed'))
 
     await expect(harness.service.recoverSessionList()).resolves.toEqual({ recovered: 0, failed: 1 })
 
@@ -713,7 +654,7 @@ describe('SessionService', () => {
   test('rebuilds readable metadata when the archived metadata snapshot cannot be read', async () => {
     const harness = createHarness()
     const session = createTestSession('session-1')
-    harness.repository.sessions.set(session.id, session)
+    await harness.repository.seedSession(session)
     vi.spyOn(harness.repository.meta, 'getAllIncludingHidden').mockRejectedValue(new Error('meta read failed'))
 
     await expect(harness.service.recoverSessionList()).resolves.toEqual({ recovered: 1, failed: 0 })
@@ -732,7 +673,7 @@ describe('SessionService', () => {
     const first = createTestSession('session-1')
     const second = createTestSession('session-2')
     for (const [index, session] of [first, second].entries()) {
-      harness.repository.sessions.set(session.id, session)
+      await harness.repository.seedSession(session)
       harness.repository.records.set(session.id, createTestRecord(session, index + 1))
     }
 
@@ -757,7 +698,7 @@ describe('SessionService', () => {
   test('deletes persistence only after awaited pre-delete effects', async () => {
     const harness = createHarness()
     const session = createTestSession('session-1')
-    harness.repository.sessions.set(session.id, session)
+    await harness.repository.seedSession(session)
     harness.repository.records.set(session.id, createTestRecord(session, 1))
     const order: string[] = []
     harness.events.subscribe((event) => {
@@ -774,20 +715,20 @@ describe('SessionService', () => {
         order.push('deleted')
       }
     })
-    const deleteSpy = vi.spyOn(harness.repository, 'deleteSession').mockImplementation((id) => {
+    const originalDelete = harness.repository.deleteSession.bind(harness.repository)
+    const deleteSpy = vi.spyOn(harness.repository, 'deleteSession').mockImplementation((id, projectDeletion) => {
       order.push('storage')
-      harness.repository.sessions.delete(id)
-      return Promise.resolve()
+      return originalDelete(id, projectDeletion)
     })
 
     await harness.service.deleteSession(session.id)
 
-    expect(deleteSpy).toHaveBeenCalledWith(session.id)
+    expect(deleteSpy).toHaveBeenCalledWith(session.id, expect.any(Function))
     expect(order).toEqual(['effect', 'storage', 'deleted'])
     expect(harness.repository.records.has(session.id)).toBe(false)
   })
 
-  test('reprojects hasPausedToolCall when a message-bearing object update clears a paused session', async () => {
+  test('reprojects hasPausedToolCall when a row clear command removes a paused message', async () => {
     const harness = createHarness()
     const session: Session = {
       id: 'session-1',
@@ -811,41 +752,36 @@ describe('SessionService', () => {
         },
       ],
     }
-    harness.repository.sessions.set(session.id, session)
+    await harness.repository.seedSession(session)
     harness.repository.records.set(session.id, { ...createTestRecord(session, 1), hasPausedToolCall: true })
 
-    await harness.service.updateSessionWithMessages(session.id, {
-      messages: [],
-      threads: undefined,
-      messageForksHash: undefined,
-    })
+    await harness.service.executeStructureCommand(session.id, { action: 'session-clear', scope: 'all' })
 
     expect(harness.repository.records.get(session.id)?.hasPausedToolCall).toBe(false)
   })
 
-  test('publishes the computed projection and repairs the record when the metadata write fails', async () => {
+  test('publishes committed rows and retries metadata when its projection fails', async () => {
     vi.useFakeTimers()
     try {
       const harness = createHarness()
       const session = createTestSession('session-1')
-      harness.repository.sessions.set(session.id, session)
+      await harness.repository.seedSession(session)
       harness.repository.records.set(session.id, { ...createTestRecord(session, 1), hasPausedToolCall: true })
       const metadataError = new Error('metadata update failed')
       vi.spyOn(harness.repository.meta, 'update').mockRejectedValueOnce(metadataError)
 
       await expect(
-        harness.service.updateSessionWithMessages(session.id, (current) => {
+        harness.service.updateSessionHeader(session.id, (current) => {
           if (!current) throw new Error('Expected current session')
           return { ...current, name: 'Renamed' }
         })
-      ).rejects.toBe(metadataError)
+      ).resolves.toMatchObject({ name: 'Renamed' })
 
-      // Live read models still receive the projection derived from the durable
-      // session, so e.g. the sidebar's waiting pill clears immediately.
       expect(harness.published.at(-1)).toMatchObject({
-        type: 'session-updated',
-        session: { id: session.id, name: 'Renamed' },
-        meta: { id: session.id, name: 'Renamed', hasPausedToolCall: false },
+        type: 'session-command-committed',
+        delta: { header: { id: session.id, name: 'Renamed' } },
+        meta: null,
+        metaRevision: null,
       })
       expect(harness.repository.records.get(session.id)).toMatchObject({ name: 'session-1', hasPausedToolCall: true })
 
@@ -853,10 +789,9 @@ describe('SessionService', () => {
 
       expect(harness.repository.records.get(session.id)).toMatchObject({ name: 'Renamed', hasPausedToolCall: false })
       expect(harness.published.at(-1)).toMatchObject({
-        type: 'session-updated',
-        session: { id: session.id, name: 'Renamed' },
+        type: 'session-meta-projected',
+        sessionId: session.id,
         meta: { id: session.id, name: 'Renamed', hasPausedToolCall: false },
-        preserveCachedGeneratingMessages: true,
       })
     } finally {
       vi.useRealTimers()
@@ -868,16 +803,16 @@ describe('SessionService', () => {
     try {
       const harness = createHarness()
       const session = createTestSession('session-1')
-      harness.repository.sessions.set(session.id, session)
+      await harness.repository.seedSession(session)
       harness.repository.records.set(session.id, createTestRecord(session, 1))
       vi.spyOn(harness.repository.meta, 'update').mockRejectedValue(new Error('metadata update failed'))
 
       await expect(
-        harness.service.updateSessionWithMessages(session.id, (current) => {
+        harness.service.updateSessionHeader(session.id, (current) => {
           if (!current) throw new Error('Expected current session')
           return { ...current, name: 'Renamed' }
         })
-      ).rejects.toThrow('metadata update failed')
+      ).resolves.toMatchObject({ name: 'Renamed' })
 
       await vi.advanceTimersByTimeAsync(5000)
 
@@ -895,7 +830,7 @@ describe('SessionService', () => {
   test('rejects writes that start after deletion begins and never resurrects the session', async () => {
     const harness = createHarness()
     const session = createTestSession('session-1')
-    harness.repository.sessions.set(session.id, session)
+    await harness.repository.seedSession(session)
     harness.repository.records.set(session.id, createTestRecord(session, 1))
     let releasePreDelete: () => void = () => undefined
     const preDeleteBlocked = new Promise<void>((resolve) => {
@@ -914,30 +849,30 @@ describe('SessionService', () => {
     const deletion = harness.service.deleteSession(session.id)
     await preDeleteStartedPromise
 
-    await expect(harness.service.updateSession(session.id, { name: 'late write' })).rejects.toBeInstanceOf(
+    await expect(harness.service.updateSessionHeader(session.id, { name: 'late write' })).rejects.toBeInstanceOf(
       SessionNotFoundError
     )
     releasePreDelete()
     await deletion
 
-    expect(harness.repository.sessions.has(session.id)).toBe(false)
+    expect(Boolean(harness.repository.inspectSession(session.id))).toBe(false)
     expect(harness.repository.records.has(session.id)).toBe(false)
   })
 
-  test('does not resurrect a session when metadata deletion fails after full-session deletion', async () => {
+  test('does not resurrect a session when metadata deletion fails after row deletion', async () => {
     const harness = createHarness()
     const session = createTestSession('session-1')
-    harness.repository.sessions.set(session.id, session)
+    await harness.repository.seedSession(session)
     harness.repository.records.set(session.id, createTestRecord(session, 1))
-    await harness.service.updateSession(session.id, { name: 'Cached before delete' })
+    await harness.service.updateSessionHeader(session.id, { name: 'Cached before delete' })
     vi.spyOn(harness.repository.meta, 'delete').mockRejectedValueOnce(new Error('metadata deletion failed'))
 
     await expect(harness.service.deleteSession(session.id)).rejects.toThrow('metadata deletion failed')
-    await expect(harness.service.updateSession(session.id, { name: 'Must not revive' })).rejects.toBeInstanceOf(
+    await expect(harness.service.updateSessionHeader(session.id, { name: 'Must not revive' })).rejects.toBeInstanceOf(
       SessionNotFoundError
     )
 
-    expect(harness.repository.sessions.has(session.id)).toBe(false)
+    expect(Boolean(harness.repository.inspectSession(session.id))).toBe(false)
     expect(harness.repository.records.has(session.id)).toBe(true)
   })
 
@@ -946,9 +881,9 @@ describe('SessionService', () => {
     const failed = createTestSession('failed')
     const delayed = createTestSession('delayed')
     for (const session of [failed, delayed]) {
-      harness.repository.sessions.set(session.id, session)
+      await harness.repository.seedSession(session)
       harness.repository.records.set(session.id, createTestRecord(session, 1))
-      await harness.service.updateSession(session.id, { name: `Cached ${session.id}` })
+      await harness.service.updateSessionHeader(session.id, { name: `Cached ${session.id}` })
     }
 
     let releaseDelayedDelete: () => void = () => undefined
@@ -960,11 +895,11 @@ describe('SessionService', () => {
       delayedDeleteStarted = resolve
     })
     const originalDeleteSession = harness.repository.deleteSession.bind(harness.repository)
-    vi.spyOn(harness.repository, 'deleteSession').mockImplementation(async (sessionId) => {
+    vi.spyOn(harness.repository, 'deleteSession').mockImplementation(async (sessionId, projectDeletion) => {
       if (sessionId === failed.id) throw new Error('bulk deletion failed')
       delayedDeleteStarted()
       await delayedDeleteBlocked
-      await originalDeleteSession(sessionId)
+      await originalDeleteSession(sessionId, projectDeletion)
     })
 
     const deletionResult = harness.service.deleteSessions([failed.id, delayed.id]).then(
@@ -975,12 +910,12 @@ describe('SessionService', () => {
     await Promise.resolve()
     await Promise.resolve()
 
-    await expect(harness.service.updateSession(delayed.id, { name: 'Must remain fenced' })).rejects.toBeInstanceOf(
-      SessionNotFoundError
-    )
+    await expect(
+      harness.service.updateSessionHeader(delayed.id, { name: 'Must remain fenced' })
+    ).rejects.toBeInstanceOf(SessionNotFoundError)
     releaseDelayedDelete()
 
     await expect(deletionResult).resolves.toEqual(expect.objectContaining({ message: 'bulk deletion failed' }))
-    expect(harness.repository.sessions.has(delayed.id)).toBe(false)
+    expect(Boolean(harness.repository.inspectSession(delayed.id))).toBe(false)
   })
 })

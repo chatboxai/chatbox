@@ -1,7 +1,8 @@
-import type { Session } from '@shared/types'
+import { InMemorySessionRowStore } from '../testing'
+import { stageLegacySessionRows } from './legacy-row-import'
 import { describe, expect, it } from 'vitest'
 import { sha256Checksum } from './codec'
-import { exportBackupArchive } from './export-backup'
+import { exportBackupArchiveWithRows as exportBackupArchive } from './export.test-support'
 import { importBackupArchive } from './import-backup'
 import { MemoryMetaStorage, MemoryStorage } from './sharded.test-support'
 
@@ -13,11 +14,12 @@ async function createArchive(count: number) {
       name: `imported ${index}`,
       messages: [{ id: `m${index}`, role: 'user', contentParts: [{ type: 'text', text: `text ${index}` }] }],
     })
+  source.values.set('settings', { language: 'zh' })
   let archive = new Blob()
   await exportBackupArchive({
     storage: source,
     metaStorage: new MemoryMetaStorage(),
-    exportItems: ['conversations'],
+    exportItems: ['conversations', 'setting'],
     includeKeys: false,
     application: { version: 'test', platform: 'test' },
     writeArchive: async (stream) => {
@@ -48,28 +50,35 @@ class CopyingStorage extends RecordingStorage {
   }
 }
 
-describe('v2 import publishes sessions from the archive', () => {
-  it('writes each session once without staging it', async () => {
+describe('v2 import publishes row candidates from the archive', () => {
+  it('publishes sessions with no generic session-key reads or writes', async () => {
     const storage = new RecordingStorage()
-    storage.values.set('session:s1', { id: 's1', name: 'local', messages: [] })
+    const rows = new InMemorySessionRowStore()
+    const previous = await stageLegacySessionRows(rows, { id: 's1', name: 'local', messages: [] })
+    await previous.publish()
+    await previous.dispose()
 
-    await importBackupArchive(await createArchive(3), { storage, metaStorage: new MemoryMetaStorage() })
+    await importBackupArchive(await createArchive(3), {
+      storage,
+      metaStorage: new MemoryMetaStorage(),
+      sharded: { store: rows },
+    })
 
     expect(storage.writes.filter((key) => key.includes(':session:'))).toEqual([])
-    expect(storage.writes.filter((key) => key.startsWith('session:')).sort()).toEqual([
-      'session:s0',
-      'session:s1',
-      'session:s2',
-    ])
-    expect(storage.writes.filter((key) => key.includes(':rollback:'))).toHaveLength(1)
-    expect((storage.values.get('session:s1') as Session).name).toBe('imported 1')
+    expect(storage.writes.filter((key) => key.startsWith('session:'))).toEqual([])
+    expect(storage.writes.filter((key) => key.includes(':rollback:'))).toHaveLength(0)
+    expect((await rows.readCommit('s1'))?.record.name).toBe('imported 1')
+    expect((await rows.listSessionIds()).sort()).toEqual(['s0', 's1', 's2'])
     expect([...storage.values.keys()].some((key) => key.startsWith('__chatbox_backup_import:'))).toBe(false)
   })
 
   it('rolls back when a session entry changes between the validating and publishing reads', async () => {
     const archive = await createArchive(3)
     const storage = new RecordingStorage()
-    storage.values.set('session:s1', { id: 's1', name: 'local', messages: [] })
+    const rows = new InMemorySessionRowStore()
+    const previous = await stageLegacySessionRows(rows, { id: 's1', name: 'local', messages: [] })
+    await previous.publish()
+    await previous.dispose()
     const seen = new Set<string>()
     const checksum: typeof sha256Checksum = async (bytes) => {
       const result = await sha256Checksum(bytes)
@@ -81,32 +90,38 @@ describe('v2 import publishes sessions from the archive', () => {
     }
 
     await expect(
-      importBackupArchive(archive, { storage, metaStorage: new MemoryMetaStorage(), checksum })
+      importBackupArchive(archive, {
+        storage,
+        metaStorage: new MemoryMetaStorage(),
+        checksum,
+        sharded: { store: rows },
+      })
     ).rejects.toThrow(/Backup changed during restore: sessions\//)
 
-    expect((storage.values.get('session:s1') as Session).name).toBe('local')
-    expect([...storage.values.keys()].filter((key) => key.startsWith('session:'))).toEqual(['session:s1'])
+    expect((await rows.readCommit('s1'))?.record.name).toBe('local')
+    expect(await rows.listSessionIds()).toEqual(['s1'])
     expect([...storage.values.keys()].some((key) => key.startsWith('__chatbox_backup_import:'))).toBe(false)
   })
 
   it('snapshots and restores existing values with native copies', async () => {
     const archive = await createArchive(2)
     const storage = new CopyingStorage()
-    const original = { id: 's0', name: 'local', messages: [] }
-    storage.values.set('session:s0', original)
+    const original = { language: 'en' }
+    storage.values.set('settings', original)
+    const rows = new InMemorySessionRowStore()
     class FailingMeta extends MemoryMetaStorage {
       override create(): Promise<void> {
         return Promise.reject(new Error('Metadata write failed'))
       }
     }
 
-    await expect(importBackupArchive(archive, { storage, metaStorage: new FailingMeta() })).rejects.toThrow(
-      'Metadata write failed'
-    )
+    await expect(
+      importBackupArchive(archive, { storage, metaStorage: new FailingMeta(), sharded: { store: rows } })
+    ).rejects.toThrow('Metadata write failed')
 
-    expect(storage.values.get('session:s0')).toBe(original)
-    expect(storage.copies.map(([source]) => source)).toContain('session:s0')
-    expect(storage.copies.some(([, destination]) => destination === 'session:s0')).toBe(true)
+    expect(storage.values.get('settings')).toBe(original)
+    expect(storage.copies.map(([source]) => source)).toContain('settings')
+    expect(storage.copies.some(([, destination]) => destination === 'settings')).toBe(true)
     expect(storage.writes.filter((key) => key.includes(':rollback:'))).toEqual([])
   })
 })

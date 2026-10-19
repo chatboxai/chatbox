@@ -36,14 +36,12 @@ let stopStartupStorageCleanup: (() => void) | null = null
 let unregisterNativeBackupProtection: (() => void) | null = null
 let unregisterBackupMigration: (() => void) | null = null
 
-/**
- * The session the user is watching is the one whose generation the background
- * migration must stay out of the way of; every other session it could migrate
- * is idle by construction, because opening one migrates it on the spot.
- */
+/** Foreground row reads, commands and generation take priority over background migration. */
 function isSessionWorkInFlight(): boolean {
   const currentSessionId = getDefaultStore().get(currentSessionIdAtom)
-  return currentSessionId !== null && isSessionGenerating(currentSessionId)
+  return (
+    sessionRepository.hasForegroundSessionWork() || (currentSessionId !== null && isSessionGenerating(currentSessionId))
+  )
 }
 
 /** Runs the pre-render migration and telemetry phase in its historical order. */

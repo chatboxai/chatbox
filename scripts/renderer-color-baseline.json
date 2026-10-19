@@ -1,6 +1,6 @@
 {
   "src/renderer/components/Accordion.tsx": 3,
-  "src/renderer/components/Artifact.tsx": 22,
+  "src/renderer/components/Artifact.tsx": 21,
   "src/renderer/components/chat/AgentModeRewardQuotaCard.tsx": 2,
   "src/renderer/components/chat/CompactionStatus.tsx": 10,
   "src/renderer/components/chat/GenericMessageError.tsx": 4,
@@ -62,8 +62,8 @@
   "src/renderer/modals/VibedropPublish.tsx": 2,
   "src/renderer/packages/initial_data.ts": 62,
   "src/renderer/pages/PictureDialog.tsx": 1,
-  "src/renderer/pages/SearchDialog.tsx": 8,
-  "src/renderer/pages/SettingDialog/AdvancedSettingTab.tsx": 2,
+  "src/renderer/pages/SearchDialog.tsx": 6,
+  "src/renderer/pages/SettingDialog/AdvancedSettingTab.tsx": 1,
   "src/renderer/routes/-new-user-scenarios/NewUserScenarioGrid.tsx": 3,
   "src/renderer/routes/background-stream-probe.tsx": 2,
   "src/renderer/routes/copilots/-components/CopilotSettingsModal.tsx": 4,

@@ -1,5 +1,5 @@
 import { Capacitor } from '@capacitor/core'
-import { hasConversationStarted, resolveSessionMode } from '@chatbox/core/session/mode-policy'
+import { resolveSessionMode } from '@chatbox/core/session/mode-policy'
 import { ActionIcon, Badge, Button, Divider, Group, Stack, Switch, Text, UnstyledButton } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import {
@@ -60,20 +60,16 @@ const MobileAgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProp
     [page]
   )
   const entry = useSessionAgentMode(sessionId)
-  const { readModel, header } = useSessionPresentation(sessionId === 'new' ? null : sessionId)
-  const fullSession = readModel?.kind === 'full' ? readModel.session : undefined
-  const locks = useSessionLockState(fullSession, sessionId)
+  const { read: headerRead, header } = useSessionPresentation(sessionId === 'new' ? null : sessionId)
+  const locks = useSessionLockState(header, sessionId)
   rendererApplication.generationHooks.useVersion()
   const busy =
     locks.anyReplyGenerating ||
     locks.compactionRunning ||
     locks.awaitingPauseDecision ||
     rendererApplication.generationRuntime.getActiveMessageIds(sessionId).size > 0
-  const conversationStarted =
-    readModel?.kind === 'full'
-      ? hasConversationStarted(readModel.session)
-      : readModel?.kind === 'window' && readModel.summary.userMessageCount > 0
-  const loading = sessionId !== 'new' && !readModel
+  const conversationStarted = (headerRead?.summary.userMessageCount ?? 0) > 0
+  const loading = sessionId !== 'new' && !headerRead
   const draft = useUIStore((s) => s.newSessionState)
   const setDraft = useUIStore((s) => s.setNewSessionState)
   const rememberMode = useUIStore((s) => s.setAgentModeLastSelected)
@@ -121,7 +117,7 @@ const MobileAgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProp
           localWorkCapabilities: setLocalWorkCapability(current.localWorkCapabilities, id, enabled),
         }))
       } else {
-        await rendererApplication.sessions.updateSession(sessionId, (current) => {
+        await rendererApplication.sessions.updateSessionHeader(sessionId, (current) => {
           if (!current) throw new Error('Session not found')
           return {
             ...current,

@@ -1,13 +1,19 @@
 import type { Session, SessionMetaRecord } from '@shared/types'
 import { describe, expect, it } from 'vitest'
-import { exportBackupArchive } from './export-backup'
-import { importBackupArchive } from './import-backup'
+import { exportBackupArchiveWithRows as exportBackupArchive } from './export.test-support'
+import {
+  importBackupArchiveWithRows as importBackupArchive,
+  readImportedSession,
+  importedRows,
+  seedImportedSession,
+} from './import.test-support'
 import { MemoryMetaStorage, MemoryStorage } from './sharded.test-support'
 
 const SESSION_COUNT = 150
 
 async function createArchive() {
   const source = new MemoryStorage()
+  source.values.set('settings', { language: 'en' })
   for (let index = 0; index < SESSION_COUNT; index++)
     source.values.set(`session:s${index}`, {
       id: `s${index}`,
@@ -18,7 +24,7 @@ async function createArchive() {
   await exportBackupArchive({
     storage: source,
     metaStorage: new MemoryMetaStorage(),
-    exportItems: ['conversations'],
+    exportItems: ['conversations', 'setting'],
     includeKeys: false,
     application: { version: 'test', platform: 'test' },
     writeArchive: async (stream) => {
@@ -68,8 +74,9 @@ class BatchMetaStorage extends MemoryMetaStorage {
   }
 }
 
-function seed(storage: MemoryStorage, meta: MemoryMetaStorage) {
-  storage.values.set('session:s0', { id: 's0', name: 'local', messages: [] })
+async function seed(storage: MemoryStorage, meta: MemoryMetaStorage) {
+  storage.values.set('settings', { language: 'zh' })
+  await seedImportedSession(storage, { id: 's0', name: 'local', messages: [] })
   meta.records.set('s0', { id: 's0', name: 'local', starred: true, sortOrder: 7, createdAt: 3 })
 }
 
@@ -78,15 +85,23 @@ describe('batched backup import', () => {
     const archive = await createArchive()
     const expectedStorage = new MemoryStorage()
     const expectedMeta = new MemoryMetaStorage()
-    seed(expectedStorage, expectedMeta)
-    await importBackupArchive(archive, { storage: expectedStorage, metaStorage: expectedMeta })
+    await seed(expectedStorage, expectedMeta)
+    await importBackupArchive(archive, {
+      storage: expectedStorage,
+      metaStorage: expectedMeta,
+      createId: () => 'batch-import',
+    })
 
     const storage = new BatchStorage()
     const meta = new BatchMetaStorage()
-    seed(storage, meta)
-    await importBackupArchive(archive, { storage, metaStorage: meta })
+    await seed(storage, meta)
+    await importBackupArchive(archive, { storage, metaStorage: meta, createId: () => 'batch-import' })
 
-    expect(storage.values).toEqual(expectedStorage.values)
+    expect([...storage.values.keys()]).toEqual([...expectedStorage.values.keys()])
+    expect(storage.values.get('settings')).toMatchObject({ language: 'en', memoryStateToken: expect.any(String) })
+    expect(await importedRows(storage).listSessionIds()).toHaveLength(SESSION_COUNT)
+    for (const id of await importedRows(storage).listSessionIds())
+      expect(await readImportedSession(storage, id)).toEqual(await readImportedSession(expectedStorage, id))
     expect(meta.records).toEqual(expectedMeta.records)
     expect(meta.records.get('s0')?.starred).toBe(true)
     expect(meta.batches.map((batch) => batch.length)).toEqual([64, 64, 22])
@@ -99,14 +114,16 @@ describe('batched backup import', () => {
     const archive = await createArchive()
     const storage = new BatchStorage()
     const meta = new BatchMetaStorage()
-    seed(storage, meta)
+    await seed(storage, meta)
     meta.failBatch = 2
     meta.allowSingleWrites = true
 
-    await expect(importBackupArchive(archive, { storage, metaStorage: meta })).rejects.toThrow('Metadata batch failed')
+    await expect(
+      importBackupArchive(archive, { storage, metaStorage: meta, createId: () => 'batch-import' })
+    ).rejects.toThrow('Metadata batch failed')
 
-    expect((storage.values.get('session:s0') as Session).name).toBe('local')
-    expect([...storage.values.keys()].filter((key) => key.startsWith('session:'))).toEqual(['session:s0'])
+    expect((await readImportedSession(storage, 's0')).name).toBe('local')
+    expect(await importedRows(storage).listSessionIds()).toEqual(['s0'])
     expect([...meta.records.values()]).toEqual([{ id: 's0', name: 'local', starred: true, sortOrder: 7, createdAt: 3 }])
   })
 
@@ -114,12 +131,12 @@ describe('batched backup import', () => {
     const archive = await createArchive()
     const storage = new BatchStorage()
     const meta = new BatchMetaStorage()
-    seed(storage, meta)
+    await seed(storage, meta)
     storage.failRemoveBatch = true
 
-    await expect(importBackupArchive(archive, { storage, metaStorage: meta })).rejects.toThrow(
-      /data restored; cleanup failed; retained keys: __chatbox_backup_import:/
-    )
+    await expect(
+      importBackupArchive(archive, { storage, metaStorage: meta, createId: () => 'batch-import' })
+    ).rejects.toThrow(/data restored; cleanup failed; retained keys: __chatbox_backup_import:/)
     expect(meta.records.size).toBe(SESSION_COUNT)
   })
 })

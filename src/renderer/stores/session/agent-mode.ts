@@ -1,9 +1,9 @@
-import { hasConversationStarted, resolveSessionMode } from '@chatbox/core/session/mode-policy'
+import { resolveSessionMode } from '@chatbox/core/session/mode-policy'
 import type {
   AgentModeEntry,
   AgentModeLockReason,
   AgentModeValue,
-  Session,
+  SessionHeader,
   SessionPromptContextSnapshot,
 } from '@shared/types'
 import { useMemo } from 'react'
@@ -37,14 +37,14 @@ export function createNewChatAgentModeEntry(
 }
 
 export function getSessionAgentModeFromSession(
-  session: Pick<Session, 'settings'> | null | undefined
+  session: Pick<SessionHeader, 'settings'> | null | undefined
 ): AgentModeEntry | undefined {
   return session?.settings?.agentMode
 }
 
 export function getSessionAgentModeEntry(
   sessionId: string,
-  session?: Pick<Session, 'settings'> | null,
+  session?: Pick<SessionHeader, 'settings'> | null,
   legacyMap = uiStore.getState().sessionAgentModeMap
 ): AgentModeEntry {
   return (
@@ -95,14 +95,14 @@ function lockNewSessionAgentMode(reason: Exclude<AgentModeLockReason, null>): Ag
   return next
 }
 
-function requireSession<T extends Pick<Session, 'settings'>>(session: T | null | undefined): T {
+function requireSession<T extends Pick<SessionHeader, 'settings'>>(session: T | null | undefined): T {
   if (!session) {
     throw new Error('Session not found')
   }
   return session
 }
 
-function applyAgentMode<T extends Pick<Session, 'settings'>>(
+function applyAgentMode<T extends Pick<SessionHeader, 'settings'>>(
   session: T | null | undefined,
   agentMode: AgentModeEntry
 ): T {
@@ -116,7 +116,7 @@ function applyAgentMode<T extends Pick<Session, 'settings'>>(
   } as T
 }
 
-function resolveSetAgentMode<T extends Pick<Session, 'settings'>>(
+function resolveSetAgentMode<T extends Pick<SessionHeader, 'settings'>>(
   sessionId: string,
   session: T | null | undefined,
   value: AgentModeValue
@@ -142,7 +142,7 @@ export function persistSessionPromptContextSnapshotGuarded(
   snapshot: SessionPromptContextSnapshot,
   expectedCapturedAt: number | undefined
 ): void {
-  const applySnapshot = <T extends Pick<Session, 'settings'>>(current: T | null | undefined): T => {
+  const applySnapshot = <T extends Pick<SessionHeader, 'settings'>>(current: T | null | undefined): T => {
     const session = requireSession(current)
     if (session.settings?.sessionPromptContextSnapshot?.capturedAt !== expectedCapturedAt) return session
     return {
@@ -150,7 +150,7 @@ export function persistSessionPromptContextSnapshotGuarded(
       settings: { ...(session.settings || {}), sessionPromptContextSnapshot: snapshot },
     } as T
   }
-  void rendererApplication.sessions.updateSession(sessionId, (current) => applySnapshot(current))
+  void rendererApplication.sessions.updateSessionHeader(sessionId, (current) => applySnapshot(current))
 }
 
 export type SetAgentModeSource =
@@ -168,7 +168,8 @@ export async function setSessionAgentMode(
     return setNewSessionAgentMode(value)
   }
 
-  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
+  const source = await rendererApplication.sessions.getSessionHeader(sessionId)
+  const session = source?.header
   if (!session) {
     return createDefaultAgentModeEntry()
   }
@@ -180,19 +181,25 @@ export async function setSessionAgentMode(
   // queue/steering) to swap in place — the user starts a new chat instead.
   // Smart-switching resolution ('system') is exempt, and 'auto' ↔ 'off' is a
   // chat-internal preference, not a mode change.
-  if (
-    (options.source ?? 'user') === 'user' &&
-    resolveSessionMode(value) !== resolveSessionMode(next.value) &&
-    hasConversationStarted(session)
-  ) {
-    return next
+  if ((options.source ?? 'user') === 'user' && resolveSessionMode(value) !== resolveSessionMode(next.value)) {
+    let cursor: import('@chatbox/core/ports').SessionThreadPageCursor | undefined
+    do {
+      const page = await rendererApplication.sessions.readSessionThreadSummariesPage({ sessionId, limit: 64, cursor })
+      if (!page || page.revision !== source.revision) throw new Error('Conversation changed while choosing its mode')
+      if (page.threads.some((thread) => (thread.summary?.userMessageCount ?? 0) > 0)) return next
+      cursor = page.nextCursor ?? undefined
+    } while (cursor)
   }
 
-  await rendererApplication.sessions.updateSession(sessionId, (currentSession) => {
-    const resolved = resolveSetAgentMode(sessionId, currentSession, value)
-    next = resolved.entry
-    return resolved.session
-  })
+  await rendererApplication.sessions.updateSessionHeader(
+    sessionId,
+    (currentSession) => {
+      const resolved = resolveSetAgentMode(sessionId, currentSession, value)
+      next = resolved.entry
+      return resolved.session
+    },
+    { expectedRevision: source.revision }
+  )
   uiStore.getState().clearSessionAgentMode(sessionId)
   return next
 }
@@ -205,13 +212,16 @@ export async function lockSessionAgentMode(
     return lockNewSessionAgentMode(reason)
   }
 
-  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
+  const source = await rendererApplication.sessions.getSessionHeader(sessionId)
+  const session = source?.header
   if (!session) {
     return { value: 'on', locked: true, lockReason: reason }
   }
 
   const next: AgentModeEntry = { value: 'on', locked: true, lockReason: reason }
-  await rendererApplication.sessions.updateSession(sessionId, (currentSession) => applyAgentMode(currentSession, next))
+  await rendererApplication.sessions.updateSessionHeader(sessionId, (currentSession) =>
+    applyAgentMode(currentSession, next)
+  )
   uiStore.getState().clearSessionAgentMode(sessionId)
   return next
 }

@@ -19,7 +19,7 @@ interface ForkCommandGuard {
 export type SessionForkOperation = ForkCommandGuard &
   (
     | { action: 'fork-create'; pivotId: string; identity: ForkCommandIdentity; append?: Message[] }
-    | { action: 'fork-switch'; pivotId: string; target: 'next' | 'prev' | number }
+    | { action: 'fork-switch'; pivotId: string; target: 'next' | 'prev' | number | { branchId: string } }
     | { action: 'fork-delete'; pivotId: string }
     | {
         action: 'fork-save-resend'

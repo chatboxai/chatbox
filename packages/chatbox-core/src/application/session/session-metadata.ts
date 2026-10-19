@@ -1,23 +1,4 @@
-import { hasPendingPauseInteraction } from '../../message-approval'
-import type { Session, SessionMeta, SessionMetaRecord } from '../../types'
-
-const sessionMetaKeys = [
-  'id',
-  'name',
-  'folderId',
-  'starred',
-  'hidden',
-  'archivedAt',
-  'assistantAvatarKey',
-  'picUrl',
-  'backgroundImage',
-  'type',
-  'hasPausedToolCall',
-] as const satisfies ReadonlyArray<keyof SessionMeta>
-
-const sessionMessageDataKeys = ['messages', 'threads', 'messageForksHash', 'compactionPoints'] as const
-
-export type SessionMetadataUpdate = Omit<Session, (typeof sessionMessageDataKeys)[number]>
+import type { SessionHeader, SessionMeta, SessionMetaRecord } from '../../types'
 
 export function projectSessionMeta(session: SessionMeta): SessionMeta {
   return {
@@ -35,7 +16,7 @@ export function projectSessionMeta(session: SessionMeta): SessionMeta {
 }
 
 /** The full derived metadata patch a session write must project alongside itself. */
-export function projectSessionMetaUpdate(session: Session, paused = hasPausedToolCall(session)): SessionMeta {
+export function projectSessionMetaUpdate(session: SessionHeader, paused: boolean): SessionMeta {
   return {
     ...projectSessionMeta(session),
     hasPausedToolCall: paused,
@@ -43,57 +24,15 @@ export function projectSessionMetaUpdate(session: Session, paused = hasPausedToo
   }
 }
 
-export function createSessionMetaRecord(session: Session, sortOrder: number, createdAt: number): SessionMetaRecord {
+export function createSessionMetaRecord(
+  session: SessionHeader,
+  sortOrder: number,
+  createdAt: number,
+  paused = false
+): SessionMetaRecord {
   return {
-    ...projectSessionMetaUpdate(session),
+    ...projectSessionMetaUpdate(session, paused),
     sortOrder,
     createdAt,
-  }
-}
-
-/**
- * Whether the session's active conversation has a tool call waiting for user
- * action (approval or a tool-call-limit continue). Deliberately scans only
- * `session.messages` — the same set the composer gate (`awaitingToolApproval`)
- * and the pending-action bar read: a pause parked in an inactive fork branch
- * offers nothing to act on until that branch is switched active, so it must
- * not mark the session as waiting. Pauses whose reason this build surfaces no
- * action for (imported or cross-version data) are excluded for the same
- * reason. The sidebar's "waiting" indicator derives solely from this
- * projection.
- */
-export function hasPausedToolCall(session: Session): boolean {
-  return hasPendingPauseInteraction(session.messages)
-}
-
-export function hasSessionMetaFields(update: Partial<Session>): boolean {
-  return sessionMetaKeys.some((key) => Object.hasOwn(update, key))
-}
-
-/**
- * Message-bearing object updates (e.g. "clear conversation" replacing
- * `messages`) can change the `hasPausedToolCall` projection even though they
- * carry no metadata key, so they must still trigger a metadata write.
- */
-export function hasMessageDataFields(update: Partial<Session>): boolean {
-  return sessionMessageDataKeys.some((key) => Object.hasOwn(update, key))
-}
-
-export function getSessionMetadataSnapshot(session: Session): SessionMetadataUpdate {
-  const {
-    messages: _messages,
-    threads: _threads,
-    messageForksHash: _messageForksHash,
-    compactionPoints: _compactionPoints,
-    ...metadata
-  } = session
-  return metadata
-}
-
-export function assertNoMessageDataUpdate(update: object): void {
-  const updateRecord = update as Record<string, unknown>
-  const key = sessionMessageDataKeys.find((item) => Object.hasOwn(updateRecord, item))
-  if (key) {
-    throw new Error(`updateSession cannot update "${key}". Use updateSessionWithMessages for message data.`)
   }
 }

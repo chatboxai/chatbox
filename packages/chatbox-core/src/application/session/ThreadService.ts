@@ -1,7 +1,5 @@
-import { getReachableSessionMessages } from '../../session/generation-state'
-import type { Message, Session, SessionThread } from '../../types'
+import type { SessionHeader, SessionThread } from '../../types'
 import type { SessionStructureResult, SessionThreadOperation } from '../../ports/session-structure-command'
-import { applyThreadStructure } from './session-thread-command'
 import type { SessionUseCasePort } from './session-use-case-port'
 
 /** Identity of the visible conversation, independent of the reusable session ID. */
@@ -11,23 +9,18 @@ export interface CurrentThreadTarget {
   lastArchivedThreadId: string | undefined
 }
 
-export function getCurrentThreadTarget(session: Session): CurrentThreadTarget {
-  return {
-    sessionId: session.id,
-    firstMessageId: session.messages[0]?.id,
-    lastArchivedThreadId: session.threads?.at(-1)?.id,
-  }
-}
-
 export interface ThreadServiceDependencies {
-  sessions: SessionUseCasePort
+  sessions: Pick<
+    SessionUseCasePort,
+    'getCurrentThreadIdentity' | 'executeStructureCommand' | 'getSessionHeader' | 'readSessionThread'
+  >
   createId(): string
   now(): number
   getDefaultSystemPrompt(): string
   getLiveMessageIds?(sessionId: string): ReadonlySet<string>
+  subscribeGenerationRuntime?(listener: () => void): () => void
   cancelMessageIds?(sessionId: string, messageIds: string[]): void
-  cancelMessages(sessionId: string, messages: Message[]): void
-  copySession(source: Session): Promise<Session>
+  copyThread(source: { sessionId: string; threadId: string; expectedRevision: number }): Promise<SessionHeader>
 }
 
 /**
@@ -38,46 +31,46 @@ export interface ThreadServiceDependencies {
 export class ThreadService {
   constructor(private readonly dependencies: ThreadServiceDependencies) {}
 
-  private cancellationIds(sessionId: string, result: SessionStructureResult): Set<string> {
-    const ids = new Set(result.cancelMessageIds)
+  private cancellationIds(
+    sessionId: string,
+    result: SessionStructureResult,
+    everLiveIds: ReadonlySet<string>
+  ): Set<string> {
     const liveIds = this.dependencies.getLiveMessageIds?.(sessionId)
+    const ids = new Set(result.cancelMessageIds.filter((id) => !everLiveIds.has(id) || liveIds?.has(id)))
     for (const id of result.affectedMessageIds ?? []) if (liveIds?.has(id)) ids.add(id)
     return ids
   }
 
-  private cancelCommitted(sessionId: string, result: SessionStructureResult): void {
-    const ids = this.cancellationIds(sessionId, result)
+  private cancelCommitted(sessionId: string, result: SessionStructureResult, everLiveIds: ReadonlySet<string>): void {
+    const ids = this.cancellationIds(sessionId, result, everLiveIds)
     if (ids.size) this.dependencies.cancelMessageIds?.(sessionId, [...ids])
   }
 
   private async execute(sessionId: string, operation: SessionThreadOperation): Promise<SessionStructureResult> {
-    const committed = this.dependencies.cancelMessageIds
-      ? await this.dependencies.sessions.executeStructureCommand?.(sessionId, operation, (result) =>
-          this.cancelCommitted(sessionId, result)
-        )
-      : null
-    if (committed) return committed
-    let result: SessionStructureResult = { applied: false, cancelMessageIds: [] }
-    await this.dependencies.sessions.updateSessionWithMessages(sessionId, (current) => {
-      if (!current) throw new Error(`Session ${sessionId} not found`)
-      const transformed = applyThreadStructure(current, operation)
-      result = transformed.result
-      const ids = this.cancellationIds(sessionId, result)
-      if (ids.size)
-        this.dependencies.cancelMessages(
-          sessionId,
-          getReachableSessionMessages(current).filter((message) => ids.has(message.id))
-        )
-      return transformed.session
+    const liveAtStart = new Set(this.dependencies.getLiveMessageIds?.(sessionId) ?? [])
+    const everLiveIds = new Set(liveAtStart)
+    const unsubscribe = this.dependencies.subscribeGenerationRuntime?.(() => {
+      for (const id of this.dependencies.getLiveMessageIds?.(sessionId) ?? []) everLiveIds.add(id)
     })
-    return result
+    try {
+      const committed = await this.dependencies.sessions.executeStructureCommand(
+        sessionId,
+        {
+          ...operation,
+          activeGenerationMessageIds: [...liveAtStart],
+        },
+        (result) => this.cancelCommitted(sessionId, result, everLiveIds)
+      )
+      if (!committed) throw new Error('Structure command did not return a result')
+      return committed
+    } finally {
+      unsubscribe?.()
+    }
   }
 
-  private async identity(sessionId: string): Promise<CurrentThreadTarget | null> {
-    if (this.dependencies.sessions.getCurrentThreadIdentity)
-      return this.dependencies.sessions.getCurrentThreadIdentity(sessionId)
-    const session = await this.dependencies.sessions.getSession(sessionId)
-    return session ? getCurrentThreadTarget(session) : null
+  private identity(sessionId: string): Promise<CurrentThreadTarget | null> {
+    return this.dependencies.sessions.getCurrentThreadIdentity(sessionId)
   }
 
   async edit(sessionId: string, threadId: string, update: Pick<Partial<SessionThread>, 'name'>): Promise<boolean> {
@@ -92,7 +85,7 @@ export class ThreadService {
       await this.execute(sessionId, {
         action: 'thread-delete',
         threadId,
-        expectedCurrent: threadId === sessionId ? (expectedCurrent ?? current) : undefined,
+        expectedCurrent,
       })
     ).applied
   }
@@ -127,14 +120,19 @@ export class ThreadService {
   }
 
   async removeCurrent(sessionId: string, expectedCurrent?: CurrentThreadTarget): Promise<boolean> {
-    return this.remove(sessionId, sessionId, expectedCurrent)
+    const source = await this.dependencies.sessions.getSessionHeader(sessionId)
+    const identity = expectedCurrent ?? (await this.identity(sessionId))
+    if (!source || !identity) return false
+    return this.remove(sessionId, source.activeThreadId, identity)
   }
 
   async rollbackCreated(target: CurrentThreadTarget): Promise<boolean> {
+    const source = await this.dependencies.sessions.getSessionHeader(target.sessionId)
+    if (!source) return false
     return (
       await this.execute(target.sessionId, {
         action: 'thread-delete',
-        threadId: target.sessionId,
+        threadId: source.activeThreadId,
         expectedCurrent: target,
         onlyEmpty: true,
       })
@@ -157,47 +155,30 @@ export class ThreadService {
   }
 
   async moveToConversation(sessionId: string, threadId: string): Promise<string | null> {
-    const session = await this.dependencies.sessions.getSession(sessionId)
-    if (!session) return null
-    if (session.id === threadId) {
-      return this.moveCurrentToConversationFromSession(session)
-    }
-
-    const target = session.threads?.find((thread) => thread.id === threadId)
-    if (!target) return null
-    const copied = await this.dependencies.copySession({
-      ...session,
-      name: target.name,
-      messages: target.messages,
-      threads: [],
-      threadName: target.name,
-      messageForksHash: session.messageForksHash,
-      compactionPoints: target.compactionPoints,
-      settings: session.settings
-        ? { ...session.settings, sessionPromptContextSnapshot: target.sessionPromptContextSnapshot }
-        : session.settings,
+    const source = await this.dependencies.sessions.getSessionHeader(sessionId)
+    if (!source) return null
+    const targetThreadId = threadId
+    const target = await this.dependencies.sessions.readSessionThread({
+      sessionId,
+      threadId: targetThreadId,
+      expectedRevision: source.revision,
     })
-    await this.remove(sessionId, threadId)
+    if (!target) return null
+    const copied = await this.dependencies.copyThread({
+      sessionId,
+      threadId: targetThreadId,
+      expectedRevision: source.revision,
+    })
+    await this.execute(sessionId, {
+      action: 'thread-delete',
+      threadId: targetThreadId,
+      expectedRevision: source.revision,
+    })
     return copied.id
   }
 
   async moveCurrentToConversation(sessionId: string): Promise<string | null> {
-    const session = await this.dependencies.sessions.getSession(sessionId)
-    return session ? this.moveCurrentToConversationFromSession(session) : null
-  }
-
-  private async moveCurrentToConversationFromSession(session: Session): Promise<string> {
-    const copied = await this.dependencies.copySession({
-      ...session,
-      name: session.threadName || session.name,
-      messages: session.messages,
-      threads: [],
-      // A still-pending thread ('') stays pending in the promoted copy so it
-      // keeps its first-reply AI naming instead of freezing the session name.
-      threadName: session.threadName ?? '',
-      messageForksHash: session.messageForksHash,
-    })
-    await this.removeCurrent(session.id, getCurrentThreadTarget(session))
-    return copied.id
+    const source = await this.dependencies.sessions.getSessionHeader(sessionId)
+    return source ? this.moveToConversation(sessionId, source.activeThreadId) : null
   }
 }

@@ -3,7 +3,7 @@ import { Directory, Filesystem, type FilesystemPlugin } from '@capacitor/filesys
 import type { BlobStoragePort, Message } from '@chatbox/core'
 import { throwIfWorkAborted } from '@shared/mobile-work/abort'
 import { bundleStaticSite } from '@shared/mobile-work/site-preview'
-import { collectWorkspaceInputs, type AttachmentMessage } from '@shared/mobile-work/workspace-inputs'
+import { collectWorkspaceInputs, type AttachmentMessages } from '@shared/mobile-work/workspace-inputs'
 import {
   base64ToText,
   MAX_WORKSPACE_BYTES,
@@ -138,7 +138,7 @@ export class CapacitorWorkspace implements LocalWorkspacePort {
 
   async preflight(
     sessionId: string | null,
-    messages: readonly AttachmentMessage[],
+    messages: AttachmentMessages,
     blobs: BlobStoragePort
   ): Promise<WorkspaceFiles> {
     return collectWorkspaceInputs(sessionId ? await this.snapshot(sessionId) : {}, messages, blobs, hash)

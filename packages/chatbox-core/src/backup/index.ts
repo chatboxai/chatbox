@@ -22,3 +22,6 @@ export * from './sql-value-file'
 export * from './storage-keys'
 export * from './types'
 export * from './zip'
+
+export * from './row-projection'
+export * from './legacy-row-import'

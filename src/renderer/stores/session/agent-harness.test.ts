@@ -251,6 +251,7 @@ describe('prepareAgentGenerationHarness', () => {
           userMessageCount: 10,
           hasAssistantMessage: true,
           hasLegacyCommandHistory: false,
+          fileResourceKeys: [],
           sandboxSeedAttachments: [seed],
         },
         compactionPoints: [{ boundaryMessageId: 'boundary', summaryMessageId: 'summary', createdAt: 10 }],

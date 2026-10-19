@@ -62,9 +62,8 @@ import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
 import { useProviders } from '@/hooks/useProviders'
 import { useSaveBlob } from '@/hooks/useSaveBlob'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
-import { useSessionLockState } from '@/hooks/useSessionLockState'
+import { useSessionControls } from '@/hooks/useSessionLockState'
 import { useSessionPresentation } from '@/hooks/useSessionPresentation'
-import { useSessionTokenContext } from '@/hooks/useSessionTokenContext'
 import { cn } from '@/lib/utils'
 import { isAutoCompactionEnabled, isCompactionInProgress, useContextTokens } from '@/packages/context-management'
 import { trackingEvent } from '@/packages/event'
@@ -157,6 +156,7 @@ export type InputBoxRef = {
 }
 
 export type InputBoxProps = {
+  tokenEstimationEnabled?: boolean
   sessionId?: string
   sessionType?: SessionType
   /** Copilot picked on the new-chat page, where the draft session is not persisted yet. */
@@ -206,6 +206,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     {
       sessionId,
       sessionType = 'chat',
+      tokenEstimationEnabled = true,
       draftCopilotId,
       draftCopilotName,
       model,
@@ -381,12 +382,12 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const pictureKeys = preConstructedMessage.pictureKeys || []
     const attachments = preConstructedMessage.attachments || []
 
-    const { readModel, header: sessionHeader } = useSessionPresentation(sessionId || null)
-    const currentSession = readModel?.kind === 'full' ? readModel.session : undefined
-    const tokenSource = useSessionTokenContext(sessionId || null, readModel)
-    const contextPending = !isNewSession && (!readModel || !tokenSource || tokenSource.isPartial === true)
+    const { read: headerRead, header: sessionHeader } = useSessionPresentation(sessionId || null)
+    const currentSession = sessionHeader
+    const contextPending = !isNewSession && (!headerRead || !tokenEstimationEnabled)
     const { sessionSettings: currentSessionMergedSettings } = useSessionSettings(sessionId || null)
-    const sessionLocks = useSessionLockState(currentSession, sessionId)
+    const controls = useSessionControls(currentSession, sessionId)
+    const sessionLocks = controls.locks
     const submitAvailability = getSubmitAvailability(sessionLocks)
     // While replies stream, an empty draft shows Stop; entering content turns
     // the same control back into Send so it can be queued. The hard block
@@ -398,10 +399,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     // Every pause holds the input read-only, so the pending-action bar takes over
     // its slot instead of stacking above a dead text field. Same predicate the bar
     // renders on, so the slot never ends up empty.
-    const pauseTakeover = useMemo(() => {
-      if (isNewSession || !currentSession) return false
-      return listPendingPauseInteractions(currentSession.messages).length > 0
-    }, [isNewSession, currentSession])
+    const pauseTakeover = !isNewSession && sessionLocks.awaitingPauseDecision
 
     const skillMenuOpen = skillCommandQuery !== null && matchingInputSkills.length > 0 && !isAwaitingPauseDecision
 
@@ -482,11 +480,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const openCompressionModal = useCallback(async () => {
       if (!sessionId || isNewSession) return
       try {
-        const session =
-          currentSession || (await rendererApplication.sessionQueryBridge.requireCompleteSessionView(sessionId))
-        if (session && compressionSessionIdRef.current === sessionId) {
-          setShowCompressionModal(true)
-        }
+        const read = await rendererApplication.sessions.getSessionHeader(sessionId)
+        if (read && compressionSessionIdRef.current === sessionId) setShowCompressionModal(true)
       } catch (error) {
         if (compressionSessionIdRef.current === sessionId) {
           toastActions.add(`${t('Failed')}: ${error instanceof Error ? error.message : String(error)}`)
@@ -756,7 +751,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       exactDraftTokens,
     } = useContextTokens({
       sessionId: currentSessionId || null,
-      source: tokenSource,
+      revision: headerRead?.revision,
+      enabled: tokenEstimationEnabled,
       settings: currentSessionMergedSettings || {},
       model,
       modelSupportToolUseForFile,
@@ -865,7 +861,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const handleAutoCompactionChange = useCallback(
       async (enabled: boolean) => {
         if (!currentSessionId || isNewSession) return
-        await rendererApplication.sessions.updateSession(currentSessionId, (session) => {
+        await rendererApplication.sessions.updateSessionHeader(currentSessionId, (session) => {
           if (!session) {
             throw new Error('Session not found')
           }
@@ -1059,8 +1055,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
           const enqueueResult = enqueueUserMessage(
             currentSessionId,
             outgoingMessage,
-            currentSession?.messages.at(-1)?.id ??
-              (readModel?.kind === 'window' ? readModel.window.messages.at(-1)?.messageId : undefined)
+            headerRead?.summary.lastNonSummaryMessageId
           )
           if (enqueueResult !== 'queued') {
             // The draft is kept in both failure cases — it is the only copy of the text.
@@ -1234,17 +1229,21 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
           return
         }
         if (
-          !(await confirmModelSwitchIfNeeded(sessionMode, currentSession?.messages, isNewSession, {
-            compactionPoints: currentSession?.compactionPoints,
-            maxContextMessageCount: currentSessionMergedSettings.maxContextMessageCount,
-          }))
+          !(await confirmModelSwitchIfNeeded(
+            !isNewSession &&
+              !!sessionId &&
+              (await rendererApplication.sessions.shouldConfirmPromptCacheBreak(sessionId, {
+                mode: sessionMode,
+                maxContextMessageCount: currentSessionMergedSettings.maxContextMessageCount,
+              }))
+          ))
         ) {
           return
         }
         onSelectModel(provider, modelId)
       },
       [
-        currentSession,
+        sessionId,
         currentSessionMergedSettings.maxContextMessageCount,
         isNewSession,
         model?.modelId,
@@ -1601,16 +1600,21 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
           {currentSessionId && (
             <CompactionStatus sessionId={currentSessionId} onViewSummary={onViewCompactionSummary} />
           )}
-          {!isNewSession &&
-            (currentSession ? (
-              <WebSearchUnavailableBanner session={currentSession} />
-            ) : readModel?.kind === 'window' ? (
-              <WebSearchUnavailableBanner sessionId={readModel.header.id} summary={readModel.summary} />
-            ) : null)}
+          {!isNewSession && headerRead && (
+            <WebSearchUnavailableBanner
+              sessionId={headerRead.header.id}
+              errorCount={headerRead.summary.webSearchSignInErrorCount}
+              latestHasError={controls.data?.latestMessageHasWebSearchSignInError}
+            />
+          )}
           {currentSessionId && !isNewSession && <QueuedMessagesBar sessionId={currentSessionId} />}
           {currentSession && !isNewSession && (
             <ErrorBoundary name="pending-action-bar">
-              <PendingActionBar session={currentSession} />
+              <PendingActionBar
+                sessionId={currentSession.id}
+                activeThreadId={headerRead?.activeThreadId ?? ''}
+                messageIds={controls.data?.pausedMessageIds ?? []}
+              />
             </ErrorBoundary>
           )}
           <Box

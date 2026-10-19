@@ -8,12 +8,12 @@ const metaStorage = vi.hoisted(() => ({
 }))
 
 const sessionRepositoryMock = vi.hoisted(() => ({
-  setSession: vi.fn(),
+  createSessionRows: vi.fn(),
 }))
 
 vi.mock('@/adapters/CurrentSessionRepository', () => ({
   CurrentSessionRepository: class {
-    setSession = sessionRepositoryMock.setSession
+    createSessionRows = sessionRepositoryMock.createSessionRows
   },
 }))
 
@@ -48,7 +48,7 @@ describe('initData', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     metaStorage.createMany.mockResolvedValue(undefined)
-    sessionRepositoryMock.setSession.mockResolvedValue(undefined)
+    sessionRepositoryMock.createSessionRows.mockResolvedValue(undefined)
   })
 
   it('uses all session meta records to decide whether default sessions are needed', async () => {
@@ -57,7 +57,7 @@ describe('initData', () => {
     await initData()
 
     expect(metaStorage.getAllTotal).toHaveBeenCalledTimes(1)
-    expect(sessionRepositoryMock.setSession).not.toHaveBeenCalled()
+    expect(sessionRepositoryMock.createSessionRows).not.toHaveBeenCalled()
     expect(metaStorage.createMany).not.toHaveBeenCalled()
   })
 
@@ -66,18 +66,20 @@ describe('initData', () => {
 
     await initData()
 
-    expect(sessionRepositoryMock.setSession).toHaveBeenCalledWith({
-      id: 'default-session',
-      name: 'Default Session',
-      messages: [],
-      type: 'chat',
-    })
+    expect(sessionRepositoryMock.createSessionRows).toHaveBeenCalledWith(
+      {
+        id: 'default-session',
+        name: 'Default Session',
+        type: 'chat',
+      },
+      []
+    )
     expect(metaStorage.createMany).toHaveBeenCalled()
   })
 
-  it('does not publish metadata when a default Session write fails', async () => {
+  it('does not publish metadata when creating default rows fails', async () => {
     metaStorage.getAllTotal.mockResolvedValue(0)
-    sessionRepositoryMock.setSession.mockRejectedValueOnce(new Error('session write failed'))
+    sessionRepositoryMock.createSessionRows.mockRejectedValueOnce(new Error('session write failed'))
 
     await expect(initData()).rejects.toThrow('session write failed')
 

@@ -8,6 +8,9 @@ function childKey(threadId: string, parentMessageId: string): string {
 
 /** Check the structural invariants a session tree must hold for decoding to be well defined. */
 export function validateSessionTree(tree: SessionTree): SessionTreeValidationResult {
+  if (tree.session.rowFormatVersion !== undefined && tree.session.rowFormatVersion !== 3) {
+    return { ok: false, reason: 'Unsupported session row format version' }
+  }
   const threadsById = new Map<string, ThreadRow>()
   const threadSeqs = new Set<number>()
   for (const thread of tree.threads) {
@@ -40,6 +43,9 @@ export function validateSessionTree(tree: SessionTree): SessionTreeValidationRes
   const rowsById = new Map<string, MessageRow>()
   const threadMessageIds = new Map<string, Set<string>>()
   for (const row of tree.messages) {
+    if (!Number.isSafeInteger(row.seq) || row.seq < 0) {
+      return { ok: false, reason: `message ${row.messageId} has an invalid ordering label` }
+    }
     if (row.sessionId !== tree.session.id) {
       return { ok: false, reason: `message ${row.messageId} belongs to session ${row.sessionId}` }
     }
@@ -105,7 +111,7 @@ export function validateSessionTree(tree: SessionTree): SessionTreeValidationRes
         reason: `message ${row.messageId} has parent ${parent.messageId} in thread ${parent.threadId}`,
       }
     }
-    if (row.seq <= parent.seq) {
+    if (tree.session.rowFormatVersion !== 3 && row.seq <= parent.seq) {
       return {
         ok: false,
         reason: `message ${row.messageId} has seq ${row.seq}, which does not follow its parent seq ${parent.seq}`,
@@ -121,6 +127,24 @@ export function validateSessionTree(tree: SessionTree): SessionTreeValidationRes
   }
 
   for (const row of tree.messages) {
+    if (tree.session.rowFormatVersion === 3) {
+      const siblings = childrenByParent.get(childKey(row.threadId, row.messageId)) ?? []
+      if (new Set(siblings.map((child) => child.seq)).size !== siblings.length) {
+        return { ok: false, reason: `message ${row.messageId} has duplicate sibling labels` }
+      }
+      if (row.pendingBranchId !== undefined || row.pendingBranchSeq !== undefined) {
+        if (
+          !row.pendingBranchId ||
+          row.activeChildId !== null ||
+          !Number.isSafeInteger(row.pendingBranchSeq) ||
+          row.pendingBranchSeq === undefined ||
+          row.pendingBranchSeq < 0 ||
+          siblings.some((child) => child.seq === row.pendingBranchSeq)
+        ) {
+          return { ok: false, reason: `message ${row.messageId} has an invalid empty branch slot` }
+        }
+      }
+    }
     if (row.activeChildId === null) {
       continue
     }

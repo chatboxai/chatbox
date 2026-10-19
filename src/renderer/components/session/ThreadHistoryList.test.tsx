@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
 
 import { MantineProvider } from '@mantine/core'
-import type { Message, Session } from '@shared/types'
-import { MessageRoleEnum } from '@shared/types'
+import type { SessionHeader } from '@shared/types'
 import { getDefaultStore } from 'jotai'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
@@ -11,7 +10,38 @@ import { fireEvent, render } from '@/test-utils'
 import ThreadHistoryList from './ThreadHistoryList'
 
 const actionMenuItemsLog = vi.hoisted(() => [] as Array<Array<{ text?: string; divider?: boolean }>>)
-const scrollToIndexMock = vi.hoisted(() => vi.fn())
+const viewThreadMock = vi.hoisted(() => vi.fn())
+
+vi.mock('@/app/renderer-application', () => ({
+  rendererApplication: {
+    sessionHooks: {
+      useSessionThreads: () => ({
+        threads: [
+          {
+            threadId: 'archived-thread',
+            name: 'Archived Thread',
+            rootMessageId: 'archived-user',
+            createdAt: 1,
+            summary: { messageCount: 1 },
+          },
+          {
+            threadId: 'current-thread',
+            name: 'Current Thread',
+            rootMessageId: 'current-user',
+            createdAt: 2,
+            summary: { messageCount: 1 },
+          },
+        ],
+        isLoading: false,
+        isError: false,
+        hasNextPage: false,
+      }),
+    },
+  },
+}))
+vi.mock('@/stores/uiStore', () => ({
+  uiStore: { getState: () => ({ transcriptNavigation: { sessionId: 'session-1', viewThread: viewThreadMock } }) },
+}))
 
 vi.mock('react-i18next', () => ({
   initReactI18next: {
@@ -35,10 +65,6 @@ vi.mock('@/stores/session/threads', () => ({
   switchThread: vi.fn(),
 }))
 
-vi.mock('@/stores/scrollActions', () => ({
-  scrollToIndex: scrollToIndexMock,
-}))
-
 vi.mock('../ActionMenu', () => ({
   default: ({ children, items }: { children: ReactNode; items: Array<{ text?: string; divider?: boolean }> }) => {
     actionMenuItemsLog.push(items)
@@ -50,19 +76,10 @@ vi.mock('../common/ScalableIcon', () => ({
   ScalableIcon: () => null,
 }))
 
-function message(id: string, role: Message['role']): Message {
-  return {
-    id,
-    role,
-    contentParts: [],
-    timestamp: 1,
-  }
-}
-
 describe('ThreadHistoryList in work mode', () => {
   beforeEach(() => {
     actionMenuItemsLog.length = 0
-    scrollToIndexMock.mockClear()
+    viewThreadMock.mockClear()
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
       value: vi.fn().mockImplementation((query: string) => ({
@@ -89,21 +106,11 @@ describe('ThreadHistoryList in work mode', () => {
   })
 
   test('keeps stored threads navigable without switch or delete actions', () => {
-    const session: Session = {
+    const session: SessionHeader = {
       id: 'session-1',
       type: 'chat',
       name: 'Session',
-      threadName: 'Current Thread',
       settings: { agentMode: { value: 'on', locked: true, lockReason: null } },
-      threads: [
-        {
-          id: 'archived-thread',
-          name: 'Archived Thread',
-          createdAt: 1,
-          messages: [message('archived-user', MessageRoleEnum.User)],
-        },
-      ],
-      messages: [message('current-user', MessageRoleEnum.User)],
     }
 
     const { getByTestId, getByText } = render(
@@ -115,7 +122,7 @@ describe('ThreadHistoryList in work mode', () => {
     expect(getByTestId('session-thread-history-list').textContent).toContain('Archived Thread')
     expect(getByTestId('session-thread-history-list').textContent).toContain('Current Thread')
     fireEvent.click(getByText(/Archived Thread/))
-    expect(scrollToIndexMock).toHaveBeenCalledWith(0, 'start', 'smooth')
+    expect(viewThreadMock).toHaveBeenCalledWith('archived-thread')
     const threadActions = actionMenuItemsLog.flat().flatMap((item) => (item.text ? [item.text] : []))
     expect(threadActions).toContain('Edit Thread Name')
     expect(threadActions).not.toContain('Switch')

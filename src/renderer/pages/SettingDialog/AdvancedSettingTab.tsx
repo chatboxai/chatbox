@@ -1,30 +1,13 @@
-import {
-  Box,
-  Button,
-  Checkbox,
-  FormControlLabel,
-  FormGroup,
-  Switch,
-  Tab,
-  Tabs,
-  Typography,
-  useTheme,
-} from '@mui/material'
-import type { Session, Settings } from '@shared/types'
-import { uniqBy } from 'lodash'
-import { useRef, useState } from 'react'
+import { Box, FormControlLabel, FormGroup, Switch, Typography } from '@mui/material'
+import type { Settings } from '@shared/types'
 import { useTranslation } from 'react-i18next'
-import { sessionRepository } from '@/app/renderer-application'
 import { Accordion, AccordionDetails, AccordionSummary } from '@/components/Accordion'
 import TextFieldReset from '@/components/common/TextFieldReset'
 import { ShortcutConfig } from '@/components/Shortcut'
+import { BackupRestoreSections } from '@/components/settings/DataSections'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
-import { type BackupExportItem, updateBackupExportItemSelection } from '@/packages/backup'
 import platform from '@/platform'
-import storage, { StorageKey } from '@/storage'
-import { migrateOnData } from '@/stores/migration'
 import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
-import { migrateSession } from '@/utils/session-utils'
 
 interface Props {
   settingsEdit: Settings
@@ -82,7 +65,7 @@ export default function AdvancedSettingTab(props: Props) {
           <Typography>{t('Data Backup and Restore')}</Typography>
         </AccordionSummary>
         <AccordionDetails>
-          <ExportAndImport onCancel={props.onCancel} />
+          <BackupRestoreSections />
         </AccordionDetails>
       </Accordion>
       <Accordion>
@@ -139,197 +122,6 @@ export default function AdvancedSettingTab(props: Props) {
               />
             )}
           </FormGroup>
-        </Box>
-      )}
-    </Box>
-  )
-}
-
-enum ExportDataItem {
-  Setting = 'setting',
-  Key = 'key',
-  Conversations = 'conversations',
-  Copilot = 'copilot',
-}
-
-function ExportAndImport(props: { onCancel: () => void }) {
-  const { t } = useTranslation()
-  const theme = useTheme()
-  const [tab, setTab] = useState<'export' | 'import'>('export')
-  const [exportItems, setExportItems] = useState<BackupExportItem[]>([
-    ExportDataItem.Setting,
-    ExportDataItem.Conversations,
-    ExportDataItem.Copilot,
-  ])
-  const importInputRef = useRef<HTMLInputElement>(null)
-  const [importTips, setImportTips] = useState('')
-  const onExport = async () => {
-    const data = await storage.getAll()
-    // A stored session record carries no messages, so every session entry is
-    // replaced by the whole session the repository decodes from the row store.
-    for (const key of Object.keys(data)) {
-      if (!key.startsWith('session:')) continue
-      const session = await sessionRepository.getSession(key.slice('session:'.length))
-      if (session) data[key] = session
-      else delete data[key]
-    }
-    delete data[StorageKey.Configs] // 不导出 uuid
-    ;(data[StorageKey.Settings] as Settings).licenseDetail = undefined // 不导出license认证数据
-    ;(data[StorageKey.Settings] as Settings).licenseInstances = undefined // 不导出license设备数据，导入数据的新设备也应该计入设备数
-    if (!exportItems.includes(ExportDataItem.Key)) {
-      delete (data[StorageKey.Settings] as Settings).licenseKey
-      delete (data[StorageKey.Settings] as Settings).providers
-    }
-    if (!exportItems.includes(ExportDataItem.Setting)) {
-      delete data[StorageKey.Settings]
-    }
-    if (!exportItems.includes(ExportDataItem.Conversations)) {
-      delete data[StorageKey.ChatSessions]
-      delete data[StorageKey.ChatSessionsList]
-      Object.keys(data).forEach((key) => {
-        if (key.startsWith('session:')) {
-          delete data[key]
-        }
-      })
-    }
-    if (!exportItems.includes(ExportDataItem.Copilot)) {
-      delete data[StorageKey.MyCopilots]
-    }
-    const date = new Date()
-    data['__exported_items'] = exportItems
-    data['__exported_at'] = date.toISOString()
-    const dateStr = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`
-    platform.exporter.exportTextFile(`chatbox-exported-data-${dateStr}.json`, JSON.stringify(data))
-  }
-  const onImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const errTip = t('Import failed, unsupported data format')
-    const file = e.target.files?.[0]
-    if (!file) {
-      return
-    }
-    const reader = new FileReader()
-    reader.onload = (event) => {
-      ;(async () => {
-        setImportTips('')
-        try {
-          const result = event.target?.result
-          if (typeof result !== 'string') {
-            throw new Error('FileReader result is not string')
-          }
-          const importData = JSON.parse(result)
-          // 如果导入数据中包含了老的版本号，应该仅仅针对老的版本号进行迁移
-          await migrateOnData(
-            {
-              getData: async (key, defaultValue) => {
-                return importData[key] || defaultValue
-              },
-              setData: async (key, value) => {
-                importData[key] = value
-              },
-              setAll: async (data) => {
-                Object.assign(importData, data)
-              },
-              getSession: async (id) => {
-                const value = importData[`session:${id}`]
-                return value && typeof value === 'object' ? migrateSession(value as Session) : null
-              },
-              setSession: async (session) => {
-                importData[`session:${session.id}`] = session
-              },
-            },
-            false
-          )
-
-          const previousData = await storage.getAll()
-          // FIXME: 这里缺少了数据校验
-          await storage.setAll({
-            ...previousData, // 有时候 importData 在导出时没有包含一些数据，这些数据应该保持原样
-            ...importData,
-            [StorageKey.ChatSessionsList]: uniqBy(
-              [
-                ...(previousData[StorageKey.ChatSessionsList] || []),
-                ...(importData[StorageKey.ChatSessionsList] || []),
-              ],
-              'id'
-            ),
-          })
-          props.onCancel() // 导出成功后立即关闭设置窗口，防止用户点击保存、导致设置数据被覆盖
-          platform.relaunch() // 重启应用以生效
-        } catch (err) {
-          setImportTips(errTip)
-
-          throw err
-        }
-      })()
-    }
-    reader.onerror = (event) => {
-      setImportTips(errTip)
-      const err = event.target?.error
-      if (!err) {
-        throw new Error('FileReader error but no error message')
-      }
-      throw err
-    }
-    reader.readAsText(file)
-  }
-  return (
-    <Box
-      sx={{
-        backgroundColor: theme.palette.mode === 'dark' ? theme.palette.grey[900] : theme.palette.grey[100],
-      }}
-      className="p-4"
-    >
-      <Tabs value={tab} onChange={(_, value) => setTab(value)} className="mb-4">
-        <Tab
-          value="export"
-          label={<span className="inline-flex justify-center items-center">{t('Data Backup')}</span>}
-        />
-        <Tab
-          value="import"
-          label={<span className="inline-flex justify-center items-center">{t('Import Backup')}</span>}
-        />
-      </Tabs>
-      {tab === 'export' && (
-        <Box sx={{}}>
-          <FormGroup className="mb-2">
-            {[
-              { label: t('Settings'), value: ExportDataItem.Setting },
-              { label: t('API KEY & License'), value: ExportDataItem.Key },
-              { label: t('Chat History'), value: ExportDataItem.Conversations },
-              { label: t('My Copilots'), value: ExportDataItem.Copilot },
-            ].map((item) => (
-              <FormControlLabel
-                key={item.value}
-                label={item.label}
-                control={
-                  <Checkbox
-                    checked={exportItems.includes(item.value)}
-                    disabled={item.value === ExportDataItem.Setting && exportItems.includes(ExportDataItem.Key)}
-                    onChange={(_event, checked) => {
-                      setExportItems((current) => updateBackupExportItemSelection(current, item.value, checked))
-                    }}
-                  />
-                }
-              />
-            ))}
-          </FormGroup>
-          <Button variant="contained" color="primary" onClick={onExport}>
-            {t('Export Selected Data')}
-          </Button>
-        </Box>
-      )}
-      {tab === 'import' && (
-        <Box>
-          <Box className="p-1">
-            {t(
-              'Import takes effect immediately. Conversations, settings, and other data in the backup overwrite matching local records. Data not included in the backup is kept; importing does not clear all local data.'
-            )}
-          </Box>
-          {importTips && <Box className="p-1 text-red-600">{importTips}</Box>}
-          <input style={{ display: 'none' }} type="file" ref={importInputRef} onChange={onImport} />
-          <Button variant="contained" color="primary" onClick={() => importInputRef.current?.click()}>
-            {t('Import Backup')}
-          </Button>
         </Box>
       )}
     </Box>

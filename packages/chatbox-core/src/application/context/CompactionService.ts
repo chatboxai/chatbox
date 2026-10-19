@@ -1,8 +1,10 @@
 import { flattenToolCallPartsToText } from '@shared/context/tool-flatten'
 import type { LoggerPort, SettingsRepositoryPort } from '../../ports'
-import type { Message, Session, SessionSettings, Settings } from '../../types'
-import { buildCompactionCommitPatch } from './compaction-commit'
-import { createCompactionPlan, isCompactionPlanCurrent } from './compaction-plan'
+import type { Message, SessionHeader, SessionSettings, Settings } from '../../types'
+import type { SessionHeaderRead } from '../../ports/session-row-repository'
+import type { SessionContextRepositoryPort, SessionContextSource } from '../../ports/session-context-source'
+import type { SessionCompactionOperation } from '../../ports/session-structure-command'
+import { createCompactionPlan } from './compaction-plan'
 import type {
   CompactionFailureCode,
   CompactionRequest,
@@ -10,20 +12,19 @@ import type {
   CompactionServiceResult,
 } from './compaction-types'
 
-export interface CompactionSessionPort {
-  getSession(sessionId: string): Promise<Session | null>
-  /** `session` is the complete session the caller already read; implementations may resolve settings from it. */
-  getSessionSettings(sessionId: string, session?: Session): Promise<SessionSettings>
-  updateSessionWithMessages(
+export interface CompactionSessionPort extends SessionContextRepositoryPort {
+  getSessionHeader(sessionId: string): Promise<SessionHeaderRead | null>
+  getSessionSettings(sessionId: string, header: SessionHeader): Promise<SessionSettings>
+  commitSessionCompaction(
     sessionId: string,
-    updater: (session: Session | null | undefined) => Session
-  ): Promise<Session>
+    operation: SessionCompactionOperation
+  ): Promise<{ applied: boolean; revision: number }>
 }
 
 export interface CompactionPolicyPort {
   shouldCompact(input: {
     sessionId: string
-    session: Session
+    header: SessionHeader
     sessionSettings: SessionSettings
     globalSettings: Settings
     pendingMessage?: Message
@@ -34,7 +35,7 @@ export interface CompactionPolicyPort {
    * persisted history remains available in the conversation.
    */
   getCompactionContext(
-    session: Session,
+    source: SessionContextSource,
     sessionSettings: SessionSettings,
     pendingMessage?: Message
   ): Message[] | Promise<Message[]>
@@ -82,7 +83,8 @@ export class CompactionService {
   }
 
   async needsCompaction(sessionId: string, pendingMessage?: Message): Promise<boolean> {
-    const session = await this.options.sessions.getSession(sessionId)
+    const read = await this.options.sessions.getSessionHeader(sessionId)
+    const session = read?.header
     if (!session) return false
 
     const globalSettings = this.options.settings.getSettings()
@@ -92,7 +94,13 @@ export class CompactionService {
     if (!modelId) return false
 
     const sessionSettings = await this.options.sessions.getSessionSettings(sessionId, session)
-    return this.options.policy.shouldCompact({ sessionId, session, sessionSettings, globalSettings, pendingMessage })
+    return this.options.policy.shouldCompact({
+      sessionId,
+      header: session,
+      sessionSettings,
+      globalSettings,
+      pendingMessage,
+    })
   }
 
   async run(
@@ -115,17 +123,24 @@ export class CompactionService {
     this.ongoing.add(sessionId)
     try {
       options.onStart?.()
-      const session = await this.options.sessions.getSession(sessionId)
-      if (!session) {
-        return this.failure('session_not_found', 'Session not found')
-      }
-
+      const read = await this.options.sessions.getSessionHeader(sessionId)
+      if (!read) return this.failure('session_not_found', 'Session not found')
+      const session = read.header
       const globalSettings = this.options.settings.getSettings()
       const modelId = session.settings?.modelId ?? globalSettings.defaultChatModel?.model
       if (!modelId) return { status: 'skipped', reason: 'no_model' }
       const sessionSettings = await this.options.sessions.getSessionSettings(sessionId, session)
-      const planned = await createCompactionPlan(session, request, (scopedSession, pendingMessage) =>
-        this.options.policy.getCompactionContext(scopedSession, sessionSettings, pendingMessage)
+      const source = await this.options.sessions.getSessionContextSource({
+        sessionId,
+        expectedRevision: read.revision,
+        maxContextMessageCount: sessionSettings.maxContextMessageCount,
+        reserveCurrentInput: true,
+        ...(request.kind === 'generation' ? { targetMessageId: request.targetMessageId } : {}),
+      })
+      if (!source) return this.failure('session_not_found', 'Session not found')
+
+      const planned = await createCompactionPlan(source, request, (context, pendingMessage) =>
+        this.options.policy.getCompactionContext(context, sessionSettings, pendingMessage)
       )
       if (planned.status !== 'ready') return planned
       const { plan } = planned
@@ -158,26 +173,22 @@ export class CompactionService {
         isSummary: true,
       }
 
-      const point = {
-        summaryMessageId: summaryMessage.id,
-        boundaryMessageId: plan.coverage.boundaryMessageId,
-        createdAt: this.now(),
-      }
+      let committedRevision: number
       try {
         if (options.abortSignal?.aborted) {
           return { status: 'cancelled' }
         }
-        let committed = false
-        await this.options.sessions.updateSessionWithMessages(sessionId, (current) => {
-          if (!current) throw new Error('Session not found during update')
-          if (options.abortSignal?.aborted) return current
-          if (!isCompactionPlanCurrent(current, plan)) return current
-          const updated = buildCompactionCommitPatch(current, summaryMessage, point)
-          if (!updated) return current
-          committed = true
-          return updated
+        const commit = await this.options.sessions.commitSessionCompaction(sessionId, {
+          action: 'compaction-commit',
+          threadId: plan.threadId,
+          summary: summaryMessage,
+          coverage: plan.coverage,
+          pathMessageIds: plan.pathMessageIds,
+          createdAt: this.now(),
+          abortSignal: options.abortSignal,
         })
-        if (!committed) {
+        committedRevision = commit.revision
+        if (!commit.applied) {
           await this.logAbandonedCompaction(sessionId, plan.coverage.boundaryMessageId)
           return options.abortSignal?.aborted ? { status: 'cancelled' } : { status: 'skipped', reason: 'stale_path' }
         }
@@ -190,6 +201,7 @@ export class CompactionService {
         summaryMessageId: summaryMessage.id,
         summary: summaryResult.summary,
         coverage: plan.coverage,
+        revision: committedRevision,
       }
     } catch (error) {
       return this.failure('update_failed', error instanceof Error ? error.message : String(error), error)

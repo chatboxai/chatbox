@@ -1,12 +1,7 @@
-import type { CompactionPoint, Message, Session, SessionSettings, SessionThread } from '@shared/types'
+import type { CompactionPoint, Message } from '@shared/types'
 import { MessageRoleEnum } from '@shared/types/session'
 import { describe, expect, it } from 'vitest'
-import {
-  buildContextForAI,
-  buildContextForSession,
-  buildContextForThread,
-  getContextMessageIds,
-} from './context-builder'
+import { buildContextForAI } from './context-builder'
 
 function createMessage(id: string, role: (typeof MessageRoleEnum)[keyof typeof MessageRoleEnum], text = ''): Message {
   return {
@@ -365,335 +360,46 @@ describe('buildContextForAI', () => {
   })
 })
 
-describe('buildContextForSession', () => {
-  it('should build context from session main messages', () => {
-    const session: Session = {
-      id: 'session-1',
-      name: 'Test Session',
-      messages: [createMessage('m1', 'user', 'Hello'), createMessage('m2', 'assistant', 'Hi')],
-    }
-
-    const result = buildContextForSession(session)
-
-    expect(result).toHaveLength(2)
-    expect(result.map((m) => m.id)).toEqual(['m1', 'm2'])
+describe('context identities from selected message inputs', () => {
+  it('retains selected message identities in order', () => {
+    const messages = [createMessage('m1', 'user', 'Hello'), createMessage('m2', 'assistant', 'Hi')]
+    expect(buildContextForAI({ messages }).map((message) => message.id)).toEqual(['m1', 'm2'])
   })
 
-  it('should use session compaction points', () => {
-    const summary = createSummaryMessage('summary-1')
-    const session: Session = {
-      id: 'session-1',
-      name: 'Test Session',
-      messages: [
-        createMessage('m1', 'user', 'Old'),
-        createMessage('m2', 'assistant', 'Boundary'),
-        createMessage('m3', 'user', 'New'),
-        createMessage('m4', 'assistant', 'Response'),
-        summary,
-      ],
-      compactionPoints: [createCompactionPoint('summary-1', 'm2', Date.now())],
-    }
-
-    const result = buildContextForSession(session)
-
-    expect(result.map((m) => m.id)).toEqual(['summary-1', 'm3', 'm4'])
+  it('keeps the system prompt and current summary with the post-boundary tail', () => {
+    const messages = [
+      createMessage('system', 'system', 'Instruction'),
+      createMessage('old-user', 'user', 'Old'),
+      createMessage('boundary', 'assistant', 'Old answer'),
+      createMessage('new-user', 'user', 'New'),
+      createMessage('new-answer', 'assistant', 'New answer'),
+      createSummaryMessage('summary'),
+    ]
+    const result = buildContextForAI({ messages, compactionPoints: [createCompactionPoint('summary', 'boundary', 1)] })
+    expect(result.map((message) => message.id)).toEqual(['system', 'summary', 'new-user', 'new-answer'])
   })
 
-  it('should build context from thread when threadId provided', () => {
-    const thread: SessionThread = {
-      id: 'thread-1',
-      name: 'Thread 1',
-      messages: [createMessage('t1', 'user', 'Thread message'), createMessage('t2', 'assistant', 'Thread response')],
-      createdAt: Date.now(),
-    }
-    const session: Session = {
-      id: 'session-1',
-      name: 'Test Session',
-      messages: [createMessage('m1', 'user', 'Main message')],
-      threads: [thread],
-    }
-
-    const result = buildContextForSession(session, { threadId: 'thread-1' })
-
-    expect(result).toHaveLength(2)
-    expect(result.map((m) => m.id)).toEqual(['t1', 't2'])
+  it('excludes an incomplete reply from selected identities', () => {
+    const messages = [
+      createMessage('question', 'user', 'Hello'),
+      { ...createMessage('reply', 'assistant', 'Partial'), generating: true },
+    ]
+    expect(buildContextForAI({ messages }).map((message) => message.id)).toEqual(['question'])
   })
 
-  it('should use session compaction points for thread', () => {
-    const summary = createSummaryMessage('thread-summary')
-    const thread: SessionThread = {
-      id: 'thread-1',
-      name: 'Thread 1',
-      messages: [
-        createMessage('t1', 'user', 'Old'),
-        createMessage('t2', 'assistant', 'Boundary'),
-        createMessage('t3', 'user', 'New'),
-        createMessage('t4', 'assistant', 'Response'),
-        summary,
-      ],
-      createdAt: Date.now(),
-      compactionPoints: [createCompactionPoint('thread-summary', 't2', Date.now())],
+  it('preserves full tool parts in the selected context', () => {
+    const tool = {
+      type: 'tool-call' as const,
+      state: 'result' as const,
+      toolCallId: 'tc',
+      toolName: 'tool',
+      args: {},
+      result: { answer: 42 },
     }
-    const session: Session = {
-      id: 'session-1',
-      name: 'Test Session',
-      messages: [],
-      threads: [thread],
-    }
-
-    const result = buildContextForSession(session, { threadId: 'thread-1' })
-
-    expect(result.map((m) => m.id)).toEqual(['thread-summary', 't3', 't4'])
-  })
-
-  it('should fall back to main messages when thread not found', () => {
-    const session: Session = {
-      id: 'session-1',
-      name: 'Test Session',
-      messages: [createMessage('m1', 'user', 'Main')],
-      threads: [],
-    }
-
-    const result = buildContextForSession(session, { threadId: 'non-existent' })
-
-    expect(result).toHaveLength(1)
-    expect(result[0].id).toBe('m1')
-  })
-
-  it('should keep tool-call parts untouched', () => {
-    const session: Session = {
-      id: 'session-1',
-      name: 'Test Session',
-      messages: [
-        createMessage('m1', 'user', 'Q1'),
-        {
-          id: 'm2',
-          role: MessageRoleEnum.Assistant,
-          contentParts: [{ type: 'tool-call', state: 'result', toolCallId: 'tc1', toolName: 'tool', args: {} }],
-        },
-        createMessage('m3', 'user', 'Q2'),
-        createMessage('m4', 'assistant', 'Response'),
-      ],
-    }
-
-    const result = buildContextForSession(session)
-
-    expect(result[1].contentParts).toHaveLength(1)
-    expect(result[1].contentParts[0].type).toBe('tool-call')
-  })
-})
-
-describe('buildContextForThread', () => {
-  it('should build context from thread messages', () => {
-    const thread: SessionThread = {
-      id: 'thread-1',
-      name: 'Thread 1',
-      messages: [createMessage('t1', 'user', 'Hello'), createMessage('t2', 'assistant', 'Hi')],
-      createdAt: Date.now(),
-    }
-
-    const result = buildContextForThread(thread)
-
-    expect(result).toHaveLength(2)
-    expect(result.map((m) => m.id)).toEqual(['t1', 't2'])
-  })
-
-  it('should use thread compaction points', () => {
-    const summary = createSummaryMessage('thread-summary')
-    const thread: SessionThread = {
-      id: 'thread-1',
-      name: 'Thread 1',
-      messages: [
-        createMessage('t1', 'user', 'Old'),
-        createMessage('t2', 'assistant', 'Boundary'),
-        createMessage('t3', 'user', 'New'),
-        summary,
-      ],
-      createdAt: Date.now(),
-      compactionPoints: [createCompactionPoint('thread-summary', 't2', Date.now())],
-    }
-
-    const result = buildContextForThread(thread)
-
-    expect(result.map((m) => m.id)).toEqual(['thread-summary', 't3'])
-  })
-
-  it('should handle empty thread', () => {
-    const thread: SessionThread = {
-      id: 'thread-1',
-      name: 'Empty Thread',
-      messages: [],
-      createdAt: Date.now(),
-    }
-
-    const result = buildContextForThread(thread)
-
-    expect(result).toEqual([])
-  })
-
-  it('should keep tool-call parts untouched', () => {
-    const thread: SessionThread = {
-      id: 'thread-1',
-      name: 'Thread',
-      messages: [
-        createMessage('t1', 'user', 'Q'),
-        {
-          id: 't2',
-          role: MessageRoleEnum.Assistant,
-          contentParts: [{ type: 'tool-call', state: 'result', toolCallId: 'tc1', toolName: 'tool', args: {} }],
-        },
-        createMessage('t3', 'user', 'Q2'),
-        createMessage('t4', 'assistant', 'A2'),
-      ],
-      createdAt: Date.now(),
-    }
-    const sessionSettings: SessionSettings = { autoCompaction: false }
-
-    const result = buildContextForThread(thread, { sessionSettings })
-
-    expect(result[1].contentParts).toHaveLength(1)
-    expect(result[1].contentParts[0].type).toBe('tool-call')
-  })
-})
-
-describe('getContextMessageIds', () => {
-  it('should return all message IDs when no compaction points exist', () => {
-    const session: Session = {
-      id: 'session-1',
-      name: 'Test Session',
-      messages: [
-        createMessage('m1', 'user', 'Hello'),
-        createMessage('m2', 'assistant', 'Hi'),
-        createMessage('m3', 'user', 'How are you?'),
-        createMessage('m4', 'assistant', 'I am fine'),
-      ],
-    }
-
-    const result = getContextMessageIds(session)
-
-    expect(result).toEqual(['m1', 'm2', 'm3', 'm4'])
-  })
-
-  it('should return only context message IDs after compaction', () => {
-    const summary = createSummaryMessage('summary-1')
-    const session: Session = {
-      id: 'session-1',
-      name: 'Test Session',
-      messages: [
-        createMessage('m1', 'user', 'Old'),
-        createMessage('m2', 'assistant', 'Boundary'),
-        createMessage('m3', 'user', 'New'),
-        createMessage('m4', 'assistant', 'Response'),
-        summary,
-      ],
-      compactionPoints: [createCompactionPoint('summary-1', 'm2', Date.now())],
-    }
-
-    const result = getContextMessageIds(session)
-
-    expect(result).toEqual(['summary-1', 'm3', 'm4'])
-  })
-
-  it('should respect maxCount parameter', () => {
-    const session: Session = {
-      id: 'session-1',
-      name: 'Test Session',
-      messages: [
-        createMessage('m1', 'user', 'Hello'),
-        createMessage('m2', 'assistant', 'Hi'),
-        createMessage('m3', 'user', 'How are you?'),
-        createMessage('m4', 'assistant', 'I am fine'),
-      ],
-    }
-
-    const result = getContextMessageIds(session, 2)
-
-    expect(result).toEqual(['m3', 'm4'])
-  })
-
-  it('should apply maxCount after compaction filtering', () => {
-    const summary = createSummaryMessage('summary-1')
-    const session: Session = {
-      id: 'session-1',
-      name: 'Test Session',
-      messages: [
-        createMessage('m1', 'user', 'Old 1'),
-        createMessage('m2', 'assistant', 'Old 2'),
-        createMessage('m3', 'user', 'Boundary'),
-        createMessage('m4', 'assistant', 'New 1'),
-        createMessage('m5', 'user', 'New 2'),
-        createMessage('m6', 'assistant', 'New 3'),
-        summary,
-      ],
-      compactionPoints: [createCompactionPoint('summary-1', 'm3', Date.now())],
-    }
-
-    // Context after compaction: [summary-1, m4, m5, m6]
-    // With maxCount=2: [m5, m6]
-    const result = getContextMessageIds(session, 2)
-
-    expect(result).toEqual(['m5', 'm6'])
-  })
-
-  it('should exclude generating messages', () => {
-    const session: Session = {
-      id: 'session-1',
-      name: 'Test Session',
-      messages: [
-        createMessage('m1', 'user', 'Hello'),
-        createMessage('m2', 'assistant', 'Hi'),
-        { ...createMessage('m3', 'assistant', 'Generating...'), generating: true },
-      ],
-    }
-
-    const result = getContextMessageIds(session)
-
-    expect(result).toEqual(['m1', 'm2'])
-  })
-
-  it('should include system message preserved after compaction', () => {
-    const systemMessage = createMessage('sys', 'system', 'You are a helpful assistant')
-    const summary = createSummaryMessage('summary-1')
-    const session: Session = {
-      id: 'session-1',
-      name: 'Test Session',
-      messages: [
-        systemMessage,
-        createMessage('m1', 'user', 'Old message'),
-        createMessage('m2', 'assistant', 'Boundary'),
-        createMessage('m3', 'user', 'New message'),
-        createMessage('m4', 'assistant', 'Response'),
-        summary,
-      ],
-      compactionPoints: [createCompactionPoint('summary-1', 'm2', Date.now())],
-    }
-
-    const result = getContextMessageIds(session)
-
-    expect(result).toEqual(['sys', 'summary-1', 'm3', 'm4'])
-  })
-
-  it('should return empty array for session with no messages', () => {
-    const session: Session = {
-      id: 'session-1',
-      name: 'Test Session',
-      messages: [],
-    }
-
-    const result = getContextMessageIds(session)
-
-    expect(result).toEqual([])
-  })
-
-  it('should handle maxCount of 0', () => {
-    const session: Session = {
-      id: 'session-1',
-      name: 'Test Session',
-      messages: [createMessage('m1', 'user', 'Hello'), createMessage('m2', 'assistant', 'Hi')],
-    }
-
-    const result = getContextMessageIds(session, 0)
-
-    expect(result).toEqual([])
+    const messages = [
+      createMessage('question', 'user', 'Hello'),
+      { ...createMessage('reply', 'assistant'), contentParts: [tool] },
+    ]
+    expect(buildContextForAI({ messages })[1].contentParts).toEqual([tool])
   })
 })

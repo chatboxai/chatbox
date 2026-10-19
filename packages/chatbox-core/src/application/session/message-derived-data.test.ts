@@ -7,7 +7,6 @@ import {
   getTokenizationTextDigest,
   type SessionAttachmentDerivedPatch,
   type SessionMessageDerivedPatch,
-  type SessionMessageTextDerivedPatch,
 } from './message-derived-data'
 
 function message(): Message {
@@ -44,19 +43,6 @@ function message(): Message {
   }
 }
 
-function textPatch(
-  source: Message,
-  overrides: Partial<SessionMessageTextDerivedPatch> = {}
-): SessionMessageTextDerivedPatch {
-  return {
-    tokenizerType: 'default',
-    sourceDigest: getSessionMessageTokenizationDigest(source),
-    tokens: 5,
-    calculatedAt: 100,
-    ...overrides,
-  }
-}
-
 function filePatch(overrides: Partial<SessionAttachmentDerivedPatch> = {}): SessionAttachmentDerivedPatch {
   return {
     id: 'attachment-1',
@@ -89,67 +75,9 @@ describe('message tokenization source', () => {
 })
 
 describe('applySessionMessageDerivedPatch', () => {
-  test('merges tokenizer caches without changing provider usage, message state or source data', () => {
-    const source = message()
-    const before = structuredClone(source)
-    const incoming = {
-      messageId: source.id,
-      text: [textPatch(source, { approximate: true })],
-      role: 'user',
-      contentParts: [],
-      usage: { totalTokens: 0 },
-      generating: false,
-      updatedAt: 999,
-    }
-    const result = applySessionMessageDerivedPatch(source, incoming)
-    expect(result?.message).toEqual({
-      ...source,
-      tokenCountMap: { deepseek: 3, historical: 7, default: 5 },
-      tokenCalculatedAt: { deepseek: 10, default: 100 },
-      tokenCountApproximate: { deepseek: true, default: true },
-    })
-    expect(result?.message.contentParts).toBe(source.contentParts)
-    expect(result?.message.usage).toBe(source.usage)
-    expect(result?.message.files).toBe(source.files)
-    expect(source).toEqual(before)
-    expect(Object.keys(result?.patch ?? {}).sort()).toEqual(['messageId', 'text'])
-  })
-
-  test('an exact result clears only its tokenizer approximation marker', () => {
-    const source = message()
-    const result = applySessionMessageDerivedPatch(source, {
-      messageId: source.id,
-      text: [textPatch(source, { tokenizerType: 'deepseek', tokens: 4 })],
-    })
-    expect(result?.message.tokenCountApproximate).toBeUndefined()
-    expect(result?.message.tokenCountMap).toEqual({ deepseek: 4, historical: 7 })
-  })
-
-  test('rejects results for another message, changed text or an older calculation', () => {
-    const source = message()
-    const patch = { messageId: source.id, text: [textPatch(source)] }
-    expect(applySessionMessageDerivedPatch({ ...source, id: 'other' }, patch)).toBeNull()
-    expect(
-      applySessionMessageDerivedPatch({ ...source, contentParts: [{ type: 'text', text: 'edited' }] }, patch)
-    ).toBeNull()
-    expect(
-      applySessionMessageDerivedPatch(
-        { ...source, tokenCountMap: { default: 10 }, tokenCalculatedAt: { default: 101 } },
-        patch
-      )
-    ).toBeNull()
-  })
-
-  test('an empty or already applied patch is a no-op', () => {
+  test('an empty attachment patch is a no-op', () => {
     const source = message()
     expect(applySessionMessageDerivedPatch(source, { messageId: source.id })).toBeNull()
-    const result = applySessionMessageDerivedPatch(source, {
-      messageId: source.id,
-      text: [textPatch(source)],
-      attachments: [filePatch()],
-    })
-    if (!result) throw new Error('expected a derived update')
-    expect(applySessionMessageDerivedPatch(result.message, result.patch)).toBeNull()
   })
 
   test('merges only allowed attachment fields and keeps file and link identities separate', () => {
@@ -205,19 +133,6 @@ describe('applySessionMessageDerivedPatch', () => {
       lineCount: 5,
       byteLength: 50,
     })
-  })
-
-  test('retains only accepted entries when text and attachment results arrive together', () => {
-    const source = message()
-    const patch: SessionMessageDerivedPatch = {
-      messageId: source.id,
-      text: [textPatch(source, { sourceDigest: 'stale' }), textPatch(source, { tokenizerType: 'deepseek' })],
-      attachments: [filePatch({ id: 'missing' }), filePatch()],
-    }
-    const result = applySessionMessageDerivedPatch(source, patch)
-    expect(result?.patch.text).toEqual([{ ...patch.text?.[1], approximate: false }])
-    expect(result?.patch.attachments).toEqual([filePatch()])
-    expect(result?.message.tokenCountMap?.default).toBeUndefined()
   })
 
   test('returns complete accepted cache entries so replay can repair an older cached copy', () => {

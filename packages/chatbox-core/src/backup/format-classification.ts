@@ -1,21 +1,15 @@
-import type { Message } from '@shared/types'
-import { decodeSessionTree } from '../session/session-tree/decode'
-import type { SessionTree } from '../session/session-tree/types'
 import { throwIfAborted } from './abort'
-import { BackupJsonSize } from './json-size'
-import { materializeBackupPayload, NATIVE_PAYLOAD_LIMIT_BYTES } from './payload'
+import { jsonUtf8Blocks } from './json-stream'
 import type { PreparedBackupSession } from './preflight'
 import { prepareBackupMessagePayload } from './resource-payload'
-import { prepareSessionForBackup } from './resources'
+import { prepareMessageForBackup } from './resources'
+import { RowJsonLayout, SingleFileBudgetError } from './row-json'
 import { type BackupSessionStore, backupPageLimits } from './session-port'
-import { BackupSourceBudgetError, MAX_BACKUP_SESSION_STRUCTURE_BYTES } from './source-check'
+import { materializeBackupPayload, NATIVE_PAYLOAD_LIMIT_BYTES } from './payload'
 
 const encoder = new TextEncoder()
-const jsonBytes = (value: unknown) => encoder.encode(JSON.stringify(value)).length
 
-/** Counts canonical v2 bytes; a completed message occurs exactly once in a valid session tree.
- * Stored payload sizes bound the prepared bytes from above: a session whose bound exceeds the
- * threshold settles on the sharded layout without reading any payload. */
+/** Stored payload sizes select large exports before any message body is read. */
 export async function classifyBackupSession(
   store: BackupSessionStore,
   id: string,
@@ -23,85 +17,66 @@ export async function classifyBackupSession(
   signal?: AbortSignal,
   nativePayloadLimit = NATIVE_PAYLOAD_LIMIT_BYTES
 ): Promise<PreparedBackupSession> {
-  const tree: Partial<SessionTree> & Pick<SessionTree, 'threads' | 'messages'> = { threads: [], messages: [] }
+  const layout = new RowJsonLayout(id)
+  const sizes = new Map<string, number>()
+  const deferred: Array<{ id: string; size: number; chunks: () => AsyncIterable<Uint8Array> }> = []
   let messageBytes = 0
   let boundBytes = 0
-  let difference = 0
-  let indexBytes = 0
-  const deferred: Array<{ chunks: () => AsyncIterable<Uint8Array>; size: number; shellBytes: number }> = []
-  const keep = (value: unknown) => {
-    indexBytes += jsonBytes(value)
-    if (indexBytes > MAX_BACKUP_SESSION_STRUCTURE_BYTES)
-      throw new BackupSourceBudgetError('Backup session structure exceeds budget')
-  }
-  const sharded = (): PreparedBackupSession => ({ id, name: tree.session?.name ?? id, layout: 'sharded' })
-  /** Prepared bytes of one payload, or undefined once the running total leaves the single-file budget. */
-  const measure = async (chunks: () => AsyncIterable<Uint8Array>, size?: number) => {
-    if (size !== undefined && size <= nativePayloadLimit) {
-      const { message } = await materializeBackupPayload(chunks(), size)
-      return jsonBytes(prepareSessionForBackup({ id, name: '', messages: [message] }).messages[0])
+  const sharded = (): PreparedBackupSession => ({ id, name: layout.header.name, layout: 'sharded' })
+  const measure = async (chunks: () => AsyncIterable<Uint8Array>, storedSize?: number) => {
+    if (storedSize !== undefined && storedSize <= nativePayloadLimit) {
+      const { message } = await materializeBackupPayload(chunks(), storedSize)
+      let size = 0
+      for (const block of jsonUtf8Blocks(prepareMessageForBackup(message))) size += block.length
+      return size
     }
-    const counter = new BackupJsonSize()
+    let size = 0
     for await (const block of prepareBackupMessagePayload(chunks())) {
       throwIfAborted(signal)
-      counter.write(block)
-      if (messageBytes + counter.bytes > threshold) return undefined
+      size += block.length
+      if (messageBytes + size > threshold)
+        throw new SingleFileBudgetError('Backup session exceeds its single-file budget')
     }
-    return counter.finish()
+    return size
   }
-  for await (const row of store.iterateBackupRows(id, backupPageLimits(), signal)) {
-    throwIfAborted(signal)
-    if (row.kind === 'header') {
-      if (tree.session || row.record.id !== id) throw new Error('Invalid backup session header')
-      keep(row.record)
-      tree.session = row.record
-    } else if (row.kind === 'thread') {
-      keep(row.thread)
-      tree.threads.push(row.thread)
-    } else {
-      if (!tree.session) throw new Error('Backup session header is missing')
-      // Topology needs message identity, not a substring referencing its original text.
-      const message: Message = { id: row.message.messageId, role: 'user', contentParts: [] }
-      const shellBytes = jsonBytes(message)
-      const structural = { ...row.message, message }
-      let size: number
+  try {
+    for await (const row of store.iterateBackupRows(id, backupPageLimits(), signal)) {
+      throwIfAborted(signal)
+      if (row.kind === 'message' && row.payload?.size !== undefined) {
+        boundBytes += row.payload.size
+        if (messageBytes + boundBytes > threshold) return sharded()
+      }
+      layout.add(row)
+      if (row.kind !== 'message') continue
+      let size = 0
       if (row.payload) {
         if (!row.payload.chunks) throw new Error('Backup payload source is missing')
         if (row.payload.size !== undefined) {
-          boundBytes += row.payload.size
-          if (messageBytes + boundBytes > threshold) return sharded()
-          deferred.push({ chunks: row.payload.chunks, size: row.payload.size, shellBytes })
-          keep(structural)
-          tree.messages.push(structural)
+          deferred.push({ id: row.message.messageId, size: row.payload.size, chunks: row.payload.chunks })
           continue
         }
-        const measured = await measure(row.payload.chunks)
-        if (measured === undefined) return sharded()
-        size = measured
+        size = await measure(row.payload.chunks)
       } else {
-        const prepared = prepareSessionForBackup({ id, name: '', messages: [row.message.message] })
-        size = jsonBytes(prepared.messages[0])
+        for (const block of jsonUtf8Blocks(prepareMessageForBackup(row.message.message))) size += block.length
       }
       messageBytes += size
       if (messageBytes > threshold) return sharded()
-      difference += size - shellBytes
-      keep(structural)
-      tree.messages.push(structural)
+      sizes.set(row.message.messageId, size)
     }
+    for (const item of deferred) {
+      const size = await measure(item.chunks, item.size)
+      messageBytes += size
+      sizes.set(item.id, size)
+    }
+    let size = 0
+    for (const part of layout.parts()) {
+      size += typeof part === 'string' ? encoder.encode(part).length : sizes.get(part.messageId)!
+      if (size > threshold) return sharded()
+    }
+    if (!Number.isSafeInteger(size) || size < 0) throw new Error('Invalid backup session size')
+    return { id, name: layout.header.name, layout: 'single', size }
+  } catch (error) {
+    if (error instanceof SingleFileBudgetError) return sharded()
+    throw error
   }
-  for (const item of deferred) {
-    throwIfAborted(signal)
-    const size = await measure(item.chunks, item.size)
-    if (size === undefined) return sharded()
-    messageBytes += size
-    if (messageBytes > threshold) return sharded()
-    difference += size - item.shellBytes
-  }
-  throwIfAborted(signal)
-  if (!tree.session) throw new Error('Backup session header is missing')
-  const decoded = decodeSessionTree(tree as SessionTree)
-  if (!decoded.ok) throw new Error(decoded.reason)
-  const size = jsonBytes(prepareSessionForBackup(decoded.session)) + difference
-  if (!Number.isSafeInteger(size) || size < 0) throw new BackupSourceBudgetError('Invalid backup session size')
-  return size > threshold ? sharded() : { id, name: tree.session.name, layout: 'single', size }
 }

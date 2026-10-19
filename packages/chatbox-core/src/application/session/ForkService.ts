@@ -1,10 +1,8 @@
 import type { SessionForkOperation, ForkCommandIdentity } from '../../ports/session-fork-command'
 import type { SessionStructureResult } from '../../ports/session-structure-command'
-import type { deriveSessionLockState } from '../../session/action-gates'
 import type { ForkIdentityPort } from '../../session/message-forks'
 import type { Message } from '../../types'
 import type { SessionService } from './SessionService'
-import { applyForkStructure } from './session-fork-command'
 
 export function createForkCommandIdentity(identity: ForkIdentityPort): ForkCommandIdentity {
   return {
@@ -18,17 +16,19 @@ export function createForkCommandIdentity(identity: ForkIdentityPort): ForkComma
 /** Coordinates durable fork edits and their post-commit side effects. */
 export class ForkService {
   constructor(
-    private readonly sessions: Pick<SessionService, 'updateSessionWithMessages'> &
-      Partial<Pick<SessionService, 'executeStructureCommand'>>,
+    private readonly sessions: Pick<SessionService, 'executeStructureCommand'>,
     private readonly identity: ForkIdentityPort,
-    private readonly runtime: (sessionId: string) => Parameters<typeof deriveSessionLockState>[1] = () => ({})
+    private readonly runtime: (sessionId: string) => {
+      compactionRunning?: boolean
+      activeGenerationMessageIds?: ReadonlySet<string>
+    } = () => ({})
   ) {}
 
   async create(sessionId: string, pivotId: string): Promise<void> {
     await this.apply(sessionId, { action: 'fork-create', pivotId, identity: createForkCommandIdentity(this.identity) })
   }
 
-  async switch(sessionId: string, pivotId: string, target: 'next' | 'prev' | number): Promise<void> {
+  async switch(sessionId: string, pivotId: string, target: 'next' | 'prev' | { branchId: string }): Promise<void> {
     await this.apply(sessionId, {
       action: 'fork-switch',
       pivotId,
@@ -67,19 +67,15 @@ export class ForkService {
     operation: SessionForkOperation,
     onCommitted?: (result: SessionStructureResult) => void
   ): Promise<SessionStructureResult> {
-    const committed = await this.sessions.executeStructureCommand?.(sessionId, operation, onCommitted)
-    if (committed) return committed
-    let result: SessionStructureResult = { applied: false, cancelMessageIds: [] }
-    await this.sessions.updateSessionWithMessages(
+    const committed = await this.sessions.executeStructureCommand(
       sessionId,
-      (session) => {
-        if (!session) throw new Error('Session not found')
-        const transformed = applyForkStructure(session, operation)
-        result = transformed.result
-        return transformed.session
+      {
+        ...operation,
+        activeGenerationMessageIds: [...(this.runtime(sessionId)?.activeGenerationMessageIds ?? [])],
       },
-      { preserveCachedGeneratingMessages: true, onFullSessionPersisted: () => onCommitted?.(result) }
+      onCommitted
     )
-    return result
+    if (!committed) throw new Error('Structure command did not return a result')
+    return committed
   }
 }

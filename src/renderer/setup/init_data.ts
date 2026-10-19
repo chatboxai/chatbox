@@ -1,3 +1,4 @@
+import { SessionHeaderSchema } from '@shared/types'
 import { sessionRepository } from '@/app/renderer-application'
 import { defaultSessionsForCN, defaultSessionsForEN } from '@/packages/initial_data'
 import platform from '@/platform'
@@ -19,7 +20,7 @@ async function initSessionsIfNeeded() {
   const defaultSessions = lang.startsWith('zh') ? defaultSessionsForCN : defaultSessionsForEN
 
   for (const session of defaultSessions) {
-    await sessionRepository.setSession(session)
+    await sessionRepository.createSessionRows(SessionHeaderSchema.parse(session), session.messages)
   }
 
   const records = createSessionMetaRecordsFromLegacyList(defaultSessions.map(getSessionMeta))

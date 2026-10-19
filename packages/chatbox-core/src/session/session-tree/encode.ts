@@ -1,13 +1,6 @@
-import {
-  latestConversationMessageHasChatboxSearchSignInError,
-  messageHasChatboxSearchSignInError,
-} from '@shared/session/web-search-sign-in-error'
-import { hasPendingPauseInteraction } from '../../message-approval'
-import { deriveContextReadProjection, preservesContextReadProjection } from '../../persistence/session-context-read'
 import type { Message, Session } from '../../types/session'
-import { forkTailStartIndex } from '../message-forks'
+import { forkTailStartIndex } from '@shared/session/message-forks'
 import { normalizeSessionV1 } from './normalize'
-import { deriveSessionTopologyFingerprint, deriveLegacySessionTopologyFingerprint } from './topology-fingerprint'
 import type { MessageRow, MessageRowStatus, SessionRecordV2, SessionTree, ThreadRow } from './types'
 
 export interface EncodeSessionTreeOptions {
@@ -15,8 +8,6 @@ export interface EncodeSessionTreeOptions {
   activeThreadId: string
   /** Fallback timestamp for a new empty active thread. */
   now: number
-  /** Committed rows whose ordering labels can be retained during structural edits. */
-  previousMessages?: readonly MessageRow[]
 }
 
 export type EncodeSessionTreeResult =
@@ -33,104 +24,24 @@ export function messageRowUpdatedAt(message: Message, createdAt: number): number
   return message.updatedAt ?? createdAt
 }
 
-/** The session record of a tree: the session without the fields the rows carry. */
-export function deriveSessionRecord(
-  session: Session,
-  activeThreadId: string,
-  unchangedStructure?: { record: SessionRecordV2; before: Message; after: Message }
-): SessionRecordV2 {
+/** Header and historical fork timestamps required by the external legacy codec. */
+function encodeSessionRecord(session: Session, activeThreadId: string): SessionRecordV2 {
   const {
     messages: _messages,
     threads: _threads,
     threadName: _threadName,
-    messageForksHash: _messageForksHash,
-    compactionPoints: _compactionPoints,
-    ...record
+    messageForksHash: _forks,
+    compactionPoints: _compaction,
+    ...header
   } = session
-
   const forkCreatedAt = Object.fromEntries(
-    Object.entries(session.messageForksHash ?? {}).map(([pivotId, fork]) => [pivotId, fork.createdAt])
+    Object.entries(session.messageForksHash ?? {}).map(([id, fork]) => [id, fork.createdAt])
   )
-  const count = (messages: Message[]) => ({
-    userMessageCount: messages.filter((message) => message.role === 'user').length,
-    fileMessageCount: messages.filter((message) => message.files?.length).length,
-    generatingMessageCount: messages.filter((message) => message.generating === true).length,
-    pausedMessageCount: messages.filter((message) => hasPendingPauseInteraction([message])).length,
-  })
-  const previous = unchangedStructure?.record.presentation
-  const counts =
-    previous && unchangedStructure
-      ? (() => {
-          const before = count([unchangedStructure.before])
-          const after = count([unchangedStructure.after])
-          return {
-            userMessageCount: previous.userMessageCount + after.userMessageCount - before.userMessageCount,
-            fileMessageCount: previous.fileMessageCount + after.fileMessageCount - before.fileMessageCount,
-            generatingMessageCount:
-              previous.generatingMessageCount + after.generatingMessageCount - before.generatingMessageCount,
-            pausedMessageCount: previous.pausedMessageCount + after.pausedMessageCount - before.pausedMessageCount,
-          }
-        })()
-      : count(session.messages)
-  const countSearchErrors = () => session.messages.filter(messageHasChatboxSearchSignInError).length
-  const searchErrorCount =
-    previous?.webSearchSignInErrorCount !== undefined && unchangedStructure
-      ? (() => {
-          const before = Number(messageHasChatboxSearchSignInError(unchangedStructure.before))
-          const after = Number(messageHasChatboxSearchSignInError(unchangedStructure.after))
-          if (before === after) return previous.webSearchSignInErrorCount
-          // A single-path record proves that the changed row belongs to the displayed conversation.
-          if (!previous.hasThreads && !previous.hasForks) return previous.webSearchSignInErrorCount + after - before
-          return countSearchErrors()
-        })()
-      : countSearchErrors()
   return {
-    ...record,
+    ...header,
     activeThreadId,
     storageFormat: 'rows',
-    ...(unchangedStructure?.record.contextReadProjection &&
-    preservesContextReadProjection(
-      unchangedStructure.before,
-      unchangedStructure.after,
-      unchangedStructure.record.contextReadProjection
-    )
-      ? { contextReadProjection: unchangedStructure.record.contextReadProjection }
-      : {}),
-    ...(unchangedStructure?.record.topologyFingerprint &&
-    Boolean(unchangedStructure.before.isSummary) === Boolean(unchangedStructure.after.isSummary)
-      ? { topologyFingerprint: unchangedStructure.record.topologyFingerprint }
-      : {}),
-    presentation: {
-      ...counts,
-      messageCount: session.messages.length,
-      hasThreads: Boolean(session.threads?.length),
-      hasForks: Object.keys(session.messageForksHash ?? {}).length > 0,
-      webSearchSignInErrorCount: searchErrorCount,
-      latestMessageHasWebSearchSignInError: latestConversationMessageHasChatboxSearchSignInError(session.messages),
-    },
-    ...(Object.keys(forkCreatedAt).length > 0 ? { forkCreatedAt } : {}),
-  }
-}
-
-/**
- * A record whose thread and fork facts come from `committed`. Row fast paths
- * leave the committed topology unchanged, and the rows, not the caller's
- * session, decide which forks and threads exist.
- */
-export function withCommittedTopology(record: SessionRecordV2, committed: SessionRecordV2): SessionRecordV2 {
-  const { forkCreatedAt: _forkCreatedAt, ...rest } = record
-  return {
-    ...rest,
-    ...(committed.forkCreatedAt ? { forkCreatedAt: committed.forkCreatedAt } : {}),
-    ...(rest.presentation && committed.presentation
-      ? {
-          presentation: {
-            ...rest.presentation,
-            hasThreads: committed.presentation.hasThreads,
-            hasForks: committed.presentation.hasForks,
-          },
-        }
-      : {}),
+    ...(Object.keys(forkCreatedAt).length ? { forkCreatedAt } : {}),
   }
 }
 
@@ -277,34 +188,7 @@ export function encodeSessionTree(session: Session, options: EncodeSessionTreeOp
     })
   }
 
-  if (options.previousMessages) {
-    const previous = new Map(options.previousMessages.map((row) => [row.messageId, row]))
-    const byThread = new Map<string, MessageRow[]>()
-    for (const row of messages) {
-      const rows = byThread.get(row.threadId)
-      if (rows) rows.push(row)
-      else byThread.set(row.threadId, [row])
-    }
-    for (const rows of byThread.values()) {
-      let nextSeq = 0
-      for (const row of rows) {
-        const before = previous.get(row.messageId)
-        row.seq = Math.max(
-          nextSeq,
-          before?.sessionId === row.sessionId && before.threadId === row.threadId ? before.seq : nextSeq
-        )
-        nextSeq = row.seq + 1
-      }
-      // Context projections need a safe exclusive upper bound after the final row.
-      if (!Number.isSafeInteger(nextSeq)) {
-        for (const [index, row] of rows.entries()) row.seq = index
-      }
-    }
-  }
-
-  const sessionRecord = deriveSessionRecord(normalized, options.activeThreadId)
-  sessionRecord.contextReadProjection = deriveContextReadProjection(threads, messages)
-  sessionRecord.topologyFingerprint = deriveSessionTopologyFingerprint(threads, messages)
+  const sessionRecord = encodeSessionRecord(normalized, options.activeThreadId)
 
   return {
     ok: true,
@@ -312,12 +196,4 @@ export function encodeSessionTree(session: Session, options: EncodeSessionTreeOp
     normalized,
     reshaped: normalizedResult.reshaped,
   }
-}
-
-export function sessionTopologyFingerprint(session: Session, expected?: string): string | undefined {
-  const encoded = encodeSessionTree(session, { activeThreadId: session.id, now: 0 })
-  if (!encoded.ok) return undefined
-  return expected && !expected.startsWith('v2:')
-    ? deriveLegacySessionTopologyFingerprint(encoded.tree.threads, encoded.tree.messages)
-    : encoded.tree.session.topologyFingerprint
 }

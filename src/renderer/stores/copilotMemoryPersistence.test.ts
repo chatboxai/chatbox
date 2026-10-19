@@ -1,3 +1,4 @@
+import { InMemorySessionRowStore } from '@chatbox/core/testing'
 import type { BackupMetaStorage } from '@chatbox/core/backup/types'
 import { unzipSync } from 'fflate'
 import { getDefaultStore } from 'jotai'
@@ -192,6 +193,7 @@ describe('Web Copilot memory persistence', () => {
       {
         storage: stores.storage,
         metaStorage: emptyMetaStorage(),
+        sessions: new InMemorySessionRowStore(),
         migrateData: async () => {},
         recoverSessionList: async () => {},
       }

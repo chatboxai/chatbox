@@ -1,16 +1,7 @@
 import { isExpectedGenerationError } from '@shared/models/error-classification'
 import { ApiError, BaseError, NetworkError, OCRError } from '@shared/models/errors'
 import { extractStreamErrorMessage } from '@shared/models/utils/stream-error-message'
-import { findMessageContext, findMessageSourceThread } from '@shared/session/message-forks'
-import type {
-  AgentModeValue,
-  CompactionPoint,
-  Message,
-  Session,
-  SessionSettings,
-  SessionType,
-  Settings,
-} from '@shared/types'
+import type { AgentModeValue, Message, SessionSettings, SessionType, Settings } from '@shared/types'
 import { resolveCommandApprovalMode } from '@shared/types/command-execution'
 import { normalizeErrorForSentry } from '@shared/utils/sentry_policy'
 import { identity, pickBy } from 'lodash'
@@ -82,29 +73,6 @@ export function trackGenerateEvent(
   } catch (error) {
     console.warn('trackGenerateEvent failed:', error)
   }
-}
-
-/**
- * Find target message index in session messages or threads
- * @returns Object with messages array and index, or null if not found
- */
-export function findTargetMessageIndex(
-  session: Session,
-  targetMsgId: string
-): { messages: Message[]; index: number } | null {
-  const location = findMessageContext(session, targetMsgId)
-  return location && location.index > 0 ? { messages: location.list, index: location.index } : null
-}
-
-/**
- * Compaction points applicable to a target message's conversation: thread
- * points when the message lives in an archived thread (retry from history),
- * session points otherwise. Points are stored next to their message list
- * (see buildCompactionCommitPatch / thread archive flows).
- */
-export function getCompactionPointsForTarget(session: Session, targetMsgId: string): CompactionPoint[] | undefined {
-  const sourceThread = findMessageSourceThread(session, targetMsgId)
-  return sourceThread ? sourceThread.compactionPoints : session.compactionPoints
 }
 
 /**

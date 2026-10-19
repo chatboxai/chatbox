@@ -1,5 +1,5 @@
 import { resolveSessionMode } from '../../session/mode-policy'
-import type { Session, SessionFolder } from '../../types'
+import type { SessionFolder, SessionHeader } from '../../types'
 
 /** The directory form folders are keyed by: trimmed, without trailing separators. */
 export function normalizeWorkingDirectory(directory: string): string {
@@ -13,7 +13,7 @@ export function normalizeWorkingDirectory(directory: string): string {
  * The directory a Work Mode session is filed under: its first working
  * directory. Chat sessions and Work Mode sessions without a directory have none.
  */
-export function getSessionWorkingDirectory(session: Pick<Session, 'settings'>): string | undefined {
+export function getSessionWorkingDirectory(session: Pick<SessionHeader, 'settings'>): string | undefined {
   if (resolveSessionMode(session.settings?.agentMode?.value) !== 'work') return undefined
   const directory = session.settings?.workingDirectories?.find((item) => item.trim().length > 0)
   return directory === undefined ? undefined : normalizeWorkingDirectory(directory)

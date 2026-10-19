@@ -1,134 +1,111 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { getSessionMessageTokenizationDigest } from '../application/session/message-derived-data'
-import { RowBackedSessionRepository } from '../application/session/RowBackedSessionRepository'
 import type { SessionTextTokenResult } from '../ports/session-text-tokens'
-import { InMemorySessionRecordStore } from '../testing'
-import type { Session } from '../types/session'
+import type { Message } from '../types/session'
 import { type NodeSessionRowSqlDatabase, openNodeSessionRowDatabase } from './node-sqlite.test-support'
+import { contextSnapshot } from './session-context-read.test-support'
 import { SqlSessionRowStore } from './session-row-sql'
 
 const databases: NodeSessionRowSqlDatabase[] = []
 afterEach(() => {
   for (const database of databases.splice(0)) database.close()
 })
-
 async function setup(count = 3, messageIdPrefix = '') {
   const database = openNodeSessionRowDatabase()
   databases.push(database)
   const rows = new SqlSessionRowStore(database)
-  const records = new InMemorySessionRecordStore()
-  const repo = new RowBackedSessionRepository({ rows, records })
-  const session: Session = {
+  const session = {
     id: 's',
     name: 's',
-    type: 'chat',
-    settings: { agentMode: { value: 'off', locked: false, lockReason: null } },
-    messages: Array.from({ length: count }, (_, i) => ({
-      id: `${messageIdPrefix}m${i}`,
-      role: i === 0 ? 'system' : 'user',
-      timestamp: 1,
-      contentParts: [{ type: 'text', text: `text ${i}` }],
-    })),
+    type: 'chat' as const,
+    messages: Array.from(
+      { length: count },
+      (_, i): Message => ({
+        id: `${messageIdPrefix}m${i}`,
+        role: i === 0 ? 'system' : 'user',
+        timestamp: 1,
+        contentParts: [{ type: 'text', text: `text ${i}` }],
+      })
+    ),
   }
-  await repo.setSession(session)
-  const read = await repo.getSessionContextSource({ sessionId: session.id })
+  const snapshot = contextSnapshot(session)
+  await rows.writeRows(snapshot)
+  const read = await rows.readMessages({ sessionId: 's', messageIds: session.messages.map((message) => message.id) })
   const results: SessionTextTokenResult[] = Object.values(read?.textTokens?.sources ?? {}).map((source) => ({
     source,
-    value: {
-      tokenizerType: 'default',
-      sourceDigest: source.textDigest,
-      tokens: 7,
-      calculatedAt: 100,
-    },
+    value: { tokenizerType: 'default', sourceDigest: source.textDigest, tokens: 7, calculatedAt: 100 },
   }))
   expect(results).toHaveLength(count)
   database.reset()
-  return { database, rows, records, repo, session, results }
+  return { database, rows, session, snapshot, results }
 }
 
 describe('SQL source-bound numerical text results', () => {
-  it('keeps cached and cold SQL context equal across streaming, appends and token updates', async () => {
-    const h = await setup()
-    const assertContext = async () => {
-      h.database.reset()
-      const warm = await h.repo.getSessionContextSource({ sessionId: 's' })
-      expect(h.database.executed.filter((sql) => /FROM session_message_payload_chunks/i.test(sql))).toEqual([])
-      const coldRepo = new RowBackedSessionRepository({ rows: h.rows, records: h.records })
-      const cold = await coldRepo.getSessionContextSource({ sessionId: 's' })
-      expect(h.database.executed.some((sql) => /FROM session_message_payload_chunks/i.test(sql))).toBe(true)
-      expect(warm).toStrictEqual(cold)
-      return warm
-    }
-    let current = (await h.repo.getSession('s'))!
-    for (const text of ['first chunk', 'second chunk']) {
-      const next: Session = {
-        ...current,
-        messages: current.messages.map((message) =>
-          message.id === 'm2' ? { ...message, contentParts: [{ type: 'text', text }] } : message
-        ),
-      }
-      await h.repo.setSession(next, { baseSession: current, changedMessageId: 'm2' })
-      await assertContext()
-      current = next
-    }
-    const appended: Session = {
-      ...current,
-      messages: [
-        ...current.messages,
-        { id: 'm3', role: 'assistant', timestamp: 2, contentParts: [{ type: 'text', text: 'reply' }] },
-      ],
-    }
-    await h.repo.setSession(appended, { baseSession: current })
-    const context = await assertContext()
-    const results: SessionTextTokenResult[] = Object.values(context?.textTokens?.sources ?? {}).map((source) => ({
-      source,
-      value: { tokenizerType: 'default', sourceDigest: source.textDigest, tokens: 17, calculatedAt: 200 },
-    }))
-    expect(results).toHaveLength(4)
-    await h.repo.acceptSessionTextTokenResults('s', results)
-    await assertContext()
-    current = (await h.repo.getSession('s'))!
-    const final: Session = {
-      ...current,
-      messages: current.messages.map((message) =>
-        message.id === 'm3' ? { ...message, contentParts: [{ type: 'text', text: 'complete reply' }] } : message
-      ),
-    }
-    await h.repo.setSession(final, { baseSession: current, changedMessageId: 'm3' })
-    await assertContext()
+  it('publishes numbers independently of bodies and revisions across restart', async () => {
+    const h = await setup(60)
+    const revision = await h.rows.getRevision('s')
+    expect(await h.rows.acceptTextTokenResults(h.results)).toHaveLength(60)
+    expect(await h.rows.getRevision('s')).toBe(revision)
+    const restarted = new SqlSessionRowStore(h.database)
+    const selected = await restarted.readMessages({ sessionId: 's', messageIds: ['m12', 'm1', 'm12'] })
+    expect(selected?.messages.map((row) => row.messageId)).toEqual(['m12', 'm1'])
+    expect(selected?.messages.every((row) => row.message.tokenCountMap === undefined)).toBe(true)
+    expect(selected?.textTokens?.results.map((result) => result.value.tokens)).toEqual([7, 7])
+    const window = await restarted.readTranscriptWindow({ sessionId: 's', limit: 20 })
+    expect(window?.messages.every((row) => row.message.tokenCountMap === undefined)).toBe(true)
+    h.database.reset()
+    expect(await restarted.readTextTokenResults(h.results.map((result) => result.source))).toHaveLength(60)
+    expect(h.database.executed.some((sql) => sql.includes('session_message_payload_chunks'))).toBe(false)
   })
 
-  it.each([false, true])(
-    'checks restored V1 content across token migration (concurrent edit: %s)',
-    async (concurrentEdit) => {
-      const h = await setup()
-      const restored: Session = {
-        ...h.session,
-        name: 'Restored backup',
-        messages: h.session.messages.map((message) => ({
-          ...message,
-          tokenCountMap: { default: 7 },
-          tokenCalculatedAt: { default: 100 },
-        })),
-      }
-      await h.records.setRecord(restored)
-      h.repo.forgetAllBaselines()
-      await h.repo.getSession('s')
-      if (concurrentEdit) await h.records.setRecord({ ...restored, name: 'Concurrent edit' })
-      const migrator = new RowBackedSessionRepository({ records: h.records, rows: h.rows })
-      await migrator.initialize()
-      await expect(migrator.migrateSession('s')).resolves.toBe('migrated')
-
-      if (concurrentEdit) {
-        await expect(h.repo.deleteSession('s')).rejects.toMatchObject({ name: 'SessionWriteConflictError' })
-        expect(await h.repo.getSession('s')).toMatchObject({ name: 'Concurrent edit' })
-        return
-      }
-      await expect(h.repo.deleteSession('s')).resolves.toBeUndefined()
-      expect(await h.records.getRecord('s')).toBeNull()
-      expect(await h.rows.hasRows('s')).toBe(false)
+  it('keeps metadata edits source-stable and rejects stale content, staged payloads, and deleted sources', async () => {
+    const h = await setup()
+    await h.rows.acceptTextTokenResults(h.results)
+    const row = h.snapshot.rows.messages[1]
+    const { message: _message, ...metadata } = row
+    await h.rows.applyDiff(
+      {
+        sessionId: 's',
+        threads: { upsert: [], delete: [] },
+        messages: { upsert: [], delete: [] },
+        messageMetadataUpsert: [{ ...metadata, seq: 42 }],
+      },
+      { record: h.snapshot.record, revision: 2 },
+      1
+    )
+    expect(await h.rows.readTextTokenResults([h.results[1].source])).toHaveLength(1)
+    const edited = {
+      ...row,
+      seq: 42,
+      message: { ...row.message, contentParts: [{ type: 'text' as const, text: 'changed' }] },
     }
-  )
+    await h.rows.applyDiff(
+      { sessionId: 's', threads: { upsert: [], delete: [] }, messages: { upsert: [edited], delete: [] } },
+      { record: h.snapshot.record, revision: 3 },
+      2
+    )
+    expect(await h.rows.acceptTextTokenResults([h.results[1]])).toEqual([])
+    const current = await h.rows.readMessages({ sessionId: 's', messageIds: [row.messageId] })
+    expect(current?.textTokens?.results).toEqual([])
+    expect(current?.textTokens?.sources[row.messageId].payloadId).not.toBe(h.results[1].source.payloadId)
+    const original = h.results[0]
+    const staged = {
+      ...original,
+      source: { ...original.source, payloadId: 's:m0:00000000-0000-4000-8000-000000000000' },
+    }
+    await h.database.executeBatch([
+      {
+        sql: 'INSERT INTO session_message_payload_chunks(session_id,payload_id,chunk_index,value) VALUES(?,?,?,?)',
+        params: ['s', staged.source.payloadId, 0, '{}'],
+      },
+    ])
+    expect(await h.rows.acceptTextTokenResults([staged])).toEqual([])
+    await h.rows.deleteRows('s', 3)
+    expect(await h.rows.acceptTextTokenResults(h.results)).toEqual([])
+    expect(await h.database.query('SELECT COUNT(*) AS count FROM session_text_tokens')).toEqual([{ count: 0 }])
+    const deletedRevision = await h.rows.getRevision('s')
+    await h.rows.writeRows({ ...h.snapshot, revision: deletedRevision! + 1 }, deletedRevision)
+    expect(await h.rows.acceptTextTokenResults(h.results)).toEqual([])
+  })
 
   it('probes existing session/message keys for a full 288-source readback', async () => {
     const h = await setup(288)
@@ -155,8 +132,11 @@ describe('SQL source-bound numerical text results', () => {
 
   it('reads both tokenizers by the requested session and live payload, excluding stale and deleted sources', async () => {
     const h = await setup()
-    await h.repo.setSession({ ...h.session, id: 'other' })
-    const other = await h.repo.getSessionContextSource({ sessionId: 'other' })
+    await h.rows.writeRows(contextSnapshot({ ...h.session, id: 'other' }))
+    const other = await h.rows.readMessages({
+      sessionId: 'other',
+      messageIds: h.session.messages.map((message) => message.id),
+    })
     const otherResults: SessionTextTokenResult[] = Object.values(other?.textTokens?.sources ?? {}).map((source) => ({
       source,
       value: { tokenizerType: 'default', sourceDigest: source.textDigest, tokens: 20, calculatedAt: 200 },
@@ -195,65 +175,6 @@ describe('SQL source-bound numerical text results', () => {
       )
     )
     for (const { source } of actual) expect(sources).toContain(source)
-  })
-
-  it('overlays full, selected, context and window reads at unchanged revision; leaves raw bodies untouched', async () => {
-    const h = await setup(60)
-    const revision = await h.rows.getRevision('s')
-    expect((await h.repo.acceptSessionTextTokenResults('s', h.results)).results).toHaveLength(60)
-    expect(await h.rows.getRevision('s')).toBe(revision)
-    const full = await h.repo.getSession('s')
-    expect(full?.messages.every((message) => message.tokenCountMap?.default === 7)).toBe(true)
-    const context = await h.repo.getSessionContextSource({ sessionId: 's' })
-    expect(context?.candidateMessages.every((message) => message.tokenCountMap?.default === 7)).toBe(true)
-    const selected = await h.repo.readSessionMessages({ sessionId: 's', messageIds: ['m12', 'm1', 'm12'] })
-    expect(selected?.messages.map((message) => [message.id, message.tokenCountMap?.default])).toEqual([
-      ['m12', 7],
-      ['m1', 7],
-    ])
-    const model = await h.repo.getSessionReadModel('s')
-    expect(model?.kind).toBe('window')
-    if (model?.kind === 'window')
-      expect(model.window.messages.every((row) => row.message.tokenCountMap?.default === 7)).toBe(true)
-    const raw = await h.rows.readSnapshot('s')
-    expect(raw?.rows.messages.every((row) => row.message.tokenCountMap === undefined)).toBe(true)
-    const restart = new RowBackedSessionRepository({ rows: new SqlSessionRowStore(h.database), records: h.records })
-    expect((await restart.getSession('s'))?.messages[12].tokenCountMap?.default).toBe(7)
-  })
-
-  it('rejects late edits with copied clocks, deletes and staged-only payloads', async () => {
-    const h = await setup()
-    await h.repo.acceptSessionTextTokenResults('s', h.results)
-    const before = await h.repo.getSession('s')
-    if (!before) throw new Error('missing fixture')
-    const edited = {
-      ...before,
-      messages: before.messages.map((message) =>
-        message.id === 'm1' ? { ...message, contentParts: [{ type: 'text' as const, text: 'edited' }] } : message
-      ),
-    }
-    await h.repo.setSession(edited, { baseSession: before, changedMessageId: 'm1' })
-    const current = await h.repo.readSessionMessages({ sessionId: 's', messageIds: ['m1'] })
-    expect(current?.messages[0].tokenCountMap).toBeUndefined()
-    const late = h.results.filter((result) => result.source.messageId === 'm1')
-    expect((await h.repo.acceptSessionTextTokenResults('s', late)).results).toEqual([])
-    const original = h.results[0]
-    const staged = {
-      ...original,
-      source: { ...original.source, payloadId: `s:m0:00000000-0000-4000-8000-000000000000` },
-    }
-    await h.database.executeBatch([
-      {
-        sql: 'INSERT INTO session_message_payload_chunks(session_id,payload_id,chunk_index,value) VALUES(?,?,?,?)',
-        params: ['s', staged.source.payloadId, 0, '{}'],
-      },
-    ])
-    expect(await h.rows.acceptTextTokenResults([staged])).toEqual([])
-    await h.repo.deleteSession('s')
-    expect(await h.rows.acceptTextTokenResults(h.results)).toEqual([])
-    expect(await h.database.query('SELECT COUNT(*) AS count FROM session_text_tokens')).toEqual([{ count: 0 }])
-    await h.repo.setSession(h.session)
-    expect(await h.rows.acceptTextTokenResults(h.results)).toEqual([])
   })
 
   it('keeps tokenizer/version/approximate clocks separate and treats corrupt cache values as misses', async () => {
@@ -362,68 +283,5 @@ describe('SQL source-bound numerical text results', () => {
       expect(values?.length).toBeLessThanOrEqual(865)
     }
     expect(await h.rows.getRevision('s')).toBe(1)
-  })
-
-  it('does not turn a complete numerical view into N payload writes and retains content conflict checks', async () => {
-    const h = await setup(100)
-    await h.repo.getSession('s')
-    await h.repo.acceptSessionTextTokenResults('s', h.results)
-    const before = await h.repo.getSession('s')
-    if (!before) throw new Error('missing fixture')
-    h.database.reset()
-    const next = {
-      ...before,
-      messages: before.messages.map((message) =>
-        message.id === 'm99' ? { ...message, contentParts: [{ type: 'text' as const, text: 'changed' }] } : message
-      ),
-    }
-    await h.repo.setSession(next, { baseSession: before, changedMessageId: 'm99' })
-    const cleanup = h.database.executed.filter((sql) => sql.startsWith('DELETE FROM session_text_tokens'))
-    expect(cleanup).toHaveLength(1)
-    expect(cleanup[0]).toContain('AND message_id = ?')
-    expect(
-      h.database.executed.filter((sql) => sql.startsWith('INSERT OR REPLACE INTO session_messages '))
-    ).toHaveLength(1)
-    const current = await h.repo.getSession('s')
-    expect(current?.messages[10].tokenCountMap?.default).toBe(7)
-    expect(current?.messages[99].tokenCountMap).toBeUndefined()
-    await expect(h.repo.setSession({ ...before, name: 'stale' }, { baseSession: before })).rejects.toThrow('changed')
-    expect(getSessionMessageTokenizationDigest(current?.messages[99] ?? before.messages[99])).not.toBe(
-      h.results[99].source.textDigest
-    )
-  })
-
-  it('retains a new-message exact draft seed as content-owned input and never resurrects it after a same-clock edit', async () => {
-    const h = await setup(1)
-    const base = await h.repo.getSession('s')
-    if (!base) throw new Error('missing fixture')
-    const seed = {
-      id: 'seed',
-      role: 'user' as const,
-      timestamp: 10,
-      updatedAt: 10,
-      tokenCount: 91,
-      tokenCountMap: { default: 4 },
-      tokenCalculatedAt: { default: 10 },
-      contentParts: [{ type: 'text' as const, text: 'seed text' }],
-    }
-    await h.repo.setSession({ ...base, messages: [...base.messages, seed] }, { baseSession: base })
-    const current = await h.repo.getSession('s')
-    expect(current?.messages[1].tokenCountMap?.default).toBe(4)
-    expect((await h.rows.readSnapshot('s'))?.textTokens?.results).toEqual([])
-    if (!current) throw new Error('missing seed fixture')
-    await h.repo.setSession(
-      {
-        ...current,
-        messages: [
-          current.messages[0],
-          { ...current.messages[1], contentParts: [{ type: 'text', text: 'different seed' }] },
-        ],
-      },
-      { baseSession: current }
-    )
-    const edited = await h.repo.getSession('s')
-    expect(edited?.messages[1].tokenCountMap).toBeUndefined()
-    expect(edited?.messages[1].tokenCount).toBe(91)
   })
 })

@@ -8,6 +8,6 @@ import type { Message } from '../types'
  * filter — otherwise context building cannot find the boundary and falls
  * back to full history. Keep every new exclusion here so both stay in sync.
  */
-export function isContextEligibleMessage(message: Message): boolean {
+export function isContextEligibleMessage(message: Pick<Message, 'generating' | 'isForkMarker'>): boolean {
   return !message.generating && !message.isForkMarker
 }

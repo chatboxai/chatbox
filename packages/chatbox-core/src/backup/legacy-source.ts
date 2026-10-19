@@ -25,6 +25,14 @@ export class LegacyBackupTopologyError extends Error {
   }
 }
 
+function isRowMarker(value: unknown): value is { storageFormat: 'rows'; id?: unknown } {
+  return typeof value === 'object' && value !== null && 'storageFormat' in value && value.storageFormat === 'rows'
+}
+function validateIdentity(value: { id?: unknown }, id: string) {
+  if (value.id !== id)
+    throw new BackupReadError('session-id-mismatch', 'Legacy session ID does not match its storage key')
+}
+
 const BLOCK = 64 * 1024
 const MAX_STRUCTURE = 16 * 1024 * 1024
 interface Range {
@@ -155,8 +163,9 @@ async function scanLegacy(file: BackupFile, signal?: AbortSignal) {
   if (message || quoted || frames.length) throw new Error('Legacy session JSON is incomplete')
   retain(decoder.decode())
   const session: unknown = JSON.parse(exterior.join(''))
+  if (isRowMarker(session)) return { kind: 'rows' as const, record: session }
   if (!SessionSchema.safeParse(session).success) throw new Error('Legacy session structure is invalid')
-  return { session: session as Session, ranges }
+  return { kind: 'legacy' as const, session: session as Session, ranges }
 }
 
 /** Combines row storage with a read-only legacy fallback; never triggers migration. */
@@ -165,12 +174,12 @@ export function legacyBackupSource(rows: BackupSessionStore, source: LegacyBacku
     async listSessionIds() {
       return [...new Set([...(await rows.listSessionIds()), ...(await source.listSessionIds())])]
     },
-    beginBackupRestore: (id) => rows.beginBackupRestore(id),
+    beginBackupRestore: (id, revision) => rows.beginBackupRestore(id, revision),
     async readLegacySession(id, maxBytes, signal) {
       throwIfAborted(signal)
       if ((await rows.listSessionIds()).includes(id)) return null
       const file = await source.open?.(id)
-      let value: Session | null | undefined
+      let value: unknown
       if (file) {
         // 无法按行导出的旧会话原样备份完整 JSON，导入时再修复；仅在有界范围内读取。
         if (file.size > maxBytes) throw new Error('Legacy conversation exceeds the single-file backup limit')
@@ -183,6 +192,10 @@ export function legacyBackupSource(rows: BackupSessionStore, source: LegacyBacku
         value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
       } else value = await source.readValue?.(id)
       if (!value) return null
+      if (isRowMarker(value)) {
+        validateIdentity(value, id)
+        return null
+      }
       let size = 0
       for (const chunk of jsonUtf8Blocks(value)) {
         throwIfAborted(signal)
@@ -190,18 +203,24 @@ export function legacyBackupSource(rows: BackupSessionStore, source: LegacyBacku
         if (size > maxBytes) throw new Error('Legacy conversation exceeds the single-file backup limit')
       }
       if (!SessionSchema.safeParse(value).success) throw new Error('Legacy session structure is invalid')
-      if (value.id !== id)
-        throw new BackupReadError('session-id-mismatch', 'Legacy session ID does not match its storage key')
-      return migrateSession(value)
+      const session = value as Session
+      validateIdentity(session, id)
+      return migrateSession(session)
     },
-    async *iterateBackupRows(id, limits, signal): AsyncGenerator<BackupRow> {
+    async *iterateBackupRows(id, limits, signal, threadId): AsyncGenerator<BackupRow> {
       if ((await rows.listSessionIds()).includes(id)) {
-        yield* rows.iterateBackupRows(id, limits, signal)
+        yield* rows.iterateBackupRows(id, limits, signal, threadId)
         return
       }
       throwIfAborted(signal)
       const file = await source.open?.(id)
       const scanned = file ? await scanLegacy(file, signal) : undefined
+      if (scanned?.kind === 'rows') {
+        validateIdentity(scanned.record, id)
+        yield* rows.iterateBackupRows(id, limits, signal, threadId)
+        return
+      }
+      if (threadId) throw new Error('Thread export requires published rows')
       const value = scanned?.session ?? (await source.readValue?.(id))
       const session = value && !scanned ? migrateSession(value) : value
       if (!session) throw new BackupReadError('session-missing', 'Legacy session data is missing')
@@ -212,7 +231,7 @@ export function legacyBackupSource(rows: BackupSessionStore, source: LegacyBacku
       const { tree } = encoded
       // The scan retains large messages only as projections, so a message that repairs created or renamed
       // cannot be streamed from the source. Checked before any row is yielded, so classification sees it
-      // and backs the session up as its legacy JSON.
+      // and reparses the bounded legacy input before row encoding.
       const unstreamable = file ? tree.messages.find((row) => !scanned?.ranges.has(row.messageId)) : undefined
       if (unstreamable) throw new LegacyBackupTopologyError(`message ${unstreamable.messageId} has no source range`)
       yield { kind: 'header', record: tree.session }

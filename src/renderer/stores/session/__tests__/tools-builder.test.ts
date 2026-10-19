@@ -22,7 +22,7 @@ const {
   builtInBrowser,
   buildFileToolsMock,
 } = vi.hoisted(() => ({
-  buildFileToolsMock: vi.fn((_messages: unknown, filesystemRead?: unknown, _loadFileMessages?: unknown) => ({
+  buildFileToolsMock: vi.fn((_messages: unknown, filesystemRead?: unknown, _fileResourceKeys?: unknown) => ({
     tools: { read_file: filesystemRead ?? { execute: async () => ({}) } },
   })),
   discoverSkillsMock: vi.fn(),
@@ -1873,16 +1873,15 @@ test('registers file tools from branch history after prompt compaction', async (
 })
 
 test('keeps the virtual reader available for compacted resource lookups', async () => {
-  const loadFileMessages = vi.fn(async () => [])
+  const fileResourceKeys = ['older-file']
   const result = await buildToolsForSession(createMockModel(), {
     webBrowsing: false,
     agentMode: 'off',
     messages: [],
-    loadFileMessages,
+    fileResourceKeys,
   })
   expect(result.tools.read_file).toBeDefined()
-  expect(buildFileToolsMock.mock.lastCall?.[2]).toBe(loadFileMessages)
-  expect(loadFileMessages).not.toHaveBeenCalled()
+  expect(buildFileToolsMock.mock.lastCall?.[2]).toBe(fileResourceKeys)
 })
 
 describe('buildToolsForSession script tool and sandbox guidance', () => {

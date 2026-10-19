@@ -6,7 +6,8 @@ import {
   createMessage,
   type ImageSource,
   ModelProviderEnum,
-  type Session,
+  type Message,
+  type SessionHeader,
   type SessionSettings,
 } from '@shared/types'
 import { IconChevronLeft, IconChevronRight, IconMessageCircle2Filled, IconX } from '@tabler/icons-react'
@@ -15,7 +16,6 @@ import { zodValidator } from '@tanstack/zod-adapter'
 import clsx from 'clsx'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
 import { trackJkClickEvent } from '@/analytics/jk'
 import { JK_EVENTS, JK_PAGE_NAMES } from '@/analytics/jk-events'
@@ -36,13 +36,13 @@ import * as remote from '@/packages/remote'
 import { router } from '@/router'
 import { useAuthInfoStore } from '@/stores/authInfoStore'
 import { resolveChatboxLicenseDefaultModel } from '@/stores/defaultChatModel'
+import { lastUsedModelStore } from '@/stores/lastUsedModelStore'
 import { getHasCompletedFirstSuccessfulChat } from '@/stores/firstSuccessfulChat'
 import { getSessionAgentModeEntry } from '@/stores/session/agent-mode'
 import { switchCurrentSession } from '@/stores/session/crud'
 import { generate } from '@/stores/session/generation'
 import { submitNewUserMessage } from '@/stores/session/messages'
-import { initEmptyChatSession } from '@/stores/sessionHelpers'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
 import { getHomeWelcomeCardMode } from '@/utils/homeWelcomeCard'
 import { NewUserScenarioGrid } from './-new-user-scenarios/NewUserScenarioGrid'
@@ -89,10 +89,14 @@ function Index() {
   const clearSessionWebBrowsing = useUIStore((s) => s.clearSessionWebBrowsing)
   const sessionAgentModeMap = useUIStore((s) => s.sessionAgentModeMap)
   const clearSessionAgentMode = useUIStore((s) => s.clearSessionAgentMode)
-  const [session, setSession] = useState<Session>({
-    id: 'new',
-    ...initEmptyChatSession(),
+  const [session, setSession] = useState<SessionHeader>(() => {
+    const settings = settingsStore.getState().getSettings()
+    const model = settings.defaultChatModel
+      ? { provider: settings.defaultChatModel.provider, modelId: settings.defaultChatModel.model }
+      : lastUsedModelStore.getState().chat || resolveChatboxLicenseDefaultModel(settings)
+    return { id: 'new', name: 'Untitled', type: 'chat', threadName: '', settings: { ...model } }
   })
+  const [systemPrompt, setSystemPrompt] = useState(() => settingsStore.getState().defaultPrompt || '')
   const [hasCompletedFirstSuccessfulChat, setHasCompletedFirstSuccessfulChat] = useState<boolean | null>(null)
   const [forceShowNewUserScenarioCards, setForceShowNewUserScenarioCards] = useState(
     getForceShowNewUserScenarioCardsFlag
@@ -226,21 +230,8 @@ function Index() {
       backgroundImage: selectedCopilot?.backgroundImage,
       name: selectedCopilot?.name || 'Untitled',
       threadName: '',
-      messages: selectedCopilot
-        ? [
-            {
-              id: uuidv4(),
-              role: 'system',
-              contentParts: [
-                {
-                  type: 'text',
-                  text: selectedCopilot.prompt,
-                },
-              ],
-            },
-          ]
-        : initEmptyChatSession().messages,
     }))
+    setSystemPrompt(selectedCopilot?.prompt ?? (settingsStore.getState().defaultPrompt || ''))
   }, [selectedCopilot])
 
   const routerState = useRouterState()
@@ -262,19 +253,8 @@ function Index() {
         backgroundImage: c.backgroundImage,
         name: c.name || 'Untitled',
         threadName: '',
-        messages: [
-          {
-            id: uuidv4(),
-            role: 'system',
-            contentParts: [
-              {
-                type: 'text',
-                text: c.prompt,
-              },
-            ],
-          },
-        ],
       }))
+      setSystemPrompt(c.prompt)
     } else if (copilotId) {
       setSession((old) => ({ ...old, copilotId }))
     }
@@ -284,7 +264,7 @@ function Index() {
     async (options?: {
       name?: string
       threadName?: string
-      messages?: Session['messages']
+      messages?: Message[]
       settingsPatch?: Partial<SessionSettings>
       settingsOverride?: Partial<SessionSettings>
     }) => {
@@ -300,7 +280,7 @@ function Index() {
           assistantAvatarKey: session.assistantAvatarKey,
           picUrl: session.picUrl,
           backgroundImage: session.backgroundImage,
-          messages: options?.messages ?? session.messages,
+          messages: options?.messages ?? (systemPrompt ? [createMessage('system', systemPrompt)] : []),
           copilotId: session.copilotId,
           threadName: options?.threadName ?? session.threadName ?? '',
           settings: {
@@ -374,6 +354,7 @@ function Index() {
     },
     [
       session,
+      systemPrompt,
       folderId,
       addSessionKnowledgeBase,
       newSessionState.localWorkCapabilities,
@@ -445,15 +426,16 @@ function Index() {
   }, [])
 
   const onClickSessionSettings = useCallback(async () => {
-    const res: Session = await NiceModal.show('session-settings', { session })
+    const res: { session: SessionHeader; systemPrompt: string } | undefined = await NiceModal.show('session-settings', {
+      session,
+      systemPrompt,
+    })
     if (res) {
-      setSession((old) => ({
-        ...old,
-        ...res,
-      }))
+      setSession(res.session)
+      setSystemPrompt(res.systemPrompt)
     }
     return true
-  }, [session])
+  }, [session, systemPrompt])
 
   const showNewUserScenarios =
     (forceShowNewUserScenarioCards || (hasCompletedFirstSuccessfulChat === false && isLoggedIn)) && !session.copilotId
@@ -505,8 +487,7 @@ function Index() {
                 </Flex>
 
                 <Text c="chatbox-secondary" className="line-clamp-5">
-                  {session.messages[0]?.contentParts?.map((part) => (part.type === 'text' ? part.text : '')).join('') ||
-                    ''}
+                  {systemPrompt}
                 </Text>
               </Stack>
             </Box>

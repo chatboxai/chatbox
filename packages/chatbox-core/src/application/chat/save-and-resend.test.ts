@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { findMessageLocation } from '../../session/message-forks'
+import { rowChatFixture } from './testing/row-chat-fixture'
+import { findMessageLocation } from '@shared/session/message-forks'
 import type { Message, Session } from '../../types'
 import { type SaveAndResendDependencies, type SaveAndResendRequest, saveAndResendMessage } from './save-and-resend'
 
@@ -18,20 +19,18 @@ function setup(
   options: { session?: Session; fail?: 'write' | 'metadata'; beforeWrite?: (value: Session) => Session } = {}
 ) {
   let session = options.session ?? baseSession()
+  const fixture = rowChatFixture(() => 'unused', session)
   let sequence = 0
   const orchestrate = vi.fn<SaveAndResendDependencies['generation']['orchestrate']>().mockResolvedValue(undefined)
   const dependencies: SaveAndResendDependencies = {
     sessions: {
-      getSession: async () => session,
-      updateSessionWithMessages: async (_id, updater, writeOptions) => {
+      updateMessage: fixture.port.updateMessage,
+      executeStructureCommand: async (id, operation, onCommitted) => {
         if (options.fail === 'write') throw new Error('disk full')
-        if (options.beforeWrite) session = options.beforeWrite(session)
-        const next = typeof updater === 'function' ? updater(session) : { ...session, ...updater }
-        if (!next) throw new Error('Session update was empty')
-        session = next
-        writeOptions?.onFullSessionPersisted?.(session)
+        if (options.beforeWrite) fixture.sessions.set(id, options.beforeWrite(fixture.sessions.get(id)!))
+        const result = await fixture.port.executeStructureCommand(id, operation, onCommitted)
         if (options.fail === 'metadata') throw new Error('metadata failed')
-        return session
+        return result
       },
     },
     generation: { orchestrate },
@@ -46,7 +45,7 @@ function setup(
     expectedContentParts: user.contentParts,
     onPersisted,
   }
-  return { dependencies, request, orchestrate, onPersisted, session: () => session }
+  return { dependencies, request, orchestrate, onPersisted, session: () => fixture.sessions.get(session.id)! }
 }
 
 function find(session: Session, id: string) {

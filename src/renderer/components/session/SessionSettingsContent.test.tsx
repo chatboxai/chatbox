@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { MantineProvider } from '@mantine/core'
-import { createMessage, type Session } from '@shared/types'
+import { type SessionHeader } from '@shared/types'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { type ReactNode, useState } from 'react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
@@ -57,27 +57,35 @@ vi.mock('@/components/ui/tooltip', () => ({ AppTooltip: ({ children }: { childre
 vi.mock('@/adapters/CurrentBlobStorage', () => ({ currentBlobStorage: { set: vi.fn() } }))
 vi.mock('@/storage/StoreStorage', () => ({ StorageKeyGenerator: { picture: (key: string) => `picture:${key}` } }))
 
+vi.mock('@/app/renderer-application', () => ({
+  rendererApplication: {
+    sessionHooks: {
+      useSessionHeader: () => ({ read: undefined }),
+      useSessionMessage: () => ({ message: undefined }),
+    },
+  },
+}))
+
 import { add as addToast } from '@/stores/toastActions'
 import { ContextLimitSettingRow } from '../settings/ParamControl'
 import { SessionSettingsContent } from './SessionSettingsContent'
 import type { SessionEdit } from './session-edit'
 
-function makeSession(settings: Session['settings']): Session {
+function makeSession(settings: SessionHeader['settings']): SessionHeader {
   return {
     id: 'session-1',
     name: 'Pricing research',
     type: 'chat',
-    messages: [createMessage('system', 'Be concise.')],
     settings: { provider: 'openai', modelId: 'gpt-4o', ...settings },
   }
 }
 
-function renderContent(session: Session, mode: 'chat' | 'work' = 'chat') {
+function renderContent(session: SessionHeader, mode: 'chat' | 'work' = 'chat') {
   const onEdit = vi.fn()
   return Object.assign(onEdit, {
     view: render(
       <MantineProvider>
-        <SessionSettingsContent session={session} mode={mode} onEdit={onEdit} />
+        <SessionSettingsContent session={session} draftSystemPrompt="Be concise." mode={mode} onEdit={onEdit} />
       </MantineProvider>
     ),
   })
@@ -145,7 +153,7 @@ describe('SessionSettingsContent', () => {
     fireEvent.click(screen.getByTestId('session-panel-restore-all'))
     onEdit.view.rerender(
       <MantineProvider>
-        <SessionSettingsContent session={makeSession({})} mode="chat" onEdit={onEdit} />
+        <SessionSettingsContent session={makeSession({})} draftSystemPrompt="Be concise." mode="chat" onEdit={onEdit} />
       </MantineProvider>
     )
     fireEvent.click(screen.getByTestId('session-panel-undo-restore'))
@@ -160,7 +168,7 @@ describe('SessionSettingsContent', () => {
           finishSave = resolve
         })
     )
-    const renderWith = (session: Session) => (
+    const renderWith = (session: SessionHeader) => (
       <MantineProvider>
         <SessionSettingsContent session={session} mode="chat" onEdit={onEdit} />
       </MantineProvider>
@@ -187,7 +195,7 @@ describe('SessionSettingsContent', () => {
           saves.push({ resolve, reject })
         })
     )
-    const renderWith = (session: Session) => (
+    const renderWith = (session: SessionHeader) => (
       <MantineProvider>
         <SessionSettingsContent session={session} mode="chat" onEdit={onEdit} />
       </MantineProvider>

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { Message, Session } from '../../types'
+import { rowChatFixture } from '../chat/testing/row-chat-fixture'
 import { ForkService } from './ForkService'
 
 function message(id: string, role: Message['role']): Message {
@@ -40,9 +41,11 @@ describe('ForkService', () => {
       }
       const service = new ForkService(
         {
-          updateSessionWithMessages: async (_id, updater) => {
-            session = typeof updater === 'function' ? updater(session) : { ...session, ...updater }
-            return session
+          async executeStructureCommand(id, operation, onCommitted) {
+            const fixture = rowChatFixture(() => 'unused', session)
+            const result = await fixture.port.executeStructureCommand(id, operation, onCommitted)
+            session = fixture.sessions.get(id)!
+            return result
           },
         },
         { createId: () => 'unused', now: () => 1 }
@@ -78,9 +81,11 @@ describe('ForkService', () => {
       }
       const service = new ForkService(
         {
-          async updateSessionWithMessages(_id, updater) {
-            session = typeof updater === 'function' ? updater(session) : { ...session, ...updater }
-            return session
+          async executeStructureCommand(id, operation, onCommitted) {
+            const fixture = rowChatFixture(() => 'unused', session)
+            const result = await fixture.port.executeStructureCommand(id, operation, onCommitted)
+            session = fixture.sessions.get(id)!
+            return result
           },
         },
         { createId: () => 'unused', now: () => 1 },
@@ -103,7 +108,7 @@ describe('ForkService', () => {
     }
   )
 
-  test('applies the shared fork transform through one atomic Session update', async () => {
+  test('applies the shared fork transform through one atomic row command', async () => {
     let session: Session = {
       id: 'session-1',
       name: 'Forks',
@@ -112,9 +117,11 @@ describe('ForkService', () => {
     let id = 0
     const service = new ForkService(
       {
-        async updateSessionWithMessages(_sessionId, updater) {
-          session = typeof updater === 'function' ? updater(session) : { ...session, ...updater }
-          return session
+        async executeStructureCommand(id, operation, onCommitted) {
+          const fixture = rowChatFixture(() => 'unused', session)
+          const result = await fixture.port.executeStructureCommand(id, operation, onCommitted)
+          session = fixture.sessions.get(id)!
+          return result
         },
       },
       { createId: () => `id-${++id}`, now: () => 1 }
@@ -132,9 +139,11 @@ describe('ForkService', () => {
     let session = original
     const service = new ForkService(
       {
-        async updateSessionWithMessages(_sessionId, updater) {
-          session = typeof updater === 'function' ? updater(session) : { ...session, ...updater }
-          return session
+        async executeStructureCommand(id, operation, onCommitted) {
+          const fixture = rowChatFixture(() => 'unused', session)
+          const result = await fixture.port.executeStructureCommand(id, operation, onCommitted)
+          session = fixture.sessions.get(id)!
+          return result
         },
       },
       { createId: () => 'unused', now: () => 1 }
@@ -142,6 +151,6 @@ describe('ForkService', () => {
 
     await service.create(session.id, 'missing')
 
-    expect(session).toBe(original)
+    expect(session).toEqual(original)
   })
 })

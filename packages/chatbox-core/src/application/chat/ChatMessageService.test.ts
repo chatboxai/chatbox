@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
+import { rowChatFixture } from './testing/row-chat-fixture'
 import { withSessionGenerationLock } from '../../generation/generation-lock'
-import { buildSwitchForkToPatch } from '../../session/message-forks'
+import { buildSwitchForkToPatch } from '@shared/session/message-forks'
 import type { Message, Session } from '../../types'
 import {
   ChatMessageService,
@@ -12,41 +13,16 @@ function createHarness(
   initial?: Session,
   beforeSend?: (sessionId: string, pendingUserMessage: Message) => Promise<void>
 ) {
-  const sessions = new Map<string, Session>(initial ? [[initial.id, initial]] : [])
   let id = 0
   let now = 100
-  const generation = vi.fn((sessionId: string, message: Message) => {
-    const session = sessions.get(sessionId)
-    if (!session) throw new Error('missing session')
-    sessions.set(sessionId, {
-      ...session,
-      messages: session.messages.map((candidate) =>
-        candidate.id === message.id ? { ...candidate, generating: false } : candidate
-      ),
-      threads: session.threads?.map((thread) => ({
-        ...thread,
-        messages: thread.messages.map((candidate) =>
-          candidate.id === message.id ? { ...candidate, generating: false } : candidate
-        ),
-      })),
-    })
-    return Promise.resolve()
+  const fixture = rowChatFixture(() => `session-${++id}`, initial)
+  const { sessions } = fixture
+  const generation = vi.fn(async (sessionId: string, message: Message) => {
+    await fixture.port.updateMessage(sessionId, message.id, { generating: false })
   })
-  const createSession = vi.fn((input: Omit<Session, 'id'>) => {
-    const session = { ...input, id: `session-${++id}` }
-    sessions.set(session.id, session)
-    return Promise.resolve(session)
-  })
+  const createSession = fixture.port.createSession
   const service = new ChatMessageService({
-    sessions: {
-      createSession,
-      getSession: (sessionId) => Promise.resolve(sessions.get(sessionId) ?? null),
-      updateSessionWithMessages: (sessionId, updater) => {
-        const updated = updater(sessions.get(sessionId))
-        sessions.set(sessionId, updated)
-        return Promise.resolve(updated)
-      },
-    },
+    sessions: fixture.port,
     generation: { orchestrate: generation },
     beforeSend,
     createId: () => `message-${++id}`,
@@ -152,7 +128,11 @@ describe('ChatMessageService', () => {
     expect(harness.createSession).toHaveBeenCalledTimes(1)
     expect(harness.generation).toHaveBeenCalledTimes(1)
     expect(persisted).toHaveBeenCalledTimes(1)
-    expect(firstResult.session.messages.map((message) => message.role)).toEqual(['system', 'user', 'assistant'])
+    expect(harness.sessions.get(firstResult.session.id)!.messages.map((message) => message.role)).toEqual([
+      'system',
+      'user',
+      'assistant',
+    ])
   })
 
   it('allows the same draft to retry when persistence failed before a session existed', async () => {
@@ -450,7 +430,7 @@ describe('ChatMessageService', () => {
         ],
       },
     ])
-    expect(updated?.threads?.[0].compactionPoints).toEqual([])
+    expect(updated?.threads?.[0].compactionPoints ?? []).toEqual([])
   })
 
   it('creates and generates a retry fork inside an archived thread', async () => {

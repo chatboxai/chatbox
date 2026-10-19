@@ -1,8 +1,9 @@
+import { getSessionSearchTarget, clearSessionSearchTarget } from '@/stores/session-search-target'
 import { resolveSessionMode } from '@chatbox/core/session/mode-policy'
 import { Box, Button, Loader } from '@mantine/core'
 import type { ModelProvider } from '@shared/types'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useStore } from 'zustand'
 import { JK_PAGE_NAMES } from '@/analytics/jk-events'
@@ -15,13 +16,11 @@ import { paddedContentColumnClassName } from '@/components/layout/contentColumn'
 import Header from '@/components/layout/Header'
 import Page from '@/components/layout/Page'
 import { SessionSheet } from '@/components/session/SessionSheet'
-import { closeSessionPanel, SessionSidePanel, toggleSessionPanel } from '@/components/session/SessionSidePanel'
+import { closeSessionPanel, SessionSidePanel } from '@/components/session/SessionSidePanel'
 import { useGenerationStop } from '@/hooks/useGenerationStop'
-import { useInitialSessionScroll } from '@/hooks/useInitialSessionScroll'
 import { useProviders } from '@/hooks/useProviders'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { useSessionPresentation, useSessionTranscript } from '@/hooks/useSessionPresentation'
-import { useSessionViewNavigation } from '@/hooks/useSessionViewNavigation'
 import useVersion from '@/hooks/useVersion'
 import { defaultSessionsForCN, defaultSessionsForEN } from '@/packages/initial_data'
 import * as remote from '@/packages/remote'
@@ -69,11 +68,21 @@ function RouteComponent() {
   const navigate = useNavigate()
   const sessionLoadTarget = useSessionStartupLoadTarget(currentSessionId)
   const recovering = sessionLoadTarget === null
-  const { header: currentSession, readModel, isFetching, isError } = useSessionPresentation(sessionLoadTarget)
+  const { header: currentSession, read: headerRead, isFetching, isError } = useSessionPresentation(sessionLoadTarget)
   useSessionStartupQueryFailure(currentSessionId, sessionLoadTarget, isError && !currentSession)
   const sessionLoadSettled = currentSession?.id === currentSessionId || (!isFetching && !isError)
   useSessionStartupGuard(currentSessionId, sessionLoadSettled, recovering)
-  const transcript = useSessionTranscript(readModel)
+  const messageListRef = useRef<MessageListRef>(null)
+  const [searchTarget] = useState(() => getSessionSearchTarget(currentSessionId))
+  const initialOrigin = useMemo(
+    () => (searchTarget ? { messageId: searchTarget.messageId } : ('tail' as const)),
+    [searchTarget]
+  )
+  const captureAnchor = useCallback(() => messageListRef.current?.captureAnchor() ?? null, [])
+  const transcript = useSessionTranscript(sessionLoadTarget, initialOrigin, captureAnchor)
+  useEffect(() => {
+    if (searchTarget) clearSessionSearchTarget(searchTarget)
+  }, [searchTarget])
   const { providers } = useProviders()
   const licenseKey = useSettingsStore((s) => s.licenseKey)
   const hasLicense = Boolean(licenseKey)
@@ -85,35 +94,6 @@ function RouteComponent() {
   const { isExceeded, isExceededResolved } = useVersion()
   const widthFull = useUIStore((s) => s.widthFull)
   const isSmallScreen = useIsSmallScreen()
-  const sessionPanelOpen = useUIStore((s) => s.sessionPanels[currentSessionId]?.open ?? false)
-  const {
-    session: panelSession,
-    isFetching: isPanelFetching,
-    isError: isPanelError,
-    refetch: reloadPanel,
-  } = rendererApplication.sessionHooks.useSession(sessionLoadTarget, {
-    enabled: !recovering && Boolean(readModel) && sessionPanelOpen,
-  })
-  const completeSession = readModel?.kind === 'full' ? readModel.session : undefined
-  const sessionForPanel = completeSession ?? panelSession ?? undefined
-  useEffect(() => {
-    if (sessionForPanel || isSmallScreen) return
-    const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key === '\\') {
-        event.preventDefault()
-        toggleSessionPanel(currentSessionId)
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [currentSessionId, isSmallScreen, sessionForPanel])
-  const messageListRef = useRef<MessageListRef>(null)
-  const {
-    requireComplete,
-    loadCompleteNavigation,
-    jumpToEdge,
-    navigate: navigateTranscript,
-  } = useSessionViewNavigation(currentSessionId, messageListRef, Boolean(completeSession), transcript.cancelJump)
   const setLastUsedChatModel = useStore(lastUsedModelStore, (state) => state.setChatModel)
   const isWorkMode = resolveSessionMode(useSessionAgentMode(currentSessionId).value) === 'work'
   const builtInBrowser = useMemo(
@@ -158,8 +138,6 @@ function RouteComponent() {
     navigate({ to: '/', replace: true })
   }, [navigate])
 
-  useInitialSessionScroll(currentSessionId, completeSession ? 'full' : readModel?.kind, !recovering)
-
   // currentSession变化时（包括session settings变化），存下当前的settings作为新Session的默认值
   useEffect(() => {
     if (currentSession) {
@@ -176,7 +154,7 @@ function RouteComponent() {
     if (!currentSession || !currentSessionWithDefaultModel || currentSessionWithDefaultModel === currentSession) {
       return
     }
-    void rendererApplication.sessions.updateSession(currentSession.id, {
+    void rendererApplication.sessions.updateSessionHeader(currentSession.id, {
       settings: currentSessionWithDefaultModel.settings,
     })
   }, [currentSession, currentSessionWithDefaultModel])
@@ -186,7 +164,7 @@ function RouteComponent() {
       if (!currentSession) {
         return
       }
-      void rendererApplication.sessions.updateSession(currentSession.id, {
+      void rendererApplication.sessions.updateSessionHeader(currentSession.id, {
         settings: {
           ...(currentSession.settings || {}),
           provider,
@@ -217,7 +195,7 @@ function RouteComponent() {
         return
       }
       if (currentSessionWithDefaultModel && currentSessionWithDefaultModel !== currentSession) {
-        await rendererApplication.sessions.updateSession(currentSession.id, {
+        await rendererApplication.sessions.updateSessionHeader(currentSession.id, {
           settings: currentSessionWithDefaultModel.settings,
         })
       }
@@ -307,36 +285,12 @@ function RouteComponent() {
   return currentSession ? (
     <div className="flex h-full">
       <div className={`flex min-w-0 flex-1 flex-col h-full ${!isSmallScreen ? 'relative' : ''}`}>
-        <Header session={completeSession ?? currentSession} />
-        {!completeSession && transcript.error && (
-          <Button variant="subtle" onClick={() => transcript.retry((edge) => jumpToEdge(edge, transcript.jumpToEdge))}>
-            {t('Try Again')}
-          </Button>
-        )}
-
-        {/* MessageList 设置 key，确保每个 session 对应新的 MessageList 实例 */}
+        <Header session={currentSession} />
         <MessageList
-          onNavigate={navigateTranscript}
           ref={messageListRef}
           key={`message-list${currentSessionId}`}
-          {...(completeSession
-            ? { currentSession: completeSession }
-            : {
-                transcript: { header: currentSession, messages: transcript.messages },
-                windowIdentity: transcript.windowIdentity,
-                hasOlder: transcript.hasOlder,
-                onLoadOlder: transcript.loadOlder,
-                hasNewer: transcript.hasNewer,
-                onLoadNewer: transcript.loadNewer,
-                isLoadingOlder: transcript.isLoadingOlder,
-                isLoadingNewer: transcript.isLoadingNewer,
-                isJumping: transcript.isJumping,
-                onJumpToEdge: (edge) => jumpToEdge(edge, transcript.jumpToEdge),
-                windowPosition: transcript.position,
-                onRequireComplete: requireComplete,
-                onLoadCompleteNavigation: loadCompleteNavigation,
-                totalMessageCount: readModel?.kind === 'window' ? readModel.summary.messageCount : undefined,
-              })}
+          headerRead={headerRead!}
+          transcript={transcript}
           className={!isSmallScreen ? 'pt-[2px]' : undefined}
         />
 
@@ -361,6 +315,7 @@ function RouteComponent() {
               key={`input-box${currentSession.id}`}
               sessionId={currentSession.id}
               sessionType={currentSession.type}
+              tokenEstimationEnabled={transcript.firstWindowReady}
               model={model}
               onStartNewThread={onStartNewThread}
               onSelectModel={onSelectModel}
@@ -373,31 +328,10 @@ function RouteComponent() {
           </ErrorBoundary>
         </Box>
       </div>
-      {!isSmallScreen && sessionPanelOpen && !sessionForPanel && (
-        <Box role="status" className="flex items-center justify-center gap-2 p-4">
-          {isPanelFetching ? (
-            <>
-              <Loader size="xs" />
-              {t('Loading...')}
-            </>
-          ) : isPanelError ? (
-            <Button variant="subtle" onClick={() => void reloadPanel()}>
-              {t('Try Again')}
-            </Button>
-          ) : null}
-        </Box>
-      )}
       {isSmallScreen ? (
-        <SessionSheet
-          session={sessionForPanel}
-          sessionId={currentSessionId}
-          isError={isPanelError && !isPanelFetching}
-          onRetry={() => void reloadPanel()}
-        />
+        <SessionSheet session={currentSession} sessionId={currentSessionId} />
       ) : (
-        sessionForPanel && (
-          <SessionSidePanel key={currentSessionId} session={sessionForPanel} builtInBrowser={builtInBrowser} />
-        )
+        <SessionSidePanel key={currentSessionId} session={currentSession} builtInBrowser={builtInBrowser} />
       )}
     </div>
   ) : (

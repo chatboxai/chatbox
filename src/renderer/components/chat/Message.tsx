@@ -19,7 +19,6 @@ import NiceModal from '@ebay/nice-modal-react'
 import { ActionIcon, type ActionIconProps, Anchor, Button, Flex, Loader, Modal, Stack, Text } from '@mantine/core'
 import { Box, Grid, useTheme } from '@mui/material'
 import { TestId } from '@shared/automation/testids'
-import { findMessageLocation } from '@shared/session/message-forks'
 import type { Message, MessageBackgroundTask, MessageTextPart, MessageToolCallPart, SessionType } from '@shared/types'
 import { getMessageText } from '@shared/utils/message'
 import {
@@ -130,7 +129,7 @@ interface Props {
    */
   sessionMode?: SessionMode
   /** Resolve prompt-cache delete policy when the action menu opens. */
-  shouldConfirmPromptCacheDelete?: (messageId: string, target: PromptCacheDeleteTarget) => boolean
+  shouldConfirmPromptCacheDelete?: (messageId: string, target: PromptCacheDeleteTarget) => boolean | Promise<boolean>
   readOnly?: boolean
   allowGeneratingStop?: boolean
   small?: boolean
@@ -282,20 +281,13 @@ const _Message: FC<Props> = (props) => {
   // action, so this fetches the session on its own and swallows failures.
   const trackAgentModeSuggestionActionAsync = useCallback(
     (action: 'accept' | 'decline') => {
-      void rendererApplication.sessionQueryBridge
-        .getSession(sessionId)
-        .then((session) => {
-          let fileCount = 0
-          const location = session ? findMessageLocation(session, msg.id) : null
-          if (location) {
-            for (let index = location.index - 1; index >= 0; index -= 1) {
-              const message = location.list[index]
-              if (message.role === 'user') {
-                fileCount = message.files?.length ?? 0
-                break
-              }
-            }
-          }
+      void Promise.all([
+        rendererApplication.sessions.getSessionHeader(sessionId),
+        rendererApplication.sessions.readPreviousUserMessage(sessionId, msg.id),
+      ])
+        .then(([read, previousUser]) => {
+          const session = read?.header
+          const fileCount = previousUser?.files?.length ?? 0
           trackAgentModeSuggestionAction({
             action,
             hasFiles: fileCount > 0,
@@ -424,7 +416,7 @@ const _Message: FC<Props> = (props) => {
 
   const onDelMsg = useCallback(async () => {
     const shouldConfirmCacheBreak =
-      confirmCacheBreakingDelete || shouldConfirmPromptCacheDelete?.(msg.id, 'message') === true
+      confirmCacheBreakingDelete || (await shouldConfirmPromptCacheDelete?.(msg.id, 'message')) === true
     if (shouldConfirmCacheBreak && !(await confirmPromptCacheBreakingAction('delete-historical-message'))) {
       return
     }
@@ -523,10 +515,10 @@ const _Message: FC<Props> = (props) => {
 
   const trackWithSessionName = useCallback(
     async (event: string) => {
-      const session = await rendererApplication.sessionQueryBridge.getSession(sessionId).catch(() => null)
+      const read = await rendererApplication.sessions.getSessionHeader(sessionId).catch(() => null)
       trackJkClickEvent(event, {
         pageName: JK_PAGE_NAMES.CHAT_PAGE,
-        content: session?.name,
+        content: read?.header.name,
       })
     },
     [sessionId]
@@ -649,7 +641,12 @@ const _Message: FC<Props> = (props) => {
           {part.text || ''}
         </Markdown>
       ) : (
-        <div className="break-words [overflow-wrap:anywhere] whitespace-pre-line">{part.text}</div>
+        <div
+          data-transcript-block={`${msg.id}-step-${index}`}
+          className="break-words [overflow-wrap:anywhere] whitespace-pre-line"
+        >
+          {part.text}
+        </div>
       ),
     [
       enableMarkdownRendering,
@@ -788,15 +785,18 @@ const _Message: FC<Props> = (props) => {
     ]
   )
   const [actionMenuOpened, setActionMenuOpened] = useState(false)
+  const actionMenuRequest = useRef(0)
   const handleActionMenuChange = useCallback(
     (opened: boolean) => {
       setActionMenuOpened(opened)
-      if (opened) {
-        setConfirmCacheBreakingDelete(
-          canDeleteMessage &&
-            !isPromptCacheBreakConfirmDismissed('delete-historical-message') &&
-            shouldConfirmPromptCacheDelete?.(msg.id, 'message') === true
-        )
+      const request = ++actionMenuRequest.current
+      setConfirmCacheBreakingDelete(false)
+      if (opened && canDeleteMessage && !isPromptCacheBreakConfirmDismissed('delete-historical-message')) {
+        void Promise.resolve(shouldConfirmPromptCacheDelete?.(msg.id, 'message'))
+          .then((confirm) => {
+            if (actionMenuRequest.current === request) setConfirmCacheBreakingDelete(confirm === true)
+          })
+          .catch((error) => console.error('Unable to read delete context', error))
       }
     },
     [canDeleteMessage, msg.id, shouldConfirmPromptCacheDelete]
@@ -906,7 +906,10 @@ const _Message: FC<Props> = (props) => {
                       <ReasoningContentUI message={msg} part={item} onCopyReasoningContent={onCopyReasoningContent} />
                     </div>
                   ) : item.type === 'text' ? (
-                    <div key={`text-${msg.id}-${index}`}>
+                    <div
+                      key={`text-${msg.id}-${index}`}
+                      data-transcript-block={enableMarkdownRendering ? undefined : `${msg.id}-${index}`}
+                    >
                       {enableMarkdownRendering ? (
                         <Markdown
                           uniqueId={`${msg.id}-${index}`}

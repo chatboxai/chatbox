@@ -8,7 +8,7 @@
  */
 
 export const AUTOMATION_CONTRACT_ID = 'chatbox-ui'
-export const AUTOMATION_CONTRACT_VERSION = '1.12.5'
+export const AUTOMATION_CONTRACT_VERSION = '1.13.0'
 export const AUTOMATION_CONTRACT_VERSION_ATTRIBUTE = 'data-automation-contract-version'
 
 /** Adjacent identity attributes hosted on TestId elements. */
@@ -26,12 +26,19 @@ export const AutomationAdjacentAttr = {
 export const AutomationStateAttr = {
   actionBarArmed: 'data-automation-armed',
   sessionPinned: 'data-session-pinned',
+  transcriptMessageCount: 'data-transcript-message-count',
+  transcriptPageCount: 'data-transcript-page-count',
+  transcriptFirstMessageId: 'data-transcript-first-message-id',
+  transcriptLastMessageId: 'data-transcript-last-message-id',
+  transcriptWindowEpoch: 'data-transcript-window-epoch',
+  navigationEntryCount: 'data-navigation-entry-count',
 } as const
 
 export type AutomationReasoningLevel = 'default' | 'off' | 'low' | 'medium' | 'high'
 
 export const TestId = {
   chat: {
+    transcript: 'session-transcript',
     messageInput: 'message-input',
     send: 'message-send',
     stop: 'message-stop',

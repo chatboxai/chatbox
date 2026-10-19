@@ -1,3 +1,4 @@
+import { convertLegacyTreeToRowFormat } from '../application/session/compatibility/row-format'
 import { createHash } from 'node:crypto'
 import { unzipSync, zipSync } from 'fflate'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -9,7 +10,7 @@ import { SessionRowConflictError } from '../ports/session-row-store'
 import { decodeSessionTree } from '../session/session-tree/decode'
 import type { MessageRow } from '../session/session-tree/types'
 import { sha256Checksum } from './codec'
-import { exportBackupArchive } from './export-backup'
+import { exportBackupArchiveWithRows as exportBackupArchive } from './export.test-support'
 import { importBackupArchive } from './import-backup'
 import { createRecordBackupSessionStore } from './record-session-store'
 import { DEFAULT_BACKUP_PAGE_LIMITS } from './session-port'
@@ -17,6 +18,10 @@ import { MemoryMetaStorage, MemoryStorage } from './sharded.test-support'
 import type { BackupProgress } from './types'
 import { createZipStream, readZipFileEntries } from './zip'
 
+function upgradedRows(snapshot: ReturnType<typeof contextSnapshot>) {
+  const tree = convertLegacyTreeToRowFormat({ session: snapshot.record, ...snapshot.rows })
+  return { sessionId: snapshot.rows.sessionId, threads: tree.threads, messages: tree.messages }
+}
 async function collect(stream: AsyncIterable<Uint8Array>) {
   const parts: Uint8Array<ArrayBuffer>[] = []
   for await (const part of stream) parts.push(new Uint8Array(part))
@@ -91,7 +96,7 @@ it('cleans a cancelled SQL payload without deleting another candidate pending pa
   await second.append({ kind: 'message', message: snapshot.rows.messages[0], payload: { size: data.length } })
   await second.publish()
   await second.dispose()
-  expect((await target.readSnapshot(snapshot.record.id))?.rows).toEqual(snapshot.rows)
+  expect((await target.readSnapshot(snapshot.record.id))?.rows).toEqual(upgradedRows(snapshot))
 })
 
 it('round trips a SQL message larger than a shard and preserves Unicode, escaped and mixed fields', async () => {
@@ -111,6 +116,9 @@ it('round trips a SQL message larger than a shard and preserves Unicode, escaped
       },
     ],
   })
+  const converted = convertLegacyTreeToRowFormat({ session: original.record, ...original.rows })
+  original.record = converted.session
+  original.rows = { sessionId: original.record.id, threads: converted.threads, messages: converted.messages }
   await source.writeRows(original)
   const exportEvents: BackupProgress[] = []
   let archive = new Blob()
@@ -151,7 +159,7 @@ it('round trips a SQL message larger than a shard and preserves Unicode, escaped
   }
   expect(importEvents.at(-1)?.phase).toBe('finishing')
   const restored = await target.readSnapshot(original.record.id)
-  expect(restored?.rows).toEqual(original.rows)
+  expect(restored?.rows).toEqual(upgradedRows(original))
   if (!restored) throw new Error('Missing restored message')
   const message = restored.rows.messages[0]
   message.message.contentParts = [{ type: 'text', text: 'Edited after restore' }]
@@ -347,9 +355,9 @@ it('round trips every SQL thread and branch through the public ZIP backup entry 
   expect(exported.manifest.formatVersion).toBe(3)
   await importBackupArchive(archive, { storage, metaStorage, sharded: { store: target } })
   const restored = await target.readSnapshot(original.record.id)
-  expect(restored?.rows).toEqual(original.rows)
+  expect(restored?.rows).toEqual(upgradedRows(original))
   expect(restored?.record.activeThreadId).toBe(original.record.activeThreadId)
-  expect(restored?.record.forkCreatedAt).toEqual(original.record.forkCreatedAt)
+  expect(restored?.record.rowFormatVersion).toBe(3)
   if (!restored) throw new Error('Restored snapshot is missing')
   const decoded = decodeSessionTree({ session: restored.record, ...restored.rows })
   expect(decoded.ok).toBe(true)
@@ -516,13 +524,19 @@ it('accepts historical v2 resources above the v3 page budget through the same pu
     },
   })
   const restored = new MemoryStorage()
+  const restoredRows = store()
   const result = await importBackupArchive(archive, {
     storage: restored,
     metaStorage: new MemoryMetaStorage(),
-    sharded: { store: store() },
+    sharded: { store: restoredRows },
   })
   expect(result.manifest.formatVersion).toBe(2)
-  expect(await restored.getItem('session:v2', null)).toEqual(await storage.getItem('session:v2', null))
+  expect(await restored.getItem('session:v2', null)).toBeNull()
+  const snapshot = await restoredRows.readSnapshot('v2')
+  expect(snapshot?.record.rowFormatVersion).toBe(3)
+  expect(snapshot?.rows.messages.map((row) => row.message)).toEqual(
+    (await storage.getItem<import('@shared/types').Session>('session:v2', null!)).messages
+  )
 })
 
 it('rejects a thread or message larger than the injected record budget', async () => {

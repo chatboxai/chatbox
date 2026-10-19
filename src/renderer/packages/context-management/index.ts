@@ -17,21 +17,13 @@ export {
 export type { BuildContextOptions } from './context-builder'
 export {
   buildContextForAI,
-  buildContextForSession,
-  buildContextForThread,
   computeContextAfterCompaction,
-  getContextMessageIds,
 } from './context-builder'
 export { getConfiguredContextWindow } from './context-pressure'
 export type {
-  GetContextMessagesForTokenEstimationOptions,
   UseContextTokensOptions,
   UseContextTokensResult,
 } from './context-tokens'
-export {
-  getContextMessagesForTokenEstimation,
-  useContextTokens,
-  useStableEligibleMessages,
-} from './context-tokens'
+export { useContextTokens } from './context-tokens'
 export type { SummaryGeneratorOptions, SummaryResult } from './summary-generator'
 export { generateSummary, generateSummaryWithStream, isSummaryGenerationAvailable } from './summary-generator'

@@ -39,7 +39,7 @@ describe('copilot folders', () => {
     expect(folders).toEqual([{ id: expect.any(String), name: copilot.name, copilotId: 'writer' }])
     for (const session of sessions) {
       expect(session.folderId).toBe(folders[0].id)
-      expect((await repository.getSession(session.id))?.folderId).toBe(folders[0].id)
+      expect((await repository.getSessionHeader(session.id))?.header.folderId).toBe(folders[0].id)
     }
     expect((await service.listAllSessionsMeta()).every((item) => item.folderId === folders[0].id)).toBe(true)
   })
@@ -64,9 +64,9 @@ describe('copilot folders', () => {
     expect((await service.createSession({ ...copilot, folderId: 'manual' })).folderId).toBe('manual')
     const session = await service.createSession(copilot)
     await service.moveSessionToFolder(session.id, 'manual')
-    expect((await service.updateSession(session.id, { name: 'Renamed chat' })).folderId).toBe('manual')
+    expect((await service.updateSessionHeader(session.id, { name: 'Renamed chat' })).folderId).toBe('manual')
     await service.moveSessionToFolder(session.id, undefined)
-    expect((await service.updateSession(session.id, { name: 'Unfiled chat' })).folderId).toBeUndefined()
+    expect((await service.updateSessionHeader(session.id, { name: 'Unfiled chat' })).folderId).toBeUndefined()
   })
 
   test('files conversations with stale folder references and recreates deleted folders', async () => {
@@ -87,7 +87,7 @@ describe('copilot folders', () => {
     ])
     const chat = await service.createSession(copilot)
     expect(chat.folderId).not.toBe(work.folderId)
-    expect((await service.updateSession(chat.id, { settings: workSettings })).folderId).toBe(work.folderId)
+    expect((await service.updateSessionHeader(chat.id, { settings: workSettings })).folderId).toBe(work.folderId)
   })
 
   test('ordinary chats and hosts without folder storage stay unfiled', async () => {
@@ -130,7 +130,7 @@ describe('copilot folders', () => {
       { id: session.folderId, name: 'Remote writing partner', copilotId: 'remote' },
     ])
     expect(getCopilotName).not.toHaveBeenCalled()
-    expect(await repository.getSession(session.id)).not.toHaveProperty('copilotName')
+    expect((await repository.getSessionHeader(session.id))?.header).not.toHaveProperty('copilotName')
   })
 
   test('does not invent a directory name for an unavailable copilot', async () => {

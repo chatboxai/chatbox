@@ -1,6 +1,7 @@
 /** Public, host-neutral API for Chatbox application and generation logic. */
 
 export type { ChatStreamOptions, ModelInterface, ModelStreamPart } from '@shared/models/types'
+export { SessionHeaderSchema } from '@shared/types'
 export { getChatboxAPIOrigin } from '@shared/request/chatbox-api-origin'
 export {
   licenseActivationSettings,
@@ -115,7 +116,6 @@ export {
   type SendNewSessionRequest,
 } from './application/chat'
 export {
-  buildCompactionCommitPatch,
   type CompactionCoverage,
   type CompactionFailure,
   type CompactionFailureCode,
@@ -154,12 +154,8 @@ export {
 export * from './application/memory'
 export { ModelFactory, type ModelFactoryOptions, type ModelResolver } from './application/model'
 export {
-  assertNoMessageDataUpdate,
   createSessionMetaRecord,
   ForkService,
-  getSessionMetadataSnapshot,
-  hasPausedToolCall,
-  hasSessionMetaFields,
   migrateSession,
   type NameGenerationSchedulerPort,
   projectSessionMeta,
@@ -170,7 +166,6 @@ export {
   SessionEventBus,
   type SessionEventListener,
   type SessionLoadRecovery,
-  type SessionMetadataUpdate,
   type SessionNameGenerationOptions,
   SessionNamingService,
   type SessionNamingServiceDependencies,
@@ -179,9 +174,6 @@ export {
   type SessionServiceOptions,
   type SessionUseCasePort,
   SessionWriteCoordinator,
-  type SessionWriteCoordinatorOptions,
-  type SessionWriteOptions,
-  type SessionWriteResult,
   ThreadService,
   type ThreadServiceDependencies,
   type UpdateSessionOptions,
@@ -383,10 +375,8 @@ export {
   type PlatformCapabilitiesPort,
   type PlatformCapability,
   type SessionDataRepositoryPort,
-  type SessionDataWriteOptions,
   type SessionCommand,
   type SessionCommandDelta,
-  type SessionMessageMutation,
   type SessionFolderStorePort,
   type SessionMetaRepositoryPort,
   SessionRepositoryError,
@@ -400,7 +390,6 @@ export {
 } from './ports'
 export {
   assertSessionActionAllowed,
-  deriveSessionLockState,
   getSessionActionGate,
   getSubmitAvailability,
   IDLE_SESSION_LOCK_STATE,
@@ -416,24 +405,21 @@ export {
   shouldShowConcurrentReplyStop,
 } from './session/action-gates'
 export {
+  buildNameGenerationAttemptKey,
+  DEFAULT_INBOX_SESSION_ID,
+  DEFAULT_INBOX_SESSION_NAME,
+  isDefaultInboxSession,
+  isNameGenerationAttemptKeyForSession,
+  type NameGenerationKind,
+  sanitizeGeneratedSessionName,
+  shouldBackfillThreadName,
+  UNTITLED_SESSION_NAME,
+} from './session/auto-title'
+export {
   countCancellableGeneratingAssistantMessages,
-  getConversationMessages,
-  getCurrentConversationMessages,
-  getGenerationControlMessages,
-  getReachableSessionMessages,
   isCancellableGeneratingAssistantMessage,
 } from './session/generation-state'
-export {
-  buildCreateForkPatch,
-  buildDeleteForkPatch,
-  buildExpandForkPatch,
-  buildSwitchForkPatch,
-  buildSwitchForkToPatch,
-  type ForkIdentityPort,
-  findMessageContext,
-  findMessageLocation,
-  findMessageSourceThread,
-} from './session/message-forks'
+export { type ForkIdentityPort } from './session/message-forks'
 export {
   type AutoTitleAction,
   type AutoTitleSession,

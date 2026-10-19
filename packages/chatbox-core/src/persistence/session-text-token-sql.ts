@@ -63,7 +63,7 @@ function validSource(source: SessionTextTokenSource): boolean {
   )
 }
 
-function validResult(result: SessionTextTokenResult): boolean {
+export function isValidTextTokenResult(result: SessionTextTokenResult): boolean {
   const { source, value } = result
   return (
     validSource(source) &&
@@ -204,7 +204,7 @@ export class SessionTextTokenSqlCache {
       pending = []
       bytes = 1024
     }
-    for (const batch of batches(results.filter(validResult), values, 64)) {
+    for (const batch of batches(results.filter(isValidTextTokenResult), values, 64)) {
       const sql = `WITH input(session_id,message_id,tokenizer_type,payload_id,calculation_version,tokens,calculated_at,approximate) AS
         (VALUES ${batch.map(() => '(?,?,?,?,?,?,?,?)').join(',')})
         INSERT INTO session_text_tokens SELECT i.* FROM input i JOIN session_messages m

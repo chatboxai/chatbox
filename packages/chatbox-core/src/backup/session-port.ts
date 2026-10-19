@@ -51,9 +51,14 @@ export interface BackupSessionCandidate {
 }
 export interface BackupSessionStore {
   listSessionIds(): Promise<string[]>
-  /** 仅用于无法无损转成消息树的旧 JSON；调用方必须传入单文件内存上限。 */
+  /** External legacy JSON decoding is bounded by the caller-provided byte limit. */
   readLegacySession?(sessionId: string, maxBytes: number, signal?: AbortSignal): Promise<Session | null>
   beginLegacyRestore?(session: Session): Promise<BackupSessionCandidate>
-  iterateBackupRows(sessionId: string, limits: BackupPageLimits, signal?: AbortSignal): AsyncIterable<BackupRow>
-  beginBackupRestore(sessionId: string): Promise<BackupSessionCandidate>
+  iterateBackupRows(
+    sessionId: string,
+    limits: BackupPageLimits,
+    signal?: AbortSignal,
+    threadId?: string
+  ): AsyncIterable<BackupRow>
+  beginBackupRestore(sessionId: string, expectedRevision?: number | null): Promise<BackupSessionCandidate>
 }

@@ -1,39 +1,21 @@
-import { MessageAnchorNotFoundError } from '../../packages/chatbox-core/src/application/session/message-tree'
-import { QueryClient, QueryObserver } from '@tanstack/react-query'
-import { SessionQueryBridge } from '../../packages/chatbox-react/src/query/session-query-bridge'
-import 'fake-indexeddb/auto'
-import { IDBFactory } from 'fake-indexeddb'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { IndexedDBSessionRowStore } from '../../src/renderer/storage/SessionRowStorage'
-import { openNodeSessionRowDatabase } from '../../packages/chatbox-core/src/persistence/node-sqlite.test-support'
-import { SqlSessionRowStore } from '../../packages/chatbox-core/src/persistence/session-row-sql'
-import { deriveContextReadProjection } from '../../packages/chatbox-core/src/persistence/session-context-read'
-import type { SessionRowStorePort } from '../../packages/chatbox-core/src/ports/session-row-store'
+import { MessageAnchorNotFoundError } from '@chatbox/core/application/session'
+import { ChatMessageService } from '@chatbox/core/application/chat'
+import { GenerationRuntimeStore } from '@chatbox/core/generation'
 import type { SessionMessageStructureOperation } from '../../packages/chatbox-core/src/ports/session-structure-command'
-import { encodeSessionTree } from '../../packages/chatbox-core/src/session/session-tree/encode'
-import { decodeSessionTree } from '../../packages/chatbox-core/src/session/session-tree/decode'
-import { InMemorySessionRecordStore } from '../../packages/chatbox-core/src/testing/InMemorySessionRecordStore'
-import { InMemorySessionRepository } from '../../packages/chatbox-core/src/testing/InMemorySessionRepository'
-import type { Message, Session } from '../../packages/chatbox-core/src/types'
-import { RowBackedSessionRepository } from '../../packages/chatbox-core/src/application/session/RowBackedSessionRepository'
-import { SessionService } from '../../packages/chatbox-core/src/application/session/SessionService'
-import { SessionWriteCoordinator } from '../../packages/chatbox-core/src/application/session/SessionWriteCoordinator'
-import { SessionEventBus } from '../../packages/chatbox-core/src/application/session/session-events'
-import { applyMessageStructure } from '../../packages/chatbox-core/src/application/session/session-message-structure'
-import { ChatMessageService } from '../../packages/chatbox-core/src/application/chat/ChatMessageService'
-import { GenerationRuntimeStore } from '../../packages/chatbox-core/src/generation/runtime-store'
+import type { Message, Session } from '@chatbox/core'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { drivers, type Driver, message, setupRows } from './session-rows-harness'
 
 const cleanup: Array<() => void> = []
 afterEach(() => {
-  for (const close of cleanup.splice(0)) close()
+  for (const dispose of cleanup.splice(0)) dispose()
   vi.restoreAllMocks()
 })
-const message = (id: string, role: Message['role'] = 'user'): Message => ({
-  id,
-  role,
-  contentParts: [{ type: 'text', text: id }],
-  timestamp: 1,
-})
+async function harness(driver: Driver, initial = fixture()) {
+  const h = await setupRows(driver, initial)
+  cleanup.push(h.dispose)
+  return h
+}
 function fixture(): Session {
   return {
     id: 's',
@@ -65,35 +47,6 @@ function branch(session: Session, pivotId: string, stored: Message[], position =
     },
   }
   return session
-}
-async function harness(driver: 'sqlite' | 'indexeddb', initial = fixture()) {
-  let rows: SessionRowStorePort
-  if (driver === 'sqlite') {
-    const db = openNodeSessionRowDatabase()
-    cleanup.push(() => db.close())
-    rows = new SqlSessionRowStore(db)
-  } else {
-    globalThis.indexedDB = new IDBFactory()
-    rows = new IndexedDBSessionRowStore()
-  }
-  const records = new InMemorySessionRecordStore()
-  const repository = Object.assign(new RowBackedSessionRepository({ rows, records }), {
-    meta: new InMemorySessionRepository().meta,
-  })
-  await repository.initialize()
-  await repository.setSession(initial)
-  const events = new SessionEventBus()
-  const sessions = new SessionService(repository, new SessionWriteCoordinator(repository), events, {
-    createId: () => 'generated',
-  })
-  return { rows, records, repository, sessions, events }
-}
-function normalized(session: Session) {
-  const encoded = encodeSessionTree(session, { activeThreadId: session.id })
-  if (!encoded.ok) throw new Error(encoded.reason)
-  const decoded = decodeSessionTree(encoded.tree)
-  if (!decoded.ok) throw new Error(decoded.reason)
-  return { ...decoded.session, messageForksHash: decoded.session.messageForksHash ?? {} }
 }
 const remove = (id: string): SessionMessageStructureOperation => ({
   action: 'message-remove',
@@ -268,53 +221,103 @@ const cases: Array<{ name: string; initial: () => Session; operation: SessionMes
   ]),
 ]
 
-describe.each(['sqlite', 'indexeddb'] as const)('message structure commands on %s', (driver) => {
-  it.each(cases)('matches legacy topology for $name', async ({ initial, operation }) => {
-    const h = await harness(driver, initial())
-    const before = (await h.repository.getSession('s'))!
-    const expected = normalized(applyMessageStructure(before, operation).session)
-    const fullRead = vi.spyOn(h.rows, 'readSnapshot')
-    const fullWrite = vi.spyOn(h.rows, 'writeRows')
+const expectedActive: Record<string, string[]> = {
+  'ordinary deletion': ['system', 'pivot', 'last'],
+  'root deletion': ['pivot', 'answer', 'last'],
+  'pivot with parent': ['system', 'answer', 'last'],
+  'root fork pivot': ['replacement', 'pivot', 'answer', 'last'],
+  'nested active pivot': ['system', 'answer', 'last'],
+  'nested inactive pivot': ['system', 'pivot', 'answer', 'last'],
+  'empty active branch': ['system', 'pivot', 'saved'],
+  'empty inactive branch': ['system', 'pivot', 'answer', 'last'],
+  'summary anchored pivot': ['system', 'replacement', 'summary', 'answer', 'last'],
+  'summary deletion': ['system', 'pivot', 'answer', 'last'],
+  'middle insertion': ['system', 'pivot', 'inserted', 'answer', 'last'],
+  'archived insertion': ['system', 'pivot', 'answer', 'last'],
+  'selected branch insertion': ['system', 'pivot', 'inserted', 'answer', 'last'],
+  'summary adjacent insertion': ['system', 'pivot', 'summary', 'inserted', 'answer', 'last'],
+  'later selected branch insertion': ['system', 'pivot', 'inserted', 'answer', 'last'],
+  'empty selected branch insertion': ['system', 'pivot', 'inserted'],
+  'optional missing anchor': ['system', 'pivot', 'answer', 'last', 'inserted'],
+  'clear active': ['system'],
+  'clear all': ['system'],
+  'clear active no system': [],
+  'clear all no system': [],
+}
+function inputMessages(session: Session): Message[] {
+  return [
+    ...session.messages,
+    ...(session.threads ?? []).flatMap((thread) => thread.messages),
+    ...Object.values(session.messageForksHash ?? {}).flatMap((fork) => fork.lists.flatMap((list) => list.messages)),
+  ]
+}
+
+describe.each(drivers)('message row commands on %s', (driver) => {
+  it.each(cases)('preserves row topology for $name', async ({ name, initial, operation }) => {
+    const input = initial()
+    const h = await harness(driver, input)
+    const writes = vi.spyOn(h.rows, 'writeRows')
     const diff = vi.spyOn(h.rows, 'applyDiff')
     const result = await h.repository.executeSessionCommand('s', { type: 'structure', operation })
-    expect(result?.kind).toBe('rows')
-    expect(fullRead).not.toHaveBeenCalled()
-    expect(fullWrite).not.toHaveBeenCalled()
+    expect(result.kind).toBe('rows')
+    expect(writes).not.toHaveBeenCalled()
     expect(diff.mock.calls[0]?.[0].messages.upsert.length ?? 0).toBeLessThanOrEqual(1)
-    expect(normalized((await h.repository.getSession('s'))!)).toEqual(expected)
-    const snapshot = await h.rows.readSnapshot('s')
-    expect(snapshot?.record.contextReadProjection).toEqual(
-      deriveContextReadProjection(snapshot!.rows.threads, snapshot!.rows.messages)
-    )
+    expect((await h.activeMessages()).map((row) => row.id)).toEqual(expectedActive[name])
+    if (operation.action === 'message-remove' || operation.action === 'message-insert-after') {
+      const retained = inputMessages(input).filter(
+        (row) => operation.action !== 'message-remove' || row.id !== operation.messageId
+      )
+      const page = await h.repository.readSessionMessages({ sessionId: 's', messageIds: retained.map((row) => row.id) })
+      expect(page?.messages).toEqual(retained)
+      if (operation.action === 'message-remove') expect(await h.readMessage(operation.messageId)).toBeUndefined()
+    }
+    if (operation.action === 'message-insert-after' && operation.previousId === 'old-user') {
+      const page = await h.repository.readSessionTranscriptWindow({
+        sessionId: 's',
+        origin: { threadId: 'archive', edge: 'head' },
+        limit: 20,
+      })
+      expect(page?.messages.filter((row) => row.threadId === 'archive').map((row) => row.messageId)).toEqual([
+        'old-system',
+        'old-user',
+        'inserted',
+        'old-answer',
+      ])
+    }
+    if (operation.action === 'session-clear') {
+      const archive = await h.repository.readSessionThread({ sessionId: 's', threadId: 'archive' })
+      if (operation.scope === 'active') {
+        expect(archive?.thread.rootMessageId).toBe('old-system')
+        expect(await h.readMessage('old-answer')).toEqual(message('old-answer', 'assistant'))
+        if (input.messageForksHash) expect(await h.readMessage('old-saved')).toEqual(message('old-saved'))
+      } else {
+        expect(archive).toBeNull()
+        expect(await h.readMessage('old-answer')).toBeUndefined()
+      }
+    }
   })
 
-  it('reports content completion for both insertion forms', async () => {
+  it('reports content completion for both insertion forms and survives metadata projection failure', async () => {
     const h = await harness(driver)
     const committed = vi.fn()
     const fullWrite = vi.spyOn(h.rows, 'writeRows')
-    await h.sessions.insertMessage('s', message('tail-insert'), undefined, { onPersisted: committed })
-    await h.sessions.insertMessage('s', message('middle-insert'), 'pivot', { onPersisted: committed })
+    await h.service.insertMessage('s', message('tail-insert'), undefined, { onPersisted: committed })
+    await h.service.insertMessage('s', message('middle-insert'), 'pivot', { onPersisted: committed })
     expect(committed).toHaveBeenCalledTimes(2)
     expect(committed.mock.calls.every(([header]) => header.id === 's' && !('messages' in header))).toBe(true)
     expect(fullWrite).not.toHaveBeenCalled()
-    const full = vi.fn()
-    await h.sessions.insertMessage('s', message('compat-insert'), 'pivot', {
-      onPersisted: committed,
-      onFullSessionPersisted: full,
-    })
-    expect(full.mock.calls[0][0].messages.some((message: Message) => message.id === 'compat-insert')).toBe(true)
-    expect(committed).toHaveBeenCalledTimes(3)
-    vi.spyOn(h.repository.meta, 'update').mockRejectedValue(new Error('metadata failed'))
+    vi.spyOn(h.meta, 'update').mockRejectedValueOnce(new Error('metadata failed'))
     await expect(
-      h.sessions.insertMessage('s', message('durable-insert'), 'pivot', { onPersisted: committed })
-    ).rejects.toThrow('metadata failed')
-    expect(committed).toHaveBeenCalledTimes(4)
+      h.service.insertMessage('s', message('durable-insert'), 'pivot', { onPersisted: committed })
+    ).resolves.toBeUndefined()
+    expect(committed).toHaveBeenCalledTimes(3)
+    expect(await h.readMessage('durable-insert')).toEqual(message('durable-insert'))
   })
 
-  it('requires a visible anchor, is idempotent, and rejects cross-thread duplicate identities', async () => {
+  it('requires a selected anchor, is idempotent, and rejects cross-thread duplicate identities', async () => {
     const h = await harness(driver, branch(fixture(), 'pivot', [message('saved')]))
     const execute = (previousId: string, id = 'inserted') =>
-      h.sessions.executeStructureCommand('s', {
+      h.service.executeStructureCommand('s', {
         action: 'message-insert-after',
         previousId,
         message: message(id),
@@ -327,7 +330,7 @@ describe.each(['sqlite', 'indexeddb'] as const)('message structure commands on %
     expect(await h.rows.getRevision('s')).toBe(revision)
     await expect(execute('old-user', 'answer')).rejects.toThrow('identity')
     await expect(
-      h.sessions.executeStructureCommand('s', {
+      h.service.executeStructureCommand('s', {
         action: 'message-insert-after',
         previousId: 'missing',
         message: message('old-user'),
@@ -335,91 +338,84 @@ describe.each(['sqlite', 'indexeddb'] as const)('message structure commands on %
     ).rejects.toThrow('identity')
   })
 
-  it('rejects stale structure CAS and retains legacy fallback', async () => {
+  it('rejects stale structure CAS while preserving current rows', async () => {
     const h = await harness(driver)
     const revision = (await h.rows.getRevision('s'))!
-    await h.sessions.updateSessionHeader('s', { name: 'new' })
+    await h.service.updateSessionHeader('s', { name: 'new' })
     await expect(
       h.repository.executeSessionCommand('s', { type: 'structure', operation: remove('answer') }, revision)
-    ).rejects.toThrow()
-    await h.rows.deleteRows('s')
-    await h.records.setRecord(fixture())
-    h.repository.forgetSessionState('s')
-    vi.spyOn(h.rows, 'writeRows').mockRejectedValue(new Error('migration unavailable'))
-    await h.sessions.executeStructureCommand('s', remove('answer'))
-    expect((await h.repository.getSession('s'))?.messages.map((message) => message.id)).not.toContain('answer')
+    ).rejects.toMatchObject({ name: 'SessionWriteConflictError' })
+    expect(await h.readMessage('answer')).toEqual(message('answer', 'assistant'))
   })
 
-  it('reports durable removal before metadata failure and returns shared attachment owners', async () => {
+  it('reports durable deletion after a projection failure and keeps shared attachment owners', async () => {
     const initial = fixture()
-    initial.messages[1].files = [
-      { id: 'file', name: 'shared', fileType: 'text/plain', storageKey: 'file', sessionAttachmentId: 12 },
-    ]
-    initial.messages[2].files = initial.messages[1].files
+    const files = [{ id: 'file', name: 'shared', fileType: 'text/plain', storageKey: 'file', sessionAttachmentId: 12 }]
+    initial.messages[1].files = files
+    initial.messages[2].files = files
     const h = await harness(driver, initial)
-    vi.spyOn(h.repository.meta, 'update').mockRejectedValue(new Error('metadata failed'))
+    vi.spyOn(h.meta, 'update').mockRejectedValueOnce(new Error('metadata failed'))
     const committed = vi.fn()
-    await expect(h.sessions.executeStructureCommand('s', remove('pivot'), committed)).rejects.toThrow('metadata failed')
+    await expect(h.service.executeStructureCommand('s', remove('pivot'), committed)).resolves.toMatchObject({
+      applied: true,
+    })
     expect(committed).toHaveBeenCalledOnce()
-    expect(committed.mock.calls[0][0].removedMessages[0].id).toBe('pivot')
-    expect(committed.mock.calls[0][0].survivingMessages.map((message: Message) => message.id)).toContain('answer')
-    expect((await h.repository.getSession('s'))?.messages.map((message) => message.id)).not.toContain('pivot')
+    expect(await h.readMessage('pivot')).toBeUndefined()
+    expect((await h.readMessage('answer'))?.files).toEqual(files)
   })
 
-  it('routes shared reply/delete/clear through structure commits and discards removed paused runtimes', async () => {
+  it('routes reply/delete/clear through row commits and discards removed paused runtimes', async () => {
     const h = await harness(driver)
     const runtime = new GenerationRuntimeStore()
     const generation = { orchestrate: vi.fn().mockResolvedValue(undefined) }
     const chat = new ChatMessageService({
-      sessions: h.sessions,
+      sessions: h.service,
       generation,
       runtime,
       createId: () => 'reply',
       now: () => 10,
     })
-    const fullWrite = vi.spyOn(h.sessions, 'updateSessionWithMessages')
+    const writes = vi.spyOn(h.rows, 'writeRows')
     await chat.replyBelow('s', 'pivot')
     expect(generation.orchestrate).toHaveBeenCalledOnce()
-    await h.sessions.updateMessage('s', 'reply', { generating: false })
+    await h.service.updateMessage('s', 'reply', { generating: false })
     const live = runtime.start('s', 'reply')
     runtime.setPhase('s', 'reply', 'paused', live)
     await chat.deleteMessage('s', 'reply')
     expect(live.abortController.signal.aborted).toBe(true)
     await chat.clearMessages('s')
-    expect(fullWrite).not.toHaveBeenCalled()
-    expect((await h.repository.getSession('s'))?.threads).toHaveLength(1)
+    expect(writes).not.toHaveBeenCalled()
+    expect((await h.repository.readSessionThread({ sessionId: 's', threadId: 'archive' }))?.thread.rootMessageId).toBe(
+      'old-system'
+    )
   })
-  it('preserves another reply live overlay during removal and does not revive the deleted message', async () => {
+
+  it('preserves a mounted reply overlay during deletion without reviving the removed row', async () => {
     const initial = fixture()
     initial.messages[2].generating = true
     const h = await harness(driver, initial)
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const bridge = new SessionQueryBridge(client, h.sessions, h.events)
-    cleanup.push(() => {
-      bridge.dispose()
-      client.clear()
+    const controller = await h.openWindow()
+    await h.application.sessionQueryBridge.updateMessageCache('s', 'answer', {
+      contentParts: [{ type: 'text', text: 'live ABC' }],
     })
-    const observer = new QueryObserver(client, bridge.definitions.readModel('s'))
-    cleanup.push(observer.subscribe(() => {}))
-    await observer.refetch()
-    await bridge.updateMessageCache('s', 'answer', { contentParts: [{ type: 'text', text: 'live ABC' }] })
-    await h.sessions.executeStructureCommand('s', remove('last'))
-    const model = observer.getCurrentResult().data
-    expect(model?.kind).toBe('full')
-    if (model?.kind !== 'full') throw new Error('Expected full generating history')
-    expect(model.session.messages.find((message) => message.id === 'answer')?.contentParts).toEqual([
-      { type: 'text', text: 'live ABC' },
-    ])
-    expect(model.session.messages.some((message) => message.id === 'last')).toBe(false)
+    await h.service.executeStructureCommand('s', remove('last'))
+    await vi.waitFor(() => {
+      const state = controller.getSnapshot()
+      expect(state.rows.some((row) => row.messageId === 'last')).toBe(false)
+      expect(state.rows.find((row) => row.messageId === 'answer')?.message.contentParts).toEqual([
+        { type: 'text', text: 'live ABC' },
+      ])
+    })
   })
 
-  it('reads a bounded first page to retain the first system message when clearing', async () => {
+  it('retains the first system message using only bounded point reads during clear', async () => {
     const initial = fixture()
-    initial.messages.push(...Array.from({ length: 200 }, (_, i) => message(`tail-${i}`)))
+    initial.messages.push(...Array.from({ length: 200 }, (_, index) => message(`tail-${index}`)))
     const h = await harness(driver, initial)
     const selected = vi.spyOn(h.rows, 'readMessages')
-    await h.sessions.executeStructureCommand('s', { action: 'session-clear', scope: 'all' })
+    await h.service.executeStructureCommand('s', { action: 'session-clear', scope: 'all' })
     expect(selected.mock.calls.every(([request]) => request.messageIds.length <= 32)).toBe(true)
-    expect(selected.mock.calls.flatMap(([request]) => request.messageIds).length).toBeLessThanOrEqual(33)
+    expect(selected.mock.calls.flatMap(([request]) => request.messageIds)).toEqual(['system'])
+    expect((await h.activeMessages()).map((row) => row.id)).toEqual(['system'])
   })
 })

@@ -15,7 +15,7 @@ const {
   routerNavigateMock,
   switchCurrentSessionMock,
   toastAddMock,
-  updateSessionMock,
+  updateSessionHeaderMock,
 } = vi.hoisted(() => ({
   archiveSessionMock: vi.fn(),
   countArchivedSessionsMetaMock: vi.fn(),
@@ -25,7 +25,7 @@ const {
   routerNavigateMock: vi.fn(),
   switchCurrentSessionMock: vi.fn(),
   toastAddMock: vi.fn(),
-  updateSessionMock: vi.fn(),
+  updateSessionHeaderMock: vi.fn(),
 }))
 
 vi.mock('react-i18next', () => ({
@@ -45,7 +45,7 @@ vi.mock('@/app/renderer-application', async (importOriginal) => {
         archiveSession: archiveSessionMock,
         countArchivedSessionsMeta: countArchivedSessionsMetaMock,
         restoreSession: restoreSessionMock,
-        updateSession: updateSessionMock,
+        updateSessionHeader: updateSessionHeaderMock,
       },
     },
   }
@@ -99,7 +99,7 @@ describe('SessionItem', () => {
     countArchivedSessionsMetaMock.mockResolvedValue(0)
     restoreSessionMock.mockResolvedValue(undefined)
     routerNavigateMock.mockResolvedValue(undefined)
-    updateSessionMock.mockResolvedValue(undefined)
+    updateSessionHeaderMock.mockResolvedValue(undefined)
     Object.defineProperty(window, 'matchMedia', {
       writable: true,
       value: vi.fn().mockImplementation((query: string) => ({
@@ -251,7 +251,7 @@ describe('SessionItem', () => {
       fireEvent.change(input, { target: { value: '  Renamed session  ' } })
       fireEvent.keyDown(input, { key: 'Enter' })
 
-      expect(updateSessionMock).toHaveBeenCalledWith('session-1', { name: 'Renamed session' })
+      expect(updateSessionHeaderMock).toHaveBeenCalledWith('session-1', { name: 'Renamed session' })
       expect(screen.queryByRole('textbox', { name: 'Name' })).toBeNull()
     }
   )
@@ -276,7 +276,7 @@ describe('SessionItem', () => {
     fireEvent.change(input, { target: { value: 'Blurred name' } })
     fireEvent.blur(input)
 
-    expect(updateSessionMock).toHaveBeenCalledWith('session-1', { name: 'Blurred name' })
+    expect(updateSessionHeaderMock).toHaveBeenCalledWith('session-1', { name: 'Blurred name' })
   })
 
   test('cancels with Escape and ignores an empty name', () => {
@@ -286,7 +286,7 @@ describe('SessionItem', () => {
     const escapeInput = screen.getByRole('textbox', { name: 'Name' })
     fireEvent.change(escapeInput, { target: { value: 'Discard me' } })
     fireEvent.keyDown(escapeInput, { key: 'Escape' })
-    expect(updateSessionMock).not.toHaveBeenCalled()
+    expect(updateSessionHeaderMock).not.toHaveBeenCalled()
 
     view.unmount()
     renderItem()
@@ -294,7 +294,7 @@ describe('SessionItem', () => {
     const emptyInput = screen.getByRole('textbox', { name: 'Name' })
     fireEvent.change(emptyInput, { target: { value: '   ' } })
     fireEvent.blur(emptyInput)
-    expect(updateSessionMock).not.toHaveBeenCalled()
+    expect(updateSessionHeaderMock).not.toHaveBeenCalled()
   })
 
   test('does not enable inline rename in the small-screen/mobile interaction mode', () => {

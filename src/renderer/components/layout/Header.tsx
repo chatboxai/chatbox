@@ -1,7 +1,6 @@
 import type { SessionHeader } from '@chatbox/core/ports'
 import { Flex, Text, UnstyledButton } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
-import type { Session } from '@shared/types'
 import { IconChevronDown, IconPencil, IconPlus } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import { useEffect } from 'react'
@@ -15,7 +14,7 @@ import { ScalableIcon } from '../common/ScalableIcon'
 import { PageHeader } from './Page'
 import Toolbar, { SessionMenu } from './Toolbar'
 
-export default function Header(props: { session: Session | SessionHeader }) {
+export default function Header(props: { session: SessionHeader }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const isSmallScreen = useIsSmallScreen()
@@ -23,7 +22,7 @@ export default function Header(props: { session: Session | SessionHeader }) {
   const { session: currentSession } = props
   const visibleSessionId = currentSession.id
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: sync only when the visible session id changes; message-driven naming is handled by session-updated in registerSessionUiEffects
+  // biome-ignore lint/correctness/useExhaustiveDependencies: run opening-time naming only when the visible session id changes
   useEffect(() => {
     let active = true
     void syncSessionAutoTitleOnOpen(currentSession, () => active)

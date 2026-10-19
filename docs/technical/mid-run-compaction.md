@@ -8,7 +8,7 @@
 | Reuse, measure, choose retained tool rounds, verify receipts, and advance a run's summary | `generation/MidRunCompactionController.ts` |
 | Resolve the target path, select the summary window, and validate commit ownership | `application/context/compaction-plan.ts` |
 | Join an in-flight structural write before cancellation or an old checkpoint is published | `generation/GenerationSegmentTransitions.ts` |
-| Snapshot and atomically persist the prefix and continuation in the right root/thread/fork | `application/session/generation-segment-split.ts` |
+| Snapshot the two messages and atomically persist their row and path changes | `application/session/generation-segment-split.ts` |
 | Model, streaming processor, steering, and runtime target handoff | `generation/GenerationService.ts` |
 | Supply the existing SessionService and StreamingWriteCoordinator instances | Desktop `stores/session/messages.ts`; RN `createMobileGeneration.ts` |
 
@@ -43,11 +43,11 @@ Requests distinguish automatic threshold checks, manual compaction, and generati
 
 ## Atomic segment persistence
 
-The `splitStreamingMessage` port commits the finalized prefix and the populated continuation together, using one `SessionService.updateSessionWithMessages` call. The existing `StreamingWriteCoordinator.persistTerminal` drains old checkpoints and invalidates their cache updates before that structural write. Full-session projection preserves other live generating messages.
+The `splitStreamingMessage` port snapshots the finalized prefix and populated continuation, then submits one `generation-segment-split` action through `SessionService.executeStructureCommand`. The row planner reads the two message identities and bounded pages of the required path metadata. It commits both message bodies and the changed parent/selected-child edges under one revision/CAS. `StreamingWriteCoordinator.persistTerminal` drains old checkpoints and invalidates their cache updates before the structural command. The committed delta updates loaded rows and point queries while retaining unrelated live generating overlays.
 
-Cancellation is checked again inside the coordinated updater. A target already finalized by Stop cannot be split. A missing/cross-path anchor fails closed instead of appending to another conversation.
+Cancellation is checked inside the row command. A target already finalized by Stop cannot be split. A missing or cross-path anchor fails closed instead of appending to another conversation. Repeating an already committed split requires the continuation to belong to the prefix’s thread, the prefix to carry the split finish reason, and both stored contentParts values to match the submitted messages.
 
-A durable session write followed by metadata failure is still a committed split. The writer uses `onFullSessionPersisted`, not a guess based on a rejected promise, to decide whether the caller must adopt the continuation. SessionService retains responsibility for metadata projection/repair.
+A successful row commit remains successful when the subsequent record or session-list projection fails. `SessionService` publishes `session-command-committed` with the committed delta and schedules projection repair. The split writer records `SessionStructureResult.applied` through the structure command’s `onCommitted` callback and return value to decide whether the caller must adopt the continuation. A projection failure must not replay the structural write.
 
 `GenerationSegmentTransitions` records the structural operation until its synchronous in-memory handoff is complete. The generation's abort cleanup waits for it, then finalizes the correct target. Old chunk checkpoints also join the operation before publishing; they cannot restore the unsplit assistant after a target handoff.
 

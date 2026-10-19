@@ -1,297 +1,111 @@
 import { describe, expect, it, vi } from 'vitest'
-import { SessionRowConflictError } from '../../ports'
-import { isRowsSessionRecord } from '../../ports/session-record-store'
-import { InMemorySessionRecordStore, InMemorySessionRepository, InMemorySessionRowStore } from '../../testing'
-import type { Message, Session } from '../../types'
-import { encodeSessionTree } from '../../session/session-tree'
-import { getSessionMessageTokenizationDigest, type SessionMessageDerivedPatch } from './message-derived-data'
-import { RowBackedSessionRepository } from './RowBackedSessionRepository'
+import { InMemorySessionRepository } from '../../testing/InMemorySessionRepository'
+import type { SessionMessageDerivedPatch } from './message-derived-data'
 import { SessionService } from './SessionService'
 import { SessionNotFoundError, SessionWriteCoordinator } from './SessionWriteCoordinator'
 import { type SessionApplicationEvent, SessionEventBus } from './session-events'
 
 async function setup() {
-  const rows = new InMemorySessionRowStore()
-  const repo = Object.assign(new RowBackedSessionRepository({ rows, records: new InMemorySessionRecordStore() }), {
-    meta: new InMemorySessionRepository().meta,
-  })
-  const session: Session = {
+  const repository = new InMemorySessionRepository()
+  await repository.seedSession({
     id: 's',
-    name: 's',
-    type: 'chat',
-    messages: [{ id: 'm', role: 'user', contentParts: [{ type: 'text', text: 'hello' }] }],
-  }
-  await repo.setSession(session)
-  const writes = new SessionWriteCoordinator(repo)
+    name: 'Chat',
+    messages: [
+      {
+        id: 'm',
+        role: 'user',
+        contentParts: [],
+        files: [{ id: 'f', name: 'notes.txt', fileType: 'text/plain', storageKey: 'file' }],
+      },
+    ],
+  })
+  const writes = new SessionWriteCoordinator(repository)
   const events = new SessionEventBus()
   const published: SessionApplicationEvent[] = []
   events.subscribe((event) => {
     published.push(event)
   })
-  const service = new SessionService(repo, writes, events, { createId: () => 'new' })
+  const service = new SessionService(repository, writes, events, { createId: () => 'new' })
   const patches: SessionMessageDerivedPatch[] = [
     {
       messageId: 'm',
-      text: [
+      attachments: [
         {
-          tokenizerType: 'default',
-          sourceDigest: getSessionMessageTokenizationDigest(session.messages[0]),
-          tokens: 42,
-          calculatedAt: 100,
+          id: 'f',
+          type: 'file',
+          sourceStorageKey: 'file',
+          sourceName: 'notes.txt',
+          tokenCountMap: { default: 42 },
+          tokenCalculatedAt: { default: 100 },
         },
       ],
     },
   ]
-  return { repo, rows, writes, service, session, published, patches }
+  return { repository, writes, service, published, patches }
 }
 
-describe('derived service and coordinator writes', () => {
-  it('orders tail appends with streaming saves, queued messages and compaction', async () => {
-    const { repo, rows, service } = await setup()
-    const assistant: Message = { id: 'reply', role: 'assistant', generating: true, contentParts: [] }
-    const queued: Message = { id: 'queued', role: 'user', contentParts: [{ type: 'text', text: 'Next' }] }
-    const summary: Message = {
-      id: 'summary',
-      role: 'assistant',
-      isSummary: true,
-      contentParts: [{ type: 'text', text: 'Summary' }],
-    }
-    const following: Message = { id: 'following', role: 'user', contentParts: [{ type: 'text', text: 'Continue' }] }
-    let release!: () => void
-    let entered!: () => void
-    const barrier = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    const started = new Promise<void>((resolve) => {
-      entered = resolve
-    })
-    const apply = rows.applyDiff.bind(rows)
-    vi.spyOn(rows, 'applyDiff').mockImplementationOnce(async (...args) => {
-      entered()
-      await barrier
-      return apply(...args)
-    })
-    const first = service.insertMessage('s', assistant)
-    await started
-    const pending = [
-      service.updateMessage('s', assistant.id, (message) => {
-        if (!message) throw new Error('Missing assistant')
-        return { ...message, contentParts: [{ type: 'text', text: 'Streamed answer' }] }
-      }),
-      service.insertMessage('s', queued),
-      service.updateSessionWithMessages('s', (session) => {
-        if (!session) throw new Error('Missing session')
-        return {
-          ...session,
-          messages: [...session.messages, summary],
-          compactionPoints: [{ boundaryMessageId: queued.id, summaryMessageId: summary.id, createdAt: 300 }],
-        }
-      }),
-      service.insertMessage('s', following),
-      service.updateMessage('s', assistant.id, (message) => {
-        if (!message) throw new Error('Missing assistant')
-        return { ...message, generating: false }
-      }),
-    ]
-    release()
-    await Promise.all([first, ...pending])
-    const stored = (await repo.getSession('s'))!
-    expect(stored.messages.map((message) => message.id)).toEqual(['m', 'reply', 'queued', 'summary', 'following'])
-    expect(stored.messages[1]).toMatchObject({
-      generating: false,
-      contentParts: [{ type: 'text', text: 'Streamed answer' }],
-    })
-    expect(stored.compactionPoints).toEqual([
-      { boundaryMessageId: queued.id, summaryMessageId: summary.id, createdAt: 300 },
-    ])
-    const snapshot = (await rows.readSnapshot('s'))!
-    const encoded = encodeSessionTree(stored, {
-      activeThreadId: 's',
-      now: 1234,
-      previousMessages: snapshot.rows.messages,
-    })
-    if (!encoded.ok) throw new Error(encoded.reason)
-    expect(snapshot.rows.messages).toEqual(encoded.tree.messages)
-    expect(snapshot.rows.threads).toEqual(encoded.tree.threads)
-    expect(snapshot.record).toEqual(encoded.tree.session)
-  })
-
-  it.each(['unencodable', 'row-write-failure', 'marker-write-failure'] as const)(
-    'records the accepted V1 version after an attachment patch (%s)',
-    async (fallback) => {
-      const rows = new InMemorySessionRowStore()
-      const records = new InMemorySessionRecordStore()
-      const repo = new RowBackedSessionRepository({ rows, records })
-      await repo.initialize()
-      const session: Session = {
-        id: 'legacy-attachment',
-        name: 'Legacy attachment',
-        type: 'chat',
-        messages: [
-          {
-            id: 'm',
-            role: 'user',
-            contentParts: [{ type: 'text', text: 'Read this file' }],
-            files: [{ id: 'f', name: 'notes.txt', fileType: 'text/plain', storageKey: 'file-contents' }],
-          },
-        ],
-      }
-      if (fallback === 'unencodable') session.messages.push({ id: 'm', role: 'assistant', contentParts: [] })
-      await records.setRecord(session)
-      if (fallback === 'row-write-failure')
-        vi.spyOn(rows, 'writeRows').mockRejectedValueOnce(new Error('Rows unavailable'))
-      if (fallback === 'marker-write-failure') {
-        const setRecord = records.setRecord.bind(records)
-        vi.spyOn(records, 'setRecord').mockImplementation(async (record) => {
-          if (isRowsSessionRecord(record)) throw new Error('Marker unavailable')
-          await setRecord(record)
-        })
-      }
-      const result = await repo.patchSessionMessageDerivedData(session.id, [
-        {
-          messageId: 'm',
-          attachments: [
-            {
-              id: 'f',
-              type: 'file',
-              sourceStorageKey: 'file-contents',
-              sourceName: 'notes.txt',
-              tokenCountMap: { default: 4 },
-              tokenCalculatedAt: { default: 100 },
-            },
-          ],
-        },
-      ])
-      expect(result.patches).toHaveLength(1)
-      expect(result.revision).toBeNull()
-      const stored = await records.getRecord(session.id)
-      if (!stored || isRowsSessionRecord(stored)) throw new Error('Expected complete V1 fallback')
-      expect(stored.messages[0].files?.[0].tokenCountMap).toEqual({ default: 4 })
-
-      await expect(repo.deleteSession(session.id)).resolves.toBeUndefined()
-      expect(await records.getRecord(session.id)).toBeNull()
-      expect(await rows.hasRows(session.id)).toBe(false)
-    }
-  )
-
-  it('preserves a recovery archive while clearing stale token seeds on an edited message', async () => {
+describe('derived service and coordinator row writes', () => {
+  it('publishes accepted local patches and ignores absent message identities', async () => {
     const h = await setup()
-    await h.repo.meta.create({ id: 's', name: 's', type: 'chat', sortOrder: 1, createdAt: 1 })
-    await h.writes.update('s', {
-      messages: [{ ...h.session.messages[0], tokenCountMap: { default: 42 }, tokenCalculatedAt: { default: 100 } }],
-    })
-    await h.writes.archiveMetadataOnly('s', 50)
-
-    await h.writes.update('s', (current) => {
-      if (!current) throw new Error('Expected current session')
-      return {
-        ...current,
-        messages: [{ ...current.messages[0], contentParts: [{ type: 'text', text: 'changed text' }] }],
-      }
-    })
-
-    const saved = await h.repo.getSession('s')
-    expect(saved).toMatchObject({ hidden: true, archivedAt: 50 })
-    expect(saved?.messages[0].contentParts).toEqual([{ type: 'text', text: 'changed text' }])
-    expect(saved?.messages[0].tokenCountMap).toBeUndefined()
-    expect(saved?.messages[0].tokenCalculatedAt).toBeUndefined()
-    expect(await h.repo.meta.getById('s')).toMatchObject({ hidden: true, archivedAt: 50 })
-    expect((await h.repo.meta.getById('s'))?.recoveryArchived).toBeUndefined()
-  })
-
-  it('reads target IDs and commits derived data without full hydration or a full-session event', async () => {
-    const h = await setup()
-    const full = vi.spyOn(h.repo, 'getSession')
-    const snapshots = vi.spyOn(h.rows, 'readSnapshot')
-    const selected = vi.spyOn(h.rows, 'readMessages')
-    const source = await h.service.readSessionMessages({ sessionId: 's', messageIds: ['m'] })
+    const selected = vi.spyOn(h.repository.rowStore, 'readMessages')
     const result = await h.service.patchSessionMessageDerivedData('s', h.patches)
-    expect(source?.messages.map((message) => message.id)).toEqual(['m'])
-    expect(selected).toHaveBeenCalledWith({ sessionId: 's', messageIds: ['m'] })
-    expect(full).not.toHaveBeenCalled()
-    expect(snapshots).not.toHaveBeenCalled()
+    expect(selected.mock.calls.every(([request]) => request.messageIds.length === 1)).toBe(true)
     expect(h.published).toEqual([{ type: 'session-derived-data-patched', ...result }])
-    expect(result.revision).toBe((result.previousRevision ?? 0) + 1)
+    expect(result.revision).toBe(2)
     await h.service.patchSessionMessageDerivedData('s', [{ ...h.patches[0], messageId: 'missing' }])
     expect(h.published).toHaveLength(1)
   })
-
-  it('serializes a full write after a selected commit and preserves the committed counts', async () => {
+  it('orders a header command after a selected derived commit', async () => {
     const h = await setup()
-    h.writes.prime(h.session)
-    let release: (() => void) | undefined
-    const original = h.repo.patchSessionMessageDerivedData.bind(h.repo)
-    vi.spyOn(h.repo, 'patchSessionMessageDerivedData').mockImplementationOnce(async (...args) => {
-      await new Promise<void>((resolve) => {
-        release = resolve
-      })
+    let release!: () => void
+    let entered!: () => void
+    const barrier = new Promise<void>((done) => {
+      release = done
+    })
+    const started = new Promise<void>((done) => {
+      entered = done
+    })
+    const original = h.repository.patchSessionMessageDerivedData
+    vi.spyOn(h.repository, 'patchSessionMessageDerivedData').mockImplementationOnce(async (...args) => {
+      entered()
+      await barrier
       return original(...args)
     })
-    const fullWrite = vi.spyOn(h.repo, 'setSession')
     const narrow = h.service.patchSessionMessageDerivedData('s', h.patches)
-    await vi.waitFor(() => expect(release).toBeDefined())
-    const full = h.service.updateSession('s', { name: 'renamed' })
-    await Promise.resolve()
-    expect(fullWrite).not.toHaveBeenCalled()
-    release?.()
-    await Promise.all([narrow, full])
-    const saved = await h.repo.getSession('s')
-    expect(saved?.name).toBe('renamed')
-    expect(saved?.messages[0].tokenCountMap?.default).toBe(42)
+    await started
+    const header = h.service.updateSessionHeader('s', { name: 'Renamed' })
+    release()
+    await Promise.all([narrow, header])
+    expect((await h.repository.getSessionHeader('s'))?.header.name).toBe('Renamed')
+    expect(
+      (await h.repository.readSessionMessages({ sessionId: 's', messageIds: ['m'] }))?.messages[0].files?.[0]
+        .tokenCountMap?.default
+    ).toBe(42)
   })
-
   it('drains queued derived writes before deletion and fences late writes', async () => {
     const h = await setup()
-    let release: (() => void) | undefined
-    const original = h.repo.patchSessionMessageDerivedData.bind(h.repo)
-    const patch = vi.spyOn(h.repo, 'patchSessionMessageDerivedData').mockImplementationOnce(async (...args) => {
-      await new Promise<void>((resolve) => {
-        release = resolve
-      })
+    let release!: () => void
+    let entered!: () => void
+    const barrier = new Promise<void>((done) => {
+      release = done
+    })
+    const started = new Promise<void>((done) => {
+      entered = done
+    })
+    const original = h.repository.patchSessionMessageDerivedData
+    const patch = vi.spyOn(h.repository, 'patchSessionMessageDerivedData').mockImplementationOnce(async (...args) => {
+      entered()
+      await barrier
       return original(...args)
     })
     const pending = h.writes.patchMessageDerivedData('s', h.patches)
-    await vi.waitFor(() => expect(release).toBeDefined())
-    const deletion = h.writes.delete('s', () => h.repo.deleteSession('s'))
+    await started
+    const deletion = h.writes.delete('s', () => h.repository.deleteSession('s'))
     await expect(h.writes.patchMessageDerivedData('s', h.patches)).rejects.toBeInstanceOf(SessionNotFoundError)
-    release?.()
+    release()
     await Promise.all([pending, deletion])
-    expect(await h.repo.getSession('s')).toBeNull()
+    expect(await h.repository.getSessionHeader('s')).toBeNull()
     await expect(h.writes.patchMessageDerivedData('s', h.patches)).rejects.toBeInstanceOf(SessionNotFoundError)
     expect(patch).toHaveBeenCalledTimes(1)
-  })
-
-  it('uses the complete-safe fallback only for repositories without selected reads', async () => {
-    const repo = new InMemorySessionRepository()
-    const session: Session = {
-      id: 'legacy',
-      name: 'legacy',
-      type: 'chat',
-      messages: [],
-      threads: [
-        {
-          id: 'archive',
-          name: 'archive',
-          createdAt: 1,
-          messages: [{ id: 'archived', role: 'user', contentParts: [] }],
-        },
-      ],
-    }
-    await repo.setSession(session)
-    const service = new SessionService(repo, new SessionWriteCoordinator(repo), new SessionEventBus(), {
-      createId: () => 'new',
-    })
-    const selected = await service.readSessionMessages({
-      sessionId: 'legacy',
-      messageIds: ['archived', 'missing', 'archived'],
-    })
-    expect(selected?.messages.map((message) => message.id)).toEqual(['archived'])
-    expect(selected?.revision).toBeNull()
-    await expect(
-      service.readSessionMessages({ sessionId: 'legacy', messageIds: ['archived'], expectedRevision: 1 })
-    ).rejects.toBeInstanceOf(SessionRowConflictError)
-    expect(
-      (await service.getSessionContextSource({ sessionId: 'legacy', threadId: 'archive' }))?.candidateMessages
-    ).toEqual(session.threads?.[0].messages)
   })
 })

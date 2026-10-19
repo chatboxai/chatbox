@@ -8,7 +8,7 @@ import {
   type Settings,
 } from '@shared/types'
 import { v4 as uuidv4 } from 'uuid'
-import { encodeSessionTree } from '../session/session-tree/encode'
+import { prepareLegacySessionRows, stageLegacySessionRows } from './legacy-row-import'
 import { throwIfAborted } from './abort'
 import {
   BACKUP_COPILOTS_PATH,
@@ -32,7 +32,13 @@ import {
   projectBackupMessage,
   serializeBackupPayload,
 } from './payload'
-import { preparedSessionReader } from './preflight'
+import { preparedEntryReader } from './preflight'
+import {
+  collectHeaderResourceReferences,
+  collectMessageReferences,
+  prepareMessageForBackup,
+  type ResourceReference,
+} from './resources'
 import { createBackupProgressReporter } from './progress'
 import { BackupResourceCatalog } from './resource-catalog'
 import { BackupResourcePayloadTransform, prepareBackupMessagePayload } from './resource-payload'
@@ -40,7 +46,6 @@ import { validateResourceReferences } from './resource-validation'
 import {
   collectGlobalResourceReferences,
   collectSessionResourceReferences,
-  prepareSessionForBackup,
   rehydrateSessionAttachmentsAsInline,
   restoreSessionMetaResourceKeys,
   restoreSessionResourceKeys,
@@ -67,6 +72,7 @@ import {
   type BackupFile,
   type BackupJsonEntry,
   type BackupProgress,
+  type BackupWarning,
   MAX_BACKUP_JSON_ENTRY_BYTES,
   MAX_BACKUP_RESOURCE_ENTRY_BYTES,
   validateBackupManifestGraph,
@@ -99,20 +105,17 @@ function replacementMeta(meta: SessionMetaRecord): SessionMetaRecord {
 }
 
 function rowResources(row: LogicalBackupRow, id: string) {
-  const session =
-    row.kind === 'header'
-      ? { ...row.session, messages: [] }
-      : row.kind === 'message'
-        ? { id, name: '', messages: [row.value] }
-        : undefined
-  return session ? collectSessionResourceReferences(session) : { references: [], warnings: [] }
+  const references: ResourceReference[] = []
+  const warnings: BackupWarning[] = []
+  if (row.kind === 'header') references.push(...collectHeaderResourceReferences(row.session))
+  else if (row.kind === 'message') collectMessageReferences(row.value, id, references, warnings)
+  return { references, warnings }
 }
 function prepareRow(row: LogicalBackupRow, id: string, keys?: ReadonlyMap<string, string>): LogicalBackupRow {
   if (row.kind === 'thread') return row
+  if (!keys) return row.kind === 'message' ? { ...row, value: prepareMessageForBackup(row.value) } : row
   const session = row.kind === 'header' ? { ...row.session, messages: [] } : { id, name: '', messages: [row.value] }
-  const prepared = keys
-    ? rehydrateSessionAttachmentsAsInline(restoreSessionResourceKeys(session, keys))
-    : prepareSessionForBackup(session)
+  const prepared = rehydrateSessionAttachmentsAsInline(restoreSessionResourceKeys(session, keys))
   if (row.kind === 'message') return { ...row, value: prepared.messages[0] }
   const { messages, ...header } = prepared
   return { ...row, session: header }
@@ -171,28 +174,24 @@ export async function exportShardedBackup(
       const prefix = `sessions/${await safeSessionPathComponent(id, checksum)}`
       const selected = sharded.prepared?.sessions.find((session) => session.id === id)
       if (selected?.layout === 'single' && sharded.prepared) {
-        const session = await preparedSessionReader({ ...options, sessionStore: sharded.store }, sharded.prepared)(
-          id,
-          (warnings) => catalog.warnings.addAll(warnings)
-        )
-        const collected = collectSessionResourceReferences(session)
-        catalog.add(collected.references)
-        catalog.warnings.addAll(collected.warnings)
-        const entry = await encode(`${prefix}/session.json`, session, 64 * 1024 * 1024)
-        let messages = session.messages.length
-        for (const thread of session.threads ?? []) messages += thread.messages.length
-        for (const fork of Object.values(session.messageForksHash ?? {}))
-          for (const list of fork.lists) messages += list.messages.length
+        const source = await preparedEntryReader({ ...options, sessionStore: sharded.store }, sharded.prepared)(id)
+        catalog.add(source.references)
+        catalog.warnings.addAll(source.warnings)
+        const path = `${prefix}/session.json`
+        const entry = {
+          descriptor: { path, size: source.size, checksum: await checksum(source.bytes) },
+          archive: { path, data: source.bytes, compress: true },
+        }
         sessions.push({
           ...entry.descriptor,
           id,
           layout: 'single',
           legacyTopology: selected.legacyTopology,
-          meta: deriveSessionMeta(session, (await meta.getById(id)) ?? undefined),
+          meta: deriveSessionMeta(source.header, (await meta.getById(id)) ?? undefined),
           resourceIds: [],
           shards: [],
           payloads: [],
-          counts: { threads: (session.threads?.length ?? 0) + 1, messages },
+          counts: source.counts,
         })
         yield entry.archive
         continue
@@ -232,9 +231,7 @@ export async function exportShardedBackup(
           let transformed: AsyncIterable<Uint8Array> | Iterable<Uint8Array>
           if (row.payload.value) {
             // Materialized payload: one native serialization plus the projection pass importers rely on.
-            const serialized = serializeBackupPayload(
-              prepareSessionForBackup({ id, name: '', messages: [row.payload.value] }).messages[0]
-            )
+            const serialized = serializeBackupPayload(prepareMessageForBackup(row.payload.value))
             prepared = serialized.projection
             transformed = serialized.blocks
           } else {
@@ -468,15 +465,13 @@ export async function importShardedBackup(
               : limits.maxPageBytes,
     }),
   }
-  const legacyTopologies = new Map<string, string>()
-  // Counts of every message a single-file session stores, including branches its tree encoding drops.
+  // Archive counts describe the external input before deterministic relationship repair.
   const storedCounts = new Map<string, { threads: number; messages: number }>()
   const singleTree = (data: Uint8Array) => {
     const value = parse(data)
     SessionSchema.parse(value)
     const session = value as Session
-    const encoded = encodeSessionTree(session, { activeThreadId: `backup-active:${session.id}`, now: 0 })
-    return { session, tree: encoded.ok ? encoded.tree : undefined, topology: encoded.ok ? undefined : encoded.reason }
+    return { session, tree: prepareLegacySessionRows(session) }
   }
   const rows = (data: Uint8Array, path: string) => {
     const value = parse(data)
@@ -511,20 +506,13 @@ export async function importShardedBackup(
       if (entry.path.endsWith('/session.json')) {
         if (manifest) throw new Error('Backup manifest must be last')
         finishGraph()
-        const { session, tree, topology } = singleTree(entry.data)
+        const { session, tree } = singleTree(entry.data)
         let messages = session.messages.length
         for (const thread of session.threads ?? []) messages += thread.messages.length
         for (const fork of Object.values(session.messageForksHash ?? {}))
           for (const list of fork.lists) messages += list.messages.length
         const counts = { threads: (session.threads?.length ?? 0) + 1, messages }
         storedCounts.set(session.id, counts)
-        if (!tree) {
-          // 混合分片备份也可携带旧 JSON。先保留诊断，清单校验后才允许按旧记录恢复，不能丢掉其中的消息。
-          legacyTopologies.set(session.id, topology!)
-          summaries.set(session.id, counts)
-          referenceCatalog.add(collectSessionResourceReferences(session).references)
-          return
-        }
         const graph = new BackupGraphValidator(session.id)
         graph.add(toLogicalBackupRow({ kind: 'header', record: tree.session }))
         for (const thread of tree.threads.sort((a, b) => a.seq - b.seq))
@@ -629,11 +617,6 @@ export async function importShardedBackup(
   )
   const expected = new Map<string, BackupJsonEntry>()
   for (const session of validated.sessions) {
-    const topology = legacyTopologies.get(session.id)
-    if (topology && (session.layout !== 'single' || !session.legacyTopology)) throw new Error(topology)
-    if (topology && !sharded.store.beginLegacyRestore)
-      throw new Error('Backup storage does not support legacy conversation restoration')
-    // A legacy JSON entry counts every stored message, including unreachable branches its tree encoding drops.
     const summary =
       session.layout === 'single' && session.legacyTopology ? storedCounts.get(session.id) : summaries.get(session.id)
     if (JSON.stringify(session.counts) !== JSON.stringify(summary)) throw new Error('Backup session counts mismatch')
@@ -802,44 +785,10 @@ export async function importShardedBackup(
           const restored = globals!.translate(
             rehydrateSessionAttachmentsAsInline(restoreSessionResourceKeys(singleTree(entry.data).session, keys))
           )
-          const encoded = encodeSessionTree(restored, { activeThreadId: `backup-active:${restored.id}`, now: 0 })
           const oldMeta = await options.metaStorage.getById(restored.id)
-          if (!encoded.ok) {
-            if (!legacyTopologies.has(restored.id) || !sharded.store.beginLegacyRestore) throw new Error(encoded.reason)
-            const candidate = await sharded.store.beginLegacyRestore(restored)
-            active = { id: restored.id, candidate, oldMeta }
-            candidates.push(active)
-            return
-          }
-          const candidate = await sharded.store.beginBackupRestore(restored.id)
+          const candidate = await stageLegacySessionRows(sharded.store, restored, options.signal)
           active = { id: restored.id, candidate, oldMeta }
           candidates.push(active)
-          await candidate.append({ kind: 'header', record: encoded.tree.session })
-          for (const thread of encoded.tree.threads) {
-            throwIfAborted(options.signal)
-            await candidate.append({ kind: 'thread', thread })
-          }
-          for (const message of encoded.tree.messages) {
-            throwIfAborted(options.signal)
-            if (fitsInlineBackupJson({ kind: 'message', message }, limits.maxRecordBytes))
-              await candidate.append({ kind: 'message', message })
-            else {
-              if (!candidate.appendPayload) throw new Error('Backup storage does not support payload restoration')
-              const validator = new BackupMessageValidator()
-              let size = 0
-              for (const bytes of jsonUtf8Blocks(message.message)) {
-                throwIfAborted(options.signal)
-                validator.write(bytes)
-                size += bytes.length
-                await candidate.appendPayload(bytes)
-              }
-              await candidate.append({
-                kind: 'message',
-                message: { ...message, message: validator.finish() },
-                payload: { size },
-              })
-            }
-          }
           return
         }
         if (entry.path.endsWith('.bin')) {

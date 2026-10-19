@@ -1,8 +1,6 @@
 import type { SessionHeader } from '@chatbox/core/ports'
-import { countCancellableGeneratingAssistantMessages } from '@chatbox/core/session/generation-state'
 import { guardBackupWrite } from '@/app/backup-operation-guard'
 import {
-  deriveSessionLockState,
   getSessionActionGate,
   type SessionAction,
   type SessionActionContext,
@@ -10,7 +8,6 @@ import {
 } from '@chatbox/core/session/action-gates'
 import { resolveSessionMode } from '@chatbox/core/session/mode-policy'
 import { supportsSessionGeneration } from '@shared/session/capabilities'
-import type { Session } from '@shared/types'
 import { t } from 'i18next'
 import { rendererApplication } from '@/app/renderer-application'
 import { notifySessionLockBlocked } from '@/utils/session-lock-copy'
@@ -21,52 +18,35 @@ import { getSessionAgentModeEntry } from './agent-mode'
  * Derive the lock snapshot for a session from its current stored state plus
  * the compaction runtime flag. Imperative counterpart to useSessionLockState
  * for call sites that must not hold a subscription (store actions, modal
- * click handlers). Callers that already fetched the session pass it to avoid
- * a second read.
+ * click handlers). Only control metadata is needed for the lock state.
  */
-export async function getSessionLockStateNow(
-  sessionId: string,
-  preloadedSession?: Session | null
-): Promise<SessionLockState | null> {
-  return (await readLockSnapshot(sessionId, preloadedSession))?.locks ?? null
+export async function getSessionLockStateNow(sessionId: string): Promise<SessionLockState | null> {
+  const control = await rendererApplication.sessions.readSessionGenerationControl({
+    sessionId,
+    activeGenerationMessageIds: [...rendererApplication.generationRuntime.getActiveMessageIds(sessionId)],
+  })
+  return control
+    ? {
+        generatingReplyCount: control.generatingReplyCount,
+        anyReplyGenerating: control.anyReplyGenerating,
+        awaitingPauseDecision: control.awaitingPauseDecision,
+        compactionRunning: getCompactionUIState(sessionId).status === 'running',
+      }
+    : null
 }
 
 async function readLockSnapshot(
   sessionId: string,
-  preloadedSession?: Session | null
+  preloadedSession?: SessionHeader | null
 ): Promise<{ session: SessionHeader; locks: SessionLockState } | null> {
-  const activeGenerationMessageIds = rendererApplication.generationRuntime.getActiveMessageIds(sessionId)
-  const compactionRunning = getCompactionUIState(sessionId).status === 'running'
-  if (preloadedSession === undefined) {
-    const source = await rendererApplication.sessions.readSessionMessages({
-      sessionId,
-      messageIds: [...activeGenerationMessageIds],
-    })
-    if (!source) return null
-    const summary = source.presentation
-    if (summary && !summary.hasForks) {
-      const generatingReplyCount = countCancellableGeneratingAssistantMessages(
-        source.messages,
-        activeGenerationMessageIds
-      )
-      return {
-        session: source.header,
-        locks: {
-          generatingReplyCount,
-          anyReplyGenerating: summary.generatingMessageCount > 0 || generatingReplyCount > 0,
-          awaitingPauseDecision: summary.pausedMessageCount > 0,
-          compactionRunning,
-        },
-      }
-    }
+  const locks = await getSessionLockStateNow(sessionId)
+  if (!locks) return null
+  const session = preloadedSession ?? (await rendererApplication.sessions.getSessionHeader(sessionId))?.header
+  if (!session) return null
+  return {
+    session,
+    locks,
   }
-  const session =
-    preloadedSession !== undefined
-      ? preloadedSession
-      : await rendererApplication.sessionQueryBridge.getSession(sessionId)
-  return session
-    ? { session, locks: deriveSessionLockState(session, { compactionRunning, activeGenerationMessageIds }) }
-    : null
 }
 
 /**
@@ -84,7 +64,7 @@ export async function guardSessionAction(
   sessionId: string,
   action: SessionAction,
   context: SessionActionContext = {},
-  preloadedSession?: Session | null
+  preloadedSession?: SessionHeader | null
 ): Promise<boolean> {
   if (!(await guardBackupWrite())) return false
   let session: SessionHeader | null

@@ -2,7 +2,10 @@ import type { Session, SessionMetaRecord } from '@shared/types'
 import { SessionMetaRecordSchema } from '@shared/types'
 import { v4 as uuidv4 } from 'uuid'
 import { migrateSession } from '../application/session/compatibility/session-load'
-import { createSessionMetaRecord, hasPausedToolCall } from '../application/session/session-metadata'
+import { createSessionMetaRecord } from '../application/session/session-metadata'
+import { hasPendingPauseInteraction } from '../message-approval'
+import { stageLegacySessionRows } from './legacy-row-import'
+import type { BackupSessionCandidate, BackupSessionStore } from './session-port'
 import { throwIfAborted } from './abort'
 import { BackupStorageKey, backupSessionStorageKey } from './storage-keys'
 import type { BackupFile, BackupMetaStorage, BackupStorage } from './types'
@@ -18,6 +21,7 @@ export interface LegacyBackupDataStore {
 export interface LegacyBackupImportOptions {
   signal?: AbortSignal
   storage: BackupStorage
+  sessions: BackupSessionStore
   metaStorage: BackupMetaStorage
   migrateData: (dataStore: LegacyBackupDataStore) => Promise<void>
   recoverSessionList: () => Promise<void>
@@ -76,6 +80,20 @@ export async function importLegacyJsonBackup(
       key !== BackupStorageKey.ChatSessionsList && key !== BackupStorageKey.ConfigVersion && !key.startsWith('__')
   )
   throwIfAborted(options.signal)
+  const sessionEntries: Array<[string, Session]> = []
+  const valueEntries: Array<[string, unknown]> = []
+  for (const [key, value] of entriesToImport) {
+    if (!key.startsWith('session:')) {
+      valueEntries.push([key, value])
+      continue
+    }
+    const sessionId = key.slice('session:'.length)
+    if (!sessionId || !value || typeof value !== 'object' || Array.isArray(value))
+      throw new Error('Legacy backup session identity mismatch')
+    const session = migrateSession(value as Session)
+    if (session.id !== sessionId) throw new Error('Legacy backup session identity mismatch')
+    sessionEntries.push([key, session])
+  }
   const existingKeys = new Set(await options.storage.getAllKeys())
   const previousMeta = await options.metaStorage.getAllIncludingHidden()
   const operationId = uuidv4()
@@ -83,24 +101,32 @@ export async function importLegacyJsonBackup(
   const changedKeys: typeof snapshots = []
   let metadataTouched = false
   let committed = false
+  let rollbackFailed = false
+  const candidates: BackupSessionCandidate[] = []
   const cleanup = async () => {
     for (const { previousKey } of snapshots) {
       if (previousKey) await options.storage.removeItem(previousKey)
     }
   }
   try {
+    for (const [, session] of sessionEntries) {
+      throwIfAborted(options.signal)
+      candidates.push(await stageLegacySessionRows(options.sessions, session, options.signal))
+    }
     // Store originals before publishing any record; failed rollback retains them.
-    for (const [key] of entriesToImport) {
+    for (const [key] of valueEntries) {
       throwIfAborted(options.signal)
       const previousKey = existingKeys.has(key) ? `__backup_legacy:${operationId}:${snapshots.length}` : undefined
       if (previousKey) await options.storage.setItemNow(previousKey, await options.storage.getItem(key, null))
       snapshots.push({ key, previousKey })
     }
-    for (const [index, [key, value]] of entriesToImport.entries()) {
+    for (const [index, [key, value]] of valueEntries.entries()) {
       throwIfAborted(options.signal)
       changedKeys.push(snapshots[index])
       await options.storage.setItemNow(key, value)
     }
+    throwIfAborted(options.signal)
+    for (const candidate of candidates) await candidate.publish(options.signal)
     throwIfAborted(options.signal)
     metadataTouched = true
 
@@ -115,7 +141,7 @@ export async function importLegacyJsonBackup(
         if (!record) continue
         const rawSession = importData[backupSessionStorageKey(record.id)]
         if (rawSession && typeof rawSession === 'object') {
-          record.hasPausedToolCall = hasPausedToolCall(migrateSession(rawSession as Session))
+          record.hasPausedToolCall = hasPendingPauseInteraction(migrateSession(rawSession as Session).messages)
         }
         const existing = await options.metaStorage.getById(record.id)
         if (existing) {
@@ -126,14 +152,10 @@ export async function importLegacyJsonBackup(
         } else await options.metaStorage.create(record)
         importedMetaCount++
       }
-    } else if (entriesToImport.some(([key]) => key.startsWith('session:'))) {
-      for (const [key] of entriesToImport) {
-        if (!key.startsWith('session:')) continue
-        const sessionId = key.slice('session:'.length)
-        if (!sessionId) continue
+    } else if (sessionEntries.length) {
+      for (const [, session] of sessionEntries) {
+        const sessionId = session.id
         throwIfAborted(options.signal)
-        const session = migrateSession(importData[key] as Session)
-        if (session.id !== sessionId) throw new Error('Legacy backup session identity mismatch')
         const record = createSessionMetaRecord(session, Date.now(), Date.now())
         const existing = await options.metaStorage.getById(sessionId)
         if (existing) await options.metaStorage.update(sessionId, { ...record, recoveryArchived: undefined })
@@ -155,6 +177,7 @@ export async function importLegacyJsonBackup(
         failures.push(failure)
       }
     }
+    for (const candidate of [...candidates].reverse()) await restore(() => candidate.rollback())
     if (metadataTouched) {
       await restore(async () => {
         for (const record of await options.metaStorage.getAllIncludingHidden()) {
@@ -169,14 +192,17 @@ export async function importLegacyJsonBackup(
         else await options.storage.removeItem(key)
       })
     }
-    if (failures.length)
+    if (failures.length) {
+      rollbackFailed = true
       throw new AggregateError(
         [error, ...failures],
         `Legacy import rollback failed; recovery data retained (${operationId})`
       )
+    }
     await cleanup()
     throw error
   } finally {
+    if (!rollbackFailed) for (const candidate of candidates) await candidate.dispose()
     if (committed) await cleanup()
   }
 }

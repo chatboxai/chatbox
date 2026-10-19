@@ -1,6 +1,8 @@
 import type { Session } from '@shared/types'
 import { v4 as uuid } from 'uuid'
 import { isRowsSessionRecord, type SessionRecordStorePort } from '../ports'
+import type { SessionRowStorePort } from '../ports/session-row-store'
+import { stageLegacySessionRows } from './legacy-row-import'
 import type { SessionRecordV2 } from '../session/session-tree'
 import { throwIfAborted } from './abort'
 import { type LegacyBackupSource, legacyBackupSource } from './legacy-source'
@@ -13,13 +15,12 @@ export interface BackupRecordSnapshots {
   remove(token: string): Promise<void>
 }
 
-/** 备份与附件归属扫描共用权威来源，避免覆盖导入后把残留旧行当成当前消息。 */
+/** Published row commits remain authoritative even when the external record projection is stale. */
 export function recordBackupSource(
-  rows: BackupSessionStore,
+  rows: BackupSessionStore & Pick<SessionRowStorePort, 'readCommit'>,
   records: SessionRecordStorePort,
   legacy: LegacyBackupSource
 ): BackupSessionStore {
-  // 完整旧记录在迁移提交前始终是权威来源；恢复旧 JSON 后可能仍留有用于回滚的旧行。
   const source = legacyBackupSource(
     {
       listSessionIds: async () => [],
@@ -28,32 +29,35 @@ export function recordBackupSource(
     },
     legacy
   )
+  const published = async (id: string) => {
+    const commit = await rows.readCommit(id)
+    if (commit?.record.rowAuthority === 1) return true
+    if (legacy.open) return false
+    const record = await records.getRecord(id)
+    if (record && isRowsSessionRecord(record)) {
+      if (!commit) throw new Error(`Published rows are missing for ${id}`)
+      return true
+    }
+    return false
+  }
   return {
     beginBackupRestore: rows.beginBackupRestore.bind(rows),
-    listSessionIds: () => records.listIds(),
-    async *iterateBackupRows(id, limits, signal) {
-      // 没有行数据的旧对话直接走有界扫描，避免为判断格式先整段读取大 JSON。
-      if (!(await rows.listSessionIds()).includes(id)) {
-        yield* source.iterateBackupRows(id, limits, signal)
-        return
-      }
-      const record = await records.getRecord(id)
-      if (record && !isRowsSessionRecord(record)) yield* source.iterateBackupRows(id, limits, signal)
-      else yield* rows.iterateBackupRows(id, limits, signal)
+    listSessionIds: async () => {
+      const [rowIds, recordIds] = await Promise.all([rows.listSessionIds(), records.listIds()])
+      return [...new Set([...rowIds, ...recordIds])]
     },
-    readLegacySession: async (id, maxBytes, signal) => {
-      if ((await rows.listSessionIds()).includes(id)) {
-        const record = await records.getRecord(id)
-        if (!record || isRowsSessionRecord(record)) return null
-      }
-      return source.readLegacySession!(id, maxBytes, signal)
+    async *iterateBackupRows(id, limits, signal, threadId) {
+      if (await published(id)) yield* rows.iterateBackupRows(id, limits, signal, threadId)
+      else yield* source.iterateBackupRows(id, limits, signal, threadId)
     },
+    readLegacySession: async (id, maxBytes, signal) =>
+      (await published(id)) ? null : source.readLegacySession!(id, maxBytes, signal),
   }
 }
 
 /** Publishes the row head and the repository's key-value marker under the backup lock. */
 export function createRecordBackupSessionStore(
-  rows: BackupSessionStore,
+  rows: BackupSessionStore & Pick<SessionRowStorePort, 'readCommit'>,
   records: SessionRecordStorePort,
   snapshots: BackupRecordSnapshots,
   legacy: LegacyBackupSource,
@@ -62,53 +66,14 @@ export function createRecordBackupSessionStore(
   return {
     ...recordBackupSource(rows, records, legacy),
     async beginLegacyRestore(session) {
-      const token = `__chatbox_backup_import:record:${createId()}`
-      const id = session.id
-      const staged = `${token}:staged`
-      const existed = await snapshots.capture(id, token)
-      try {
-        // 候选旧 JSON 落到临时存储，不能把每个待恢复对话都留在内存中直到整包提交。
-        await snapshots.stage(staged, session)
-      } catch (error) {
-        await snapshots.remove(staged)
-        await snapshots.remove(token)
-        throw error
-      }
-      let written = false
-      let rollbackFailed = false
-      return {
-        async append() {
-          throw new Error('Legacy restore does not accept message rows')
-        },
-        async publish(signal) {
-          throwIfAborted(signal)
-          written = true
-          await snapshots.restore(id, staged, true)
-          throwIfAborted(signal)
-        },
-        async rollback() {
-          if (!written) return
-          try {
-            await snapshots.restore(id, token, existed)
-            written = false
-          } catch (error) {
-            rollbackFailed = true
-            throw new Error(`Backup session rollback failed; recovery record retained (${token})`, { cause: error })
-          }
-        },
-        async dispose() {
-          if (rollbackFailed) throw new Error(`Backup recovery record retained (${token})`)
-          await snapshots.remove(staged)
-          await snapshots.remove(token)
-        },
-      }
+      return stageLegacySessionRows(this, session)
     },
-    async beginBackupRestore(id) {
+    async beginBackupRestore(id, expectedRevision) {
       const token = `__chatbox_backup_import:record:${createId()}`
       const existed = await snapshots.capture(id, token)
       let candidate: Awaited<ReturnType<typeof rows.beginBackupRestore>>
       try {
-        candidate = await rows.beginBackupRestore(id)
+        candidate = await rows.beginBackupRestore(id, expectedRevision)
       } catch (error) {
         await snapshots.remove(token)
         throw error
@@ -128,7 +93,14 @@ export function createRecordBackupSessionStore(
           throwIfAborted(signal)
           await candidate.publish(signal)
           markerWritten = true
-          await records.setRecord(header)
+          const {
+            forkCreatedAt: _forks,
+            presentation: _presentation,
+            contextReadProjection: _context,
+            topologyFingerprint: _fingerprint,
+            ...canonical
+          } = header
+          await records.setRecord({ ...canonical, rowFormatVersion: 3, rowAuthority: 1 })
           throwIfAborted(signal)
         },
         async rollback() {

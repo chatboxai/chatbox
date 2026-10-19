@@ -1,7 +1,9 @@
 import type { Session } from '@shared/types'
 import { expect, it, vi } from 'vitest'
 import { contextSnapshot } from '../persistence/session-context-read.test-support'
-import { exportBackupArchive, type BackupExportOptions } from './export-backup'
+import type { BackupExportOptions } from './export-backup'
+import { exportBackupArchiveWithRows as exportBackupArchive } from './export.test-support'
+import { prepareBackupExport } from './preflight'
 import { BackupResourceCatalog } from './resource-catalog'
 import { collectSessionResourceReferences } from './resources'
 import type { BackupSessionStore } from './session-port'
@@ -67,10 +69,8 @@ it.each(['v2', 'v3'] as const)(
       ...(format === 'v3'
         ? { sharded: { store } }
         : {
-            readSession: async (id: string) => {
-              sessionsRead++
-              return externalSession(id)
-            },
+            sessionStore: store,
+            prepared: await prepareBackupExport({ ...options(), sessionStore: store }, { preparedEntryBytes: 0 }),
           }),
       writeArchive: async (stream) => {
         try {
@@ -82,6 +82,8 @@ it.each(['v2', 'v3'] as const)(
         }
       },
     }
+    sessionsRead = 0
+    closedSources = 0
     await expect(exportBackupArchive(request)).rejects.toBeInstanceOf(BackupWarningBudgetError)
     expect(sessionsRead).toBeLessThan(ids.length)
     expect(writerClosed).toBe(true)

@@ -1,3 +1,4 @@
+import { convertLegacyTreeToRowFormat } from '../../../../packages/chatbox-core/src/application/session/compatibility/row-format'
 import 'fake-indexeddb/auto'
 import {
   BackupManifestV3Schema,
@@ -48,6 +49,15 @@ const fixture = () =>
       },
     },
   })
+
+function rowFormat3(snapshot: ReturnType<typeof contextSnapshot>) {
+  const tree = convertLegacyTreeToRowFormat({ session: snapshot.record, ...snapshot.rows })
+  return {
+    ...snapshot,
+    record: tree.session,
+    rows: { sessionId: snapshot.rows.sessionId, threads: tree.threads, messages: tree.messages },
+  }
+}
 
 async function exportFile(
   source: BackupSessionStore,
@@ -179,11 +189,6 @@ it.each([
         metaStorage: new MemoryMetaStorage(),
         sharded: { store: target, nativePayloadLimit },
       })
-      if (layout === 'single') {
-        const restored = await restoredStorage.getItem<Session | null>(backupSessionStorageKey(session.id), null)
-        if (!restored) throw new Error('Missing restored session')
-        await target.writeRows(contextSnapshot(restored))
-      }
       expect(await target.readSnapshot(session.id)).not.toBeNull()
       expect((await target.readSnapshot(session.id))?.rows).toEqual(snapshot.rows)
       for (const [key, value] of storage.blobs) expect(restoredStorage.blobs.get(key)).toBe(value)
@@ -193,11 +198,6 @@ it.each([
         metaStorage: new MemoryMetaStorage(),
         sharded: { store: source, nativePayloadLimit },
       })
-      if (layout === 'single') {
-        const restored = await storage.getItem<Session | null>(backupSessionStorageKey(session.id), null)
-        if (!restored) throw new Error('Missing restored session')
-        await source.writeRows(contextSnapshot(restored))
-      }
       expect((await source.readSnapshot(session.id))?.rows).toEqual(snapshot.rows)
     } finally {
       database.close()
@@ -246,7 +246,7 @@ it('batches 64 KiB stored payloads and restores mixed message sizes through SQLi
 
 it('round trips a large IndexedDB message and resumes window reads, edits and reopening', async () => {
   const store = new IndexedDBSessionRowStore()
-  const snapshot = contextSnapshot({
+  let snapshot = contextSnapshot({
     id: 'large-idb',
     name: 'Large',
     messages: [
@@ -258,6 +258,7 @@ it('round trips a large IndexedDB message and resumes window reads, edits and re
       },
     ],
   })
+  snapshot = rowFormat3(snapshot)
   await store.writeRows(snapshot)
   const archive = await exportFile(store, DEFAULT_BACKUP_PAGE_LIMITS)
   await importBackupArchive(archive, {
@@ -266,7 +267,7 @@ it('round trips a large IndexedDB message and resumes window reads, edits and re
     sharded: { store },
   })
   expect((await store.readSnapshot(snapshot.record.id))?.rows).toEqual(snapshot.rows)
-  const window = await store.readMessageWindow({ sessionId: snapshot.record.id, limit: 1 })
+  const window = await store.readTranscriptWindow({ sessionId: snapshot.record.id, limit: 1 })
   if (!window) throw new Error('Missing large message window')
   expect(window.messages[0].message).toEqual(snapshot.rows.messages[0].message)
   const updated = { ...window.messages[0], message: { ...window.messages[0].message, modelId: 'updated' } }
@@ -371,9 +372,17 @@ it('keeps an existing whole message complete in a v2 export prepared from Indexe
   })
   store.close()
   const restored = new MemoryStorage()
-  await importBackupArchive(archive, { storage: restored, metaStorage: new MemoryMetaStorage() })
-  const session = restored.values.get(backupSessionStorageKey(snapshot.record.id)) as Session
-  expect(session.messages[0].contentParts).toEqual([{ type: 'text', text }])
+  const target = new IndexedDBSessionRowStore()
+  await importBackupArchive(archive, {
+    storage: restored,
+    metaStorage: new MemoryMetaStorage(),
+    sharded: { store: target, nativePayloadLimit: 0 },
+  })
+  const rows = await target.readMessages({
+    sessionId: snapshot.record.id,
+    messageIds: [snapshot.rows.messages[0].messageId],
+  })
+  expect(rows?.messages[0].message.contentParts).toEqual([{ type: 'text', text }])
 })
 
 it('keeps wide messages readable while allowing only one payload write in flight', async () => {
@@ -453,7 +462,7 @@ it('cancels while preparing rollback for a legacy large row and preserves the or
 
 it('round trips full branches through public ZIP backup and resumes ordinary IndexedDB reads and edits', async () => {
   const store = new IndexedDBSessionRowStore()
-  const original = fixture()
+  const original = rowFormat3(fixture())
   await store.writeRows(original)
   const file = await exportFile(store)
   await store.deleteRows(original.record.id)
@@ -467,7 +476,7 @@ it('round trips full branches through public ZIP backup and resumes ordinary Ind
   const decoded = decodeSessionTree({ session: restored.record, ...restored.rows })
   expect(decoded.ok).toBe(true)
   if (decoded.ok) expect(decoded.session.messages.map((message) => message.id)).toEqual(['z-first', 'a-last'])
-  const window = await store.readMessageWindow({ sessionId: original.record.id, limit: 2 })
+  const window = await store.readTranscriptWindow({ sessionId: original.record.id, limit: 2 })
   expect(window?.messages.map((message) => message.messageId)).toEqual(['z-first', 'a-last'])
   const edited = {
     ...restored.rows.messages.find((message) => message.messageId === 'a-last')!,
@@ -710,7 +719,7 @@ it('restores a mixed archive single layout message above the IndexedDB inline bu
       sharded: { store: target },
     })
     expect(
-      (await target.readMessageWindow({ sessionId: 'small', limit: 1 }))?.messages[0].message.contentParts
+      (await target.readTranscriptWindow({ sessionId: 'small', limit: 1 }))?.messages[0].message.contentParts
     ).toEqual([{ type: 'text', text: 'x'.repeat(200000) }])
   } finally {
     database.close()

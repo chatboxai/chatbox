@@ -6,6 +6,9 @@ import { InMemorySessionRecordStore } from '../../testing/InMemorySessionRecordS
 import type { Message, Session } from '../../types/session'
 import { RowBackedSessionRepository } from './RowBackedSessionRepository'
 import { SessionSearchService } from './SessionSearchService'
+import { SessionRowWriteQueue } from './SessionRowWriteQueue'
+import { encodeSessionTree } from '../../session/session-tree/encode'
+import { convertLegacyTreeToRowFormat } from './compatibility/row-format'
 
 const databases: NodeSessionRowSqlDatabase[] = []
 afterEach(() => {
@@ -56,19 +59,37 @@ function fixture(status: 'settled' | 'generating' | 'paused'): Session {
   return session
 }
 
-async function harness(status: 'settled' | 'generating' | 'paused' = 'settled', migrateLegacyBeforeRead = false) {
+async function harness(status: 'settled' | 'generating' | 'paused' = 'settled') {
   const database = openNodeSessionRowDatabase()
   databases.push(database)
   const rows = new SqlSessionRowStore(database)
   const records = new InMemorySessionRecordStore()
-  const repository = new RowBackedSessionRepository({ records, rows, now: () => 1, migrateLegacyBeforeRead })
+  const repository = new RowBackedSessionRepository({
+    records,
+    rows,
+    backup: rows,
+    writes: new SessionRowWriteQueue((_id, run) => run()),
+    now: () => 1,
+  })
   const session = fixture(status)
-  await repository.setSession(session)
+  await rows.initialize()
+  const encoded = encodeSessionTree(session, { activeThreadId: session.id, now: 1 })
+  if (!encoded.ok) throw new Error(encoded.reason)
+  const tree = convertLegacyTreeToRowFormat(encoded.tree, encoded.normalized.messageForksHash)
+  await rows.writeRows(
+    {
+      record: tree.session,
+      revision: 1,
+      rows: { sessionId: session.id, threads: tree.threads, messages: tree.messages },
+    },
+    null
+  )
+  await records.setRecord(tree.session)
   const search = new SessionSearchService(
     {
       listSessionsMetaPage: async () => ({ items: [], nextCursor: null, total: 0 }),
-      readSessionSearchThreadsPage: (request) => repository.readSessionSearchThreadsPage(request),
-      readSessionMessageWindow: (request) => repository.readSessionMessageWindow(request),
+      readSessionSearchCandidates: (request) => repository.readSessionSearchCandidates(request),
+      readSessionSearchWindow: (request) => repository.readSessionSearchWindow(request),
     },
     async () => {}
   )
@@ -80,12 +101,7 @@ describe('search storage on real SQLite', () => {
     'searches selected forks and archived threads in bounded pages while %s',
     async (status) => {
       const { database, rows, repository, session, search } = await harness(status)
-      const fullRead = vi
-        .spyOn(repository, 'getSessionReadModel')
-        .mockRejectedValue(new Error('Complete read model is forbidden'))
-      const snapshot = vi.spyOn(rows, 'readSnapshot').mockRejectedValue(new Error('Full graph read is forbidden'))
-      const messageReads = vi.spyOn(rows, 'readMessageWindow')
-      const threadReads = vi.spyOn(rows, 'readThreadsPage')
+      const messageReads = vi.spyOn(rows, 'readTranscriptWindow')
       const queries: Array<{ sql: string; count: number }> = []
       const query = database.query.bind(database)
       vi.spyOn(database, 'query').mockImplementation(async <T>(sql: string, params: SessionRowSqlBindValue[] = []) => {
@@ -96,9 +112,7 @@ describe('search storage on real SQLite', () => {
       const result = await search.search('needle', { sessionId: session.id })
       expect(result.failedSessionIds).toEqual([])
       expect(result.hits.map((hit) => hit.messageId)).toEqual(['m30', 'h0'])
-      expect(fullRead).not.toHaveBeenCalled()
-      expect(snapshot).not.toHaveBeenCalled()
-      expect(threadReads).toHaveBeenCalledTimes(2)
+      expect(messageReads.mock.calls.length).toBeGreaterThan(2)
       expect(messageReads.mock.calls.every(([request]) => request.limit <= 50 && request.expectedRevision === 1)).toBe(
         true
       )
@@ -109,69 +123,67 @@ describe('search storage on real SQLite', () => {
     }
   )
 
-  it('rejects a new thread window after the session changes between threads', async () => {
+  it('continues SQLite selected-path search between real stream checkpoints', async () => {
+    const { repository, rows, session } = await harness('generating')
+    let checkpoints = 0
+    const search = new SessionSearchService(
+      {
+        listSessionsMetaPage: async () => ({ items: [], nextCursor: null, total: 0 }),
+        readSessionSearchCandidates: (request) => repository.readSessionSearchCandidates(request),
+        readSessionSearchWindow: (request) => repository.readSessionSearchWindow(request),
+      },
+      async () => {
+        await repository.executeSessionCommand(session.id, {
+          type: 'update',
+          messageId: 'm119',
+          updater: {
+            contentParts: [{ type: 'text', text: `checkpoint ${++checkpoints}` }],
+          },
+        })
+      }
+    )
+    const reads = vi.spyOn(rows, 'readTranscriptWindow')
+    const result = await search.search('needle', { sessionId: session.id })
+    expect(result.failedSessionIds).toEqual([])
+    expect(result.hits.map((hit) => hit.messageId)).toEqual(['m30', 'h0'])
+    expect(checkpoints).toBeGreaterThan(2)
+    expect(reads.mock.calls.filter(([request]) => request.origin === 'tail')).toHaveLength(1)
+    expect(reads.mock.calls.every(([request]) => request.limit <= 50 && request.maxBytes === 2 * 1024 * 1024)).toBe(
+      true
+    )
+  })
+
+  it('rejects a transcript continuation after a header commit', async () => {
     const { repository, session } = await harness()
-    const page = await repository.readSessionSearchThreadsPage({ sessionId: session.id, limit: 20 })
-    if (page?.kind !== 'rows') throw new Error('Expected bounded search source')
-    await repository.readSessionMessageWindow({ sessionId: session.id, limit: 50, expectedRevision: page.revision })
-    await repository.setSession({ ...session, name: 'Updated chat' }, { baseSession: session })
+    const page = await repository.readSessionTranscriptWindow({ sessionId: session.id, origin: 'tail', limit: 50 })
+    if (!page?.older) throw new Error('Expected continuation')
+    await repository.executeSessionCommand(session.id, { type: 'header', updater: { name: 'Updated chat' } })
     await expect(
-      repository.readSessionMessageWindow({
+      repository.readSessionTranscriptWindow({
         sessionId: session.id,
-        threadId: 'history-24',
         limit: 50,
+        cursor: page.older,
         expectedRevision: page.revision,
       })
     ).rejects.toBeInstanceOf(SessionRowConflictError)
-    if (!page.nextCursor) throw new Error('Expected history continuation')
-    await expect(
-      repository.readSessionSearchThreadsPage({ sessionId: session.id, limit: 20, cursor: page.nextCursor })
-    ).rejects.toBeInstanceOf(SessionRowConflictError)
   })
 
-  it('stops before another SQLite window or thread page when search is canceled between batches', async () => {
+  it('stops before another SQLite body page when canceled between batches', async () => {
     const { repository, rows, session } = await harness()
     const controller = new AbortController()
     const canceled = new Error('Canceled by a new query')
     const search = new SessionSearchService(
       {
         listSessionsMetaPage: async () => ({ items: [], nextCursor: null, total: 0 }),
-        readSessionSearchThreadsPage: (request) => repository.readSessionSearchThreadsPage(request),
-        readSessionMessageWindow: (request) => repository.readSessionMessageWindow(request),
+        readSessionSearchCandidates: (request) => repository.readSessionSearchCandidates(request),
+        readSessionSearchWindow: (request) => repository.readSessionSearchWindow(request),
       },
       async () => {
         controller.abort(canceled)
       }
     )
-    const windows = vi.spyOn(rows, 'readMessageWindow')
-    const threads = vi.spyOn(rows, 'readThreadsPage')
+    const windows = vi.spyOn(rows, 'readTranscriptWindow')
     await expect(search.search('needle', { sessionId: session.id, signal: controller.signal })).rejects.toBe(canceled)
     expect(windows).toHaveBeenCalledTimes(1)
-    expect(threads).toHaveBeenCalledTimes(1)
-  })
-
-  it('rejects a row cursor when the next thread page has become a legacy source', async () => {
-    const { repository, records, session } = await harness('settled', true)
-    const page = await repository.readSessionSearchThreadsPage({ sessionId: session.id, limit: 20 })
-    if (page?.kind !== 'rows' || !page.nextCursor) throw new Error('Expected row continuation')
-    await records.setRecord(session)
-    const fullRead = vi.spyOn(repository, 'getSession')
-    const recordReads = vi.spyOn(records, 'getRecord')
-    await expect(
-      repository.readSessionSearchThreadsPage({ sessionId: session.id, limit: 20, cursor: page.nextCursor })
-    ).rejects.toBeInstanceOf(SessionRowConflictError)
-    expect(fullRead).not.toHaveBeenCalled()
-    expect(recordReads).toHaveBeenCalledTimes(1)
-  })
-
-  it('retains complete-session fallback for an unmigrated record', async () => {
-    const { repository, session, rows, records } = await harness()
-    await rows.deleteRows(session.id)
-    await records.setRecord(session)
-    const result = await repository.readSessionSearchThreadsPage({ sessionId: session.id, limit: 20 })
-    expect(result?.kind).toBe('full')
-    if (result?.kind !== 'full') throw new Error('Expected compatibility source')
-    expect(result.session.messages).toHaveLength(120)
-    expect(result.session.messageForksHash?.m118.lists[1].messages[0].id).toBe('hidden-fork')
   })
 })

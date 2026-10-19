@@ -57,6 +57,7 @@ function harness(threshold = 57_600) {
         return { status: 'failed', failure: { code: 'summary_failed', message: 'summary unavailable' } }
       return {
         status: 'compacted',
+        revision: 1,
         summaryMessageId: `summary-${compactions}`,
         summary: `summary-${compactions}`,
         coverage: {

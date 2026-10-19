@@ -1,9 +1,5 @@
 import { withSessionGenerationLock } from '@chatbox/core/generation'
-import {
-  countCancellableGeneratingAssistantMessages,
-  getGenerationControlMessages,
-} from '@chatbox/core/session/generation-state'
-import { createMessage, type Message, type Session } from '@shared/types'
+import { createMessage, type Message } from '@shared/types'
 import { v4 as uuidv4 } from 'uuid'
 import { createStore } from 'zustand'
 import { rendererApplication } from '@/app/renderer-application'
@@ -206,19 +202,6 @@ export function isSteerableQueuedMessage(message: Message): boolean {
   return message.contentParts.every((part) => part.type === 'text')
 }
 
-function findLastAssistantMessage(session: Session): Message | undefined {
-  for (let i = session.messages.length - 1; i >= 0; i -= 1) {
-    if (session.messages[i].role === 'assistant') return session.messages[i]
-  }
-  return undefined
-}
-
-function currentConversationHasPausedToolCall(session: Session): boolean {
-  return session.messages.some((message) =>
-    message.contentParts.some((part) => part.type === 'tool-call' && part.state === 'paused')
-  )
-}
-
 function consumeForceResume(sessionId: string): boolean {
   if (!forceResume.has(sessionId)) return false
   forceResume.delete(sessionId)
@@ -239,10 +222,13 @@ function deliverQueuedMessage(sessionId: string, item: QueuedUserMessage): Promi
     // Steering may have consumed this item while we waited for the lock.
     if (getQueue(sessionId)[0]?.id !== item.id) return 'stale'
 
-    const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
+    const session = await rendererApplication.sessions.readSessionConversationState({
+      sessionId,
+      messageIds: [item.id, ...(item.conversationAnchorId ? [item.conversationAnchorId] : [])],
+    })
     if (!session) return 'discard'
 
-    const activePathHasItem = session.messages.some((message) => message.id === item.id)
+    const activePathHasItem = session.matchedMessageIds.includes(item.id)
 
     // The conversation the item was queued for is no longer the active path
     // (thread or fork switched); pause instead of sending it into the wrong
@@ -252,7 +238,7 @@ function deliverQueuedMessage(sessionId: string, item: QueuedUserMessage): Promi
     if (
       !activePathHasItem &&
       item.conversationAnchorId &&
-      !session.messages.some((message) => message.id === item.conversationAnchorId)
+      !session.matchedMessageIds.includes(item.conversationAnchorId)
     ) {
       return { paused: 'conversation-changed' }
     }
@@ -260,33 +246,33 @@ function deliverQueuedMessage(sessionId: string, item: QueuedUserMessage): Promi
     // Alternative replies generate concurrently without holding the session lock,
     // so an explicit check is required in addition to lock serialization.
     const activeGenerationMessageIds = rendererApplication.generationRuntime.getActiveMessageIds(sessionId)
-    if (
-      countCancellableGeneratingAssistantMessages(
-        getGenerationControlMessages(session, activeGenerationMessageIds),
-        activeGenerationMessageIds
-      ) > 0
-    )
-      return 'deferred'
+    const control = await rendererApplication.sessions.readSessionGenerationControl({
+      sessionId,
+      activeGenerationMessageIds: [...activeGenerationMessageIds],
+      expectedRevision: session.revision,
+    })
+    if (!control) return 'discard'
+    if (control.generatingReplyCount > 0) return 'deferred'
     // A paused tool call is waiting for user approval; delivering now would start
     // a follow-up generation behind the approval dialog.
-    if (currentConversationHasPausedToolCall(session)) return 'deferred'
+    if (control.awaitingPauseDecision) return 'deferred'
 
     // A previous attempt may have persisted the user message and then failed;
     // re-submitting would append a duplicate. If the reply never started (the
     // user message is last) or only its placeholder exists (a stale generating
     // assistant right after it), resume the generation instead.
     if (activePathHasItem) {
-      const lastMessage = session.messages.at(-1)
+      const lastMessage = session.tailMessages.at(-1)
       const orphanUserMessage = lastMessage?.id === item.id ? lastMessage : undefined
       const orphanPlaceholder =
         !orphanUserMessage &&
         lastMessage?.role === 'assistant' &&
         lastMessage.generating === true &&
         !activeGenerationMessageIds.has(lastMessage.id) &&
-        session.messages.at(-2)?.id === item.id
+        session.tailMessages.at(-2)?.id === item.id
           ? lastMessage
           : undefined
-      const persistedMessage = orphanUserMessage ?? (orphanPlaceholder ? session.messages.at(-2) : undefined)
+      const persistedMessage = orphanUserMessage ?? (orphanPlaceholder ? session.tailMessages.at(-2) : undefined)
       if (persistedMessage) {
         setItemInFlight(sessionId, item.id, true)
         try {
@@ -315,7 +301,7 @@ function deliverQueuedMessage(sessionId: string, item: QueuedUserMessage): Promi
       return 'delivered'
     }
 
-    const lastAssistant = findLastAssistantMessage(session)
+    const lastAssistant = session.lastAssistantMessage
     if (lastAssistant && !consumeForceResume(sessionId)) {
       if (lastAssistant.finishReason === 'canceled') return { paused: 'stopped' }
       if (lastAssistant.error !== undefined || lastAssistant.errorCode !== undefined) return { paused: 'error' }
@@ -349,12 +335,15 @@ function deliverQueuedCompaction(sessionId: string, item: QueuedCompactionReques
   return withSessionGenerationLock(sessionId, async (): Promise<DeliveryOutcome> => {
     if (getQueue(sessionId)[0]?.id !== item.id) return 'stale'
 
-    const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
+    const session = await rendererApplication.sessions.readSessionConversationState({
+      sessionId,
+      messageIds: [item.id, ...(item.conversationAnchorId ? [item.conversationAnchorId] : [])],
+    })
     if (!session) return 'discard'
 
     if (
       item.conversationAnchorId &&
-      !session.messages.some((message) => message.id === item.conversationAnchorId) &&
+      !session.matchedMessageIds.includes(item.conversationAnchorId) &&
       // "Send now" is the user answering the conversation-changed pause, so it
       // also has to release a compression whose anchor message is gone.
       !consumeForceResume(sessionId)
@@ -363,14 +352,14 @@ function deliverQueuedCompaction(sessionId: string, item: QueuedCompactionReques
     }
 
     const activeGenerationMessageIds = rendererApplication.generationRuntime.getActiveMessageIds(sessionId)
-    if (
-      countCancellableGeneratingAssistantMessages(
-        getGenerationControlMessages(session, activeGenerationMessageIds),
-        activeGenerationMessageIds
-      ) > 0
-    )
-      return 'deferred'
-    if (currentConversationHasPausedToolCall(session)) return 'deferred'
+    const control = await rendererApplication.sessions.readSessionGenerationControl({
+      sessionId,
+      activeGenerationMessageIds: [...activeGenerationMessageIds],
+      expectedRevision: session.revision,
+    })
+    if (!control) return 'discard'
+    if (control.generatingReplyCount > 0) return 'deferred'
+    if (control.awaitingPauseDecision) return 'deferred'
 
     // Lazy import to avoid a circular dependency (the compaction module imports this store).
     const { isCompactionInProgress, runCompactionWithUIState } = await import('@/packages/context-management')
@@ -564,21 +553,17 @@ export function hasQueuedWork(sessionId: string): boolean {
  * cannot be anchored on it. Steered messages keep using the newest message of
  * the conversation scope they were admitted into.
  */
-export function conversationAnchorIdOf(session: Session): string | undefined {
-  for (let index = session.messages.length - 1; index >= 0; index -= 1) {
-    const message = session.messages[index]
-    if (!message.generating) return message.id
-  }
-  return undefined
+export async function readConversationAnchorId(sessionId: string): Promise<string | undefined> {
+  return (await rendererApplication.sessions.readSessionConversationState({ sessionId }))?.lastSettledMessageId
 }
 
 // Best-effort async stamp; an unstamped item simply skips the conversation-changed gate.
 function stampConversationAnchor(sessionId: string, itemId: string): void {
-  void rendererApplication.sessionQueryBridge
-    .getSession(sessionId)
+  void rendererApplication.sessions
+    .readSessionConversationState({ sessionId })
     .then((session) => {
       if (!session) return
-      const anchorId = session.messages.at(-1)?.id
+      const anchorId = session.tailMessages.at(-1)?.id
       if (!anchorId) return
       setQueue(
         sessionId,

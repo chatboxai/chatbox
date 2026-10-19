@@ -45,11 +45,15 @@ vi.mock('../storage/blob-write-tracker', () => ({
 }))
 
 vi.mock('@/app/renderer-application', async () => {
-  const { BackupOperationCoordinator } = await import('@chatbox/core/backup')
+  const { BackupOperationCoordinator, collectSessionResourceReferences } = await import('@chatbox/core/backup')
   return {
     rendererApplication: { backupOperations: new BackupOperationCoordinator() },
     sessionRepository: {
-      getSession: vi.fn(async (id: string) => sessionStore.get(`session:${id}`) ?? null),
+      iterateSessionResourceReferences: vi.fn(async function* (id: string) {
+        const session = sessionStore.get(`session:${id}`)
+        if (!session) throw new Error('Missing resource owner')
+        yield* collectSessionResourceReferences(session as import('@shared/types').Session).references
+      }),
     },
   }
 })

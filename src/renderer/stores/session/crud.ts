@@ -1,22 +1,12 @@
 import { BackupOperationBusyError } from '@chatbox/core/backup'
-import { getGenerationControlMessages } from '@chatbox/core/session/generation-state'
 import {
   areSessionsInSameListGroup,
   excludeCollapsedFolderSessions,
   findGroupSuccessor,
   getSessionListGroup,
 } from '@chatbox/core/utils/session-sort'
-import {
-  copyMessageForksWithMapping,
-  copyMessagesWithMapping,
-  copyThreadsWithMapping,
-  createMessage,
-  remapCompactionPoints,
-  type Session,
-  type SessionMeta,
-} from '@shared/types'
+import type { Message, SessionHeader } from '@shared/types'
 import { getDefaultStore } from 'jotai'
-import { omit } from 'lodash'
 import { guardBackupWrite } from '@/app/backup-operation-guard'
 import { rendererApplication } from '@/app/renderer-application'
 import platform from '@/platform'
@@ -36,45 +26,11 @@ async function clearMessageQueues(sessionIds: string[]): Promise<void> {
   for (const sessionId of sessionIds) clearQueue(sessionId)
 }
 
-/**
- * Abort every in-flight generation of a session: registered runtimes first,
- * then `generating` placeholders the runtime has not registered yet (their
- * abort lands as a pendingAbort tombstone). Abort-only on purpose — callers
- * that keep the session (clear) finalize through the runtime's own paths, and
- * callers that delete it have nothing left to persist to.
- */
-function abortSessionGenerations(sessionId: string, session: Session | null | undefined, reason: string): void {
-  const activeRuntimeIds = rendererApplication.generationRuntime.getActiveMessageIds(sessionId)
-  for (const messageId of activeRuntimeIds) {
-    rendererApplication.generationRuntime.requestAbort(sessionId, messageId, reason)
-  }
-  if (!session) return
-  for (const message of getGenerationControlMessages(session, activeRuntimeIds)) {
-    if (message.generating && !activeRuntimeIds.has(message.id)) {
-      rendererApplication.generationRuntime.requestAbort(sessionId, message.id, reason)
-    }
-  }
-}
-
 function abortGenerationsBeforeDeletion(sessionId: string): void {
-  // Deletion must stop in-flight work before the session disappears: a
-  // generation still preparing its request (attachments, OCR, tools) would
-  // otherwise dispatch a billable provider call for a deleted conversation.
-  // (The removed request-snapshot checkpoint used to fail that dispatch as a
-  // side effect of its pre-dispatch persist.)
-  //
-  // The placeholder scan reads the cache only, never a fetch: bulk deletion
-  // (delete-all-archived) would otherwise pull every session's full message
-  // list into the query cache before the first delete, and those entries stay
-  // resident until the deletion completes. An unregistered `generating`
-  // placeholder can only exist for a session this renderer is generating in,
-  // and such a session is always cached — a cache miss has nothing to abort
-  // beyond the registered runtimes handled above.
-  abortSessionGenerations(
-    sessionId,
-    rendererApplication.sessionQueryBridge.getCachedSession(sessionId),
-    'session-deleted'
-  )
+  const runtime = rendererApplication.generationRuntime
+  runtime.beginSessionStop(sessionId, 'session-deleted')
+  for (const messageId of runtime.getActiveMessageIds(sessionId))
+    runtime.requestAbort(sessionId, messageId, 'session-deleted')
 }
 
 export async function deleteSession(sessionId: string): Promise<void> {
@@ -82,8 +38,11 @@ export async function deleteSession(sessionId: string): Promise<void> {
   abortGenerationsBeforeDeletion(sessionId)
   // Clear only after the deletion succeeded: queued messages are the sole copy
   // of the user's text, and a failed deletion leaves the session (and queue) alive.
-  await rendererApplication.sessions.deleteSession(sessionId)
-  rendererApplication.generationRuntime.clearSessionStop(sessionId)
+  try {
+    await rendererApplication.sessions.deleteSession(sessionId)
+  } finally {
+    rendererApplication.generationRuntime.clearSessionStop(sessionId)
+  }
   clearSessionGenerationStopOperations(sessionId)
   await clearMessageQueues([sessionId])
 }
@@ -93,7 +52,11 @@ export async function deleteSessions(sessionIds: string[]): Promise<void> {
   for (const sessionId of sessionIds) {
     abortGenerationsBeforeDeletion(sessionId)
   }
-  await rendererApplication.sessions.deleteSessions(sessionIds)
+  try {
+    await rendererApplication.sessions.deleteSessions(sessionIds)
+  } finally {
+    for (const id of sessionIds) rendererApplication.generationRuntime.clearSessionStop(id)
+  }
   for (const sessionId of sessionIds) {
     rendererApplication.generationRuntime.clearSessionStop(sessionId)
     clearSessionGenerationStopOperations(sessionId)
@@ -118,7 +81,7 @@ export async function refreshSessionListCache(): Promise<void> {
 /**
  * Create a new session and switch to it
  */
-async function create(newSession: Omit<Session, 'id'>) {
+async function create(newSession: Omit<SessionHeader, 'id'> & { messages: readonly Message[] }) {
   if (!(await guardBackupWrite())) throw new BackupOperationBusyError()
   const session = await rendererApplication.sessions.createSession(newSession)
   switchCurrentSession(session.id)
@@ -136,91 +99,19 @@ export function createEmpty(type: 'chat') {
 }
 
 /**
- * Copy a session (internal helper)
- */
-async function copySession(
-  sourceMeta: SessionMeta & {
-    name?: Session['name']
-    messages?: Session['messages']
-    threads?: Session['threads']
-    threadName?: Session['threadName']
-    messageForksHash?: Session['messageForksHash']
-    compactionPoints?: Session['compactionPoints']
-    settings?: Session['settings']
-  },
-  options?: {
-    appendForkMarker?: boolean
-  }
-) {
-  const source = await rendererApplication.sessionQueryBridge.getSession(sourceMeta.id)
-  if (!source) {
-    throw new Error(`Session ${sourceMeta.id} not found`)
-  }
-
-  const sourceMessages = sourceMeta.messages ?? source.messages
-  const messagesToCopy = options?.appendForkMarker
-    ? sourceMessages.filter((message) => !message.isForkMarker)
-    : sourceMessages
-
-  // Copy messages and get ID mapping
-  const { messages: newMessages, idMapping } = copyMessagesWithMapping(messagesToCopy)
-
-  const sourceThreads = 'threads' in sourceMeta ? sourceMeta.threads : source.threads
-  const { threads: copiedThreads, idMapping: combinedIdMapping } = copyThreadsWithMapping(sourceThreads, idMapping)
-  const sourceMessageForksHash =
-    'messageForksHash' in sourceMeta ? sourceMeta.messageForksHash : source.messageForksHash
-  const { messageForksHash: newMessageForksHash, idMapping: fullIdMapping } = copyMessageForksWithMapping(
-    sourceMessageForksHash,
-    combinedIdMapping
-  )
-
-  // Remap compaction points with the full mapping (active messages, threads
-  // and fork-list messages): a compacted branch may be switched inactive, so
-  // its boundary/summary can live inside a saved fork list — including fork
-  // lists reachable only from archived threads.
-  const newThreads = copiedThreads?.map((thread) => ({
-    ...thread,
-    compactionPoints: remapCompactionPoints(thread.compactionPoints, fullIdMapping, 'copySession'),
-  }))
-
-  // Use sourceMeta.compactionPoints if explicitly provided (e.g., from thread),
-  // otherwise fall back to source session's compactionPoints
-  const sourceCompactionPoints =
-    'compactionPoints' in sourceMeta ? sourceMeta.compactionPoints : source.compactionPoints
-
-  const newCompactionPoints = remapCompactionPoints(sourceCompactionPoints, fullIdMapping, 'copySession')
-
-  const copiedMessages = [...newMessages]
-  if (options?.appendForkMarker) {
-    copiedMessages.push({
-      ...createMessage('assistant'),
-      isForkMarker: true,
-      forkedFromSessionId: source.id,
-    })
-  }
-
-  const newSession = {
-    ...omit(source, 'id', 'messages', 'threads', 'messageForksHash', 'compactionPoints'),
-    ...(sourceMeta.name ? { name: sourceMeta.name } : {}),
-    messages: copiedMessages,
-    threads: newThreads,
-    messageForksHash: newMessageForksHash,
-    compactionPoints: newCompactionPoints?.length ? newCompactionPoints : undefined,
-    ...('threadName' in sourceMeta ? { threadName: sourceMeta.threadName ?? '' } : {}),
-    // Explicit settings override (e.g. a promoted thread carrying its own
-    // frozen persona snapshot); otherwise the source session's settings apply.
-    ...('settings' in sourceMeta ? { settings: sourceMeta.settings } : {}),
-  }
-  return await rendererApplication.sessions.createSession(newSession, source.id)
-}
-
-/**
  * Copy session and switch to it
  */
-export async function copyAndSwitchSession(source: SessionMeta) {
+export async function copyAndSwitchSession(sessionId: string) {
   if (!(await guardBackupWrite())) return
-  const newSession = await copySession(source, { appendForkMarker: true })
-  switchCurrentSession(newSession.id)
+  const source = await rendererApplication.sessions.getSessionHeader(sessionId)
+  if (!source) throw new Error(`Session ${sessionId} not found`)
+  const created = await rendererApplication.sessions.copySession({
+    sessionId,
+    expectedRevision: source.revision,
+    scope: { type: 'session' },
+    appendForkMarker: true,
+  })
+  switchCurrentSession(created.id)
 }
 
 /**
@@ -371,11 +262,16 @@ export async function clear(sessionId: string) {
   try {
     const result = await rendererApplication.sessions.executeStructureCommand(
       sessionId,
-      { action: 'session-clear', scope: 'all' },
+      {
+        action: 'session-clear',
+        scope: 'all',
+        activeGenerationMessageIds: rendererApplication.generationRuntime
+          .list(sessionId)
+          .map((entry) => entry.messageId),
+      },
       (committed) => {
-        for (const id of committed.affectedMessageIds ?? [])
-          if (committed.cancelMessageIds.includes(id) || rendererApplication.generationRuntime.get(sessionId, id))
-            rendererApplication.generationRuntime.discard(sessionId, id, 'session-cleared')
+        for (const id of committed.cancelMessageIds)
+          rendererApplication.generationRuntime.discard(sessionId, id, 'session-cleared')
         clearSessionActivity(sessionId)
         if (platform.isDesktopLike)
           cleanup = platform
@@ -391,29 +287,4 @@ export async function clear(sessionId: string) {
   } finally {
     await cleanup
   }
-  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
-  if (!session) {
-    return
-  }
-  abortSessionGenerations(sessionId, session, 'session-cleared')
-  if (platform.isDesktopLike) {
-    try {
-      await platform.getSessionAttachmentRagController().deleteSessionAttachments(sessionId)
-    } catch (error) {
-      console.warn('Failed to cleanup session attachment RAG entries while clearing session:', error)
-    }
-  }
-  const updated = await rendererApplication.sessions.updateSessionWithMessages(session.id, {
-    messages: session.messages.filter((m) => m.role === 'system').slice(0, 1),
-    threads: undefined,
-    messageForksHash: undefined,
-    // Pending title for the next conversation — not `undefined`, which
-    // means "historical field missing" and would be backfilled to `name`.
-    threadName: '',
-  })
-  clearSessionActivity(session.id)
-  return updated
 }
-
-// Re-export copySession for use by threads.ts (moveThreadToConversations)
-export { copySession as _copySession }

@@ -5,8 +5,8 @@ import { expect, it } from 'vitest'
 import { openNodeSessionRowDatabase } from '../persistence/node-sqlite.test-support'
 import { contextSnapshot } from '../persistence/session-context-read.test-support'
 import { SqlSessionRowStore } from '../persistence/session-row-sql'
-import { exportBackupArchive } from './export-backup'
-import { importBackupArchive } from './import-backup'
+import { exportBackupArchiveWithRows as exportBackupArchive } from './export.test-support'
+import { importBackupArchiveWithRows as importBackupArchive, readImportedSession } from './import.test-support'
 import { MemoryMetaStorage, MemoryStorage } from './sharded.test-support'
 
 class StreamStorage extends MemoryStorage {
@@ -87,7 +87,7 @@ it('round trips a v2 shared image through bounded resource streams and preserves
   expect(restored.restoredSessionCount).toBe(2)
   expect(destination.blobs.get('image')).toBe('unrelated target bytes')
   for (const id of ['first', 'second']) {
-    const session = destination.values.get(`session:${id}`) as Session
+    const session = await readImportedSession(destination, id)
     const part = session.messages[0].contentParts[0]
     if (part.type !== 'image') throw new Error('Image reference was lost')
     expect(destination.blobs.get(part.storageKey)).toBe(image)
@@ -149,7 +149,7 @@ it.each(['v2', 'v3'] as const)(
       const message =
         format === 'v3'
           ? (await targetRows.readSnapshot(session.id))!.rows.messages[0].message
-          : (target.values.get('session:missing') as Session).messages[0]
+          : (await readImportedSession(target, 'missing')).messages[0]
       expect(message.contentParts[0]).toEqual(session.messages[0].contentParts[0])
       const image = message.contentParts[1]
       expect(image?.type).toBe('image')

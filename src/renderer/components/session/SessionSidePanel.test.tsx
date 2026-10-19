@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
 
-import type { SessionHeader } from '@chatbox/core/ports'
+import type { SessionHeader } from '@shared/types'
 import { type BuiltInBrowserTabs, EMPTY_BUILT_IN_BROWSER_STATE } from '@shared/built-in-browser'
-import { createMessage, type Session } from '@shared/types'
 import { renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { rendererApplication } from '@/app/renderer-application'
@@ -90,30 +89,35 @@ describe('conversation settings edits', () => {
     vi.restoreAllMocks()
   })
 
-  const session: Session = {
+  const session: SessionHeader = {
     id: 's1',
     name: 'Pricing',
     type: 'chat',
     settings: { temperature: 0.3, topP: 0.9 },
-    messages: [createMessage('system', 'Be concise.'), createMessage('user', 'Hello')],
   }
 
-  it('commits header fields alone and writes only the system prompt with the messages', async () => {
-    const updateHeader = vi.spyOn(rendererApplication.sessions, 'updateSessionHeader').mockResolvedValue()
-    const updateWithMessages = vi
-      .spyOn(rendererApplication.sessions, 'updateSessionWithMessages')
-      .mockResolvedValue(session)
+  it('commits header fields and system prompts through their row commands', async () => {
+    const updateHeader = vi.spyOn(rendererApplication.sessions, 'updateSessionHeader').mockResolvedValue(session)
+    const setPrompt = vi.spyOn(rendererApplication.sessions, 'setSessionSystemPrompt').mockResolvedValue(session)
     const { result } = renderHook(() => usePersistedSessionEdit(session))
 
     await result.current({ settings: { temperature: undefined, stream: false }, name: ' Plans ' })
-    expect(updateWithMessages).not.toHaveBeenCalled()
+    expect(setPrompt).not.toHaveBeenCalled()
     const headerUpdater = updateHeader.mock.calls[0][1] as (header: SessionHeader) => SessionHeader
-    const { messages: _messages, ...header } = session
-    expect(headerUpdater(header)).toEqual({ ...header, name: 'Plans', settings: { topP: 0.9, stream: false } })
+    expect(headerUpdater(session)).toEqual({ ...session, name: 'Plans', settings: { topP: 0.9, stream: false } })
 
-    await result.current({ systemPrompt: 'Answer in French.' })
+    await result.current({ systemPrompt: ' Answer in French. ' })
     expect(updateHeader).toHaveBeenCalledTimes(1)
-    const messagesUpdater = updateWithMessages.mock.calls[0][1] as (stored: Session) => Session
-    expect(messagesUpdater(session).messages[0].contentParts).toEqual([{ type: 'text', text: 'Answer in French.' }])
+    expect(setPrompt).toHaveBeenCalledWith('s1', 'Answer in French.')
+
+    await result.current({ name: 'French', systemPrompt: 'Translate.' })
+    expect(updateHeader).toHaveBeenCalledTimes(2)
+    expect(setPrompt).toHaveBeenLastCalledWith('s1', 'Translate.')
+  })
+
+  it('propagates a failed header save to the settings controls', async () => {
+    vi.spyOn(rendererApplication.sessions, 'updateSessionHeader').mockRejectedValue(new Error('Disk full'))
+    const { result } = renderHook(() => usePersistedSessionEdit(session))
+    await expect(result.current({ settings: { stream: false } })).rejects.toThrow('Disk full')
   })
 })

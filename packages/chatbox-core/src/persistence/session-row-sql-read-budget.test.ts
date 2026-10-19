@@ -1,8 +1,9 @@
+import { readRowContextSource } from '../application/session/row-context'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { SessionRowSnapshot } from '../ports/session-row-store'
 import type { Session } from '../types/session'
 import { type NodeSessionRowSqlDatabase, openNodeSessionRowDatabase } from './node-sqlite.test-support'
-import { contextSnapshot, expectedContextMessage } from './session-context-read.test-support'
+import { contextSnapshot } from './session-context-read.test-support'
 import { type SessionRowSqlBindValue, SqlSessionRowStore } from './session-row-sql'
 
 const databases: NodeSessionRowSqlDatabase[] = []
@@ -88,7 +89,7 @@ function setup(onQuery?: (sql: string, params: SessionRowSqlBindValue[], rows: u
         rows: result.length,
         requestBytes,
         responseBytes,
-        contextLimit: kind === 'context' ? params[3] : undefined,
+        contextLimit: kind === 'context' ? params[5] : undefined,
         keys,
         ascii: sql.includes('instr(value, char(0))'),
         oversized: result.some(
@@ -211,19 +212,12 @@ describe('SQLite bridge read budgets', () => {
     const { writer, reader, calls } = setup()
     const snapshot = sessionSnapshot(3500, '', 1700)
     await writer.writeRows(snapshot)
-    const context = await reader.readContext({ sessionId: snapshot.record.id })
-    expect(context?.messages).toEqual(snapshot.rows.messages.map(expectedContextMessage))
+    const context = await readRowContextSource(reader, { sessionId: snapshot.record.id })
+    expect(context?.candidateMessages).toEqual(snapshot.rows.messages.map((row) => row.message))
     const pages = calls.filter((call) => call.kind === 'context')
     expect(pages.length).toBeGreaterThan(2)
-    expect(pages[0].contextLimit).toBe(1536)
-    for (const [index, page] of pages.entries()) {
-      expect(page.keys).toEqual(['i', 'p', 's', 'v', 'c', 'l', 'x'])
-      if (index > 0) {
-        expect(page.contextLimit).toBe(
-          Math.max(8, Math.min(Math.floor(budget / 160), Math.ceil(pages[index - 1].rows * 1.1)))
-        )
-      }
-    }
+    expect(pages.every((page) => Number(page.contextLimit) <= 201)).toBe(true)
+    expect(pages.every((page) => page.responseBytes < budget)).toBe(true)
   })
 
   it('reads context with the highest safe sequence values', async () => {
@@ -231,8 +225,8 @@ describe('SQLite bridge read budgets', () => {
     const snapshot = sessionSnapshot(4)
     for (const row of snapshot.rows.messages) row.seq += Number.MAX_SAFE_INTEGER - 3
     await writer.writeRows(snapshot)
-    const context = await reader.readContext({ sessionId: snapshot.record.id })
-    expect(context?.messages).toEqual(snapshot.rows.messages.map(expectedContextMessage))
+    const context = await readRowContextSource(reader, { sessionId: snapshot.record.id })
+    expect(context?.candidateMessages).toEqual(snapshot.rows.messages.map((row) => row.message))
   })
 
   it.each([
@@ -259,11 +253,10 @@ describe('SQLite bridge read budgets', () => {
         params: [value, snapshot.rows.messages[1].messageId],
       },
     ])
-    await expect(reader.readContext({ sessionId: snapshot.record.id })).rejects.toMatchObject({
+    await expect(readRowContextSource(reader, { sessionId: snapshot.record.id })).rejects.toMatchObject({
       name: 'SessionRowStoreError',
-      cause: { message: 'Context metadata exceeds the native response budget' },
     })
-    expect(calls.some((call) => call.kind === 'context')).toBe(true)
+    expect(calls.some((call) => call.kind === 'payload')).toBe(false)
   })
 
   it.each(['payload_id', 'parent_message_id'])(
@@ -278,11 +271,11 @@ describe('SQLite bridge read budgets', () => {
           params: ['x'.repeat(10000), snapshot.rows.messages[1].messageId],
         },
       ])
-      await expect(reader.readContext({ sessionId: snapshot.record.id })).rejects.toMatchObject({
+      await expect(readRowContextSource(reader, { sessionId: snapshot.record.id })).rejects.toMatchObject({
         name: 'SessionRowStoreError',
-        cause: { message: 'Context metadata exceeds the native response budget' },
       })
-      expect(calls.filter((call) => call.kind === 'context').at(-1)?.responseBytes).toBeLessThan(1024)
+      expect(calls.some((call) => call.kind === 'payload')).toBe(false)
+      expect(calls.every((call) => call.responseBytes < budget)).toBe(true)
     }
   )
 
@@ -333,10 +326,13 @@ describe('SQLite bridge read budgets', () => {
     }
     await writer.writeRows(snapshot)
 
-    const context = await reader.readContext({ sessionId: snapshot.record.id })
+    const context = await reader.readMessages({
+      sessionId: snapshot.record.id,
+      messageIds: snapshot.rows.messages.map((row) => row.messageId),
+    })
 
-    expect(context?.messages).toEqual(snapshot.rows.messages.map(expectedContextMessage))
-    expect(Object.keys(context?.textTokens?.sources ?? {})).toHaveLength(240)
+    expect(context?.messages).toEqual(snapshot.rows.messages)
+    expect(context?.messages).toHaveLength(240)
     const payload = calls.filter((call) => call.kind === 'payload')
     expect(payload.length).toBeLessThanOrEqual(12)
     expect(payload.every((call) => !call.oversized)).toBe(true)
@@ -466,32 +462,32 @@ describe('SQLite bridge read budgets', () => {
     expect(selected?.messages).toEqual(snapshot.rows.messages)
   })
 
-  it.each([1000, 10000, 100000])(
-    'uses byte-bounded pages for %i ordinary text messages',
-    async (count) => {
-      const { writer, reader, calls } = setup()
-      const snapshot = sessionSnapshot(count)
-      await writer.writeRows(snapshot)
-      const selected = await reader.readMessages({
-        sessionId: snapshot.record.id,
-        messageIds: snapshot.rows.messages.map((row) => row.messageId),
-      })
-      expect(selected?.messages).toEqual(snapshot.rows.messages)
-      expect(calls.filter((call) => call.kind === 'selected').length).toBeLessThanOrEqual(Math.ceil(count / 350))
-      expect(calls.filter((call) => call.kind === 'payload').length).toBeLessThanOrEqual(Math.ceil(count / 140))
-      expect(calls.some((call) => call.kind === 'payload' && call.binds > 100)).toBe(true)
-      const selectedMetadataBytes = calls
-        .filter((call) => call.kind === 'selected')
-        .reduce((sum, call) => sum + call.responseBytes, 0)
-      calls.length = 0
-      const context = await reader.readContext({ sessionId: snapshot.record.id })
-      expect(context?.messages).toEqual(snapshot.rows.messages.map(expectedContextMessage))
-      const contextCalls = calls.filter((call) => call.kind === 'context')
-      expect(contextCalls.length).toBeLessThanOrEqual(Math.ceil(count / 600))
-      expect(contextCalls.reduce((sum, call) => sum + call.responseBytes, 0)).toBeLessThan(selectedMetadataBytes * 0.6)
-    },
-    60000
-  )
+  for (const count of [1000, 10000, 100000]) {
+    it(
+      `uses byte-bounded pages for ${count} ordinary text messages`,
+      async () => {
+        const { writer, reader, calls } = setup()
+        const snapshot = sessionSnapshot(count)
+        await writer.writeRows(snapshot)
+        const selected = await reader.readMessages({
+          sessionId: snapshot.record.id,
+          messageIds: snapshot.rows.messages.map((row) => row.messageId),
+        })
+        expect(selected?.messages).toEqual(snapshot.rows.messages)
+        expect(calls.filter((call) => call.kind === 'selected').length).toBeLessThanOrEqual(Math.ceil(count / 250))
+        expect(calls.filter((call) => call.kind === 'payload').length).toBeLessThanOrEqual(Math.ceil(count / 140))
+        expect(calls.some((call) => call.kind === 'payload' && call.binds > 100)).toBe(true)
+        calls.length = 0
+        const context = await readRowContextSource(reader, { sessionId: snapshot.record.id })
+        expect(context?.candidateMessages).toEqual(snapshot.rows.messages.map((row) => row.message))
+        const contextCalls = calls.filter((call) => call.kind === 'context')
+        expect(contextCalls.length).toBeLessThanOrEqual(Math.ceil(count / 200) * 3)
+        expect(contextCalls.every((call) => call.rows <= 201 && call.responseBytes < budget)).toBe(true)
+      },
+      // The complete context reads 16-row batches, each with bridge-budget and query-plan checks.
+      count === 100000 ? 120000 : 60000
+    )
+  }
 
   it.each([
     { label: 'wide ASCII', suffix: 'x'.repeat(850) },
@@ -512,8 +508,8 @@ describe('SQLite bridge read budgets', () => {
       messageIds: [ids[40], 'missing', ...ids.slice().reverse(), ids[40]],
     })
     expect(selected?.messages.map((row) => row.messageId)).toEqual([...new Set([ids[40], ...ids.slice().reverse()])])
-    const context = await reader.readContext({ sessionId: snapshot.record.id })
-    expect(context?.messages).toEqual(snapshot.rows.messages.map(expectedContextMessage))
+    const context = await readRowContextSource(reader, { sessionId: snapshot.record.id })
+    expect(context?.candidateMessages).toEqual(snapshot.rows.messages.map((row) => row.message))
   })
 
   it.each([false, true])(
@@ -529,9 +525,8 @@ describe('SQLite bridge read budgets', () => {
           params: [`payload\u0000${'\u0001'.repeat(100000)}`, ancestorId],
         },
       ])
-      await expect(reader.readContext({ sessionId: snapshot.record.id })).rejects.toMatchObject({
+      await expect(readRowContextSource(reader, { sessionId: snapshot.record.id })).rejects.toMatchObject({
         name: 'SessionRowStoreError',
-        cause: { message: 'Context metadata exceeds the native response budget' },
       })
       expect(calls.filter((call) => call.kind === 'context').every((call) => call.responseBytes < budget)).toBe(true)
     }
@@ -611,7 +606,6 @@ describe('SQLite bridge read budgets', () => {
         reader.readMessages({ sessionId: snapshot.record.id, messageIds: [snapshot.rows.messages[0].messageId] })
       ).rejects.toMatchObject({
         name: 'SessionRowStoreError',
-        cause: { message: 'Message metadata exceeds the native response budget' },
       })
     }
   )

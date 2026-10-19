@@ -2,7 +2,7 @@ import type { CopilotDetail, Session, SessionMetaRecord, Settings } from '@share
 import { describe, expect, it } from 'vitest'
 import {
   collectSessionResourceReferences,
-  prepareSessionForBackup,
+  prepareMessageForBackup,
   restoreCopilotResourceKeys,
   restoreSessionMetaResourceKeys,
   restoreSessionResourceKeys,
@@ -261,9 +261,9 @@ describe('backup resource graph', () => {
     })
   })
 
-  it('removes local paths and derived RAG state from serialized sessions', () => {
-    const prepared = prepareSessionForBackup(createSession())
-    const file = prepared.messages[0].files?.[0]
+  it('removes local paths and derived RAG state from serialized messages', () => {
+    const prepared = prepareMessageForBackup(createSession().messages[0])
+    const file = prepared.files?.[0]
     expect(file).toMatchObject({ ragMode: 'session-retrieval' })
     expect(file?.localPath).toBeUndefined()
     expect(file?.sessionAttachmentId).toBeUndefined()

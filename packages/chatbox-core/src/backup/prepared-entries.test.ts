@@ -4,7 +4,7 @@ import { openNodeSessionRowDatabase } from '../persistence/node-sqlite.test-supp
 import { contextSnapshot } from '../persistence/session-context-read.test-support'
 import { SqlSessionRowStore } from '../persistence/session-row-sql'
 import { exportBackupArchive } from './export-backup'
-import { importBackupArchive } from './import-backup'
+import { importBackupArchiveWithRows as importBackupArchive, readImportedSession } from './import.test-support'
 import { prepareBackupExport } from './preflight'
 import type { BackupSessionStore } from './session-port'
 import { MemoryMetaStorage, MemoryStorage } from './sharded.test-support'
@@ -95,7 +95,7 @@ describe('prepared session entries', () => {
 
       const restored = new MemoryStorage()
       await importBackupArchive(cached.archive, { storage: restored, metaStorage: new MemoryMetaStorage() })
-      const session = restored.values.get(backupSessionStorageKey('s3')) as Session
+      const session = await readImportedSession(restored, 's3')
       expect(session.messages[1].contentParts).toContainEqual(expect.objectContaining({ type: 'image' }))
       expect(restored.blobs.get('picture:shared')).toBe('data:image/png;base64,YWJj')
     } finally {
@@ -109,8 +109,8 @@ describe('prepared session entries', () => {
       const prepared = await prepareBackupExport(options)
       expect(reads()).toBe(12)
       expect(prepared.entries?.size).toBe(12)
-      const retained = prepared.entries?.get('s0')?.session
-      expect(retained?.messages).toEqual([])
+      const retained = prepared.entries?.get('s0')?.header
+      expect(retained).not.toHaveProperty('messages')
       expect(Object.keys(retained ?? {}).every((key) => !['threads', 'messageForksHash'].includes(key))).toBe(true)
       resetReads()
       await exportBackupArchive({

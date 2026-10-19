@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 
+import type { SessionHeader } from '@chatbox/core/ports'
 import { MantineProvider } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import { ChatboxAIAPIError, MESSAGE_ERROR_CODES } from '@shared/models/errors'
-import type { ChatboxAILicenseDetail, ChatboxAIPlanType, Message, Session } from '@shared/types'
+import type { ChatboxAILicenseDetail, ChatboxAIPlanType, Message } from '@shared/types'
 import { afterEach, expect, test, vi } from 'vitest'
 import { settingsStore } from '@/stores/settingsStore'
 import { fireEvent, render, screen, waitFor } from '@/test-utils'
@@ -17,7 +18,9 @@ const platformMocks = vi.hoisted(() => ({
 }))
 const trackingMocks = vi.hoisted(() => ({
   trackTokenExhaustedCard: vi.fn(),
-  useSession: vi.fn<(sessionId: string | null) => { session?: Pick<Session, 'settings'>; isFetched: boolean }>(() => ({
+  useSessionHeader: vi.fn<
+    (sessionId: string | null) => { session?: Pick<SessionHeader, 'settings'>; isFetched: boolean }
+  >(() => ({
     session: undefined,
     isFetched: false,
   })),
@@ -42,7 +45,7 @@ vi.mock('@/app/renderer-application', async (importOriginal) => {
       ...actual.rendererApplication,
       sessionHooks: {
         ...actual.rendererApplication.sessionHooks,
-        useSession: trackingMocks.useSession,
+        useSessionHeader: trackingMocks.useSessionHeader,
       },
     },
   }
@@ -93,8 +96,8 @@ afterEach(() => {
   translationMocks.translateTexts.mockReset()
   platformMocks.openLink.mockReset()
   trackingMocks.trackTokenExhaustedCard.mockReset()
-  trackingMocks.useSession.mockReset()
-  trackingMocks.useSession.mockReturnValue({ session: undefined, isFetched: false })
+  trackingMocks.useSessionHeader.mockReset()
+  trackingMocks.useSessionHeader.mockReturnValue({ session: undefined, isFetched: false })
   settingsStore.setState(initialSettings)
 })
 
@@ -166,7 +169,7 @@ test.each([
             plan: plan as ChatboxAIPlanType,
           },
   }))
-  trackingMocks.useSession.mockReturnValue({
+  trackingMocks.useSessionHeader.mockReturnValue({
     session: { settings: { agentMode: { value: agentMode ? 'on' : 'off', locked: false, lockReason: null } } },
     isFetched: true,
   })
@@ -233,8 +236,8 @@ test('renders file preprocessing errors as generic backend errors instead of OCR
   expect(trackingMocks.trackTokenExhaustedCard).not.toHaveBeenCalled()
 })
 
-test('resolves a missing generation mode from the cached session before tracking', () => {
-  trackingMocks.useSession.mockReturnValue({
+test('resolves a missing generation mode from the cached session header before tracking', () => {
+  trackingMocks.useSessionHeader.mockReturnValue({
     session: { settings: { agentMode: { value: 'on', locked: false, lockReason: null } } },
     isFetched: true,
   })
@@ -260,7 +263,7 @@ test('resolves a missing generation mode from the cached session before tracking
     </MantineProvider>
   )
 
-  expect(trackingMocks.useSession).toHaveBeenCalledWith('session-123')
+  expect(trackingMocks.useSessionHeader).toHaveBeenCalledWith('session-123')
   expect(trackingMocks.trackTokenExhaustedCard).toHaveBeenCalledWith('exposure', {
     sessionId: 'session-123',
     mode: 'work_mode',

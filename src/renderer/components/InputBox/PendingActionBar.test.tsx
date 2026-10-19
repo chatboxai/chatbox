@@ -6,6 +6,17 @@ import type { Message, MessageToolCallPart, Session } from '@shared/types'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const rowReads = vi.hoisted(() => ({ message: undefined as Message | undefined }))
+vi.mock('@/app/renderer-application', () => ({
+  rendererApplication: {
+    sessionHooks: {
+      useSessionMessage: (_sessionId: string, messageId: string | null) => ({
+        message: rowReads.message?.id === messageId ? rowReads.message : null,
+      }),
+    },
+  },
+}))
+
 vi.mock('react-i18next', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react-i18next')>()),
   useTranslation: () => ({
@@ -37,7 +48,7 @@ vi.mock('@/stores/toastActions', () => ({ add: vi.fn() }))
 import { currentGenerationService } from '@/adapters/CurrentGenerationService'
 import { pulsePendingActionBar } from '@/stores/approvalAttentionStore'
 import { APPROVAL_RESPONSE_TIMEOUT_MS } from '@chatbox/core/message-approval'
-import PendingActionBar, { PENDING_ACTION_ARMING_MS } from './PendingActionBar'
+import RowPendingActionBar, { PENDING_ACTION_ARMING_MS } from './PendingActionBar'
 
 Object.defineProperty(globalThis, 'ResizeObserver', {
   writable: true,
@@ -65,6 +76,17 @@ function makeSession(
 ): Session {
   const message = { id: messageId, role: 'assistant', contentParts: parts } as unknown as Message
   return { id: sessionId, type: 'chat', name: 'test', messages: [message] } as unknown as Session
+}
+
+function PendingActionBar({ session }: { session: Session }) {
+  rowReads.message = session.messages[0]
+  return (
+    <RowPendingActionBar
+      sessionId={session.id}
+      activeThreadId={session.messages[0]?.id ?? 'active'}
+      messageIds={session.messages.map((message) => message.id)}
+    />
+  )
 }
 
 function renderBar(session: Session) {

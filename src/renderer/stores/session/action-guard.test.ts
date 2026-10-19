@@ -1,9 +1,9 @@
 import type { Message, Session } from '@shared/types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { getSessionMock, readMessagesMock, toastMock } = vi.hoisted(() => ({
+const { getSessionMock, readControlMock, toastMock } = vi.hoisted(() => ({
   getSessionMock: vi.fn(),
-  readMessagesMock: vi.fn(),
+  readControlMock: vi.fn(),
   toastMock: vi.fn(),
 }))
 
@@ -22,19 +22,21 @@ vi.mock('../uiStore', () => ({
 vi.mock('@/app/renderer-application', async () => {
   const { GenerationRuntimeStore } = await import('@chatbox/core/generation')
   const { BackupOperationCoordinator } = await import('@chatbox/core/backup')
+  const { createRowSessionFixtureReads } = await import('./testing/row-session-fixture')
+  const reads = createRowSessionFixtureReads(getSessionMock)
+  readControlMock.mockImplementation(reads.readSessionGenerationControl)
   return {
     rendererApplication: {
       backupOperations: new BackupOperationCoordinator(),
       generationRuntime: new GenerationRuntimeStore(),
-      sessionQueryBridge: { getSession: getSessionMock },
-      sessions: { readSessionMessages: readMessagesMock },
+      sessions: { ...reads, readSessionGenerationControl: readControlMock },
     },
   }
 })
 
 import { rendererApplication } from '@/app/renderer-application'
 import { setCompactionUIState } from '../atoms/compactionAtoms'
-import { guardSessionAction } from './action-guard'
+import { getSessionLockStateNow, guardSessionAction } from './action-guard'
 
 const generationRuntimeStore = rendererApplication.generationRuntime
 
@@ -68,29 +70,44 @@ describe('guardSessionAction', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    readMessagesMock.mockResolvedValue({})
+    getSessionMock.mockResolvedValue(session())
+    readControlMock.mockReset()
+    readControlMock.mockImplementation(async (request) => {
+      const { createRowSessionFixtureReads } = await import('./testing/row-session-fixture')
+      return createRowSessionFixtureReads(getSessionMock).readSessionGenerationControl(request)
+    })
     setCompactionUIState('session-1', { status: 'idle' })
     generationRuntimeStore.clear('session-1')
   })
 
-  it('uses persisted lock counts and selected runtime messages without hydrating a linear session', async () => {
-    readMessagesMock.mockResolvedValue({
-      header: { id: 'session-1', name: 'Session' },
-      messages: [],
-      presentation: { hasForks: false, generatingMessageCount: 1, pausedMessageCount: 0 },
+  it('reads lock control without fetching a header used only by the action mode guard', async () => {
+    readControlMock.mockResolvedValue({
+      generatingReplyCount: 0,
+      anyReplyGenerating: false,
+      awaitingPauseDecision: false,
+    })
+    const header = vi.spyOn(rendererApplication.sessions, 'getSessionHeader')
+    await expect(getSessionLockStateNow('session-1')).resolves.toMatchObject({ anyReplyGenerating: false })
+    expect(readControlMock).toHaveBeenCalledOnce()
+    expect(header).not.toHaveBeenCalled()
+  })
+
+  it('passes runtime IDs to exact row control and preserves persisted generating gates', async () => {
+    readControlMock.mockResolvedValue({
+      generatingReplyCount: 0,
+      anyReplyGenerating: true,
+      awaitingPauseDecision: false,
     })
     expect(await guardSessionAction('session-1', 'submit-message')).toBe(false)
-    expect(getSessionMock).not.toHaveBeenCalled()
-    expect(readMessagesMock).toHaveBeenCalledWith({ sessionId: 'session-1', messageIds: [] })
+    expect(readControlMock).toHaveBeenCalledWith({ sessionId: 'session-1', activeGenerationMessageIds: [] })
     generationRuntimeStore.start('session-1', 'reply')
-    readMessagesMock.mockResolvedValue({
-      header: { id: 'session-1', name: 'Session' },
-      messages: [message({ id: 'reply', generating: true })],
-      presentation: { hasForks: false, generatingMessageCount: 0, pausedMessageCount: 0 },
+    readControlMock.mockResolvedValue({
+      generatingReplyCount: 1,
+      anyReplyGenerating: true,
+      awaitingPauseDecision: false,
     })
     expect(await guardSessionAction('session-1', 'regenerate')).toBe(false)
-    expect(getSessionMock).not.toHaveBeenCalled()
-    expect(readMessagesMock).toHaveBeenLastCalledWith({ sessionId: 'session-1', messageIds: ['reply'] })
+    expect(readControlMock).toHaveBeenLastCalledWith({ sessionId: 'session-1', activeGenerationMessageIds: ['reply'] })
   })
 
   it('allows the action and stays silent when the session is unlocked', async () => {

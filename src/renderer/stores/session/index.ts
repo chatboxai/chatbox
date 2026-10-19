@@ -51,7 +51,6 @@ export {
   createSaveAndResendFork,
   deleteFork,
   expandFork,
-  findMessageLocation,
   switchFork,
   switchForkTo,
 } from './forks'
@@ -60,7 +59,6 @@ export {
   generate,
   generateMore,
   genMessageContext,
-  getMessageThreadContext,
   getSessionWebBrowsing,
   regenerateInNewFork,
   retryFromLastToolCallAfterApiError,
@@ -72,7 +70,7 @@ export { stopAllMessageGenerations, stopMessageGeneration } from './generation-c
 export type { QueuedCompactionRequest, QueuedItem, QueuedUserMessage, QueuePausedReason } from './message-queue'
 export {
   clearQueue,
-  conversationAnchorIdOf,
+  readConversationAnchorId,
   enqueueCompactionRequest,
   enqueueUserMessage,
   hasQueuedWork,
@@ -114,7 +112,6 @@ export { buildToolsForSession } from './tools-builder'
 // Types and state
 export * from './types'
 export {
-  findTargetMessageIndex,
   handleGenerationError,
   initializeTargetMessage,
   trackGenerateEvent,

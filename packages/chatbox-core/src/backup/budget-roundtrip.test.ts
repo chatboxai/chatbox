@@ -2,8 +2,9 @@ import { afterEach, expect, it } from 'vitest'
 import { contextSnapshot } from '../persistence/session-context-read.test-support'
 import { openNodeSessionRowDatabase, type NodeSessionRowSqlDatabase } from '../persistence/node-sqlite.test-support'
 import { SqlSessionRowStore } from '../persistence/session-row-sql'
-import { exportBackupArchive, type BackupExportOptions } from './export-backup'
-import { importBackupArchive } from './import-backup'
+import type { BackupExportOptions } from './export-backup'
+import { exportBackupArchiveWithRows as exportBackupArchive } from './export.test-support'
+import { importBackupArchiveWithRows as importBackupArchive, readImportedSession } from './import.test-support'
 import { prepareBackupExport } from './preflight'
 import { MemoryMetaStorage, MemoryStorage } from './sharded.test-support'
 import { BackupStorageKey, backupSessionStorageKey } from './storage-keys'
@@ -54,7 +55,7 @@ it('round trips a v2 session with ten thousand short messages', async () => {
   expect(result.manifest.warnings).toEqual([])
   const restored = new MemoryStorage()
   await importBackupArchive(archive, { storage: restored, metaStorage: new MemoryMetaStorage() })
-  expect(restored.values.get(backupSessionStorageKey('many-short'))).toMatchObject({ messages })
+  expect(await readImportedSession(restored, 'many-short')).toMatchObject({ messages })
 }, 30000)
 
 it.each([600 * 1024, 4 * 1024 * 1024 + 1])(

@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { MemoryService } from '../application/memory/MemoryService'
 import { createMemoryToolContext, createPausedMemoryTools } from '../application/memory/paused-memory-tools'
 import { parseCopilotMemoryStateTokens } from '../types/agent-persona'
-import { exportBackupArchive } from './export-backup'
-import { importBackupArchive } from './import-backup'
+import { exportBackupArchiveWithRows as exportBackupArchive } from './export.test-support'
+import { importBackupArchiveWithRows as importBackupArchive, readImportedSession } from './import.test-support'
 import { BackupStorageKey, backupSessionStorageKey } from './storage-keys'
 import type { BackupExportItem, BackupFile, BackupMetaStorage, BackupStorage } from './types'
 
@@ -216,14 +216,18 @@ describe('Memory state backup translation', () => {
           },
         ],
       }
-      session.messages = [current]
-      if (session.threads) session.threads[0].messages = [current]
+      session.messages = [
+        { id: 'user', role: 'user', contentParts: [{ type: 'text', text: 'Remember this' }] },
+        current,
+      ]
+      if (session.threads) session.threads[0].messages = [{ ...current, id: 'thread-current' }]
       session.messageForksHash = {
         user: {
           position: 0,
           createdAt: 1,
           lists: [
-            { id: 'valid', messages: [current] },
+            { id: 'selected', messages: [] },
+            { id: 'valid', messages: [{ ...current, id: 'fork-current' }] },
             { id: 'stale', messages: [stale] },
             { id: 'unknown', messages: [{ ...current, id: 'unknown', contentParts: [originalPart] }] },
           ],
@@ -238,12 +242,16 @@ describe('Memory state backup translation', () => {
         metaStorage: new MemoryMetaStorage(),
         createId: () => 'call-import',
       })
-      const restored = destination.values.get(backupSessionStorageKey(session.id)) as Session
+      const restored = await readImportedSession(destination, session.id)
       const memory = memoryService(destination)
       const targets = [
-        restored.messages[0],
-        restored.threads?.[0].messages[0],
-        restored.messageForksHash?.user.lists[0].messages[0],
+        restored.messages.find((message) => message.contentParts.some((part) => part.type === 'tool-call')),
+        restored.threads?.[0].messages.find((message) =>
+          message.contentParts.some((part) => part.type === 'tool-call')
+        ),
+        restored.messageForksHash?.user.lists
+          .flatMap((list) => list.messages)
+          .find((message) => message.id === 'fork-current'),
       ]
       for (const [index, targetMessage] of targets.entries()) {
         const tools = createPausedMemoryTools({ memory, targetMessage }).tools
@@ -251,9 +259,14 @@ describe('Memory state backup translation', () => {
           { content: `Imported call ${index}` },
           { toolCallId: 'memory-call', messages: [], context: undefined }
         )
-        expect(result).toHaveProperty(withCopilot ? 'message' : 'error')
+        expect(
+          result,
+          JSON.stringify({ index, target: targetMessage?.id, result, part: targetMessage?.contentParts[0] })
+        ).toHaveProperty(withCopilot ? 'message' : 'error')
       }
-      for (const list of restored.messageForksHash?.user.lists.slice(1) ?? []) {
+      for (const list of restored.messageForksHash?.user.lists.filter((list) =>
+        list.messages.some((message) => ['stale', 'unknown'].includes(message.id))
+      ) ?? []) {
         const tools = createPausedMemoryTools({ memory, targetMessage: list.messages[0] }).tools
         expect(
           await tools.save_memory.execute?.(
@@ -283,7 +296,7 @@ describe('Memory state backup translation', () => {
       metaStorage: new MemoryMetaStorage(),
       createId: () => 'unknown-import',
     })
-    const restored = destination.values.get(backupSessionStorageKey(session.id)) as Session
+    const restored = await readImportedSession(destination, session.id)
     const scope = await memory.getPausedCallMemoryScope(restored.settings?.sessionPromptContextSnapshot, 'tutor')
     await expect(memory.addMemoryForScope(scope, 'Unknown old call')).resolves.toMatchObject({ ok: false })
   })
@@ -339,8 +352,8 @@ describe('Memory state backup translation', () => {
       expect(token.retirementToken).toEqual(expect.any(String))
       expect(token.retirementToken).not.toBe(lifecycle)
       expect(token.retirementToken).not.toBe('destination-lifecycle')
-      const restored = destination.values.get(backupSessionStorageKey(session.id)) as Session
-      const staleRestored = destination.values.get(backupSessionStorageKey(staleSession.id)) as Session
+      const restored = await readImportedSession(destination, session.id)
+      const staleRestored = await readImportedSession(destination, staleSession.id)
       const memory = memoryService(destination)
       for (const [index, restoredSnapshot] of [
         restored.settings?.sessionPromptContextSnapshot,
@@ -395,7 +408,7 @@ describe('Memory state backup translation', () => {
       createId: () => 'conversation-lifecycle-import',
     })
 
-    const restored = destination.values.get(backupSessionStorageKey(session.id)) as Session
+    const restored = await readImportedSession(destination, session.id)
     const memory = memoryService(destination)
     for (const restoredSnapshot of [
       restored.settings?.sessionPromptContextSnapshot,
@@ -459,7 +472,7 @@ describe('Memory state backup translation', () => {
       createId: () => 'conversation-only-import',
     })
 
-    const restored = destination.values.get(backupSessionStorageKey(session.id)) as Session
+    const restored = await readImportedSession(destination, session.id)
     expect(restored.settings?.sessionPromptContextSnapshot).toEqual({
       ...frozenSnapshot,
       memoryStateToken: ':destination-global',
@@ -503,7 +516,7 @@ describe('Memory state backup translation', () => {
     })
 
     const restoredSettings = destination.values.get(BackupStorageKey.Settings) as Settings
-    const restored = destination.values.get(backupSessionStorageKey(session.id)) as Session
+    const restored = await readImportedSession(destination, session.id)
     expect(restoredSettings.memoryStateToken).toEqual(expect.any(String))
     expect(restoredSettings.memoryStateToken).not.toBe('source-global')
     expect(restored.settings?.sessionPromptContextSnapshot).toEqual(pendingSnapshot)

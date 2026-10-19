@@ -1,3 +1,5 @@
+import { InMemorySessionRowStore } from '@chatbox/core/testing'
+import { stageLegacySessionRows } from '@chatbox/core/backup'
 import type { SessionMetaRecord } from '@shared/types'
 import { describe, expect, it, vi } from 'vitest'
 import { importLegacyJsonBackup } from './legacy-import'
@@ -5,6 +7,7 @@ import type { BackupMetaStorage, BackupStorage } from './types'
 
 class LegacyMemoryStorage implements BackupStorage {
   readonly values = new Map<string, unknown>()
+  readonly sessions = new InMemorySessionRowStore()
 
   getAllKeys(): Promise<string[]> {
     return Promise.resolve(Array.from(this.values.keys()))
@@ -80,6 +83,7 @@ describe('legacy JSON backup import', () => {
       }),
       {
         storage,
+        sessions: storage.sessions,
         metaStorage,
         recoverSessionList,
         migrateData: async (dataStore) => {
@@ -91,6 +95,8 @@ describe('legacy JSON backup import', () => {
 
     expect(storage.values.get('settings')).toEqual({ language: 'en', migrated: true })
     expect(storage.values.get('configVersion')).toBeUndefined()
+    expect(storage.values.has('session:existing')).toBe(false)
+    expect(await storage.sessions.readCommit('existing')).toMatchObject({ record: { rowFormatVersion: 3 } })
     expect(metaStorage.records.get('existing')?.name).toBe('Updated')
     expect(metaStorage.records.get('new')).toMatchObject({ id: 'new', name: 'New session' })
     expect(result).toEqual({ importedKeyCount: 2, importedMetaCount: 2, recoveredSessionList: false })
@@ -113,6 +119,7 @@ describe('legacy JSON backup import', () => {
       asJsonFile({ 'session:old': { id: 'old', name: 'Old', messages: [] } }),
       {
         storage: new LegacyMemoryStorage(),
+        sessions: new InMemorySessionRowStore(),
         metaStorage,
         recoverSessionList,
         migrateData: () => Promise.resolve(),
@@ -153,6 +160,7 @@ describe('legacy JSON backup import', () => {
       }),
       {
         storage,
+        sessions: storage.sessions,
         metaStorage,
         recoverSessionList: () => Promise.resolve(),
         migrateData: () => Promise.resolve(),
@@ -175,6 +183,7 @@ describe('legacy JSON backup import', () => {
     await expect(
       importLegacyJsonBackup(asJsonFile({ settings: { language: 'zh' }, 'session:new': { id: 'new', messages: [] } }), {
         storage,
+        sessions: storage.sessions,
         metaStorage: new LegacyMemoryMetaStorage(),
         signal: controller.signal,
         migrateData: async () => {},
@@ -194,6 +203,7 @@ describe('legacy JSON backup import', () => {
     await expect(
       importLegacyJsonBackup(asJsonFile({ settings: { language: 'zh' } }), {
         storage,
+        sessions: storage.sessions,
         metaStorage: new LegacyMemoryMetaStorage(),
         migrateData: async () => {},
         recoverSessionList: async () => {},
@@ -215,6 +225,7 @@ describe('legacy JSON backup import', () => {
         asJsonFile({ settings: { language: 'zh' }, 'chat-sessions-list': [{ id: 'new', name: 'New' }] }),
         {
           storage,
+          sessions: storage.sessions,
           metaStorage,
           migrateData: async () => {},
           recoverSessionList: async () => {},
@@ -224,10 +235,160 @@ describe('legacy JSON backup import', () => {
     expect(storage.values.get('settings')).toEqual({ language: 'en' })
   })
 
+  it('restores published rows when metadata publication fails', async () => {
+    const storage = new LegacyMemoryStorage()
+    const original = await stageLegacySessionRows(storage.sessions, { id: 'old', name: 'Original', messages: [] })
+    await original.publish()
+    await original.dispose()
+    const revision = await storage.sessions.getRevision('old')
+    const metaStorage = new LegacyMemoryMetaStorage()
+    vi.spyOn(metaStorage, 'create').mockRejectedValueOnce(new Error('metadata failed'))
+    const genericGet = vi.spyOn(storage, 'getItem')
+    const genericSet = vi.spyOn(storage, 'setItemNow')
+    await expect(
+      importLegacyJsonBackup(
+        asJsonFile({
+          'session:old': { id: 'old', name: 'Imported', messages: [] },
+          'session:new': { id: 'new', name: 'New', messages: [] },
+          'chat-sessions-list': [{ id: 'old', name: 'Imported' }],
+        }),
+        {
+          storage,
+          sessions: storage.sessions,
+          metaStorage,
+          migrateData: async () => {},
+          recoverSessionList: async () => {},
+        }
+      )
+    ).rejects.toThrow('metadata failed')
+    expect(await storage.sessions.readCommit('old')).toMatchObject({ record: { name: 'Original' } })
+    expect(await storage.sessions.getRevision('old')).toBe(revision)
+    expect(await storage.sessions.readCommit('new')).toBeNull()
+    expect(genericGet.mock.calls.some(([key]) => key.startsWith('session:'))).toBe(false)
+    expect(genericSet.mock.calls.some(([key]) => key.startsWith('session:'))).toBe(false)
+  })
+
+  it.each([0, 200_000])(
+    'rejects malformed message fields before publication with %i padding bytes',
+    async (padding) => {
+      const storage = new LegacyMemoryStorage()
+      const original = await stageLegacySessionRows(storage.sessions, { id: 'old', name: 'Original', messages: [] })
+      await original.publish()
+      await original.dispose()
+      const revision = await storage.sessions.getRevision('old')
+      storage.values.set('settings', { language: 'en' })
+      const metaStorage = new LegacyMemoryMetaStorage()
+      const begin = storage.sessions.beginBackupRestore.bind(storage.sessions)
+      const publish = vi.fn()
+      const dispose = vi.fn()
+      vi.spyOn(storage.sessions, 'beginBackupRestore').mockImplementation(async (...args) => {
+        const candidate = await begin(...args)
+        return {
+          ...candidate,
+          publish: async (signal) => {
+            publish()
+            await candidate.publish(signal)
+          },
+          dispose: async () => {
+            dispose()
+            await candidate.dispose()
+          },
+        }
+      })
+      await expect(
+        importLegacyJsonBackup(
+          asJsonFile({
+            settings: { language: 'zh' },
+            'session:old': { id: 'old', name: 'Replacement', messages: [] },
+            'session:bad': {
+              id: 'bad',
+              name: 'Invalid message',
+              messages: [
+                { id: 'broken', role: 'user', contentParts: [{ type: 'text', text: 99 }], extra: 'x'.repeat(padding) },
+              ],
+            },
+          }),
+          {
+            storage,
+            sessions: storage.sessions,
+            metaStorage,
+            migrateData: async () => {},
+            recoverSessionList: async () => {},
+          }
+        )
+      ).rejects.toThrow('invalid message broken')
+      expect(publish).not.toHaveBeenCalled()
+      expect(dispose).toHaveBeenCalledOnce()
+      expect(await storage.sessions.readCommit('old')).toMatchObject({ record: { name: 'Original' } })
+      expect(await storage.sessions.getRevision('old')).toBe(revision)
+      expect(await storage.sessions.readCommit('bad')).toBeNull()
+      expect(metaStorage.records.size).toBe(0)
+      expect(storage.values.get('settings')).toEqual({ language: 'en' })
+    }
+  )
+
+  it('validates every session identity before publishing rows or settings', async () => {
+    const storage = new LegacyMemoryStorage()
+    const begin = vi.spyOn(storage.sessions, 'beginBackupRestore')
+    await expect(
+      importLegacyJsonBackup(
+        asJsonFile({
+          settings: { language: 'zh' },
+          'session:good': { id: 'good', name: 'Good', messages: [] },
+          'session:bad': { id: 'other', name: 'Bad', messages: [] },
+        }),
+        {
+          storage,
+          sessions: storage.sessions,
+          metaStorage: new LegacyMemoryMetaStorage(),
+          migrateData: async () => {},
+          recoverSessionList: async () => {},
+        }
+      )
+    ).rejects.toThrow('identity mismatch')
+    expect(begin).not.toHaveBeenCalled()
+    expect(storage.values.size).toBe(0)
+  })
+
+  it('rolls back a published row when cancellation arrives before the next session', async () => {
+    const storage = new LegacyMemoryStorage()
+    const controller = new AbortController()
+    const begin = storage.sessions.beginBackupRestore.bind(storage.sessions)
+    vi.spyOn(storage.sessions, 'beginBackupRestore').mockImplementation(async (...args) => {
+      const candidate = await begin(...args)
+      return {
+        ...candidate,
+        publish: async (signal) => {
+          await candidate.publish(signal)
+          controller.abort()
+        },
+      }
+    })
+    await expect(
+      importLegacyJsonBackup(
+        asJsonFile({
+          'session:first': { id: 'first', name: 'First', messages: [] },
+          'session:second': { id: 'second', name: 'Second', messages: [] },
+        }),
+        {
+          storage,
+          sessions: storage.sessions,
+          signal: controller.signal,
+          metaStorage: new LegacyMemoryMetaStorage(),
+          migrateData: async () => {},
+          recoverSessionList: async () => {},
+        }
+      )
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(await storage.sessions.readCommit('first')).toBeNull()
+    expect(await storage.sessions.readCommit('second')).toBeNull()
+  })
+
   it('rejects non-object JSON backups', async () => {
     await expect(
       importLegacyJsonBackup(asJsonFile([]), {
         storage: new LegacyMemoryStorage(),
+        sessions: new InMemorySessionRowStore(),
         metaStorage: new LegacyMemoryMetaStorage(),
         recoverSessionList: () => Promise.resolve(),
         migrateData: () => Promise.resolve(),

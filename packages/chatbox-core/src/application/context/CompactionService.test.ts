@@ -1,4 +1,13 @@
 import { selectContextMessages } from '@shared/context'
+import type { SessionContextSource } from '../../ports/session-context-source'
+import { InMemorySessionRecordStore } from '../../testing/InMemorySessionRecordStore'
+import { InMemorySessionRowStore } from '../../testing/InMemorySessionRowStore'
+import { RowBackedSessionRepository } from '../session/RowBackedSessionRepository'
+import { SessionRowWriteQueue } from '../session/SessionRowWriteQueue'
+import { verifySessionTreeRoundTrip } from '../../session/session-tree/verify'
+import { decodeSessionTree } from '../../session/session-tree/decode'
+import { convertLegacyTreeToRowFormat } from '../session/compatibility/row-format'
+
 import { describe, expect, test, vi } from 'vitest'
 import type { LoggerPort } from '../../ports'
 import type { Message, Session, SessionSettings, Settings } from '../../types'
@@ -16,6 +25,7 @@ function createHarness(
     beforeUpdate?: (session: Session) => Session
     logger?: LoggerPort
     messages?: Message[]
+    maxContextMessageCount?: number
   } = {}
 ) {
   let session: Session = {
@@ -35,7 +45,7 @@ function createHarness(
   const sessionSettings: SessionSettings = {
     provider: 'openai',
     modelId: 'gpt-4.1',
-    maxContextMessageCount: 10,
+    maxContextMessageCount: options.maxContextMessageCount ?? 10,
   }
   const globalSettings = {
     language: 'en',
@@ -44,22 +54,61 @@ function createHarness(
     defaultChatModel: { provider: 'openai', model: 'gpt-4.1' },
   } as Settings
   const getCompactionContext = vi.fn(
-    (current: Session, _settings: SessionSettings, _pendingMessage?: Message) => current.messages
+    (current: SessionContextSource, _settings: SessionSettings, _pendingMessage?: Message) => current.candidateMessages
   )
   const shouldCompact = vi.fn(() => Promise.resolve(true))
   const generate = vi.fn<CompactionSummaryPort['generate']>(async (input) => {
     input.onStreamUpdate?.('streaming summary')
     return { success: true, summary: 'Final summary' }
   })
-  const getSession = vi.fn(() => Promise.resolve(session))
+  const rows = new InMemorySessionRowStore()
+  const records = new InMemorySessionRecordStore()
+  const repository = new RowBackedSessionRepository({
+    records,
+    rows,
+    backup: rows,
+    writes: new SessionRowWriteQueue((_id, run) => run()),
+  })
+  const seedFixture = async () => {
+    const verified = verifySessionTreeRoundTrip(session, { activeThreadId: session.id, now: 0 })
+    if (!verified.ok) throw new Error(verified.reason)
+    const tree = convertLegacyTreeToRowFormat(verified.tree, verified.session.messageForksHash)
+    const previous = await rows.getRevision(session.id)
+    await rows.writeRows(
+      {
+        record: tree.session,
+        revision: (previous ?? 0) + 1,
+        rows: { sessionId: session.id, threads: tree.threads, messages: tree.messages },
+      },
+      previous
+    )
+  }
+  const getSession = vi.fn(async () => {
+    await seedFixture()
+    return repository.getSessionHeader(session.id)
+  })
+  let summarySequence = 0
   const service = new CompactionService({
     sessions: {
-      getSession,
+      getSessionHeader: getSession,
+      async getSessionContextSource(request) {
+        if (request.expectedRevision === undefined) await getSession()
+        return repository.getSessionContextSource(request)
+      },
       getSessionSettings: () => Promise.resolve(sessionSettings),
-      async updateSessionWithMessages(_sessionId, updater) {
-        session = options.beforeUpdate?.(session) ?? session
-        session = updater(session)
-        return session
+      async commitSessionCompaction(_sessionId, operation) {
+        if (options.beforeUpdate) {
+          session = options.beforeUpdate(session)
+          await seedFixture()
+        }
+        const result = await repository.executeSessionCommand(session.id, { type: 'structure', operation })
+        if (result.delta.structureResult?.applied) {
+          const snapshot = (await rows.readSnapshot(session.id))!
+          const exported = decodeSessionTree({ session: snapshot.record, ...snapshot.rows })
+          if (!exported.ok) throw new Error(exported.reason)
+          session = exported.session
+        }
+        return { applied: result.delta.structureResult?.applied === true, revision: result.delta.revision }
       },
     },
     settings: { getSettings: () => globalSettings },
@@ -69,7 +118,7 @@ function createHarness(
     },
     summaries: { generate },
     logger: options.logger,
-    createId: () => 'summary-message',
+    createId: () => (summarySequence++ ? `summary-message-${summarySequence}` : 'summary-message'),
     now: () => 123,
   })
   return {
@@ -179,7 +228,11 @@ describe('CompactionService', () => {
       },
     ]
     harness.getCompactionContext.mockImplementation((session, settings, pending) =>
-      selectTokenEstimationContext(session, settings.maxContextMessageCount, pending)
+      selectTokenEstimationContext(
+        { messages: session.candidateMessages, compactionPoints: session.compactionPoints },
+        settings.maxContextMessageCount,
+        pending
+      )
     )
     const request = { kind: 'generation' as const, targetMessageId: 'target', retainedToolCallId: 'retained' }
     const result = await harness.service.run('session-1', request)
@@ -208,7 +261,7 @@ describe('CompactionService', () => {
     expect(harness.generate).toHaveBeenLastCalledWith(expect.objectContaining({ prompt: 'Saved instructions' }))
   })
 
-  test('appends a summary and exact boundary through an atomic Session update', async () => {
+  test('appends a summary and exact boundary through an atomic row commit', async () => {
     const harness = createHarness()
     const streamUpdates: string[] = []
 
@@ -279,7 +332,7 @@ describe('CompactionService', () => {
 
     const result = await harness.service.run('session-1', { kind: 'manual' })
 
-    expect(result).toMatchObject({ status: 'compacted' })
+    expect(result.status, result.status === 'failed' ? result.failure.message : undefined).toBe('compacted')
     expect(harness.session.compactionPoints?.[0]).toMatchObject({ boundaryMessageId: 'a3' })
     expect(harness.session.messages.map((m) => m.id)).toEqual(['u1', 'a1', 'u2', 'a2', 'u3', 'a3', 'summary-message'])
 
@@ -295,17 +348,17 @@ describe('CompactionService', () => {
     ).toBe(true)
   })
 
-  test('covers the latest message in histories longer than 200 messages', async () => {
+  test('covers unlimited histories longer than 200 messages', async () => {
     const messages: Message[] = []
     for (let round = 1; round <= 130; round += 1) {
       messages.push(message(`u${round}`, 'user'))
       messages.push(message(`a${round}`, 'assistant'))
     }
-    const harness = createHarness({ messages })
+    const harness = createHarness({ messages, maxContextMessageCount: Number.MAX_SAFE_INTEGER })
 
     const result = await harness.service.run('session-1', { kind: 'manual' })
 
-    expect(result).toMatchObject({ status: 'compacted' })
+    expect(result.status, result.status === 'failed' ? result.failure.message : undefined).toBe('compacted')
     expect(harness.session.compactionPoints?.[0]).toMatchObject({ boundaryMessageId: 'a130' })
     const summaryInput = harness.generate.mock.calls[0][0]
     expect(summaryInput.messages).toHaveLength(260)
@@ -345,7 +398,7 @@ describe('CompactionService', () => {
     expect(harness.shouldCompact).not.toHaveBeenCalled()
   })
 
-  test('returns a structured failure and leaves Session data unchanged when summary generation fails', async () => {
+  test('returns a structured failure and leaves message rows unchanged when summary generation fails', async () => {
     const harness = createHarness()
     harness.generate.mockResolvedValueOnce({ success: false, error: new Error('provider failed') })
     const originalMessages = harness.session.messages
@@ -380,7 +433,7 @@ describe('CompactionService', () => {
   })
 })
 
-test('decides automatic compaction once before starting feedback and reads a fresh planning session', async () => {
+test('decides automatic compaction once before starting feedback and reads fresh planning rows', async () => {
   const harness = createHarness()
   const onStart = vi.fn(() => {
     expect(harness.shouldCompact).toHaveBeenCalledOnce()

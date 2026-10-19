@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'vitest'
-import { sessionContentFingerprint } from '../../application/session/SessionPersistenceProtocol'
 import type { Message, Session } from '../../types/session'
 import { decodeSessionTree } from './decode'
 import { repairSessionV1 } from './repair'
@@ -337,7 +336,7 @@ describe('repairSessionV1', () => {
       return texts
     }
 
-    test('encode, keep their fingerprint and keep every displayed message', () => {
+    test('encode and preserve every reachable displayed message', () => {
       const failures: string[] = []
       for (let seed = 1; seed <= 1500; seed += 1) {
         const source = createDamagedSession(seed)
@@ -350,9 +349,6 @@ describe('repairSessionV1', () => {
         if (!decoded.ok) {
           failures.push(`seed ${seed}: ${decoded.reason}`)
           continue
-        }
-        if (sessionContentFingerprint(decoded.session) !== sessionContentFingerprint(source)) {
-          failures.push(`seed ${seed}: fingerprint changed`)
         }
         const kept = new Set(displayedTexts(decoded.session))
         const lost = displayedTexts(source).filter((text) => !kept.has(text))

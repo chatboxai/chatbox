@@ -1,316 +1,143 @@
-import { type Message, type Session, SessionWriteConflictError } from '@chatbox/core'
-import {
-  RowBackedSessionRepository,
-  snapshotStreamingMessage,
-  StreamingWriteCoordinator,
-} from '@chatbox/core/application/session'
-import { SqlSessionRowStore } from '@chatbox/core/persistence'
-import type { SessionReadModel } from '@chatbox/core/ports'
-import { InMemorySessionRecordStore, InMemorySessionRepository, InMemorySettingsStorage } from '@chatbox/core/testing'
-import { createChatApplication, createChatQueryClient, QueryKeys } from '@chatbox/react'
-import { QueryObserver } from '@tanstack/react-query'
-import { afterEach, describe, expect, test, vi } from 'vitest'
-import { openNodeSessionRowDatabase } from '../../packages/chatbox-core/src/persistence/node-sqlite.test-support'
+import type { Message } from '@chatbox/core'
+import { snapshotStreamingMessage, StreamingWriteCoordinator } from '@chatbox/core/application/session'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { drivers, message, setupRows, source, type Driver } from './session-rows-harness'
 
 const cleanup: Array<() => void> = []
-
 afterEach(() => {
-  for (const dispose of cleanup.splice(0).reverse()) dispose()
   vi.restoreAllMocks()
-  vi.useRealTimers()
+  for (const dispose of cleanup.splice(0)) dispose()
 })
-
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((done) => {
+function deferred() {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => {
     resolve = done
   })
   return { promise, resolve }
 }
-
-function assistant(text: string, generating = true): Message {
-  return { id: 'assistant', role: 'assistant', generating, contentParts: [{ type: 'text', text }] }
-}
-
-function messageText(session: Session | null | undefined): string | undefined {
-  return session?.messages
-    .find((message) => message.id === 'assistant')
-    ?.contentParts.flatMap((part) => (part.type === 'text' ? [part.text] : []))
-    .join('')
-}
-
-async function setup() {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-  const database = openNodeSessionRowDatabase()
-  cleanup.push(() => database.close())
-  class Repository extends RowBackedSessionRepository {
-    readonly meta = new InMemorySessionRepository().meta
-  }
-  const repository = new Repository({
-    rows: new SqlSessionRowStore(database),
-    records: new InMemorySessionRecordStore(),
-    requiresCompleteWorkModeView: false,
-  })
-  const session: Session = {
-    id: 'existing-session',
-    name: 'Existing conversation',
-    type: 'chat',
-    messages: [
-      { id: 'old-user', role: 'user', contentParts: [{ type: 'text', text: 'Earlier question' }] },
-      { id: 'old-assistant', role: 'assistant', contentParts: [{ type: 'text', text: 'Earlier reply' }] },
-      { id: 'user', role: 'user', contentParts: [{ type: 'text', text: 'Continue the conversation' }] },
-    ],
-  }
-  await repository.setSession(session)
-  const client = createChatQueryClient()
-  const fullKey = QueryKeys.ChatSession(session.id)
-  const modelKey = QueryKeys.ChatSessionReadModel(session.id)
-  client.setQueryDefaults(fullKey, { gcTime: 30 })
-  cleanup.push(() => client.clear())
-  const application = createChatApplication({
-    queryClient: client,
-    sessionRepository: repository,
-    settingsStorage: new InMemorySettingsStorage(),
-    session: { createId: () => 'unused' },
-    settings: { isDesktopLike: false },
-  })
-  cleanup.push(() => application.dispose())
-  await application.bootstrap()
-  const bridge = application.sessionQueryBridge
-  const initialReadModel = await client.fetchQuery(bridge.definitions.readModel(session.id))
-  expect(bridge.getCachedSession(session.id)).toBeUndefined()
-  await bridge.requireCompleteSessionView(session.id)
-  await application.sessions.insertMessage(session.id, assistant('A'))
-
-  const visible = () => {
-    const model = client.getQueryData<SessionReadModel>(modelKey)
-    return model?.kind === 'full' ? model.session : undefined
-  }
-  const violations: string[] = []
-  let lastText = messageText(visible()) ?? ''
-  let removedFullQueries = 0
-  let conflicts = 0
-  const sample = () => {
-    const state = client.getQueryState(modelKey)
-    const current = messageText(visible())
-    if (state?.status !== 'success' || current === undefined) {
-      violations.push('Visible conversation became missing or loading')
-      return
-    }
-    if (!current.startsWith(lastText)) violations.push(`Text regressed: ${lastText} -> ${current}`)
-    lastText = current
-  }
-  const observer = new QueryObserver(client, bridge.definitions.readModel(session.id))
-  cleanup.push(observer.subscribe(sample))
-  cleanup.push(
-    client.getQueryCache().subscribe((event) => {
-      if (event.query.queryKey[1] !== session.id) return
-      if (event.type === 'removed' && event.query.queryKey[0] === fullKey[0]) removedFullQueries += 1
-      if (event.query.queryKey[0] === modelKey[0]) sample()
-    })
-  )
-  const writeSession = repository.setSession.bind(repository)
-  vi.spyOn(repository, 'setSession').mockImplementation(async (...args) => {
-    try {
-      await writeSession(...args)
-    } catch (error) {
-      if (error instanceof SessionWriteConflictError) conflicts += 1
-      throw error
-    }
-  })
-
+const assistant = (text: string, generating = true): Message => ({
+  ...message('assistant', 'assistant'),
+  generating,
+  contentParts: [{ type: 'text', text }],
+  ...(!generating ? { finishReason: 'stop' as const } : {}),
+})
+async function setup(driver: Driver) {
+  const initial = { ...source(), messages: [message('earlier'), message('user'), assistant('A')] }
+  const h = await setupRows(driver, initial)
+  cleanup.push(h.dispose)
+  const window = await h.openWindow(2)
+  const bridge = h.application.sessionQueryBridge
   const scheduler = new StreamingWriteCoordinator()
-  const key = `${session.id}\u0000assistant`
-  const stream = (message: Message) => {
-    const snapshot = snapshotStreamingMessage(message)
-    return scheduler.runCacheUpdate(key, (isCurrent) =>
-      bridge.updateMessageCache(session.id, snapshot.id, snapshot, { shouldApply: isCurrent })
+  const stream = (value: Message) => {
+    const snapshot = snapshotStreamingMessage(value)
+    return scheduler.runCacheUpdate('s:assistant', (isCurrent) =>
+      bridge.updateMessageCache('s', snapshot.id, snapshot, { shouldApply: isCurrent })
     )
   }
-  const persist = (message: Message, checkpoint = false) => {
-    const snapshot = snapshotStreamingMessage(message)
-    const write = () => application.sessions.updateMessage(session.id, snapshot.id, snapshot)
-    return checkpoint
-      ? scheduler.scheduleCheckpoint(key, write)
-      : snapshot.generating === false
-        ? scheduler.persistTerminal(key, write)
-        : write()
+  const write = async (value: Message) => {
+    await h.service.updateMessage('s', value.id, snapshotStreamingMessage(value))
   }
-  const collectFullQuery = async () => {
-    const query = client.getQueryCache().find({ queryKey: fullKey, exact: true })
-    if (query) {
-      expect(query.getObserversCount()).toBe(0)
-      const before = removedFullQueries
-      await vi.advanceTimersByTimeAsync(31)
-      expect(removedFullQueries).toBeGreaterThan(before)
-    }
-    expect(bridge.getCachedSession(session.id)).toBeUndefined()
-    sample()
+  const terminal = (value: Message) => scheduler.persistTerminal('s:assistant', () => write(value))
+  const visible = () => window.getSnapshot().rows.find((row) => row.messageId === 'assistant')?.message
+  const finish = async (text: string) => {
+    await terminal(assistant(text, false))
+    expect(await h.readMessage('assistant')).toMatchObject({
+      generating: false,
+      contentParts: [{ type: 'text', text }],
+    })
+    expect(visible()).toMatchObject({ generating: false, contentParts: [{ type: 'text', text }] })
+    expect(await h.readMessage('earlier')).toEqual(initial.messages[0])
   }
-  const assertFinished = async (text: string) => {
-    const stored = await repository.getSession(session.id)
-    expect(messageText(stored)).toBe(text)
-    expect(stored?.messages.slice(0, 3)).toEqual(session.messages)
-    expect(stored?.messages.at(-1)).toMatchObject({ generating: false })
-    expect(stored?.messages.at(-1)?.error).toBeUndefined()
-    expect(messageText(visible())).toBe(text)
-    expect(visible()?.messages.at(-1)?.generating).toBe(false)
-    expect(conflicts).toBe(0)
-    expect(violations).toEqual([])
-  }
-  return {
-    application,
-    repository,
-    client,
-    bridge,
-    session,
-    initialReadModel,
-    visible,
-    stream,
-    persist,
-    collectFullQuery,
-    assertFinished,
-  }
+  return { ...h, window, bridge, scheduler, stream, write, terminal, visible, finish }
 }
 
-describe('shared streaming writes in one application instance', () => {
-  test('continues an existing session through repeated unobserved cache collection', async () => {
-    const h = await setup()
-    const live = assistant('AB')
-    await h.stream(live)
-    const part = live.contentParts[0]
-    if (part.type !== 'text') throw new Error('Missing text fixture')
-    part.text = 'ABC'
-    expect(messageText(h.visible())).toBe('AB')
-    await h.collectFullQuery()
-    await h.stream(live)
-    expect(messageText(h.visible())).toBe('ABC')
-    await h.persist(live, true)
-    await h.collectFullQuery()
-    part.text = 'ABCD'
-    await h.stream(live)
-    await h.persist(assistant('ABCD', false))
-    await h.assertFinished('ABCD')
-  })
-
-  test('keeps the latest visible text when a slow checkpoint completes after full-cache collection', async () => {
-    const h = await setup()
-    await h.stream(assistant('AB'))
-    const started = deferred<void>()
-    const release = deferred<void>()
-    const write = h.repository.executeSessionCommand.bind(h.repository)
-    vi.spyOn(h.repository, 'executeSessionCommand').mockImplementationOnce(async (...args) => {
-      started.resolve()
-      await release.promise
-      return write(...args)
-    })
-    const checkpoint = h.persist(assistant('AB'), true)
-    await started.promise
-    await h.stream(assistant('ABCD'))
-    await h.collectFullQuery()
-    expect(messageText(h.visible())).toBe('ABCD')
-    release.resolve()
-    await checkpoint
-    await h.stream(assistant('ABCDE'))
-    await h.persist(assistant('ABCDE', false))
-    await h.assertFinished('ABCDE')
-  })
-
-  test('does not let a delayed cache read overwrite the terminal result', async () => {
-    const h = await setup()
-    await h.stream(assistant('AB'))
-    await h.collectFullQuery()
-    const old = await h.repository.getCompleteSessionSource(h.session.id)
-    const started = deferred<void>()
-    const read = deferred<typeof old>()
-    vi.spyOn(h.repository, 'getCompleteSessionSource').mockImplementationOnce(async () => {
-      started.resolve()
-      return read.promise
-    })
-    const pendingRead = h.bridge.getSession(h.session.id)
-    await started.promise
-    const cacheUpdate = h.stream(assistant('ABC'))
-    await h.persist(assistant('ABCD', false))
-    read.resolve(old)
-    await Promise.all([cacheUpdate, pendingRead])
-    await h.assertFinished('ABCD')
-  })
-
-  test('keeps the newest chunks while an explicit full read is pending', async () => {
-    const h = await setup()
-    await h.collectFullQuery()
-    const stored = await h.repository.getCompleteSessionSource(h.session.id)
-    const started = deferred<void>()
-    const read = deferred<typeof stored>()
-    vi.spyOn(h.repository, 'getCompleteSessionSource').mockImplementationOnce(async () => {
-      started.resolve()
-      return read.promise
-    })
-    const pendingRead = h.bridge.getSession(h.session.id)
-    await started.promise
-    await h.stream(assistant('AB'))
-    await h.stream(assistant('ABCD'))
-    expect(messageText(h.visible())).toBe('ABCD')
-    read.resolve(stored)
-    await pendingRead
-    expect(messageText(h.visible())).toBe('ABCD')
-    await h.persist(assistant('ABCD', false))
-    await h.assertFinished('ABCD')
-  })
-
-  test('updates a retained complete view after full-cache collection without reading storage for chunks', async () => {
-    const h = await setup()
-    await h.stream(assistant('AB'))
-    await h.collectFullQuery()
-    const read = vi.spyOn(h.repository, 'getCompleteSessionSource')
-    const selected = vi.spyOn(h.repository, 'readSessionMessages')
-    await Promise.all([h.stream(assistant('ABC')), h.stream(assistant('ABCD'))])
+describe.each(drivers)('streaming with bounded transcript windows on %s', (driver) => {
+  it('continues streaming through repeated query cache collection', async () => {
+    const h = await setup(driver)
+    const read = vi.spyOn(h.repository, 'readSessionTranscriptWindow')
+    for (const text of ['AB', 'ABC', 'ABCD']) {
+      h.application.queryClient.clear()
+      await h.stream(assistant(text))
+      expect(h.visible()?.contentParts).toEqual([{ type: 'text', text }])
+      expect(h.window.getSnapshot().rows).toHaveLength(2)
+    }
     expect(read).not.toHaveBeenCalled()
-    expect(selected).not.toHaveBeenCalled()
-    expect(messageText(h.visible())).toBe('ABCD')
-    await h.persist(assistant('ABCD', false))
-    await h.assertFinished('ABCD')
+    await h.finish('ABCDE')
   })
 
-  test('does not resurrect a deleted session when a late chunk arrives', async () => {
-    const h = await setup()
-    await h.stream(assistant('ABCD'))
-    await h.application.sessions.deleteSession(h.session.id)
-    await expect(h.stream(assistant('ABCDE'))).rejects.toThrow('not found')
-    expect(h.bridge.getCachedSession(h.session.id)).toBeNull()
-    expect(h.client.getQueryData(QueryKeys.ChatSessionReadModel(h.session.id))).toBeNull()
-    expect(await h.repository.getSession(h.session.id)).toBeNull()
-  })
-
-  test('preserves the live reply from a loaded window while retaining the complete committed history', async () => {
-    const h = await setup()
-    const committed = await h.repository.getSession(h.session.id)
-    const window = await h.repository.readSessionMessageWindow({ sessionId: h.session.id, limit: 1 })
-    if (!committed || !window || h.initialReadModel?.kind !== 'window') {
-      throw new Error('Missing window fixture')
-    }
-    expect(window.messages).toHaveLength(1)
-    expect(window.messages[0].messageId).toBe('assistant')
-    const partial: SessionReadModel = {
-      ...h.initialReadModel,
-      window: {
-        ...window,
-        messages: window.messages.map((row) => ({ ...row, message: assistant('ABCD') })),
-      },
-    }
-    h.client.setQueryData(QueryKeys.ChatSessionReadModel(h.session.id), partial)
-    await h.collectFullQuery()
-
-    await h.application.sessionEvents.publish({
-      type: 'session-updated',
-      session: committed,
-      meta: null,
-      preserveCachedGeneratingMessages: true,
+  it('does not regress live text when a slow checkpoint commits', async () => {
+    const h = await setup(driver)
+    const pause = deferred()
+    const checkpoint = h.scheduler.scheduleCheckpoint('s:assistant', async () => {
+      await pause.promise
+      await h.write(assistant('AB'))
     })
+    await h.stream(assistant('ABCD'))
+    pause.resolve()
+    await checkpoint
+    expect((await h.readMessage('assistant'))?.contentParts).toEqual([{ type: 'text', text: 'AB' }])
+    expect(h.visible()?.contentParts).toEqual([{ type: 'text', text: 'ABCD' }])
+    await h.finish('ABCDE')
+  })
 
-    expect(messageText(h.visible())).toBe('ABCD')
-    expect(h.visible()?.messages).toHaveLength(committed.messages.length)
-    expect(h.visible()?.messages.slice(0, 3)).toEqual(h.session.messages)
-    expect(h.bridge.getCachedSession(h.session.id)?.messages).toEqual(h.visible()?.messages)
+  it('fences a delayed cache publication behind a terminal commit', async () => {
+    const h = await setup(driver)
+    const pause = deferred()
+    const delayed = h.scheduler.runCacheUpdate('s:assistant', async (isCurrent) => {
+      await pause.promise
+      await h.bridge.updateMessageCache('s', 'assistant', assistant('AB'), { shouldApply: isCurrent })
+    })
+    await h.finish('Finished')
+    pause.resolve()
+    await delayed
+    expect(h.visible()?.contentParts).toEqual([{ type: 'text', text: 'Finished' }])
+  })
+
+  it('publishes the newest chunk when cache updates complete out of order', async () => {
+    const h = await setup(driver)
+    const pause = deferred()
+    const delayed = h.scheduler.runCacheUpdate('s:assistant', async (isCurrent) => {
+      await pause.promise
+      await h.bridge.updateMessageCache('s', 'assistant', assistant('AB'), { shouldApply: isCurrent })
+    })
+    await h.stream(assistant('ABCDE'))
+    pause.resolve()
+    await delayed
+    expect(h.visible()?.contentParts).toEqual([{ type: 'text', text: 'ABCDE' }])
+    await h.finish('ABCDEF')
+  })
+
+  it('persists a terminal reply after its page is evicted', async () => {
+    const h = await setup(driver)
+    expect(await h.window.openSearch('earlier')).toBe(true)
+    expect(h.visible()).toBeUndefined()
+    await h.stream(assistant('Invisible live chunk'))
+    await h.terminal(assistant('Completed offscreen', false))
+    expect(h.visible()).toBeUndefined()
+    expect((await h.readMessage('assistant'))?.contentParts).toEqual([{ type: 'text', text: 'Completed offscreen' }])
+    expect(await h.window.openSearch('assistant')).toBe(true)
+    expect(h.visible()).toMatchObject({
+      generating: false,
+      contentParts: [{ type: 'text', text: 'Completed offscreen' }],
+    })
+  })
+
+  it('keeps a later live reply while another reply completes', async () => {
+    const h = await setup(driver)
+    await h.service.insertMessage('s', { ...message('second', 'assistant'), generating: true })
+    await h.bridge.updateMessageCache('s', 'second', { contentParts: [{ type: 'text', text: 'Second live' }] })
+    await h.finish('First final')
+    expect(h.window.getSnapshot().rows.find((row) => row.messageId === 'second')?.message.contentParts).toEqual([
+      { type: 'text', text: 'Second live' },
+    ])
+    expect((await h.readMessage('second'))?.contentParts).toEqual([{ type: 'text', text: 'second' }])
+  })
+
+  it('does not resurrect deleted rows when a late cache publication arrives', async () => {
+    const h = await setup(driver)
+    await h.service.deleteSession('s')
+    await h.stream(assistant('Late'))
+    expect(h.window.getSnapshot().rows).toHaveLength(0)
+    expect(await h.repository.getSessionHeader('s')).toBeNull()
   })
 })

@@ -7,6 +7,11 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 
 const { useBlobMock } = vi.hoisted(() => ({ useBlobMock: vi.fn() }))
 
+vi.mock('i18next', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('i18next')>()),
+  t: (key: string) => key,
+}))
+
 vi.mock('react-i18next', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react-i18next')>()),
   useTranslation: () => ({

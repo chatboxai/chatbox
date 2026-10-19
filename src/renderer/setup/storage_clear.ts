@@ -2,7 +2,7 @@ import { withSessionWorkAccess } from '@/adapters/session-work-lock'
 import type { CopilotDetail } from '@shared/types'
 import { getDefaultStore } from 'jotai'
 import { rendererApplication, sessionRepository } from '@/app/renderer-application'
-import { collectGlobalResourceReferences, collectSessionResourceReferences } from '@/packages/backup/resources'
+import { collectGlobalResourceReferences } from '@/packages/backup/resources'
 import { StorageKey } from '@/storage/StoreStorage'
 import { inputBoxPreConstructedMessageFamily } from '@/stores/atoms/uiAtoms'
 import { getMetaStorage } from '@/stores/sessionHelpers'
@@ -190,13 +190,10 @@ async function doCleanupOrphanedBlobs(options?: CleanupOptions): Promise<number>
       return 0
     }
     await yieldIfNeeded()
-    // 不从 atom 中获取，避免水合状态
-    const session = await sessionRepository.getSession(sessionMeta.id)
-    if (!session) {
-      continue
-    }
-    for (const reference of collectSessionResourceReferences(session).references) {
+    for await (const reference of sessionRepository.iterateSessionResourceReferences(sessionMeta.id)) {
+      if (Date.now() > deadline) return 0
       needDeletedSet.delete(reference.storageKey)
+      await yieldIfNeeded()
     }
     if (needDeletedSet.size === 0) return 0
   }

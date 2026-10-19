@@ -1,9 +1,8 @@
-import { type CurrentThreadTarget, getCurrentThreadTarget } from '@chatbox/core/application/session'
 import { resolveSessionMode } from '@chatbox/core/session/mode-policy'
 import NiceModal from '@ebay/nice-modal-react'
-import { ActionIcon, Badge, Flex, Text } from '@mantine/core'
+import { ActionIcon, Badge, Button, Flex, Loader, Text } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
-import type { Session, SessionThreadBrief } from '@shared/types'
+import type { SessionHeader, SessionThreadBrief } from '@shared/types'
 import { IconDots, IconEdit, IconSwitch, IconTrash } from '@tabler/icons-react'
 import clsx from 'clsx'
 import { useAtomValue } from 'jotai'
@@ -11,10 +10,10 @@ import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { currentSessionIdAtom } from '@/stores/atoms'
-import { scrollToIndex } from '@/stores/scrollActions'
+import { uiStore } from '@/stores/uiStore'
+import { rendererApplication } from '@/app/renderer-application'
 import { useSessionAgentMode } from '@/stores/session/agent-mode'
 import { removeThread, switchThread as switchThreadAction } from '@/stores/session/threads'
-import { getAllMessageList, getCurrentThreadHistoryHash } from '@/stores/sessionHelpers'
 import ActionMenu from '../ActionMenu'
 import { ScalableIcon } from '../common/ScalableIcon'
 
@@ -27,7 +26,7 @@ export default function ThreadHistoryList({
   onNavigate,
   inlineMenus,
 }: {
-  session: Session
+  session: SessionHeader
   onNavigate?: () => void
   /** Renders thread menus inside the list, for hosts such as a modal sheet that block the page outside. */
   inlineMenus?: boolean
@@ -36,27 +35,25 @@ export default function ThreadHistoryList({
   const agentModeEntry = useSessionAgentMode(session.id)
   const sessionMode = resolveSessionMode(agentModeEntry.value)
 
-  const currentMessageList = useMemo(() => getAllMessageList(session), [session])
-
-  const currentThreadHistoryHash = useMemo(() => getCurrentThreadHistoryHash(session), [session])
+  const query = rendererApplication.sessionHooks.useSessionThreads(session.id)
   const threadList = useMemo(
-    () => (currentThreadHistoryHash ? Object.values(currentThreadHistoryHash) : []),
-    [currentThreadHistoryHash]
+    () =>
+      query.threads.map((thread) => ({
+        id: thread.threadId,
+        name: thread.name ?? session.name,
+        messageCount: thread.summary?.messageCount,
+        firstMessageId: thread.rootMessageId ?? undefined,
+        createdAtLabel: new Date(thread.createdAt).toLocaleDateString(),
+      })),
+    [query.threads, session.name]
   )
-
   const gotoThreadMessage = useCallback(
     (threadId: string) => {
-      const thread = threadList.find((t) => t.id === threadId)
-      if (!thread) {
-        return
-      }
-      const msgIndex = currentMessageList.findIndex((m) => m.id === thread.firstMessageId)
-      if (msgIndex >= 0) {
-        scrollToIndex(msgIndex, 'start', 'smooth')
-      }
+      const navigation = uiStore.getState().transcriptNavigation
+      if (navigation?.sessionId === session.id) void navigation.viewThread(threadId)
       onNavigate?.()
     },
-    [threadList, onNavigate, currentMessageList]
+    [session.id, onNavigate]
   )
 
   const handleSwitchThread = useCallback(
@@ -67,6 +64,8 @@ export default function ThreadHistoryList({
     [session.id, onNavigate]
   )
 
+  if (query.isLoading) return <Loader size="xs" />
+  if (query.isError) return <Button onClick={() => void query.refetch()}>{t('Try Again')}</Button>
   if (threadList.length === 0) {
     return (
       <Text fz={13} c="chatbox-tertiary" ta="center" py="xl">
@@ -85,25 +84,31 @@ export default function ThreadHistoryList({
           switchThread={handleSwitchThread}
           allowStructureActions={sessionMode === 'chat'}
           sessionId={session.id}
-          currentThreadTarget={getCurrentThreadTarget(session)}
           inlineMenu={inlineMenus}
         />
       ))}
+      {query.hasNextPage && (
+        <Button variant="subtle" loading={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>
+          {t('Load More')}
+        </Button>
+      )}
     </div>
   )
 }
 
 function ThreadItem(props: {
-  thread: SessionThreadBrief
+  thread: Omit<SessionThreadBrief, 'firstMessageId' | 'messageCount'> & {
+    firstMessageId?: string
+    messageCount?: number
+  }
   goto(threadId: string): void
   switchThread(threadId: string): void
   allowStructureActions: boolean
   sessionId: string
-  currentThreadTarget: CurrentThreadTarget
   inlineMenu?: boolean
 }) {
   const { t } = useTranslation()
-  const { thread, goto, switchThread, allowStructureActions, sessionId, currentThreadTarget, inlineMenu } = props
+  const { thread, goto, switchThread, allowStructureActions, sessionId, inlineMenu } = props
   const threadName = thread.name || t('New Thread')
   const currentSessionId = useAtomValue(currentSessionIdAtom)
   const isSmallScreen = useIsSmallScreen()
@@ -159,7 +164,7 @@ function ThreadItem(props: {
                     if (!currentSessionId) {
                       return
                     }
-                    return removeThread(sessionId, thread.id, currentThreadTarget)
+                    return removeThread(sessionId, thread.id)
                   },
                 },
               ]

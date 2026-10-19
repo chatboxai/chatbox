@@ -126,7 +126,7 @@ it('registers the host CLI only while product info is enabled', async () => {
     refreshAccount: async () => false,
     getVersion: async () => ({ installedVersion: '1', platform: 'test' }),
     listChats: async () => ({ items: [], total: 0, nextCursor: null }),
-    getChat: async () => null,
+    readChatPage: async () => null,
   }))
   const work = new LocalWorkMode(workspace, new MobileExecutionService(), undefined, undefined, host)
   const context = { sessionId: 'cli', modelName: 'custom', signal: new AbortController().signal }

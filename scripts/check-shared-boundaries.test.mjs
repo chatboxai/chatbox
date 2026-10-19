@@ -35,7 +35,7 @@ function withFixture(files, run) {
 test('allows supported process dependencies', () => {
   withFixture(
     {
-      'src/renderer/view.ts': "import type { Session } from '@shared/types'",
+      'src/renderer/view.ts': "import type { SessionHeader } from '@shared/types'",
       'src/main/main.ts': "import { app } from 'electron'\nimport type { Session } from '../shared/types'",
       'src/preload/index.ts':
         "import { contextBridge } from 'electron'\nimport type { Session } from '../shared/types'",
@@ -43,6 +43,25 @@ test('allows supported process dependencies', () => {
     },
     (root) => {
       assert.deepEqual(checkArchitectureBoundaries(root), [])
+    }
+  )
+})
+
+test('enforces row-only dependencies across both hosts and shared business modules', () => {
+  const files = [
+    'src/renderer/stores/session/new.ts',
+    'apps/mobile/src/application/new.ts',
+    'packages/chatbox-core/src/application/new.ts',
+    'packages/chatbox-core/src/generation/new.ts',
+    'packages/chatbox-core/src/session/new.ts',
+    'packages/chatbox-core/src/session/session-tree/new.ts',
+    'packages/chatbox-react/src/new.ts',
+  ]
+  withFixture(
+    Object.fromEntries(files.map((file) => [file, "import type { Session as Chat } from '@chatbox/core'"])),
+    (root) => {
+      const violations = checkArchitectureBoundaries(root).filter(({ type }) => type === 'session-aggregate')
+      assert.deepEqual(violations.map(({ file }) => file).sort(), [...files].sort())
     }
   )
 })
@@ -130,7 +149,7 @@ test('resolves @shared aliases without allowing them to traverse process boundar
   withFixture(
     {
       'src/shared/types.ts': 'export interface Session { id: string }',
-      'src/renderer/allowed.ts': "import type { Session } from '@shared/types'",
+      'src/renderer/allowed.ts': "import type { SessionHeader } from '@shared/types'",
       'src/renderer/main.ts': "import value from '@shared/../main/value'",
       'src/renderer/preload.ts': "export { value } from '@shared/../preload/value'",
       'src/main/renderer.ts': "import value from '@shared/../renderer/value'",
@@ -161,7 +180,7 @@ test('rejects @shared alias traversal from portable boundaries while allowing sh
       'src/shared/escape.ts': "import view from '@shared/../renderer/view'",
       'packages/chatbox-core/src/allowed.ts': "import type { Session } from '@shared/types'",
       'packages/chatbox-core/src/escape.ts': "import main from '@shared/../main/main'",
-      'packages/chatbox-react/src/allowed.ts': "import type { Session } from '@chatbox/core'",
+      'packages/chatbox-react/src/allowed.ts': "import type { SessionHeader } from '@chatbox/core'",
       'packages/chatbox-react/src/escape.ts': "import preload from '@shared/../preload/index'",
       'src/renderer/view.ts': 'export default 1',
       'src/main/main.ts': 'export default 1',

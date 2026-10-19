@@ -33,7 +33,7 @@ export interface CompactionFailure {
 }
 
 export type CompactionServiceResult =
-  | { status: 'compacted'; summaryMessageId: string; summary: string; coverage: CompactionCoverage }
+  | { status: 'compacted'; summaryMessageId: string; summary: string; coverage: CompactionCoverage; revision: number }
   | { status: 'skipped'; reason: 'not_needed' | 'no_model' | 'busy' | 'backup_busy' | 'stale_path' }
   | { status: 'cancelled' }
   | { status: 'failed'; failure: CompactionFailure }

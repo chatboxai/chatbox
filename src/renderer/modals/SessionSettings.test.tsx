@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { MantineProvider } from '@mantine/core'
-import type { Session } from '@shared/types'
+import type { SessionHeader } from '@shared/types'
 import { fireEvent, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
   hide: vi.fn(),
   resolve: vi.fn(),
   delBlob: vi.fn(),
-  updateSessionWithMessages: vi.fn(),
+  updateSessionHeader: vi.fn(),
 }))
 
 Object.defineProperty(window, 'matchMedia', {
@@ -37,7 +37,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }))
 vi.mock('@/app/renderer-application', () => ({
-  rendererApplication: { sessions: { updateSessionWithMessages: mocks.updateSessionWithMessages } },
+  rendererApplication: { sessions: { updateSessionHeader: mocks.updateSessionHeader } },
 }))
 vi.mock('@/storage', () => ({ default: { delBlob: mocks.delBlob } }))
 vi.mock('@/components/common/AdaptiveModal', () => {
@@ -64,11 +64,10 @@ vi.mock('@/components/session/SessionSettingsContent', () => ({
 
 import SessionSettings from './SessionSettings'
 
-const draftSession: Session = {
+const draftSession: SessionHeader = {
   id: 'new',
   type: 'chat',
   name: 'Untitled',
-  messages: [],
   settings: { provider: 'openai', modelId: 'gpt-4o' },
   backgroundImage: { type: 'storage-key', storageKey: 'picture:session-bg:shared' },
 }
@@ -78,13 +77,13 @@ describe('SessionSettings for an unsaved chat', () => {
     mocks.hide.mockClear()
     mocks.resolve.mockClear()
     mocks.delBlob.mockClear()
-    mocks.updateSessionWithMessages.mockClear()
+    mocks.updateSessionHeader.mockClear()
   })
 
   test('resolves with the edited draft without saving it or deleting shared blobs', () => {
     render(
       <MantineProvider>
-        <SessionSettings id="session-settings-test" session={draftSession} />
+        <SessionSettings id="session-settings-test" session={draftSession} systemPrompt="Default prompt" />
       </MantineProvider>
     )
 
@@ -92,18 +91,19 @@ describe('SessionSettings for an unsaved chat', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Set temperature' }))
     fireEvent.click(screen.getByRole('button', { name: 'Done' }))
 
-    const resolved = mocks.resolve.mock.calls[0][0] as Session
-    expect(resolved.backgroundImage).toBeUndefined()
-    expect(resolved.settings).toEqual({ provider: 'openai', modelId: 'gpt-4o', temperature: 0.2 })
+    const resolved = mocks.resolve.mock.calls[0][0] as { session: SessionHeader; systemPrompt: string }
+    expect(resolved.session.backgroundImage).toBeUndefined()
+    expect(resolved.session.settings).toEqual({ provider: 'openai', modelId: 'gpt-4o', temperature: 0.2 })
+    expect(resolved.systemPrompt).toBe('Default prompt')
     expect(mocks.hide).toHaveBeenCalled()
-    expect(mocks.updateSessionWithMessages).not.toHaveBeenCalled()
+    expect(mocks.updateSessionHeader).not.toHaveBeenCalled()
     expect(mocks.delBlob).not.toHaveBeenCalled()
   })
 
   test('includes text a focused field commits when the dialog closes', () => {
     render(
       <MantineProvider>
-        <SessionSettings id="session-settings-test" session={draftSession} />
+        <SessionSettings id="session-settings-test" session={draftSession} systemPrompt="Default prompt" />
       </MantineProvider>
     )
 
@@ -112,6 +112,8 @@ describe('SessionSettings for an unsaved chat', () => {
     fireEvent.change(name, { target: { value: 'Pricing research' } })
     fireEvent.click(screen.getByRole('button', { name: 'Done' }))
 
-    expect((mocks.resolve.mock.calls[0][0] as Session).name).toBe('Pricing research')
+    expect((mocks.resolve.mock.calls[0][0] as { session: SessionHeader; systemPrompt: string }).session.name).toBe(
+      'Pricing research'
+    )
   })
 })

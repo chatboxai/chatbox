@@ -17,7 +17,9 @@ import { safeStorage } from './safeStorage'
 export interface TranscriptNavigation {
   readonly owner: symbol
   readonly sessionId: string
-  readonly view: 'window' | 'complete'
+  navigateMessage(messageId: string): Promise<boolean>
+  openSearch(messageId: string): Promise<boolean>
+  viewThread(threadId: string): Promise<boolean>
   scrollToIndex(location: {
     index: number | 'LAST'
     align: 'start' | 'center' | 'end'

@@ -1,3 +1,4 @@
+import type { Message } from '../types'
 export type GenerationRuntimePhase = 'preparing' | 'streaming' | 'paused' | 'stopping'
 
 export interface GenerationRuntimeState {
@@ -32,6 +33,7 @@ export interface GenerationRuntimeStoreOptions {
  * in this in-memory store.
  */
 export class GenerationRuntimeStore {
+  private readonly liveMessages = new WeakMap<AbortController, Message>()
   private readonly states = new Map<string, Map<string, GenerationRuntimeState>>()
   private readonly pendingAbortReasons = new Map<string, Map<string, unknown>>()
   private readonly sessionStopGates = new Map<string, GenerationSessionStopGate>()
@@ -76,6 +78,18 @@ export class GenerationRuntimeStore {
     sessionStates.set(messageId, state)
     this.notify()
     return state
+  }
+
+  /** Active stream state is independent of mounted transcript pages. */
+  setLiveMessage(sessionId: string, message: Message): void {
+    const state = this.get(sessionId, message.id)
+    if (state && state.phase !== 'stopping') this.liveMessages.set(state.abortController, message)
+  }
+
+  getLiveMessage(sessionId: string, messageId: string): Message | undefined {
+    const state = this.get(sessionId, messageId)
+    const message = state && this.liveMessages.get(state.abortController)
+    return message?.id === messageId ? message : undefined
   }
 
   get(sessionId: string, messageId?: string): GenerationRuntimeState | undefined {

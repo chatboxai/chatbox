@@ -1,36 +1,16 @@
-import {
-  deriveSessionLockState,
-  IDLE_SESSION_LOCK_STATE,
-  type SessionLockState,
-  sessionLockStatesEqual,
-} from '@chatbox/core/session/action-gates'
-import type { Session } from '@shared/types'
+import { type SessionLockState } from '@chatbox/core/session/action-gates'
+import type { SessionHeader } from '@shared/types'
+import { useSessionGenerationControl } from '@chatbox/react/query'
 import { useAtomValue } from 'jotai'
 import { selectAtom } from 'jotai/utils'
-import { useMemo, useRef } from 'react'
+import { useMemo } from 'react'
 import { rendererApplication } from '@/app/renderer-application'
 import { compactionUIStateMapAtom } from '@/stores/atoms/compactionAtoms'
 
 const useGenerationRuntimeVersion = () => rendererApplication.generationHooks.useVersion()
 
-/**
- * Renderer adapter for the shared session action gates: joins session data
- * with the renderer-only compaction runtime state into one lock snapshot.
- * Components pass the snapshot to `getSessionActionGate` instead of encoding
- * their own blocking conditions.
- *
- * Referential stability matters here: the hook is mounted in the route, the
- * message list, and the input box at once, and streaming hands it a fresh
- * session object per chunk. The compaction map is subscribed through a
- * per-session `selectAtom` boolean (the map itself changes on every compaction
- * streaming chunk), and the snapshot object is reused while its values are
- * unchanged so `memo()`d consumers (every Message row) don't re-render per
- * chunk.
- */
-export function useSessionLockState(
-  session: Session | null | undefined,
-  presentationSessionId?: string
-): SessionLockState {
+/** Joins exact row generation controls with the host's compaction runtime. */
+export function useSessionControls(session: SessionHeader | null | undefined, presentationSessionId?: string) {
   const sessionId = session?.id ?? presentationSessionId
   const compactionRunningAtom = useMemo(
     () =>
@@ -46,15 +26,20 @@ export function useSessionLockState(
     () => (sessionId ? rendererApplication.generationRuntime.getActiveMessageIds(sessionId) : new Set<string>()),
     [sessionId, generationRuntimeVersion]
   )
-  const previousRef = useRef<SessionLockState>(IDLE_SESSION_LOCK_STATE)
-  return useMemo(() => {
-    const next = session
-      ? deriveSessionLockState(session, { compactionRunning, activeGenerationMessageIds })
-      : { ...IDLE_SESSION_LOCK_STATE, compactionRunning }
-    if (sessionLockStatesEqual(next, previousRef.current)) {
-      return previousRef.current
-    }
-    previousRef.current = next
-    return next
-  }, [session, compactionRunning, activeGenerationMessageIds])
+  const header = rendererApplication.sessionHooks.useSessionHeader(sessionId ?? null)
+  return useSessionGenerationControl({
+    sessionId,
+    headerRead: header.read,
+    bridge: rendererApplication.sessionQueryBridge,
+    activeGenerationMessageIds,
+    compactionRunning,
+    source: rendererApplication.sessions,
+  })
+}
+
+export function useSessionLockState(
+  session: SessionHeader | null | undefined,
+  presentationSessionId?: string
+): SessionLockState {
+  return useSessionControls(session, presentationSessionId).locks
 }

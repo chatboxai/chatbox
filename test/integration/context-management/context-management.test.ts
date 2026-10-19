@@ -1,10 +1,9 @@
 import './setup'
+import { InMemorySessionRepository } from '@chatbox/core/testing'
 import { v4 as uuidv4 } from 'uuid'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   buildContextForAI,
-  buildContextForSession,
-  buildContextForThread,
   checkOverflow,
   DEFAULT_COMPACTION_THRESHOLD,
   isAutoCompactionEnabled,
@@ -110,6 +109,18 @@ function createTestThread(
     createdAt: Date.now(),
     compactionPoints: options?.compactionPoints,
   }
+}
+
+async function seedContextRows(fixture: Session) {
+  const repository = new InMemorySessionRepository()
+  await repository.seedSession(fixture)
+  return repository
+}
+
+async function selectRowContext(repository: InMemorySessionRepository, sessionId: string, threadId?: string) {
+  const source = await repository.getSessionContextSource({ sessionId, threadId })
+  if (!source) throw new Error('Missing context source')
+  return buildContextForAI({ messages: source.candidateMessages, compactionPoints: source.compactionPoints })
 }
 
 describe('Context Management Integration Tests', () => {
@@ -269,7 +280,7 @@ describe('Context Management Integration Tests', () => {
   })
 
   describe('Session and Thread Context Building', () => {
-    it('should build context for session with compaction points', () => {
+    it('should build context for session with compaction points', async () => {
       const msg1 = createTestMessage('user', 'Old')
       const msg2 = createTestMessage('assistant', 'Old response')
       const msg3 = createTestMessage('user', 'New')
@@ -280,13 +291,14 @@ describe('Context Management Integration Tests', () => {
         compactionPoints: [createCompactionPoint(summary.id, msg2.id)],
       })
 
-      const result = buildContextForSession(session)
+      const repository = await seedContextRows(session)
+      const result = await selectRowContext(repository, session.id)
 
       expect(result).toHaveLength(3) // summary + msg3 + msg4
       expect(result[0].isSummary).toBe(true)
     })
 
-    it('should build context for specific thread in session', () => {
+    it('should build context for specific thread in session', async () => {
       const sessionMessages = [createTestMessage('user', 'Session message')]
 
       const threadMsg1 = createTestMessage('user', 'Thread message 1')
@@ -301,14 +313,15 @@ describe('Context Management Integration Tests', () => {
         threads: [thread],
       })
 
-      const result = buildContextForSession(session, { threadId: thread.id })
+      const repository = await seedContextRows(session)
+      const result = await selectRowContext(repository, session.id, thread.id)
 
       // Should use thread's messages and compaction points
       expect(result).toHaveLength(2) // summary + threadMsg2
       expect(result[0].isSummary).toBe(true)
     })
 
-    it('should build context for standalone thread', () => {
+    it('should build context for standalone thread', async () => {
       const msg1 = createTestMessage('user', 'Thread msg 1')
       const msg2 = createTestMessage('assistant', 'Thread response 1')
       const msg3 = createTestMessage('user', 'Thread msg 2')
@@ -319,26 +332,19 @@ describe('Context Management Integration Tests', () => {
         compactionPoints: [createCompactionPoint(summary.id, msg2.id)],
       })
 
-      const result = buildContextForThread(thread)
+      const session = createTestSession([], { threads: [thread] })
+      const repository = await seedContextRows(session)
+      const result = await selectRowContext(repository, session.id, thread.id)
 
       expect(result).toHaveLength(3) // summary + msg3 + msg4
     })
 
-    it('should fall back to session messages when threadId not found', () => {
-      const sessionMessages = [
-        createTestMessage('user', 'Session message'),
-        createTestMessage('assistant', 'Session response'),
-      ]
-
-      const session = createTestSession(sessionMessages, {
-        threads: [],
-      })
-
-      const result = buildContextForSession(session, { threadId: 'non-existent-thread' })
-
-      // Should use session messages
-      expect(result).toHaveLength(2)
-      expect(result[0].contentParts[0]).toEqual({ type: 'text', text: 'Session message' })
+    it('rejects an unavailable thread without selecting the active path', async () => {
+      const session = createTestSession([createTestMessage('user', 'Current message')])
+      const repository = await seedContextRows(session)
+      const activeThreadId = (await repository.getSessionHeader(session.id))?.activeThreadId
+      await expect(selectRowContext(repository, session.id, 'missing-thread')).rejects.toThrow('Context thread')
+      expect((await repository.getSessionHeader(session.id))?.activeThreadId).toBe(activeThreadId)
     })
   })
 
@@ -512,7 +518,7 @@ describe('Context Management Integration Tests', () => {
       expect(result[2].contentParts[0]).toEqual({ type: 'text', text: 'Round 3 A' })
     })
 
-    it('should work with session containing both threads and main messages', () => {
+    it('should work with session containing both threads and main messages', async () => {
       const mainMsg1 = createTestMessage('user', 'Main Q')
       const mainMsg2 = createTestMessage('assistant', 'Main A')
       const mainSummary = createTestMessage('assistant', 'Main summary', { isSummary: true })
@@ -527,12 +533,12 @@ describe('Context Management Integration Tests', () => {
         threads: [thread],
       })
 
-      // Get main session context
-      const mainResult = buildContextForSession(session)
+      const repository = await seedContextRows(session)
+      const mainResult = await selectRowContext(repository, session.id)
       expect(mainResult).toHaveLength(2) // summary + mainMsg2
 
       // Get thread context
-      const threadResult = buildContextForSession(session, { threadId: 'thread-1' })
+      const threadResult = await selectRowContext(repository, session.id, 'thread-1')
       expect(threadResult).toHaveLength(2) // threadMsg1 + threadMsg2 (no compaction in thread)
     })
   })

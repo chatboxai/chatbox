@@ -8,18 +8,23 @@ import {
   waitForSessionGenerations,
   withSessionGenerationLock,
 } from '@chatbox/core/generation'
+import { SessionEventBus, SessionService, SessionWriteCoordinator } from '@chatbox/core/application/session'
+import { InMemorySessionRepository } from '@chatbox/core/testing'
 import { buildContext } from '@shared/context'
 import { estimateTokensForTokenizerType } from '@shared/token-estimation/tokenizer'
 import type { Message, Session } from '@shared/types'
 import { getDefaultStore } from 'jotai'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { compactionUIStateMapAtom, getCompactionUIState } from '@/stores/atoms/compactionAtoms'
 
 const {
   resolveTokenEstimationPolicyMock,
   generateSummaryWithStreamMock,
-  getSessionMock,
-  updateSessionWithMessagesMock,
+  getSessionHeaderMock,
+  getSessionContextSourceMock,
+  estimateMock,
+  readConversationAnchorIdMock,
+  commitSessionCompactionMock,
   getSessionSettingsMock,
   getSessionLockStateMock,
   enqueueCompactionRequestMock,
@@ -27,9 +32,12 @@ const {
 } = vi.hoisted(() => ({
   resolveTokenEstimationPolicyMock: vi.fn(),
   generateSummaryWithStreamMock: vi.fn(),
-  getSessionMock: vi.fn(),
+  getSessionHeaderMock: vi.fn(),
+  getSessionContextSourceMock: vi.fn(),
+  estimateMock: vi.fn(),
+  readConversationAnchorIdMock: vi.fn(),
   getSessionSettingsMock: vi.fn(),
-  updateSessionWithMessagesMock: vi.fn(),
+  commitSessionCompactionMock: vi.fn(),
   getSessionLockStateMock: vi.fn(),
   enqueueCompactionRequestMock: vi.fn(),
   hasQueuedWorkMock: vi.fn(),
@@ -40,8 +48,11 @@ vi.mock('@/app/renderer-application', async () => {
   return {
     rendererApplication: {
       backupOperations: new BackupOperationCoordinator(),
-      sessions: { updateSessionWithMessages: updateSessionWithMessagesMock },
-      sessionQueryBridge: { getSession: getSessionMock },
+      sessions: {
+        getSessionHeader: getSessionHeaderMock,
+        getSessionContextSource: getSessionContextSourceMock,
+        commitSessionCompaction: commitSessionCompactionMock,
+      },
     },
   }
 })
@@ -51,25 +62,21 @@ vi.mock('@/stores/session/session-settings', () => ({
 vi.mock('@/settings-runtime', () => ({
   settingsService: { getSettings: () => ({ defaultChatModel: { model: 'test-model' } }) },
 }))
-vi.mock('@/stores/queryClient', () => ({ default: { getQueryData: vi.fn(), setQueryData: vi.fn() } }))
-vi.mock('@/packages/token-estimation', () => ({ getTokenizerType: () => 'estimate' }))
-vi.mock('../token', () => ({ sumCachedTokensFromMessages: () => 0 }))
-vi.mock('./context-tokens', () => ({
-  getContextMessagesForTokenEstimation: (session: Session) => session.messages,
-  getContextTokensCacheKey: () => ['context-tokens', 'test'],
-  getLatestCompactionBoundaryId: () => null,
+vi.mock('../token-estimation/row-history-service', () => ({
+  rendererTokenEstimation: { estimate: estimateMock },
 }))
 vi.mock('./summary-generator', () => ({ generateSummaryWithStream: generateSummaryWithStreamMock }))
 vi.mock('@/stores/session/action-guard', () => ({ getSessionLockStateNow: getSessionLockStateMock }))
 vi.mock('@/stores/session/message-queue', () => ({
-  conversationAnchorIdOf: (session: Session) => session.messages.at(-1)?.id,
+  readConversationAnchorId: readConversationAnchorIdMock,
   enqueueCompactionRequest: enqueueCompactionRequestMock,
   hasQueuedWork: hasQueuedWorkMock,
 }))
 
 import { rendererApplication } from '@/app/renderer-application'
 import { requestManualCompaction, runCompactionWithUIState } from './compaction'
-import * as compactionInput from '../token-estimation/compaction-input'
+let repository: InMemorySessionRepository
+let sessions: SessionService
 
 function message(id: string, overrides: Partial<Message> = {}): Message {
   return { id, role: 'assistant', contentParts: [], ...overrides }
@@ -83,11 +90,28 @@ function testSession(): Session {
   }
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.clearAllMocks()
   resolveTokenEstimationPolicyMock.mockResolvedValue({ sandboxMode: false, modelSupportToolUseForFile: false })
   getDefaultStore().set(compactionUIStateMapAtom, {})
-  getSessionMock.mockResolvedValue(testSession())
+  repository = new InMemorySessionRepository()
+  await repository.seedSession(testSession())
+  sessions = new SessionService(repository, new SessionWriteCoordinator(repository), new SessionEventBus(), {
+    createId: () => 'new-session',
+  })
+  getSessionHeaderMock.mockImplementation((id: string) => sessions.getSessionHeader(id))
+  getSessionContextSourceMock.mockImplementation((request: Parameters<SessionService['getSessionContextSource']>[0]) =>
+    sessions.getSessionContextSource(request)
+  )
+  commitSessionCompactionMock.mockImplementation(
+    (id: string, operation: Parameters<SessionService['commitSessionCompaction']>[1]) =>
+      sessions.commitSessionCompaction(id, operation)
+  )
+  readConversationAnchorIdMock.mockImplementation(
+    async (id: string) => (await repository.readSessionConversationState({ sessionId: id }))?.lastSettledMessageId
+  )
+  estimateMock.mockResolvedValue({ totalTokens: 0 })
+  generateSummaryWithStreamMock.mockResolvedValue({ success: true, summary: 'Summary' })
   getSessionSettingsMock.mockResolvedValue({})
   getSessionLockStateMock.mockResolvedValue({
     generatingReplyCount: 0,
@@ -97,15 +121,17 @@ beforeEach(() => {
   })
   hasQueuedWorkMock.mockReturnValue(false)
   enqueueCompactionRequestMock.mockReturnValue('queued')
-  updateSessionWithMessagesMock.mockImplementation((_id: string, updater: (s: Session) => Session) => {
-    updater(testSession())
-    return Promise.resolve()
-  })
+})
+
+afterEach(async () => {
+  await waitForSessionGenerations()
+  sessions.dispose()
 })
 
 describe('runCompactionWithUIState', () => {
-  it('performs one token estimate and two session reads for an accepted automatic run', async () => {
-    const estimate = vi.spyOn(compactionInput, 'estimateCompactionInputTokens').mockResolvedValueOnce(1_000_000)
+  it('estimates once and reads a separate row context for accepted automatic compaction', async () => {
+    const estimate = estimateMock.mockResolvedValueOnce({ totalTokens: 1_000_000 })
+    getSessionSettingsMock.mockResolvedValue({ maxContextMessageCount: 20 })
     generateSummaryWithStreamMock.mockResolvedValueOnce({ success: true, summary: 'Summary' })
     const states: string[] = []
     const unsubscribe = getDefaultStore().sub(compactionUIStateMapAtom, () =>
@@ -115,27 +141,31 @@ describe('runCompactionWithUIState', () => {
       const result = await runCompactionWithUIState('session-1', { kind: 'automatic' })
       expect(result.status).toBe('compacted')
       expect(estimate).toHaveBeenCalledOnce()
-      expect(getSessionMock).toHaveBeenCalledTimes(2)
+      expect(getSessionHeaderMock).toHaveBeenCalledTimes(2)
+      expect(getSessionContextSourceMock).toHaveBeenCalledOnce()
+      expect(getSessionContextSourceMock).toHaveBeenCalledWith({
+        sessionId: 'session-1',
+        expectedRevision: 1,
+        maxContextMessageCount: 20,
+        reserveCurrentInput: true,
+      })
+      expect(commitSessionCompactionMock).toHaveBeenCalledOnce()
       expect(states).toEqual(['running', 'completed'])
     } finally {
-      estimate.mockRestore()
       unsubscribe()
     }
   })
 
   it('keeps completed feedback when a subsequent automatic run needs no compaction', async () => {
-    const estimate = vi.spyOn(compactionInput, 'estimateCompactionInputTokens').mockResolvedValueOnce(0)
+    estimateMock.mockResolvedValueOnce({ totalTokens: 0 })
     getDefaultStore().set(compactionUIStateMapAtom, {
       'session-1': { status: 'completed', error: null, streamingText: '', summaryMessageId: 'previous' },
     })
-    try {
-      await runCompactionWithUIState('session-1', { kind: 'automatic' })
-      expect(getCompactionUIState('session-1').status).toBe('completed')
-      expect(getSessionMock).toHaveBeenCalledOnce()
-      expect(generateSummaryWithStreamMock).not.toHaveBeenCalled()
-    } finally {
-      estimate.mockRestore()
-    }
+    await runCompactionWithUIState('session-1', { kind: 'automatic' })
+    expect(getCompactionUIState('session-1').status).toBe('completed')
+    expect(getSessionHeaderMock).toHaveBeenCalledOnce()
+    expect(generateSummaryWithStreamMock).not.toHaveBeenCalled()
+    expect(getSessionContextSourceMock).not.toHaveBeenCalled()
   })
 
   it('lets sending continue when automatic estimation cannot resolve the provider', async () => {
@@ -146,14 +176,14 @@ describe('runCompactionWithUIState', () => {
     })
     expect(resolveTokenEstimationPolicyMock).toHaveBeenCalledOnce()
     expect(generateSummaryWithStreamMock).not.toHaveBeenCalled()
-    expect(updateSessionWithMessagesMock).not.toHaveBeenCalled()
+    expect(commitSessionCompactionMock).not.toHaveBeenCalled()
   })
 
   it('does not admit compaction during backup', async () => {
     await rendererApplication.backupOperations.run('export', async () => {
       await runCompactionWithUIState('session-1', { kind: 'manual' })
       expect(generateSummaryWithStreamMock).not.toHaveBeenCalled()
-      expect(updateSessionWithMessagesMock).not.toHaveBeenCalled()
+      expect(commitSessionCompactionMock).not.toHaveBeenCalled()
     })
   })
 
@@ -213,11 +243,8 @@ describe('runCompactionWithUIState', () => {
     })
     expect(countInputTokens(session.messages)).toBeGreaterThan(1_000_000)
     expect(countInputTokens(sendContext)).toBeLessThan(100)
-    getSessionMock.mockResolvedValue(session)
+    await repository.seedSession(session)
     getSessionSettingsMock.mockResolvedValue(session.settings)
-    updateSessionWithMessagesMock.mockImplementation((_id: string, updater: (current: Session) => Session) =>
-      Promise.resolve(updater(session))
-    )
     let summarizedMessages: Message[] = []
     generateSummaryWithStreamMock.mockImplementation(({ messages }: { messages: Message[] }) => {
       summarizedMessages = messages
@@ -292,8 +319,10 @@ describe('requestManualCompaction', () => {
     await expect(requestManualCompaction('session-1', { force: true, prompt: 'Keep paths.' })).resolves.toBe('started')
 
     expect(enqueueCompactionRequestMock).not.toHaveBeenCalled()
-    expect(generateSummaryWithStreamMock).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: 'session-1', prompt: 'Keep paths.' })
+    await vi.waitFor(() =>
+      expect(generateSummaryWithStreamMock).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: 'session-1', prompt: 'Keep paths.' })
+      )
     )
     expect(hasPendingSessionGeneration('session-1')).toBe(true)
     const nextGeneration = vi.fn(async () => {})

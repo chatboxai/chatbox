@@ -1,7 +1,7 @@
 import { QueryKeys } from '@chatbox/react/query'
 import NiceModal from '@ebay/nice-modal-react'
 import { Box, Paper, Stack, Text } from '@mantine/core'
-import { MessageRoleEnum, ModelProviderEnum, type Session } from '@shared/types'
+import { MessageRoleEnum, ModelProviderEnum, SessionHeaderSchema, type Session } from '@shared/types'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider } from '@tanstack/react-router'
@@ -380,7 +380,8 @@ export const SessionSettingsStates: StoryObj = {
       <OpenModal
         loadModal={() => import('@/modals/SessionSettings').then((module) => module.default)}
         props={{
-          session: sampleSession,
+          session: SessionHeaderSchema.parse(sampleSession),
+          systemPrompt: 'System note: keep answers concise and cite source material.',
         }}
       />
     </ModalPreview>
@@ -438,7 +439,42 @@ function OpenModal({ loadModal, props }: { loadModal: () => Promise<ComponentTyp
 }
 
 function SeedSampleSession() {
-  queryClient.setQueryData(QueryKeys.ChatSession(sampleSession.id), sampleSession)
+  const header = SessionHeaderSchema.parse(sampleSession)
+  queryClient.setQueryData(QueryKeys.ChatSessionHeader(header.id), {
+    header,
+    revision: 1,
+    activeThreadId: header.id,
+    control: { generatingAssistantCount: 0 },
+    summary: {
+      hasAutoTitleContent: true,
+      messageCount: 3,
+      userMessageCount: 1,
+      assistantMessageCount: 1,
+      fileMessageCount: 0,
+      generatingMessageCount: 0,
+      pausedMessageCount: 0,
+      webSearchSignInErrorCount: 0,
+      legacyCommandMessageCount: 0,
+      steeredMessageCount: 0,
+      firstSystemMessageId: 'modal-story-system',
+    },
+  })
+  for (const message of sampleSession.messages)
+    queryClient.setQueryData(QueryKeys.ChatSessionMessage(header.id, message.id), { header, revision: 1, message })
+  for (const [seq, thread] of (sampleSession.threads ?? []).entries())
+    queryClient.setQueryData(QueryKeys.ChatSessionThread(header.id, thread.id), {
+      record: { ...header, activeThreadId: header.id, storageFormat: 'rows' },
+      revision: 1,
+      thread: {
+        sessionId: header.id,
+        threadId: thread.id,
+        seq,
+        name: thread.name,
+        createdAt: thread.createdAt,
+        rootMessageId: thread.messages[0]?.id ?? null,
+        activeLeafMessageId: thread.messages.at(-1)?.id ?? null,
+      },
+    })
   return null
 }
 

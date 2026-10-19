@@ -1,33 +1,37 @@
-import type { SessionCommandWriteOptions } from './SessionWriteCoordinator'
+import type { SessionSearchWindowRequest, SessionSearchCandidatesRequest } from '../../ports/session-search-source'
+import type { SessionArtifactRequest } from '../../ports/session-artifact-source'
+import type { SessionCopyRequest } from '../../ports/session-row-repository'
+import type { SessionTokenCacheResult } from '../../ports/session-token-cache'
+import type { SessionConversationStateRequest } from '../../ports/session-row-repository'
+import type { SessionGenerationControlRequest } from '../../ports/session-row-repository'
+import type { SessionTokenPlanRequest, SessionTokenPageRequest } from '../../ports/session-token-source'
+import type { SessionCommandWriteOptions, SessionCommandWriteResult } from './SessionWriteCoordinator'
+import { SessionNotFoundError, type SessionWriteCoordinator } from './SessionWriteCoordinator'
 import type {
   SessionStructureOperation,
   SessionStructureResult,
   CurrentThreadIdentity,
 } from '../../ports/session-structure-command'
-import { SessionWriteConflictError } from '../../ports/session-repository'
 import type { SessionCommand } from '../../ports/session-repository'
-import { findMessageLocation } from '@shared/session/message-forks'
-import {
-  assertSessionThreadPageRevision,
-  validateSessionThreadPageRequest,
-} from '../../persistence/session-thread-page'
-import type { LoggerPort, SessionFolderStorePort, SessionRepositoryPort } from '../../ports'
-import type { SessionContextRequest, SessionContextSource } from '../../ports/session-context-source'
-import type { SessionMessageDerivedWriteResult, SessionMessagesSource } from '../../ports/session-message-source'
 import type {
-  SessionHeader,
-  CompleteSessionSource,
-  SessionReadModel,
-  SessionSearchThreadsPage,
-  SessionSearchThreadsPageRequest,
-} from '../../ports/session-read-model'
-import { sessionReadModelHeader } from '../../ports/session-read-model'
-import type { SessionMessageWindow, SessionMessageWindowRequest } from '../../ports/session-row-store'
-import { type SessionMessagesRequest, SessionRowConflictError } from '../../ports/session-row-store'
+  LoggerPort,
+  SessionFolderStorePort,
+  SessionRepositoryPort,
+  SessionHeaderRead,
+  SessionForkOptionsRequest,
+} from '../../ports'
+import type { SessionContextRequest } from '../../ports/session-context-source'
+import type { SessionMessageDerivedWriteResult } from '../../ports/session-message-source'
+import type { SessionMessagesRequest, SessionThreadPageRequest } from '../../ports/session-row-store'
+import type {
+  SessionTranscriptRequest,
+  SessionThreadRequest,
+  SessionNavigationRepairRequest,
+} from '../../ports/session-transcript-source'
 import type { SessionTextTokenResult, SessionTextTokenWriteResult } from '../../ports/session-text-tokens'
 import type {
   Message,
-  Session,
+  SessionHeader,
   SessionFolder,
   SessionMetaPage,
   SessionMetaRecord,
@@ -35,42 +39,20 @@ import type {
   Updater,
 } from '../../types'
 import type { SessionMessageDerivedPatch } from './message-derived-data'
-import {
-  applyMessageInsert,
-  applyMessageRemoval,
-  applyMessagesReplace,
-  type MessageInsertOptions,
-} from './message-tree'
-import {
-  SessionCommandMetadataUpdateError,
-  SessionMetadataUpdateError,
-  SessionNotFoundError,
-  type SessionWriteCoordinator,
-  type SessionWriteResult,
-  type SessionCommandWriteResult,
-} from './SessionWriteCoordinator'
-import { contextSourceFromSession } from './session-context-source'
+import type { MessageInsertOptions } from './message-command-types'
 import type { SessionEventBus } from './session-events'
-import {
-  assertNoMessageDataUpdate,
-  createSessionMetaRecord,
-  getSessionMetadataSnapshot,
-  hasMessageDataFields,
-  hasSessionMetaFields,
-  type SessionMetadataUpdate,
-} from './session-metadata'
+import { createSessionMetaRecord } from './session-metadata'
 import { directoryFolderName, findDirectoryFolder, getSessionWorkingDirectory } from './working-directory-folders'
-import type { SessionMessageOperation } from './message-mutation'
 
 export interface SessionServiceOptions {
   createId: () => string
+  getActiveGenerationMessageIds?: (sessionId: string) => ReadonlySet<string>
   logger?: LoggerPort
   now?: () => number
   getLastUsedModels?: () => {
     chat?: Partial<SessionSettings>
     picture?: Partial<SessionSettings>
   }
-  repairSessionOnRead?: (session: Session) => { session: Session; changed: boolean }
   /** Durable folder definitions. Without it folders live for the process only. */
   folders?: SessionFolderStorePort
   /** Current saved copilot name, independent of conversation and thread titles. */
@@ -99,18 +81,8 @@ function describeError(error: unknown): unknown {
   }
 }
 
-export interface UpdateSessionOptions {
+export interface UpdateSessionOptions extends SessionCommandWriteOptions {
   preserveCachedGeneratingMessages?: boolean
-  /**
-   * Only this message's content differs from the session as it was last
-   * persisted; the storage layer may use it to write a single row. Entry points
-   * that insert, remove or move messages must leave it unset.
-   */
-  changedMessageId?: string
-  /** Runs once the full Session is durable, even if its metadata projection fails afterward. */
-  onFullSessionPersisted?: (session: Session) => void
-  /** Internal recovery path: a successful full write supersedes a metadata-only archive. */
-  clearRecoveryArchive?: boolean
 }
 
 async function runInChunks<T>(items: T[], chunkSize: number, worker: (item: T) => Promise<void>): Promise<void> {
@@ -124,10 +96,17 @@ async function runInChunks<T>(items: T[], chunkSize: number, worker: (item: T) =
 const META_PROJECTION_REPAIR_DELAY_MS = 1000
 
 export class SessionService {
+  private bootTime = Date.now()
+  private recoveryEpoch = 0
+  private readonly unsubscribeRecoveryEvents: () => void
+  private readonly recoveredSessions = new Set<string>()
+  private readonly recoveryTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  private disposed = false
   private readonly now: () => number
   private readonly getLastUsedModels: NonNullable<SessionServiceOptions['getLastUsedModels']>
   private readonly getVisibleSessionMetas: NonNullable<SessionServiceOptions['getVisibleSessionMetas']>
   private readonly pendingMetaRepairs = new Set<string>()
+  private readonly pendingRecordRepairs = new Set<string>()
   private readonly pendingArchiveListRefreshes = new Set<string>()
   private archiveStateRevision = 0
   private initialization: Promise<void> | null = null
@@ -144,6 +123,9 @@ export class SessionService {
     this.now = options.now ?? (() => Date.now())
     this.getLastUsedModels = options.getLastUsedModels ?? (() => ({}))
     this.folderStore = options.folders ?? createMemoryFolderStore()
+    this.unsubscribeRecoveryEvents = events.subscribe((event) => {
+      if (event.type === 'session-deleted') this.resetGenerationRecovery()
+    })
   }
 
   initialize(): Promise<void> {
@@ -153,11 +135,10 @@ export class SessionService {
     return this.initialization
   }
 
-  async getSession(sessionId: string): Promise<Session | null> {
+  async getSessionHeader(sessionId: string) {
     await this.initialize()
     try {
-      const session = await this.repository.getSession(sessionId)
-      return await this.repairReadSession(session)
+      return await this.repository.getSessionHeader(sessionId)
     } catch (error) {
       await this.log('error', 'Failed to read session from repository', {
         sessionId,
@@ -167,106 +148,140 @@ export class SessionService {
     }
   }
 
-  private async repairReadSession(session: Session | null): Promise<Session | null> {
-    const sessionId = session?.id
-    const repairSessionOnRead = this.options.repairSessionOnRead
-    if (!session || !repairSessionOnRead || !repairSessionOnRead(session).changed) {
-      return session
+  async readSessionSearchWindow(request: SessionSearchWindowRequest) {
+    await this.initialize()
+    return this.repository.readSessionSearchWindow(request)
+  }
+
+  async readSessionSearchCandidates(request: SessionSearchCandidatesRequest) {
+    await this.initialize()
+    return this.repository.readSessionSearchCandidates(request)
+  }
+
+  async readSessionTranscriptWindow(request: SessionTranscriptRequest) {
+    await this.initialize()
+    const page = await this.repository.readSessionTranscriptWindow(request)
+    if (
+      page &&
+      !this.disposed &&
+      !this.recoveredSessions.has(request.sessionId) &&
+      !this.recoveryTimers.has(request.sessionId)
+    ) {
+      const timer = setTimeout(() => {
+        this.recoveryTimers.delete(request.sessionId)
+        void this.recoverInterruptedGenerations(request.sessionId).catch((error) => {
+          void this.options.logger?.log('error', 'Interrupted generation recovery failed', {
+            sessionId: request.sessionId,
+            error: describeError(error),
+          })
+        })
+      }, 0)
+      this.recoveryTimers.set(request.sessionId, timer)
     }
-
-    const result = await this.writes.updateFromSnapshot(
-      session,
-      (current) => {
-        if (!current) throw new Error(`Session ${sessionId} not found`)
-        const repair = repairSessionOnRead(current)
-        return repair.changed ? repair.session : current
-      },
-      { updateMeta: false }
-    )
-    await this.events.publish({
-      type: 'session-updated',
-      session: result.session,
-      meta: null,
-      // A first read can overlap a streaming cache update. Keep in-flight
-      // chunks; the merge only maps over messages that still exist.
-      preserveCachedGeneratingMessages: true,
-    })
-    return result.session
+    return page
   }
 
-  async getSessionReadModel(sessionId: string): Promise<SessionReadModel | null> {
+  async recoverInterruptedGenerations(sessionId: string): Promise<void> {
     await this.initialize()
-    const model = await this.repository.getSessionReadModel?.(sessionId)
-    if (model === null) return null
-    if (model?.kind === 'window') return model
-    const session =
-      model?.kind === 'full' ? await this.repairReadSession(model.session) : await this.getSession(sessionId)
-    if (!session) return null
-    if (model?.kind === 'full' && session === model.session) return model
-    if (model?.kind === 'full' && this.repository.getCompleteSessionSource) {
-      const source = await this.repository.getCompleteSessionSource(sessionId)
-      return source
-        ? { kind: 'full', session: source.session, revision: source.revision, textTokens: source.textTokens }
-        : null
+    if (this.recoveredSessions.has(sessionId) || this.disposed) return
+    this.recoveredSessions.add(sessionId)
+    const epoch = this.recoveryEpoch
+    try {
+      for (const messageId of await this.repository.readSessionGeneratingMessageIds(sessionId)) {
+        if (this.disposed || epoch !== this.recoveryEpoch) return
+        if (this.options.getActiveGenerationMessageIds?.(sessionId).has(messageId)) continue
+        await this.executeStructureCommand(sessionId, {
+          action: 'message-recover',
+          messageId,
+          replacementPivotId: this.options.createId(),
+          bootTime: this.bootTime,
+          now: this.now(),
+        })
+        await new Promise<void>((resolve) => setTimeout(resolve, 0))
+      }
+    } catch (error) {
+      this.recoveredSessions.delete(sessionId)
+      throw error
     }
-    return { kind: 'full', session }
   }
 
-  async getCompleteSessionSource(sessionId: string): Promise<CompleteSessionSource | null> {
-    await this.initialize()
-    if (this.repository.getCompleteSessionSource) {
-      const source = await this.repository.getCompleteSessionSource(sessionId)
-      const session = source ? await this.repairReadSession(source.session) : null
-      if (!session || !source) return null
-      // A repair commits a new revision; read its body and identity together.
-      return session === source.session ? source : this.repository.getCompleteSessionSource(sessionId)
-    }
-    const session = await this.getSession(sessionId)
-    return session ? { session } : null
+  resetGenerationRecovery(bootTime = this.bootTime): void {
+    this.bootTime = bootTime
+    this.recoveryEpoch++
+    this.recoveredSessions.clear()
+    for (const timer of this.recoveryTimers.values()) clearTimeout(timer)
+    this.recoveryTimers.clear()
   }
 
-  async readSessionSearchThreadsPage(
-    request: SessionSearchThreadsPageRequest
-  ): Promise<SessionSearchThreadsPage | null> {
-    await this.initialize()
-    validateSessionThreadPageRequest(request)
-    if (this.repository.readSessionSearchThreadsPage) return this.repository.readSessionSearchThreadsPage(request)
-    assertSessionThreadPageRevision(request, null)
-    const session = await this.getSession(request.sessionId)
-    return session ? { kind: 'full', session } : null
+  dispose(): void {
+    this.disposed = true
+    this.resetGenerationRecovery()
+    this.unsubscribeRecoveryEvents()
   }
 
-  async readSessionMessageWindow(request: SessionMessageWindowRequest): Promise<SessionMessageWindow | null> {
+  async readSessionNavigationPage(request: SessionTranscriptRequest) {
     await this.initialize()
-    if (!this.repository.readSessionMessageWindow) throw new Error('Session window reads are unavailable')
-    return this.repository.readSessionMessageWindow(request)
+    return this.repository.readSessionNavigationPage(request)
   }
 
-  async getSessionContextSource(request: SessionContextRequest): Promise<SessionContextSource | null> {
+  async repairSessionNavigationProjections(request: SessionNavigationRepairRequest) {
     await this.initialize()
-    if (this.repository.getSessionContextSource) return this.repository.getSessionContextSource(request)
-    if (request.expectedRevision !== undefined)
-      throw new SessionRowConflictError(request.sessionId, request.expectedRevision, null)
-    const session = await this.getSession(request.sessionId)
-    return session ? contextSourceFromSession(session, request) : null
+    return this.repository.repairSessionNavigationProjections(request)
   }
 
-  async readSessionMessages(request: SessionMessagesRequest): Promise<SessionMessagesSource | null> {
+  async readSessionThread(request: SessionThreadRequest) {
     await this.initialize()
-    if (this.repository.readSessionMessages) return this.repository.readSessionMessages(request)
-    if (request.expectedRevision !== undefined)
-      throw new SessionRowConflictError(request.sessionId, request.expectedRevision, null)
-    const session = await this.getSession(request.sessionId)
-    return session
-      ? {
-          header: sessionReadModelHeader({ kind: 'full', session }),
-          revision: null,
-          messages: [...new Set(request.messageIds)].flatMap((id) => {
-            const location = findMessageLocation(session, id)
-            return location ? [location.list[location.index]] : []
-          }),
-        }
-      : null
+    return this.repository.readSessionThread(request)
+  }
+
+  async readSessionThreadSummariesPage(request: SessionThreadPageRequest) {
+    await this.initialize()
+    return this.repository.readSessionThreadSummariesPage(request)
+  }
+
+  async readSessionForkOptionsPage(request: SessionForkOptionsRequest) {
+    await this.initialize()
+    return this.repository.readSessionForkOptionsPage(request)
+  }
+
+  async readSessionNamingMessages(request: { sessionId: string; expectedRevision: number }) {
+    await this.initialize()
+    return this.repository.readSessionNamingMessages(request)
+  }
+
+  async readSessionConversationState(request: SessionConversationStateRequest) {
+    await this.initialize()
+    return this.repository.readSessionConversationState(request)
+  }
+
+  async acceptSessionTokenCacheResults(sessionId: string, results: readonly SessionTokenCacheResult[]): Promise<void> {
+    await this.initialize()
+    await this.repository.acceptSessionTokenCacheResults(sessionId, results)
+  }
+
+  async createSessionTokenPlan(request: SessionTokenPlanRequest) {
+    await this.initialize()
+    return this.repository.createSessionTokenPlan(request)
+  }
+
+  async readSessionTokenPage(request: SessionTokenPageRequest) {
+    await this.initialize()
+    return this.repository.readSessionTokenPage(request)
+  }
+
+  async *iterateSessionArtifactMarkdown(request: SessionArtifactRequest): AsyncIterable<string> {
+    await this.initialize()
+    yield* this.repository.iterateSessionArtifactMarkdown(request)
+  }
+
+  async getSessionContextSource(request: SessionContextRequest) {
+    await this.initialize()
+    return this.repository.getSessionContextSource(request)
+  }
+
+  async readSessionMessages(request: SessionMessagesRequest) {
+    await this.initialize()
+    return this.repository.readSessionMessages(request)
   }
 
   async patchSessionMessageDerivedData(
@@ -343,7 +358,7 @@ export class SessionService {
   }
 
   /** New copilot conversations share a folder keyed by the copilot's identity. */
-  private async resolveCopilotFolder(session: Session, copilotName?: string): Promise<string | undefined> {
+  private async resolveCopilotFolder(session: SessionHeader, copilotName?: string): Promise<string | undefined> {
     const copilotId = session.copilotId
     if (!this.options.folders || !copilotId || getSessionWorkingDirectory(session) !== undefined) return undefined
     try {
@@ -470,197 +485,210 @@ export class SessionService {
     return items
   }
 
-  /** `copilotName` comes from the selected definition, independently of the conversation title. */
   async createSession(
-    newSession: Omit<Session, 'id'>,
+    newSession: Omit<SessionHeader, 'id'> & { messages?: readonly Message[] },
     previousId?: string,
     options?: { copilotName?: string }
-  ): Promise<Session> {
+  ): Promise<SessionHeader> {
     await this.initialize()
+    const { messages = [], ...fields } = newSession
     const lastUsedModels = this.getLastUsedModels()
-    const session: Session = {
-      ...newSession,
+    const header: SessionHeader = {
+      ...fields,
       id: this.options.createId(),
-      // Pending auto-title — not `undefined`, which means a historical field
-      // is missing and would be backfilled from `name` (including a copilot name).
-      threadName: newSession.threadName ?? '',
-      settings: {
-        ...(newSession.type === 'picture' ? lastUsedModels.picture : lastUsedModels.chat),
-        ...newSession.settings,
-      },
+      threadName: fields.threadName ?? '',
+      settings: { ...(fields.type === 'picture' ? lastUsedModels.picture : lastUsedModels.chat), ...fields.settings },
     }
-
-    const directoryFolderId = await this.resolveDirectoryFolder(session, undefined)
-    if (directoryFolderId) session.folderId = directoryFolderId
-    const copilotFolderId = await this.resolveCopilotFolder(session, options?.copilotName)
-    if (copilotFolderId) session.folderId = copilotFolderId
-
-    const record = await this.writes.create(session, async () => {
-      await this.repository.setSession(session)
-
-      let sortOrder = this.now()
-      if (previousId) {
-        // The numeric lower bound comes from the full repository rather than a
-        // partially loaded list window. It includes hidden records and both pin
-        // groups so the new sortOrder stays unique if either record later moves
-        // between groups or becomes visible again.
-        const records = [...(await this.repository.meta.getAllIncludingHidden())].sort(
-          (a, b) => b.sortOrder - a.sortOrder
-        )
-        const previous = records.find((item) => item.id === previousId && !item.hidden)
-        if (previous) {
-          const lowerNeighbor = records.find((item) => item.sortOrder < previous.sortOrder)
-          sortOrder =
-            lowerNeighbor !== undefined ? (previous.sortOrder + lowerNeighbor.sortOrder) / 2 : previous.sortOrder - 2000
-        }
+    const directoryFolderId = await this.resolveDirectoryFolder(header, undefined)
+    if (directoryFolderId) header.folderId = directoryFolderId
+    const copilotFolderId = await this.resolveCopilotFolder(header, options?.copilotName)
+    if (copilotFolderId) header.folderId = copilotFolderId
+    let sortOrder = this.now()
+    if (previousId) {
+      const records = [...(await this.repository.meta.getAllIncludingHidden())].sort(
+        (a, b) => b.sortOrder - a.sortOrder
+      )
+      const previous = records.find((item) => item.id === previousId && !item.hidden)
+      if (previous) {
+        const lower = records.find((item) => item.sortOrder < previous.sortOrder)
+        sortOrder = lower ? (previous.sortOrder + lower.sortOrder) / 2 : previous.sortOrder - 2000
       }
-
-      const record = createSessionMetaRecord(session, sortOrder, this.now())
-      await this.repository.meta.create(record)
-      return record
-    })
-    await this.events.publish({ type: 'session-created', session, record })
-    return session
-  }
-
-  async updateSessionWithMessages(
-    sessionId: string,
-    updater: Updater<Session>,
-    options: UpdateSessionOptions = {}
-  ): Promise<Session> {
-    return this.persistSessionUpdate(sessionId, updater, options)
-  }
-
-  private async persistSessionUpdate(
-    sessionId: string,
-    updater: Updater<Session>,
-    options: UpdateSessionOptions = {},
-    operation?: SessionMessageOperation
-  ): Promise<Session> {
-    await this.initialize()
-    const updateMeta =
-      Boolean(operation) ||
-      typeof updater === 'function' ||
-      hasSessionMetaFields(updater) ||
-      hasMessageDataFields(updater)
-    let result: SessionWriteResult
-    try {
-      const writeOptions = {
-        updateMeta,
-        clearRecoveryArchive: options.clearRecoveryArchive,
-        changedMessageId: options.changedMessageId,
-      }
-      result = operation
-        ? await this.writes.mutateMessages(sessionId, operation, writeOptions)
-        : await this.writes.update(sessionId, updater, writeOptions)
-    } catch (error) {
-      if (!(error instanceof SessionMetadataUpdateError)) throw error
-
-      // The full session is already durable and is also the coordinator's
-      // current snapshot. Project it — including the derived metadata patch —
-      // even though the list metadata write failed, otherwise staleTime:
-      // Infinity leaves external read models permanently behind and a retry
-      // can append the same message again. The persisted metadata record is
-      // still stale, so schedule a repair for it too.
-      options.onFullSessionPersisted?.(error.session)
+    }
+    const result = await this.writes.create(header, messages, sortOrder, this.now())
+    await this.publishCommandResult(result, true)
+    if (result.meta)
       await this.events.publish({
-        type: 'session-updated',
-        session: error.session,
-        meta: error.meta,
-        preserveCachedGeneratingMessages: options.preserveCachedGeneratingMessages === true,
+        type: 'session-created',
+        session: result.delta.header,
+        record: result.meta,
+        revision: result.delta.revision,
       })
-      this.scheduleMetaProjectionRepair(sessionId)
-      throw error.metadataError
-    }
-    options.onFullSessionPersisted?.(result.session)
-    await this.events.publish({
-      type: 'session-updated',
-      session: result.session,
-      meta: result.meta,
-      preserveCachedGeneratingMessages: options.preserveCachedGeneratingMessages === true,
-    })
-    const previousDirectory = result.previous ? getSessionWorkingDirectory(result.previous) : undefined
-    const directoryFolderId = await this.resolveDirectoryFolder(result.session, previousDirectory)
-    if (directoryFolderId) {
-      try {
-        return await this.updateSession(sessionId, { folderId: directoryFolderId })
-      } catch (error) {
-        await this.log('warn', 'Failed to file session by working directory', {
-          sessionId,
-          error: describeError(error),
-        })
-      }
-    }
-    return result.session
+    await this.handleProjectionFailure(result)
+    return result.delta.header
+  }
+
+  async copySessionThread(request: {
+    sessionId: string
+    threadId: string
+    expectedRevision: number
+  }): Promise<SessionHeader> {
+    const { threadId, ...source } = request
+    return this.copySession({ ...source, scope: { type: 'thread', threadId } })
+  }
+
+  async copySession(
+    request: Pick<SessionCopyRequest, 'sessionId' | 'expectedRevision' | 'scope'> & { appendForkMarker?: boolean }
+  ): Promise<SessionHeader> {
+    await this.initialize()
+    const createdAt = this.now()
+    const sourceMeta = await this.repository.meta.getById(request.sessionId)
+    const records = await this.repository.meta.getAllIncludingHidden()
+    const below =
+      sourceMeta &&
+      records.filter((row) => row.sortOrder < sourceMeta.sortOrder).sort((a, b) => b.sortOrder - a.sortOrder)[0]
+    const sortOrder = sourceMeta
+      ? below
+        ? (sourceMeta.sortOrder + below.sortOrder) / 2
+        : sourceMeta.sortOrder - 2000
+      : createdAt
+    const result = await this.writes.copy(
+      {
+        sessionId: request.sessionId,
+        expectedRevision: request.expectedRevision,
+        scope: request.scope,
+        targetSessionId: this.options.createId(),
+        createdAt,
+        ...(request.appendForkMarker ? { appendForkMarkerId: this.options.createId() } : {}),
+      },
+      sortOrder
+    )
+    await this.publishCommandResult(result, true)
+    if (result.meta)
+      await this.events.publish({
+        type: 'session-created',
+        session: result.delta.header,
+        record: result.meta,
+        revision: result.delta.revision,
+      })
+    await this.handleProjectionFailure(result)
+    return result.delta.header
   }
 
   private publishCommandResult(
-    result: SessionCommandWriteResult | ({ kind: 'full' } & SessionWriteResult),
+    result: SessionCommandWriteResult,
     preserveCachedGeneratingMessages: boolean
   ): Promise<void> {
-    return this.events.publish(
-      result.kind === 'rows'
-        ? {
-            type: 'session-command-committed',
-            delta: result.delta,
-            meta: result.meta,
-            preserveCachedGeneratingMessages,
-          }
-        : { type: 'session-updated', session: result.session, meta: result.meta, preserveCachedGeneratingMessages }
+    return this.events.publish({
+      type: 'session-command-committed',
+      delta: result.delta,
+      meta: result.meta,
+      metaRevision: result.metaRevision,
+      preserveCachedGeneratingMessages,
+    })
+  }
+
+  private async handleProjectionFailure(result: SessionCommandWriteResult): Promise<void> {
+    if (result.delta.recordProjectionError !== undefined) this.pendingRecordRepairs.add(result.delta.sessionId)
+    if (result.projectionError === undefined && result.delta.recordProjectionError === undefined) return
+    if (
+      result.delta.previousHeader?.hidden !== result.delta.header.hidden ||
+      result.delta.previousHeader?.archivedAt !== result.delta.header.archivedAt
     )
+      this.pendingArchiveListRefreshes.add(result.delta.sessionId)
+    this.scheduleMetaProjectionRepair(result.delta.sessionId)
+    await this.log('warn', 'Session rows committed; metadata projection will be retried', {
+      sessionId: result.delta.sessionId,
+      error: describeError(result.projectionError ?? result.delta.recordProjectionError),
+    })
   }
 
   private async persistCommand(
     sessionId: string,
     command: SessionCommand,
-    preserveCachedGeneratingMessages = true,
-    onCommitted?: (result: SessionStructureResult) => void,
-    options: SessionCommandWriteOptions = {}
-  ): Promise<boolean> {
+    options: UpdateSessionOptions = {},
+    onCommitted?: (result: SessionStructureResult) => void
+  ): Promise<SessionCommandWriteResult> {
     await this.initialize()
+    const result = await this.writes.executeCommand(sessionId, command, options)
+    await this.publishCommandResult(result, options.preserveCachedGeneratingMessages !== false)
+    await this.handleProjectionFailure(result)
+    // Observers cannot turn a durable append into a retryable write failure.
     try {
-      const result = await this.writes.executeCommand(sessionId, command, onCommitted, options)
-      if (!result) return false
-      await this.publishCommandResult(result, preserveCachedGeneratingMessages)
-      if (command.type === 'header') {
-        const header = result.kind === 'rows' ? result.delta.header : result.session
-        const previous = result.kind === 'rows' ? result.delta.previousHeader : result.previous
-        const folderId = await this.resolveDirectoryFolder(
-          header,
-          previous ? getSessionWorkingDirectory(previous) : undefined
-        )
-        if (folderId) await this.updateSessionHeader(sessionId, { folderId })
-      }
-      return true
+      options.onPersisted?.(result.delta.header)
+      if (result.delta.structureResult) onCommitted?.(result.delta.structureResult)
     } catch (error) {
-      if (error instanceof SessionMetadataUpdateError) {
-        await this.events.publish({
-          type: 'session-updated',
-          session: error.session,
-          meta: error.meta,
-          preserveCachedGeneratingMessages,
-        })
-        this.scheduleMetaProjectionRepair(sessionId)
-        throw error.metadataError
-      }
-      if (!(error instanceof SessionCommandMetadataUpdateError)) throw error
-      await this.events.publish({
-        type: 'session-command-committed',
-        ...error.result,
-        preserveCachedGeneratingMessages,
-      })
-      this.scheduleMetaProjectionRepair(sessionId)
-      throw error.metadataError
+      await this.log('warn', 'Session commit observer failed', { sessionId, error: describeError(error) })
     }
+    if (command.type === 'header') {
+      const previousDirectory = result.delta.previousHeader
+        ? getSessionWorkingDirectory(result.delta.previousHeader)
+        : undefined
+      const folderId = await this.resolveDirectoryFolder(result.delta.header, previousDirectory)
+      if (folderId) {
+        try {
+          return await this.persistCommand(sessionId, { type: 'header', updater: { folderId } })
+        } catch (error) {
+          await this.log('warn', 'Failed to file session by working directory', {
+            sessionId,
+            error: describeError(error),
+          })
+        }
+      }
+    }
+    return result
+  }
+
+  async readSessionBranchPreview(request: import('../../ports/session-branch-source').SessionBranchPreviewRequest) {
+    await this.initialize()
+    return this.repository.readSessionBranchPreview(request)
+  }
+
+  async readSessionBranchMessagesPage(
+    request: import('../../ports/session-branch-source').SessionBranchMessagesRequest
+  ) {
+    await this.initialize()
+    return this.repository.readSessionBranchMessagesPage(request)
+  }
+
+  async readPreviousUserMessage(sessionId: string, targetMessageId: string) {
+    await this.initialize()
+    return this.repository.readPreviousUserMessage(sessionId, targetMessageId)
+  }
+
+  async shouldConfirmPromptCacheBreak(
+    sessionId: string,
+    options: Omit<import('../../ports/session-prompt-cache-source').SessionPromptCacheRequest, 'sessionId' | 'deletion'>
+  ) {
+    await this.initialize()
+    return this.repository.readSessionPromptCacheDecision({ sessionId, ...options })
+  }
+
+  async shouldConfirmPromptCacheDelete(
+    sessionId: string,
+    messageId: string,
+    target: import('../../session/prompt-cache-policy').PromptCacheDeleteTarget,
+    options: Omit<import('../../ports/session-prompt-cache-source').SessionPromptCacheRequest, 'sessionId' | 'deletion'>
+  ) {
+    await this.initialize()
+    return this.repository.readSessionPromptCacheDecision({ sessionId, ...options, deletion: { messageId, target } })
+  }
+
+  async readSessionGenerationControl(request: SessionGenerationControlRequest) {
+    await this.initialize()
+    return this.repository.readSessionGenerationControl(request)
   }
 
   async getCurrentThreadIdentity(sessionId: string): Promise<CurrentThreadIdentity | null> {
     await this.initialize()
-    if (this.repository.getCurrentThreadIdentity) return this.repository.getCurrentThreadIdentity(sessionId)
-    const session = await this.getSession(sessionId)
-    return session
-      ? { sessionId, firstMessageId: session.messages[0]?.id, lastArchivedThreadId: session.threads?.at(-1)?.id }
-      : null
+    return this.repository.getCurrentThreadIdentity(sessionId)
+  }
+
+  async commitSessionCompaction(
+    sessionId: string,
+    operation: import('../../ports/session-structure-command').SessionCompactionOperation
+  ): Promise<{ applied: boolean; revision: number }> {
+    const result = await this.persistCommand(sessionId, { type: 'structure', operation }, {})
+    return { applied: result.delta.structureResult?.applied === true, revision: result.delta.revision }
   }
 
   async executeStructureCommand(
@@ -668,167 +696,82 @@ export class SessionService {
     operation: SessionStructureOperation,
     onCommitted?: (result: SessionStructureResult) => void
   ): Promise<SessionStructureResult | null> {
-    let result: SessionStructureResult | null = null
-    await this.persistCommand(sessionId, { type: 'structure', operation }, true, (committed) => {
-      result = committed
-      onCommitted?.(committed)
-    })
-    return result
+    const result = await this.persistCommand(sessionId, { type: 'structure', operation }, {}, onCommitted)
+    return result.delta.structureResult ?? null
   }
 
-  async updateSessionHeader(sessionId: string, updater: Updater<SessionHeader>): Promise<void> {
-    if (await this.persistCommand(sessionId, { type: 'header', updater })) return
-    await this.updateSession(sessionId, updater)
+  async updateSessionHeader(
+    sessionId: string,
+    updater: Updater<SessionHeader>,
+    options: UpdateSessionOptions = {}
+  ): Promise<SessionHeader> {
+    return (await this.persistCommand(sessionId, { type: 'header', updater }, options)).delta.header
   }
 
   async insertMessage(
     sessionId: string,
     message: Message,
     previousId?: string,
-    options: MessageInsertOptions &
-      Pick<SessionCommandWriteOptions, 'onPersisted'> &
-      Pick<UpdateSessionOptions, 'onFullSessionPersisted' | 'preserveCachedGeneratingMessages'> = {}
+    options: MessageInsertOptions & UpdateSessionOptions = {}
   ): Promise<void> {
-    const onFullSessionPersisted =
-      options.onFullSessionPersisted || options.onPersisted
-        ? (session: Session) => {
-            options.onFullSessionPersisted?.(session)
-            options.onPersisted?.(getSessionMetadataSnapshot(session))
-          }
-        : undefined
-    if (!previousId) {
-      if (
-        !options.onFullSessionPersisted &&
-        (await this.persistCommand(
-          sessionId,
-          { type: 'append', messages: [message] },
-          options.preserveCachedGeneratingMessages === true,
-          undefined,
-          { onPersisted: options.onPersisted }
-        ))
-      )
-        return
-      await this.persistSessionUpdate(
-        sessionId,
-        {},
-        { ...options, onFullSessionPersisted },
-        { type: 'append', messages: [message] }
-      )
-      return
-    }
-    if (
-      !options.onFullSessionPersisted &&
-      (await this.persistCommand(
-        sessionId,
-        {
-          type: 'structure',
-          operation: { action: 'message-insert-after', message, previousId, requireAnchor: options.requireAnchor },
-        },
-        options.preserveCachedGeneratingMessages === true,
-        undefined,
-        { onPersisted: options.onPersisted }
-      ))
-    )
-      return
-    await this.updateSessionWithMessages(
+    await this.persistCommand(
       sessionId,
-      (session) => applyMessageInsert(session, sessionId, message, previousId, options),
-      { onFullSessionPersisted, preserveCachedGeneratingMessages: options.preserveCachedGeneratingMessages }
+      previousId
+        ? {
+            type: 'structure',
+            operation: { action: 'message-insert-after', message, previousId, requireAnchor: options.requireAnchor },
+          }
+        : { type: 'append', messages: [message] },
+      options
     )
   }
 
   async insertMessages(sessionId: string, messages: readonly Message[]): Promise<void> {
-    if (!messages.length) return
-    if (await this.persistCommand(sessionId, { type: 'append', messages })) return
-    await this.persistSessionUpdate(sessionId, {}, {}, { type: 'append', messages })
+    if (messages.length) await this.persistCommand(sessionId, { type: 'append', messages })
   }
 
-  async insertMessagesFromSnapshot(
+  async insertMessagesAtRevision(
     sessionId: string,
     messages: readonly Message[],
-    source: CompleteSessionSource,
-    assertUnchanged: (current: Session) => void,
+    revision: number,
     onPersisted?: (header: SessionHeader) => void
   ): Promise<SessionHeader> {
-    if (source.session.id !== sessionId) throw new Error('Session identity cannot change')
-    let committed: SessionHeader | undefined
-    const persisted = (header: SessionHeader) => {
-      committed = header
-      onPersisted?.(header)
-    }
-    if (source.revision !== undefined) {
-      try {
-        if (
-          await this.persistCommand(sessionId, { type: 'append', messages }, true, undefined, {
-            expectedRevision: source.revision,
-            onPersisted: persisted,
-          })
-        )
-          return committed!
-      } catch (error) {
-        if (committed || !(error instanceof SessionWriteConflictError)) throw error
-      }
-    }
-    await this.updateSessionWithMessages(
-      sessionId,
-      (current) => {
-        if (!current) throw new SessionNotFoundError(sessionId)
-        assertUnchanged(current)
-        return { ...current, messages: [...current.messages, ...messages] }
-      },
-      { onFullSessionPersisted: persisted }
-    )
-    return committed!
+    return (
+      await this.persistCommand(sessionId, { type: 'append', messages }, { expectedRevision: revision, onPersisted })
+    ).delta.header
   }
 
   async updateMessage(sessionId: string, messageId: string, updater: Updater<Message>): Promise<void> {
-    if (await this.persistCommand(sessionId, { type: 'update', messageId, updater })) return
-    await this.persistSessionUpdate(
-      sessionId,
-      {},
-      { preserveCachedGeneratingMessages: true, changedMessageId: messageId },
-      { type: 'update', messageId, updater }
-    )
-  }
-
-  async updateMessages(sessionId: string, updater: Updater<Message[]>): Promise<Session> {
-    return await this.updateSessionWithMessages(sessionId, (session) =>
-      applyMessagesReplace(session, sessionId, updater)
-    )
+    await this.persistCommand(sessionId, { type: 'update', messageId, updater })
   }
 
   async removeMessage(
     sessionId: string,
     messageId: string,
-    onFullSessionPersisted?: (session: Session) => void
-  ): Promise<Session> {
-    // Messages can be deleted while other replies stream; their cache-only chunk
-    // updates must survive this full-session write. Preserving never resurrects
-    // the removed message: the merge only maps over messages that still exist.
-    return await this.updateSessionWithMessages(
+    onPersisted?: (header: SessionHeader) => void
+  ): Promise<void> {
+    await this.persistCommand(
       sessionId,
-      (session) => applyMessageRemoval(session, sessionId, messageId, this.options.createId),
-      { preserveCachedGeneratingMessages: true, onFullSessionPersisted }
+      {
+        type: 'structure',
+        operation: { action: 'message-remove', messageId, replacementPivotId: this.options.createId() },
+      },
+      { onPersisted }
     )
   }
 
-  updateSession(
-    sessionId: string,
-    updater: Updater<SessionMetadataUpdate>,
-    options: Pick<UpdateSessionOptions, 'clearRecoveryArchive' | 'onFullSessionPersisted'> = {}
-  ): Promise<Session> {
-    return this.updateSessionWithMessages(
-      sessionId,
-      (session) => {
-        if (!session) {
-          throw new Error(`Session ${sessionId} not found`)
-        }
-        const update = typeof updater === 'function' ? updater(getSessionMetadataSnapshot(session)) : updater
-        assertNoMessageDataUpdate(update)
-        return { ...session, ...update }
+  async setSessionSystemPrompt(sessionId: string, text: string): Promise<SessionHeader> {
+    const result = await this.persistCommand(sessionId, {
+      type: 'structure',
+      operation: {
+        action: 'set-system-prompt',
+        text,
+        messageId: this.options.createId(),
+        replacementPivotId: this.options.createId(),
+        now: this.now(),
       },
-      { preserveCachedGeneratingMessages: true, ...options }
-    )
+    })
+    return result.delta.header
   }
 
   async updateSessionSortOrder(sessionId: string, sortOrder: number): Promise<SessionMetaRecord> {
@@ -847,8 +790,7 @@ export class SessionService {
         ids: [sessionId],
         operation: 'session deletion',
       })
-      await this.repository.deleteSession(sessionId)
-      await this.repository.meta.delete(sessionId)
+      await this.repository.deleteSession(sessionId, () => this.repository.meta.delete(sessionId))
       await this.events.publish({ type: 'session-deleted', ids: [sessionId] })
     })
   }
@@ -864,8 +806,9 @@ export class SessionService {
         ids: uniqueIds,
         operation: 'bulk session deletion',
       })
-      await runInChunks(uniqueIds, 20, (sessionId) => this.repository.deleteSession(sessionId))
-      await this.repository.meta.deleteMany(uniqueIds)
+      await runInChunks(uniqueIds, 20, (sessionId) =>
+        this.repository.deleteSession(sessionId, () => this.repository.meta.delete(sessionId))
+      )
       await this.events.publish({ type: 'session-deleted', ids: uniqueIds })
     })
     await this.publishListReset({ visible: true, archived: true })
@@ -905,11 +848,11 @@ export class SessionService {
     const missingSessionIds: string[] = []
     await runInChunks(uniqueIds, 20, async (sessionId) => {
       try {
-        await this.updateSession(
+        await this.updateSessionHeader(
           sessionId,
           { hidden: true, archivedAt },
           {
-            onFullSessionPersisted: () => {
+            onPersisted: () => {
               this.archiveStateRevision++
             },
           }
@@ -934,7 +877,8 @@ export class SessionService {
         await this.events.publish({ type: 'session-deleted', ids: missingSessionIds })
       })
     }
-    await this.publishListReset({ visible: true, archived: true })
+    if (!uniqueIds.some((id) => this.pendingArchiveListRefreshes.has(id)))
+      await this.publishListReset({ visible: true, archived: true })
   }
 
   async restoreSession(sessionId: string): Promise<void> {
@@ -942,30 +886,14 @@ export class SessionService {
   }
 
   private async updateArchiveState(sessionId: string, hidden: boolean): Promise<void> {
-    let persisted = false
-    let revision = this.archiveStateRevision
-    try {
-      await this.updateSession(
-        sessionId,
-        { hidden, archivedAt: hidden ? this.now() : undefined },
-        {
-          clearRecoveryArchive: !hidden,
-          onFullSessionPersisted: () => {
-            persisted = true
-            revision = ++this.archiveStateRevision
-          },
-        }
-      )
-    } catch (error) {
-      if (!persisted) throw error
-      // The live projection already reflects the committed session. Reading stale
-      // metadata now would undo it; refresh both lists after the scheduled repair.
+    const result = await this.persistCommand(
+      sessionId,
+      { type: 'header', updater: { hidden, archivedAt: hidden ? this.now() : undefined } },
+      { clearRecoveryArchive: !hidden }
+    )
+    const revision = ++this.archiveStateRevision
+    if (result.projectionError !== undefined) {
       this.pendingArchiveListRefreshes.add(sessionId)
-      await this.log('warn', 'Failed to project committed session archive state', {
-        sessionId,
-        hidden,
-        error: describeError(error),
-      })
       return
     }
     await this.refreshArchiveLists(sessionId, revision)
@@ -998,18 +926,14 @@ export class SessionService {
         error: describeError(error),
       })
     }
-    const sessionsWithTimestamp: Array<{ session: Session; timestamp: number }> = []
+    const sessionsWithTimestamp: Array<{ read: SessionHeaderRead; timestamp: number }> = []
     const failedSessionIds: string[] = []
-
     for (const sessionId of sessionIds) {
       try {
-        const session = await this.getSession(sessionId)
-        if (session?.id) {
-          sessionsWithTimestamp.push({
-            session,
-            timestamp: session.messages[0]?.timestamp ?? 0,
-          })
-        }
+        const read = await this.getSessionHeader(sessionId)
+        if (!read) continue
+        const thread = await this.readSessionThread({ sessionId, expectedRevision: read.revision })
+        sessionsWithTimestamp.push({ read, timestamp: thread?.thread.createdAt ?? 0 })
       } catch (error) {
         failedSessionIds.push(sessionId)
         await this.log('error', 'Failed to read session during session-list recovery', {
@@ -1028,13 +952,14 @@ export class SessionService {
 
     sessionsWithTimestamp.sort((left, right) => left.timestamp - right.timestamp)
     const now = this.now()
-    const records = sessionsWithTimestamp.map(({ session, timestamp }, index) => {
+    const records = sessionsWithTimestamp.map(({ read, timestamp }, index) => {
       const recoveredRecord = createSessionMetaRecord(
-        session,
+        read.header,
         timestamp || now - (sessionsWithTimestamp.length - index) * 1000,
-        timestamp || now - (sessionsWithTimestamp.length - index) * 1000
+        timestamp || now - (sessionsWithTimestamp.length - index) * 1000,
+        read.summary.pausedMessageCount > 0
       )
-      const existingArchivedRecord = existingArchivedRecords.get(session.id)
+      const existingArchivedRecord = existingArchivedRecords.get(read.header.id)
       return existingArchivedRecord
         ? {
             ...recoveredRecord,
@@ -1072,28 +997,21 @@ export class SessionService {
   private async repairMetaProjection(sessionId: string): Promise<void> {
     const refreshArchiveLists = this.pendingArchiveListRefreshes.delete(sessionId)
     try {
-      if (!refreshArchiveLists) {
-        const committed = await this.writes.executeCommand(sessionId, { type: 'header', updater: {} })
-        if (committed) {
-          await this.publishCommandResult(committed, true)
-          return
-        }
+      if (this.pendingRecordRepairs.has(sessionId)) {
+        await this.repository.repairSessionRecordProjection(sessionId)
+        this.pendingRecordRepairs.delete(sessionId)
       }
       const result = await this.writes.reprojectMeta(sessionId)
-      if (!result) return
-      const revision = refreshArchiveLists ? ++this.archiveStateRevision : this.archiveStateRevision
+      if (!result?.meta || result.metaRevision === null) return
       await this.events.publish({
-        type: 'session-updated',
-        session: result.session,
-        meta: result.meta,
-        preserveCachedGeneratingMessages: true,
-      })
-      if (refreshArchiveLists) await this.refreshArchiveLists(sessionId, revision)
-    } catch (error) {
-      await this.log('warn', 'Failed to repair session metadata projection', {
+        type: 'session-meta-projected',
         sessionId,
-        error: describeError(error),
+        meta: result.meta,
+        revision: result.metaRevision,
       })
+      if (refreshArchiveLists) await this.refreshArchiveLists(sessionId, ++this.archiveStateRevision)
+    } catch (error) {
+      await this.log('warn', 'Failed to repair session metadata projection', { sessionId, error: describeError(error) })
     }
   }
 

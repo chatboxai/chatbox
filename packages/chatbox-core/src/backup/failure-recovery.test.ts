@@ -1,7 +1,12 @@
-import { expect, it } from 'vitest'
-import { exportBackupArchive } from './export-backup'
+import { expect, it, vi } from 'vitest'
+import { exportBackupArchiveWithRows as exportBackupArchive } from './export.test-support'
 import { prepareBackupExport } from './preflight'
-import { importBackupArchive } from './import-backup'
+import {
+  importBackupArchiveWithRows as importBackupArchive,
+  readImportedSession,
+  importedRows,
+  seedImportedSession,
+} from './import.test-support'
 import { MemoryMetaStorage, MemoryStorage } from './sharded.test-support'
 import type { Session } from '@shared/types'
 
@@ -27,29 +32,35 @@ it('retains new resources and the old value when session rollback fails', async 
       return { boundedMemory: true }
     },
   })
-  class Destination extends MemoryStorage {
-    override async setItemNow<T>(key: string, value: T) {
-      if (key === 'session:s' && (value as Session)?.name === 'old') throw new Error('Rollback disk failure')
-      return super.setItemNow(key, value)
-    }
-  }
   class Meta extends MemoryMetaStorage {
     override async create() {
       throw new Error('Meta write failure')
     }
   }
-  const target = new Destination()
-  target.values.set('session:s', { id: 's', name: 'old', messages: [] })
+  const target = new MemoryStorage()
+  await seedImportedSession(target, { id: 's', name: 'old', messages: [] })
+  const rows = importedRows(target)
+  const begin = rows.beginBackupRestore.bind(rows)
+  const retained: import('./session-port').BackupSessionCandidate[] = []
+  vi.spyOn(rows, 'beginBackupRestore').mockImplementation(async (...args) => {
+    const candidate = await begin(...args)
+    retained.push(candidate)
+    return {
+      ...candidate,
+      rollback: async () => {
+        throw new Error('Rollback disk failure')
+      },
+    }
+  })
   await expect(importBackupArchive(archive, { storage: target, metaStorage: new Meta() })).rejects.toThrow(
     /rollback failed/i
   )
-  expect((target.values.get('session:s') as Session).name).toBe('new')
+  expect((await readImportedSession(target, 's')).name).toBe('new')
   expect(target.blobs.get('image')).toBe('data:image/png;base64,YWJj')
-  expect(
-    [...target.values.entries()].some(
-      ([key, value]) => key.includes(':rollback:') && (value as Session)?.name === 'old'
-    )
-  ).toBe(true)
+  expect(retained).toHaveLength(1)
+  await retained[0].rollback()
+  expect((await readImportedSession(target, 's')).name).toBe('old')
+  await retained[0].dispose()
 })
 
 it('reports classification failures and rejects an unreadable session once output has started', async () => {
@@ -106,12 +117,13 @@ it('reports classification failures and rejects an unreadable session once outpu
 
 it('reports cleanup failure after commit without rolling back from already deleted snapshots', async () => {
   const source = new MemoryStorage()
+  source.values.set('settings', { language: 'en' })
   source.values.set('session:s', { id: 's', name: 'restored', messages: [] })
   let archive = new Blob()
   await exportBackupArchive({
     storage: source,
     metaStorage: new MemoryMetaStorage(),
-    exportItems: ['conversations'],
+    exportItems: ['conversations', 'setting'],
     includeKeys: false,
     application: { version: 'test', platform: 'test' },
     writeArchive: async (stream) => {
@@ -128,9 +140,10 @@ it('reports cleanup failure after commit without rolling back from already delet
     }
   }
   const destination = new Destination()
+  destination.values.set('settings', { language: 'zh' })
   destination.values.set('session:s', { id: 's', name: 'old', messages: [] })
   await expect(
     importBackupArchive(archive, { storage: destination, metaStorage: new MemoryMetaStorage() })
   ).rejects.toThrow(/data restored; cleanup failed/)
-  expect((destination.values.get('session:s') as Session).name).toBe('restored')
+  expect((await readImportedSession(destination, 's')).name).toBe('restored')
 })

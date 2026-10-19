@@ -164,8 +164,8 @@ vi.mock('@/stores/toastActions', () => ({ add: mocks.toastAddMock }))
 
 vi.mock('@/app/renderer-application', () => ({
   rendererApplication: {
-    sessions: { updateSession: vi.fn() },
-    sessionHooks: { useSessionReadModel: () => ({ readModel: undefined }) },
+    sessions: { updateSessionHeader: vi.fn() },
+    sessionHooks: { useSessionHeader: () => ({ read: undefined, session: undefined }) },
   },
 }))
 vi.mock('@/stores/session/session-settings', () => ({

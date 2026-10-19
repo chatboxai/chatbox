@@ -1,4 +1,9 @@
-import { Theme, type Message, type Session, type SessionMetaPage, type Settings } from '@chatbox/core'
+import {
+  DEFAULT_TRANSCRIPT_PAGE_BYTES,
+  type SessionTranscriptPage,
+  type SessionTranscriptRequest,
+} from '@chatbox/core/ports'
+import { Theme, type Message, type SessionMetaPage, type Settings } from '@chatbox/core'
 import { tool } from 'ai'
 import { z } from 'zod'
 import { throwIfWorkAborted } from './abort'
@@ -14,7 +19,7 @@ export interface MobileProductInfoHost {
   refreshAccount(): Promise<boolean>
   getVersion(): Promise<{ installedVersion: string; platform: string }>
   listChats(cursor: number, limit: number, archived: boolean): Promise<SessionMetaPage>
-  getChat(id: string): Promise<Session | null>
+  readChatPage(request: SessionTranscriptRequest): Promise<SessionTranscriptPage | null>
 }
 
 const commands = [
@@ -28,8 +33,8 @@ const commands = [
   'settings list',
   'settings get <key>',
   'chats list [--limit 10] [--cursor 0] [--archived]',
-  'chats read <id> [--limit 20] [--cursor 0]',
-  'chats search <query> [--limit 10] [--cursor 0:0] [--archived]',
+  'chats read <id> [--limit 20] [--cursor <nextCursor>]',
+  'chats search <query> [--limit 10] [--cursor <nextCursor>] [--archived]',
 ]
 const inputSchema = z.object({ argv: z.array(z.string().max(32000)).min(1).max(16) }).strict()
 
@@ -83,8 +88,12 @@ function safeSettings(settings: Settings) {
   }
 }
 
-function messages(session: Session) {
-  const compact = (message: Message, threadId?: string) => ({
+function compactMessage(message: Message, threadId: string) {
+  const text = message.contentParts
+    .filter((part) => part.type === 'text')
+    .map((part) => part.text)
+    .join('\n')
+  return {
     messageId: message.id,
     role: message.role,
     timestamp: message.timestamp,
@@ -93,24 +102,46 @@ function messages(session: Session) {
       .filter((part) => part.type === 'image')
       .slice(0, 16)
       .map((part) => ({ storageKey: part.storageKey })),
-    text: message.contentParts
-      .filter((part) => part.type === 'text')
-      .map((part) => part.text)
-      .join('\n'),
-  })
-  return [
-    ...session.messages.filter(readable).map((message) => compact(message)),
-    ...(session.threads ?? []).flatMap((thread) =>
-      thread.messages.filter(readable).map((message) => compact(message, thread.id))
-    ),
-  ]
+    text: text.slice(0, 1000),
+    truncated: text.length > 1000,
+  }
 }
 function readable(message: Message) {
   return !message.backgroundTask && (message.role === 'user' || message.role === 'assistant')
 }
-function boundedMessage(message: ReturnType<typeof messages>[number]) {
-  return { ...message, text: message.text.slice(0, 1000), truncated: message.text.length > 1000 }
+const rowCursorSchema = z
+  .object({
+    sessionId: z.string(),
+    revision: z.number().int().nonnegative(),
+    threadId: z.string(),
+    threadSeq: z.number().int(),
+    messageId: z.string().nullable(),
+    direction: z.enum(['before', 'after']),
+    limit: z.number().int().min(1).max(50),
+    maxBytes: z.literal(DEFAULT_TRANSCRIPT_PAGE_BYTES),
+    scope: z.literal('transcript'),
+  })
+  .strict()
+const searchCursorSchema = z
+  .object({
+    version: z.literal(1),
+    query: z.string(),
+    archived: z.boolean(),
+    sessionIndex: z.number().int().nonnegative(),
+    sessionId: z.string().optional(),
+    cursor: rowCursorSchema.optional(),
+    revision: z.number().int().nonnegative().optional(),
+    offset: z.number().int().min(0).max(50),
+  })
+  .strict()
+type SearchCursor = z.infer<typeof searchCursorSchema>
+function encodeCursor(value: unknown): string {
+  return encodeURIComponent(JSON.stringify(value))
 }
+function decodeCursor(value: string): unknown {
+  return JSON.parse(decodeURIComponent(value))
+}
+
 function integer(value: string, max = 10_000_000) {
   if (!/^\d+$/.test(value) || Number(value) > max) throw new Error('Invalid pagination argument')
   return Number(value)
@@ -213,44 +244,83 @@ export function buildMobileProductInfoTool(host: MobileProductInfoHost, signal: 
         }
         if (action === 'read') {
           if (archived) throw new Error('Unsupported flag')
-          const cursor = integer(flags.get('--cursor') ?? '0')
-          const session = await host.getChat(target)
+          const cursor = flags.has('--cursor') ? rowCursorSchema.parse(decodeCursor(flags.get('--cursor')!)) : undefined
+          if (cursor && (cursor.sessionId !== target || cursor.limit !== limit || cursor.direction !== 'before'))
+            throw new Error('Invalid read cursor')
+          const page = await host.readChatPage({ sessionId: target, limit, origin: 'tail', cursor })
           throwIfWorkAborted(currentSignal)
-          if (!session) return { error: 'Conversation not found.' }
-          const items = messages(session)
+          if (!page) return { error: 'Conversation not found.' }
           return {
-            sessionId: session.id,
-            name: session.name.slice(0, 200),
-            messages: items.slice(cursor, cursor + limit).map(boundedMessage),
-            nextCursor: cursor + limit < items.length ? cursor + limit : null,
-            total: items.length,
+            sessionId: page.record.id,
+            name: page.record.name.slice(0, 200),
+            messages: page.messages
+              .filter((row) => readable(row.message))
+              .map((row) => compactMessage(row.message, row.threadId)),
+            nextCursor: page.older ? encodeCursor(page.older) : null,
+            hasMore: page.older !== null,
           }
         }
-        const cursor = flags.get('--cursor') ?? '0:0'
-        if (!/^\d+:\d+$/.test(cursor)) throw new Error('Invalid search cursor')
-        let [sessionIndex, messageIndex] = cursor.split(':').map((value) => integer(value))
-        const hits: Array<ReturnType<typeof boundedMessage> & { sessionId: string; sessionName: string }> = []
+        let position: SearchCursor = flags.has('--cursor')
+          ? searchCursorSchema.parse(decodeCursor(flags.get('--cursor')!))
+          : { version: 1, query: target, archived, sessionIndex: 0, offset: 0 }
+        if (position.query !== target || position.archived !== archived) throw new Error('Invalid search cursor')
+        const hits: Array<ReturnType<typeof compactMessage> & { sessionId: string; sessionName: string }> = []
         for (let scanned = 0; scanned < 20; scanned++) {
           throwIfWorkAborted(currentSignal)
-          const page = await host.listChats(sessionIndex, 1, archived)
-          if (!page.items.length) return { hits, nextCursor: null, archived }
-          const session = await host.getChat(page.items[0].id)
+          const chats = await host.listChats(position.sessionIndex, 1, archived)
+          const chat = chats.items[0]
+          if (!chat) return { hits, nextCursor: null, hasMore: false, archived }
+          if (position.sessionId && position.sessionId !== chat.id) throw new Error('Search list changed')
+          const page = await host.readChatPage({
+            sessionId: chat.id,
+            limit: 50,
+            origin: 'head',
+            cursor: position.cursor,
+            expectedRevision: position.revision,
+          })
           throwIfWorkAborted(currentSignal)
-          const items = session ? messages(session) : []
-          for (; session && messageIndex < items.length; messageIndex++) {
-            if (!items[messageIndex].text.toLocaleLowerCase().includes(target.toLocaleLowerCase())) continue
+          let following: SearchCursor | null = page?.newer
+            ? {
+                version: 1,
+                query: target,
+                archived,
+                sessionIndex: position.sessionIndex,
+                sessionId: chat.id,
+                cursor: rowCursorSchema.parse(page.newer),
+                revision: page.revision,
+                offset: 0,
+              }
+            : chats.nextCursor === null
+              ? null
+              : { version: 1, query: target, archived, sessionIndex: chats.nextCursor, offset: 0 }
+          for (let index = position.offset; page && index < page.messages.length; index++) {
+            const row = page.messages[index]
+            if (!readable(row.message)) continue
+            const fullText = row.message.contentParts
+              .filter((part) => part.type === 'text')
+              .map((part) => part.text)
+              .join('\n')
+            if (!fullText.toLocaleLowerCase().includes(target.toLocaleLowerCase())) continue
             hits.push({
-              sessionId: session.id,
-              sessionName: session.name.slice(0, 200),
-              ...boundedMessage(items[messageIndex]),
+              sessionId: chat.id,
+              sessionName: chat.name.slice(0, 200),
+              ...compactMessage(row.message, row.threadId),
             })
-            if (hits.length === limit) return { hits, nextCursor: `${sessionIndex}:${messageIndex + 1}`, archived }
+            if (hits.length === limit) {
+              if (index + 1 < page.messages.length)
+                following = { ...position, sessionId: chat.id, revision: page.revision, offset: index + 1 }
+              return {
+                hits,
+                nextCursor: following ? encodeCursor(following) : null,
+                hasMore: following !== null,
+                archived,
+              }
+            }
           }
-          if (page.nextCursor === null) return { hits, nextCursor: null, archived }
-          sessionIndex = page.nextCursor
-          messageIndex = 0
+          if (!following) return { hits, nextCursor: null, hasMore: false, archived }
+          position = following
         }
-        return { hits, nextCursor: `${sessionIndex}:0`, archived }
+        return { hits, nextCursor: encodeCursor(position), hasMore: true, archived }
       } catch {
         throwIfWorkAborted(currentSignal)
         return {

@@ -72,7 +72,7 @@ import Sidebar from '@/Sidebar'
 import * as atoms from '@/stores/atoms'
 import { getRendererDevLaunchOptions } from '@/utils/dev-launch'
 
-const useSession = (sessionId: string | null) => rendererApplication.sessionHooks.useSessionHeader(sessionId)
+const useSessionHeader = (sessionId: string | null) => rendererApplication.sessionHooks.useSessionHeader(sessionId)
 
 function getSessionIdFromPathname(pathname: string): string | null {
   if (!pathname.startsWith('/session/')) return null
@@ -99,7 +99,7 @@ function BackgroundImageOverlay() {
   const isSessionPage = location.pathname.startsWith('/session/') && location.pathname.length > '/session/'.length
   const sessionId = getSessionIdFromPathname(location.pathname)
   const sessionLoadTarget = useSessionStartupLoadTarget(sessionId)
-  const { session } = useSession(sessionLoadTarget)
+  const { session } = useSessionHeader(sessionLoadTarget)
   const effectiveKey =
     session?.backgroundImage?.type === 'storage-key'
       ? session?.backgroundImage?.storageKey
@@ -162,7 +162,7 @@ function useHasBackgroundImage() {
   const isSessionPage = location.pathname.startsWith('/session/') && location.pathname.length > '/session/'.length
   const sessionId = getSessionIdFromPathname(location.pathname)
   const sessionLoadTarget = useSessionStartupLoadTarget(sessionId)
-  const { session } = useSession(sessionLoadTarget)
+  const { session } = useSessionHeader(sessionLoadTarget)
 
   return (isRootPage || isSessionPage) && Boolean(session?.backgroundImage ?? globalBackgroundImageKey)
 }

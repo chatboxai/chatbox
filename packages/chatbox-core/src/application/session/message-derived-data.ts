@@ -28,7 +28,6 @@ export interface SessionAttachmentDerivedPatch {
 /** Derived caches can change without changing message content or tree structure. */
 export interface SessionMessageDerivedPatch {
   messageId: string
-  text?: SessionMessageTextDerivedPatch[]
   attachments?: SessionAttachmentDerivedPatch[]
 }
 
@@ -132,43 +131,6 @@ export function applySessionMessageDerivedPatch(
   if (message.id !== patch.messageId) return null
 
   let updated = message
-  const acceptedText: SessionMessageTextDerivedPatch[] = []
-  if (patch.text?.length) {
-    const sourceDigest = getSessionMessageTokenizationDigest(message)
-    for (const entry of patch.text) {
-      const key = entry.tokenizerType
-      if (key !== 'default' && key !== 'deepseek') continue
-      if (entry.sourceDigest !== sourceDigest) continue
-      if (entry.calculatedAt < (updated.tokenCalculatedAt?.[key] ?? 0)) continue
-      const approximate = entry.approximate === true
-      if (
-        updated.tokenCountMap?.[key] === entry.tokens &&
-        updated.tokenCalculatedAt?.[key] === entry.calculatedAt &&
-        (approximate
-          ? updated.tokenCountApproximate?.[key] === true
-          : updated.tokenCountApproximate?.[key] === undefined)
-      ) {
-        continue
-      }
-      const tokenCountApproximate = { ...updated.tokenCountApproximate }
-      if (approximate) tokenCountApproximate[key] = true
-      else delete tokenCountApproximate[key]
-      updated = {
-        ...updated,
-        tokenCountMap: { ...updated.tokenCountMap, [key]: entry.tokens },
-        tokenCalculatedAt: { ...updated.tokenCalculatedAt, [key]: entry.calculatedAt },
-        tokenCountApproximate: Object.keys(tokenCountApproximate).length ? tokenCountApproximate : undefined,
-      }
-      acceptedText.push({
-        tokenizerType: key,
-        sourceDigest,
-        tokens: entry.tokens,
-        calculatedAt: entry.calculatedAt,
-        approximate,
-      })
-    }
-  }
-
   const acceptedAttachments: SessionAttachmentDerivedPatch[] = []
   for (const entry of patch.attachments ?? []) {
     if (entry.type === 'file') {
@@ -197,7 +159,6 @@ export function applySessionMessageDerivedPatch(
     message: updated,
     patch: {
       messageId: message.id,
-      ...(acceptedText.length ? { text: acceptedText } : {}),
       ...(acceptedAttachments.length ? { attachments: acceptedAttachments } : {}),
     },
   }

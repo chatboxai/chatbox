@@ -1,7 +1,28 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { Message } from '../types'
 import { GenerationRuntimeStore } from './runtime-store'
 
 describe('GenerationRuntimeStore', () => {
+  it('keeps only the current runtime stream and freezes it when stopping', () => {
+    const store = new GenerationRuntimeStore()
+    const first = store.start('s', 'a')
+    const message: Message = {
+      id: 'a',
+      role: 'assistant',
+      generating: true,
+      contentParts: [{ type: 'text', text: 'before stop' }],
+    }
+    store.setLiveMessage('s', message)
+    store.beginStop('s', 'a', 1, first)
+    store.setLiveMessage('s', { ...message, contentParts: [{ type: 'text', text: 'late chunk' }] })
+    expect(store.getLiveMessage('s', 'a')).toBe(message)
+    store.clear('s', 'a')
+    expect(store.getLiveMessage('s', 'a')).toBeUndefined()
+    store.start('s', 'a')
+    expect(store.getLiveMessage('s', 'a')).toBeUndefined()
+    store.dispose()
+  })
+
   it('cancels an idle wait without cancelling the existing generation', async () => {
     const store = new GenerationRuntimeStore()
     const runtime = store.start('active', 'reply')

@@ -29,7 +29,20 @@ export function prepareContextMessages(messages: Message[], options: ContextPrep
  * untouched. Exposed so token estimation can measure exactly the selection
  * the send path will use. Returns the original message references.
  */
+export type ContextSelectionEntry = Pick<
+  Message,
+  'id' | 'role' | 'generating' | 'isForkMarker' | 'isSummary' | 'steered' | 'finishReason' | 'error' | 'errorCode'
+>
+
 export function selectContextMessages(messages: Message[], options: ContextSelectionOptions = {}): Message[] {
+  return selectContextEntries(messages, options)
+}
+
+/** Selection works on row facts; message bodies are hydrated only for the selected identities. */
+export function selectContextEntries<T extends ContextSelectionEntry>(
+  messages: T[],
+  options: ContextSelectionOptions = {}
+): T[] {
   const { compactionPoints, maxContextMessageCount } = options
 
   // Legacy steering records stored the steered user after the assistant reply
@@ -53,7 +66,10 @@ export function selectContextMessages(messages: Message[], options: ContextSelec
   return contextMessages
 }
 
-function applyCompaction(messages: Message[], compactionPoints: CompactionPoint[] | undefined): Message[] {
+function applyCompaction<T extends ContextSelectionEntry>(
+  messages: T[],
+  compactionPoints: CompactionPoint[] | undefined
+): T[] {
   const latestCompactionPoint = findLatestApplicableCompactionPoint(messages, compactionPoints)
 
   // A summary may only enter context as the stand-in of an applied compaction
@@ -74,7 +90,7 @@ function applyCompaction(messages: Message[], compactionPoints: CompactionPoint[
 
   const messagesAfterBoundary = messages.slice(boundaryIndex + 1).filter((m) => !m.isSummary)
 
-  let contextMessages: Message[] = [summaryMessage, ...messagesAfterBoundary]
+  let contextMessages: T[] = [summaryMessage, ...messagesAfterBoundary]
 
   const systemMessage = messages.find((m) => m.role === 'system')
   if (systemMessage && !contextMessages.some((m) => m.id === systemMessage.id)) {
@@ -89,7 +105,7 @@ function applyCompaction(messages: Message[], compactionPoints: CompactionPoint[
  * The limit applies to history messages only, preserving the last user message (current input).
  * This is achieved by adding 1 to maxCount since the last message is always the current input.
  */
-function applyMessageLimit(messages: Message[], maxCount: number): Message[] {
+function applyMessageLimit<T extends ContextSelectionEntry>(messages: T[], maxCount: number): T[] {
   const head = messages[0]?.role === 'system' ? messages[0] : undefined
   const workingMsgs = head ? messages.slice(1) : messages
 

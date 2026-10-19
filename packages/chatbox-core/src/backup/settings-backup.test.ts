@@ -2,7 +2,7 @@ import type { SessionMetaRecord, Settings } from '@shared/types'
 import { unzipSync } from 'fflate'
 import { describe, expect, it } from 'vitest'
 import { BACKUP_MANIFEST_PATH, BACKUP_SETTINGS_PATH } from './archive-layout'
-import { exportBackupArchive } from './export-backup'
+import { exportBackupArchiveWithRows as exportBackupArchive } from './export.test-support'
 import { normalizeBackupExportItems, updateBackupExportItemSelection } from './export-items'
 import { BackupStorageKey } from './storage-keys'
 import {

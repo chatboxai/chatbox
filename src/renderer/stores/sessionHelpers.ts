@@ -5,22 +5,21 @@ import {
   type ParsedAttachmentContent,
   type PickedAsset,
 } from '@chatbox/core/application/attachments'
-import { projectSessionMeta } from '@chatbox/core/application/session'
+import { projectSessionMeta, SessionSearchService, type SessionSearchOptions } from '@chatbox/core/application/session'
+import { isActionAvailableInMode, resolveSessionMode } from '@chatbox/core/session/mode-policy'
 import { isSessionAttachmentRagSupportedFilePath, isSupportedFile, isTextFilePath } from '@shared/file-extensions'
 import {
   CHATBOX_AI_PARSER_LICENSE_KEY_REQUIRED_ERROR,
   EMPTY_ATTACHMENT_CONTENT_ERROR,
   NON_RECOVERABLE_LOCAL_PARSER_ERROR_CODES,
 } from '@shared/file-parse-errors'
-import { searchSessionMessages } from '@shared/services/native-session-search'
-import type { Session, SessionMeta, SessionSettings, SessionThreadBrief, Settings } from '@shared/types'
+import type { SessionHeader, SessionMeta, SessionSettings, Settings } from '@shared/types'
 import type { DocumentParserConfig } from '@shared/types/settings'
-import { migrateMessage } from '@shared/utils/message'
 import { BrowserAttachmentAdapter } from '@/adapters/BrowserAttachmentAdapter'
 import { CapacitorAttachmentAdapter } from '@/adapters/CapacitorAttachmentAdapter'
 import { DesktopAttachmentAdapter } from '@/adapters/DesktopAttachmentAdapter'
 import { withSessionWorkAccess } from '@/adapters/session-work-lock'
-import { rendererApplication, sessionRepository } from '@/app/renderer-application'
+import { rendererApplication } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
 import { PREVIEW_LINES } from '@/packages/context-management/attachment-payload'
 import * as localParser from '@/packages/local-parser'
@@ -33,13 +32,13 @@ import { nonSessionStorageKey } from '@/storage/non-session-key'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import { authInfoStore } from '@/stores/authInfoStore'
 import { reportError } from '@/utils/sentry'
-import { migrateSession } from '@/utils/session-utils'
 import * as defaults from '../../shared/defaults'
 import { SESSION_ATTACHMENT_RAG_LOG_PREFIX } from '../../shared/session-attachment-rag/logging'
 import { createMessage, type Message, SessionSettingsSchema, TOKEN_CACHE_KEYS } from '../../shared/types'
 import type { AttachmentPreparationResult, PreprocessedFile } from '../types/input-box'
 import { resolveChatboxLicenseDefaultModel } from './defaultChatModel'
 import { lastUsedModelStore } from './lastUsedModelStore'
+import { getSessionAgentModeEntry } from './session/agent-mode'
 import { SESSION_ATTACHMENT_RAG_LARGE_ATTACHMENT_WARNING } from './sessionAttachmentRagErrors'
 import * as settingActions from './settingActions'
 import { getPlatformDefaultDocumentParser, settingsStore } from './settingsStore'
@@ -986,7 +985,7 @@ export function mergeSettings(
   })
 }
 
-export function initEmptyChatSession(): Omit<Session, 'id'> {
+export function initEmptyChatSession(): Omit<SessionHeader, 'id'> & { messages: Message[] } {
   const settings = settingsStore.getState().getSettings()
   const { chat: lastUsedChatModel } = lastUsedModelStore.getState()
   const defaultChatModel = settings.defaultChatModel
@@ -995,7 +994,7 @@ export function initEmptyChatSession(): Omit<Session, 'id'> {
         modelId: settings.defaultChatModel.model,
       }
     : lastUsedChatModel || resolveChatboxLicenseDefaultModel(settings)
-  const newSession: Omit<Session, 'id'> = {
+  const newSession: Omit<SessionHeader, 'id'> & { messages: Message[] } = {
     name: 'Untitled',
     type: 'chat',
     threadName: '',
@@ -1016,104 +1015,16 @@ export function getSessionMeta(session: SessionMeta) {
   return projectSessionMeta(session)
 }
 
-function _searchSessions(query: string, s: Session) {
-  // Shared matcher, also used by the native mobile shell.
-  const session = migrateSession(s)
-  return searchSessionMessages(session, query).map((m) => migrateMessage(m))
-}
-
-const SEARCH_PAGE_SIZE = 30
-const SEARCH_RESULT_LIMIT = 50
-
-export async function searchSessions(searchInput: string, sessionId?: string, onResult?: (result: Session[]) => void) {
-  let matchedMessageTotal = 0
-
-  const emitBatch = (batch: Session[]) => {
-    if (batch.length === 0) {
-      return
-    }
-    onResult?.(batch)
-  }
-
-  if (sessionId) {
-    const session = await sessionRepository.getSession(sessionId)
-    if (session) {
-      const matchedMessages = _searchSessions(searchInput, session)
-      matchedMessageTotal += matchedMessages.length
-      emitBatch([{ ...session, messages: matchedMessages }])
-    }
-    return
-  }
-
-  const metaStorage = await getMetaStorage()
-  let cursor: number | null = 0
-
-  while (cursor !== null) {
-    const page = await metaStorage.getPage(cursor, SEARCH_PAGE_SIZE)
-
-    // Load full sessions for this page in parallel to amortize I/O latency.
-    const sessions = await Promise.all(page.items.map((meta) => sessionRepository.getSession(meta.id)))
-
-    const batch: Session[] = []
-    for (const session of sessions) {
-      if (!session) continue
-      const messages = _searchSessions(searchInput, session)
-      if (messages.length === 0) continue
-      matchedMessageTotal += messages.length
-      batch.push({ ...session, messages })
-    }
-    emitBatch(batch)
-
-    if (matchedMessageTotal >= SEARCH_RESULT_LIMIT) {
-      break
-    }
-
-    cursor = page.nextCursor
-    if (cursor !== null) {
-      // Yield to the event loop so the UI can render progressive results
-      // before we start scanning the next page.
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    }
-  }
-}
-
-export function getCurrentThreadHistoryHash(s: Session) {
-  const ret: { [firstMessageId: string]: SessionThreadBrief } = {}
-  if (s.threads) {
-    for (const thread of s.threads) {
-      if (!thread.messages || thread.messages.length === 0) {
-        continue
-      }
-      ret[thread.messages[0].id] = {
-        id: thread.id,
-        name: thread.name,
-        createdAt: thread.createdAt,
-        createdAtLabel: new Date(thread.createdAt).toLocaleString(),
-        firstMessageId: thread.messages[0].id,
-        messageCount: thread.messages.length,
-      }
-    }
-    if (s.messages && s.messages.length > 0) {
-      ret[s.messages[0].id] = {
-        id: s.id,
-        name: s.threadName || '',
-        firstMessageId: s.messages[0].id,
-        messageCount: s.messages.length,
-      }
-    }
-  }
-  return ret
-}
-
-export function getAllMessageList(s: Session) {
-  let messageContext: Message[] = []
-  if (s.threads) {
-    for (const thread of s.threads) {
-      messageContext = messageContext.concat(thread.messages)
-    }
-  }
-  if (s.messages) {
-    messageContext = messageContext.concat(s.messages)
-  }
-  return messageContext
+export async function searchSessions(searchInput: string, options: SessionSearchOptions = {}) {
+  return new SessionSearchService(rendererApplication.sessions).search(searchInput, {
+    ...options,
+    hideSystemPromptMessage: (header) =>
+      (typeof options.hideSystemPromptMessage === 'function'
+        ? options.hideSystemPromptMessage(header)
+        : Boolean(options.hideSystemPromptMessage)) ||
+      !isActionAvailableInMode(
+        'session-system-prompt',
+        resolveSessionMode(getSessionAgentModeEntry(header.id, header).value)
+      ),
+  })
 }

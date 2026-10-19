@@ -1,18 +1,7 @@
+import { convertLegacyTreeToRowFormat } from '../application/session/compatibility/row-format'
 import { encodeSessionTree } from '../session/session-tree/encode'
 import type { SessionRowSnapshot } from '../ports/session-row-store'
-import type { MessageRow } from '../session/session-tree/types'
 import type { Session } from '../types/session'
-
-export function expectedContextMessage(row: MessageRow) {
-  return {
-    sessionId: row.sessionId,
-    threadId: row.threadId,
-    messageId: row.messageId,
-    parentMessageId: row.parentMessageId,
-    seq: row.seq,
-    message: row.message,
-  }
-}
 
 export function contextSession(prefixCount = 8): Session {
   return {
@@ -39,9 +28,10 @@ export function contextSession(prefixCount = 8): Session {
 export function contextSnapshot(session = contextSession(), revision = 1): SessionRowSnapshot {
   const encoded = encodeSessionTree(session, { activeThreadId: session.id, now: 1 })
   if (!encoded.ok) throw new Error(encoded.reason)
+  const tree = convertLegacyTreeToRowFormat(encoded.tree)
   return {
-    record: encoded.tree.session,
+    record: tree.session,
     revision,
-    rows: { sessionId: session.id, threads: encoded.tree.threads, messages: encoded.tree.messages },
+    rows: { sessionId: session.id, threads: tree.threads, messages: tree.messages },
   }
 }

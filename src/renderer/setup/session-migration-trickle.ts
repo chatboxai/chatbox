@@ -1,5 +1,5 @@
 import { BackupOperationBusyError } from '@chatbox/core/backup'
-import type { SessionMigrationOutcome } from '@chatbox/core/application/session'
+import type { SessionMigrationCandidate, SessionMigrationOutcome } from '@/adapters/CurrentSessionRepository'
 
 /** Delay before the first session of a run is touched, keeping startup clear. */
 const DEFAULT_INITIAL_DELAY_MS = 15 * 1000
@@ -14,7 +14,8 @@ const DEFAULT_MAX_CONSECUTIVE_FAILURES = 3
 const IDLE_TIMEOUT_MS = 1000
 
 export interface SessionMigrationTrickleRepository {
-  listUnmigratedSessionIds(shouldSkip?: (id: string) => Promise<boolean>): Promise<string[]>
+  listSessionMigrationCandidates(): Promise<SessionMigrationCandidate[]>
+  requiresSessionMigration(candidate: SessionMigrationCandidate): Promise<boolean>
   migrateSession(id: string): Promise<SessionMigrationOutcome>
 }
 
@@ -30,7 +31,7 @@ export interface SessionMigrationTrickleOptions {
   repository: SessionMigrationTrickleRepository
   /** True while a generation is running or the user is interacting; the tick is then skipped. */
   isBusy: () => boolean
-  /** Checked before reading a legacy record during enumeration and again before migration. */
+  /** Checked before inspecting or migrating each queued candidate. */
   shouldSkipSession?: (id: string) => Promise<boolean>
   initialDelayMs?: number
   intervalMs?: number
@@ -51,10 +52,10 @@ export interface SessionMigrationTrickleHandle {
   readyForFullScan: Promise<boolean>
 }
 
-type OutcomeCounts = Record<SessionMigrationOutcome | 'failed', number>
+type OutcomeCounts = Record<SessionMigrationOutcome | 'protected' | 'failed', number>
 
 function createCounts(): OutcomeCounts {
-  return { migrated: 0, skipped: 0, already: 0, missing: 0, failed: 0 }
+  return { migrated: 0, protected: 0, already: 0, missing: 0, failed: 0 }
 }
 
 function defaultSchedule(fn: () => void, delayMs: number): CancelScheduled {
@@ -82,9 +83,9 @@ function defaultSchedule(fn: () => void, delayMs: number): CancelScheduled {
 
 /**
  * Converts the sessions still stored in their legacy whole-session form to
- * message rows, one session per tick, so no user ever waits for a bulk
- * migration. The queue is taken once per run: sessions created afterwards are
- * written as rows by the repository itself.
+ * message rows, one session per tick. Foreground operations take priority
+ * between candidates. The queue is taken once per run: sessions created
+ * afterwards are written as rows by the repository itself.
  */
 export function startSessionMigrationTrickle(options: SessionMigrationTrickleOptions): SessionMigrationTrickleHandle {
   const { repository, isBusy } = options
@@ -95,7 +96,7 @@ export function startSessionMigrationTrickle(options: SessionMigrationTrickleOpt
   const log = options.log
 
   const counts = createCounts()
-  const queue: string[] = []
+  const queue: SessionMigrationCandidate[] = []
   let settle: () => void = () => {}
   const done = new Promise<void>((resolve) => {
     settle = resolve
@@ -144,7 +145,7 @@ export function startSessionMigrationTrickle(options: SessionMigrationTrickleOpt
     settle()
     settleReadyForFullScan(counts.failed === 0 && !skippedProtectedSession)
     log?.info(
-      `session row migration finished: ${counts.migrated} migrated, ${counts.skipped} skipped, ` +
+      `session row migration finished: ${counts.migrated} migrated, ${counts.protected} recovery-protected, ` +
         `${counts.already} already migrated, ${counts.missing} missing, ${counts.failed} failed ` +
         `in ${Date.now() - startedAt}ms`
     )
@@ -152,9 +153,13 @@ export function startSessionMigrationTrickle(options: SessionMigrationTrickleOpt
 
   async function begin(): Promise<void> {
     if (stopped) return
-    let pending: string[]
+    if (isBusy()) {
+      scheduleNext(delayMs, begin)
+      return
+    }
+    let pending: SessionMigrationCandidate[]
     try {
-      pending = await repository.listUnmigratedSessionIds(options.shouldSkipSession ? shouldSkip : undefined)
+      pending = await repository.listSessionMigrationCandidates()
     } catch (error) {
       if (error instanceof BackupOperationBusyError) {
         scheduleNext(delayMs, begin)
@@ -172,7 +177,7 @@ export function startSessionMigrationTrickle(options: SessionMigrationTrickleOpt
     }
     queue.push(...pending)
     startedAt = Date.now()
-    log?.info(`session row migration started: ${queue.length} sessions to convert`)
+    log?.info(`session row migration started: ${queue.length} candidates to inspect`)
     scheduleNext(delayMs, tick)
   }
 
@@ -182,30 +187,38 @@ export function startSessionMigrationTrickle(options: SessionMigrationTrickleOpt
       scheduleNext(delayMs, tick)
       return
     }
-    const id = queue.shift()
-    if (id === undefined) {
+    const candidate = queue.shift()
+    if (candidate === undefined) {
       finish()
       return
     }
 
+    const { id } = candidate
     const migrationStartedAt = Date.now()
     try {
       const skip = await shouldSkip(id)
       if (stopped) return
-      if (paused) {
-        queue.unshift(id)
+      if (paused || isBusy()) {
+        queue.unshift(candidate)
         scheduleNext(delayMs, tick)
         return
       }
-      const outcome = skip ? 'skipped' : await repository.migrateSession(id)
+      const required = !skip && (await repository.requiresSessionMigration(candidate))
+      if (stopped) return
+      if (paused || isBusy()) {
+        queue.unshift(candidate)
+        scheduleNext(delayMs, tick)
+        return
+      }
+      const outcome = skip ? 'protected' : required ? await repository.migrateSession(id) : 'already'
       counts[outcome] += 1
       consecutiveFailures = 0
-      if (outcome === 'skipped') {
-        log?.warn(`session row migration skipped session ${id}`)
+      if (outcome === 'protected') {
+        log?.warn(`session row migration deferred recovery-protected session ${id}`)
       }
     } catch (error) {
       if (error instanceof BackupOperationBusyError) {
-        queue.unshift(id)
+        queue.unshift(candidate)
         scheduleNext(delayMs, tick)
         return
       }

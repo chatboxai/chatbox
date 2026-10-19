@@ -66,12 +66,16 @@ export function createSmoothFollowOutputController({
     }
   }
 
+  const syncScrollPosition = (scrollTop: number, maxScrollTop: number) => {
+    lastScrollTop = scrollTop
+    lastMaxScrollTop = maxScrollTop
+  }
+
   const handleScroll = (scrollTop: number, maxScrollTop: number) => {
     const movedUp = lastScrollTop !== undefined && scrollTop < lastScrollTop - SCROLL_DIRECTION_TOLERANCE
     const movedDown = lastScrollTop !== undefined && scrollTop > lastScrollTop + SCROLL_DIRECTION_TOLERANCE
     const movedUpBecauseLayoutShrank = isLayoutClampedScroll(lastScrollTop, lastMaxScrollTop, scrollTop, maxScrollTop)
-    lastScrollTop = scrollTop
-    lastMaxScrollTop = maxScrollTop
+    syncScrollPosition(scrollTop, maxScrollTop)
     if (movedUp && !movedUpBecauseLayoutShrank) {
       const shouldStopScrolling = following
       pause()
@@ -117,6 +121,7 @@ export function createSmoothFollowOutputController({
     handleAtBottomChange,
     handleHeightChange,
     handleScroll,
+    syncScrollPosition,
     pause,
     resume,
     isFollowing: () => following,

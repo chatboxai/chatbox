@@ -1,5 +1,14 @@
+import { BackupMessageValidator } from '@chatbox/core/backup'
+import {
+  putTranscriptThread,
+  rebuildRestoredSelectedDepths,
+  putTranscriptMessage,
+  TRANSCRIPT_THREADS,
+  TRANSCRIPT_MESSAGES,
+} from './session-row-idb-transcript'
 import { v4 as uuid } from 'uuid'
 import {
+  BackupRowProjectionBuilder,
   backupPageLimits,
   fitsInlineBackupJson,
   jsonUtf8Chunks,
@@ -31,6 +40,7 @@ import {
 
 import {
   readBackupPayload,
+  messageMetadata,
   payloadRange,
   type StoredMessageRow,
   type PayloadRef,
@@ -112,10 +122,15 @@ export async function* iterateIndexedDBBackupRows(
   db: IDBDatabase,
   sessionId: string,
   requested: BackupPageLimits,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  threadId?: string
 ): AsyncGenerator<BackupRow> {
   const limits = backupPageLimits(requested)
   throwIfAborted(signal)
+  const messageRange = IDBKeyRange.bound(
+    threadId ? [sessionId, threadId] : [sessionId],
+    threadId ? [sessionId, threadId, []] : [sessionId, []]
+  )
   const snapshot = await transaction<BackupIndex>(db, 'readonly', ({ tx, success, finish }) => {
     const refs: RowRef[] = []
     const active: PersistedThreadRow[] = []
@@ -143,48 +158,70 @@ export async function* iterateIndexedDBBackupRows(
         activeThreadId: commit.record.activeThreadId,
       })
     }
-    success(tx.objectStore(MESSAGES).index(SESSION_INDEX).count(sessionId), (count) => {
-      expectedMessages = count
-      done()
-    })
-    success(tx.objectStore(THREADS).index(SESSION_INDEX).openCursor(sessionId), (cursor) => {
-      throwIfAborted(signal)
-      if (!cursor) {
-        done()
-        return
-      }
-      const value = cursor.value as PersistedThreadRow | RevisionHeadRow
-      if (isRevisionHeadRow(value)) head = value
-      else {
-        if (value.seq === -1) {
-          if (active.length) throw new Error('Backup session has multiple active threads')
-          active.push(value)
-        }
-        const bytes = byteSize({ kind: 'thread', thread: plainThreadRow(value) })
-        if (bytes > limits.maxRecordBytes) throw new Error('Backup record requires payload blocks')
-        add({ kind: 'thread', id: value.threadId, threadId: value.threadId, order: value.seq, bytes })
-      }
-      cursor.continue()
-    })
     success(
-      tx
-        .objectStore(MESSAGES)
-        .index(MESSAGE_ORDER_INDEX)
-        .openKeyCursor(IDBKeyRange.bound([sessionId], [sessionId, []])),
-      (cursor) => {
+      threadId
+        ? tx.objectStore(TRANSCRIPT_MESSAGES).index(MESSAGE_ORDER_INDEX).count(messageRange)
+        : tx.objectStore(MESSAGES).index(SESSION_INDEX).count(sessionId),
+      (count) => {
+        expectedMessages = count
+        done()
+      }
+    )
+    if (threadId) {
+      success(
+        tx.objectStore(THREADS).get([sessionId, REVISION_HEAD_THREAD_ID]),
+        (value: RevisionHeadRow | undefined) => {
+          if (!value?.sessionRecord) throw new Error('Thread backup requires a row commit')
+          head = value
+          success(
+            tx.objectStore(THREADS).get([sessionId, value.sessionRecord.activeThreadId]),
+            (value: PersistedThreadRow | undefined) => {
+              if (!value) throw new Error('Active thread is missing')
+              active.push(value)
+              success(tx.objectStore(THREADS).get([sessionId, threadId]), (value: PersistedThreadRow | undefined) => {
+                if (!value) throw new Error('Backup thread is missing')
+                const bytes = byteSize({ kind: 'thread', thread: plainThreadRow(value) })
+                if (bytes > limits.maxRecordBytes) throw new Error('Backup record requires payload blocks')
+                add({ kind: 'thread', id: value.threadId, threadId: value.threadId, order: value.seq, bytes })
+                done()
+              })
+            }
+          )
+        }
+      )
+    } else
+      success(tx.objectStore(THREADS).index(SESSION_INDEX).openCursor(sessionId), (cursor) => {
         throwIfAborted(signal)
         if (!cursor) {
           done()
           return
         }
-        const key = cursor.key as [string, string, number, string]
-        if (typeof key[1] !== 'string' || !Number.isSafeInteger(key[2]) || typeof key[3] !== 'string')
-          throw new Error('Invalid backup ordering key')
-        add({ kind: 'message', id: key[3], threadId: key[1], order: key[2], bytes: 0 })
-        messages++
+        const value = cursor.value as PersistedThreadRow | RevisionHeadRow
+        if (isRevisionHeadRow(value)) head = value
+        else {
+          if (value.seq === -1) {
+            if (active.length) throw new Error('Backup session has multiple active threads')
+            active.push(value)
+          }
+          const bytes = byteSize({ kind: 'thread', thread: plainThreadRow(value) })
+          if (bytes > limits.maxRecordBytes) throw new Error('Backup record requires payload blocks')
+          add({ kind: 'thread', id: value.threadId, threadId: value.threadId, order: value.seq, bytes })
+        }
         cursor.continue()
+      })
+    success(tx.objectStore(TRANSCRIPT_MESSAGES).index(MESSAGE_ORDER_INDEX).openKeyCursor(messageRange), (cursor) => {
+      throwIfAborted(signal)
+      if (!cursor) {
+        done()
+        return
       }
-    )
+      const key = cursor.key as [string, string, number, string]
+      if (typeof key[1] !== 'string' || !Number.isSafeInteger(key[2]) || typeof key[3] !== 'string')
+        throw new Error('Invalid backup ordering key')
+      add({ kind: 'message', id: key[3], threadId: key[1], order: key[2], bytes: 0 })
+      messages++
+      cursor.continue()
+    })
   })
   snapshot.refs.sort((left, right) => {
     if (left.kind !== right.kind) return left.kind === 'thread' ? -1 : 1
@@ -220,14 +257,24 @@ export async function* iterateIndexedDBBackupRows(
       for (const ref of refs) {
         success(tx.objectStore(ref.kind === 'thread' ? THREADS : MESSAGES).get([sessionId, ref.id]), (value) => {
           if (!value) throw new Error('Backup row disappeared during traversal')
-          const row: BackupRow =
-            ref.kind === 'thread'
-              ? { kind: 'thread', thread: plainThreadRow(value) }
-              : { kind: 'message', message: value }
-          if (ref.kind === 'thread' && byteSize(row) !== ref.bytes)
-            throw new Error('Backup row changed during traversal')
-          rows.push(row)
-          done()
+          if (ref.kind === 'thread') {
+            const row: BackupRow = { kind: 'thread', thread: plainThreadRow(value) }
+            if (byteSize(row) !== ref.bytes) throw new Error('Backup row changed during traversal')
+            rows.push(row)
+            done()
+          } else {
+            success(tx.objectStore(TRANSCRIPT_MESSAGES).get([sessionId, ref.id]), (projection) => {
+              if (!projection) throw new Error('Backup metadata is missing')
+              const stored: StoredMessageRow = {
+                ...messageMetadata(value),
+                ...messageMetadata(projection),
+                message: value.message,
+                payload: value.payload,
+              }
+              rows.push({ kind: 'message', message: stored as MessageRow })
+              done()
+            })
+          }
         })
       }
     })
@@ -275,13 +322,23 @@ function stage(id: string, index: number, store: StagedRow['store'], value: Stag
 
 /** Publish and rollback copy via cursors inside one transaction. Only a single
  * row is materialized at a time; readers see the complete old or new snapshot. */
-export async function beginIndexedDBBackupRestore(db: IDBDatabase, sessionId: string): Promise<BackupSessionCandidate> {
+export async function beginIndexedDBBackupRestore(
+  db: IDBDatabase,
+  sessionId: string,
+  expectedRevision?: number | null
+): Promise<BackupSessionCandidate> {
   if (!sessionId) throw new Error('Backup session id is missing')
   const expected = await transaction<number | null>(db, 'readonly', ({ tx, success, finish }) => {
     success(tx.objectStore(THREADS).get([sessionId, REVISION_HEAD_THREAD_ID]), (value) => finish(storedRevision(value)))
   })
+  if (expectedRevision !== undefined && expectedRevision !== expected)
+    throw new SessionRowConflictError(sessionId, expectedRevision, expected)
   const revision = (expected ?? 0) + 1
   if (!Number.isSafeInteger(revision)) throw new Error('Session revision exhausted')
+  const projection = new BackupRowProjectionBuilder()
+  let converted: ReturnType<BackupRowProjectionBuilder['finish']> | undefined
+  let convertedMessages: Map<string, ReturnType<BackupRowProjectionBuilder['finish']>['messages'][number]> | undefined
+  let convertedThreads: Map<string, ThreadRow> | undefined
   const candidateId = uuid()
   const previousId = uuid()
   let phase: 'collecting' | 'published' | 'rolled-back' | 'disposed' = 'collecting'
@@ -289,6 +346,7 @@ export async function beginIndexedDBBackupRestore(db: IDBDatabase, sessionId: st
   let activeThreadId: string | undefined
   let activeThreadCount = 0
   let pendingPayload: PayloadRef | undefined
+  let payloadValidator: BackupMessageValidator | undefined
   let prepared = false
   const candidatePayloads = new Set<string>()
   const previousPayloads = new Set<string>()
@@ -322,9 +380,18 @@ export async function beginIndexedDBBackupRestore(db: IDBDatabase, sessionId: st
       })
       for (const key of keys) {
         throwIfAborted(signal)
-        let value = await transaction<StagedRow['value']>(db, 'readonly', ({ tx, success, finish }) =>
-          success(tx.objectStore(store).get(key), finish)
-        )
+        let value = await transaction<StagedRow['value']>(db, 'readonly', ({ tx, success, finish }) => {
+          success(tx.objectStore(store).get(key), (value) => {
+            if (store !== MESSAGES || !value) {
+              finish(value)
+              return
+            }
+            success(tx.objectStore(TRANSCRIPT_MESSAGES).get(key), (projection) => {
+              if (!projection) throw new Error('Rollback metadata is missing')
+              finish({ ...messageMetadata(value), ...messageMetadata(projection) })
+            })
+          })
+        })
         if (!value) throw new Error('Backup source changed during rollback preparation')
         if (store === MESSAGES) {
           const row = value as StoredMessageRow
@@ -356,17 +423,42 @@ export async function beginIndexedDBBackupRestore(db: IDBDatabase, sessionId: st
     transaction<void>(db, 'readwrite', (context) => {
       const { tx, success, finish } = context
       const threads = tx.objectStore(THREADS)
+      tx.objectStore(TRANSCRIPT_THREADS).delete(IDBKeyRange.bound([sessionId], [sessionId, []]))
+      tx.objectStore(TRANSCRIPT_MESSAGES).delete(IDBKeyRange.bound([sessionId], [sessionId, []]))
       const copyCandidate = () => {
         let copied = 0
         const request = threads.index(SESSION_INDEX).openCursor(candidateRange(rollback ? previousId : candidateId))
         success(request, (cursor) => {
           if (!cursor) {
             if (!rollback && copied !== count) throw new Error('Backup candidate is incomplete')
-            finish(undefined)
+            rebuildRestoredSelectedDepths(tx, sessionId)
+              .then(() => finish(undefined))
+              .catch(context.fail)
             return
           }
           const entry = cursor.value as StagedRow
+          if (!rollback) {
+            if (!converted) throw new Error('Backup candidate projections are missing')
+            if (entry.store === MESSAGES) {
+              const stored = entry.value as StoredMessageRow
+              const metadata = convertedMessages?.get(stored.messageId)
+              if (!metadata) throw new Error('Backup message projection is missing')
+              entry.value = { ...stored, ...metadata }
+            } else if (isRevisionHeadRow(entry.value as PersistedThreadRow | RevisionHeadRow))
+              entry.value = revisionHead(sessionId, { record: converted.session, revision })
+            else {
+              const thread = convertedThreads?.get((entry.value as ThreadRow).threadId)
+              if (!thread) throw new Error('Backup thread projection is missing')
+              entry.value = {
+                ...thread,
+                ...(thread.seq === -1 ? { sessionRecord: converted.session, commitRevision: revision } : {}),
+              }
+            }
+          }
           tx.objectStore(entry.store).put(entry.value)
+          if (entry.store === MESSAGES) putTranscriptMessage(tx, entry.value as StoredMessageRow)
+          else if (!isRevisionHeadRow(entry.value as PersistedThreadRow | RevisionHeadRow))
+            putTranscriptThread(tx, entry.value as PersistedThreadRow)
           copied++
           cursor.continue()
         })
@@ -400,12 +492,15 @@ export async function beginIndexedDBBackupRestore(db: IDBDatabase, sessionId: st
       if (phase !== 'collecting' || !count) throw new Error('Backup candidate is closed')
       if (!pendingPayload) {
         pendingPayload = { id: uuid(), size: 0, count: 0 }
+        payloadValidator = new BackupMessageValidator()
         candidatePayloads.add(pendingPayload.id)
       }
+      payloadValidator!.write(data)
       await appendChunk(pendingPayload, data)
     },
     async append(row) {
       if (phase !== 'collecting') throw new Error('Backup candidate is closed')
+      row = projection.append(row, row.kind === 'message' && row.payload ? payloadValidator?.finishFacts() : undefined)
       if (byteSize(row) > 128 * 1024) throw new Error('Backup record requires payload blocks')
       let value: StagedRow['value']
       let active = false
@@ -445,13 +540,19 @@ export async function beginIndexedDBBackupRestore(db: IDBDatabase, sessionId: st
         finish(undefined)
       })
       count++
-      if (row.kind === 'message' && row.payload) pendingPayload = undefined
+      if (row.kind === 'message' && row.payload) {
+        pendingPayload = undefined
+        payloadValidator = undefined
+      }
       if (row.kind === 'header') activeThreadId = row.record.activeThreadId
       if (active) activeThreadCount++
     },
     async publish(signal) {
       if (phase !== 'collecting' || activeThreadCount !== 1 || pendingPayload)
         throw new Error('Backup candidate is not publishable')
+      converted = projection.finish()
+      convertedMessages = new Map(converted.messages.map((row) => [row.messageId, row]))
+      convertedThreads = new Map(converted.threads.map((row) => [row.threadId, row]))
       await preparePrevious(signal)
       throwIfAborted(signal)
       await replace(false)

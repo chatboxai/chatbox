@@ -14,12 +14,16 @@ export class WorkspaceAttachmentCapacityError extends Error {
   }
 }
 
-export type AttachmentMessage = Pick<Message, 'files' | 'contentParts'>
+export type AttachmentMessage = {
+  files?: ReadonlyArray<{ id?: string; name: string; storageKey?: string; rawStorageKey?: string }>
+  contentParts: readonly Message['contentParts'][number][]
+}
+export type AttachmentMessages = Iterable<AttachmentMessage> | AsyncIterable<AttachmentMessage>
 
 /** Collect all new attachments before writes so an oversized batch leaves the workspace intact. */
 export async function collectWorkspaceInputs(
   existing: WorkspaceFiles,
-  messages: readonly AttachmentMessage[],
+  messages: AttachmentMessages,
   blobs: BlobStoragePort,
   hash: (value: string) => Promise<string>
 ): Promise<WorkspaceFiles> {
@@ -36,12 +40,12 @@ export async function collectWorkspaceInputs(
     validateWorkspaceFiles({ [path]: { base64 } })
     pending[path] = { base64 }
   }
-  for (const message of messages) {
+  for await (const message of messages) {
     for (const attachment of message.files ?? []) {
       const key = attachment.rawStorageKey ?? attachment.storageKey
       if (!key) continue
       const name = attachment.name.replace(/[\\/:%\u0000-\u001f]/g, '_').slice(-100) || 'attachment'
-      const path = `input/${sessionDirectoryName(attachment.id).slice(0, 80)}-${name}`
+      const path = `input/${sessionDirectoryName(attachment.id ?? key).slice(0, 80)}-${name}`
       if (path in existing || path in pending) continue
       const value = await blobs.get(key)
       if (value === null) continue

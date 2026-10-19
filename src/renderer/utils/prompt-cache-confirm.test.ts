@@ -24,11 +24,9 @@ import {
   confirmModelSwitchIfNeeded,
   confirmPromptCacheBreakingAction,
   dismissPromptCacheBreakConfirm,
-  evaluatePromptCacheDeleteContext,
   getPromptCacheBreakCopy,
   isPromptCacheBreakConfirmDismissed,
   isPromptCacheConfirmAccepted,
-  selectPromptCachePolicyContext,
 } from './prompt-cache-confirm'
 
 describe('getPromptCacheBreakCopy', () => {
@@ -155,199 +153,19 @@ describe('confirmModelSwitchIfNeeded', () => {
     showModalMock.mockReset()
     uiState.promptCacheBreakConfirmDismissed = {}
   })
-
-  it('skips the dialog on a new session and in chat mode', async () => {
-    const longAssistant = {
-      id: 'a1',
-      role: 'assistant' as const,
-      contentParts: [{ type: 'text' as const, text: 'x'.repeat(4000) }],
-    }
-    await expect(confirmModelSwitchIfNeeded('work', [longAssistant], true)).resolves.toBe(true)
-    await expect(confirmModelSwitchIfNeeded('chat', [longAssistant], false)).resolves.toBe(true)
+  it('accepts the row policy result without opening a dialog when confirmation is unnecessary', async () => {
+    await expect(confirmModelSwitchIfNeeded(false)).resolves.toBe(true)
     expect(showModalMock).not.toHaveBeenCalled()
   })
-
-  it('asks before switching models in a long work-mode chat', async () => {
+  it('requires the user to confirm a cache break', async () => {
     showModalMock.mockResolvedValueOnce(false)
-    const longAssistant = {
-      id: 'a1',
-      role: 'assistant' as const,
-      contentParts: [{ type: 'text' as const, text: 'x'.repeat(4000) }],
-    }
-    await expect(confirmModelSwitchIfNeeded('work', [longAssistant], false)).resolves.toBe(false)
-    expect(showModalMock).toHaveBeenCalledOnce()
+    await expect(confirmModelSwitchIfNeeded(true)).resolves.toBe(false)
+    showModalMock.mockResolvedValueOnce(true)
+    await expect(confirmModelSwitchIfNeeded(true)).resolves.toBe(true)
   })
-
-  it('keeps the warning once a long first request starts streaming', async () => {
-    showModalMock.mockResolvedValueOnce(false)
-    const longUser = {
-      id: 'u1',
-      role: 'user' as const,
-      contentParts: [{ type: 'text' as const, text: 'x'.repeat(4000) }],
-    }
-    const generatingAssistant = {
-      id: 'a1',
-      role: 'assistant' as const,
-      generating: true,
-      contentParts: [{ type: 'text' as const, text: 'partial' }],
-    }
-
-    await expect(confirmModelSwitchIfNeeded('work', [longUser, generatingAssistant], false)).resolves.toBe(false)
-    expect(showModalMock).toHaveBeenCalledOnce()
-  })
-
-  it('ignores long history outside the configured context window', async () => {
-    const oldLongAssistant = {
-      id: 'a-old',
-      role: 'assistant' as const,
-      contentParts: [{ type: 'text' as const, text: 'x'.repeat(4000) }],
-    }
-    const recentUser = {
-      id: 'u-recent',
-      role: 'user' as const,
-      contentParts: [{ type: 'text' as const, text: 'question' }],
-    }
-    const recentAssistant = {
-      id: 'a-recent',
-      role: 'assistant' as const,
-      contentParts: [{ type: 'text' as const, text: 'answer' }],
-    }
-
-    await expect(
-      confirmModelSwitchIfNeeded('work', [oldLongAssistant, recentUser, recentAssistant], false, {
-        maxContextMessageCount: 1,
-      })
-    ).resolves.toBe(true)
-    expect(showModalMock).not.toHaveBeenCalled()
-  })
-
-  it('skips the dialog when model-switch prompts are dismissed', async () => {
+  it('respects the model-switch prompt preference', async () => {
     uiState.promptCacheBreakConfirmDismissed = { 'switch-model': true }
-    const longAssistant = {
-      id: 'a1',
-      role: 'assistant' as const,
-      contentParts: [{ type: 'text' as const, text: 'x'.repeat(4000) }],
-    }
-    await expect(confirmModelSwitchIfNeeded('work', [longAssistant], false)).resolves.toBe(true)
+    await expect(confirmModelSwitchIfNeeded(true)).resolves.toBe(true)
     expect(showModalMock).not.toHaveBeenCalled()
-  })
-})
-
-describe('selectPromptCachePolicyContext', () => {
-  it('uses compaction selection while preserving in-flight request evidence', () => {
-    const boundary = {
-      id: 'a-boundary',
-      role: 'assistant' as const,
-      contentParts: [{ type: 'text' as const, text: 'old answer' }],
-    }
-    const summary = {
-      id: 'summary',
-      role: 'assistant' as const,
-      isSummary: true,
-      contentParts: [{ type: 'text' as const, text: 'summary' }],
-    }
-    const generatingAssistant = {
-      id: 'a-generating',
-      role: 'assistant' as const,
-      generating: true,
-      contentParts: [{ type: 'text' as const, text: 'partial' }],
-    }
-
-    const context = selectPromptCachePolicyContext([boundary, summary, generatingAssistant], {
-      compactionPoints: [
-        {
-          boundaryMessageId: boundary.id,
-          summaryMessageId: summary.id,
-          createdAt: 1,
-        },
-      ],
-    })
-
-    expect(context.messages.map((message) => message.id)).toEqual([summary.id])
-    expect(context.hasStartedAssistantRequest).toBe(true)
-  })
-
-  it('excludes queued turns that have not reached the provider', () => {
-    const firstUser = {
-      id: 'u1',
-      role: 'user' as const,
-      contentParts: [{ type: 'text' as const, text: 'short request' }],
-    }
-    const generatingAssistant = {
-      id: 'a1',
-      role: 'assistant' as const,
-      generating: true,
-      contentParts: [{ type: 'text' as const, text: 'partial' }],
-    }
-    const queuedUser = {
-      id: 'u2',
-      role: 'user' as const,
-      contentParts: [{ type: 'text' as const, text: 'x'.repeat(4000) }],
-    }
-
-    const context = selectPromptCachePolicyContext([firstUser, generatingAssistant, queuedUser])
-
-    expect(context.messages.map((message) => message.id)).toEqual([firstUser.id])
-    expect(context.hasStartedAssistantRequest).toBe(true)
-  })
-
-  it('does not use assistants outside the selected context as request evidence', () => {
-    const oldAssistant = {
-      id: 'a-old',
-      role: 'assistant' as const,
-      contentParts: [{ type: 'text' as const, text: 'old answer' }],
-    }
-    const latestUser = {
-      id: 'u-latest',
-      role: 'user' as const,
-      contentParts: [{ type: 'text' as const, text: 'x'.repeat(4000) }],
-    }
-
-    const context = selectPromptCachePolicyContext([oldAssistant, latestUser], {
-      maxContextMessageCount: 0,
-    })
-
-    expect(context.messages.map((message) => message.id)).toEqual([latestUser.id])
-    expect(context.hasStartedAssistantRequest).toBe(false)
-  })
-})
-
-describe('evaluatePromptCacheDeleteContext', () => {
-  it('distinguishes filtered failures from compaction boundaries', () => {
-    const failedReply = {
-      id: 'a-failed',
-      role: 'assistant' as const,
-      error: 'request failed',
-      contentParts: [{ type: 'text' as const, text: 'failed' }],
-    }
-    const boundary = {
-      id: 'a-boundary',
-      role: 'assistant' as const,
-      contentParts: [{ type: 'text' as const, text: 'old answer' }],
-    }
-    const summary = {
-      id: 'summary',
-      role: 'assistant' as const,
-      isSummary: true,
-      contentParts: [{ type: 'text' as const, text: 'summary' }],
-    }
-    const recentUser = {
-      id: 'u-recent',
-      role: 'user' as const,
-      contentParts: [{ type: 'text' as const, text: 'recent question' }],
-    }
-    const messages = [failedReply, boundary, summary, recentUser]
-    const options = {
-      compactionPoints: [
-        {
-          boundaryMessageId: boundary.id,
-          summaryMessageId: summary.id,
-          createdAt: 1,
-        },
-      ],
-    }
-
-    expect(evaluatePromptCacheDeleteContext(messages, failedReply.id, options).deletionChangesContext).toBe(false)
-    expect(evaluatePromptCacheDeleteContext(messages, boundary.id, options).deletionChangesContext).toBe(true)
   })
 })

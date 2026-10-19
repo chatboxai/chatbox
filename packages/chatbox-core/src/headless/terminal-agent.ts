@@ -1,7 +1,7 @@
 import type { ModelInterface } from '@shared/models/types'
 import type { MessageContentParts } from '@shared/types'
 import type { ToolSet } from 'ai'
-import type { Session } from '@shared/types'
+import type { Message } from '@shared/types'
 import { generateTerminalSession } from './generation-host'
 import { tool } from 'ai'
 import { z } from 'zod'
@@ -55,7 +55,7 @@ export interface HeadlessTerminalAgentResult {
   status: 'completed' | 'step_limit' | 'timeout' | 'aborted' | 'error'
   error?: string
   profile: 'terminal-only'
-  session: Session
+  message: Message
   usage?: { inputTokens: number; outputTokens: number; totalTokens: number }
   toolCallCount: number
 }
@@ -160,7 +160,7 @@ export async function runHeadlessTerminalAgent(
 
   const tools: ToolSet = { run_command: runCommand }
   try {
-    const session = await generateTerminalSession({
+    const result = await generateTerminalSession({
       model: options.model,
       instruction: options.instruction,
       systemPrompt: options.systemPrompt ?? terminalSystemPrompt(options.workingDirectory),
@@ -168,7 +168,6 @@ export async function runHeadlessTerminalAgent(
       maxSteps,
       signal: controller.signal,
     })
-    const result = session.messages.at(-1)!
     return {
       profile: 'terminal-only',
       status: timedOut
@@ -181,7 +180,7 @@ export async function runHeadlessTerminalAgent(
               ? 'step_limit'
               : 'completed',
       error: result.error,
-      session,
+      message: result,
       finalText: finalTextFromParts(result.contentParts),
       finishReason: result.finishReason,
       usage: result.usage

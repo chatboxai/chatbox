@@ -1,3 +1,4 @@
+import { finishAbortedGeneration } from '@chatbox/core/generation'
 import { SessionActionBlockedError } from '@chatbox/core/session/action-gates'
 import { t } from 'i18next'
 import { notifySessionLockBlocked } from '@/utils/session-lock-copy'
@@ -10,19 +11,17 @@ import {
   snapshotStreamingMessage,
 } from '@chatbox/core/application/session'
 import { withSessionGenerationLock } from '@chatbox/core/generation'
-import { getReachableSessionMessages } from '@chatbox/core/session/generation-state'
 import { isExpectedGenerationError } from '@shared/models/error-classification'
 import { BaseError, ChatboxAIAPIError } from '@shared/models/errors'
 import { extractStreamErrorMessage } from '@shared/models/utils/stream-error-message'
 import { supportsSessionGeneration } from '@shared/session/capabilities'
-import { findMessageLocation } from '@shared/session/message-forks'
-import { planAttachmentOwnershipTransfers } from '@shared/session-attachment-rag/ownership'
+import { cleanupSessionAttachments } from './attachment-cleanup'
 import { createMessage, type Message } from '@shared/types'
 import { countMessageWords } from '@shared/utils/message'
 import { normalizeErrorForSentry } from '@shared/utils/sentry_policy'
 import { createModel } from '@/adapters'
 import { guardBackupWrite } from '@/app/backup-operation-guard'
-import { rendererApplication } from '@/app/renderer-application'
+import { rendererApplication, sessionRepository } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
 import { runCompactionWithUIState } from '@/packages/context-management'
 import { getModelDisplayName } from '@/packages/model-setting-utils'
@@ -216,7 +215,15 @@ export async function persistStreamingMessage(
       options?.onlyIfGenerating
         ? (current) => {
             if (!current) throw new Error(`Message ${snapshot.id} not found`)
-            return current.generating ? snapshot : current
+            return current.generating
+              ? snapshot.generating === false
+                ? finishAbortedGeneration(
+                    { ...current, ...snapshot },
+                    snapshot.contentParts,
+                    snapshot.timestamp ?? Date.now()
+                  )
+                : snapshot
+              : current
           }
         : snapshot
     )
@@ -250,24 +257,7 @@ export async function removeMessage(sessionId: string, messageId: string) {
     if (result.cancelMessageIds.includes(messageId) || rendererApplication.generationRuntime.get(sessionId, messageId))
       rendererApplication.generationRuntime.discard(sessionId, messageId, 'message-deleted')
     clearMessageGenerationStopOperation(sessionId, messageId)
-    cleanup = (async () => {
-      if (!platform.isDesktopLike) return
-      try {
-        const controller = platform.getSessionAttachmentRagController()
-        for (const transfer of planAttachmentOwnershipTransfers(
-          result.removedMessages ?? [],
-          result.survivingMessages ?? []
-        ))
-          await controller.rebindAttachment({
-            attachmentId: transfer.attachmentId,
-            sessionId,
-            messageId: transfer.messageId,
-          })
-        await controller.deleteMessageAttachments(messageId)
-      } catch (error) {
-        console.warn('Failed to cleanup session attachment RAG entries for message deletion:', error)
-      }
-    })()
+    cleanup = cleanupSessionAttachments(sessionId, messageId)
   }
   try {
     const result = await rendererApplication.sessions.executeStructureCommand(
@@ -292,55 +282,6 @@ export async function removeMessage(sessionId: string, messageId: string) {
   } finally {
     await cleanup
   }
-  // Deleting ordinary messages is always allowed (streaming targets are
-  // stopped by the caller first), but removing a compaction summary while
-  // replies stream would yank the compacted context out from under them.
-  // The fetched session is handed to the guard so the summary case doesn't
-  // read it twice.
-  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
-  const location = session ? findMessageLocation(session, messageId) : null
-  if (
-    location?.list[location.index]?.isSummary &&
-    !(await guardSessionAction(sessionId, 'delete-summary', {}, session))
-  ) {
-    return
-  }
-  if (platform.isDesktopLike) {
-    try {
-      const controller = platform.getSessionAttachmentRagController()
-      // Save & Resend versioning lets several messages share one indexed
-      // attachment row. Rebind shared rows to a surviving reference first so
-      // the delete-by-owner below (and later orphan maintenance) only takes
-      // down rows nobody references any more.
-      const removedMessage = location?.list[location.index]
-      if (session && removedMessage) {
-        for (const transfer of planAttachmentOwnershipTransfers(
-          [removedMessage],
-          getReachableSessionMessages(session)
-        )) {
-          await controller.rebindAttachment({
-            attachmentId: transfer.attachmentId,
-            sessionId,
-            messageId: transfer.messageId,
-          })
-        }
-      }
-      await controller.deleteMessageAttachments(messageId)
-    } catch (error) {
-      console.warn('Failed to cleanup session attachment RAG entries for message deletion:', error)
-    }
-  }
-  await rendererApplication.sessions.removeMessage(sessionId, messageId, () => {
-    // Runs once the full-session removal is durable, including the
-    // partial-success path where the metadata projection fails afterward. A
-    // paused reply keeps its generation runtime (generating: false, so the
-    // delete path skips handleStop); discard it so an orphaned paused runtime
-    // doesn't outlive the tool call it was waiting on.
-    if (rendererApplication.generationRuntime.get(sessionId, messageId)) {
-      rendererApplication.generationRuntime.discard(sessionId, messageId, 'message-deleted')
-    }
-    clearMessageGenerationStopOperation(sessionId, messageId)
-  })
 }
 
 /**
@@ -390,9 +331,16 @@ export async function submitNewUserMessageUnlocked(
         import('@/packages/mobile-work-mode/runtime'),
         import('@/adapters/CurrentBlobStorage'),
       ])
-      const complete = await rendererApplication.sessions.getSession(sessionId)
-      if (!complete) return
-      await capacitorWorkspace.preflight(sessionId, [...complete.messages, params.newUserMsg], currentBlobStorage)
+      const attachments = async function* () {
+        for await (const row of sessionRepository.iterateSessionAttachmentFacts({ sessionId, scope: 'active-path' })) {
+          yield {
+            files: row.files,
+            contentParts: row.imageStorageKeys.map((storageKey) => ({ type: 'image' as const, storageKey })),
+          }
+        }
+        yield params.newUserMsg
+      }
+      await capacitorWorkspace.preflight(sessionId, attachments(), currentBlobStorage)
     }
   }
 

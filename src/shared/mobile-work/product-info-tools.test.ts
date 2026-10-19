@@ -1,3 +1,4 @@
+import { InMemorySessionRepository } from '@chatbox/core/testing'
 import { Theme, type Session } from '@chatbox/core'
 import { createDefaultSettings } from '@chatbox/core/domain/settings'
 import { describe, expect, it, vi } from 'vitest'
@@ -18,6 +19,8 @@ function fixture() {
       { id: 'assistant', role: 'assistant', contentParts: [{ type: 'text', text: 'hello again' }] },
     ],
   }
+  const repository = new InMemorySessionRepository()
+  const seeded = repository.seedSession(session)
   const host: MobileProductInfoHost = {
     getSettings: () => settings,
     refreshAccount: vi.fn(async () => true),
@@ -27,7 +30,10 @@ function fixture() {
       total: 1,
       nextCursor: null,
     })),
-    getChat: vi.fn(async (id) => (id === session.id ? session : null)),
+    readChatPage: vi.fn(async (request) => {
+      await seeded
+      return repository.readSessionTranscriptWindow(request)
+    }),
   }
   const controller = new AbortController()
   const cli = buildMobileProductInfoTool(host, controller.signal)
@@ -58,14 +64,14 @@ describe('mobile product info CLI', () => {
   it('paginates readable messages and search matches without exposing system messages', async () => {
     const { run } = fixture()
     const first = await run(['chats', 'read', 'one', '--limit', '1'])
-    expect(first).toMatchObject({ nextCursor: 1, total: 2, messages: [{ messageId: 'user', truncated: true }] })
+    expect(first).toMatchObject({ hasMore: true, messages: [{ messageId: 'assistant', threadId: 'one' }] })
     expect(JSON.stringify(first)).not.toContain('secret-system')
-    expect(await run(['chats', 'search', 'hello', '--limit', '1'])).toMatchObject({
-      nextCursor: '0:1',
-      hits: [{ messageId: 'user' }],
-    })
-    expect(await run(['chats', 'search', 'hello', '--limit', '1', '--cursor', '0:1'])).toMatchObject({
+    const search = await run(['chats', 'search', 'hello', '--limit', '1'])
+    expect(search).toMatchObject({ hasMore: true, hits: [{ messageId: 'user', threadId: 'one', truncated: true }] })
+    const nextCursor = (search as { nextCursor: string }).nextCursor
+    expect(await run(['chats', 'search', 'hello', '--limit', '1', '--cursor', nextCursor])).toMatchObject({
       hits: [{ messageId: 'assistant' }],
+      nextCursor: null,
     })
     expect(await run(['chats', 'read', 'missing'])).toHaveProperty('error')
   })
@@ -98,10 +104,13 @@ it('bounds a search to 20 conversations and returns a resumable cursor even with
     total: 30,
     nextCursor: cursor + 1 < 30 ? cursor + 1 : null,
   }))
-  expect(await run(['chats', 'search', 'no match'])).toMatchObject({ hits: [], nextCursor: '20:0' })
-  expect(host.getChat).toHaveBeenCalledTimes(20)
-  expect(await run(['chats', 'search', 'no match', '--cursor', '20:0'])).toMatchObject({ hits: [], nextCursor: null })
-  expect(host.getChat).toHaveBeenCalledTimes(30)
+  const first = await run(['chats', 'search', 'no match'])
+  expect(first).toMatchObject({ hits: [], hasMore: true })
+  expect(host.readChatPage).toHaveBeenCalledTimes(20)
+  expect(
+    await run(['chats', 'search', 'no match', '--cursor', (first as { nextCursor: string }).nextCursor])
+  ).toMatchObject({ hits: [], nextCursor: null })
+  expect(host.readChatPage).toHaveBeenCalledTimes(30)
 })
 
 it.each([

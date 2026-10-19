@@ -1,6 +1,5 @@
 /// <reference types="vite/client" />
 
-import { backfillMissingThreadName } from '@chatbox/core'
 import { createChatQueryClient } from '@chatbox/react'
 import { v4 as uuidv4 } from 'uuid'
 import { CurrentSessionRepository } from '@/adapters/CurrentSessionRepository'
@@ -13,7 +12,6 @@ import { authInfoStore } from '@/stores/authInfoStore'
 import { getCopilotName } from '@/stores/copilotStore'
 import { initLastUsedModelStore, lastUsedModelStore } from '@/stores/lastUsedModelStore'
 import { reportError } from '@/utils/sentry'
-import { recoverSessionOnLoad } from '@/utils/session-utils'
 import {
   type CreateRendererApplicationOptions,
   createRendererApplication,
@@ -55,14 +53,6 @@ const common: Omit<CreateRendererApplicationOptions, 'host'> = {
     logger: getLogger('session-service'),
     folders: rendererSessionFolderStore,
     getCopilotName,
-    repairSessionOnRead: (session) => {
-      const recovery = recoverSessionOnLoad(session)
-      const backfill = backfillMissingThreadName(recovery.session)
-      return {
-        session: backfill.session,
-        changed: recovery.recoveredStaleGeneration || backfill.changed,
-      }
-    },
   },
   settingsLogger: getLogger('settings-service'),
   settingsEffectsHost,

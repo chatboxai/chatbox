@@ -1,9 +1,8 @@
 import type { SessionHeader } from '@chatbox/core/ports'
-import { isThreadHistoryAvailable, resolveSessionMode } from '@chatbox/core/session/mode-policy'
+import { isActionAvailableInMode, resolveSessionMode } from '@chatbox/core/session/mode-policy'
 import NiceModal from '@ebay/nice-modal-react'
 import { Flex } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
-import type { Session } from '@shared/types'
 import {
   IconCode,
   IconCopy,
@@ -25,6 +24,7 @@ import { confirmSessionDeletion } from '@/presentation/session/session-deletion-
 import { router } from '@/router'
 import { useSessionAgentMode } from '@/stores/session/agent-mode'
 import { clear as clearSession, copyAndSwitchSession, deleteSession } from '@/stores/session/crud'
+import { exportSessionJson } from '@/stores/session/export'
 import * as toastActions from '@/stores/toastActions'
 import { useUIStore } from '@/stores/uiStore'
 import ActionMenu, { type ActionMenuItemProps, type ActionMenuProps } from '../ActionMenu'
@@ -43,7 +43,7 @@ export function SessionMenu({
   children,
   onEditSettings,
 }: {
-  session: Session | SessionHeader
+  session: SessionHeader
   children: ActionMenuProps['children']
   /** Adds a conversation settings entry at the top, for layouts without the title's edit button. */
   onEditSettings?: () => void
@@ -56,10 +56,9 @@ export function SessionMenu({
   const widthFull = useUIStore((s) => s.widthFull)
   const setWidthFull = useUIStore((s) => s.setWidthFull)
   const agentModeEntry = useSessionAgentMode(sessionId)
-  const showThreadHistory = isThreadHistoryAvailable(
-    'threads' in session ? session : {},
-    resolveSessionMode(agentModeEntry.value)
-  )
+  const { threads } = rendererApplication.sessionHooks.useSessionThreads(sessionId)
+  const showThreadHistory =
+    isActionAvailableInMode('thread-history', resolveSessionMode(agentModeEntry.value)) || threads.length > 1
 
   const handleExportAndSave = () => {
     NiceModal.show('export-chat')
@@ -80,17 +79,14 @@ export function SessionMenu({
   }
 
   const handleViewSessionJson = useCallback(async () => {
-    const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
-    if (session) {
-      await NiceModal.show('json-viewer', { title: t('Session Raw JSON'), data: session })
+    const json = await exportSessionJson(sessionId)
+    if (json) {
+      await NiceModal.show('json-viewer', { title: t('Session Raw JSON'), data: JSON.parse(json) })
     }
   }, [sessionId, t])
 
   const handleCopySession = useCallback(async () => {
-    const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
-    if (session) {
-      await copyAndSwitchSession(session)
-    }
+    await copyAndSwitchSession(sessionId)
   }, [sessionId])
 
   const handleCopySessionId = useCallback(() => {
@@ -214,7 +210,7 @@ function SessionPanelToggle({ sessionId }: { sessionId: string }) {
 }
 
 /** Title bar actions for a conversation. */
-export default function Toolbar({ session }: { session: Session | SessionHeader }) {
+export default function Toolbar({ session }: { session: SessionHeader }) {
   const { t } = useTranslation()
   return (
     <Flex align="center" className="controls">

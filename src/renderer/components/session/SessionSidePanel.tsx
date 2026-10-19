@@ -1,8 +1,8 @@
-import { isThreadHistoryAvailable, resolveSessionMode } from '@chatbox/core/session/mode-policy'
+import { resolveSessionMode } from '@chatbox/core/session/mode-policy'
 import { Loader, Text } from '@mantine/core'
 import { AutomationAdjacentAttr, TestId } from '@shared/automation/testids'
 import { BUILT_IN_BROWSER_MAX_TABS, type BuiltInBrowserTabs } from '@shared/built-in-browser'
-import type { Session } from '@shared/types'
+import type { SessionHeader } from '@shared/types'
 import { IconAdjustmentsHorizontal, IconHistory, IconPlus, type IconProps, IconWorld, IconX } from '@tabler/icons-react'
 import clsx from 'clsx'
 import {
@@ -26,7 +26,7 @@ import { useSessionAgentMode } from '@/stores/session/agent-mode'
 import * as toastActions from '@/stores/toastActions'
 import { DEFAULT_SESSION_PANEL, type SessionPanelTab, uiStore, useUIStore } from '@/stores/uiStore'
 import { SessionSettingsContent } from './SessionSettingsContent'
-import { applySessionEdit, applySessionHeaderEdit, type SessionEdit } from './session-edit'
+import { applySessionEdit, type SessionEdit } from './session-edit'
 import ThreadHistoryList from './ThreadHistoryList'
 
 export const SESSION_PANEL_MIN_WIDTH = 320
@@ -41,7 +41,7 @@ const SESSION_PANEL_MAX_RATIO = 0.7
  * Applies conversation settings edits to the stored session right away. Hosts render one instance
  * per conversation, so every edit lands in the conversation it was typed in.
  */
-export function usePersistedSessionEdit(session: Session) {
+export function usePersistedSessionEdit(session: SessionHeader) {
   const sessionRef = useRef(session)
   sessionRef.current = session
   return useCallback(async (edit: SessionEdit) => {
@@ -49,21 +49,13 @@ export function usePersistedSessionEdit(session: Session) {
     const { systemPrompt, ...headerEdit } = edit
     const writes: Promise<unknown>[] = []
     if (systemPrompt !== undefined) {
-      // A reply may be streaming while settings change; keep its cached chunks in the written snapshot.
-      writes.push(
-        rendererApplication.sessions.updateSessionWithMessages(
-          current.id,
-          (stored) => applySessionEdit(stored ?? current, { systemPrompt }),
-          { preserveCachedGeneratingMessages: true }
-        )
-      )
+      writes.push(rendererApplication.sessions.setSessionSystemPrompt(current.id, systemPrompt.trim()))
     }
     if (Object.keys(headerEdit).length > 0) {
-      // Header-only edits commit the session record alone, without reading or rewriting its messages.
       writes.push(
         rendererApplication.sessions.updateSessionHeader(current.id, (stored) => {
           if (!stored) throw new Error('Session not found')
-          return applySessionHeaderEdit(stored, headerEdit)
+          return applySessionEdit(stored, headerEdit)
         })
       )
     }
@@ -206,7 +198,13 @@ function useResizeHandle(container: React.RefObject<HTMLElement>) {
  * chat aside rather than covering it. A page the model starts reading opens the panel when it is
  * closed and otherwise waits in its tab with a status mark, without taking the user's tab away.
  */
-export function SessionSidePanel({ session, builtInBrowser }: { session: Session; builtInBrowser?: BuiltInBrowser }) {
+export function SessionSidePanel({
+  session,
+  builtInBrowser,
+}: {
+  session: SessionHeader
+  builtInBrowser?: BuiltInBrowser
+}) {
   return builtInBrowser ? (
     <BrowserBackedSessionPanel session={session} builtInBrowser={builtInBrowser} />
   ) : (
@@ -214,7 +212,13 @@ export function SessionSidePanel({ session, builtInBrowser }: { session: Session
   )
 }
 
-function BrowserBackedSessionPanel({ session, builtInBrowser }: { session: Session; builtInBrowser: BuiltInBrowser }) {
+function BrowserBackedSessionPanel({
+  session,
+  builtInBrowser,
+}: {
+  session: SessionHeader
+  builtInBrowser: BuiltInBrowser
+}) {
   const browserTabs = useBuiltInBrowserTabs(builtInBrowser)
   return <SessionPanelHost session={session} builtInBrowser={builtInBrowser} browserTabs={browserTabs} />
 }
@@ -258,7 +262,7 @@ function SessionPanelHost({
   builtInBrowser,
   browserTabs,
 }: {
-  session: Session
+  session: SessionHeader
   builtInBrowser?: BuiltInBrowser
   browserTabs?: BuiltInBrowserTabs
 }) {
@@ -288,7 +292,7 @@ function OpenSessionPanel({
   builtInBrowser,
   browserTabs,
 }: {
-  session: Session
+  session: SessionHeader
   builtInBrowser?: BuiltInBrowser
   browserTabs?: BuiltInBrowserTabs
 }) {
@@ -299,8 +303,9 @@ function OpenSessionPanel({
   const tabStripRef = useRef<HTMLDivElement>(null)
   const startResize = useResizeHandle(ref)
   const mode = resolveSessionMode(useSessionAgentMode(session.id).value)
+  const threadQuery = rendererApplication.sessionHooks.useSessionThreads(session.id)
   const onEdit = usePersistedSessionEdit(session)
-  const showThreads = isThreadHistoryAvailable(session, mode)
+  const showThreads = mode === 'chat' || threadQuery.threads.length > 1
   const pages = builtInBrowser ? (browserTabs?.tabs ?? []) : []
 
   const tabs: PanelTabKey[] = [

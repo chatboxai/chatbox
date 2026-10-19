@@ -142,7 +142,7 @@ function SessionItem(props: Props) {
     if (!name || name === session.name) {
       return
     }
-    void rendererApplication.sessions.updateSession(session.id, { name }).catch((error) => {
+    void rendererApplication.sessions.updateSessionHeader(session.id, { name }).catch((error) => {
       console.error('Failed to rename session:', error)
     })
   }
@@ -203,7 +203,7 @@ function SessionItem(props: Props) {
       text: pinActionLabel || '',
       icon: session.starred ? IconPinnedFilled : IconPinned,
       onClick: () => {
-        void rendererApplication.sessions.updateSession(session.id, { starred: !session.starred })
+        void rendererApplication.sessions.updateSessionHeader(session.id, { starred: !session.starred })
       },
     },
     // A pinned chat stays in Pinned; it returns to its project once unpinned.
@@ -391,7 +391,7 @@ function SessionItem(props: Props) {
             onClick={(event) => {
               stopItemClick(event)
               dismissActionTooltip()
-              void rendererApplication.sessions.updateSession(session.id, { starred: !session.starred })
+              void rendererApplication.sessions.updateSessionHeader(session.id, { starred: !session.starred })
             }}
           >
             {session.starred ? (

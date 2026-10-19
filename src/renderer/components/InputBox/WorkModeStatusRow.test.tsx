@@ -38,10 +38,10 @@ const mocks = vi.hoisted(() => {
     setNewSessionWorkingDirectoriesDefault: vi.fn(),
   }
   const sessionSettings: { workingDirectories?: string[]; commandApprovalMode?: string; agentFullAccess?: boolean } = {}
-  const updateSessionMock = vi.fn()
+  const updateSessionHeaderMock = vi.fn()
   const openDirectoryDialogMock = vi.fn()
   const trackCodeExecutionClickMock = vi.fn()
-  return { uiState, sessionSettings, updateSessionMock, openDirectoryDialogMock, trackCodeExecutionClickMock }
+  return { uiState, sessionSettings, updateSessionHeaderMock, openDirectoryDialogMock, trackCodeExecutionClickMock }
 })
 
 vi.mock('react-i18next', () => ({
@@ -59,7 +59,7 @@ vi.mock('@/platform', () => ({
 
 vi.mock('@/app/renderer-application', () => ({
   rendererApplication: {
-    sessions: { updateSession: mocks.updateSessionMock },
+    sessions: { updateSessionHeader: mocks.updateSessionHeaderMock },
   },
 }))
 
@@ -137,12 +137,12 @@ describe('WorkModeStatusRow approval menu', () => {
       expect.objectContaining({ sessionId: 'session-1', mode: 'work_mode' }),
       'approval'
     )
-    expect(mocks.updateSessionMock).toHaveBeenCalledWith('session-1', expect.any(Function))
+    expect(mocks.updateSessionHeaderMock).toHaveBeenCalledWith('session-1', expect.any(Function))
     // The new-chat default is recorded only after the session write settles.
     await vi.waitFor(() => {
       expect(mocks.uiState.setNewSessionCommandApprovalModeDefault).toHaveBeenCalledWith('always_ask')
     })
-    const updater = mocks.updateSessionMock.mock.calls[0][1]
+    const updater = mocks.updateSessionHeaderMock.mock.calls[0][1]
     expect(updater({ settings: {} })).toEqual({
       settings: { agentFullAccess: undefined, commandApprovalMode: 'always_ask' },
     })
@@ -155,7 +155,7 @@ describe('WorkModeStatusRow approval menu', () => {
     await screen.findByTestId(TestId.agent.approvalStatusMenu)
     fireEvent.click(screen.getByText('Full Access'))
 
-    expect(mocks.updateSessionMock).not.toHaveBeenCalled()
+    expect(mocks.updateSessionHeaderMock).not.toHaveBeenCalled()
     expect(mocks.uiState.setNewSessionCommandApprovalModeDefault).toHaveBeenCalledWith('full_access')
     const updater = mocks.uiState.setNewSessionState.mock.calls[0][0]
     expect(updater({})).toEqual({ agentFullAccess: true, commandApprovalMode: 'full_access' })
@@ -173,13 +173,13 @@ describe('WorkModeStatusRow approval menu', () => {
     expect(mocks.uiState.setNewSessionCommandApprovalModeDefault).toHaveBeenCalledWith('smart')
     // No mode change: nothing to track, nothing to write back to the session.
     expect(mocks.trackCodeExecutionClickMock).not.toHaveBeenCalled()
-    expect(mocks.updateSessionMock).not.toHaveBeenCalled()
+    expect(mocks.updateSessionHeaderMock).not.toHaveBeenCalled()
   })
 
   test('does not record the default when the persisted-session write fails', async () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     mocks.sessionSettings.commandApprovalMode = 'smart'
-    mocks.updateSessionMock.mockRejectedValueOnce(new Error('storage unavailable'))
+    mocks.updateSessionHeaderMock.mockRejectedValueOnce(new Error('storage unavailable'))
     renderRow()
 
     fireEvent.click(screen.getByTestId(TestId.agent.approvalStatusTrigger))
@@ -187,7 +187,7 @@ describe('WorkModeStatusRow approval menu', () => {
     fireEvent.click(screen.getByText('Full Access'))
 
     await act(async () => {})
-    expect(mocks.updateSessionMock).toHaveBeenCalled()
+    expect(mocks.updateSessionHeaderMock).toHaveBeenCalled()
     // This chat visibly kept its old policy — new chats must not inherit full access.
     expect(mocks.uiState.setNewSessionCommandApprovalModeDefault).not.toHaveBeenCalled()
     errSpy.mockRestore()
@@ -196,7 +196,7 @@ describe('WorkModeStatusRow approval menu', () => {
   test('a stale pending write cannot overwrite a newer explicit default', async () => {
     mocks.sessionSettings.commandApprovalMode = 'smart'
     let resolveWrite: (() => void) | undefined
-    mocks.updateSessionMock.mockImplementationOnce(
+    mocks.updateSessionHeaderMock.mockImplementationOnce(
       () =>
         new Promise<void>((resolve) => {
           resolveWrite = resolve
@@ -266,15 +266,15 @@ describe('WorkModeStatusRow directory menu', () => {
     expect(screen.getByText('Recent')).toBeTruthy()
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Deselect folder' })[0])
-    expect(mocks.updateSessionMock).toHaveBeenCalledWith('session-1', expect.any(Function))
-    let updater = mocks.updateSessionMock.mock.calls[0][1]
+    expect(mocks.updateSessionHeaderMock).toHaveBeenCalledWith('session-1', expect.any(Function))
+    let updater = mocks.updateSessionHeaderMock.mock.calls[0][1]
     expect(updater({ settings: {} })).toEqual({ settings: { workingDirectories: ['/code/design-tokens'] } })
     await vi.waitFor(() => {
       expect(mocks.uiState.setNewSessionWorkingDirectoriesDefault).toHaveBeenCalledWith(['/code/design-tokens'])
     })
 
     fireEvent.click(screen.getByRole('button', { name: '/code/chatbox-web' }))
-    updater = mocks.updateSessionMock.mock.calls[1][1]
+    updater = mocks.updateSessionHeaderMock.mock.calls[1][1]
     expect(updater({ settings: {} })).toEqual({
       settings: { workingDirectories: ['/code/chatbox-pro', '/code/design-tokens', '/code/chatbox-web'] },
     })
@@ -283,7 +283,7 @@ describe('WorkModeStatusRow directory menu', () => {
   test('does not record the default when the directory write fails', async () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     mocks.sessionSettings.workingDirectories = ['/code/chatbox-pro']
-    mocks.updateSessionMock.mockRejectedValueOnce(new Error('storage unavailable'))
+    mocks.updateSessionHeaderMock.mockRejectedValueOnce(new Error('storage unavailable'))
     renderRow()
 
     fireEvent.click(screen.getByTestId(TestId.agent.workingDirStatusTrigger))
@@ -291,7 +291,7 @@ describe('WorkModeStatusRow directory menu', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Deselect folder' }))
 
     await act(async () => {})
-    expect(mocks.updateSessionMock).toHaveBeenCalled()
+    expect(mocks.updateSessionHeaderMock).toHaveBeenCalled()
     expect(mocks.uiState.setNewSessionWorkingDirectoriesDefault).not.toHaveBeenCalled()
     errSpy.mockRestore()
   })
@@ -305,7 +305,7 @@ describe('WorkModeStatusRow directory menu', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add Folder' }))
 
     await vi.waitFor(() => {
-      expect(mocks.updateSessionMock).toHaveBeenCalledWith('session-1', expect.any(Function))
+      expect(mocks.updateSessionHeaderMock).toHaveBeenCalledWith('session-1', expect.any(Function))
     })
     expect(recentDirectoriesStore.getState().directories).toEqual(['/code/chatbox-web'])
   })

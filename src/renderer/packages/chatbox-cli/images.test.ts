@@ -1,3 +1,4 @@
+import type { Message } from '@shared/types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
@@ -25,8 +26,11 @@ const {
 }))
 
 vi.mock('@/packages/app-action-approval', () => ({ requestAppActionApproval: requestAppActionApprovalMock }))
-vi.mock('@/app/renderer-application', () => ({
-  rendererApplication: { sessionQueryBridge: { getSession: getSessionMock } },
+vi.mock('./session-row-scan', () => ({
+  visitSelectedSessionMessages: async (id: string, visit: (row: { message: Message }) => boolean) => {
+    const session = await getSessionMock(id)
+    for (const message of session?.messages ?? []) if (visit({ message })) break
+  },
 }))
 vi.mock('@/packages/image-model-catalog', () => ({
   getAvailableImageModels: getAvailableImageModelsMock,

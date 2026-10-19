@@ -106,7 +106,7 @@ Searches for text patterns in virtual uploaded content identified by <FILE_PATH>
 export function buildFileTools(
   messages: Message[],
   filesystemRead?: ToolSet[string],
-  loadFileMessages?: () => Promise<Message[]>
+  fileResourceKeys: readonly string[] = []
 ) {
   const files = new Map<string, string>()
   const add = (key: string) => files.set(uploadedFilePath(key), key)
@@ -124,18 +124,10 @@ export function buildFileTools(
     }
   }
   register(messages)
-  let historyRead: Promise<void> | undefined
+  for (const key of fileResourceKeys) add(key)
   const readContent = async (path: string) => {
     if (!isUploadedFilePath(path)) return null
-    if (!files.has(path) && loadFileMessages) {
-      try {
-        historyRead ??= Promise.resolve().then(loadFileMessages).then(register)
-        await historyRead
-      } catch {
-        historyRead = undefined
-        return null
-      }
-    }
+
     const key = files.get(path)
     return key === undefined ? null : readFileContentFromKey(key)
   }

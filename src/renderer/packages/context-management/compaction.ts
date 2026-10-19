@@ -15,9 +15,9 @@ import { settingsService } from '@/settings-runtime'
 import { setCompactionUIState } from '@/stores/atoms/compactionAtoms'
 import { getSessionLockStateNow } from '@/stores/session/action-guard'
 import { getSessionAgentModeEntry } from '@/stores/session/agent-mode'
-import { conversationAnchorIdOf, enqueueCompactionRequest, hasQueuedWork } from '@/stores/session/message-queue'
+import { readConversationAnchorId, enqueueCompactionRequest, hasQueuedWork } from '@/stores/session/message-queue'
 import { getSessionSettings } from '@/stores/session/session-settings'
-import { estimateCompactionInputTokens } from '../token-estimation/compaction-input'
+import { rendererTokenEstimation } from '../token-estimation/row-history-service'
 import { resolveTokenEstimationPolicy } from '../token-estimation/policy'
 import { getCompactionContext } from './compaction-context'
 import { checkOverflow } from './compaction-detector'
@@ -28,14 +28,15 @@ const log = getLogger('compaction')
 
 const compactionService = new CompactionService({
   sessions: {
-    getSession: (sessionId) => rendererApplication.sessionQueryBridge.getSession(sessionId),
+    getSessionHeader: (sessionId) => rendererApplication.sessions.getSessionHeader(sessionId),
+    getSessionContextSource: (request) => rendererApplication.sessions.getSessionContextSource(request),
     getSessionSettings: (sessionId, session) => getSessionSettings(sessionId, session),
-    updateSessionWithMessages: (sessionId, updater) =>
-      rendererApplication.sessions.updateSessionWithMessages(sessionId, updater),
+    commitSessionCompaction: (sessionId, operation) =>
+      rendererApplication.sessions.commitSessionCompaction(sessionId, operation),
   },
   settings: settingsService,
   policy: {
-    async shouldCompact({ sessionId, session, sessionSettings, globalSettings, pendingMessage }) {
+    async shouldCompact({ sessionId, header: session, sessionSettings, globalSettings, pendingMessage }) {
       const providerId = session.settings?.provider ?? globalSettings.defaultChatModel?.provider
       const modelId = session.settings?.modelId ?? globalSettings.defaultChatModel?.model
       if (!modelId) return false
@@ -46,13 +47,15 @@ const compactionService = new CompactionService({
           { ...sessionSettings, provider: providerId, modelId },
           getSessionAgentModeEntry(sessionId, session).value === 'on'
         )
-        const contextTokens = await estimateCompactionInputTokens(
-          session,
-          pendingMessage,
+        const estimate = await rendererTokenEstimation.estimate({
+          sessionId,
+          constructedMessage: pendingMessage,
           model,
-          sessionSettings.maxContextMessageCount,
-          policy
-        )
+          maxContextMessageCount: sessionSettings.maxContextMessageCount,
+          modelSupportToolUseForFile: policy.modelSupportToolUseForFile ?? false,
+          sandboxMode: policy.sandboxMode,
+        })
+        const contextTokens = estimate.totalTokens
 
         return checkOverflow({
           tokens: contextTokens,
@@ -147,12 +150,11 @@ export async function requestManualCompaction(
   sessionId: string,
   options: ManualCompactionOptions = {}
 ): Promise<ManualCompactionOutcome> {
-  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
-  const locks = await getSessionLockStateNow(sessionId, session)
+  const locks = await getSessionLockStateNow(sessionId)
   const request = { prompt: options.prompt, force: options.force === true }
   // Recorded before the lock is taken: the request is bound to the conversation
   // the user confirmed it in, not to whatever the session looks like later.
-  const conversationAnchorId = session ? conversationAnchorIdOf(session) : undefined
+  const conversationAnchorId = await readConversationAnchorId(sessionId)
   // Accepted submissions can own the generation turn before their placeholder
   // appears. Check ownership only before acquiring our own turn.
   if (hasPendingSessionGeneration(sessionId) || !canCompressNow(sessionId, locks)) {

@@ -6,7 +6,7 @@ import { decodeSessionTree } from '../session/session-tree/decode'
 import { exportBackupArchive } from './export-backup'
 import { jsonUtf8Blocks } from './json-stream'
 import { prepareBackupExport } from './preflight'
-import { prepareSessionForBackup } from './resources'
+import { preparedSessionFixture } from './export.test-support'
 import type { BackupSessionStore } from './session-port'
 import { MemoryMetaStorage, MemoryStorage } from './sharded.test-support'
 
@@ -169,7 +169,7 @@ it('measures canonical v2 bytes across branches, Unicode, and cleaned attachment
     await rows.writeRows(source)
     const decoded = decodeSessionTree({ session: source.record, ...source.rows })
     if (!decoded.ok) throw new Error(decoded.reason)
-    const expected = new TextEncoder().encode(JSON.stringify(prepareSessionForBackup(decoded.session))).length
+    const expected = new TextEncoder().encode(JSON.stringify(preparedSessionFixture(decoded.session))).length
     class UnreadableGlobals extends MemoryStorage {
       override async getAllKeys(): Promise<string[]> {
         throw new Error('Global data must not be read during classification')
@@ -189,7 +189,7 @@ it('measures canonical v2 bytes across branches, Unicode, and cleaned attachment
     expect((await prepareBackupExport(settings, { singleSessionBytes: expected - 1 })).sessions[0].layout).toBe(
       'sharded'
     )
-    expect(await rows.readSnapshot('s')).toMatchObject({ rows: source.rows })
+    expect(await rows.readSnapshot('s')).toMatchObject({ rows: JSON.parse(JSON.stringify(source.rows)) })
   } finally {
     db.close()
   }
@@ -254,7 +254,7 @@ it('measures deferred payloads exactly when the stored sizes fit the single-file
     await rows.writeRows(source)
     const decoded = decodeSessionTree({ session: source.record, ...source.rows })
     if (!decoded.ok) throw new Error(decoded.reason)
-    const expected = new TextEncoder().encode(JSON.stringify(prepareSessionForBackup(decoded.session))).length
+    const expected = new TextEncoder().encode(JSON.stringify(preparedSessionFixture(decoded.session))).length
     const { store, payloadReads } = countingStore(rows)
     const plan = await prepareBackupExport(options(store), { singleSessionBytes: 2 * 1024 * 1024 })
     expect(plan.sessions).toEqual([{ id: 's', name: 'S', layout: 'single', size: expected }])

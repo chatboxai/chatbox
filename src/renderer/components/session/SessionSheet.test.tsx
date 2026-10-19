@@ -5,7 +5,13 @@ import { afterEach, expect, test, vi } from 'vitest'
 import { SessionSheet } from './SessionSheet'
 
 const close = vi.hoisted(() => vi.fn())
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
+vi.mock('react-i18next', () => ({
+  initReactI18next: { type: '3rdParty', init: vi.fn() },
+  useTranslation: () => ({ t: (key: string) => key }),
+}))
+vi.mock('@/app/renderer-application', () => ({
+  rendererApplication: { sessionHooks: { useSessionThreads: () => ({ threads: [] }) } },
+}))
 vi.mock('@/stores/session/agent-mode', () => ({ useSessionAgentMode: () => ({ value: 'off' }) }))
 vi.mock('./SessionSidePanel', () => ({
   useSessionPanel: (id: string) => ({ open: id === 'pending', tab: 'settings' }),
@@ -62,7 +68,7 @@ test('opens a bottom sheet while its session is loading, shows retry on failure 
   expect(onRetry).toHaveBeenCalledOnce()
   view.rerender(
     <MantineProvider>
-      <SessionSheet session={{ id: 'pending', name: 'Loaded', messages: [] }} sessionId="pending" />
+      <SessionSheet session={{ id: 'pending', name: 'Loaded' }} sessionId="pending" />
     </MantineProvider>
   )
   expect(view.getByText('Loaded settings')).toBeTruthy()

@@ -1,14 +1,9 @@
 import type { SessionApplicationEvent, SessionEventBus } from '@chatbox/core/application/session'
 import { registerWorkspaceCleanup } from '@shared/mobile-work/workspace-cleanup'
 import { rendererApplication } from '@/app/renderer-application'
-import { clearScrollPositionCache } from '@/components/chat/MessageList'
 import { sessionStartupRecovery } from '@/packages/session-startup-recovery'
 import platform from '@/platform'
-import {
-  clearSessionNameGenerationState,
-  syncSessionAutoTitle,
-  syncSessionAutoTitleOnOpen,
-} from '@/stores/session/naming'
+import { clearSessionNameGenerationState, syncSessionAutoTitleOnOpen } from '@/stores/session/naming'
 import { clearSessionActivity } from '@/stores/sessionActivityStore'
 import { uiStore } from '@/stores/uiStore'
 
@@ -40,7 +35,6 @@ function cleanupDeletedSessionRuntimeState(sessionId: string): void {
     .catch((error: unknown) => {
       console.warn('Failed to release the deleted conversation browser:', error)
     })
-  clearScrollPositionCache(sessionId)
   clearSessionNameGenerationState(sessionId)
   clearSessionActivity(sessionId)
   platform.sandboxReset?.({ sessionId }).catch(() => {})
@@ -73,17 +67,6 @@ export function registerSessionUiEffects(events: SessionEventBus): () => void {
         void syncSessionAutoTitleOnOpen(event.delta.header, () => true).catch((error: unknown) => {
           console.warn('Failed to synchronize session title:', error)
         })
-      }
-      return
-    }
-    if (event.type === 'session-updated' && event.session) {
-      // Naming reacts to persisted user/message writes only. Read-repair
-      // publishes (meta: null) must not re-enter naming — bulk readers like
-      // the startup RAG maintenance sweep and recoverSessionList touch every
-      // session — and hidden/archived sessions (bulk archive fan-out) must
-      // not trigger backfill writes or naming model calls either.
-      if (event.meta && !event.session.hidden) {
-        syncSessionAutoTitle(event.session)
       }
       return
     }

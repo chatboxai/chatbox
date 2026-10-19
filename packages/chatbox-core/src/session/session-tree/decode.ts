@@ -43,7 +43,10 @@ export function decodeSessionTree(tree: SessionTree): DecodeSessionTreeResult {
     }
   }
   for (const siblings of childrenByParent.values()) {
-    siblings.sort((left, right) => left.seq - right.seq)
+    siblings.sort(
+      (left, right) =>
+        left.seq - right.seq || (left.messageId < right.messageId ? -1 : left.messageId > right.messageId ? 1 : 0)
+    )
   }
 
   const messageForksHash: Record<string, MessageForkEntry> = {}
@@ -126,8 +129,10 @@ export function decodeSessionTree(tree: SessionTree): DecodeSessionTreeResult {
           lists.push({ id, messages: branch.messages })
         }
         if (row.activeChildId === null) {
-          position = lists.length
-          lists.push({ id: `fork_list_empty_${pivot.pivotId}`, messages: [] })
+          const pendingSeq = row.pendingBranchSeq
+          const nextSibling = pendingSeq === undefined ? -1 : children.findIndex((child) => child.seq > pendingSeq)
+          position = nextSibling < 0 ? lists.length : nextSibling
+          lists.splice(position, 0, { id: row.pendingBranchId ?? `fork_list_empty_${pivot.pivotId}`, messages: [] })
         } else if (position < 0) {
           return {
             ok: false,
@@ -139,7 +144,9 @@ export function decodeSessionTree(tree: SessionTree): DecodeSessionTreeResult {
           position,
           lists,
           createdAt:
-            tree.session.forkCreatedAt?.[pivot.pivotId] ?? Math.min(...children.map((child) => child.createdAt)),
+            rowsById.get(pivot.pivotId)?.forkCreatedAt ??
+            tree.session.forkCreatedAt?.[pivot.pivotId] ??
+            Math.min(...children.map((child) => child.createdAt)),
         }
         cursor = row.activeChildId
       }
@@ -218,6 +225,8 @@ export function decodeSessionTree(tree: SessionTree): DecodeSessionTreeResult {
   const {
     activeThreadId: _activeThreadId,
     storageFormat: _storageFormat,
+    rowAuthority: _rowAuthority,
+    rowFormatVersion: _rowFormatVersion,
     forkCreatedAt: _forkCreatedAt,
     presentation: _presentation,
     contextReadProjection: _contextReadProjection,

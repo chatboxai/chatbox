@@ -1,7 +1,8 @@
-import type { Message, Session, SessionThread } from '@shared/types'
+import type { SessionTranscriptCursor } from '@chatbox/core/ports'
+import { isEmptyMessage } from '@shared/utils/message'
 import { defaultSessionsForCN, defaultSessionsForEN } from '@/packages/initial_data'
 import { rendererApplication } from '@/app/renderer-application'
-import { hasSuccessfulUserAssistantTurn } from './session/message-success'
+import { isSuccessfulAssistantReply } from './session/message-success'
 
 export const FIRST_SUCCESSFUL_CHAT_KEY = 'chatbox:first-successful-chat:v1'
 
@@ -60,15 +61,6 @@ export function resetFirstSuccessfulChatForDebug(): void {
   }
 }
 
-function getSessionMessageLists(session: Session): Message[][] {
-  const threadMessages = (session.threads ?? []).map((thread: SessionThread) => thread.messages)
-  return [...threadMessages, session.messages]
-}
-
-export function hasSuccessfulConversation(session: Session): boolean {
-  return getSessionMessageLists(session).some(hasSuccessfulUserAssistantTurn)
-}
-
 async function inferFirstSuccessfulChatCompletedFromSessions(): Promise<boolean> {
   const sessionMetas = await rendererApplication.sessions.listAllSessionsMeta()
   for (const meta of sessionMetas) {
@@ -76,11 +68,28 @@ async function inferFirstSuccessfulChatCompletedFromSessions(): Promise<boolean>
     if (meta.hidden) continue
     if (meta.type && meta.type !== 'chat') continue
 
-    const session = await rendererApplication.sessionQueryBridge.getSession(meta.id)
-    if (!session) continue
-    if (hasSuccessfulConversation(session)) {
-      return true
-    }
+    let cursor: SessionTranscriptCursor | undefined
+    let threadId: string | undefined
+    let laterSuccessfulReply = false
+    do {
+      const page = await rendererApplication.sessions.readSessionTranscriptWindow({
+        sessionId: meta.id,
+        origin: 'tail',
+        limit: 50,
+        cursor,
+      })
+      if (!page) break
+      for (const row of [...page.messages].reverse()) {
+        if (row.threadId !== threadId) {
+          threadId = row.threadId
+          laterSuccessfulReply = false
+        }
+        if (isSuccessfulAssistantReply(row.message)) laterSuccessfulReply = true
+        if (laterSuccessfulReply && row.message.role === 'user' && !isEmptyMessage(row.message)) return true
+      }
+      cursor = page.older ?? undefined
+      if (cursor) await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    } while (cursor)
   }
 
   return false

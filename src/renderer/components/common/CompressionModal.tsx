@@ -2,7 +2,7 @@ import { BackupOperationBusyError } from '@chatbox/core/backup'
 import { Button, Group, Stack, Text, Textarea } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import { getDefaultCompactionPrompt } from '@shared/prompts'
-import type { Session } from '@shared/types/session'
+import type { SessionHeader } from '@shared/types/session'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { languageNameMap } from '@/i18n/locales'
@@ -14,7 +14,7 @@ import { AdaptiveModal } from './AdaptiveModal'
 interface CompressionModalProps {
   opened: boolean
   onClose: () => void
-  session: Session
+  session: SessionHeader
 }
 
 export function CompressionModal({ opened, onClose, session }: CompressionModalProps) {

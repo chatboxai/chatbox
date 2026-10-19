@@ -22,7 +22,10 @@ describe('getCompactionContext', () => {
       attachmentResolver: attachments,
       maxContextMessageCount: limit,
     })
-    const compacting = getCompactionContext(current, current.settings ?? {})
+    const compacting = getCompactionContext(
+      { candidateMessages: current.messages, compactionPoints: current.compactionPoints ?? [] },
+      current.settings ?? {}
+    )
     expect(compacting).toEqual(sending.filter((message) => message.id !== pending.id))
     expect(compacting[0].id).toBe('system')
     expect(current).toEqual(snapshot)
@@ -35,7 +38,11 @@ describe('getCompactionContext', () => {
       attachmentResolver: attachments,
       maxContextMessageCount: 2,
     })
-    const compacting = getCompactionContext(current, current.settings ?? {}, largePending)
+    const compacting = getCompactionContext(
+      { candidateMessages: current.messages, compactionPoints: current.compactionPoints ?? [] },
+      current.settings ?? {},
+      largePending
+    )
     expect(compacting).toEqual(sending.filter((message) => message.id !== largePending.id))
     expect(compacting.some((message) => message.id === largePending.id)).toBe(false)
   })
@@ -57,7 +64,10 @@ describe('getCompactionContext', () => {
       compactionPoints: current.compactionPoints,
       maxContextMessageCount: 2,
     })
-    const compacting = getCompactionContext(current, current.settings ?? {})
+    const compacting = getCompactionContext(
+      { candidateMessages: current.messages, compactionPoints: current.compactionPoints ?? [] },
+      current.settings ?? {}
+    )
     expect(compacting).toEqual(sending.filter((message) => message.id !== pending.id))
     expect(compacting.map((message) => message.id)).toEqual(['u2', 'a2'])
   })

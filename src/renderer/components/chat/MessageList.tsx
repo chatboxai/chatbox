@@ -1,21 +1,13 @@
-import { type CurrentThreadTarget, getCurrentThreadTarget } from '@chatbox/core/application/session'
-import type { SessionTranscript } from '@chatbox/core/ports'
+import type { SessionHeaderRead } from '@chatbox/core/ports'
 import { getSessionActionGate } from '@chatbox/core/session/action-gates'
-import {
-  isActionAvailableInMode,
-  isThreadHistoryAvailable,
-  resolveSessionMode,
-  type SessionMode,
-} from '@chatbox/core/session/mode-policy'
-import {
-  type PromptCacheDeleteTarget,
-  shouldConfirmPromptCacheBreakForDelete,
-} from '@chatbox/core/session/prompt-cache-policy'
+import { isActionAvailableInMode, resolveSessionMode, type SessionMode } from '@chatbox/core/session/mode-policy'
+import type { PromptCacheDeleteTarget } from '@chatbox/core/session/prompt-cache-policy'
+import { useSessionNavigation, type SessionTranscriptViewportAnchor } from '@chatbox/react/query'
 import NiceModal from '@ebay/nice-modal-react'
 import { Button, Flex, Loader, Stack, Transition } from '@mantine/core'
 import { useThrottledCallback } from '@mantine/hooks'
 import { TestId } from '@shared/automation/testids'
-import type { Session, Message as SessionMessage, SessionThreadBrief } from '@shared/types'
+import type { Message as SessionMessage, SessionThreadBrief } from '@shared/types'
 import {
   IconArrowBarToUp,
   IconArrowUp,
@@ -30,7 +22,6 @@ import {
   type FC,
   forwardRef,
   memo,
-  type UIEventHandler,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -40,22 +31,20 @@ import {
   useState,
 } from 'react'
 import { useTranslation } from 'react-i18next'
-import { type StateSnapshot, Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
-import { buildMessageRenderItems, type MessageRenderItem } from '@/components/chat/message-render-items'
+import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
+import { rendererApplication } from '@/app/renderer-application'
 import { contentColumnClassName } from '@/components/layout/contentColumn'
 import { platformTypeAtom } from '@/hooks/useNeedRoomForWinControls'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
-import { useSessionLockState } from '@/hooks/useSessionLockState'
+import { useSessionControls } from '@/hooks/useSessionLockState'
+import type { useSessionTranscript } from '@/hooks/useSessionPresentation'
 import { cn } from '@/lib/utils'
-import platform from '@/platform'
-import { getSessionAgentModeEntry } from '@/stores/session/agent-mode'
+import { useSessionAgentMode } from '@/stores/session/agent-mode'
 import { removeMessage } from '@/stores/session/messages'
 import { moveThreadToConversations, removeThread, switchThread } from '@/stores/session/threads'
 import { useSessionActivity } from '@/stores/sessionActivityStore'
-import { getAllMessageList, getCurrentThreadHistoryHash } from '@/stores/sessionHelpers'
 import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
-import { type TranscriptNavigation, uiStore, useUIStore } from '@/stores/uiStore'
-import { evaluatePromptCacheDeleteContext } from '@/utils/prompt-cache-confirm'
+import { uiStore, useUIStore } from '@/stores/uiStore'
 import { notifySessionLockBlocked } from '@/utils/session-lock-copy'
 import ActionMenu from '../ActionMenu'
 import { ErrorBoundary } from '../common/ErrorBoundary'
@@ -65,809 +54,583 @@ import { BlockCodeCollapsedStateProvider } from '../Markdown'
 import ForkGroup from './ForkGroup'
 import ForkMarkerMessage from './ForkMarkerMessage'
 import Message from './Message'
-import MessageMinimapRail, { type MessageMinimapAnchor } from './MessageMinimapRail'
+import MessageMinimapRail from './MessageMinimapRail'
 import MessageNavigation, { ScrollToBottomButton } from './MessageNavigation'
-import {
-  areMinimapAnchorsEqual,
-  canReuseMinimapAnchorsDuringGeneration,
-  getMessagePreviewText,
-  isUserNavigationMessage,
-} from './message-navigation-utils'
+import { buildTranscriptRenderItems } from './message-render-items'
 import SummaryMessage from './SummaryMessage'
 import { createSmoothFollowOutputController, isLayoutClampedScroll } from './smooth-follow-output'
-import {
-  boundedWindowSnapshot,
-  clearWindowScrollPosition,
-  createWindowScrollKey,
-  discardWindowScrollPosition,
-  getWindowScrollPosition,
-  observeWindowScrollInvalidation,
-  resolveWindowScrollPosition,
-  saveWindowScrollPosition,
-  type WindowScrollEntry,
-  type WindowTranscriptIdentity,
-  windowScrollObjectId,
-} from './window-scroll-cache'
+import { createTranscriptContentAnchor, shiftTranscriptContentAnchor } from './transcript-content-anchor'
+import { scrollToTranscriptItem, transcriptAnchorLayoutSettled } from './transcript-item-scroll'
 
-const MINIMAP_MESSAGE_LIMIT = 500
-
-const EMPTY_MINIMAP_ANCHORS: MessageMinimapAnchor[] = []
-
-// LRU-like cache with max size to prevent unbounded memory growth
-const MAX_SCROLL_CACHE_SIZE = 100
-const sessionScrollPositionCache = new Map<string, StateSnapshot>()
-
-function setScrollPosition(sessionId: string, snapshot: StateSnapshot) {
-  // Delete and re-add to move to end (most recently used)
-  sessionScrollPositionCache.delete(sessionId)
-  sessionScrollPositionCache.set(sessionId, snapshot)
-
-  // Evict oldest entries if over limit
-  if (sessionScrollPositionCache.size > MAX_SCROLL_CACHE_SIZE) {
-    const firstKey = sessionScrollPositionCache.keys().next().value
-    if (firstKey) {
-      sessionScrollPositionCache.delete(firstKey)
-    }
-  }
-}
-
-// Export cleanup function for use when sessions are deleted
-export function clearScrollPositionCache(sessionId: string) {
-  sessionScrollPositionCache.delete(sessionId)
-  clearWindowScrollPosition(sessionId)
-}
-
-function readWindowAnchor(container: HTMLElement, items: MessageRenderItem[]) {
-  const list = container.querySelector<HTMLElement>('[data-testid="virtuoso-item-list"]')
-  const viewport = container.getBoundingClientRect()
-  if (!list || viewport.height <= 0 || getComputedStyle(list).visibility === 'hidden') return null
-  for (const item of Array.from(list.querySelectorAll<HTMLElement>(':scope > [data-index]'))) {
-    const bounds = item.getBoundingClientRect()
-    if (bounds.bottom <= viewport.top || bounds.top >= viewport.bottom) continue
-    const messageId = items[Number(item.dataset.index)]?.messages[0]?.id
-    if (messageId) return { messageId, offset: viewport.top - bounds.top }
-  }
-  return null
-}
-
-function readWindowLayout(container: HTMLElement, widthFull: boolean, smallScreen: boolean) {
-  if (container.clientWidth <= 0 || container.clientHeight <= 0 || document.fonts?.status === 'loading') return null
-  const style = getComputedStyle(container)
-  return JSON.stringify([
-    container.clientWidth,
-    container.clientHeight,
-    window.devicePixelRatio,
-    style.fontFamily,
-    style.fontSize,
-    style.lineHeight,
-    widthFull,
-    smallScreen,
-    windowScrollObjectId(settingsStore.getState()),
-  ])
-}
-
-export type MessageNavigationTarget = { kind: 'head' | 'tail' } | { kind: 'message'; messageId: string }
-
+type Transcript = ReturnType<typeof useSessionTranscript>
 export interface MessageListRef {
-  scrollToTop: (behavior?: ScrollBehavior, source?: 'replay') => void
-  scrollToBottom: (behavior?: ScrollBehavior, source?: 'replay') => void
-  scrollToMessage: (messageId: string, behavior?: 'auto' | 'smooth', source?: 'replay') => boolean
-  setIsNewMessage: (flag: boolean) => void
+  captureAnchor(): SessionTranscriptViewportAnchor | null
+  scrollToTop(): void
+  scrollToBottom(): void
+  scrollToMessage(messageId: string): Promise<boolean>
+  setIsNewMessage(value: boolean): void
 }
 
-export type MessageListProps = {
-  className?: string
-  onLoadOlder?: () => void
-  hasOlder?: boolean
-  hasNewer?: boolean
-  isLoadingOlder?: boolean
-  isLoadingNewer?: boolean
-  isJumping?: boolean
-  totalMessageCount?: number
-  onLoadNewer?: () => void
-  onNavigate?: (target: MessageNavigationTarget) => boolean
-  onJumpToEdge?: (edge: 'head' | 'tail') => void
-  windowPosition?: { id: number; edge: 'head' | 'tail' } | null
-  onRequireComplete?: (messageId?: string) => void
-  onLoadCompleteNavigation?: () => void
-  windowIdentity?: WindowTranscriptIdentity
-} & ({ currentSession: Session; transcript?: never } | { currentSession?: never; transcript: SessionTranscript })
-
-const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) => {
+const MessageList = forwardRef<
+  MessageListRef,
+  { headerRead: SessionHeaderRead; transcript: Transcript; className?: string }
+>(({ headerRead, transcript, className }, ref) => {
   const { t } = useTranslation()
+  const session = headerRead.header
+  const controller = transcript.controller
   const isSmallScreen = useIsSmallScreen()
-  const widthFull = useUIStore((s) => s.widthFull)
-  const hideSystemPromptMessage = useSettingsStore((s) => s.hideSystemPromptMessage)
-  const globalMaxContextMessageCount = useSettingsStore((s) => s.maxContextMessageCount)
-
-  const completeSession = props.currentSession
-  const isCompleteSession = completeSession !== undefined
-  const currentSession = completeSession ?? props.transcript!.header
-  const activity = useSessionActivity(currentSession.id)
-  const navigationOwner = useMemo(() => Symbol(currentSession.id), [currentSession.id])
-
-  const currentThreadHash = useMemo(
-    () => (completeSession ? getCurrentThreadHistoryHash(completeSession) : {}),
-    [completeSession]
-  )
-  const currentMessageList = useMemo(
-    () => (completeSession ? getAllMessageList(completeSession) : props.transcript!.messages),
-    [completeSession, props.transcript]
-  )
-  const sessionLocks = useSessionLockState(completeSession, currentSession.id)
-  // Resolved once per session snapshot and passed down as a plain prop: with
-  // multi-thousand-row sessions, per-row store subscriptions would re-run a
-  // selector on every streaming chunk. Mode changes rewrite session.settings,
-  // so the session prop already re-renders this component when it matters.
-  const sessionMode = useMemo(
-    () => resolveSessionMode(getSessionAgentModeEntry(currentSession.id, currentSession).value),
-    [currentSession]
-  )
-  const promptCacheContextRef = useRef({
-    mode: sessionMode,
-    messages: completeSession?.messages ?? [],
-    compactionPoints: completeSession?.compactionPoints,
-    maxContextMessageCount: currentSession.settings?.maxContextMessageCount ?? globalMaxContextMessageCount,
-  })
-  promptCacheContextRef.current = {
-    mode: sessionMode,
-    messages: completeSession?.messages ?? [],
-    compactionPoints: completeSession?.compactionPoints,
-    maxContextMessageCount: currentSession.settings?.maxContextMessageCount ?? globalMaxContextMessageCount,
-  }
-  const shouldConfirmPromptCacheDelete = useCallback((messageId: string, target: PromptCacheDeleteTarget) => {
-    const { mode, messages, compactionPoints, maxContextMessageCount } = promptCacheContextRef.current
-    const context = evaluatePromptCacheDeleteContext(messages, messageId, {
-      compactionPoints,
-      maxContextMessageCount,
-    })
-    return shouldConfirmPromptCacheBreakForDelete(mode, messages, messageId, target, {
-      contextMessages: context.messages,
-      hasStartedAssistantRequest: context.hasStartedAssistantRequest,
-      deletionChangesContext: context.deletionChangesContext,
-    })
-  }, [])
-
-  const latestSummaryMessageId = useMemo(() => {
-    for (let i = currentMessageList.length - 1; i >= 0; i--) {
-      if (currentMessageList[i].isSummary) {
-        return currentMessageList[i].id
-      }
-    }
-    return null
-  }, [currentMessageList])
-
-  const renderItems = useMemo<MessageRenderItem[]>(
-    () => buildMessageRenderItems(currentMessageList),
-    [currentMessageList]
-  )
-  const previousItems = useRef<{ items: MessageRenderItem[]; index: number; positionId?: number } | null>(null)
-  const firstItemIndex = useMemo(() => {
-    if (!props.transcript) return 0
-    const previous = previousItems.current
-    if (previous && previous.positionId === props.windowPosition?.id) {
-      const indices = new Map(
-        renderItems.flatMap((item, index) => item.messages.map((message) => [message.id, index] as const))
-      )
-      for (let index = 0; index < previous.items.length; index++) {
-        const currentIndex = indices.get(previous.items[index].messages[0].id)
-        if (currentIndex !== undefined) return previous.index + index - currentIndex
-      }
-    }
-    return 1000000000 - renderItems.length
-  }, [props.transcript, props.windowPosition?.id, renderItems])
-  useLayoutEffect(() => {
-    previousItems.current = { items: renderItems, index: firstItemIndex, positionId: props.windowPosition?.id }
-  }, [renderItems, firstItemIndex, props.windowPosition?.id])
-  const initialViewWasWindow = useRef(props.transcript !== undefined).current
-  const viewportAnchorRef = useRef<{ messageId: string; offset: number } | null>(null)
-  const windowKey = useMemo(
-    () =>
-      props.transcript
-        ? createWindowScrollKey(currentSession, props.windowIdentity, renderItems, firstItemIndex)
-        : null,
-    [props.transcript, props.windowIdentity, currentSession, renderItems, firstItemIndex]
-  )
-
-  const hasUnloadedNavigation = Boolean(props.transcript && (props.hasOlder || props.hasNewer))
-  const minimapEligible =
-    !isSmallScreen &&
-    Math.max(props.totalMessageCount ?? currentMessageList.length, currentMessageList.length) <=
-      MINIMAP_MESSAGE_LIMIT &&
-    (!hasUnloadedNavigation || props.totalMessageCount !== undefined)
-  const [minimapReadySession, setMinimapReadySession] = useState<string | null>(null)
-  const minimapReady = minimapEligible && minimapReadySession === currentSession.id
-  const loadMinimapRef = useRef<() => void>(() => {})
-  loadMinimapRef.current = () => {
-    if (hasUnloadedNavigation) {
-      const anchor = messageListRef.current ? readWindowAnchor(messageListRef.current, renderItems) : null
-      if (anchor) viewportAnchorRef.current = anchor
-      props.onLoadCompleteNavigation?.()
-    }
-  }
-  const messageWorkPending = Boolean(
-    props.isLoadingOlder || props.isLoadingNewer || props.isJumping || sessionLocks.anyReplyGenerating
-  )
-  useEffect(() => {
-    if (!minimapEligible) {
-      setMinimapReadySession(null)
-      return
-    }
-    if (minimapReady || messageWorkPending) return
-    let idleCallback: number | undefined
-    let fallbackTimer: ReturnType<typeof setTimeout> | undefined
-    const load = () => {
-      loadMinimapRef.current()
-      setMinimapReadySession(currentSession.id)
-    }
-    const frame = requestAnimationFrame(() => {
-      if (typeof window.requestIdleCallback === 'function') idleCallback = window.requestIdleCallback(load)
-      else fallbackTimer = setTimeout(load, 300)
-    })
-    return () => {
-      cancelAnimationFrame(frame)
-      clearTimeout(fallbackTimer)
-      if (idleCallback !== undefined) window.cancelIdleCallback(idleCallback)
-    }
-  }, [currentSession.id, minimapEligible, minimapReady, messageWorkPending])
-
-  // A streaming reply replaces the session object for every chunk. Build the
-  // minimap once when generation starts, freeze it while chunks arrive, then
-  // refresh it once with the final assistant preview after generation ends.
-  const previousMinimapStateRef = useRef<{
-    sessionId: string
-    generationRunning: boolean
-    messages: SessionMessage[]
-    anchors: MessageMinimapAnchor[]
-  }>({ sessionId: currentSession.id, generationRunning: false, messages: [], anchors: [] })
-  const userMessageAnchors = useMemo<MessageMinimapAnchor[]>(() => {
-    const previousState = previousMinimapStateRef.current
-
-    // Hidden and incomplete minimaps must not scan message previews.
-    if (!minimapReady || hasUnloadedNavigation) {
-      previousMinimapStateRef.current = {
-        sessionId: currentSession.id,
-        generationRunning: false,
-        messages: currentMessageList,
-        anchors: EMPTY_MINIMAP_ANCHORS,
-      }
-      return EMPTY_MINIMAP_ANCHORS
-    }
-
-    if (
-      sessionLocks.anyReplyGenerating &&
-      previousState.sessionId === currentSession.id &&
-      previousState.generationRunning &&
-      canReuseMinimapAnchorsDuringGeneration(previousState.messages, currentMessageList)
-    ) {
-      return previousState.anchors
-    }
-
-    const assistantTextByUserId = new Map<string, string>()
-
-    for (let i = 0; i < currentMessageList.length; i++) {
-      const message = currentMessageList[i]
-      if (!isUserNavigationMessage(message)) {
-        continue
-      }
-
-      for (let j = i + 1; j < currentMessageList.length; j++) {
-        const nextMessage = currentMessageList[j]
-        if (nextMessage.role === 'user') {
-          break
-        }
-        if (nextMessage.role === 'assistant' && !nextMessage.isSummary && !nextMessage.isForkMarker) {
-          // Do not expose a transient partial preview. The completed text is
-          // loaded by the first render after `anyReplyGenerating` becomes false.
-          if (!nextMessage.generating) {
-            assistantTextByUserId.set(message.id, getMessagePreviewText(nextMessage))
-          }
-          break
-        }
-      }
-    }
-
-    const anchors = renderItems.flatMap((item, itemIndex) =>
-      item.messages.filter(isUserNavigationMessage).map((message) => ({
-        messageId: message.id,
-        itemIndex,
-        text: getMessagePreviewText(message),
-        assistantText: assistantTextByUserId.get(message.id),
-      }))
-    )
-
-    const stableAnchors =
-      previousState.sessionId === currentSession.id && areMinimapAnchorsEqual(previousState.anchors, anchors)
-        ? previousState.anchors
-        : anchors
-    previousMinimapStateRef.current = {
-      sessionId: currentSession.id,
-      generationRunning: sessionLocks.anyReplyGenerating,
-      messages: currentMessageList,
-      anchors: stableAnchors,
-    }
-    return stableAnchors
-  }, [
-    currentMessageList,
-    currentSession.id,
-    renderItems,
-    sessionLocks.anyReplyGenerating,
-    minimapReady,
-    hasUnloadedNavigation,
-  ])
-  const showMinimap = !isSmallScreen && userMessageAnchors.length > 0
-
+  const activity = useSessionActivity(session.id)
+  const platformType = useAtomValue(platformTypeAtom)
+  const widthFull = useUIStore((state) => state.widthFull)
+  const hideSystemPromptSetting = useSettingsStore((state) => state.hideSystemPromptMessage)
+  const globalMaxContextMessageCount = useSettingsStore((state) => state.maxContextMessageCount)
+  const sessionMode = resolveSessionMode(useSessionAgentMode(session.id).value)
+  const controls = useSessionControls(session, session.id)
+  const sessionLocks = controls.locks
+  const hideSystemPrompt = hideSystemPromptSetting || !isActionAvailableInMode('session-system-prompt', sessionMode)
+  const container = useRef<HTMLDivElement>(null)
+  const scroller = useRef<HTMLElement | null>(null)
+  const reportedScrollTop = useRef(0)
+  const pendingMeasurementScroll = useRef<HTMLElement | null>(null)
   const virtuoso = useRef<VirtuosoHandle>(null)
-  const [smoothFollowOutput] = useState(() =>
-    createSmoothFollowOutputController({
-      scrollToBottom: (behavior) => virtuoso.current?.scrollTo({ top: Infinity, behavior }),
-      stopScrolling: (scrollTop) => virtuoso.current?.scrollTo({ top: scrollTop, behavior: 'auto' }),
-      // Mobile WebViews can fall behind when a smooth scroll is retargeted on every streaming height change.
-      getScrollBehavior: platform.type === 'mobile' ? () => 'auto' : undefined,
-    })
+  const lastItem = useRef<HTMLDivElement>(null)
+  const owner = useMemo(() => Symbol(session.id), [session.id])
+  const items = useMemo(
+    () => buildTranscriptRenderItems(transcript.rows, transcript.threads),
+    [transcript.rows, transcript.threads]
   )
-  const messageListRef = useRef<HTMLDivElement>(null)
-  const [messageViewportHeight, setMessageViewportHeight] = useState(0)
+  const rowsById = useMemo(() => new Map(transcript.rows.map((row) => [row.messageId, row])), [transcript.rows])
+  const threadById = useMemo(
+    () => new Map(transcript.threads.map((thread) => [thread.threadId, thread])),
+    [transcript.threads]
+  )
+  const [highlighted, setHighlighted] = useState<string | null>(null)
   const [isNewMessage, setIsNewMessage] = useState(false)
-  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null)
-  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const windowGeometryChanged = useRef(false)
-  const [windowStart, setWindowStart] = useState<{
-    ready: boolean
-    entry?: WindowScrollEntry
-    position?: ReturnType<typeof resolveWindowScrollPosition>
-  }>(() => {
-    const entry = windowKey ? getWindowScrollPosition(currentSession.id) : undefined
-    return { ready: !entry, entry }
-  })
-  const latestWindow = useRef({
-    key: windowKey,
-    renderItems,
-    widthFull,
-    isSmallScreen,
-    isNewMessage,
-    generating: sessionLocks.anyReplyGenerating,
-  })
-  useLayoutEffect(() => {
-    latestWindow.current = {
-      key: windowKey,
-      renderItems,
-      widthFull,
-      isSmallScreen,
-      isNewMessage,
-      generating: sessionLocks.anyReplyGenerating,
-    }
-  }, [windowKey, renderItems, widthFull, isSmallScreen, isNewMessage, sessionLocks.anyReplyGenerating])
-
-  // A transcript window with no position left to restore belongs at its tail — but only when that
-  // tail is the conversation end, and only when the reader it saved was following it. A reader that
-  // stopped mid-conversation keeps the ordinary fallback even once its anchor message is gone.
-  const windowBelongsAtTail = !!props.transcript && !props.hasNewer && (windowStart.entry?.following ?? true)
-
-  useLayoutEffect(() => {
-    if (windowStart.ready) return
-    // Virtuoso consumes measured ranges on mount. Validate a warm candidate against the actual
-    // viewport before mounting the list; a cold window can begin its normal measurement immediately.
-    const container = messageListRef.current
-    const layout = container && readWindowLayout(container, widthFull, isSmallScreen)
-    const position = resolveWindowScrollPosition(windowStart.entry, windowKey, layout ?? '', renderItems)
-    if (position) {
-      if ('snapshot' in position && position.following) smoothFollowOutput.resume()
-      else smoothFollowOutput.pause()
-      if (windowStart.entry)
-        viewportAnchorRef.current = {
-          messageId: windowStart.entry.anchor.messageId,
-          offset: 'snapshot' in position ? windowStart.entry.anchor.offset : 0,
-        }
-    } else if (windowBelongsAtTail) {
-      // Nothing is left to restore, so the mount below sends this window to its end. Follow has to
-      // be active before that happens: the window measures itself before Virtuoso can report being
-      // at the bottom, and the height handler only holds the view at the end while following.
-      smoothFollowOutput.resume()
-    }
-    // The entry stays on the state: Virtuoso only mounts once the window is ready, and the
-    // mount position below still needs to know whether the saved reader was following the tail.
-    setWindowStart({ ready: true, entry: windowStart.entry, position })
-  }, [windowStart, windowKey, renderItems, widthFull, isSmallScreen, smoothFollowOutput, windowBelongsAtTail])
-
-  useLayoutEffect(() => {
-    if (isCompleteSession || !windowStart.ready) return
-    const handle = virtuoso.current
-    const container = messageListRef.current
-    let valid = true
-    const unsubscribe = observeWindowScrollInvalidation(currentSession.id, () => {
-      valid = false
-    })
-    return () => {
-      unsubscribe()
-      discardWindowScrollPosition(currentSession.id)
-      const current = latestWindow.current
-      if (!valid || !handle || !container || !current.key || current.isNewMessage || current.generating) return
-      const key = current.key
-      const scroller = container.querySelector<HTMLElement>('[data-virtuoso-scroller]')
-      const layout = readWindowLayout(container, current.widthFull, current.isSmallScreen)
-      const anchor = readWindowAnchor(container, current.renderItems)
-      if (!scroller || !layout || !anchor) return
-      const scrollTop = scroller.scrollTop
-      const following = smoothFollowOutput.isFollowing()
-      if (following && scroller.scrollHeight - scroller.clientHeight - scrollTop > 4) return
-      const save = (snapshot: StateSnapshot | null) =>
-        saveWindowScrollPosition({ version: 1, key, layout, anchor, snapshot, following })
-      if (windowGeometryChanged.current || key.signature === null) {
-        save(null)
-        return
-      }
-      handle.getState((state) => {
-        const snapshot = boundedWindowSnapshot(state, current.renderItems.length)
-        if (!snapshot || Math.abs(snapshot.scrollTop - scrollTop) > 4) return
-        save(snapshot)
-      })
-    }
-  }, [isCompleteSession, windowStart.ready, currentSession.id, smoothFollowOutput, props.windowPosition?.id])
-
-  const setMessageListElement = useUIStore((s) => s.setMessageListElement)
-  const setTranscriptNavigation = useUIStore((s) => s.setTranscriptNavigation)
-
-  // message navigation handlers
-  const [messageNavigationVisible, setMessageNavigationVisible] = useState(false)
-  const handleMessageNavigationVisibleChanged = useCallback((v: boolean) => setMessageNavigationVisible(v), [])
-
-  const handleScrollToTop = useCallback(() => {
-    if (props.onNavigate?.({ kind: 'head' })) return
-    smoothFollowOutput.pause()
-    if (props.hasOlder) {
-      if (props.onJumpToEdge) props.onJumpToEdge('head')
-      else props.onRequireComplete?.()
-      return
-    }
-    // Virtualized rows change height as they mount; an animated jump can be interrupted by those measurements.
-    virtuoso.current?.scrollTo({ top: 0, behavior: 'auto' })
-  }, [smoothFollowOutput, props.hasOlder, props.onJumpToEdge, props.onRequireComplete, props.onNavigate])
-
-  const handleScrollToBottom = useCallback(() => {
-    if (props.onNavigate?.({ kind: 'tail' })) return
-    if (props.hasNewer) {
-      props.onJumpToEdge?.('tail')
-      return
-    }
-    smoothFollowOutput.resume()
-    virtuoso.current?.scrollTo({ top: Infinity, behavior: 'smooth' })
-  }, [smoothFollowOutput, props.hasNewer, props.onJumpToEdge, props.onNavigate])
-
-  useLayoutEffect(() => {
-    if (!props.windowPosition) return
-    if (props.windowPosition.edge === 'head') smoothFollowOutput.pause()
-    else smoothFollowOutput.resume()
-  }, [props.windowPosition, smoothFollowOutput])
-
-  const handleMinimapJump = useCallback(
-    (anchor: MessageMinimapAnchor) => {
-      if (props.onNavigate?.({ kind: 'message', messageId: anchor.messageId })) return
-      smoothFollowOutput.pause()
-      virtuoso.current?.scrollToIndex({ index: anchor.itemIndex, align: 'start', behavior: 'smooth' })
-    },
-    [smoothFollowOutput, props.onNavigate]
-  )
-
-  const navigateToItem = useCallback(
-    (index: number) => {
-      const message = renderItems[index]?.messages.find(isUserNavigationMessage) ?? renderItems[index]?.messages[0]
-      if (message && props.onNavigate?.({ kind: 'message', messageId: message.id })) return
-      virtuoso.current?.scrollToIndex({ index, align: 'start', behavior: 'smooth' })
-    },
-    [renderItems, props.onNavigate]
-  )
-
-  const handleScrollToPrev = useCallback(() => {
-    smoothFollowOutput.pause()
-    if (messageListRef?.current && virtuoso?.current) {
-      const containerRect = messageListRef.current.getBoundingClientRect()
-      for (let i = 0; i < renderItems.length; i++) {
-        // 此处原本判断 role 的逻辑已在 renderItems 中处理
-        const msgElement = messageListRef.current.querySelector(
-          `[data-testid="virtuoso-item-list"] > [data-index="${i}"]`
-        )
-        if (msgElement) {
-          const rect = msgElement.getBoundingClientRect()
-          // 找到第一个出现在可视区域顶部的元素，滚动到上一条用户消息
-          // +2 tolerance: smooth scroll + virtuoso height estimation can leave
-          // the previous element's bottom a sub-pixel into the viewport,
-          // causing the anchor to land one item too early.
-          if (rect.bottom > containerRect.top + 2) {
-            // If the current element's top is scrolled above the viewport and it
-            // contains a user message (e.g. a long assistant response in a group),
-            // scroll to the top of THIS element first to bring the question back.
-            if (rect.top < containerRect.top - 2 && renderItems[i].messages.some(isUserNavigationMessage)) {
-              navigateToItem(i)
-              return
-            }
-            for (let j = i - 1; j >= 0; j--) {
-              if (renderItems[j].messages.some(isUserNavigationMessage)) {
-                navigateToItem(j)
-                return
-              }
-            }
-            // 没有上一条用户消息了，滚动到顶部
-            navigateToItem(0)
-            return
-          }
-        }
-      }
-    }
-  }, [renderItems, smoothFollowOutput, navigateToItem, props.onNavigate])
-
-  const handleScrollToNext = useCallback(() => {
-    smoothFollowOutput.pause()
-    if (messageListRef?.current && virtuoso?.current) {
-      const containerRect = messageListRef.current.getBoundingClientRect()
-      for (let i = 0; i < renderItems.length; i++) {
-        const msgElement = messageListRef.current.querySelector(
-          `[data-testid="virtuoso-item-list"] > [data-index="${i}"]`
-        )
-        if (msgElement) {
-          const rect = msgElement.getBoundingClientRect()
-          // 找到第一个出现在可视区域顶部的元素，滚动到下一条用户消息
-          // +2 tolerance: see handleScrollToPrev comment
-          if (rect.bottom > containerRect.top + 2) {
-            for (let j = i + 1; j < renderItems.length; j++) {
-              if (renderItems[j].messages.some(isUserNavigationMessage)) {
-                navigateToItem(j)
-                return
-              }
-            }
-            // 没有下一条用户消息了，滚动到底部
-            if (props.onNavigate?.({ kind: 'tail' })) return
-            virtuoso.current.scrollToIndex({ index: renderItems.length - 1, align: 'end', behavior: 'smooth' })
-            return
-          }
-        }
-      }
-    }
-  }, [renderItems, smoothFollowOutput, navigateToItem, props.onNavigate])
-
+  const [viewportHeight, setViewportHeight] = useState(0)
   const [atBottom, setAtBottom] = useState(false)
   const [atTop, setAtTop] = useState(false)
-
   const [showScrollToPrev, setShowScrollToPrev] = useState(false)
   const lastScrollTop = useRef<number>()
   const lastMaxScrollTop = useRef<number>()
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current)
-      }
-      if (highlightTimerRef.current) {
-        clearTimeout(highlightTimerRef.current)
-      }
-    }
-  }, [])
-
+  const scrollNavigationTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(
+    () => () => {
+      if (scrollNavigationTimer.current) clearTimeout(scrollNavigationTimer.current)
+    },
+    []
+  )
   const handleScrollTopThrottled = useThrottledCallback((scrollTop: number, maxScrollTop: number) => {
-    if (typeof scrollTop === 'number' && typeof lastScrollTop.current === 'number') {
-      // A taller scrollport can clamp the bottom position without an upward navigation gesture.
+    if (typeof lastScrollTop.current === 'number') {
       const layoutShrank = isLayoutClampedScroll(
         lastScrollTop.current,
         lastMaxScrollTop.current,
         scrollTop,
         maxScrollTop
       )
+      if (scrollNavigationTimer.current) {
+        clearTimeout(scrollNavigationTimer.current)
+        scrollNavigationTimer.current = null
+      }
       if (scrollTop > 0 && scrollTop < lastScrollTop.current && !layoutShrank) {
-        // 是向上滚动
         setShowScrollToPrev(true)
-        if (timerRef.current) {
-          clearTimeout(timerRef.current)
-          timerRef.current = null
-        }
-        timerRef.current = setTimeout(() => setShowScrollToPrev(false), 3000)
+        scrollNavigationTimer.current = setTimeout(() => setShowScrollToPrev(false), 3000)
       } else {
         setShowScrollToPrev(false)
-        if (timerRef.current) {
-          clearTimeout(timerRef.current)
-          timerRef.current = null
-        }
       }
     }
     lastScrollTop.current = scrollTop
     lastMaxScrollTop.current = maxScrollTop
   }, 256)
-
-  const handleScroll = useCallback<UIEventHandler>(
-    (e) => {
-      const scrollTop = e.currentTarget.scrollTop
-      const maxScrollTop = e.currentTarget.scrollHeight - e.currentTarget.clientHeight
-      if (props.hasNewer) {
-        smoothFollowOutput.pause()
-        setAtBottom(false)
-      } else if (smoothFollowOutput.handleScroll(scrollTop, maxScrollTop)) {
-        setAtBottom(false)
-      } else if (smoothFollowOutput.isFollowing()) {
-        setAtBottom(true)
-      }
-      if (e.currentTarget.scrollHeight - (scrollTop + e.currentTarget.clientHeight) >= 0) {
-        handleScrollTopThrottled(scrollTop, maxScrollTop)
-      }
-      // Rendered ranges include overscan. Preserve only the item intersecting
-      // the viewport and its pixel offset when this view needs complete data.
-      const container = messageListRef.current
-      if (!isCompleteSession && container) {
-        const anchor = readWindowAnchor(container, renderItems)
-        if (anchor) viewportAnchorRef.current = anchor
-      }
-    },
-    [handleScrollTopThrottled, isCompleteSession, renderItems, smoothFollowOutput, props.hasNewer]
-  )
-  // message navigation handlers end
-
+  const [showNavigation, setShowNavigation] = useState(false)
+  const progress = useRef(0)
+  const userDirection = useRef<'older' | 'newer' | null>(null)
+  const touchY = useRef<number | null>(null)
+  const scrollbarPointer = useRef<{ pointerId: number; scrollTop: number } | null>(null)
+  const browseOperation = useRef({ controller, requestId: 0, paging: false })
+  const synchronizeBrowseIntent = useCallback(() => {
+    const operation = controller.getSnapshot().operation
+    const paging =
+      !!operation && operation.phase !== 'error' && (operation.kind === 'older' || operation.kind === 'newer')
+    if (browseOperation.current.paging && !paging) userDirection.current = null
+    browseOperation.current.paging = paging
+    const explicit = operation && ['open', 'navigate', 'branch'].includes(operation.kind)
+    if (
+      browseOperation.current.controller === controller &&
+      (!explicit || browseOperation.current.requestId === operation.requestId)
+    )
+      return
+    browseOperation.current = { controller, requestId: explicit ? operation.requestId : 0, paging }
+    userDirection.current = null
+    touchY.current = null
+    scrollbarPointer.current = null
+  }, [controller])
   useLayoutEffect(() => {
-    const container = messageListRef.current
-    if ((!isCompleteSession && !windowStart.ready) || !container || !virtuoso.current) return
-    let active = true
-    const navigation: TranscriptNavigation = {
-      owner: navigationOwner,
-      sessionId: currentSession.id,
-      view: isCompleteSession ? 'complete' : 'window',
-      scrollToIndex(location) {
-        const handle = virtuoso.current
-        if (
-          !active ||
-          !handle ||
-          !container.isConnected ||
-          messageListRef.current !== container ||
-          uiStore.getState().transcriptNavigation !== navigation ||
-          container.dataset.sessionId !== navigation.sessionId ||
-          container.dataset.sessionView !== navigation.view
+    synchronizeBrowseIntent()
+    return controller.subscribe(synchronizeBrowseIntent)
+  }, [controller, synchronizeBrowseIntent])
+  const live = useRef({ transcript, items, rowsById })
+  live.current = { transcript, items, rowsById }
+  const scrollToPosition = useCallback((location: Parameters<VirtuosoHandle['scrollTo']>[0]) => {
+    virtuoso.current?.scrollTo(location)
+    if (scrollbarPointer.current && scroller.current) scrollbarPointer.current.scrollTop = scroller.current.scrollTop
+  }, [])
+  const scrollToItem = useCallback(
+    (
+      index: number,
+      align: 'start' | 'end' | 'center' = 'start',
+      behavior: 'auto' | 'smooth' = 'auto',
+      isCurrent: () => boolean = () => true
+    ) => {
+      const list = virtuoso.current
+      const viewport = scroller.current
+      if (list && viewport)
+        scrollToTranscriptItem(
+          { scrollIntoView: (request) => list.scrollIntoView(request), scrollTo: scrollToPosition },
+          viewport,
+          index,
+          align,
+          behavior,
+          isCurrent
         )
-          return false
-        if (location.index === 'LAST') smoothFollowOutput.resume()
-        else smoothFollowOutput.pause()
-        handle.scrollToIndex(location)
+    },
+    [scrollToPosition]
+  )
+  const follow = useMemo(
+    () =>
+      createSmoothFollowOutputController({
+        scrollToBottom: (behavior) => {
+          const element = scroller.current
+          if (element) scrollToPosition({ top: Math.max(0, element.scrollHeight - element.clientHeight), behavior })
+        },
+        stopScrolling: (top) => scrollToPosition({ top, behavior: 'auto' }),
+      }),
+    [scrollToPosition]
+  )
+  useEffect(() => () => follow.dispose(), [follow])
+  const scrollByGeometry = useCallback((delta: number) => {
+    virtuoso.current?.scrollBy({ top: delta, behavior: 'auto' })
+    if (scrollbarPointer.current && scroller.current) scrollbarPointer.current.scrollTop = scroller.current.scrollTop
+  }, [])
+  const contentAnchor = useMemo(
+    () =>
+      createTranscriptContentAnchor({
+        viewport: () => scroller.current,
+        suspended: () =>
+          !!controller.getSnapshot().layout || !!controller.getSnapshot().operation || follow.isFollowing(),
+        scrollBy: scrollByGeometry,
+      }),
+    [controller, follow, scrollByGeometry]
+  )
+  useLayoutEffect(() => {
+    if (container.current) contentAnchor.connect(container.current)
+    return () => contentAnchor.disconnect()
+  }, [contentAnchor, transcript.windowEpoch])
+  useEffect(() => {
+    if (!highlighted) return
+    const timer = setTimeout(() => setHighlighted(null), 2500)
+    return () => clearTimeout(timer)
+  }, [highlighted])
+
+  const messageElement = useCallback((id: string) => {
+    const elements = container.current?.querySelectorAll<HTMLElement>('[data-transcript-message]')
+    return elements ? Array.from(elements).find((element) => element.dataset.transcriptMessage === id) : undefined
+  }, [])
+  const captureAnchor = useCallback((): SessionTranscriptViewportAnchor | null => {
+    const block = contentAnchor.capture()
+    const blockRow = block?.messageId ? live.current.rowsById.get(block.messageId) : undefined
+    if (block && blockRow) return { ...block, threadId: blockRow.threadId }
+    const viewport = scroller.current?.getBoundingClientRect()
+    const elements = container.current?.querySelectorAll<HTMLElement>('[data-transcript-message]')
+    if (!viewport || !elements) return null
+    for (const element of Array.from(elements)) {
+      const bounds = element.getBoundingClientRect()
+      if (bounds.bottom <= viewport.top || bounds.top >= viewport.bottom) continue
+      const row = live.current.rowsById.get(element.dataset.transcriptMessage ?? '')
+      if (row) return { threadId: row.threadId, messageId: row.messageId, offset: bounds.top - viewport.top }
+    }
+    return null
+  }, [contentAnchor])
+  const navigate = useCallback(
+    (origin: 'head' | 'tail' | { messageId: string }) => {
+      if (origin !== 'tail') follow.pause()
+      if (typeof origin === 'object') setHighlighted(origin.messageId)
+      return controller.navigate(origin)
+    },
+    [controller, follow]
+  )
+  useImperativeHandle(
+    ref,
+    () => ({
+      captureAnchor,
+      scrollToTop: () => {
+        void navigate('head')
+      },
+      scrollToBottom: () => {
+        void navigate('tail')
+      },
+      scrollToMessage: (messageId) => navigate({ messageId }),
+      setIsNewMessage,
+    }),
+    [captureAnchor, navigate]
+  )
+  useEffect(() => {
+    uiStore.getState().setMessageListElement(container)
+    uiStore.getState().setTranscriptNavigation({
+      owner,
+      sessionId: session.id,
+      navigateMessage: async (messageId) => {
+        follow.pause()
+        setHighlighted(messageId)
+        return controller.navigate({ messageId })
+      },
+      openSearch: async (messageId) => {
+        follow.pause()
+        setHighlighted(messageId)
+        return controller.openSearch(messageId)
+      },
+      viewThread: async (threadId) => {
+        follow.pause()
+        return controller.viewThread(threadId)
+      },
+      scrollToIndex: ({ index, align, behavior }) => {
+        if (index === 0 || index === 'LAST') navigate(index === 0 ? 'head' : 'tail')
+        else if (virtuoso.current && scroller.current) scrollToItem(index, align, behavior)
         return true
       },
-    }
-    setTranscriptNavigation(navigation)
+    })
     return () => {
-      active = false
-      if (uiStore.getState().transcriptNavigation === navigation) setTranscriptNavigation(null)
+      if (uiStore.getState().transcriptNavigation?.owner === owner) {
+        uiStore.getState().setTranscriptNavigation(null)
+        uiStore.getState().setMessageListElement(null)
+      }
     }
-  }, [
-    currentSession.id,
-    isCompleteSession,
-    navigationOwner,
-    setTranscriptNavigation,
-    smoothFollowOutput,
-    windowStart.ready,
-  ])
+  }, [owner, session.id, controller, follow, navigate, scrollToItem])
 
-  useEffect(() => {
-    const currentVirtuoso = virtuoso.current // 清理时 virtuoso.current 已经为 null
-    return () => {
-      if (!isCompleteSession) return
-      currentVirtuoso?.getState((state) => {
-        if (state.ranges.length > 0) {
-          // useEffect 可能执行两次，这里根据 ranges 判断是否为第一次 useEffect 严格测试导致的执行
-          setScrollPosition(currentSession.id, state)
+  const layoutFrame = useRef<number | null>(null)
+  const layoutDeadline = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const applying = useRef<number | null>(null)
+  const layoutCorrection = useCallback(
+    (anchor: SessionTranscriptViewportAnchor) => {
+      const element = anchor.messageId ? messageElement(anchor.messageId) : null
+      const viewport = scroller.current
+      if (!element || !viewport) return null
+      return (
+        (anchor.blockId ? contentAnchor.correction(anchor) : null) ??
+        element.getBoundingClientRect().top - viewport.getBoundingClientRect().top - contentAnchor.messageOffset(anchor)
+      )
+    },
+    [contentAnchor, messageElement]
+  )
+  const userInput = useCallback(
+    (scrollDelta = 0) => {
+      const state = controller.getSnapshot()
+      const layout = state.layout
+      if (layout && state.firstWindowReady) {
+        let canYield = layout.kind !== 'preserve'
+        if (layout.kind === 'preserve') {
+          const anchor = shiftTranscriptContentAnchor(
+            { ...layout.anchor, offset: 'offset' in layout.anchor ? layout.anchor.offset : 0 },
+            scrollDelta
+          )
+          const correction = layoutCorrection(anchor)
+          if (correction !== null) {
+            if (Math.abs(correction) > 0.5) scrollByGeometry(correction)
+            contentAnchor.adopt(anchor)
+            canYield = true
+          }
         }
-      })
+        if (canYield) {
+          if (layoutFrame.current !== null) cancelAnimationFrame(layoutFrame.current)
+          if (layoutDeadline.current !== null) clearTimeout(layoutDeadline.current)
+          layoutFrame.current = null
+          layoutDeadline.current = null
+          applying.current = null
+          controller.cancelLayout(layout.requestId)
+        }
+      }
+      contentAnchor.onUserInput()
+    },
+    [controller, contentAnchor, layoutCorrection, scrollByGeometry]
+  )
+  const applyLayout = useCallback(() => {
+    const layout = live.current.transcript.layout
+    if (!layout || applying.current === layout.requestId || !scroller.current || !virtuoso.current) return
+    const currentItems = live.current.items
+    if (
+      currentItems.some((item) => item.messages.length) &&
+      !container.current?.querySelector('[data-transcript-message]')
+    )
+      return
+    if (layoutFrame.current !== null) cancelAnimationFrame(layoutFrame.current)
+    if (layoutDeadline.current !== null) clearTimeout(layoutDeadline.current)
+    applying.current = layout.requestId
+    const isCurrent = () => controller.getSnapshot().layout?.requestId === layout.requestId
+    const index = layout.anchor.messageId
+      ? currentItems.findIndex((item) => item.messages.some((message) => message.id === layout.anchor.messageId))
+      : -1
+    if (layout.kind === 'tail') {
+      follow.resume()
+      if (currentItems.length && !lastItem.current) scrollToItem(currentItems.length - 1, 'end', 'auto', isCurrent)
+    } else {
+      follow.pause()
+      if (layout.kind === 'head' || index < 0) scrollToPosition({ top: 0, behavior: 'auto' })
+      else if (!layout.anchor.messageId || !messageElement(layout.anchor.messageId))
+        scrollToItem(index, 'start', 'auto', isCurrent)
     }
-  }, [isCompleteSession, currentSession.id])
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 仅执行一次
+    let stableAnchorFrames = 0
+    let previousAnchorHeight = -1
+    let stableTailFrames = 0
+    let previousTailHeight = -1
+    layoutDeadline.current = setTimeout(() => {
+      if (layoutFrame.current !== null) cancelAnimationFrame(layoutFrame.current)
+      applying.current = null
+      controller.rejectLayout(layout.requestId, new Error('Message layout is unavailable'))
+    }, 5000)
+    const finish = () => {
+      if (live.current.transcript.layout?.requestId !== layout.requestId) {
+        applying.current = null
+        return
+      }
+      const element = layout.anchor.messageId ? messageElement(layout.anchor.messageId) : null
+      const viewport = scroller.current
+      if (!viewport) {
+        applying.current = null
+        return
+      }
+      if ((layout.kind === 'anchor' || layout.kind === 'preserve') && index >= 0) {
+        if (!element) {
+          if (virtuoso.current) scrollToItem(index, 'start', 'auto', isCurrent)
+          layoutFrame.current = requestAnimationFrame(finish)
+          return
+        }
+        const offset = 'offset' in layout.anchor ? layout.anchor.offset : 0
+        const blockAnchor =
+          'blockId' in layout.anchor && layout.anchor.blockId
+            ? {
+                messageId: layout.anchor.messageId,
+                blockId: layout.anchor.blockId,
+                offset,
+                messageOffset: layout.anchor.messageOffset,
+              }
+            : null
+        const correction =
+          (blockAnchor ? contentAnchor.correction(blockAnchor) : null) ??
+          element.getBoundingClientRect().top -
+            viewport.getBoundingClientRect().top -
+            (blockAnchor ? contentAnchor.messageOffset(blockAnchor) : offset)
+        const targetBounds = element.getBoundingClientRect()
+        const viewportBounds = viewport.getBoundingClientRect()
+        const targetVisible = blockAnchor
+          ? contentAnchor.isVisible(blockAnchor)
+          : targetBounds.bottom > viewportBounds.top && targetBounds.top < viewportBounds.bottom
+        const settled = transcriptAnchorLayoutSettled(viewport, correction, targetVisible)
+        stableAnchorFrames = settled && previousAnchorHeight === viewport.scrollHeight ? stableAnchorFrames + 1 : 0
+        previousAnchorHeight = viewport.scrollHeight
+        if (!settled) scrollByGeometry(correction)
+        if (stableAnchorFrames < 2) {
+          layoutFrame.current = requestAnimationFrame(finish)
+          return
+        }
+      } else if (layout.kind === 'tail') {
+        const tail = lastItem.current
+        const bounds = viewport.getBoundingClientRect()
+        const tailBounds = tail?.getBoundingClientRect()
+        const maxTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight)
+        const tailVisible =
+          !currentItems.length ||
+          (tailBounds && tailBounds.bottom > bounds.top && tailBounds.bottom <= bounds.bottom + 2)
+        const settled = viewport.clientHeight > 0 && tailVisible && Math.abs(viewport.scrollTop - maxTop) <= 2
+        stableTailFrames = settled && previousTailHeight === viewport.scrollHeight ? stableTailFrames + 1 : 0
+        previousTailHeight = viewport.scrollHeight
+        if (stableTailFrames < 2) {
+          if (!settled) {
+            if (!tail && currentItems.length) scrollToItem(currentItems.length - 1, 'end', 'auto', isCurrent)
+            else scrollToPosition({ top: maxTop, behavior: 'auto' })
+          }
+          layoutFrame.current = requestAnimationFrame(finish)
+          return
+        }
+      }
+      const acknowledge = () => {
+        if (live.current.transcript.layout?.requestId !== layout.requestId) return
+        if (layoutDeadline.current !== null) clearTimeout(layoutDeadline.current)
+        layoutDeadline.current = null
+        applying.current = null
+        if (scrollbarPointer.current && scroller.current)
+          scrollbarPointer.current.scrollTop = scroller.current.scrollTop
+        if (scroller.current)
+          follow.syncScrollPosition(
+            scroller.current.scrollTop,
+            Math.max(0, scroller.current.scrollHeight - scroller.current.clientHeight)
+          )
+        controller.acknowledgeLayout(layout.requestId)
+        contentAnchor.adopt(layout.kind === 'preserve' && 'offset' in layout.anchor ? layout.anchor : null)
+      }
+      if (layout.kind === 'tail' || ((layout.kind === 'anchor' || layout.kind === 'preserve') && index >= 0))
+        acknowledge()
+      else layoutFrame.current = requestAnimationFrame(acknowledge)
+    }
+    layoutFrame.current = requestAnimationFrame(finish)
+  }, [controller, follow, messageElement, contentAnchor, scrollByGeometry, scrollToPosition, scrollToItem])
+  useLayoutEffect(() => {
+    applyLayout()
+  }, [transcript.layout, items, applyLayout])
+  useEffect(
+    () => () => {
+      if (layoutFrame.current !== null) cancelAnimationFrame(layoutFrame.current)
+      if (layoutDeadline.current !== null) clearTimeout(layoutDeadline.current)
+    },
+    []
+  )
   useEffect(() => {
-    setMessageListElement(messageListRef)
+    const release = (event: PointerEvent) => {
+      if (scrollbarPointer.current?.pointerId === event.pointerId) scrollbarPointer.current = null
+    }
+    document.addEventListener('pointerup', release)
+    document.addEventListener('pointercancel', release)
+    return () => {
+      scrollbarPointer.current = null
+      document.removeEventListener('pointerup', release)
+      document.removeEventListener('pointercancel', release)
+    }
   }, [])
-
-  useEffect(() => {
-    return () => smoothFollowOutput.dispose()
-  }, [smoothFollowOutput])
-
-  useEffect(() => {
-    const element = messageListRef.current
-    if (!element) {
+  const loadAtEdge = useCallback(
+    (direction: 'older' | 'newer') => {
+      synchronizeBrowseIntent()
+      if (userDirection.current !== direction || !progress.current) return
+      const state = controller.getSnapshot()
+      if (state.operation || state.layout) return
+      if (direction === 'older' && state.hasOlder) void controller.loadOlder(progress.current)
+      if (direction === 'newer' && state.hasNewer) void controller.loadNewer(progress.current)
+    },
+    [controller, synchronizeBrowseIntent]
+  )
+  const onScroll = useCallback(() => {
+    synchronizeBrowseIntent()
+    const element = scroller.current
+    if (!element) return
+    reportedScrollTop.current = element.scrollTop
+    const pointer = scrollbarPointer.current
+    const delta = pointer ? element.scrollTop - pointer.scrollTop : 0
+    if (pointer) pointer.scrollTop = element.scrollTop
+    if (delta && controller.getSnapshot().layout) userInput(delta)
+    if (controller.getSnapshot().layout) {
+      contentAnchor.onScroll()
       return
     }
-
-    const updateViewportHeight = () => {
-      setMessageViewportHeight(element.clientHeight)
+    if (delta) {
+      progress.current++
+      userDirection.current = delta < 0 ? 'older' : 'newer'
+      if (delta < 0) follow.pause()
     }
-
-    updateViewportHeight()
-
-    if (typeof ResizeObserver === 'undefined') {
-      window.addEventListener('resize', updateViewportHeight)
-      return () => {
-        window.removeEventListener('resize', updateViewportHeight)
+    follow.handleScroll(element.scrollTop, Math.max(0, element.scrollHeight - element.clientHeight))
+    const maxScrollTop = element.scrollHeight - element.clientHeight
+    if (maxScrollTop - element.scrollTop >= 0) handleScrollTopThrottled(element.scrollTop, maxScrollTop)
+    contentAnchor.onScroll()
+    if (element.scrollTop < 160) loadAtEdge('older')
+    if (element.scrollHeight - element.clientHeight - element.scrollTop < 160) loadAtEdge('newer')
+  }, [controller, follow, loadAtEdge, contentAnchor, userInput, synchronizeBrowseIntent, handleScrollTopThrottled])
+  useEffect(() => {
+    if (transcript.firstWindowReady && transcript.hasNewer && follow.isFollowing() && !transcript.operation)
+      navigate('tail')
+  }, [transcript.firstWindowReady, transcript.hasNewer, transcript.operation, navigate, follow])
+  const previousRowCount = useRef(transcript.rows.length)
+  useLayoutEffect(() => {
+    if (!transcript.layout && isNewMessage && transcript.rows.length > previousRowCount.current) {
+      const index = items.findIndex((item) => item.messages[0]?.id === headerRead.summary.lastUserMessageId)
+      if (index >= 0) {
+        follow.pause()
+        if (virtuoso.current && scroller.current) scrollToItem(index)
       }
     }
-
-    const observer = new ResizeObserver(() => {
-      updateViewportHeight()
-    })
-
-    observer.observe(element)
-
-    return () => {
-      observer.disconnect()
-    }
-  }, [])
-
-  const platformType = useAtomValue(platformTypeAtom)
-
-  // Work Mode drops the conversation's system prompt when building the request —
-  // identity comes from the frozen Soul — so showing it would misrepresent what the
-  // model receives, whatever the display setting says.
-  const hideSystemPrompt = hideSystemPromptMessage || !isActionAvailableInMode('session-system-prompt', sessionMode)
-  const showThreadHistory = isThreadHistoryAvailable(completeSession ?? {}, sessionMode)
-
-  const renderMessageBlock = useCallback(
-    (msg: SessionMessage, options: { isFirstItem: boolean; isLastItem: boolean }) => {
-      // Keep system messages in renderItems so thread anchors and Virtuoso indices stay stable.
-      const shouldHideSystemPrompt = hideSystemPrompt && msg.role === 'system'
-      const thread = showThreadHistory ? currentThreadHash[msg.id] : undefined
-      // Saved alternatives stay inside the pivot block (newest-first in ForkGroup), so the active
-      // branch appears last. Forks can pivot on a system message ("Reply Again Below", first-reply
-      // retries), so the switcher must stay reachable even while the system prompt is hidden.
-      const forkGroup = completeSession?.messageForksHash?.[msg.id] &&
-        completeSession.messageForksHash[msg.id].lists.length > 1 && (
-          <ForkGroup
-            sessionId={currentSession.id}
-            sessionType={currentSession.type || 'chat'}
-            msgId={msg.id}
-            forks={completeSession.messageForksHash[msg.id]}
-            sessionLocks={sessionLocks}
+    previousRowCount.current = transcript.rows.length
+  }, [
+    transcript.rows,
+    transcript.layout,
+    items,
+    isNewMessage,
+    headerRead.summary.lastUserMessageId,
+    follow,
+    scrollToItem,
+  ])
+  const jumpUser = useCallback(
+    (direction: 'older' | 'newer') => {
+      const state = controller.getSnapshot()
+      if (!state.firstWindowReady || (state.operation && state.operation.phase !== 'error') || state.layout) return
+      const anchor = captureAnchor()
+      const current = state.rows.findIndex((row) => row.messageId === anchor?.messageId)
+      if (current < 0) return
+      const currentRow = state.rows[current]
+      const currentElement = messageElement(currentRow.messageId)
+      const currentTop =
+        currentElement && scroller.current
+          ? currentElement.getBoundingClientRect().top - scroller.current.getBoundingClientRect().top
+          : 0
+      const includeCurrent = direction === 'older' && currentTop < -1
+      const candidates =
+        direction === 'older'
+          ? state.rows.slice(0, current + (includeCurrent ? 1 : 0)).reverse()
+          : state.rows.slice(current + 1)
+      const target = candidates.find((row) => row.message.role === 'user' && !row.message.isSummary)
+      if (!target) return
+      const index = live.current.items.findIndex((item) =>
+        item.messages.some((message) => message.id === target.messageId)
+      )
+      if (index < 0) return
+      follow.pause()
+      userDirection.current = null
+      touchY.current = null
+      scrollbarPointer.current = null
+      contentAnchor.onUserInput()
+      setHighlighted(target.messageId)
+      virtuoso.current?.scrollToIndex({ index, align: 'start', behavior: 'smooth' })
+    },
+    [captureAnchor, controller, follow, contentAnchor, messageElement]
+  )
+  const shouldConfirmPromptCacheDelete = useCallback(
+    (messageId: string, target: PromptCacheDeleteTarget) =>
+      rendererApplication.sessions.shouldConfirmPromptCacheDelete(session.id, messageId, target, {
+        mode: sessionMode,
+        maxContextMessageCount: session.settings?.maxContextMessageCount ?? globalMaxContextMessageCount,
+      }),
+    [session.id, session.settings?.maxContextMessageCount, sessionMode, globalMaxContextMessageCount]
+  )
+  const renderMessage = (message: SessionMessage, first: boolean, last: boolean) => {
+    const row = rowsById.get(message.id)!
+    const thread = threadById.get(row.threadId)
+    const showThread = row.messageId === thread?.rootMessageId
+    const hidden = hideSystemPrompt && message.role === 'system'
+    const spacing = first ? 'pt-4' : last ? '!pb-4' : ''
+    return (
+      <Stack key={message.id} gap={0} pt={message.role === 'user' ? 4 : 0} data-transcript-message={message.id}>
+        {showThread && (
+          <ThreadLabel
+            sessionId={session.id}
             sessionMode={sessionMode}
-            assistantAvatarKey={currentSession.assistantAvatarKey}
-            sessionPicUrl={currentSession.picUrl}
+            thread={{
+              id: row.threadId,
+              name: thread?.name ?? session.name,
+              createdAtLabel: thread && thread.seq >= 0 ? new Date(thread.createdAt).toLocaleString() : undefined,
+            }}
           />
-        )
-
-      if (shouldHideSystemPrompt) {
-        return (
-          <Stack key={msg.id} gap={0}>
-            {thread && (
-              <ThreadLabel
-                thread={thread}
-                sessionId={currentSession.id}
-                sessionMode={sessionMode}
-                currentThreadTarget={getCurrentThreadTarget(currentSession)}
-              />
-            )}
-            {/* Virtuoso items must keep a measurable height so their canonical message indices
-                remain stable; the placeholder also carries the first/last paddings the hidden
-                message would have contributed, keeping the visible transcript's spacing. */}
-            {!thread && (
-              <div
-                aria-hidden="true"
-                className={cn('h-px', options.isFirstItem && 'pt-4', options.isLastItem && 'pb-4')}
-              />
-            )}
-            {forkGroup}
-          </Stack>
-        )
-      }
-
-      return (
-        <Stack key={msg.id} gap={0} pt={msg.role === 'user' ? 4 : 0}>
-          {thread && (
-            <ThreadLabel
-              thread={thread}
-              sessionId={currentSession.id}
-              sessionMode={sessionMode}
-              currentThreadTarget={getCurrentThreadTarget(currentSession)}
-            />
-          )}
-          <ErrorBoundary name={`message-item`}>
-            {msg.isForkMarker ? (
-              <ForkMarkerMessage
-                sourceSessionId={msg.forkedFromSessionId}
-                className={options.isFirstItem ? 'pt-4' : options.isLastItem ? '!pb-4' : ''}
-              />
-            ) : msg.isSummary ? (
+        )}
+        {hidden ? (
+          <div className={cn('h-px', spacing)} aria-hidden="true" />
+        ) : (
+          <ErrorBoundary name="message-item">
+            {message.isForkMarker ? (
+              <ForkMarkerMessage sourceSessionId={message.forkedFromSessionId} className={spacing} />
+            ) : message.isSummary ? (
               <SummaryMessage
-                msg={msg}
-                className={options.isFirstItem ? 'pt-4' : options.isLastItem ? '!pb-4' : ''}
-                isLatestSummary={currentSession.type !== 'picture' && msg.id === latestSummaryMessageId}
+                msg={message}
+                sessionId={session.id}
+                sessionMode={sessionMode}
+                className={spacing}
+                isLatestSummary={message.id === headerRead.summary.lastSummaryMessageId}
+                highlighted={message.id === highlighted}
+                shouldConfirmPromptCacheDelete={shouldConfirmPromptCacheDelete}
                 onDelete={
-                  currentSession.type === 'picture'
+                  session.type === 'picture'
                     ? undefined
                     : () => {
                         const gate = getSessionActionGate('delete-summary', sessionLocks)
@@ -875,108 +638,61 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
                           void notifySessionLockBlocked(gate.reason, t)
                           return
                         }
-                        void removeMessage(currentSession.id, msg.id)
+                        void removeMessage(session.id, message.id)
                       }
                 }
-                sessionId={currentSession.id}
-                sessionMode={sessionMode}
-                shouldConfirmPromptCacheDelete={shouldConfirmPromptCacheDelete}
-                highlighted={msg.id === highlightedMessageId}
               />
             ) : (
               <Message
-                id={msg.id}
-                msg={msg}
-                sessionId={currentSession.id}
-                sessionType={currentSession.type || 'chat'}
-                readOnly={currentSession.type === 'picture'}
-                className={options.isFirstItem ? 'pt-4' : options.isLastItem ? '!pb-4' : ''}
-                collapseThreshold={msg.role === 'system' ? 150 : undefined}
-                buttonGroup={options.isLastItem && msg.role === 'assistant' ? 'always' : 'auto'}
+                id={message.id}
+                msg={message}
+                sessionId={session.id}
+                sessionType={session.type || 'chat'}
+                readOnly={session.type === 'picture'}
+                className={spacing}
+                collapseThreshold={message.role === 'system' ? 150 : undefined}
+                buttonGroup={last && message.role === 'assistant' ? 'always' : 'auto'}
                 sessionLocks={sessionLocks}
                 sessionMode={sessionMode}
                 shouldConfirmPromptCacheDelete={shouldConfirmPromptCacheDelete}
                 allowGeneratingStop
-                assistantAvatarKey={currentSession.assistantAvatarKey}
-                sessionPicUrl={currentSession.picUrl}
+                assistantAvatarKey={session.assistantAvatarKey}
+                sessionPicUrl={session.picUrl}
               />
             )}
           </ErrorBoundary>
-          {forkGroup}
-        </Stack>
-      )
-    },
-    [
-      currentSession,
-      completeSession,
-      currentThreadHash,
-      hideSystemPrompt,
-      sessionLocks,
-      sessionMode,
-      shouldConfirmPromptCacheDelete,
-      showThreadHistory,
-      latestSummaryMessageId,
-      highlightedMessageId,
-      t,
-    ]
-  )
-
-  useImperativeHandle(ref, () => ({
-    scrollToTop: (behavior = 'auto', source) => {
-      if (source !== 'replay' && props.onNavigate?.({ kind: 'head' })) return
-      smoothFollowOutput.pause()
-      if (props.hasOlder) {
-        if (props.onJumpToEdge) props.onJumpToEdge('head')
-        else props.onRequireComplete?.()
-        return
-      }
-      smoothFollowOutput.pause()
-      virtuoso.current?.scrollTo({ top: 0, behavior })
-    },
-    scrollToBottom: (behavior = 'auto', source) => {
-      if (source !== 'replay' && props.onNavigate?.({ kind: 'tail' })) return
-      if (props.hasNewer) {
-        props.onJumpToEdge?.('tail')
-        return
-      }
-      smoothFollowOutput.resume()
-      virtuoso.current?.scrollTo({ top: Infinity, behavior })
-    },
-    scrollToMessage: (messageId, behavior = 'smooth', source) => {
-      if (source !== 'replay' && props.onNavigate?.({ kind: 'message', messageId })) return true
-      const itemIndex = renderItems.findIndex((item) => item.messages.some((message) => message.id === messageId))
-      if (itemIndex < 0) {
-        props.onRequireComplete?.(messageId)
-        return Boolean(props.onRequireComplete)
-      }
-
-      smoothFollowOutput.pause()
-      setHighlightedMessageId(messageId)
-      if (highlightTimerRef.current) {
-        clearTimeout(highlightTimerRef.current)
-      }
-      highlightTimerRef.current = setTimeout(() => setHighlightedMessageId(null), 2500)
-      virtuoso.current?.scrollToIndex({ index: itemIndex, align: 'center', behavior })
-      return true
-    },
-    setIsNewMessage: (value: boolean) => setIsNewMessage(value),
-  }))
-
+        )}
+        {row.fork && row.fork.count > 1 && (
+          <ForkGroup
+            sessionId={session.id}
+            sessionType={session.type || 'chat'}
+            msgId={message.id}
+            fork={row.fork}
+            liveMessages={controls.data?.cancellableMessages ?? []}
+            sessionLocks={sessionLocks}
+            sessionMode={sessionMode}
+            assistantAvatarKey={session.assistantAvatarKey}
+            sessionPicUrl={session.picUrl}
+          />
+        )}
+      </Stack>
+    )
+  }
   return (
-    <div className={cn('w-full h-full mx-auto', isSmallScreen && 'flex flex-col', props.className)}>
+    <div className={cn('w-full h-full min-h-0 mx-auto flex flex-col', className)}>
       <BlockCodeCollapsedStateProvider defaultCollapsed={!!settingsStore.getState().autoCollapseCodeBlock}>
         {isSmallScreen && (
-          <Transition mounted={showScrollToPrev && (!atTop || !!props.hasOlder)} transition="fade">
+          <Transition mounted={showScrollToPrev && (!atTop || transcript.hasOlder)} transition="fade">
             {(transitionStyle) => (
               <Flex style={transitionStyle} className="shrink-0 leading-tight bg-chatbox-background-secondary">
                 {[
-                  { text: t('Return to the top'), icon: IconArrowBarToUp, onClick: handleScrollToTop },
-                  { text: t('Back to previous message'), icon: IconArrowUp, onClick: handleScrollToPrev },
-                ].map((item, idx) => (
+                  { text: t('Return to the top'), icon: IconArrowBarToUp, onClick: () => navigate('head') },
+                  { text: t('Back to previous message'), icon: IconArrowUp, onClick: () => void jumpUser('older') },
+                ].map((item, index) => (
                   <Button
                     key={item.text}
                     variant="transparent"
-                    className={cn('w-1/2', idx === 0 ? 'border-r border-r-chatbox-border-primary' : '')}
+                    className={cn('w-1/2', index === 0 ? 'border-r border-r-chatbox-border-primary' : '')}
                     classNames={{ section: '!mr-xxs' }}
                     size="xs"
                     h="auto"
@@ -993,157 +709,163 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
           </Transition>
         )}
         <div
-          className={cn(
-            'overflow-hidden relative',
-            isSmallScreen ? 'min-h-0 flex-1' : 'h-full',
-            // The minimap inset is mirrored on the right so the message column stays centered on the composer.
-            minimapEligible ? 'px-[28px]' : 'pl-1 pr-0 sm:pl-0'
-          )}
-          ref={messageListRef}
-          data-session-id={currentSession.id}
-          data-session-view={isCompleteSession ? 'complete' : 'window'}
-          aria-busy={props.isJumping || props.isLoadingOlder || props.isLoadingNewer || undefined}
-          onClickCapture={(event) => {
-            if (event.target instanceof Element && event.target.closest('[data-index]'))
-              windowGeometryChanged.current = true
+          ref={container}
+          data-session-id={session.id}
+          data-session-view="rows"
+          data-testid={TestId.chat.transcript}
+          data-transcript-message-count={transcript.rows.length}
+          data-transcript-page-count={transcript.pages.length}
+          data-transcript-first-message-id={transcript.rows[0]?.messageId}
+          data-transcript-last-message-id={transcript.rows.at(-1)?.messageId}
+          data-transcript-window-epoch={transcript.windowEpoch}
+          className={cn('overflow-hidden relative min-h-0 flex-1', !isSmallScreen && 'px-[28px]')}
+          aria-busy={!!transcript.operation && transcript.operation.phase !== 'error'}
+          onPointerDownCapture={(event) => {
+            synchronizeBrowseIntent()
+            const element = scroller.current
+            if (event.pointerType === 'mouse' && event.button === 0 && element && event.target === element) {
+              scrollbarPointer.current = { pointerId: event.pointerId, scrollTop: element.scrollTop }
+              userInput()
+            }
           }}
-          onKeyDownCapture={() => {
-            windowGeometryChanged.current = true
+          onWheelCapture={(event) => {
+            synchronizeBrowseIntent()
+            userInput()
+            progress.current++
+            userDirection.current = event.deltaY < 0 ? 'older' : 'newer'
+            if (event.deltaY < 0) follow.pause()
+            onScroll()
+          }}
+          onTouchStartCapture={(event) => {
+            synchronizeBrowseIntent()
+            touchY.current = event.touches[0]?.clientY ?? null
+            userInput()
+          }}
+          onTouchMoveCapture={(event) => {
+            synchronizeBrowseIntent()
+            const currentY = event.touches[0]?.clientY
+            if (currentY === undefined || touchY.current === null || currentY === touchY.current) return
+            const direction = currentY > touchY.current ? 'older' : 'newer'
+            userInput()
+            progress.current++
+            userDirection.current = direction
+            if (userDirection.current === 'older') follow.pause()
+            touchY.current = currentY
+            onScroll()
+          }}
+          onTouchEndCapture={() => {
+            touchY.current = null
+          }}
+          onKeyDownCapture={(event) => {
+            synchronizeBrowseIntent()
+            if (['ArrowUp', 'PageUp', 'ArrowDown', 'PageDown'].includes(event.key)) {
+              userInput()
+              progress.current++
+              userDirection.current = event.key.endsWith('Up') ? 'older' : 'newer'
+              if (userDirection.current === 'older') follow.pause()
+            }
           }}
         >
-          {/* Virtuoso smooths appended items but snaps same-item height growth; the controller below owns both cases. */}
-          {(!props.transcript || windowStart.ready) && (
+          {(items.length > 0 || transcript.operation?.phase !== 'reading') && (
             <Virtuoso
-              key={props.transcript ? `window-${props.windowPosition?.id ?? 0}` : 'complete'}
-              style={{ scrollbarGutter: isSmallScreen ? 'auto' : 'stable both-edges' }}
+              key={`${session.id}:${transcript.windowEpoch}`}
+              style={{
+                scrollbarGutter: isSmallScreen ? 'auto' : 'stable both-edges',
+                visibility: transcript.firstWindowReady ? undefined : 'hidden',
+                opacity: transcript.firstWindowReady ? undefined : 0,
+              }}
               className={platformType === 'win32' ? 'scrollbar-custom' : ''}
-              data={renderItems}
-              firstItemIndex={firstItemIndex}
-              startReached={props.hasOlder ? props.onLoadOlder : undefined}
-              endReached={props.hasNewer ? props.onLoadNewer : undefined}
-              components={WINDOW_BOUNDARY_COMPONENTS}
-              context={
-                props.transcript
-                  ? {
-                      hasOlder: props.hasOlder,
-                      hasNewer: props.hasNewer,
-                      isLoadingOlder: props.isLoadingOlder,
-                      isLoadingNewer: props.isLoadingNewer,
-                      onLoadOlder: props.onLoadOlder,
-                      onLoadNewer: props.onLoadNewer,
-                    }
-                  : undefined
-              }
-              // MessageRenderItem already carries a stable key (message id / group ids).
-              // Without computeItemKey, Virtuoso reconciles by index and reuses DOM nodes
-              // across positions; when a message is inserted or removed mid-list (steering,
-              // fork switching, compaction), React's keyed inner <Stack> then tries to remove
-              // a node Virtuoso already moved, throwing "Failed to execute 'removeChild'".
-              computeItemKey={(_, item) => item.key}
               ref={virtuoso}
+              data={items}
+              firstItemIndex={0}
+              computeItemKey={(_, item) => item.key}
               followOutput={false}
-              {...(props.transcript && props.windowPosition
-                ? {
-                    ...(props.windowPosition.edge === 'head'
-                      ? { initialScrollTop: 0 }
-                      : { initialTopMostItemIndex: { index: 'LAST' as const, align: 'end' as const } }),
-                  }
-                : props.transcript && windowStart.position
-                  ? 'snapshot' in windowStart.position
-                    ? {
-                        restoreStateFrom: windowStart.position.snapshot,
-                        initialScrollTop: windowStart.position.snapshot.scrollTop,
-                      }
-                    : { initialTopMostItemIndex: { index: windowStart.position.anchorIndex, align: 'start' as const } }
-                  : !props.transcript && !initialViewWasWindow && sessionScrollPositionCache.has(currentSession.id)
-                    ? {
-                        restoreStateFrom: sessionScrollPositionCache.get(currentSession.id),
-                        // 需要额外设置 initialScrollTop，否则恢复位置后 scrollTop 为 0。这时如果用户没有滚动，那么下次保存时 scrollTop 将记为 0，导致下一次恢复时位置始终为顶部。
-                        initialScrollTop: sessionScrollPositionCache.get(currentSession.id)?.scrollTop,
-                      }
-                    : windowBelongsAtTail
-                      ? { initialTopMostItemIndex: { index: 'LAST' as const, align: 'end' as const } }
-                      : {
-                          initialTopMostItemIndex:
-                            !props.transcript && smoothFollowOutput.isFollowing()
-                              ? { index: 'LAST', align: 'end' }
-                              : !props.transcript && viewportAnchorRef.current
-                                ? {
-                                    index: Math.max(
-                                      0,
-                                      renderItems.findIndex((item) =>
-                                        item.messages.some(
-                                          (message) => message.id === viewportAnchorRef.current?.messageId
-                                        )
-                                      )
-                                    ),
-                                    align: 'start',
-                                    offset: viewportAnchorRef.current.offset,
-                                  }
-                                : renderItems.length - 1,
-                        })}
-              increaseViewportBy={{ top: 2000, bottom: 2000 }}
-              itemContent={(absoluteIndex, item) => {
-                const index = absoluteIndex - firstItemIndex
-                const itemClassName = contentColumnClassName(widthFull)
-                const isFirstItem = index === 0
-                const isLastItem = index === renderItems.length - 1
-
-                if (item.type === 'group') {
-                  return (
-                    <div className={itemClassName}>
-                      <div
-                        className="flex flex-col pt-5"
-                        style={
-                          messageViewportHeight > 0 && isNewMessage && isLastItem
-                            ? { minHeight: `${messageViewportHeight * 0.85}px` }
-                            : undefined
-                        } // key
-                      >
-                        {item.messages.map((message, messageIndex) =>
-                          renderMessageBlock(message, {
-                            isFirstItem: isFirstItem && messageIndex === 0,
-                            isLastItem: isLastItem && messageIndex === item.messages.length - 1,
-                          })
-                        )}
-                        {/* <div aria-hidden="true" className="flex-1" /> */}
-                      </div>
-                    </div>
-                  )
+              skipAnimationFrameInResizeObserver
+              initialTopMostItemIndex={0}
+              scrollerRef={(element) => {
+                scroller.current = element instanceof HTMLElement ? element : null
+                setViewportHeight(scroller.current?.clientHeight ?? 0)
+              }}
+              onScroll={onScroll}
+              startReached={() => loadAtEdge('older')}
+              endReached={() => loadAtEdge('newer')}
+              rangeChanged={applyLayout}
+              totalListHeightChanged={(height) => {
+                applyLayout()
+                if (!controller.getSnapshot().layout) follow.handleHeightChange(height)
+                const element = scroller.current
+                if (element && pendingMeasurementScroll.current !== element) {
+                  pendingMeasurementScroll.current = element
+                  // ResizeObserver can adjust the native offset after this frame's scroll events.
+                  // Publish the measured viewport before paint so the rendered range matches it.
+                  queueMicrotask(() => {
+                    if (pendingMeasurementScroll.current === element) pendingMeasurementScroll.current = null
+                    if (scroller.current === element && element.scrollTop !== reportedScrollTop.current)
+                      element.dispatchEvent(new Event('scroll'))
+                  })
                 }
-
-                return (
-                  <div className={itemClassName}>
-                    {renderMessageBlock(item.messages[0], { isFirstItem, isLastItem })}
-                  </div>
-                )
               }}
-              atTopStateChange={setAtTop}
-              atBottomStateChange={(nextAtBottom) => {
-                if (!props.hasNewer) smoothFollowOutput.handleAtBottomChange(nextAtBottom)
-                setAtBottom(!props.hasNewer && (nextAtBottom || smoothFollowOutput.isFollowing()))
+              atBottomStateChange={(value) => {
+                setAtBottom(value)
+                if (!controller.getSnapshot().layout) follow.handleAtBottomChange(value)
+                uiStore.getState().setMessageScrollingAtBottom(value && !controller.getSnapshot().hasNewer)
               }}
-              totalListHeightChanged={smoothFollowOutput.handleHeightChange}
-              onScroll={handleScroll}
+              atTopStateChange={(value) => {
+                setAtTop(value)
+                uiStore.getState().setMessageScrollingAtTop(value && !controller.getSnapshot().hasOlder)
+              }}
+              increaseViewportBy={{ top: viewportHeight, bottom: viewportHeight }}
+              minOverscanItemCount={{ top: 3, bottom: 3 }}
+              itemContent={(index, item) => (
+                <div
+                  className={contentColumnClassName(widthFull)}
+                  ref={index === items.length - 1 ? lastItem : undefined}
+                >
+                  {item.type === 'thread' && (
+                    <ThreadLabel
+                      sessionId={session.id}
+                      sessionMode={sessionMode}
+                      thread={{
+                        id: item.thread.threadId,
+                        name: item.thread.name ?? session.name,
+                        createdAtLabel:
+                          item.thread.seq >= 0 ? new Date(item.thread.createdAt).toLocaleString() : undefined,
+                      }}
+                    />
+                  )}
+                  <Stack
+                    gap={0}
+                    className={item.type === 'group' ? 'pt-5' : undefined}
+                    style={
+                      item.type === 'group' && isNewMessage && index === items.length - 1
+                        ? { minHeight: viewportHeight * 0.85 }
+                        : undefined
+                    }
+                  >
+                    {item.messages.map((message, messageIndex) =>
+                      renderMessage(
+                        message,
+                        index === 0 && messageIndex === 0,
+                        index === items.length - 1 && messageIndex === item.messages.length - 1
+                      )
+                    )}
+                  </Stack>
+                </div>
+              )}
             />
           )}
-
-          {props.isJumping && (
-            <Flex
-              role="status"
-              aria-live="polite"
-              gap="xs"
-              align="center"
-              className="absolute top-2 left-1/2 -translate-x-1/2 rounded px-3 py-2 bg-chatbox-background-secondary shadow"
-            >
-              <Loader size="xs" />
-              {t('Loading...')}
-            </Flex>
+          {transcript.error && (
+            <Button className="absolute top-2 left-1/2 -translate-x-1/2" onClick={() => void transcript.retry()}>
+              {t('Try Again')}
+            </Button>
           )}
-
-          {showMinimap && <MessageMinimapRail anchors={userMessageAnchors} onJump={handleMinimapJump} />}
-
-          {activity === 'generating' && (!atBottom || props.hasNewer) && (
+          {(transcript.isLoadingOlder || transcript.isLoadingNewer) && (
+            <Loader className="absolute top-2 left-1/2" size="xs" />
+          )}
+          {!isSmallScreen && (
+            <TranscriptMinimap sessionId={session.id} enabled={transcript.firstWindowReady} onJump={navigate} />
+          )}
+          {activity === 'generating' && (!atBottom || transcript.hasNewer) && (
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2">
               <Button
                 w={40}
@@ -1154,25 +876,24 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
                 c="chatbox-secondary"
                 className="border border-solid border-chatbox-border-primary shadow-lg"
                 aria-label={t('Generating...')}
-                onClick={handleScrollToBottom}
+                onClick={() => navigate('tail')}
               >
                 <Loading height={16} viewBox="0 0 38 24" aria-hidden="true" />
               </Button>
             </div>
           )}
-
           {!isSmallScreen ? (
             <MessageNavigation
-              visible={messageNavigationVisible}
-              onVisibleChange={handleMessageNavigationVisibleChanged}
-              onScrollToTop={handleScrollToTop}
-              onScrollToBottom={handleScrollToBottom}
-              onScrollToPrev={handleScrollToPrev}
-              onScrollToNext={handleScrollToNext}
+              visible={showNavigation}
+              onVisibleChange={setShowNavigation}
+              onScrollToTop={() => navigate('head')}
+              onScrollToBottom={() => navigate('tail')}
+              onScrollToPrev={() => void jumpUser('older')}
+              onScrollToNext={() => void jumpUser('newer')}
             />
           ) : (
-            <Transition mounted={activity !== 'generating' && (!atBottom || !!props.hasNewer)} transition="slide-up">
-              {(transitionStyle) => <ScrollToBottomButton onClick={handleScrollToBottom} style={transitionStyle} />}
+            <Transition mounted={activity !== 'generating' && (!atBottom || transcript.hasNewer)} transition="slide-up">
+              {(transitionStyle) => <ScrollToBottomButton onClick={() => navigate('tail')} style={transitionStyle} />}
             </Transition>
           )}
         </div>
@@ -1180,54 +901,56 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
     </div>
   )
 })
-
 export default memo(MessageList)
 
-type WindowBoundaryContext = Pick<
-  MessageListProps,
-  'hasOlder' | 'hasNewer' | 'isLoadingOlder' | 'isLoadingNewer' | 'onLoadOlder' | 'onLoadNewer'
->
-
-function WindowBoundary({ context, edge }: { context?: WindowBoundaryContext; edge: 'head' | 'tail' }) {
-  const { t } = useTranslation()
-  if (!context) return null
-  const more = edge === 'head' ? context.hasOlder : context.hasNewer
-  const loading = edge === 'head' ? context.isLoadingOlder : context.isLoadingNewer
-  if (!more && edge === 'tail') return null
-  return (
-    <Flex mih={36} justify="center" align="center" gap="xs" role="status" aria-live="polite">
-      {loading ? (
-        <>
-          <Loader size="xs" />
-          {t('Loading...')}
-        </>
-      ) : more ? (
-        <Button
-          variant="subtle"
-          size="compact-xs"
-          onClick={edge === 'head' ? context.onLoadOlder : context.onLoadNewer}
-        >
-          {t('Load More')}
-        </Button>
-      ) : (
-        <span className="text-xs text-chatbox-tertiary">{t('Beginning of conversation')}</span>
-      )}
-    </Flex>
-  )
-}
-
-const WINDOW_BOUNDARY_COMPONENTS = {
-  Header: ({ context }: { context?: WindowBoundaryContext }) => <WindowBoundary context={context} edge="head" />,
-  Footer: ({ context }: { context?: WindowBoundaryContext }) => <WindowBoundary context={context} edge="tail" />,
-}
-
+const TranscriptMinimap = memo(
+  ({
+    sessionId,
+    enabled,
+    onJump,
+  }: {
+    sessionId: string
+    enabled: boolean
+    onJump(origin: { messageId: string }): void
+  }) => {
+    const navigation = useSessionNavigation({
+      sessionId,
+      enabled,
+      source: rendererApplication.sessions,
+      bridge: rendererApplication.sessionQueryBridge,
+    })
+    const anchors = useMemo(
+      () =>
+        navigation.entries.map((entry, itemIndex) => ({
+          messageId: entry.messageId,
+          itemIndex,
+          text: entry.preview,
+          assistantText: entry.assistantPreview,
+        })),
+      [navigation.entries]
+    )
+    return (
+      <MessageMinimapRail
+        anchors={anchors}
+        onJump={(anchor) => onJump({ messageId: anchor.messageId })}
+        hasOlder={navigation.hasOlder}
+        hasNewer={navigation.hasNewer}
+        onLoadOlder={navigation.loadOlder}
+        onLoadNewer={navigation.loadNewer}
+        onEdge={navigation.navigate}
+        loading={navigation.isFetching}
+        error={navigation.error}
+        onRetry={navigation.retry}
+      />
+    )
+  }
+)
 type ThreadLabelProps = {
   sessionId: string
   sessionMode: SessionMode
-  thread: SessionThreadBrief
-  currentThreadTarget?: CurrentThreadTarget
+  thread: Pick<SessionThreadBrief, 'id' | 'name' | 'createdAtLabel'>
 }
-const ThreadLabel: FC<ThreadLabelProps> = memo(({ thread, sessionId, sessionMode, currentThreadTarget }) => {
+const ThreadLabel: FC<ThreadLabelProps> = memo(({ thread, sessionId, sessionMode }) => {
   const { t } = useTranslation()
   const openSessionPanel = useUIStore((s) => s.openSessionPanel)
 
@@ -1251,9 +974,9 @@ const ThreadLabel: FC<ThreadLabelProps> = memo(({ thread, sessionId, sessionMode
   }, [sessionId, thread.id])
 
   const handleDeleteThread = useCallback(() => {
-    if (!thread.id || (thread.id === sessionId && !currentThreadTarget)) return
-    return removeThread(sessionId, thread.id, currentThreadTarget)
-  }, [sessionId, thread.id, currentThreadTarget])
+    if (!thread.id) return
+    return removeThread(sessionId, thread.id)
+  }, [sessionId, thread.id])
 
   return (
     <div className="text-center pb-4 pt-8">

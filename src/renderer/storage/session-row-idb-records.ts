@@ -5,12 +5,28 @@ export const SESSION_ROW_DB_NAME = 'chatbox-messages'
 export const SESSION_ROW_THREAD_STORE = 'threads'
 export const SESSION_ROW_MESSAGE_STORE = 'messages'
 export const SESSION_ROW_PAYLOAD_STORE = 'payloads'
+export const SESSION_ROW_TOKEN_CACHE_STORE = 'tokenCache'
+export const MESSAGE_STAGE = 'messageMutationStage'
+export const OLD_PARENT_ORDER = 'byOldParentOrder'
+export const SELECTED_ROLE = 'bySelectedRole'
+export const SELECTED_KIND = 'bySelectedKind'
+export const SELECTED_PAUSED = 'bySelectedPaused'
+export const SELECTED_NAMING = 'bySelectedNaming'
+export const SELECTED_CONVERSATION = 'bySelectedConversation'
 export const MESSAGE_ORDER_INDEX = 'bySessionThreadOrder'
 export const MESSAGE_PAYLOAD_INDEX = 'byMessagePayload'
 
 export const SESSION_INDEX = 'bySession'
 export const STATUS_INDEX = 'byStatus'
-export const ROW_STORES = [SESSION_ROW_THREAD_STORE, SESSION_ROW_MESSAGE_STORE, SESSION_ROW_PAYLOAD_STORE]
+export const ROW_STORES = [
+  SESSION_ROW_THREAD_STORE,
+  SESSION_ROW_MESSAGE_STORE,
+  SESSION_ROW_PAYLOAD_STORE,
+  SESSION_ROW_TOKEN_CACHE_STORE,
+  'transcriptThreads',
+  'transcriptMessages',
+  MESSAGE_STAGE,
+]
 export const REVISION_HEAD_THREAD_ID = '__chatbox_internal_revision_head__'
 
 export interface RevisionHeadRow {

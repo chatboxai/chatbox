@@ -1,8 +1,10 @@
-import type { Message, Session } from '@shared/types'
+import type { Message } from '@shared/types'
 import { getMessageText } from '@shared/utils/message'
 import { rendererApplication } from '@/app/renderer-application'
-import { searchSessions } from '@/stores/sessionHelpers'
-import { booleanFlag, ChatboxCliUsageError, integerFlag } from './parser'
+import { SessionSearchService } from '@chatbox/core/application/session'
+import type { SessionTranscriptCursor } from '@chatbox/core/ports'
+import { z } from 'zod'
+import { booleanFlag, ChatboxCliUsageError, integerFlag, stringFlag } from './parser'
 import type { ChatboxCliCommandDefinition } from './types'
 
 const EXCERPT_LENGTH = 400
@@ -33,16 +35,26 @@ function compactMessage(message: Message, thread?: { id: string; name: string })
   }
 }
 
-function readableMessages(session: Session): Array<{ message: Message; thread?: { id: string; name: string } }> {
-  const current = session.messages.map((message) => ({ message }))
-  const history = (session.threads ?? []).flatMap((thread) =>
-    thread.messages.map((message) => ({ message, thread: { id: thread.id, name: thread.name } }))
-  )
-  return [...current, ...history].filter(
-    ({ message }) =>
-      isReadableConversationMessage(message) &&
-      Boolean(excerpt(message) || message.files?.length || message.contentParts.some((part) => part.type === 'image'))
-  )
+const cursorSchema = z.object({
+  sessionId: z.string(),
+  revision: z.number().int().nonnegative(),
+  threadId: z.string(),
+  threadSeq: z.number().int(),
+  messageId: z.string().nullable(),
+  direction: z.enum(['before', 'after']),
+  limit: z.number().int().min(1).max(50),
+  maxBytes: z.number().int().positive(),
+  scope: z.literal('transcript'),
+})
+
+function readCursor(value: string | undefined): SessionTranscriptCursor | undefined {
+  if (!value || value === '0') return undefined
+  try {
+    if (value.length > 4096) throw new Error('Cursor too large')
+    return cursorSchema.parse(JSON.parse(decodeURIComponent(value)))
+  } catch {
+    throw new ChatboxCliUsageError('Invalid history cursor. Start a new read without --cursor.')
+  }
 }
 
 export const chatCommands: ChatboxCliCommandDefinition[] = [
@@ -81,44 +93,49 @@ export const chatCommands: ChatboxCliCommandDefinition[] = [
       const query = parsed.positionals.join(' ').trim()
       if (!query) throw new ChatboxCliUsageError('Missing search query.')
       const limit = integerFlag(parsed, 'limit', { defaultValue: 10, min: 1, max: 20 })
-      const hits: Record<string, unknown>[] = []
-
-      await searchSessions(query, undefined, (sessions) => {
-        for (const session of sessions) {
-          for (const message of session.messages) {
-            if (hits.length >= limit) return
-            if (!isReadableConversationMessage(message)) continue
-            hits.push({
-              sessionId: session.id,
-              sessionName: session.name,
-              ...compactMessage(message),
-            })
-          }
-        }
+      const result = await new SessionSearchService(rendererApplication.sessions).search(query, {
+        limit,
+        conversationOnly: true,
+        hideSystemPromptMessage: true,
       })
-      return { scope: 'global', query, hits, limitReached: hits.length >= limit }
+      return { scope: 'global', query, ...result }
     },
   },
   {
     path: ['chats', 'read'],
     description: 'Read compact user/assistant messages from one conversation without approval.',
-    usage: 'chatbox chats read <session-id> [--limit 20] [--cursor 0]',
+    usage: 'chatbox chats read <session-id> [--limit 20] [--cursor <next-cursor>]',
     async execute({ parsed }) {
       const sessionId = parsed.positionals[0]
       if (!sessionId) throw new ChatboxCliUsageError('Missing session id.')
-      const limit = integerFlag(parsed, 'limit', { defaultValue: 20, min: 1, max: 50 })
-      const cursor = integerFlag(parsed, 'cursor', { defaultValue: 0, min: 0, max: 10_000_000 })
-      const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
-      if (!session) throw new ChatboxCliUsageError(`Conversation not found: ${sessionId}`)
-
-      const messages = readableMessages(session)
-      const page = messages.slice(cursor, cursor + limit)
+      const cursor = readCursor(stringFlag(parsed, 'cursor'))
+      const limit = integerFlag(parsed, 'limit', { defaultValue: cursor?.limit ?? 20, min: 1, max: 50 })
+      const source = await rendererApplication.sessions.getSessionHeader(sessionId)
+      if (!source) throw new ChatboxCliUsageError(`Conversation not found: ${sessionId}`)
+      const page = await rendererApplication.sessions.readSessionTranscriptWindow({
+        sessionId,
+        limit,
+        maxBytes: 2 * 1024 * 1024,
+        expectedRevision: cursor?.revision ?? source.revision,
+        ...(cursor ? { cursor } : { origin: 'tail' }),
+      })
+      if (!page) throw new ChatboxCliUsageError(`Conversation not found: ${sessionId}`)
+      const threads = new Map(page.threads.map((thread) => [thread.threadId, thread]))
       return {
         scope: 'session',
-        session: { id: session.id, name: session.name, type: session.type ?? 'chat' },
-        messages: page.map(({ message, thread }) => compactMessage(message, thread)),
-        nextCursor: cursor + page.length < messages.length ? cursor + page.length : null,
-        total: messages.length,
+        session: { id: source.header.id, name: source.header.name, type: source.header.type ?? 'chat' },
+        messages: page.messages
+          .filter(
+            ({ message }) =>
+              isReadableConversationMessage(message) &&
+              Boolean(
+                excerpt(message) || message.files?.length || message.contentParts.some((part) => part.type === 'image')
+              )
+          )
+          .map(({ message, threadId }) =>
+            compactMessage(message, { id: threadId, name: threads.get(threadId)?.name ?? '' })
+          ),
+        nextCursor: page.older ? encodeURIComponent(JSON.stringify(page.older)) : null,
       }
     },
   },

@@ -1,54 +1,162 @@
 import { selectContextMessages } from '@shared/context'
 import { setRuntimeRegistry } from '@shared/model-registry'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { Message, Session } from '../../types'
-import { findCompactionBoundaryMessage } from '../context/compaction-boundary'
+import type { Message } from '../../types'
 import {
-  FALLBACK_CONTEXT_WINDOW_TOKENS,
-  getCompactionThresholdTokens,
-  resolveModelContextWindow,
-  selectTokenEstimationContext,
+  SESSION_TEXT_TOKEN_VERSION,
+  type SessionTokenCacheResult,
+  type SessionTextTokenResult,
+  type SessionTokenRepositoryPort,
+  type SessionTextTokenRepositoryPort,
+} from '../../ports'
+import {
   TokenEstimationService,
+  selectTokenEstimationContext,
+  resolveModelContextWindow,
+  getCompactionThresholdTokens,
+  FALLBACK_CONTEXT_WINDOW_TOKENS,
 } from './TokenEstimationService'
 
-const blobs = new Map<string, string>()
-const service = new TokenEstimationService({
-  get: (key) => Promise.resolve(blobs.get(key) ?? null),
+const message = (id: string, text = 'batch content'): Message => ({
+  id,
+  role: 'user',
+  contentParts: [{ type: 'text', text }],
 })
-
+function fixture(messages: Message[], get = vi.fn(async (_key: string): Promise<string | null> => null)) {
+  let payloadVersion = 0
+  const accepted: SessionTextTokenResult[] = []
+  const numerical = new Map<string, SessionTokenCacheResult>()
+  const repository = {
+    acceptSessionTokenCacheResults: vi.fn<SessionTokenRepositoryPort['acceptSessionTokenCacheResults']>(
+      async (_sessionId, results) => {
+        for (const result of results) numerical.set(`${result.cacheKey}:${result.identity.payloadId}`, result)
+      }
+    ),
+    createSessionTokenPlan: vi.fn<SessionTokenRepositoryPort['createSessionTokenPlan']>(async (request) => ({
+      sessionId: request.sessionId,
+      revision: 1,
+      header: { id: request.sessionId, name: 'Tokens' },
+      thread: {
+        sessionId: request.sessionId,
+        threadId: 'thread',
+        seq: -1,
+        name: 'Active',
+        createdAt: 1,
+        compactionPoints: [],
+        rootMessageId: messages[0]?.id ?? null,
+        activeLeafMessageId: messages.at(-1)?.id ?? null,
+      },
+      beforeTarget: {
+        userMessageCount: messages.length,
+        hasAssistantMessage: false,
+        hasLegacyCommandHistory: false,
+        sandboxSeedAttachments: [],
+        fileResourceKeys: [],
+      },
+      messageIds: selectTokenEstimationContext({ messages }, request.maxContextMessageCount).map((value) => value.id),
+      canManualCompact: messages.some((value) => value.role !== 'system' && !value.isSummary),
+    })),
+    readSessionTokenPage: vi.fn<SessionTokenRepositoryPort['readSessionTokenPage']>(
+      async ({ plan, offset, limit, cacheKey }) => {
+        const ids = plan.messageIds.slice(offset, offset + limit)
+        const entries = ids.map((id) => ({
+          sessionId: plan.sessionId,
+          messageId: id,
+          payloadId: `${id}:${payloadVersion}`,
+          payloadBytes: 100,
+          value: numerical.get(`${cacheKey}:${id}:${payloadVersion}`)?.value,
+        }))
+        const selected = ids
+          .filter((id) => !entries.find((entry) => entry.messageId === id)?.value)
+          .map((id) => messages.find((value) => value.id === id)!)
+        return {
+          sessionId: plan.sessionId,
+          revision: plan.revision,
+          messages: selected,
+          entries,
+          nextOffset: offset + ids.length < plan.messageIds.length ? offset + ids.length : null,
+          textTokens: {
+            sources: Object.fromEntries(
+              selected.map((value) => [
+                value.id,
+                {
+                  sessionId: plan.sessionId,
+                  messageId: value.id,
+                  payloadId: `${value.id}:${payloadVersion}`,
+                  calculationVersion: SESSION_TEXT_TOKEN_VERSION,
+                  textDigest: `${value.id}:${payloadVersion}`,
+                  text: value.contentParts.flatMap((part) => (part.type === 'text' ? [part.text] : [])).join('\n'),
+                },
+              ])
+            ),
+            results: accepted,
+          },
+        }
+      }
+    ),
+    acceptSessionTextTokenResults: vi.fn<SessionTextTokenRepositoryPort['acceptSessionTextTokenResults']>(
+      async (sessionId, results) => {
+        accepted.push(...results)
+        return { sessionId, results: [...results] }
+      }
+    ),
+  }
+  return {
+    service: new TokenEstimationService({ get }, repository),
+    repository,
+    get,
+    changePayload() {
+      payloadVersion++
+    },
+  }
+}
+const service = new TokenEstimationService({ get: async () => null })
 afterEach(() => {
   setRuntimeRegistry(null)
 })
 
-describe('TokenEstimationService', () => {
-  it('counts injected instructions once in every estimate without changing conversation counts', async () => {
-    const session: Session = {
-      id: 'memory-budget',
-      name: '',
-      messages: [{ id: 'user', role: 'user', contentParts: [{ type: 'text', text: 'Hello' }] }],
-    }
-    const additionalInstructions = 'Remember that the user prefers Chinese explanations.'
-    const baseline = await service.estimate({ session })
-    const instructionOnly = await service.estimate({ additionalInstructions })
+describe('row token estimation', () => {
+  it('does no history IO or token traversal in the immediate draft path', () => {
+    const f = fixture([message('history', 'large '.repeat(100000))])
+    const result = f.service.estimateImmediately({ sessionId: 's', constructedMessage: message('draft', 'Hello') })
+    expect(result.currentInputTokens).toBeGreaterThan(0)
+    expect(result.contextTokens).toBe(0)
+    expect(result.approximation.context).toBe(true)
+    expect(f.repository.createSessionTokenPlan).not.toHaveBeenCalled()
+    expect(f.repository.readSessionTokenPage).not.toHaveBeenCalled()
+  })
+  it('counts independent instructions once without changing conversation counts', async () => {
+    const f = fixture([message('user', 'Hello')])
+    const baseline = await f.service.estimate({ sessionId: 's' })
+    const instructions = await service.estimate({ additionalInstructions: 'The user prefers Chinese explanations.' })
     const progress = vi.fn()
-    const result = await service.estimate({ session, additionalInstructions }, { onProgress: progress })
-
-    expect(instructionOnly.contextTokens).toBeGreaterThan(0)
-    expect(instructionOnly.contextMessageCount).toBe(0)
-    expect(instructionOnly.canManualCompact).toBe(false)
-    expect(result.contextTokens).toBe(baseline.contextTokens + instructionOnly.contextTokens)
-    expect(result.contextMessageCount).toBe(baseline.contextMessageCount)
-    expect(result.currentInputTokens).toBe(baseline.currentInputTokens)
-    expect(progress.mock.calls[0][0].contextTokens).toBe(result.contextTokens)
-    expect(service.estimateImmediately({ session, additionalInstructions }).contextTokens).toBe(result.contextTokens)
+    const result = await f.service.estimate(
+      { sessionId: 's', resolveInstructions: async () => 'The user prefers Chinese explanations.' },
+      { onProgress: progress }
+    )
+    expect(result.contextTokens).toBe(baseline.contextTokens + instructions.contextTokens)
+    expect(result.contextMessageCount).toBe(1)
+    expect(instructions.contextMessageCount).toBe(0)
+    expect(progress.mock.calls.at(-1)?.[0].contextTokens).toBe(result.contextTokens)
   })
-
-  it('reports bounded long instruction estimates as approximate even with no historical messages', async () => {
-    const request = { additionalInstructions: 'memory '.repeat(1000) }
-    expect(service.estimateImmediately(request).approximation.context).toBe(true)
-    expect((await service.estimate(request)).approximation.context).toBe(true)
+  it('reads at most sixteen bodies per page and cancels before the next page', async () => {
+    const f = fixture(Array.from({ length: 40 }, (_, i) => message(`m${i}`)))
+    const progress = vi.fn()
+    await f.service.estimate({ sessionId: 's' }, { onProgress: progress })
+    expect(progress.mock.calls.map(([, done, total]) => [done, total])).toEqual([
+      [16, 40],
+      [32, 40],
+      [40, 40],
+    ])
+    expect(progress.mock.calls.map(([result]) => result.approximation.context)).toEqual([true, true, false])
+    expect(f.repository.readSessionTokenPage.mock.calls.map(([request]) => request.limit)).toEqual([16, 16, 16])
+    const controller = new AbortController()
+    f.repository.readSessionTokenPage.mockClear()
+    await expect(
+      f.service.estimate({ sessionId: 's' }, { signal: controller.signal, onProgress: () => controller.abort() })
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(f.repository.readSessionTokenPage).toHaveBeenCalledTimes(1)
   })
-
   it('supports native AbortSignals without throwIfAborted', async () => {
     const controller = new AbortController()
     Object.defineProperty(controller.signal, 'throwIfAborted', { value: undefined })
@@ -56,104 +164,107 @@ describe('TokenEstimationService', () => {
     controller.abort()
     await expect(service.estimate({}, { signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' })
   })
-
-  it('publishes cumulative batches and stops work after cancellation', async () => {
-    const session: Session = {
-      id: 'progress',
-      name: 'Progress',
-      messages: Array.from({ length: 40 }, (_, index) => ({
-        id: `progress-${index}`,
-        role: 'user',
-        contentParts: [{ type: 'text', text: 'batch content' }],
-      })),
+  it('counts tool payloads and hydrated attachments in the selected history', async () => {
+    const attached: Message = {
+      ...message('file'),
+      files: [{ id: 'file', name: 'notes.txt', fileType: 'text/plain', storageKey: 'notes' }],
     }
-    const progress = vi.fn()
-    const result = await service.estimate({ session }, { onProgress: progress })
-    expect(progress.mock.calls.map(([, completed, total]) => [completed, total])).toEqual([
-      [16, 40],
-      [32, 40],
-      [40, 40],
-    ])
-    expect(progress.mock.calls.map(([partial]) => partial.contextTokens)).toEqual([
-      (result.contextTokens * 16) / 40,
-      (result.contextTokens * 32) / 40,
-      result.contextTokens,
-    ])
-    expect(progress.mock.calls.every(([partial]) => partial.approximation.context)).toBe(true)
-    const controller = new AbortController()
-    const cancelled = vi.fn(() => controller.abort())
-    await expect(
-      service.estimate({ session }, { signal: controller.signal, onProgress: cancelled })
-    ).rejects.toMatchObject({ name: 'AbortError' })
-    expect(cancelled).toHaveBeenCalledTimes(1)
-  })
-
-  it('counts draft, selected context, tool payloads, and inline attachments with v2 semantics', async () => {
-    blobs.set('attachment:1', 'attachment body '.repeat(40))
-    const toolMessage: Message = {
-      id: 'assistant-tool',
+    const tool: Message = {
+      id: 'tool',
       role: 'assistant',
       contentParts: [
-        { type: 'text', text: 'tool reply' },
         {
           type: 'tool-call',
           state: 'result',
-          toolCallId: 'call-1',
+          toolCallId: 'call',
           toolName: 'lookup',
           args: { query: 'weather' },
           result: { forecast: 'sunny'.repeat(20) },
         },
       ],
     }
-    const attachmentMessage: Message = {
-      id: 'user-file',
-      role: 'user',
-      contentParts: [{ type: 'text', text: 'read this' }],
-      files: [{ id: 'file-1', name: 'notes.txt', fileType: 'text/plain', storageKey: 'attachment:1' }],
-    }
-    const session: Session = {
-      id: 'session',
-      name: 'Tokens',
-      messages: [
-        { id: 'old', role: 'user', contentParts: [{ type: 'text', text: 'old message' }] },
-        toolMessage,
-        attachmentMessage,
-      ],
-    }
-
-    const result = await service.estimate({
-      session,
-      constructedMessage: { id: 'draft', role: 'user', contentParts: [{ type: 'text', text: 'new draft' }] },
+    const f = fixture(
+      [message('old'), tool, attached],
+      vi.fn(async () => 'attachment body '.repeat(40))
+    )
+    const result = await f.service.estimate({
+      sessionId: 's',
       maxContextMessageCount: 2,
-      model: { provider: 'openai', modelId: 'gpt-4o' },
+      constructedMessage: message('draft'),
     })
-
-    expect(result.currentInputTokens).toBeGreaterThan(0)
     expect(result.contextMessageCount).toBe(2)
     expect(result.breakdown.context.toolCalls).toBeGreaterThan(0)
     expect(result.breakdown.context.attachments).toBeGreaterThan(0)
     expect(result.totalTokens).toBe(result.currentInputTokens + result.contextTokens)
+    expect(attached.tokenCountMap).toBeUndefined()
+    expect(f.repository.acceptSessionTextTokenResults).toHaveBeenCalled()
   })
-
-  it('uses the DeepSeek tokenizer independently from the default tokenizer', async () => {
-    const request = {
-      constructedMessage: {
-        id: 'draft',
-        role: 'user' as const,
-        contentParts: [{ type: 'text' as const, text: 'hello world '.repeat(40) }],
-      },
+  it('rechecks external attachment content for every independent estimate', async () => {
+    const attached: Message = {
+      ...message('file'),
+      files: [{ id: 'file', name: 'notes.txt', fileType: 'text/plain', storageKey: 'notes' }],
     }
-    const defaultResult = await service.estimate({
-      ...request,
-      model: { provider: 'openai', modelId: 'gpt-test' },
-    })
-    const deepSeekResult = await service.estimate({
-      ...request,
+    const f = fixture(
+      [attached],
+      vi.fn(async () => 'attachment body '.repeat(40))
+    )
+    await f.service.estimate({ sessionId: 's', constructedMessage: message('draft', 'a') })
+    await f.service.estimate({ sessionId: 's', constructedMessage: message('draft', 'ab') })
+    expect(f.get).toHaveBeenCalledTimes(2)
+    f.changePayload()
+    await f.service.estimate({ sessionId: 's' })
+    expect(f.get).toHaveBeenCalledTimes(3)
+    await f.service.estimate({ sessionId: 's', model: { provider: 'deepseek', modelId: 'deepseek-chat' } })
+    expect(f.get).toHaveBeenCalledTimes(4)
+  })
+  it('retries missing attachments instead of retaining an incomplete result', async () => {
+    const attached: Message = {
+      ...message('file'),
+      files: [{ id: 'file', name: 'notes.txt', fileType: 'text/plain', storageKey: 'notes' }],
+    }
+    const get = vi
+      .fn<(_key: string) => Promise<string | null>>()
+      .mockRejectedValueOnce(new Error('unavailable'))
+      .mockResolvedValue('Recovered document content')
+    const f = fixture([attached], get)
+    expect((await f.service.estimate({ sessionId: 's' })).missingAttachments?.context).toBe(true)
+    expect((await f.service.estimate({ sessionId: 's' })).missingAttachments?.context).toBe(false)
+    expect(get).toHaveBeenCalledTimes(2)
+  })
+  it('selects the same finite history as the next send', () => {
+    const messages = Array.from({ length: 12 }, (_, i) => message(`m${i}`))
+    const draft = message('draft')
+    expect(selectTokenEstimationContext({ messages }, 10, draft)).toEqual(
+      selectContextMessages([...messages, draft], { maxContextMessageCount: 10 }).filter((value) => value !== draft)
+    )
+  })
+  it('uses DeepSeek tokenization independently', async () => {
+    const constructedMessage = message('draft', 'hello world '.repeat(40))
+    const normal = await service.estimate({ constructedMessage, model: { provider: 'openai', modelId: 'gpt-test' } })
+    const deepSeek = await service.estimate({
+      constructedMessage,
       model: { provider: 'deepseek', modelId: 'deepseek-chat' },
     })
-    expect(deepSeekResult.currentInputTokens).not.toBe(defaultResult.currentInputTokens)
+    expect(normal.currentInputTokens).not.toBe(deepSeek.currentInputTokens)
   })
-
+  it('bounds long drafts and instruction text and marks approximate results', async () => {
+    const request = {
+      constructedMessage: message('draft', 'a'.repeat(8192)),
+      additionalInstructions: 'memory '.repeat(1000),
+    }
+    expect(service.estimateImmediately(request).approximation).toEqual({ currentInput: true, context: true })
+    expect((await service.estimate(request)).approximation).toEqual({ currentInput: true, context: true })
+  })
+  it('includes a conservative image allowance', async () => {
+    const image: Message = { id: 'image', role: 'user', contentParts: [{ type: 'image', storageKey: 'image' }] }
+    for (const result of [
+      service.estimateImmediately({ constructedMessage: image }),
+      await service.estimate({ constructedMessage: image }),
+    ]) {
+      expect(result.breakdown.currentInput.attachments).toBeGreaterThanOrEqual(4096)
+      expect(result.approximation.currentInput).toBe(true)
+    }
+  })
   it('keeps an unknown visual limit unknown while compaction receives the 128k fallback', () => {
     const model = { provider: 'custom-provider', modelId: 'unknown-private-model' }
     expect(resolveModelContextWindow(model)).toBeNull()
@@ -178,227 +289,4 @@ describe('TokenEstimationService', () => {
     expect(resolveModelContextWindow({ provider: 'custom-provider', modelId: 'shared-model' })).toBeNull()
     expect(resolveModelContextWindow({ provider: 'provider-b', modelId: 'shared-model' })).toBe(131_072)
   })
-
-  it('exposes manual compaction only when the full context has an eligible boundary', () => {
-    const systemOnly: Session = {
-      id: 'system-only',
-      name: 'System only',
-      messages: [{ id: 'system', role: 'system', contentParts: [{ type: 'text', text: 'Prompt' }] }],
-    }
-    const summaryOnly: Session = {
-      id: 'summary-only',
-      name: 'Summary only',
-      messages: [
-        { id: 'summary', role: 'assistant', isSummary: true, contentParts: [{ type: 'text', text: 'Summary' }] },
-      ],
-    }
-    const conversation: Session = {
-      id: 'conversation',
-      name: 'Conversation',
-      messages: [{ id: 'user', role: 'user', contentParts: [{ type: 'text', text: 'Hello' }] }],
-    }
-
-    expect(service.estimateImmediately({ session: systemOnly }).canManualCompact).toBe(false)
-    expect(service.estimateImmediately({ session: summaryOnly }).canManualCompact).toBe(false)
-    expect(service.estimateImmediately({ session: conversation }).canManualCompact).toBe(true)
-  })
-
-  it('reuses exact historical attachment work across draft and unrelated streaming updates', async () => {
-    const get = vi.fn(() => Promise.resolve('historical attachment body '.repeat(20)))
-    const cachedService = new TokenEstimationService({ get })
-    const attached: Message = {
-      id: 'attached',
-      role: 'user',
-      contentParts: [{ type: 'text', text: 'Read the attachment' }],
-      files: [{ id: 'file', name: 'notes.txt', fileType: 'text/plain', storageKey: 'file:key' }],
-    }
-    const session = (streamText: string): Session => ({
-      id: 'cached',
-      name: 'Cached history',
-      messages: [
-        { ...attached, contentParts: [{ type: 'text', text: 'Read the attachment' }] },
-        { id: 'stream', role: 'assistant', generating: true, contentParts: [{ type: 'text', text: streamText }] },
-      ],
-    })
-
-    await cachedService.estimate({
-      session: session('first chunk'),
-      constructedMessage: { id: 'draft', role: 'user', contentParts: [{ type: 'text', text: 'a' }] },
-    })
-    await cachedService.estimate({
-      session: session('second chunk'),
-      constructedMessage: { id: 'draft', role: 'user', contentParts: [{ type: 'text', text: 'ab' }] },
-    })
-
-    expect(get).toHaveBeenCalledTimes(1)
-  })
-
-  it('keeps immediate draft work separate from stable history across draft and streaming clones', () => {
-    const immediateService = new TokenEstimationService({ get: () => Promise.resolve(null) })
-    let historicalTokenReads = 0
-    let draftTokenReads = 0
-    const historicalTokenCountMap = new Proxy<Record<string, number>>(
-      { default: 40 },
-      {
-        get(target, property, receiver) {
-          if (property === 'default') historicalTokenReads += 1
-          return Reflect.get(target, property, receiver)
-        },
-      }
-    )
-    const stableHistory: Message = {
-      id: 'stable-history',
-      role: 'user',
-      contentParts: [{ type: 'text', text: 'Stable historical prompt' }],
-      tokenCountMap: historicalTokenCountMap,
-    }
-    const estimate = (draftText: string, streamText: string) => {
-      const draftTokenCountMap = new Proxy<Record<string, number>>(
-        { default: draftText.length },
-        {
-          get(target, property, receiver) {
-            if (property === 'default') draftTokenReads += 1
-            return Reflect.get(target, property, receiver)
-          },
-        }
-      )
-      return immediateService.estimateImmediately({
-        session: {
-          id: 'immediate-cache',
-          name: 'Immediate cache',
-          messages: [
-            stableHistory,
-            {
-              id: 'generating-reply',
-              role: 'assistant',
-              generating: true,
-              contentParts: [{ type: 'text', text: streamText }],
-            },
-          ],
-        },
-        constructedMessage: {
-          id: 'draft',
-          role: 'user',
-          contentParts: [{ type: 'text', text: draftText }],
-          tokenCountMap: draftTokenCountMap,
-        },
-        model: { provider: 'openai', modelId: 'gpt-test' },
-      })
-    }
-
-    estimate('a', 'first chunk')
-    const readsAfterFirstEstimate = historicalTokenReads
-    estimate('ab', 'first chunk')
-    estimate('abc', 'second chunk')
-
-    expect(historicalTokenReads).toBe(readsAfterFirstEstimate)
-    expect(draftTokenReads).toBe(3)
-  })
-
-  it('uses hydrated attachment weight when choosing a raw-tail boundary', async () => {
-    const get = vi.fn(() => Promise.resolve('very large inline file '.repeat(4_000)))
-    const attachmentService = new TokenEstimationService({ get })
-    const messages: Message[] = []
-    for (let round = 1; round <= 4; round += 1) {
-      messages.push({
-        id: `u${round}`,
-        role: 'user',
-        contentParts: [{ type: 'text', text: `question ${round}` }],
-        ...(round === 4
-          ? { files: [{ id: 'huge', name: 'huge.txt', fileType: 'text/plain', storageKey: 'huge:key' }] }
-          : {}),
-      })
-      messages.push({ id: `a${round}`, role: 'assistant', contentParts: [{ type: 'text', text: `answer ${round}` }] })
-    }
-    const estimateMessagesTokens = await attachmentService.createMessagesTokenEstimator(messages, {
-      provider: 'openai',
-      modelId: 'gpt-test',
-    })
-
-    expect(
-      findCompactionBoundaryMessage(messages, {
-        maxTailTokens: 500,
-        estimateMessagesTokens,
-      })?.id
-    ).toBe('a4')
-    expect(get).toHaveBeenCalledOnce()
-  })
-
-  it('selects the same finite history window that the next send will use', () => {
-    const history = Array.from({ length: 12 }, (_, index) => ({
-      id: `m${index + 1}`,
-      role: index % 2 === 0 ? ('user' as const) : ('assistant' as const),
-      contentParts: [{ type: 'text' as const, text: `message ${index + 1}` }],
-    }))
-    const system: Message = { id: 'system', role: 'system', contentParts: [{ type: 'text', text: 'System prompt' }] }
-    const draft: Message = { id: 'draft', role: 'user', contentParts: [{ type: 'text', text: 'Current input' }] }
-    const session: Session = { id: 'window', name: 'Window', messages: [system, ...history] }
-    const outgoingHistory = selectContextMessages([...session.messages, draft], { maxContextMessageCount: 10 }).filter(
-      (message) => message !== draft
-    )
-
-    expect(selectTokenEstimationContext(session, 10, draft).map((message) => message.id)).toEqual(
-      outgoingHistory.map((message) => message.id)
-    )
-    expect(
-      service.estimateImmediately({ session, constructedMessage: draft, maxContextMessageCount: 0 }).contextTokens
-    ).toBe(service.estimateImmediately({ session: { ...session, messages: [system] } }).contextTokens)
-  })
-
-  it('bounds long-text estimation and reports the approximate result', async () => {
-    const startedAt = performance.now()
-    const result = await service.estimate({
-      constructedMessage: {
-        id: 'long-draft',
-        role: 'user',
-        contentParts: [{ type: 'text', text: 'a'.repeat(8_192) }],
-      },
-    })
-
-    expect(result.currentInputTokens).toBeGreaterThan(0)
-    expect(result.approximation.currentInput).toBe(true)
-    expect(performance.now() - startedAt).toBeLessThan(2_000)
-  })
-
-  it('includes a conservative image allowance and marks it approximate', async () => {
-    const imageMessage: Message = {
-      id: 'image-draft',
-      role: 'user',
-      contentParts: [{ type: 'image', storageKey: 'image:key' }],
-    }
-
-    const immediate = service.estimateImmediately({ constructedMessage: imageMessage })
-    const resolved = await service.estimate({ constructedMessage: imageMessage })
-
-    expect(immediate.breakdown.currentInput.attachments).toBeGreaterThanOrEqual(4_096)
-    expect(immediate.approximation.currentInput).toBe(true)
-    expect(resolved.breakdown.currentInput.attachments).toBeGreaterThanOrEqual(4_096)
-    expect(resolved.approximation.currentInput).toBe(true)
-  })
-})
-
-it('keeps unreadable attachment estimates incomplete and retries the same message after recovery', async () => {
-  const get = vi
-    .fn()
-    .mockRejectedValueOnce(new Error('temporary read failure'))
-    .mockResolvedValue('Recovered document content')
-  const estimator = new TokenEstimationService({ get })
-  const session: Session = {
-    id: 'recovery',
-    name: 'Recovery',
-    messages: [
-      {
-        id: 'file-message',
-        role: 'user',
-        contentParts: [],
-        files: [{ id: 'file', name: 'notes.txt', fileType: 'text/plain', storageKey: 'notes' }],
-      },
-    ],
-  }
-  const failed = await estimator.estimate({ session })
-  expect(failed).toMatchObject({ missingAttachments: { context: true }, approximation: { context: true } })
-  const recovered = await estimator.estimate({ session })
-  expect(recovered.missingAttachments?.context).toBeFalsy()
-  expect(recovered.breakdown.context.attachments).toBeGreaterThan(0)
-  expect(get).toHaveBeenCalledTimes(2)
 })

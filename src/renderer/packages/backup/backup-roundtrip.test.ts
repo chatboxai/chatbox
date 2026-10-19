@@ -1,11 +1,16 @@
-import { InMemorySessionRepository, InMemorySessionRowStore } from '@chatbox/core/testing'
+import { InMemorySessionRowStore } from '@chatbox/core/testing'
+import { stageLegacySessionRows } from '../../../../packages/chatbox-core/src/backup/legacy-row-import'
 import type { CopilotDetail, Session, SessionMetaRecord, Settings } from '@shared/types'
 import { unzipSync, zipSync } from 'fflate'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CurrentSessionRepository } from '@/adapters/CurrentSessionRepository'
 import { bytesToBase64, sha256Checksum } from './codec'
-import { exportBackupArchive } from './export-backup'
-import { importBackupArchive } from './import-backup'
+import { exportBackupArchiveWithRows as exportBackupArchive } from '../../../../packages/chatbox-core/src/backup/export.test-support'
+import {
+  importBackupArchiveWithRows as importBackupArchive,
+  readImportedSession,
+  importedRows,
+  seedImportedSession,
+} from '../../../../packages/chatbox-core/src/backup/import.test-support'
 import { BackupStorageKey, backupSessionStorageKey } from './storage-keys'
 import type { BackupFile, BackupMetaStorage, BackupStorage } from './types'
 
@@ -232,8 +237,8 @@ describe('ZIP backup round trip', () => {
       storage: destination,
       metaStorage: new MemoryMetaStorage(),
     })
-    expect(await destination.getItem(backupSessionStorageKey('kept'), null)).toMatchObject({ threads: kept.threads })
-    expect(await destination.getItem(backupSessionStorageKey('other'), null)).toBeNull()
+    expect(await readImportedSession(destination, 'kept')).toMatchObject({ threads: kept.threads })
+    expect(await importedRows(destination).readCommit('other')).toBeNull()
   })
 
   it.each([
@@ -245,6 +250,7 @@ describe('ZIP backup round trip', () => {
     async ({ selectedSessionIds, expectedIds }) => {
       const source = new MemoryStorage()
       const session = createSession('orphan')
+      await seedImportedSession(source, session)
       source.blobs.set('picture:shared', 'data:image/png;base64,AAECAw==')
       const result = await exportBackupArchive({
         exportItems: ['conversations'],
@@ -253,7 +259,6 @@ describe('ZIP backup round trip', () => {
         storage: source,
         metaStorage: new MemoryMetaStorage(),
         application: { version: 'test', platform: 'test' },
-        readSession: async (id) => (id === 'orphan' ? session : null),
         listSessionIds: async () => ['orphan'],
         writeArchive: async (data) => {
           for await (const _chunk of data()) {
@@ -324,8 +329,8 @@ describe('ZIP backup round trip', () => {
 
     expect(result.restoredSessionCount).toBe(2)
     expect(destination.blobs.get('picture:shared')).toBe('data:image/png;base64,/w==')
-    const restoredOne = destination.values.get(backupSessionStorageKey('one')) as Session
-    const restoredTwo = destination.values.get(backupSessionStorageKey('two')) as Session
+    const restoredOne = await readImportedSession(destination, 'one')
+    const restoredTwo = await readImportedSession(destination, 'two')
     const restoredKey = restoredOne.messages[0].contentParts[1]
     expect(restoredKey).toMatchObject({ type: 'image' })
     if (restoredKey.type !== 'image') throw new Error('Expected an image part')
@@ -341,16 +346,13 @@ describe('ZIP backup round trip', () => {
     const source = new MemoryStorage()
     const sourceMeta = new MemoryMetaStorage()
     const session = createSession('rows')
-    const repository = new CurrentSessionRepository({
-      dataStorage: source,
-      metaStorage: new InMemorySessionRepository().meta,
-      rowStore: new InMemorySessionRowStore(),
-    })
-    await repository.setSession(session)
+    const rows = new InMemorySessionRowStore()
+    const candidate = await stageLegacySessionRows(rows, session)
+    await candidate.publish()
+    await candidate.dispose()
     sourceMeta.records.set(session.id, createMeta(session, 1))
     source.blobs.set('picture:shared', 'data:image/png;base64,AAECAw==')
-    // The stored record alone has no messages; only the repository can rebuild them.
-    expect(source.values.get(backupSessionStorageKey(session.id))).not.toHaveProperty('messages')
+    expect((await rows.readCommit(session.id))?.record).not.toHaveProperty('messages')
 
     const chunks: Uint8Array[] = []
     const exported = await exportBackupArchive({
@@ -358,7 +360,7 @@ describe('ZIP backup round trip', () => {
       includeKeys: false,
       storage: source,
       metaStorage: sourceMeta,
-      readSession: (sessionId) => repository.getSession(sessionId),
+      sessionStore: rows,
       application: { version: 'test', platform: 'test' },
       writeArchive: async (dataCallback) => {
         for await (const chunk of dataCallback()) chunks.push(chunk)
@@ -381,7 +383,7 @@ describe('ZIP backup round trip', () => {
       storage: destination,
       metaStorage: destinationMeta,
     })
-    const restored = destination.values.get(backupSessionStorageKey('rows')) as Session
+    const restored = await readImportedSession(destination, 'rows')
     expect(restored.messages.map(({ id }) => id)).toEqual(['message-rows'])
   })
 
@@ -466,7 +468,7 @@ describe('ZIP backup round trip', () => {
       metaStorage: new MemoryMetaStorage(),
     })
 
-    const restored = destination.values.get(backupSessionStorageKey(session.id)) as Session
+    const restored = await readImportedSession(destination, session.id)
     expect(restored.settings?.sessionPromptContextSnapshot).toEqual({
       ...frozenSnapshot,
       memoryStateToken: ':destination-global',
@@ -532,7 +534,7 @@ describe('ZIP backup round trip', () => {
     })
 
     const restoredSettings = destination.values.get(BackupStorageKey.Settings) as Settings
-    const restored = destination.values.get(backupSessionStorageKey(session.id)) as Session
+    const restored = await readImportedSession(destination, session.id)
     expect(restoredSettings.memoryStateToken).toEqual(expect.any(String))
     expect(restoredSettings.memoryStateToken).not.toBe('source-global')
     expect(restored.settings?.sessionPromptContextSnapshot).toEqual(pendingSnapshot)
@@ -765,7 +767,7 @@ describe('ZIP backup round trip', () => {
       storage: destination,
       metaStorage: new MemoryMetaStorage(),
     })
-    const restored = destination.values.get(backupSessionStorageKey(session.id)) as Session
+    const restored = await readImportedSession(destination, session.id)
     const restoredFile = restored.messages[0].files?.[0]
     expect(restoredFile?.localPath).toBeUndefined()
     expect(restoredFile?.sessionAttachmentId).toBeUndefined()
@@ -852,7 +854,7 @@ describe('ZIP backup round trip', () => {
       storage: destination,
       metaStorage: new MemoryMetaStorage(),
     })
-    const restored = destination.values.get(backupSessionStorageKey(session.id)) as Session
+    const restored = await readImportedSession(destination, session.id)
     for (const file of restored.messages[0].files ?? []) {
       const extension = file.name.split('.').pop() ?? ''
       expect(destination.blobs.get(file.rawStorageKey ?? '')).toBe(expectedRawValues.get(extension))
@@ -901,7 +903,7 @@ describe('ZIP backup round trip', () => {
       storage: destination,
       metaStorage: new MemoryMetaStorage(),
     })
-    const restored = destination.values.get(backupSessionStorageKey(session.id)) as Session
+    const restored = await readImportedSession(destination, session.id)
     expect(restored.messages[0].contentParts[0]).toEqual({ type: 'text', text: 'a'.repeat(2 * 1024 * 1024) })
     expect(restored.messages[0].links?.[0].storageKey).toBe(storageKey)
     expect(destination.blobs.get(storageKey)).toBe('parsed link')
@@ -975,7 +977,7 @@ describe('ZIP backup round trip', () => {
       expect.objectContaining({ code: 'resource-read-failed', itemId: 'picture:shared' })
     )
     expect(imported.restoredSessionCount).toBe(1)
-    expect(destination.values.get(backupSessionStorageKey(session.id))).toMatchObject({
+    expect(await readImportedSession(destination, session.id)).toMatchObject({
       messages: [
         {
           contentParts: [
@@ -1019,11 +1021,11 @@ describe('ZIP backup round trip', () => {
         metaStorage: new MemoryMetaStorage(),
       })
     ).resolves.toMatchObject({ restoredSessionCount: 1 })
-    const restored = destination.values.get(backupSessionStorageKey(session.id)) as Session & {
+    const restored = (await readImportedSession(destination, session.id)) as Session & {
       messages: Array<Session['messages'][number] & { content?: string }>
     }
     expect(restored.messages[0].content).toBe('keep legacy content')
-    expect(restored.messages[0].contentParts).toEqual([])
+    expect(restored.messages[0].contentParts).toEqual([{ type: 'text', text: 'keep legacy content' }])
   })
 
   it('does not count unreadable resource payloads as deduplicated exports', async () => {
@@ -1096,7 +1098,7 @@ describe('ZIP backup round trip', () => {
       storage: destination,
       metaStorage: new MemoryMetaStorage(),
     })
-    const restored = destination.values.get(backupSessionStorageKey(session.id)) as Session
+    const restored = await readImportedSession(destination, session.id)
     expect(restored.messages[0].contentParts).toEqual([{ type: 'text', text: 'keep me' }])
     expect(restored.messages[0].files?.[0].storageKey).toBeUndefined()
     expect(restored.messages[0].links?.[0].storageKey).toBeUndefined()
@@ -1123,69 +1125,57 @@ describe('ZIP backup round trip', () => {
     ).rejects.toThrow()
   })
 
-  it('ignores null orphan session slots that do not have session metadata', async () => {
+  it('rejects an export whose only selected source is missing before opening the writer', async () => {
     const source = new MemoryStorage()
     source.values.set(backupSessionStorageKey('new'), null)
-    const result = await exportBackupArchive({
-      exportItems: ['conversations'],
-      includeKeys: false,
-      storage: source,
-      metaStorage: new MemoryMetaStorage(),
-      application: { version: 'test', platform: 'test' },
-      writeArchive: async (dataCallback) => {
-        for await (const _chunk of dataCallback()) {
-          // Consume the stream so the manifest is finalized.
-        }
-        return { boundedMemory: true }
-      },
-    })
-
-    expect(result.manifest.sessions).toEqual([])
-    expect(result.manifest.warnings).toEqual([])
+    const writeArchive = vi.fn(async () => ({ boundedMemory: true }))
+    await expect(
+      exportBackupArchive({
+        exportItems: ['conversations'],
+        includeKeys: false,
+        storage: source,
+        metaStorage: new MemoryMetaStorage(),
+        application: { version: 'test', platform: 'test' },
+        writeArchive,
+      })
+    ).rejects.toThrow('Legacy session data is missing')
+    expect(writeArchive).not.toHaveBeenCalled()
+    expect(source.values.get(backupSessionStorageKey('new'))).toBeNull()
   })
 
-  it('skips a corrupt session slot whose embedded id does not match its storage key', async () => {
+  it('rejects a corrupt source identity before opening the writer or changing source data', async () => {
     const source = new MemoryStorage()
-    const sourceMeta = new MemoryMetaStorage()
     const session = createSession('embedded-id')
     source.values.set(backupSessionStorageKey('storage-id'), session)
-    sourceMeta.records.set('storage-id', { ...createMeta(session, 1), id: 'storage-id' })
-    const chunks: Uint8Array[] = []
-
-    const exported = await exportBackupArchive({
-      exportItems: ['conversations'],
-      includeKeys: false,
-      storage: source,
-      metaStorage: sourceMeta,
-      application: { version: 'test', platform: 'test' },
-      writeArchive: async (dataCallback) => {
-        for await (const chunk of dataCallback()) chunks.push(chunk)
-        return { boundedMemory: true }
-      },
-    })
-
-    expect(exported.manifest.sessions).toEqual([])
-    expect(exported.manifest.warnings).toContainEqual(
-      expect.objectContaining({ code: 'session-read-failed', itemId: 'storage-id' })
-    )
-    const imported = await importBackupArchive(
-      new File([Uint8Array.from(combine(chunks)).buffer], 'corrupt-slot.zip'),
-      {
-        storage: new MemoryStorage(),
+    const writeArchive = vi.fn(async () => ({ boundedMemory: true }))
+    await expect(
+      exportBackupArchive({
+        exportItems: ['conversations'],
+        includeKeys: false,
+        storage: source,
         metaStorage: new MemoryMetaStorage(),
-      }
-    )
-    expect(imported.restoredSessionCount).toBe(0)
-    expect(imported.warnings).toHaveLength(1)
+        application: { version: 'test', platform: 'test' },
+        writeArchive,
+      })
+    ).rejects.toThrow('Legacy session ID does not match its storage key')
+    expect(writeArchive).not.toHaveBeenCalled()
+    expect(source.values.get(backupSessionStorageKey('storage-id'))).toBe(session)
   })
 
-  it('does not export resource references from a session that fails after resource collection', async () => {
+  it.each([
+    { name: 'unpaired UTF-16 code units', ids: ['invalid-\ud800-session'] },
+    {
+      name: 'an unpaired identifier and its JSON representation',
+      ids: ['a'.repeat(201) + '\ud800', JSON.stringify('a'.repeat(201) + '\ud800')],
+    },
+  ])('round trips $name with distinct safe archive paths', async ({ ids }) => {
     const source = new MemoryStorage()
     const sourceMeta = new MemoryMetaStorage()
-    const invalidId = 'invalid-\ud800-session'
-    const session = createSession(invalidId)
-    source.values.set(backupSessionStorageKey(invalidId), session)
-    sourceMeta.records.set(invalidId, createMeta(session, 1))
+    for (const id of ids) {
+      const session = createSession(id)
+      source.values.set(backupSessionStorageKey(id), session)
+      sourceMeta.records.set(id, createMeta(session, 1))
+    }
     source.blobs.set('picture:shared', 'data:image/png;base64,AAECAw==')
     const chunks: Uint8Array[] = []
 
@@ -1201,17 +1191,17 @@ describe('ZIP backup round trip', () => {
       },
     })
 
-    expect(exported.manifest.sessions).toEqual([])
-    expect(exported.manifest.resources).toEqual([])
-    expect(exported.manifest.warnings).toContainEqual(
-      expect.objectContaining({ code: 'session-read-failed', itemId: invalidId })
-    )
-    await expect(
-      importBackupArchive(new File([Uint8Array.from(combine(chunks)).buffer], 'failed-session.zip'), {
-        storage: new MemoryStorage(),
-        metaStorage: new MemoryMetaStorage(),
-      })
-    ).resolves.toMatchObject({ restoredSessionCount: 0, restoredResourceCount: 0 })
+    expect(exported.manifest.sessions.map((entry) => entry.id).sort()).toEqual([...ids].sort())
+    const paths = exported.manifest.sessions.map((entry) => entry.path)
+    expect(new Set(paths).size).toBe(ids.length)
+    for (const path of paths) expect(path).toMatch(/^sessions\/id-[a-f0-9]+\/session.json$/)
+    expect(exported.manifest.resources).toHaveLength(1)
+    const destination = new MemoryStorage()
+    await importBackupArchive(new File([Uint8Array.from(combine(chunks)).buffer], 'identifier.zip'), {
+      storage: destination,
+      metaStorage: new MemoryMetaStorage(),
+    })
+    for (const id of ids) expect(await readImportedSession(destination, id)).toMatchObject(createSession(id))
   })
 
   it('rejects a resource checksum mismatch before changing destination data', async () => {
@@ -1244,7 +1234,7 @@ describe('ZIP backup round trip', () => {
         { storage: destination, metaStorage: destinationMeta }
       )
     ).rejects.toThrow('checksum mismatch')
-    expect(destination.values.has(backupSessionStorageKey(session.id))).toBe(false)
+    expect(await importedRows(destination).readCommit(session.id)).toBeNull()
     expect(destinationMeta.records.size).toBe(0)
   })
 
@@ -1307,7 +1297,7 @@ describe('ZIP backup round trip', () => {
     const previousSession: Session = { id: 'rollback', name: 'Previous', messages: [] }
     const previousMeta = createMeta(previousSession, 1)
     const rollbackRehydration = vi.fn(() => Promise.resolve())
-    destination.values.set(backupSessionStorageKey(previousSession.id), previousSession)
+    await seedImportedSession(destination, previousSession)
     destinationMeta.records.set(previousSession.id, previousMeta)
 
     await expect(
@@ -1317,7 +1307,7 @@ describe('ZIP backup round trip', () => {
         rehydrateSession: (session) => Promise.resolve({ session, warnings: [], rollback: rollbackRehydration }),
       })
     ).rejects.toThrow('Injected metadata write failure')
-    expect(destination.values.get(backupSessionStorageKey(previousSession.id))).toEqual(previousSession)
+    expect(await readImportedSession(destination, previousSession.id)).toMatchObject(previousSession)
     expect(destinationMeta.records.get(previousSession.id)).toMatchObject(previousMeta)
     expect(destinationMeta.records.get(previousSession.id)).toMatchObject({
       hidden: undefined,
@@ -1351,12 +1341,20 @@ describe('ZIP backup round trip', () => {
     const destination = new MemoryStorage()
     const destinationMeta = new FailOnceMetaStorage()
     const original = { ...session, name: 'Original' }
-    destination.values.set(backupSessionStorageKey(session.id), original)
+    await seedImportedSession(destination, original)
     destinationMeta.records.set(session.id, createMeta(original, 1))
-    vi.spyOn(destination, 'setItemNow').mockImplementation(async (key, value) => {
-      if (key === backupSessionStorageKey(session.id) && (value as Session).name === 'Original')
-        throw new Error('rollback disk failure')
-      destination.values.set(key, value)
+    const rows = importedRows(destination)
+    const begin = rows.beginBackupRestore.bind(rows)
+    const retained: import('../../../../packages/chatbox-core/src/backup/session-port').BackupSessionCandidate[] = []
+    vi.spyOn(rows, 'beginBackupRestore').mockImplementation(async (...args) => {
+      const candidate = await begin(...args)
+      retained.push(candidate)
+      return {
+        ...candidate,
+        rollback: async () => {
+          throw new Error('rollback disk failure')
+        },
+      }
     })
     await expect(
       importBackupArchive(new File([Uint8Array.from(combine(chunks)).buffer], 'rollback.zip'), {
@@ -1364,11 +1362,10 @@ describe('ZIP backup round trip', () => {
         metaStorage: destinationMeta,
       })
     ).rejects.toThrow('rollback failed')
-    expect(
-      [...destination.values].some(
-        ([key, value]) => key.includes(':rollback:') && (value as Session).name === 'Original'
-      )
-    ).toBe(true)
+    expect((await readImportedSession(destination, session.id)).name).toBe('Restored')
+    await retained[0].rollback()
+    expect(await readImportedSession(destination, session.id)).toMatchObject(original)
+    await retained[0].dispose()
   })
 
   it('cleans staged and newly written data when import is canceled during commit', async () => {
@@ -1406,7 +1403,7 @@ describe('ZIP backup round trip', () => {
         },
       })
     ).rejects.toMatchObject({ name: 'AbortError' })
-    expect(destination.values.has(backupSessionStorageKey(session.id))).toBe(false)
+    expect(await importedRows(destination).readCommit(session.id)).toBeNull()
     expect(destinationMeta.records.size).toBe(0)
     expect(destination.blobs.size).toBe(0)
   })

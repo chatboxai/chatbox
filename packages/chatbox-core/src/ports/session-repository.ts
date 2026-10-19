@@ -1,15 +1,9 @@
-import type {
-  SessionStructureOperation,
-  SessionStructureResult,
-  CurrentThreadIdentity,
-} from './session-structure-command'
+import type { SessionRowRepositoryPort } from './session-row-repository'
+import type { SessionStructureOperation, SessionStructureResult } from './session-structure-command'
 import type { SessionRowCommit, SessionRowsDiff } from './session-row-store'
-import type { Message, Session, SessionFolder, SessionMetaPage, SessionMetaRecord } from '../types/session'
+import type { Message, SessionFolder, SessionMetaPage, SessionMetaRecord } from '../types/session'
 import type { Updater } from '../types'
-import type { SessionContextRepositoryPort } from './session-context-source'
-import type { SessionMessageRepositoryPort } from './session-message-source'
-import type { SessionHeader, SessionReadRepositoryPort } from './session-read-model'
-import type { SessionTextTokenRepositoryPort } from './session-text-tokens'
+import type { SessionHeader } from './session-read-model'
 
 export type SessionRepositoryOperation =
   | 'initialize'
@@ -57,62 +51,29 @@ export class SessionWriteConflictError extends Error {
   }
 }
 
-export type SessionMessageMutation =
-  | { type: 'append'; messages: readonly Message[] }
-  | { type: 'replace'; messageId: string; message: Message }
-
 export type SessionCommand =
   | { type: 'structure'; operation: SessionStructureOperation }
   | { type: 'append'; messages: readonly Message[] }
   | { type: 'update'; messageId: string; updater: Updater<Message> }
   | { type: 'header'; updater: Updater<SessionHeader> }
 
-/** A committed row change; complete Sessions are obtained through explicit reads. */
+/** Durable row changes and their independent header projection. */
 export interface SessionCommandDelta extends SessionRowCommit {
   structureResult?: SessionStructureResult
   sessionId: string
-  previousRevision: number
+  previousRevision: number | null
   header: SessionHeader
-  previousHeader: SessionHeader
+  previousHeader?: SessionHeader
+  /** The row commit succeeded; only the external record projection needs repair. */
+  recordProjectionError?: unknown
   diff: SessionRowsDiff
   /** The newly appended active-path rows, excluding the previous tail link update. */
   appendedMessageIds: string[]
 }
 
-export type SessionCommandResult =
-  | { kind: 'rows'; delta: SessionCommandDelta }
-  | { kind: 'full'; session: Session; previous: Session; structureResult?: SessionStructureResult }
+export type SessionCommandResult = { kind: 'rows'; delta: SessionCommandDelta }
 
-export interface SessionDataWriteOptions {
-  /**
-   * The caller guarantees that, against the last persisted state, only this
-   * message's content differs: the set of messages, their parent/child links,
-   * the selected branches and the threads are all unchanged. Implementations
-   * may use it to write less, and may ignore it.
-   */
-  changedMessageId?: string
-  /** Snapshot the caller used to derive this write, for optimistic concurrency control. */
-  baseSession?: Session
-}
-
-export interface SessionDataRepositoryPort
-  extends Partial<SessionReadRepositoryPort>,
-    Partial<SessionContextRepositoryPort>,
-    Partial<SessionTextTokenRepositoryPort>,
-    Partial<SessionMessageRepositoryPort> {
-  initialize(): Promise<void>
-  getSession(id: string): Promise<Session | null>
-  setSession(session: Session, options?: SessionDataWriteOptions): Promise<void>
-  /** Execute against the current committed revision; complex and legacy sessions use a complete result. */
-  getCurrentThreadIdentity?(sessionId: string): Promise<CurrentThreadIdentity | null>
-  executeSessionCommand?(
-    sessionId: string,
-    command: SessionCommand,
-    expectedRevision?: number
-  ): Promise<SessionCommandResult>
-  deleteSession(id: string): Promise<void>
-  getAllSessionIds(): Promise<string[]>
-}
+export interface SessionDataRepositoryPort extends SessionRowRepositoryPort {}
 
 export interface SessionMetaRepositoryPort {
   initialize(): Promise<void>

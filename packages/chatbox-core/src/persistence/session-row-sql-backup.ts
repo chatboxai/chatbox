@@ -1,8 +1,11 @@
+import { BackupMessageValidator } from '../backup/payload'
+import { BackupRowProjectionBuilder } from '../backup/row-projection'
 import { v4 as uuid } from 'uuid'
 import { throwIfAborted } from '../backup/abort'
 import type { BackupRow, BackupSessionCandidate } from '../backup/session-port'
 import { type SessionRowCommit, SessionRowConflictError } from '../ports/session-row-store'
 import type { MessageRow, ThreadRow } from '../session/session-tree/types'
+import { rowExtra } from './session-row-projection-sql'
 import type { SessionRowSqlDatabase, SessionRowSqlStatement } from './session-row-sql'
 
 const STAGING_BATCH_STATEMENTS = 128
@@ -11,9 +14,9 @@ const encoder = new TextEncoder()
 
 const columns = {
   threads:
-    'session_id, thread_id, seq, name, created_at, root_message_id, active_leaf_message_id, compaction_points_json, session_prompt_context_snapshot_json, session_record_json, commit_revision',
+    'session_id, thread_id, seq, name, created_at, root_message_id, active_leaf_message_id, compaction_points_json, session_prompt_context_snapshot_json, session_record_json, commit_revision, projection_json',
   messages:
-    'session_id, message_id, thread_id, parent_message_id, active_child_id, seq, kind, status, created_at, updated_at, branch_id, payload_id, payload_chunk_count, payload_utf8_length',
+    'session_id, message_id, thread_id, parent_message_id, active_child_id, seq, kind, status, created_at, updated_at, branch_id, payload_id, payload_chunk_count, payload_utf8_length, row_metadata_json, selected_depth',
 }
 
 /** Candidates share the native staging tables; only the final small SQL batch publishes rows. */
@@ -24,8 +27,10 @@ export async function createSqlBackupCandidate(
     thread(row: ThreadRow, commit?: SessionRowCommit): SessionRowSqlStatement
     message(row: MessageRow): Iterable<SessionRowSqlStatement>
   },
-  createId: () => string = uuid
+  createId: () => string = uuid,
+  expectedRevision?: number | null
 ): Promise<BackupSessionCandidate> {
+  const projection = new BackupRowProjectionBuilder()
   const mutation = createId()
   const previous = createId()
   const heads = await database.query<{ revision: number | null }>(
@@ -33,6 +38,8 @@ export async function createSqlBackupCandidate(
     [sessionId]
   )
   const expected = heads[0]?.revision ?? null
+  if (expectedRevision !== undefined && expectedRevision !== expected)
+    throw new SessionRowConflictError(sessionId, expectedRevision, expected)
   const revision = (expected ?? 0) + 1
   if (!Number.isSafeInteger(revision)) throw new Error('Session revision exhausted')
   let commit: SessionRowCommit | undefined
@@ -82,6 +89,7 @@ export async function createSqlBackupCandidate(
     | {
         id: string
         decoder: { decode(input?: Uint8Array, options?: { stream?: boolean }): string }
+        validator: BackupMessageValidator
         count: number
         bytes: number
       }
@@ -123,9 +131,11 @@ export async function createSqlBackupCandidate(
       pending ??= {
         id: payloadPrefix + createId(),
         decoder: new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }),
+        validator: new BackupMessageValidator(),
         count: 0,
         bytes: 0,
       }
+      pending.validator.write(bytes)
       pending.bytes += bytes.length
       const text = pending.decoder.decode(bytes, { stream: true })
       const statements: SessionRowSqlStatement[] = []
@@ -142,6 +152,7 @@ export async function createSqlBackupCandidate(
     },
     async append(row: BackupRow) {
       if (published || disposed) throw new Error('Backup candidate is closed')
+      row = projection.append(row, row.kind === 'message' && row.payload ? pending?.validator.finishFacts() : undefined)
       if (row.kind === 'header') {
         if (commit || row.record.id !== sessionId) throw new Error('Invalid backup header')
         commit = { record: row.record, revision }
@@ -156,7 +167,7 @@ export async function createSqlBackupCandidate(
         const m = row.message
         await stage([
           {
-            sql: `INSERT INTO session_messages_staging (mutation_id, ${columns.messages}) VALUES (${Array(15).fill('?').join(', ')})`,
+            sql: `INSERT INTO session_messages_staging (mutation_id, ${columns.messages}) VALUES (${Array(17).fill('?').join(', ')})`,
             params: [
               mutation,
               sessionId,
@@ -173,6 +184,8 @@ export async function createSqlBackupCandidate(
               pending.id,
               pending.count,
               pending.bytes,
+              rowExtra(m),
+              null,
             ],
           },
         ])
@@ -201,8 +214,48 @@ export async function createSqlBackupCandidate(
     async publish(signal) {
       throwIfAborted(signal)
       if (!commit || published || disposed || pending) throw new Error('Backup candidate is not publishable')
+      if (failure) throw failure.error
+      const converted = projection.finish()
+      commit = { record: converted.session, revision }
+      const updates = function* (): Generator<SessionRowSqlStatement> {
+        for (const thread of converted.threads) {
+          const statement = codec.thread(thread, commit)
+          yield {
+            sql: `INSERT OR REPLACE INTO session_threads_staging(mutation_id,${columns.threads}) VALUES (${Array(
+              statement.params.length + 1
+            )
+              .fill('?')
+              .join(',')})`,
+            params: [mutation, ...statement.params],
+          }
+        }
+        for (const message of converted.messages)
+          yield {
+            sql: 'UPDATE session_messages_staging SET seq=?,row_metadata_json=? WHERE mutation_id=? AND session_id=? AND message_id=?',
+            params: [message.seq, rowExtra(message), mutation, sessionId, message.messageId],
+          }
+      }
+      await stage(updates())
       await flush()
       throwIfAborted(signal)
+      if (commit.record.rowFormatVersion === 3) {
+        await database.executeBatch([
+          {
+            sql: `WITH RECURSIVE path(message_id,thread_id,depth) AS (
+            SELECT m.message_id,m.thread_id,0 FROM session_threads_staging t
+            JOIN session_messages_staging m ON m.mutation_id=t.mutation_id AND m.session_id=t.session_id AND m.thread_id=t.thread_id AND m.message_id=t.root_message_id
+            WHERE t.mutation_id=? AND t.session_id=? AND m.parent_message_id IS NULL
+            UNION ALL
+            SELECT child.message_id,child.thread_id,path.depth+1 FROM path
+            JOIN session_messages_staging parent ON parent.mutation_id=? AND parent.session_id=? AND parent.message_id=path.message_id
+            JOIN session_messages_staging child ON child.mutation_id=parent.mutation_id AND child.session_id=parent.session_id AND child.thread_id=path.thread_id AND child.message_id=parent.active_child_id AND child.parent_message_id=parent.message_id
+          ) UPDATE session_messages_staging SET selected_depth=(SELECT depth FROM path WHERE path.message_id=session_messages_staging.message_id),
+            row_metadata_json=json_set(row_metadata_json,'$.selected',json(CASE WHEN message_id IN(SELECT message_id FROM path) THEN 'true' ELSE 'false' END))
+            WHERE mutation_id=? AND session_id=?`,
+            params: [mutation, sessionId, mutation, sessionId, mutation, sessionId],
+          },
+        ])
+      }
       const actual =
         (
           await database.query<{ revision: number | null }>(

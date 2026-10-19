@@ -1,12 +1,12 @@
-import { applyMessageUpdate } from '@chatbox/core/application/session'
+import { createForkCommandIdentity } from '@chatbox/core/application/session'
+import type { SessionHeader } from '@chatbox/core/ports'
 import { SessionActionBlockedError } from '@chatbox/core/session/action-gates'
 import { withSessionGenerationLock } from '@chatbox/core/generation'
 import { isActionAvailableInMode, resolveSessionMode } from '@chatbox/core/session/mode-policy'
 import { buildContext } from '@shared/context'
 import type { AttachmentResolver } from '@shared/context/types'
 import { supportsSessionGeneration } from '@shared/session/capabilities'
-import { findMessageContext, findMessageLocation as findStoredMessageLocation } from '@shared/session/message-forks'
-import { type CompactionPoint, createMessage, type Message, type Session, type SessionSettings } from '@shared/types'
+import { type CompactionPoint, createMessage, type Message, type SessionSettings } from '@shared/types'
 import { countMessageWords } from '@shared/utils/message'
 import { v4 as uuidv4 } from 'uuid'
 import { currentGenerationService } from '@/adapters/CurrentGenerationService'
@@ -15,7 +15,7 @@ import { estimateTokensFromMessages } from '@/packages/token'
 import { guardBackupWrite } from '@/app/backup-operation-guard'
 import { guardSessionAction } from './action-guard'
 import { createAttachmentResolver } from './attachment-resolver'
-import { createNewFork, createSaveAndResendFork, findMessageLocation } from './forks'
+import { createNewFork, createSaveAndResendFork } from './forks'
 import { insertMessageAfter, modifyMessage } from './messages'
 import { getSessionHeader, getSessionTokenModel } from './session-settings'
 import type { AgentModeEntrySource } from './types'
@@ -84,22 +84,12 @@ async function generateReplyBelowWithoutSessionLock(sessionId: string, msgId: st
     })
   } catch (error) {
     if (inserted) {
-      await rendererApplication.sessions.updateSessionWithMessages(
-        sessionId,
-        (session) => {
-          if (!session) throw error
-          const location = findStoredMessageLocation(session, newAssistantMsg.id)
-          const current = location?.list[location.index]
-          if (!current?.generating) return session
-          // Use the current container: the user may have switched branches while the write settled.
-          return applyMessageUpdate(session, sessionId, newAssistantMsg.id, {
-            ...current,
-            generating: false,
-            error: error instanceof Error ? error.message : String(error),
-          })
-        },
-        { preserveCachedGeneratingMessages: true }
-      )
+      await rendererApplication.sessions.updateMessage(sessionId, newAssistantMsg.id, (current) => {
+        if (!current) throw error
+        return current.generating
+          ? { ...current, generating: false, error: error instanceof Error ? error.message : String(error) }
+          : current
+      })
     }
     throw error
   } finally {
@@ -118,7 +108,7 @@ async function generateReplyBelowWithoutSessionLock(sessionId: string, msgId: st
  */
 export async function generateMore(sessionId: string, msgId: string) {
   if (!(await guardBackupWrite())) return
-  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
+  const session = (await rendererApplication.sessions.getSessionHeader(sessionId))?.header ?? null
   if (!session || !supportsSessionGeneration(session.type)) {
     return
   }
@@ -167,9 +157,9 @@ export async function saveAndResendMessage(
   // streaming since the editor's pre-check, including the short window before
   // its AbortController is registered.
   return withSessionGenerationLock(sessionId, async () => {
-    let session: Session | null
+    let session: SessionHeader | null
     try {
-      session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
+      session = (await rendererApplication.sessions.getSessionHeader(sessionId))?.header ?? null
     } catch {
       await saveEditWithoutResend(sessionId, editedMessage)
       return
@@ -177,11 +167,10 @@ export async function saveAndResendMessage(
     if (!session || !supportsSessionGeneration(session.type)) {
       return
     }
-    const location = findMessageLocation(session, editedMessage.id)
-    if (!location) {
-      return
-    }
-    const targetMessage = location.list[location.index]
+    const targetMessage = (
+      await rendererApplication.sessions.readSessionMessages({ sessionId, messageIds: [editedMessage.id] })
+    )?.messages[0]
+    if (!targetMessage) return
     if (
       !(await guardSessionAction(
         sessionId,
@@ -248,32 +237,33 @@ async function regenerateInNewForkWithoutSessionLock(
   msg: Message,
   options?: { runGenerateMore?: GenerateMoreFn }
 ) {
-  const runGenerateMore = options?.runGenerateMore ?? generateReplyBelowWithoutSessionLock
-  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
-  if (!session || !supportsSessionGeneration(session.type)) {
-    return
+  const session = (await rendererApplication.sessions.getSessionHeader(sessionId))?.header
+  if (!session || !supportsSessionGeneration(session.type)) return
+  const reply = { ...createMessage('assistant', ''), generating: true }
+  const result = await rendererApplication.sessions.executeStructureCommand(sessionId, {
+    action: 'message-retry',
+    messageId: msg.id,
+    reply,
+    identity: createForkCommandIdentity({ createId: uuidv4, now: Date.now }),
+    activeGenerationMessageIds: [...rendererApplication.generationRuntime.getActiveMessageIds(sessionId)],
+    guard: {
+      action: 'regenerate',
+      activeGenerationMessageIds: rendererApplication.generationRuntime.getActiveMessageIds(sessionId),
+    },
+  })
+  if (!result?.applied || !result.replyMessageId) return
+  const target = { ...reply, id: result.replyMessageId }
+  try {
+    await _generateWithoutSessionLock(sessionId, target, { operationType: 'regenerate' })
+  } catch (error) {
+    await rendererApplication.sessions.updateMessage(sessionId, target.id, (current) => {
+      if (!current) throw error
+      return current.generating
+        ? { ...current, generating: false, error: error instanceof Error ? error.message : String(error) }
+        : current
+    })
+    throw error
   }
-  const location = findMessageLocation(session, msg.id)
-  if (!location) {
-    await _generateWithoutSessionLock(sessionId, msg, { operationType: 'regenerate' })
-    return
-  }
-  // Skip anchored compaction summaries: a summary sits immediately after its
-  // boundary and belongs to the shared prefix, so the fork pivot must be the
-  // real conversation message before it (forks keyed on a summary id would
-  // attach navigation to SummaryMessage and break when it is deleted).
-  let previousMessageIndex = location.index - 1
-  while (previousMessageIndex >= 0 && location.list[previousMessageIndex].isSummary) {
-    previousMessageIndex -= 1
-  }
-  if (previousMessageIndex < 0) {
-    // If target message is the first message, regenerate directly
-    await _generateWithoutSessionLock(sessionId, msg, { operationType: 'regenerate' })
-    return
-  }
-  const forkMessage = location.list[previousMessageIndex]
-  await createNewFork(sessionId, forkMessage.id)
-  return runGenerateMore(sessionId, forkMessage.id)
 }
 
 /**
@@ -333,20 +323,6 @@ function createAttachmentResolverFromAdapter(adapter: {
       return adapter.getBlob(id).catch(() => null as string | null)
     },
   }
-}
-
-/**
- * Find the thread message list that a message belongs to
- * @param sessionId Session ID
- * @param messageId Message ID
- * @returns The thread message list containing the message
- */
-export async function getMessageThreadContext(sessionId: string, messageId: string): Promise<Message[]> {
-  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
-  if (!session) {
-    return []
-  }
-  return findMessageContext(session, messageId)?.list ?? []
 }
 
 // Re-export for backward compatibility

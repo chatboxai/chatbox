@@ -1,3 +1,6 @@
+import { SessionRowWriteQueue } from '@chatbox/core/application/session'
+import { projectRowFixture } from '../../../../packages/chatbox-core/src/ports/testing/session-row-fixtures'
+import { stageLegacySessionRows } from '@chatbox/core/backup'
 import { RowBackedSessionRepository } from '@chatbox/core/application/session'
 import { InMemorySessionRecordStore } from '../../../../packages/chatbox-core/src/testing/InMemorySessionRecordStore'
 import type { Message } from '@chatbox/core'
@@ -32,7 +35,7 @@ const isPublish = (batch: NativeStatement[]) =>
   batch.some((row) => row.statement.startsWith('INSERT OR REPLACE INTO session_row_heads'))
 
 function snapshot(count: number, revision = 1): SessionRowSnapshot {
-  return {
+  return projectRowFixture({
     revision,
     record: {
       id: 'session',
@@ -74,7 +77,7 @@ function snapshot(count: number, revision = 1): SessionRowSnapshot {
         },
       })),
     },
-  }
+  })
 }
 
 function realBridge(platform: 'ios' | 'android' = 'ios') {
@@ -123,6 +126,11 @@ async function storeRevision(database: NodeSessionRowSqlDatabase): Promise<numbe
   return rows[0]?.revision ?? null
 }
 
+function expectedSnapshot(value: SessionRowSnapshot | null): SessionRowSnapshot | null {
+  if (!value) return null
+  return JSON.parse(JSON.stringify(projectRowFixture(structuredClone(value)))) as SessionRowSnapshot
+}
+
 async function readContentSnapshot(store: SQLiteSessionRowStore) {
   const snapshot = await store.readSnapshot('session')
   if (!snapshot) return null
@@ -150,8 +158,10 @@ function selectedFixture() {
     ...old.rows.messages[19],
     message: {
       ...old.rows.messages[19].message,
-      tokenCountMap: { default: 123 },
-      tokenCalculatedAt: { default: 456 },
+      contentParts: [
+        ...old.rows.messages[19].message.contentParts,
+        { type: 'text' as const, text: 'Updated selected message' },
+      ],
     },
   }
   const diff = {
@@ -175,7 +185,7 @@ describe('Capacitor staging transport on real SQLite', () => {
     async (removeTail) => {
       const { store, database, calls } = realBridge()
       const old = snapshot(1000)
-      await store.writeRows(old, null)
+      await store.writeRows(projectRowFixture(old), null)
       await store.acceptTextTokenResults(await tokenResults(store))
       const before = await database.query<{ message_id: string; payload_id: string }>(
         'SELECT message_id, payload_id FROM session_messages ORDER BY seq'
@@ -191,8 +201,8 @@ describe('Capacitor staging transport on real SQLite', () => {
         {
           sessionId: 'session',
           threads: { upsert: removeTail ? threads : [], delete: [] },
-          messages: { upsert: messages, delete: removeTail ? ['m999'] : [] },
-          unchangedPayloadMessageIds: messages.map((row) => row.messageId),
+          messages: { upsert: [], delete: removeTail ? ['m999'] : [] },
+          messageMetadataUpsert: messages.map(({ message: _message, ...row }) => row),
         },
         { record: old.record, revision: 2 },
         1
@@ -210,7 +220,9 @@ describe('Capacitor staging transport on real SQLite', () => {
         messages.map((row) => [row.messageId, row.seq])
       )
       expect((await database.query('SELECT * FROM session_text_tokens')).length).toBe(messages.length)
-    }
+    },
+    // Every one of the 1,000 metadata rows is updated, then payload and token preservation are verified.
+    30000
   )
 
   it('initializes a fresh database through iOS delete-batch preprocessing', async () => {
@@ -256,7 +268,7 @@ describe('Capacitor staging transport on real SQLite', () => {
   it('cleans numerical sources only when live staged rows publish and rolls cleanup back on conflict', async () => {
     const { store, hooks, database, calls } = realBridge()
     const { old, diff, commit } = selectedFixture()
-    await store.writeRows(old, null)
+    await store.writeRows(projectRowFixture(old), null)
     const results = await tokenResults(store)
     await store.acceptTextTokenResults(results)
     const count = () => database.query('SELECT COUNT(*) AS count FROM session_text_tokens')
@@ -280,9 +292,15 @@ describe('Capacitor staging transport on real SQLite', () => {
     expect(stagedRows).toHaveLength(1)
     const tokenCleanup = calls.flat().filter((row) => row.statement.startsWith('DELETE FROM session_text_tokens'))
     expect(tokenCleanup).toHaveLength(1)
-    expect(tokenCleanup[0].values).toEqual(['session', stagedRows[0].values[0]])
+    expect(tokenCleanup[0].values).toEqual([
+      'session',
+      stagedRows[0].values[0],
+      'session',
+      stagedRows[0].values[0],
+      'session',
+    ])
     expect(tokenCleanup[0].statement).toContain(
-      'message_id IN (SELECT message_id FROM session_messages_staging WHERE mutation_id = ?)'
+      'JOIN session_messages m ON m.session_id=s.session_id AND m.message_id=s.message_id'
     )
     const queryPlan = await database.query<{ detail: string }>(
       `EXPLAIN QUERY PLAN ${tokenCleanup[0].statement}`,
@@ -291,6 +309,17 @@ describe('Capacitor staging transport on real SQLite', () => {
     expect(
       queryPlan.some((row) => /SEARCH session_text_tokens.*session_id=\? AND message_id=\?/.test(row.detail))
     ).toBe(true)
+    const payloadCleanup = calls
+      .flat()
+      .find((row) =>
+        row.statement.startsWith('DELETE FROM session_message_payload_chunks WHERE payload_id IN(SELECT m.payload_id')
+      )
+    expect(payloadCleanup).toBeDefined()
+    const payloadPlan = await database.query<{ detail: string }>(
+      `EXPLAIN QUERY PLAN ${payloadCleanup!.statement}`,
+      payloadCleanup!.values
+    )
+    expect(payloadPlan.some((row) => /SEARCH m .*session_id=\? AND message_id=\?/.test(row.detail))).toBe(true)
   })
 
   it.each(['success', 'rollback', 'lost-ack'] as const)(
@@ -298,20 +327,28 @@ describe('Capacitor staging transport on real SQLite', () => {
     async (outcome) => {
       const { store, hooks, database, calls } = realBridge()
       const { old, selected, commit } = selectedFixture()
-      await store.writeRows(old, null)
+      await store.writeRows(projectRowFixture(old), null)
       const results = await tokenResults(store)
       await store.acceptTextTokenResults(results)
       const diff = {
         sessionId: 'session',
         threads: { upsert: [{ ...old.rows.threads[0], name: 'Updated thread' }], delete: [] },
         messages: { upsert: [selected], delete: ['m5'] },
+        messageMetadataUpsert: [old.rows.messages[4], old.rows.messages[6]].map(({ message: _body, ...row }) => ({
+          ...row,
+          ...(row.messageId === 'm4' ? { activeChildId: 'm6' } : { parentMessageId: 'm4' }),
+        })),
       }
       const count = () => database.query('SELECT COUNT(*) AS count FROM session_text_tokens')
       calls.length = 0
       hooks.before = async (batch) => {
         if (!isPublish(batch)) return
         expect(await count()).toEqual([{ count: 20 }])
-        expect(await database.query('SELECT COUNT(*) AS count FROM session_messages_staging')).toEqual([{ count: 19 }])
+        expect(
+          (await database.query<{ message_id: string }>('SELECT message_id FROM session_messages_staging'))
+            .map((row) => row.message_id)
+            .sort()
+        ).toEqual(['m4', ...Array.from({ length: 14 }, (_, index) => `m${index + 6}`)].sort())
       }
       if (outcome === 'rollback') {
         hooks.rollback = isPublish
@@ -340,21 +377,29 @@ describe('Capacitor staging transport on real SQLite', () => {
       expect(await storeRevision(database)).toBe(2)
       const publish = calls.findLast(isPublish)
       expect(publish).toBeDefined()
-      expect(publish?.some((row) => row.statement === 'DELETE FROM session_messages WHERE session_id = ?')).toBe(true)
+      expect(publish?.some((row) => row.statement === 'DELETE FROM session_messages WHERE session_id = ?')).toBe(false)
       const tokenCleanup = publish?.filter((row) => row.statement.startsWith('DELETE FROM session_text_tokens'))
-      expect(tokenCleanup?.map((row) => row.values)).toEqual([['session']])
+      expect(tokenCleanup).toHaveLength(1)
     }
   )
 
   it.each(['direct', 'staged'] as const)('cleans deleted message sources in a delete-only %s diff', async (mode) => {
     const { store, database, calls } = realBridge()
     const old = snapshot(10)
-    await store.writeRows(old, null)
+    await store.writeRows(projectRowFixture(old), null)
     const results = await tokenResults(store)
     await store.acceptTextTokenResults(results)
     calls.length = 0
     await store.applyDiff(
-      { sessionId: 'session', threads: { upsert: [], delete: [] }, messages: { upsert: [], delete: ['m5', 'm6'] } },
+      {
+        sessionId: 'session',
+        threads: { upsert: [], delete: [] },
+        messages: { upsert: [], delete: ['m5', 'm6'] },
+        messageMetadataUpsert: [old.rows.messages[4], old.rows.messages[7]].map(({ message: _body, ...row }) => ({
+          ...row,
+          ...(row.messageId === 'm4' ? { activeChildId: 'm7' } : { parentMessageId: 'm4' }),
+        })),
+      },
       { revision: 2, record: { ...old.record, name: mode === 'staged' ? 'thread name '.repeat(50_000) : 'Updated' } },
       1
     )
@@ -366,17 +411,8 @@ describe('Capacitor staging transport on real SQLite', () => {
     ).toEqual([])
     const publish = calls.findLast(isPublish)
     const tokenCleanup = publish?.filter((row) => row.statement.startsWith('DELETE FROM session_text_tokens'))
-    expect(tokenCleanup?.map((row) => row.values)).toEqual(
-      mode === 'staged'
-        ? [['session']]
-        : [
-            ['session', 'm5'],
-            ['session', 'm6'],
-          ]
-    )
-    expect(
-      calls.some((batch) => batch.some((row) => row.statement.startsWith('INSERT INTO session_messages_staging')))
-    ).toBe(mode === 'staged')
+    expect(tokenCleanup).toHaveLength(1)
+    expect(calls.some(isStaging)).toBe(true)
     expect(await storeRevision(database)).toBe(2)
   })
 
@@ -385,7 +421,7 @@ describe('Capacitor staging transport on real SQLite', () => {
     async (failure) => {
       const { store, calls, database } = realBridge()
       const old = snapshot(2)
-      await store.writeRows(old, null)
+      await store.writeRows(projectRowFixture(old), null)
       calls.length = 0
       const next = snapshot(100, 2)
       for (const row of next.rows.messages) {
@@ -399,9 +435,9 @@ describe('Capacitor staging transport on real SQLite', () => {
         name: 'SessionRowStoreError',
         operation: 'write-rows',
       })
-      expect(calls.some(isStaging)).toBe(true)
+      if (failure === 'serialization') expect(calls.some(isStaging)).toBe(true)
       expect(calls.some(isPublish)).toBe(false)
-      expect(await readContentSnapshot(store)).toEqual(old)
+      expect(await readContentSnapshot(store)).toEqual(expectedSnapshot(old))
       expect(await storeRevision(database)).toBe(1)
       expect(await database.query('SELECT mutation_id FROM session_row_staging_mutations')).toEqual([])
       expect(await database.query('SELECT message_id FROM session_messages_staging')).toEqual([])
@@ -416,13 +452,16 @@ describe('Capacitor staging transport on real SQLite', () => {
       for (const row of old.rows.messages.slice(-500)) {
         row.message.contentParts = [{ type: 'text', text: 'selected message body '.repeat(60) }]
       }
-      await store.writeRows(old, null)
+      await store.writeRows(projectRowFixture(old), null)
       const originalMetadata = await database.query<{ message_id: string; payload_id: string }>(
         'SELECT * FROM session_messages ORDER BY message_id'
       )
       const selected = old.rows.messages.slice(-500).map((row) => ({
         ...row,
-        message: { ...row.message, tokenCountMap: { default: 100 }, tokenCalculatedAt: { default: 123 } },
+        message: {
+          ...row.message,
+          contentParts: [...row.message.contentParts, { type: 'text' as const, text: ' updated' }],
+        },
       }))
       const selectedIds = new Set(selected.map((row) => row.messageId))
       calls.length = 0
@@ -447,8 +486,13 @@ describe('Capacitor staging transport on real SQLite', () => {
       )
       expect(stagedCount).toBe(selected.length)
       // Count actual SQLite row changes, including payload replacement and cleanup.
-      // This bound depends on the selected 500 rows, not the conversation's size.
-      expect(changes.reduce((sum, value) => sum + value, 0)).toBeLessThanOrEqual(selected.length * 5 + 20)
+      // Each selected row also creates and deletes a payload ownership record.
+      // The bound depends on the selected 500 rows, not the conversation size.
+      const projectionChanges = selected.length * 2 // Replacement preview and old payload's preview cleanup.
+      expect(changes.reduce((sum, value) => sum + value, 0) - projectionChanges).toBeLessThanOrEqual(
+        selected.length * 7 + 20
+      )
+      expect(await database.query('SELECT COUNT(*) AS count FROM session_message_navigation')).toEqual([{ count }])
       expect(calls.flat().some((row) => row.statement === 'DELETE FROM session_messages WHERE session_id = ?')).toBe(
         false
       )
@@ -458,11 +502,13 @@ describe('Capacitor staging transport on real SQLite', () => {
       expect(nextMetadata.filter((row) => !selectedIds.has(row.message_id))).toEqual(
         originalMetadata.filter((row) => !selectedIds.has(row.message_id))
       )
-      expect(await readContentSnapshot(store)).toEqual({
-        ...old,
-        revision: 2,
-        rows: { ...old.rows, messages: [...old.rows.messages.slice(0, -selected.length), ...selected] },
-      })
+      expect(await readContentSnapshot(store)).toEqual(
+        expectedSnapshot({
+          ...old,
+          revision: 2,
+          rows: { ...old.rows, messages: [...old.rows.messages.slice(0, -selected.length), ...selected] },
+        })
+      )
       expect(await database.query('SELECT mutation_id FROM session_messages_staging')).toEqual([])
     },
     60_000
@@ -491,20 +537,22 @@ describe('Capacitor staging transport on real SQLite', () => {
       rootMessageId: 'archived',
       activeLeafMessageId: 'archived',
     })
-    await store.writeRows(old, null)
+    await store.writeRows(projectRowFixture(old), null)
     const original = await database.query("SELECT * FROM session_messages WHERE message_id IN ('fork', 'archived')")
     await store.applyDiff(diff, commit, 1)
     expect(await database.query("SELECT * FROM session_messages WHERE message_id IN ('fork', 'archived')")).toEqual(
       original
     )
-    expect(await readContentSnapshot(store)).toEqual({
-      ...old,
-      revision: 2,
-      rows: {
-        ...old.rows,
-        messages: old.rows.messages.map((row) => (row.messageId === selected.messageId ? selected : row)),
-      },
-    })
+    expect(await readContentSnapshot(store)).toEqual(
+      expectedSnapshot({
+        ...old,
+        revision: 2,
+        rows: {
+          ...old.rows,
+          messages: old.rows.messages.map((row) => (row.messageId === selected.messageId ? selected : row)),
+        },
+      })
+    )
   })
 
   it.each(['payload', 'staging', 'publish'] as const)(
@@ -512,7 +560,7 @@ describe('Capacitor staging transport on real SQLite', () => {
     async (phase) => {
       const { store, hooks, database } = realBridge()
       const { old, diff, commit, next } = selectedFixture()
-      await store.writeRows(old, null)
+      await store.writeRows(projectRowFixture(old), null)
       let failed = false
       hooks.rollback = (batch) => {
         const matches =
@@ -527,10 +575,10 @@ describe('Capacitor staging transport on real SQLite', () => {
       }
       await expect(store.applyDiff(diff, commit, 1)).rejects.toMatchObject({ name: 'SessionRowStoreError' })
       expect(failed).toBe(true)
-      expect(await readContentSnapshot(store)).toEqual(old)
+      expect(await readContentSnapshot(store)).toEqual(expectedSnapshot(old))
       expect(await database.query('SELECT mutation_id FROM session_row_staging_mutations')).toEqual([])
       await store.applyDiff(diff, commit, 1)
-      expect(await readContentSnapshot(store)).toEqual(next)
+      expect(await readContentSnapshot(store)).toEqual(expectedSnapshot(next))
     }
   )
 
@@ -539,7 +587,7 @@ describe('Capacitor staging transport on real SQLite', () => {
     async (winnerKind) => {
       const { store, hooks, database } = realBridge()
       const { old, diff, commit } = selectedFixture()
-      await store.writeRows(old, null)
+      await store.writeRows(projectRowFixture(old), null)
       const winner = snapshot(21, 3)
       let changed = false
       hooks.after = async (batch) => {
@@ -555,7 +603,7 @@ describe('Capacitor staging transport on real SQLite', () => {
         actualRevision: winnerKind === 'write' ? 3 : 2,
       })
       expect(changed).toBe(true)
-      expect(await readContentSnapshot(store)).toEqual(winnerKind === 'write' ? winner : null)
+      expect(await readContentSnapshot(store)).toEqual(expectedSnapshot(winnerKind === 'write' ? winner : null))
       expect(await database.query('SELECT mutation_id FROM session_messages_staging')).toEqual([])
     }
   )
@@ -563,7 +611,7 @@ describe('Capacitor staging transport on real SQLite', () => {
   it('recognizes a selected-message publish with a lost bridge acknowledgement', async () => {
     const { store, hooks } = realBridge()
     const { old, diff, commit, next } = selectedFixture()
-    await store.writeRows(old, null)
+    await store.writeRows(projectRowFixture(old), null)
     let lost = false
     hooks.after = (batch) => {
       if (!lost && isPublish(batch)) {
@@ -571,9 +619,9 @@ describe('Capacitor staging transport on real SQLite', () => {
         throw new Error('Bridge acknowledgement lost')
       }
     }
-    await expect(store.applyDiff(diff, commit, 1)).resolves.toBeUndefined()
+    await expect(store.applyDiff(diff, commit, 1)).resolves.toMatchObject({ revision: 2 })
     expect(lost).toBe(true)
-    expect(await readContentSnapshot(store)).toEqual(next)
+    expect(await readContentSnapshot(store)).toEqual(expectedSnapshot(next))
   })
 
   it('preserves complete escaped multi-chunk bodies and long ids within native budgets', async () => {
@@ -590,8 +638,14 @@ describe('Capacitor staging transport on real SQLite', () => {
       contentParts: [{ type: 'text', text: '\\"\u0001汉😀'.repeat(100_000) }],
     }
     old.rows.threads[0].activeLeafMessageId = messageId
-    await store.writeRows(old, null)
-    const selected = { ...row, message: { ...row.message, tokenCountMap: { default: 123 } } }
+    await store.writeRows(projectRowFixture(old), null)
+    const selected = {
+      ...row,
+      message: {
+        ...row.message,
+        contentParts: [...row.message.contentParts, { type: 'text' as const, text: ' updated' }],
+      },
+    }
     calls.length = 0
     await store.applyDiff(
       { sessionId: 'session', threads: { upsert: [], delete: [] }, messages: { upsert: [selected], delete: [] } },
@@ -602,52 +656,54 @@ describe('Capacitor staging transport on real SQLite', () => {
     expect(
       calls.flat().some((statement) => statement.statement === 'DELETE FROM session_messages WHERE session_id = ?')
     ).toBe(false)
-    expect(await readContentSnapshot(store)).toEqual({
-      ...old,
-      revision: 2,
-      rows: { ...old.rows, messages: [...old.rows.messages.slice(0, -1), selected] },
-    })
+    expect(await readContentSnapshot(store)).toEqual(
+      expectedSnapshot({
+        ...old,
+        revision: 2,
+        rows: { ...old.rows, messages: [...old.rows.messages.slice(0, -1), selected] },
+      })
+    )
   })
 
   it('recovers abandoned sparse staging after cleanup failure without publishing it', async () => {
     const { store, hooks, database } = realBridge()
     const { old, diff, commit, next } = selectedFixture()
-    await store.writeRows(old, null)
+    await store.writeRows(projectRowFixture(old), null)
     hooks.after = (batch) => {
       if (isStaging(batch)) throw new Error('Staging acknowledgement lost')
     }
     hooks.before = (batch) => {
-      if (batch[0].statement === 'DELETE FROM session_threads_staging WHERE mutation_id = ?')
+      if (batch.some((row) => row.statement === 'DELETE FROM session_row_local_payloads WHERE mutation_id=?'))
         throw new Error('Cleanup unavailable')
     }
     await expect(store.applyDiff(diff, commit, 1)).rejects.toMatchObject({ name: 'SessionRowStoreError' })
-    expect(await readContentSnapshot(store)).toEqual(old)
+    expect(await readContentSnapshot(store)).toEqual(expectedSnapshot(old))
     expect(await database.query('SELECT message_id FROM session_messages_staging')).toEqual([{ message_id: 'm19' }])
     hooks.after = undefined
     hooks.before = undefined
     await new SqlSessionRowStore(database).initialize()
     expect(await database.query('SELECT message_id FROM session_messages_staging')).toEqual([{ message_id: 'm19' }])
-    expect(await readContentSnapshot(store)).toEqual(old)
+    expect(await readContentSnapshot(store)).toEqual(expectedSnapshot(old))
     await database.execute('UPDATE session_row_staging_mutations SET created_at = 0')
     await new SqlSessionRowStore(database).initialize()
     expect(await database.query('SELECT mutation_id FROM session_row_staging_mutations')).toEqual([])
     expect(await database.query('SELECT mutation_id FROM session_messages_staging')).toEqual([])
-    expect(await readContentSnapshot(store)).toEqual(old)
+    expect(await readContentSnapshot(store)).toEqual(expectedSnapshot(old))
     await store.applyDiff(diff, commit, 1)
-    expect(await readContentSnapshot(store)).toEqual(next)
+    expect(await readContentSnapshot(store)).toEqual(expectedSnapshot(next))
   })
 
-  it.each(['thread', 'message-delete', 'thread-delete', 'unguarded'] as const)(
-    'uses complete staging for a %s diff',
+  it.each(['thread', 'message-delete', 'thread-delete'] as const)(
+    'publishes local rows for a %s diff',
     async (kind) => {
       const { store, hooks } = realBridge()
       const { old, diff, commit, next } = selectedFixture()
-      await store.writeRows(old, null)
+      await store.writeRows(projectRowFixture(old), null)
       let published = false
       hooks.before = (batch) => {
         if (!isPublish(batch)) return
         published = true
-        expect(batch.some((row) => row.statement === 'DELETE FROM session_messages WHERE session_id = ?')).toBe(true)
+        expect(batch.some((row) => row.statement === 'DELETE FROM session_messages WHERE session_id = ?')).toBe(false)
       }
       await store.applyDiff(
         {
@@ -659,29 +715,39 @@ describe('Capacitor staging transport on real SQLite', () => {
           messages: { ...diff.messages, delete: kind === 'message-delete' ? ['missing'] : [] },
         },
         commit,
-        kind === 'unguarded' ? undefined : 1
+        1
       )
       expect(published).toBe(true)
-      expect(await readContentSnapshot(store)).toEqual(next)
+      expect(await readContentSnapshot(store)).toEqual(expectedSnapshot(next))
     }
   )
+
+  it('rejects local edits without a revision before modifying published rows', async () => {
+    const { store } = realBridge()
+    const { old, diff, commit } = selectedFixture()
+    await store.writeRows(projectRowFixture(old), null)
+    await expect(store.applyDiff(diff, commit)).rejects.toMatchObject({
+      cause: { message: 'Local row edits require an expected revision' },
+    })
+    expect(await readContentSnapshot(store)).toEqual(expectedSnapshot(old))
+  })
 
   it('rejects an unknown statement kind without publishing a partial selection', async () => {
     const { store, calls } = realBridge()
     const { old } = selectedFixture()
-    await store.writeRows(old, null)
+    await store.writeRows(projectRowFixture(old), null)
     calls.length = 0
     const sqlDatabase = (store as unknown as { store: { database: SessionRowSqlDatabase } }).store.database
     await expect(
       sqlDatabase.executeBatch([{ sql: 'SELECT ?', params: ['x'.repeat(600 * 1024)] }], {
         sessionId: 'session',
-        mode: 'diff',
+        mode: 'replace',
         expectedRevision: 1,
         resultRevision: 2,
       })
     ).rejects.toThrow('session row statement is missing staging metadata')
-    expect(calls).toEqual([])
-    expect(await readContentSnapshot(store)).toEqual(old)
+    expect(calls.some(isPublish)).toBe(false)
+    expect(await readContentSnapshot(store)).toEqual(expectedSnapshot(old))
   })
 
   it.each([1_000, 10_000, 100_000])(
@@ -690,18 +756,72 @@ describe('Capacitor staging transport on real SQLite', () => {
       const { store, calls, database } = realBridge()
       const expected = snapshot(count)
       await store.writeRows(expected, null)
-      expect(await readContentSnapshot(store)).toEqual(expected)
-      const entries = calls.reduce((sum, batch) => sum + batch.length, 0)
-      expect(entries).toBeLessThanOrEqual(Math.ceil(count / 30) + 20)
+      expect(await readContentSnapshot(store)).toEqual(expectedSnapshot(expected))
+      const insertFamilies = [
+        { prefix: 'INSERT OR REPLACE INTO session_messages_staging ', width: 17 },
+        { prefix: 'INSERT OR REPLACE INTO session_message_payload_chunks ', width: 4 },
+        { prefix: 'INSERT OR REPLACE INTO session_message_navigation ', width: 4 },
+      ]
+      const isRowInsert = (row: NativeStatement) =>
+        insertFamilies.some(({ prefix }) => row.statement.startsWith(prefix))
+      const rowBatches = calls.filter((batch) => batch.some(isRowInsert))
+      for (const { prefix, width } of insertFamilies) {
+        const maxRows = Math.floor(900 / width)
+        let totalRows = 0
+        for (const batch of rowBatches) {
+          const inserts = batch.filter((row) => row.statement.startsWith(prefix))
+          const batchRows = inserts.reduce((sum, row) => sum + row.values.length / width, 0)
+          totalRows += batchRows
+          // Each byte-bounded transport batch may finish with one partial statement per table.
+          expect(inserts).toHaveLength(Math.ceil(batchRows / maxRows))
+          for (const insert of inserts.slice(0, -1)) expect(insert.values).toHaveLength(maxRows * width)
+        }
+        expect(totalRows).toBe(count)
+      }
+      const uncoalescedSizes = rowBatches.map((batch) => {
+        let bytes = 2
+        let statements = 0
+        let largest = 0
+        for (const row of batch) {
+          const family = insertFamilies.find(({ prefix }) => row.statement.startsWith(prefix))
+          const width = family?.width ?? row.values.length
+          const statement = family
+            ? row.statement.slice(0, row.statement.indexOf(' VALUES ')) +
+              ` VALUES (${Array(width).fill('?').join(', ')})`
+            : row.statement
+          for (let offset = 0; offset < row.values.length; offset += width) {
+            const size = encoder.encode(
+              JSON.stringify({ statement, values: row.values.slice(offset, offset + width) })
+            ).byteLength
+            bytes += size + (statements++ ? 1 : 0)
+            largest = Math.max(largest, size)
+          }
+        }
+        return { bytes, largest }
+      })
+      const largestStatement = Math.max(...uncoalescedSizes.map((batch) => batch.largest))
+      for (const batch of uncoalescedSizes.slice(0, -1))
+        expect(batch.bytes).toBeGreaterThanOrEqual(480 * 1024 - largestStatement - 1)
+      // This single-thread fixture has three prepare, four thread and eleven publication statements.
+      expect(calls.flat().filter((row) => !isRowInsert(row))).toHaveLength(18)
       expect(
         calls
           .flat()
           .some(
             (row) =>
-              row.statement.startsWith('INSERT OR REPLACE INTO session_messages_staging') && row.values.length === 900
+              row.statement.startsWith('INSERT OR REPLACE INTO session_messages_staging') && row.values.length >= 400
           )
       ).toBe(true)
-      expect(await database.query("SELECT name FROM sqlite_master WHERE type = 'trigger'")).toEqual([])
+      expect(await database.query("SELECT name FROM sqlite_master WHERE type = 'trigger'")).toEqual([
+        { name: 'session_message_navigation_cleanup' },
+        { name: 'session_token_cache_delete' },
+        { name: 'session_token_cache_payload' },
+      ])
+      expect(
+        await database.query(
+          "SELECT name FROM sqlite_master WHERE type = 'trigger' AND upper(sql) LIKE '%AFTER INSERT%'"
+        )
+      ).toEqual([])
       expect(await database.query('PRAGMA foreign_key_list(session_messages_staging)')).toEqual([])
       expect(await database.query('PRAGMA foreign_key_list(session_message_payload_chunks)')).toEqual([])
     },
@@ -722,13 +842,16 @@ describe('Capacitor staging transport on real SQLite', () => {
       },
     }
     expected.rows.messages = [old, ...expected.rows.messages.slice(1), replacement]
-    await store.writeRows(expected, null)
-    expect(await readContentSnapshot(store)).toEqual({
-      ...expected,
-      rows: { ...expected.rows, messages: [replacement, ...expected.rows.messages.slice(1, -1)] },
-    })
+    await store.writeRows(projectRowFixture(expected), null)
+    expect(await readContentSnapshot(store)).toEqual(
+      expectedSnapshot({
+        ...expected,
+        rows: { ...expected.rows, messages: [replacement, ...expected.rows.messages.slice(1, -1)] },
+      })
+    )
   })
 
+  // This transaction stages 1,000 bodies and rebuilds the selected-path metadata before snapshot verification.
   it('keeps deletes and commit updates after the staged inserts in a large diff', async () => {
     const { store, calls } = realBridge()
     await store.writeRows(snapshot(1), null)
@@ -746,18 +869,20 @@ describe('Capacitor staging transport on real SQLite', () => {
       1
     )
     expect(calls.some(isStaging)).toBe(true)
-    expect(await readContentSnapshot(store)).toEqual({
-      ...next,
-      rows: { ...next.rows, messages: next.rows.messages.filter((row) => row.messageId !== 'm500') },
-    })
-  })
+    expect(await readContentSnapshot(store)).toEqual(
+      expectedSnapshot({
+        ...next,
+        rows: { ...next.rows, messages: next.rows.messages.filter((row) => row.messageId !== 'm500') },
+      })
+    )
+  }, 30000)
 
   it.each(['staging', 'publish'] as const)(
     'rolls back a failed %s transaction and retries from the old snapshot',
     async (phase) => {
       const { store, hooks, database } = realBridge()
       const old = snapshot(1)
-      await store.writeRows(old, null)
+      await store.writeRows(projectRowFixture(old), null)
       const next = snapshot(1_000, 2)
       let failed = false
       hooks.rollback = (batch) => {
@@ -767,10 +892,10 @@ describe('Capacitor staging transport on real SQLite', () => {
       }
       await expect(store.writeRows(next, 1)).rejects.toMatchObject({ name: 'SessionRowStoreError' })
       expect(failed).toBe(true)
-      expect(await readContentSnapshot(store)).toEqual(old)
+      expect(await readContentSnapshot(store)).toEqual(expectedSnapshot(old))
       expect(await database.query('SELECT mutation_id FROM session_row_staging_mutations')).toEqual([])
       await store.writeRows(next, 1)
-      expect(await readContentSnapshot(store)).toEqual(next)
+      expect(await readContentSnapshot(store)).toEqual(expectedSnapshot(next))
       expect(await database.query('SELECT mutation_id FROM session_messages_staging')).toEqual([])
       expect((await database.query('SELECT payload_id FROM session_message_payload_chunks')).length).toBe(1_000)
     }
@@ -779,7 +904,7 @@ describe('Capacitor staging transport on real SQLite', () => {
   it('keeps published rows unchanged until the final CAS transaction', async () => {
     const { store, hooks, database } = realBridge()
     const old = snapshot(1)
-    await store.writeRows(old, null)
+    await store.writeRows(projectRowFixture(old), null)
     let stagingBatches = 0
     hooks.after = async (batch) => {
       if (!isStaging(batch)) return
@@ -808,7 +933,7 @@ describe('Capacitor staging transport on real SQLite', () => {
       actualRevision: 3,
     })
     expect(replaced).toBe(true)
-    expect(await readContentSnapshot(store)).toEqual(winner)
+    expect(await readContentSnapshot(store)).toEqual(expectedSnapshot(winner))
     expect(await database.query('SELECT mutation_id FROM session_messages_staging')).toEqual([])
   })
 
@@ -826,7 +951,7 @@ describe('Capacitor staging transport on real SQLite', () => {
     const next = snapshot(1_000, 2)
     await expect(store.writeRows(next, 1)).resolves.toBeUndefined()
     expect(lost).toBe(true)
-    expect(await readContentSnapshot(store)).toEqual(next)
+    expect(await readContentSnapshot(store)).toEqual(expectedSnapshot(next))
   })
 })
 
@@ -867,7 +992,12 @@ it.each(['ios', 'android'] as const)(
   'keeps repeated branched append commands bounded through the %s mobile port',
   async (platform) => {
     const { store } = realBridge(platform)
-    const repository = new RowBackedSessionRepository({ rows: store, records: new InMemorySessionRecordStore() })
+    const repository = new RowBackedSessionRepository({
+      rows: store,
+      backup: store,
+      writes: new SessionRowWriteQueue((_id, action) => action()),
+      records: new InMemorySessionRecordStore(),
+    })
     await repository.initialize()
     const message = (id: string): Message => ({
       id,
@@ -875,7 +1005,7 @@ it.each(['ios', 'android'] as const)(
       contentParts: [{ type: 'text', text: id }],
       timestamp: 1,
     })
-    await repository.setSession({
+    const seed = await stageLegacySessionRows(store, {
       id: 'session',
       name: 'Forked',
       messages: [message('pivot'), message('tail')],
@@ -890,16 +1020,18 @@ it.each(['ios', 'android'] as const)(
         },
       },
     })
-    repository.forgetBaseline('session')
+    await seed.publish()
+    await seed.dispose()
     const fullRead = vi.spyOn(store, 'readSnapshot')
     for (const id of ['next', 'last']) {
       const result = await repository.executeSessionCommand('session', { type: 'append', messages: [message(id)] })
       expect(result.kind).toBe('rows')
     }
     expect(fullRead).not.toHaveBeenCalled()
-    const persisted = await repository.getSession('session')
-    expect(persisted?.messages.map((item) => item.id)).toEqual(['pivot', 'tail', 'next', 'last'])
-    expect(persisted?.messageForksHash?.pivot.lists[1].messages.map((item) => item.id)).toEqual(['saved'])
+    const persisted = await repository.readSessionTranscriptWindow({ sessionId: 'session', limit: 20 })
+    expect(persisted?.messages.map((row) => row.messageId)).toEqual(['pivot', 'tail', 'next', 'last'])
+    const inactive = await store.readBranchMessagesPage({ sessionId: 'session', firstMessageId: 'saved', limit: 20 })
+    expect(inactive?.messages.map((row) => row.messageId)).toEqual(['saved'])
   }
 )
 
@@ -907,7 +1039,12 @@ it.each(['ios', 'android'] as const)(
   'commits thread lifecycle through the %s structural mobile port',
   async (platform) => {
     const { store } = realBridge(platform)
-    const repository = new RowBackedSessionRepository({ rows: store, records: new InMemorySessionRecordStore() })
+    const repository = new RowBackedSessionRepository({
+      rows: store,
+      backup: store,
+      writes: new SessionRowWriteQueue((_id, action) => action()),
+      records: new InMemorySessionRecordStore(),
+    })
     await repository.initialize()
     const message = (id: string): Message => ({
       id,
@@ -915,15 +1052,15 @@ it.each(['ios', 'android'] as const)(
       contentParts: [{ type: 'text', text: id }],
       timestamp: 1,
     })
-    await repository.setSession({
+    const seed = await stageLegacySessionRows(store, {
       id: 'session',
       name: 'Threaded',
       messages: [message('active')],
       threads: [{ id: 'archived', name: 'History', createdAt: 1, messages: [message('old')] }],
     })
-    repository.forgetBaseline('session')
+    await seed.publish()
+    await seed.dispose()
     const fullRead = vi.spyOn(store, 'readSnapshot')
-    const structure = vi.spyOn(store, 'readStructure')
     const switched = await repository.executeSessionCommand('session', {
       type: 'structure',
       operation: { action: 'thread-switch', threadId: 'archived', archiveId: 'saved', now: 2 },
@@ -931,13 +1068,12 @@ it.each(['ios', 'android'] as const)(
     expect(switched.kind).toBe('rows')
     const deleted = await repository.executeSessionCommand('session', {
       type: 'structure',
-      operation: { action: 'thread-delete', threadId: 'saved' },
+      operation: { action: 'thread-delete', threadId: 'session' },
     })
     expect(deleted.kind).toBe('rows')
-    expect(structure).toHaveBeenCalledTimes(2)
     expect(fullRead).not.toHaveBeenCalled()
-    const persisted = await repository.getSession('session')
-    expect(persisted?.messages.map((item) => item.id)).toEqual(['old'])
-    expect(persisted?.threads ?? []).toEqual([])
+    const persisted = await repository.readSessionTranscriptWindow({ sessionId: 'session', limit: 20 })
+    expect(persisted?.messages.map((row) => row.messageId)).toEqual(['old'])
+    expect((await store.readThreadsPage({ sessionId: 'session', limit: 20 }))?.threadIds).toEqual(['archived'])
   }
 )

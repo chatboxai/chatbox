@@ -1,6 +1,6 @@
+import { visitSelectedSessionMessages } from './session-row-scan'
 import { supportsImageReferenceInput } from '@chatbox/core/application/image-generation'
 import { type ImageGeneration, ModelProviderEnum } from '@shared/types'
-import { rendererApplication } from '@/app/renderer-application'
 import { requestAppActionApproval } from '@/packages/app-action-approval'
 import { type AvailableImageModel, getAvailableImageModels } from '@/packages/image-model-catalog'
 import storage from '@/storage'
@@ -165,16 +165,29 @@ function displayCandidateToolCallId(record: ImageGeneration, currentSessionId: s
     : undefined
 }
 
-async function getDisplayedImageToolCallIds(sessionId: string): Promise<ReadonlySet<string>> {
-  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
+async function getDisplayedImageToolCallIds(
+  sessionId: string,
+  candidates: readonly string[]
+): Promise<ReadonlySet<string>> {
+  const pending = new Set(candidates)
   const ids = new Set<string>()
-  for (const message of session?.messages ?? []) {
-    for (const part of message.contentParts ?? []) {
-      if (part.type === 'tool-call' && getAcceptedImageBackgroundTaskResult(part.result) !== null) {
-        ids.add(part.toolCallId)
+  await visitSelectedSessionMessages(
+    sessionId,
+    ({ message }) => {
+      for (const part of message.contentParts) {
+        if (
+          part.type === 'tool-call' &&
+          pending.has(part.toolCallId) &&
+          getAcceptedImageBackgroundTaskResult(part.result) !== null
+        ) {
+          ids.add(part.toolCallId)
+          pending.delete(part.toolCallId)
+        }
       }
-    }
-  }
+      return pending.size === 0
+    },
+    true
+  )
   return ids
 }
 
@@ -566,7 +579,7 @@ export const imageCommands: ChatboxCliCommandDefinition[] = [
       const displayedInline =
         candidateToolCallId !== undefined &&
         sessionId !== undefined &&
-        (await getDisplayedImageToolCallIds(sessionId)).has(candidateToolCallId)
+        (await getDisplayedImageToolCallIds(sessionId, [candidateToolCallId])).has(candidateToolCallId)
       return compactRecord(record, { displayedInline })
     },
   },
@@ -581,7 +594,10 @@ export const imageCommands: ChatboxCliCommandDefinition[] = [
       const candidateIds = page.items.map((item) => displayCandidateToolCallId(item, sessionId))
       const displayedToolCallIds =
         sessionId !== undefined && candidateIds.some((id) => id !== undefined)
-          ? await getDisplayedImageToolCallIds(sessionId)
+          ? await getDisplayedImageToolCallIds(
+              sessionId,
+              candidateIds.filter((id): id is string => id !== undefined)
+            )
           : undefined
       return {
         scope: 'global',

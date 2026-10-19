@@ -1,6 +1,14 @@
 import { isTextFilePath } from '@shared/file-extensions'
 import { getToolResultImageReference } from '@shared/tool-result-image'
-import type { CopilotDetail, Message, MessageFile, Session, SessionMetaRecord, Settings } from '@shared/types'
+import type {
+  CopilotDetail,
+  Message,
+  MessageFile,
+  Session,
+  SessionHeader,
+  SessionMetaRecord,
+  Settings,
+} from '@shared/types'
 import { getWorkArtifacts } from '@shared/work-artifacts'
 import type { BackupResourceEntry, BackupWarning } from './types'
 
@@ -18,7 +26,7 @@ function addReference(references: ResourceReference[], reference: ResourceRefere
   if (reference?.storageKey) references.push(reference)
 }
 
-function collectMessageReferences(
+export function collectMessageReferences(
   message: Message,
   sessionId: string,
   references: ResourceReference[],
@@ -127,20 +135,25 @@ export function collectSessionResourceReferences(session: Session): {
   const references: ResourceReference[] = []
   const warnings: BackupWarning[] = []
   visitSessionMessages(session, (message) => collectMessageReferences(message, session.id, references, warnings))
+  references.push(...collectHeaderResourceReferences(session))
+  return { references, warnings }
+}
+
+export function collectHeaderResourceReferences(session: SessionHeader): ResourceReference[] {
+  const references: ResourceReference[] = []
   addReference(
     references,
     session.assistantAvatarKey
       ? { storageKey: session.assistantAvatarKey, kind: 'avatar', sessionId: session.id }
       : undefined
   )
-  if (session.backgroundImage?.type === 'storage-key') {
-    addReference(references, {
+  if (session.backgroundImage?.type === 'storage-key')
+    references.push({
       storageKey: session.backgroundImage.storageKey,
       kind: 'background',
       sessionId: session.id,
     })
-  }
-  return { references, warnings }
+  return references
 }
 
 export function collectGlobalResourceReferences(settings?: Partial<Settings>, copilots?: CopilotDetail[]) {
@@ -183,12 +196,12 @@ function resetRagState(file: MessageFile) {
   delete file.sessionAttachmentIndexingStage
 }
 
-export function prepareSessionForBackup(session: Session): Session {
-  const prepared = JSON.parse(JSON.stringify(session)) as Session
-  visitSessionFiles(prepared, (file) => {
+export function prepareMessageForBackup(message: Message): Message {
+  const prepared = JSON.parse(JSON.stringify(message)) as Message
+  for (const file of prepared.files ?? []) {
     delete file.localPath
     resetRagState(file)
-  })
+  }
   return prepared
 }
 

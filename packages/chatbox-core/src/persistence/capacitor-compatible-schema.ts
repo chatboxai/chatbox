@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS session_threads (
   session_prompt_context_snapshot_json TEXT,
   session_record_json TEXT,
   commit_revision INTEGER,
+  projection_json TEXT,
   PRIMARY KEY (session_id, thread_id)
 );
 
@@ -93,6 +94,8 @@ CREATE TABLE IF NOT EXISTS session_messages (
   payload_id TEXT NOT NULL,
   payload_chunk_count INTEGER NOT NULL,
   payload_utf8_length INTEGER NOT NULL,
+  row_metadata_json TEXT,
+  selected_depth INTEGER,
   PRIMARY KEY (session_id, message_id)
 );
 
@@ -109,6 +112,7 @@ CREATE TABLE IF NOT EXISTS session_threads_staging (
   session_prompt_context_snapshot_json TEXT,
   session_record_json TEXT,
   commit_revision INTEGER,
+  projection_json TEXT,
   PRIMARY KEY (mutation_id, session_id, thread_id)
 );
 
@@ -128,6 +132,8 @@ CREATE TABLE IF NOT EXISTS session_messages_staging (
   payload_id TEXT NOT NULL,
   payload_chunk_count INTEGER NOT NULL,
   payload_utf8_length INTEGER NOT NULL,
+  row_metadata_json TEXT,
+  selected_depth INTEGER,
   PRIMARY KEY (mutation_id, session_id, message_id)
 );
 

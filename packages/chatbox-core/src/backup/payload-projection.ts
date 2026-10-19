@@ -1,3 +1,5 @@
+import { deriveMessageFacts } from '../session/message-facts'
+import { isMessageEligibleForAutoTitle } from '../session/message-success'
 import { messageHasChatboxSearchSignInError } from '@shared/session/web-search-sign-in-error'
 import { getToolResultImageReference } from '@shared/tool-result-image'
 import {
@@ -29,6 +31,10 @@ const MESSAGE_KEYS = new Set([
   'generating',
   'isSummary',
   'isForkMarker',
+  'error',
+  'errorCode',
+  'finishReason',
+  'steered',
 ])
 const RESULT_KEYS = new Set(['image_storage_key', 'media_type', 'file_path', 'artifacts', 'errorCode'])
 const ARTIFACT_KEYS = new Set(['path', 'name', 'mimeType', 'size', 'storageKey'])
@@ -114,6 +120,38 @@ export class CompactBackupProjection {
   private root: unknown
   private retainedBytes = 0
   private schemaError: unknown
+  private promptCacheChars = 0
+  private hasToolCall = false
+  private hasLegacyCommand = false
+  private meaningfulOutput = false
+  private nonReplyPart = false
+  private partCount = 0
+  private textLength = 0
+  private partText?: { length: number; nonWhitespace: boolean }
+
+  text(path: JsonPath, length: number, nonWhitespace: boolean) {
+    if (path.length === 3 && path[0] === 'contentParts' && path[2] === 'text') this.partText = { length, nonWhitespace }
+  }
+
+  facts(message: Message) {
+    const facts = deriveMessageFacts(message)
+    const namingMessage: Message = {
+      ...message,
+      contentParts: this.meaningfulOutput
+        ? [{ type: 'text', text: 'x' }]
+        : this.textLength > 0 || this.partCount > 1
+          ? [{ type: 'text', text: ' ' }]
+          : [],
+    }
+    return {
+      ...facts,
+      promptCacheChars: this.promptCacheChars,
+      hasToolCall: this.hasToolCall,
+      hasLegacyCommand: this.hasLegacyCommand,
+      autoTitleEligible:
+        (message.role !== 'assistant' || !this.nonReplyPart) && isMessageEligibleForAutoTitle(namingMessage),
+    }
+  }
 
   private check(run: () => void) {
     try {
@@ -163,6 +201,22 @@ export class CompactBackupProjection {
         const result = MessageContentPartSchema.safeParse(value)
         if (!result.success) return
         const part = result.data
+        this.partCount++
+        if (part.type === 'text' || part.type === 'reasoning') {
+          const length = this.partText?.length ?? part.text.length
+          this.textLength += length
+          this.promptCacheChars = Math.min(4000, this.promptCacheChars + length)
+          this.meaningfulOutput ||= this.partText?.nonWhitespace ?? Boolean(part.text.trim())
+        } else if (part.type === 'image') {
+          this.promptCacheChars = Math.min(4000, this.promptCacheChars + 7)
+          this.meaningfulOutput = true
+        } else if (part.type === 'tool-call') {
+          this.hasToolCall = true
+          this.hasLegacyCommand ||= part.toolName === 'user_exec' || part.toolName === 'code_execution'
+          this.meaningfulOutput ||= part.state === 'result' && part.result !== undefined
+          this.nonReplyPart ||= part.state === 'paused'
+        } else if (part.type === 'agent-mode-suggestion') this.nonReplyPart = true
+        this.partText = undefined
         if (
           part.type === 'tool-call' &&
           (part.resultStorageKey ||

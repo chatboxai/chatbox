@@ -1,391 +1,146 @@
-import 'fake-indexeddb/auto'
-import { IDBFactory } from 'fake-indexeddb'
-import { RowBackedSessionRepository } from '@chatbox/core/application/session'
-import { SqlSessionRowStore } from '@chatbox/core/persistence'
-import type { SessionRowStorePort } from '@chatbox/core/ports'
-import type { Session } from '@chatbox/core'
-import { InMemorySessionRecordStore, InMemorySessionRepository, InMemorySettingsStorage } from '@chatbox/core/testing'
-import { createChatApplication } from '@chatbox/react'
+import { QueryKeys } from '@chatbox/react/query'
 import { QueryObserver } from '@tanstack/react-query'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { openNodeSessionRowDatabase } from '../../packages/chatbox-core/src/persistence/node-sqlite.test-support'
-import { IndexedDBSessionRowStore } from '../../src/renderer/storage/SessionRowStorage'
+import { acknowledge, drivers, message, setupRows, source, type Driver } from './session-rows-harness'
 
 const cleanup: Array<() => void> = []
 afterEach(() => {
-  for (const dispose of cleanup.splice(0).reverse()) dispose()
+  vi.restoreAllMocks()
+  for (const dispose of cleanup.splice(0)) dispose()
 })
-async function setup(
-  driver: 'sqlite' | 'indexeddb',
-  repairSessionOnRead?: (session: Session) => { session: Session; changed: boolean }
-) {
-  let rows: SessionRowStorePort
-  if (driver === 'sqlite') {
-    const database = openNodeSessionRowDatabase()
-    cleanup.push(() => database.close())
-    rows = new SqlSessionRowStore(database)
-  } else {
-    globalThis.indexedDB = new IDBFactory()
-    rows = new IndexedDBSessionRowStore()
-  }
-  const repository = Object.assign(
-    new RowBackedSessionRepository({ rows, records: new InMemorySessionRecordStore() }),
-    {
-      meta: new InMemorySessionRepository().meta,
-    }
-  )
-  const application = createChatApplication({
-    sessionRepository: repository,
-    settingsStorage: new InMemorySettingsStorage(),
-    session: { createId: () => 'unused', repairSessionOnRead },
-    settings: { isDesktopLike: false },
+async function setup(driver: Driver) {
+  const h = await setupRows(driver, {
+    ...source(),
+    messages: Array.from({ length: 120 }, (_, i) => message(`m${i}`, i === 119 ? 'assistant' : 'user')),
   })
-  cleanup.push(() => application.dispose())
-  return { rows, repository, application }
+  cleanup.push(h.dispose)
+  return h
 }
-const session = (): Session => ({
-  id: 's',
-  name: 'Named',
-  threadName: 'Named',
-  type: 'chat',
-  settings: { agentMode: { value: 'off', locked: false, lockReason: null } },
-  messages: Array.from({ length: 120 }, (_, i) => ({
-    id: `m${i}`,
-    role: 'user',
-    contentParts: [{ type: 'text', text: `text ${i}` }],
-  })),
-})
 
-describe.each(['sqlite', 'indexeddb'] as const)('full read-model identity through the application on %s', (driver) => {
-  it.each(['initial-full', 'window-to-full'] as const)(
-    'projects continuous commands after %s without reloading history',
-    async (entry) => {
-      const h = await setup(driver)
-      const original = session()
-      if (entry === 'initial-full') original.messages.at(-1)!.generating = true
-      await h.repository.setSession(original)
-      const observer = new QueryObserver(
-        h.application.queryClient,
-        h.application.sessionQueryBridge.definitions.readModel('s')
-      )
-      const unsubscribe = observer.subscribe(() => {})
-      cleanup.push(unsubscribe)
-      await vi.waitFor(() => expect(observer.getCurrentResult().isSuccess).toBe(true))
-      if (entry === 'window-to-full') {
-        expect(observer.getCurrentResult().data?.kind).toBe('window')
-        await h.application.sessions.insertMessage('s', {
-          id: 'reply',
-          role: 'assistant',
-          generating: true,
-          contentParts: [],
-        })
-      }
-      const snapshot = vi.spyOn(h.rows, 'readSnapshot')
-      const complete = vi.spyOn(h.repository, 'getCompleteSessionSource')
-      for (const operation of [
-        () =>
-          h.application.sessions.updateMessage('s', entry === 'initial-full' ? 'm119' : 'reply', {
-            contentParts: [{ type: 'text', text: 'checkpoint' }],
-          }),
-        () => h.application.sessions.updateSessionHeader('s', { name: 'Renamed' }),
-        () => h.application.sessions.insertMessage('s', { id: 'next', role: 'user', contentParts: [] }),
-      ]) {
-        await operation()
-        const model = observer.getCurrentResult().data
-        expect(model?.kind).toBe('full')
-        if (model?.kind !== 'full') throw new Error('Expected complete history')
-        expect(model.revision).toBe(await h.rows.getRevision('s'))
-        expect(model.session.messages[0].id).toBe('m0')
-      }
-      expect(complete).not.toHaveBeenCalled()
-      expect(snapshot).not.toHaveBeenCalled()
-    }
-  )
-
-  it.each(
-    driver === 'sqlite'
-      ? (['stream', 'newer-commit', 'full-update', 'delete', 'tokens'] as const)
-      : (['stream', 'newer-commit', 'full-update', 'delete'] as const)
-  )('keeps committed replies visible during atomic recovery (%s)', async (concurrent) => {
+describe.each(drivers)('revision-owned header and transcript on %s', (driver) => {
+  it('opens only the tail page and applies commands without fetching historical payloads', async () => {
     const h = await setup(driver)
-    const original = session()
-    original.messages.push(
-      ...['a', 'b'].map((id) => ({
-        id,
-        role: 'assistant' as const,
-        generating: true,
-        contentParts: [{ type: 'text' as const, text: 'initial' }],
-      }))
+    const snapshot = vi.spyOn(h.rows, 'readSnapshot')
+    const read = vi.spyOn(h.repository, 'readSessionTranscriptWindow')
+    const window = await h.openWindow(20)
+    expect(window.getSnapshot().rows.map((r) => r.messageId)).toEqual(
+      Array.from({ length: 20 }, (_, i) => `m${100 + i}`)
     )
-    await h.repository.setSession(original)
-    const observer = new QueryObserver(
-      h.application.queryClient,
-      h.application.sessionQueryBridge.definitions.readModel('s')
-    )
-    cleanup.push(observer.subscribe(() => {}))
+    await h.service.updateMessage('s', 'm119', { contentParts: [{ type: 'text', text: 'Edited' }] })
+    await h.service.updateSessionHeader('s', { name: 'Renamed' })
+    await h.service.insertMessage('s', message('next'))
+    expect(window.getSnapshot().revision).toBe(await h.rows.getRevision('s'))
+    expect(window.getSnapshot().rows[0].messageId).toBe('m100')
+    expect(window.getSnapshot().rows.at(-1)?.messageId).toBe('next')
+    expect(window.getSnapshot().rows.find((row) => row.messageId === 'm119')?.message.contentParts).toEqual([
+      { type: 'text', text: 'Edited' },
+    ])
+    expect(window.getSnapshot().hasNewer).toBe(false)
+    expect(window.getSnapshot().pages.map((page) => page.messages.length)).toEqual([20, 1])
+    expect(read).toHaveBeenCalledTimes(1)
+    expect(snapshot).not.toHaveBeenCalled()
+    const header = await h.application.queryClient.fetchQuery(h.application.sessionQueryBridge.definitions.header('s'))
+    expect(header?.header.name).toBe('Renamed')
+    expect(header?.header).not.toHaveProperty('messages')
+  })
+
+  it('preserves live content through header updates and checkpoints, then replaces it with terminal rows', async () => {
+    const h = await setup(driver)
+    await h.service.updateMessage('s', 'm119', { generating: true })
+    const window = await h.openWindow()
+    const bridge = h.application.sessionQueryBridge
+    const observer = new QueryObserver(h.application.queryClient, bridge.definitions.message('s', 'm119'))
+    const unsubscribe = observer.subscribe(() => {})
+    cleanup.push(unsubscribe)
     await vi.waitFor(() => expect(observer.getCurrentResult().isSuccess).toBe(true))
-    await h.application.sessions.updateSession('s', { starred: true })
+    await bridge.updateMessageCache('s', 'm119', { contentParts: [{ type: 'text', text: 'Live' }] })
+    await h.service.updateMessage('s', 'm119', {
+      generating: true,
+      contentParts: [{ type: 'text', text: 'Checkpoint' }],
+    })
+    await h.service.updateSessionHeader('s', { starred: true })
+    expect(window.getSnapshot().rows.at(-1)?.message.contentParts).toEqual([{ type: 'text', text: 'Live' }])
+    expect((await h.readMessage('m119'))?.contentParts).toEqual([{ type: 'text', text: 'Checkpoint' }])
+    await h.service.updateMessage('s', 'm119', {
+      generating: false,
+      finishReason: 'stop',
+      contentParts: [{ type: 'text', text: 'Final' }],
+    })
+    expect(window.getSnapshot().rows.at(-1)?.message.contentParts).toEqual([{ type: 'text', text: 'Final' }])
+    const cached = h.application.queryClient.getQueryData<{ message: { contentParts: unknown } }>(
+      QueryKeys.ChatSessionMessage('s', 'm119')
+    )
+    expect(cached?.message.contentParts).toEqual([{ type: 'text', text: 'Final' }])
+  })
+
+  it('keeps the window independent of query cache collection', async () => {
+    const h = await setup(driver)
+    const window = await h.openWindow()
+    const read = vi.spyOn(h.repository, 'readSessionTranscriptWindow')
+    for (let i = 0; i < 3; i++) {
+      h.application.queryClient.clear()
+      await h.application.sessionQueryBridge.updateMessageCache('s', 'm119', {
+        contentParts: [{ type: 'text', text: `Live ${i}` }],
+      })
+      expect(window.getSnapshot().rows.at(-1)?.message.contentParts).toEqual([{ type: 'text', text: `Live ${i}` }])
+    }
+    expect(read).not.toHaveBeenCalled()
+    expect(window.getSnapshot().rows).toHaveLength(20)
+  })
+
+  it('fences a slow page response when a newer local command commits', async () => {
+    const h = await setup(driver)
+    const window = await h.openWindow()
+    const original = h.repository.readSessionTranscriptWindow.bind(h.repository)
     let release!: () => void
-    let started!: () => void
     const waiting = new Promise<void>((resolve) => {
       release = resolve
     })
-    const reading = new Promise<void>((resolve) => {
-      started = resolve
+    let readStarted!: () => void
+    const started = new Promise<void>((resolve) => {
+      readStarted = resolve
     })
-    const read = h.repository.getCompleteSessionSource.bind(h.repository)
-    vi.spyOn(h.repository, 'getCompleteSessionSource').mockImplementationOnce(async (id) => {
-      const result = await read(id)
-      started()
+    vi.spyOn(h.repository, 'readSessionTranscriptWindow').mockImplementationOnce(async (request) => {
+      const page = await original(request)
+      readStarted()
       await waiting
-      return result
+      return page
     })
-    const terminal = h.application.sessions.updateMessage('s', 'a', {
+    const pending = window.loadOlder(1)
+    await started
+    await h.service.updateMessage('s', 'm119', {
       generating: false,
-      contentParts: [{ type: 'text', text: 'final a' }],
+      contentParts: [{ type: 'text', text: 'Committed' }],
     })
-    try {
-      await reading
-      await h.application.sessionQueryBridge.updateMessageCache('s', 'b', {
-        contentParts: [{ type: 'text', text: 'live b' }],
-      })
-      if (concurrent === 'full-update') await h.application.sessions.updateSession('s', { name: 'Later full update' })
-      if (concurrent === 'delete') await h.application.sessions.deleteSession('s')
-      if (concurrent === 'tokens') {
-        const sources = (await read('s'))!.textTokens!.sources
-        for (const [id, tokens] of [
-          ['m118', 66],
-          ['m119', 77],
-        ] as const) {
-          const source = sources[id]
-          await h.application.sessions.acceptSessionTextTokenResults('s', [
-            { source, value: { tokenizerType: 'default', sourceDigest: source.textDigest, tokens, calculatedAt: 1 } },
-          ])
-        }
-      }
-      if (concurrent === 'newer-commit')
-        await h.application.sessions.updateMessage('s', 'b', {
-          generating: false,
-          contentParts: [{ type: 'text', text: 'final b' }],
-        })
-    } finally {
-      release()
-      await terminal
-    }
-    if (concurrent === 'delete') {
-      expect(
-        h.application.queryClient.getQueryData(h.application.sessionQueryBridge.definitions.readModel('s').queryKey)
-      ).toBeNull()
-      return
-    }
-    const model = observer.getCurrentResult().data
-    expect(model?.kind).toBe('full')
-    if (model?.kind !== 'full') throw new Error('Expected full history')
-    expect(model.session.messages.find((message) => message.id === 'a')).toMatchObject({
-      generating: false,
-      contentParts: [{ type: 'text', text: 'final a' }],
-    })
-    expect(model.session.messages.find((message) => message.id === 'b')?.contentParts).toEqual([
-      { type: 'text', text: concurrent === 'newer-commit' ? 'final b' : 'live b' },
-    ])
-    if (concurrent === 'full-update') {
-      expect(model.session.name).toBe('Later full update')
-      expect(model.revision).toBeUndefined()
-    } else expect(model.revision).toBe(await h.rows.getRevision('s'))
-    if (concurrent === 'tokens') {
-      expect(model.session.messages.find((message) => message.id === 'm118')?.tokenCountMap?.default).toBe(66)
-      expect(model.session.messages.find((message) => message.id === 'm119')?.tokenCountMap?.default).toBe(77)
-      expect(model.textTokens?.results.map((result) => result.source.messageId)).toEqual(
-        expect.arrayContaining(['m118', 'm119'])
-      )
-    }
+    release()
+    await pending
+    expect(window.getSnapshot().revision).toBe(await h.rows.getRevision('s'))
+    expect(window.getSnapshot().rows.at(-1)?.message.contentParts).toEqual([{ type: 'text', text: 'Committed' }])
   })
 
-  it.skipIf(driver !== 'sqlite')(
-    'selects full history when token results arrive during the selection read',
-    async () => {
-      const h = await setup(driver)
-      await h.repository.setSession(session())
-      const observer = new QueryObserver(
-        h.application.queryClient,
-        h.application.sessionQueryBridge.definitions.readModel('s')
-      )
-      cleanup.push(observer.subscribe(() => {}))
-      await vi.waitFor(() => expect(observer.getCurrentResult().data?.kind).toBe('window'))
-      const source = (await h.repository.getCompleteSessionSource('s'))!.textTokens!.sources.m119
-      let release!: () => void
-      let started!: () => void
-      const waiting = new Promise<void>((resolve) => {
-        release = resolve
-      })
-      const reading = new Promise<void>((resolve) => {
-        started = resolve
-      })
-      const read = h.repository.getSessionReadModel.bind(h.repository)
-      vi.spyOn(h.repository, 'getSessionReadModel').mockImplementationOnce(async (id) => {
-        const result = await read(id)
-        started()
-        await waiting
-        return result
-      })
-      const insertion = h.application.sessions.insertMessage('s', {
-        id: 'reply',
-        role: 'assistant',
-        generating: true,
-        contentParts: [],
-      })
-      try {
-        await reading
-        await h.application.sessions.acceptSessionTextTokenResults('s', [
-          { source, value: { tokenizerType: 'default', sourceDigest: source.textDigest, tokens: 77, calculatedAt: 1 } },
-        ])
-      } finally {
-        release()
-        await insertion
-      }
-      const model = observer.getCurrentResult().data
-      expect(model?.kind).toBe('full')
-      if (model?.kind !== 'full') throw new Error('Expected full history')
-      expect(model.session.messages.at(-1)?.id).toBe('reply')
-      expect(model.session.messages.find((message) => message.id === 'm119')?.tokenCountMap?.default).toBe(77)
-      expect(model.revision).toBe(await h.rows.getRevision('s'))
-    }
-  )
-
-  it.each(driver === 'sqlite' ? (['tokens', 'newer-command'] as const) : (['newer-command'] as const))(
-    'preserves %s arriving during structural history selection',
-    async (concurrent) => {
-      const h = await setup(driver)
-      await h.repository.setSession(session())
-      const observer = new QueryObserver(
-        h.application.queryClient,
-        h.application.sessionQueryBridge.definitions.readModel('s')
-      )
-      cleanup.push(observer.subscribe(() => {}))
-      await vi.waitFor(() => expect(observer.getCurrentResult().data?.kind).toBe('window'))
-      let release!: () => void
-      let started!: () => void
-      const waiting = new Promise<void>((resolve) => {
-        release = resolve
-      })
-      const reading = new Promise<void>((resolve) => {
-        started = resolve
-      })
-      const read = h.repository.getSessionReadModel.bind(h.repository)
-      vi.spyOn(h.repository, 'getSessionReadModel').mockImplementationOnce(async (id) => {
-        const result = await read(id)
-        started()
-        await waiting
-        return result
-      })
-      const structure = h.application.sessions.executeStructureCommand('s', {
-        action: 'thread-create',
-        archiveId: 'history',
-        now: 10,
-        systemMessageId: 'new-system',
-        defaultSystemPrompt: 'Prompt',
-      })
-      try {
-        await reading
-        if (concurrent === 'tokens') {
-          const sources = (await h.repository.getCompleteSessionSource('s'))!.textTokens!.sources
-          for (const [id, tokens] of [
-            ['m118', 77],
-            ['m119', 88],
-          ] as const) {
-            const source = sources[id]
-            await h.application.sessions.acceptSessionTextTokenResults('s', [
-              {
-                source,
-                value: { tokenizerType: 'default', sourceDigest: source.textDigest, tokens, calculatedAt: 1 },
-              },
-            ])
-          }
-          const current = observer.getCurrentResult().data
-          expect(current?.kind).toBe('window')
-          if (current?.kind !== 'window') throw new Error('Expected loaded window')
-          expect(current.window.messages.find((row) => row.message.id === 'm118')?.message.tokenCountMap?.default).toBe(
-            77
-          )
-          expect(current.window.messages.find((row) => row.message.id === 'm119')?.message.tokenCountMap?.default).toBe(
-            88
-          )
-        } else {
-          await h.application.sessions.insertMessage('s', {
-            id: 'newer',
-            role: 'assistant',
-            generating: true,
-            contentParts: [],
-          })
-        }
-      } finally {
-        release()
-        await structure
-      }
-      const model = observer.getCurrentResult().data
-      expect(model?.kind).toBe('full')
-      if (model?.kind !== 'full') throw new Error('Expected complete history')
-      expect(model.revision).toBe(await h.rows.getRevision('s'))
-      if (concurrent === 'tokens') {
-        const archived = model.session.threads?.find((thread) => thread.id === 'history')
-        expect(archived?.messages.find((message) => message.id === 'm118')?.tokenCountMap?.default).toBe(77)
-        expect(archived?.messages.find((message) => message.id === 'm119')?.tokenCountMap?.default).toBe(88)
-      } else expect(model.session.messages.at(-1)?.id).toBe('newer')
-    }
-  )
-
-  it('retains live reply text when history navigation loads its first complete query', async () => {
+  it('recovers navigation after another repository changes the source revision', async () => {
     const h = await setup(driver)
-    const original = session()
-    original.messages.push({
-      id: 'reply',
-      role: 'assistant',
-      generating: true,
-      contentParts: [{ type: 'text', text: 'A' }],
+    const window = await h.openWindow()
+    const other = h.createRepository()
+    await other.executeSessionCommand('s', {
+      type: 'update',
+      messageId: 'm50',
+      updater: { contentParts: [{ type: 'text', text: 'External' }] },
     })
-    await h.repository.setSession(original)
-    const bridge = h.application.sessionQueryBridge
-    const observer = new QueryObserver(h.application.queryClient, bridge.definitions.readModel('s'))
-    cleanup.push(observer.subscribe(() => {}))
-    await vi.waitFor(() => expect(observer.getCurrentResult().isSuccess).toBe(true))
-    await bridge.updateMessageCache('s', 'reply', { contentParts: [{ type: 'text', text: 'ABC' }] })
-    expect(h.application.queryClient.getQueryData(bridge.definitions.session('s').queryKey)).toBeUndefined()
-    const viewed = await bridge.requireCompleteSessionView('s')
-    expect(viewed?.messages.at(-1)?.contentParts).toEqual([{ type: 'text', text: 'ABC' }])
-    const model = observer.getCurrentResult().data
-    if (model?.kind !== 'full') throw new Error('Expected full history')
-    expect(model.session.messages.at(-1)?.contentParts).toEqual([{ type: 'text', text: 'ABC' }])
-    expect(model.revision).toBe(await h.rows.getRevision('s'))
-    expect((await h.repository.getSession('s'))?.messages.at(-1)?.contentParts).toEqual([{ type: 'text', text: 'A' }])
+    expect(await window.openSearch('m50')).toBe(true)
+    expect(window.getSnapshot().rows[0].message.contentParts).toEqual([{ type: 'text', text: 'External' }])
+    expect(window.getSnapshot().revision).toBe(await h.rows.getRevision('s'))
+    acknowledge(window)
   })
 
-  it('returns repaired content with its newly committed atomic identity and token sources', async () => {
-    const h = await setup(driver, (current) =>
-      current.name === 'Repaired'
-        ? { session: current, changed: false }
-        : {
-            changed: true,
-            session: {
-              ...current,
-              name: 'Repaired',
-              messages: current.messages.map((message, index) =>
-                index ? message : { ...message, contentParts: [{ type: 'text', text: 'repaired text' }] }
-              ),
-            },
-          }
-    )
-    const original = session()
-    original.messages.at(-1)!.generating = true
-    await h.repository.setSession(original)
-    const previousRevision = await h.rows.getRevision('s')
-    const model = await h.application.sessions.getSessionReadModel('s')
-    expect(model?.kind).toBe('full')
-    if (model?.kind !== 'full') throw new Error('Expected complete repaired history')
-    const committed = (await h.repository.getCompleteSessionSource('s'))!
-    expect(model.revision).toBe(committed.revision)
-    expect(model.revision).toBeGreaterThan(previousRevision!)
-    expect(model.session).toEqual(committed.session)
-    expect(model.session.messages[0].contentParts).toEqual([{ type: 'text', text: 'repaired text' }])
-    expect(model.textTokens).toEqual(committed.textTokens)
+  it('does not revive a deleted session when a late live update arrives', async () => {
+    const h = await setup(driver)
+    const window = await h.openWindow()
+    await h.service.deleteSession('s')
+    await h.application.sessionQueryBridge.updateMessageCache('s', 'm119', {
+      contentParts: [{ type: 'text', text: 'Late' }],
+    })
+    expect(window.getSnapshot().rows).toHaveLength(0)
+    expect(await h.repository.getSessionHeader('s')).toBeNull()
   })
 })

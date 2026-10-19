@@ -67,7 +67,7 @@
     "check:biome": "biome check",
     "check:ci": "biome ci",
     "check:docs": "node --test scripts/check-docs.test.mjs && node scripts/check-docs.mjs",
-    "check:shared-boundaries": "node --test scripts/check-shared-boundaries.test.mjs && node scripts/check-shared-boundaries.mjs",
+    "check:shared-boundaries": "node --test scripts/check-shared-boundaries.test.mjs scripts/session-row-boundary.test.mjs && node scripts/check-shared-boundaries.mjs",
     "check:renderer-colors": "node --test scripts/check-renderer-colors.test.mjs && node scripts/check-renderer-colors.mjs",
     "check:desktop-automation-build": "node --test scripts/ensure-desktop-automation-build.test.mjs",
     "mobile:sync": "pnpm run mobile:sync:ios && pnpm run mobile:sync:android",

@@ -1,34 +1,35 @@
 import type { Message, MessageFile, Session } from '@shared/types'
+import { InMemorySessionRepository } from '@chatbox/core/testing'
+import { SessionService, SessionWriteCoordinator, SessionEventBus } from '@chatbox/core/application/session'
+import { collectSessionOwnership } from '@/adapters/session-ownership'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { sessionsMock, sessionQueryBridgeMock, generationRuntimeMock, ragControllerMock, guardSessionActionMock } =
-  vi.hoisted(() => ({
+const { sessionsMock, ownershipMock, generationRuntimeMock, ragControllerMock, guardSessionActionMock } = vi.hoisted(
+  () => ({
     sessionsMock: {
       executeStructureCommand: vi.fn().mockResolvedValue(null),
-      removeMessage: vi.fn().mockResolvedValue(undefined),
-      updateSessionWithMessages: vi.fn(),
     },
-    sessionQueryBridgeMock: {
-      getSession: vi.fn(),
-    },
+    ownershipMock: vi.fn(),
     generationRuntimeMock: {
       getActiveMessageIds: vi.fn(() => new Set<string>()),
       get: vi.fn(() => undefined),
       discard: vi.fn(),
+      list: vi.fn(() => []),
     },
     ragControllerMock: {
       rebindAttachment: vi.fn().mockResolvedValue(undefined),
       deleteMessageAttachments: vi.fn().mockResolvedValue([]),
     },
     guardSessionActionMock: vi.fn().mockResolvedValue(true),
-  }))
+  })
+)
 
 vi.mock('@/app/renderer-application', () => ({
   rendererApplication: {
     sessions: sessionsMock,
-    sessionQueryBridge: sessionQueryBridgeMock,
     generationRuntime: generationRuntimeMock,
   },
+  sessionRepository: { collectSessionAttachmentOwnership: ownershipMock },
 }))
 vi.mock('@/platform', () => ({
   default: { isDesktopLike: true, getSessionAttachmentRagController: () => ragControllerMock },
@@ -62,10 +63,17 @@ function message(id: string, role: 'user' | 'assistant', files?: MessageFile[]):
   return { id, role, contentParts: [{ type: 'text', text: id }], files } as Message
 }
 
+let repository: InMemorySessionRepository
 beforeEach(() => {
   vi.clearAllMocks()
   guardSessionActionMock.mockResolvedValue(true)
   generationRuntimeMock.get.mockReturnValue(undefined)
+  repository = new InMemorySessionRepository()
+  const service = new SessionService(repository, new SessionWriteCoordinator(repository), new SessionEventBus(), {
+    createId: () => 'replacement-pivot',
+  })
+  sessionsMock.executeStructureCommand.mockImplementation(service.executeStructureCommand.bind(service))
+  ownershipMock.mockImplementation((id: string) => collectSessionOwnership(repository, id))
 })
 
 describe('shared attachment ownership', () => {
@@ -86,7 +94,7 @@ describe('shared attachment ownership', () => {
         },
       },
     } as Session
-    sessionQueryBridgeMock.getSession.mockResolvedValue(session)
+    await repository.seedSession(session)
 
     await removeMessage('session-1', 'original')
 
@@ -96,7 +104,12 @@ describe('shared attachment ownership', () => {
       messageId: 'replacement',
     })
     expect(ragControllerMock.deleteMessageAttachments).toHaveBeenCalledWith('original')
-    expect(sessionsMock.removeMessage).toHaveBeenCalledWith('session-1', 'original', expect.any(Function))
+    expect(
+      (await repository.readSessionMessages({ sessionId: session.id, messageIds: ['original'] }))?.messages
+    ).toEqual([])
+    expect(ragControllerMock.rebindAttachment.mock.invocationCallOrder[0]).toBeLessThan(
+      ragControllerMock.deleteMessageAttachments.mock.invocationCallOrder[0]
+    )
   })
 
   it('leaves unshared attachments with the deleted message', async () => {
@@ -105,7 +118,7 @@ describe('shared attachment ownership', () => {
       name: 'Test',
       messages: [message('lonely', 'user', [ragFile(7)]), message('reply', 'assistant')],
     } as Session
-    sessionQueryBridgeMock.getSession.mockResolvedValue(session)
+    await repository.seedSession(session)
 
     await removeMessage('session-1', 'lonely')
 
@@ -120,11 +133,14 @@ describe('shared attachment ownership', () => {
       name: 'Test',
       messages: [message('kept', 'user', [ragFile(42)]), message('doomed', 'user', [ragFile(42)])],
     } as Session
-    sessionQueryBridgeMock.getSession.mockResolvedValue(session)
+    await repository.seedSession(session)
 
     await removeMessage('session-1', 'doomed')
 
-    expect(sessionsMock.removeMessage).toHaveBeenCalledWith('session-1', 'doomed', expect.any(Function))
+    expect((await repository.readSessionMessages({ sessionId: session.id, messageIds: ['doomed'] }))?.messages).toEqual(
+      []
+    )
+    expect(ragControllerMock.deleteMessageAttachments).not.toHaveBeenCalled()
   })
 
   it('rebinds attachments shared with survivors when the active branch is deleted', async () => {
@@ -142,13 +158,7 @@ describe('shared attachment ownership', () => {
         },
       },
     } as Session
-    sessionsMock.updateSessionWithMessages.mockImplementation(
-      async (_id: string, updater: (session: Session) => Session, options: { onFullSessionPersisted?: () => void }) => {
-        const updated = updater(session)
-        options?.onFullSessionPersisted?.()
-        return updated
-      }
-    )
+    await repository.seedSession(session)
 
     await deleteFork('session-1', 'pivot')
     // The rebind is fire-and-forget from the persistence callback.

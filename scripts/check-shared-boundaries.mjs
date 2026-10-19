@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
+import { findSessionAggregateDependencies, sessionBusinessRoots } from './session-row-boundary.mjs'
 
 const portableHostSpecifiers = [
   '@/',
@@ -1059,7 +1060,7 @@ function findSessionStorageViolations(root, readSourceFile) {
           boundary: 'Session-capable storage writer',
           file: relative(root, filePath),
           supportedPath:
-            'Persist full Sessions through CurrentSessionRepository. Session-capable setAll and direct writes without a statically non-Session key are limited to the named migration and import/restore paths.',
+            'Persist session changes through row commands. Session-capable setAll and direct writes without a statically non-Session key are limited to the named migration and import/restore paths.',
         })
       }
       return violations
@@ -1094,6 +1095,11 @@ export function checkArchitectureBoundaries(root) {
   return [
     ...createBoundaries(root).flatMap((boundary) => findImportViolations(root, boundary, readSourceFile)),
     ...findSessionStorageViolations(root, readSourceFile),
+    ...sessionBusinessRoots.flatMap((directory) =>
+      walk(join(root, directory)).flatMap((file) =>
+        findSessionAggregateDependencies(relative(root, file).split(sep).join('/'), readSourceFile(file))
+      )
+    ),
     ...findWildcardExportViolations(root),
   ]
 }

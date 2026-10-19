@@ -1,3 +1,4 @@
+import { rendererApplication } from '@/app/renderer-application'
 import { ImageGenerationResultGallery } from '@/components/chat/ImageGenerationResultGallery'
 import {
   APPROVAL_RESPONSE_TIMEOUT_MS,
@@ -6,9 +7,9 @@ import {
   listPendingPauseInteractions,
   type PendingPauseInteraction,
 } from '@chatbox/core/message-approval'
-import { Box, Button, Group, Menu, Spoiler, Text, UnstyledButton } from '@mantine/core'
+import { Box, Button, Group, Loader, Menu, Spoiler, Text, UnstyledButton } from '@mantine/core'
 import { AutomationStateAttr, TestId } from '@shared/automation/testids'
-import type { ImageGenerationApprovalDetails, Session } from '@shared/types'
+import type { ImageGenerationApprovalDetails, Message } from '@shared/types'
 import {
   IconAlertCircle,
   IconArrowUp,
@@ -71,14 +72,6 @@ function isResolveAction(action: PendingAction): boolean {
 function getInteractionKey(interaction: PendingPauseInteraction): string {
   const pauseType = interaction.kind === 'approval' ? interaction.pauseReason.type : interaction.kind
   return JSON.stringify([interaction.messageId, interaction.toolCallId, pauseType])
-}
-
-function getActiveConversationKey(session: Session): string {
-  const activeForkPath = session.messages.flatMap((message) => {
-    const fork = session.messageForksHash?.[message.id]
-    return fork ? [[message.id, fork.position] as const] : []
-  })
-  return JSON.stringify([session.messages[0]?.id ?? session.id, activeForkPath])
 }
 
 function getImageGenerationDetails(pauseReason: ApprovalPauseReason): ImageGenerationApprovalDetails | undefined {
@@ -437,12 +430,13 @@ const PendingHeading: FC<{
   )
 }
 
-type PendingActionBarProps = { session: Session }
+type PendingActionBarProps = { sessionId: string; activeThreadId: string; messageIds: readonly string[] }
+type PendingActionContentProps = { sessionId: string; message: Message }
 
-const PendingActionBarContent: FC<PendingActionBarProps> = ({ session }) => {
+const PendingActionBarContent: FC<PendingActionContentProps> = ({ sessionId, message }) => {
   const { t } = useTranslation()
   const isSmallScreen = useIsSmallScreen()
-  const interactions = useMemo(() => listPendingPauseInteractions(session.messages), [session.messages])
+  const interactions = useMemo(() => listPendingPauseInteractions([message]), [message])
   const interactionKeys = useMemo(() => interactions.map(getInteractionKey), [interactions])
   const current: PendingPauseInteraction | undefined = interactions[0]
   const currentKey = current ? getInteractionKey(current) : undefined
@@ -481,6 +475,11 @@ const PendingActionBarContent: FC<PendingActionBarProps> = ({ session }) => {
       const removed = prev.pendingKeys.filter((key) => !next.has(key)).length
       const added = interactionKeys.filter((key) => !previous.has(key)).length
       if (removed === 0 && added === 0) return prev
+      const callIdentity = (key: string) => JSON.stringify((JSON.parse(key) as [string, string, string]).slice(0, 2))
+      const previousCalls = new Set(prev.pendingKeys.map(callIdentity))
+      if (added > 0 && interactionKeys.every((key) => !previousCalls.has(callIdentity(key)))) {
+        return { total: interactionKeys.length, done: 0, pendingKeys: interactionKeys }
+      }
 
       return {
         total: prev.total + added,
@@ -542,8 +541,8 @@ const PendingActionBarContent: FC<PendingActionBarProps> = ({ session }) => {
     lastActionRef.current = action
     setActing({ interactionKey, action })
     const request = isResolveAction(action)
-      ? currentGenerationService.continuePausedToolCall(session.id, interaction.messageId, interaction.toolCallId)
-      : currentGenerationService.stopPausedToolCall(session.id, interaction.messageId, interaction.toolCallId, {
+      ? currentGenerationService.continuePausedToolCall(sessionId, interaction.messageId, interaction.toolCallId)
+      : currentGenerationService.stopPausedToolCall(sessionId, interaction.messageId, interaction.toolCallId, {
           denyReason,
         })
     request
@@ -563,7 +562,7 @@ const PendingActionBarContent: FC<PendingActionBarProps> = ({ session }) => {
     setActing({ interactionKey, action: 'continue' })
     const count = interaction.maxToolCalls
     currentGenerationService
-      .disableToolCallLimitPauseAndContinue(session.id, interaction.messageId, interaction.toolCallId, scope)
+      .disableToolCallLimitPauseAndContinue(sessionId, interaction.messageId, interaction.toolCallId, scope)
       .then(() => {
         toastActions.add(
           scope === 'global'
@@ -636,7 +635,7 @@ const PendingActionBarContent: FC<PendingActionBarProps> = ({ session }) => {
           }
           progressKey={episode.done}
           countdown={hasCountdown ? { remainingMs: countdownRemainingMs, paused: isExplanationExpanded } : null}
-          onView={() => void revealPausedStep(session.id, current.messageId, current.toolCallId)}
+          onView={() => void revealPausedStep(sessionId, current.messageId, current.toolCallId)}
         />
         {current.kind === 'approval' ? (
           <ApprovalBody
@@ -749,13 +748,13 @@ const PendingActionBarContent: FC<PendingActionBarProps> = ({ session }) => {
 }
 
 const PendingActionBar: FC<PendingActionBarProps> = (props) => {
-  // Checked here (cached per messages identity, shared with InputBox) so the
-  // conversation-key walk below only runs while a decision is actually showing.
-  if (listPendingPauseInteractions(props.session.messages).length === 0) return null
-  // InputBox stays mounted while switching historical threads or message forks.
-  // The first message distinguishes thread histories; active fork positions
-  // distinguish branches that intentionally share that prefix.
-  return <PendingActionBarContent key={getActiveConversationKey(props.session)} {...props} />
+  const { t } = useTranslation()
+  const query = rendererApplication.sessionHooks.useSessionMessage(props.sessionId, props.messageIds[0] ?? null)
+  if (!props.messageIds.length) return null
+  if (query.isLoading) return <Loader size="xs" />
+  if (query.isError) return <Button onClick={() => void query.refetch()}>{t('Try Again')}</Button>
+  if (!query.message || listPendingPauseInteractions([query.message]).length === 0) return null
+  return <PendingActionBarContent key={props.activeThreadId} sessionId={props.sessionId} message={query.message} />
 }
 
 export default memo(PendingActionBar)

@@ -27,7 +27,6 @@ import { getCompactionThresholdTokens } from '@/packages/context-management/comp
 import { getConfiguredContextWindow } from '@/packages/context-management/context-pressure'
 import { prepareMobileMCPTools } from '@/packages/mcp/mobile-tools'
 import { buildPausedAgentMemoryTools } from '@/packages/model-calls/toolsets/agent-memory'
-import { loadBranchFileMessages } from '@/packages/model-calls/toolsets/file-history'
 import platform from '@/platform'
 import { createSandboxProvider } from '@/sandbox'
 import { settingsService } from '@/settings-runtime'
@@ -41,7 +40,6 @@ import {
   persistSessionPromptContextSnapshotGuarded,
   setSessionAgentMode,
 } from '@/stores/session/agent-mode'
-import { findMessageLocation } from '@/stores/session/forks'
 import { wakeQueuedUserMessages } from '@/stores/session/message-queue'
 import {
   insertMessageAfter,
@@ -81,8 +79,6 @@ const logger: LoggerPort = {
 }
 
 const sessions: GenerationSessionPort = {
-  getSession: (sessionId) => rendererApplication.sessionQueryBridge.getSession(sessionId),
-  getCompleteSessionSource: (sessionId) => rendererApplication.sessions.getCompleteSessionSource(sessionId),
   getSessionContextSource: (request) => rendererApplication.sessions.getSessionContextSource(request),
   readSessionMessages: (request) => rendererApplication.sessions.readSessionMessages(request),
   isSessionMissingError: (error) => error instanceof SessionNotFoundError,
@@ -103,10 +99,6 @@ const sessions: GenerationSessionPort = {
     await insertMessageAfter(sessionId, message, afterMessageId, { requireAnchor: true })
   },
   updateStreamingCache: (sessionId, message) => updateStreamingCache(sessionId, message),
-  findMessage(session, messageId) {
-    const location = findMessageLocation(session, messageId)
-    return location ? location.list[location.index] : undefined
-  },
   modifyMessage: (sessionId, message, refreshCounting, updateOnlyCache) =>
     modifyMessage(sessionId, message, refreshCounting, updateOnlyCache),
   handleGenerationError: (error, message, settings, context) =>
@@ -194,17 +186,13 @@ async function buildToolsForPausedToolCall(
         }
       : undefined
 
-  const targetMessageId = source.targetMessage?.id
   const { tools } = await buildToolsForSession(model, {
     sessionId: session.id,
     webBrowsing,
     knowledgeBase,
     messages: promptMessages,
     fileMessages: messagesForPrompt,
-    loadFileMessages:
-      source.compactionPoints.length && targetMessageId
-        ? () => loadBranchFileMessages(() => rendererApplication.sessions.getSession(session.id), targetMessageId)
-        : undefined,
+    fileResourceKeys: source.beforeTarget.fileResourceKeys,
     agentMode: effectiveAgentMode,
     sessionSettings: settings,
     codeExecution,
@@ -282,14 +270,7 @@ const dependencies: GenerationServiceDependencies<ModelDependencies> = {
         messages: request.messages,
         targetMsgIx: request.targetMessageIndex,
         history: request.history,
-        loadFileMessages:
-          request.compactionPoints?.length && request.messages[request.targetMessageIndex]
-            ? () =>
-                loadBranchFileMessages(
-                  () => rendererApplication.sessions.getSession(request.session.id),
-                  request.messages[request.targetMessageIndex].id
-                )
-            : undefined,
+        fileResourceKeys: request.history?.fileResourceKeys,
         model: request.model,
         dependencies: request.modelContext,
         attachmentResolver: request.attachments,

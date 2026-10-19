@@ -5,7 +5,7 @@ import { openNodeSessionRowDatabase } from '../persistence/node-sqlite.test-supp
 import { contextSnapshot } from '../persistence/session-context-read.test-support'
 import { SqlSessionRowStore } from '../persistence/session-row-sql'
 import { exportBackupArchive } from './export-backup'
-import { importBackupArchive } from './import-backup'
+import { importBackupArchiveWithRows as importBackupArchive } from './import.test-support'
 import { projectBackupMessage } from './payload'
 import { prepareBackupExport } from './preflight'
 import { MemoryMetaStorage, MemoryStorage } from './sharded.test-support'

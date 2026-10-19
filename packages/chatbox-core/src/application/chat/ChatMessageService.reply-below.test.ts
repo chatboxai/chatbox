@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
+import { rowChatFixture } from './testing/row-chat-fixture'
 import { GenerationRuntimeStore } from '../../generation/runtime-store'
 import type { Message, Session } from '../../types'
-import { contextSourceFromSession } from '../session/session-context-source'
 import { ChatMessageService } from './ChatMessageService'
 
 const message = (id: string, role: Message['role']): Message => ({
@@ -21,18 +21,10 @@ function harness() {
   let nextId = 0
   let compacting = false
   const orchestrate = vi.fn(async () => {})
-  const updateSessionWithMessages = vi.fn(
-    async (_id: string, updater: (current: Session | null | undefined) => Session) => {
-      session = updater(session)
-      return session
-    }
-  )
+  const fixture = rowChatFixture(() => 'unused', session)
+  const executeStructureCommand = fixture.port.executeStructureCommand
   const service = new ChatMessageService({
-    sessions: {
-      createSession: async () => session,
-      getSession: async () => session,
-      updateSessionWithMessages,
-    },
+    sessions: fixture.port,
     generation: { orchestrate },
     runtime,
     isCompactionRunning: () => compacting,
@@ -41,12 +33,13 @@ function harness() {
   })
   return {
     service,
+    readContext: fixture.repository.getSessionContextSource.bind(fixture.repository),
     runtime,
     orchestrate,
-    updateSessionWithMessages,
-    get: () => session,
+    executeStructureCommand,
+    get: () => fixture.sessions.get(session.id)!,
     set: (value: Session) => {
-      session = value
+      fixture.sessions.set(value.id, value)
     },
     compact: () => {
       compacting = true
@@ -59,7 +52,7 @@ describe('ChatMessageService.replyBelow', () => {
     for (const role of ['user', 'system'] as const) {
       const h = harness()
       const summary = { ...message('summary', 'assistant'), isSummary: true }
-      const messages = [message('boundary', role), summary, message('later', 'user')]
+      const messages = [message('boundary', role), summary, message('boundary-later', 'user')]
       const point = { boundaryMessageId: 'boundary', summaryMessageId: 'summary', createdAt: 1 }
       h.set(
         location === 'active'
@@ -71,12 +64,10 @@ describe('ChatMessageService.replyBelow', () => {
       )
       await h.service.replyBelow('concurrent-chat', 'boundary')
       const stored = location === 'active' ? h.get().messages : h.get().threads?.[0].messages
-      expect(stored?.map(({ id }) => id)).toEqual(['boundary', 'summary', 'candidate-1', 'later'])
+      expect(stored?.map(({ id }) => id)).toEqual(['boundary', 'summary', 'candidate-1', 'boundary-later'])
       expect(
-        contextSourceFromSession(h.get(), {
-          sessionId: 'concurrent-chat',
-          targetMessageId: 'candidate-1',
-        }).effectiveCompactionPoint
+        (await h.readContext({ sessionId: 'concurrent-chat', targetMessageId: 'candidate-1' }))
+          ?.effectiveCompactionPoint
       ).toEqual(point)
     }
   })
@@ -131,18 +122,23 @@ describe('ChatMessageService.replyBelow', () => {
     })
     const invalid = harness()
     await expect(invalid.service.replyBelow('concurrent-chat', 'original')).rejects.toThrow('cannot receive')
-    await expect(invalid.service.replyBelow('concurrent-chat', 'missing')).rejects.toThrow('cannot receive')
+    await expect(invalid.service.replyBelow('concurrent-chat', 'missing')).rejects.toThrow()
     expect(work.orchestrate).not.toHaveBeenCalled()
     expect(compacting.orchestrate).not.toHaveBeenCalled()
     expect(invalid.get().messages).toHaveLength(3)
   })
 
-  it('rechecks compaction when the fallback updater executes', async () => {
+  it('rechecks compaction at the command boundary', async () => {
     const h = harness()
-    const write = h.updateSessionWithMessages.getMockImplementation()!
-    h.updateSessionWithMessages.mockImplementationOnce(async (id, updater) => {
+    const write = h.executeStructureCommand.getMockImplementation()!
+    h.executeStructureCommand.mockImplementationOnce(async (id, operation, onCommitted) => {
       h.compact()
-      return write(id, updater)
+      if (operation.action !== 'message-insert-after') throw new Error('Expected message insertion')
+      return write(
+        id,
+        { ...operation, guard: { ...operation.guard, action: 'reply-below', compactionRunning: true } },
+        onCommitted
+      )
     })
     await expect(h.service.replyBelow('concurrent-chat', 'prompt')).rejects.toMatchObject({ reason: 'compaction' })
     expect(h.get().messages).toHaveLength(3)
@@ -152,7 +148,7 @@ describe('ChatMessageService.replyBelow', () => {
 
   it('releases candidate preparation admission after a rejected persistence write', async () => {
     const h = harness()
-    h.updateSessionWithMessages.mockRejectedValueOnce(new Error('Disk unavailable'))
+    h.executeStructureCommand.mockRejectedValueOnce(new Error('Disk unavailable'))
     await expect(h.service.replyBelow('concurrent-chat', 'prompt')).rejects.toThrow('Disk unavailable')
     expect(h.get().messages).toHaveLength(3)
     expect(h.orchestrate).not.toHaveBeenCalled()

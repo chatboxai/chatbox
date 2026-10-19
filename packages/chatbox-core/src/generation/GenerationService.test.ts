@@ -1,18 +1,16 @@
 import { decodeSessionTree } from '../session/session-tree/decode'
-import { deriveSessionTopologyFingerprint } from '../session/session-tree/topology-fingerprint'
-import { deriveContextReadProjection } from '../persistence/session-context-read'
 import type { ChatStreamOptions, ModelInterface, ModelStreamPart } from '@shared/models/types'
 import type { Config, Message, Session, SessionSettings, Settings } from '@shared/types'
 import { jsonSchema, type ModelMessage, type ToolSet } from 'ai'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { InMemorySessionRepository } from '../testing/InMemorySessionRepository'
+import type { CompactionSessionPort } from '../application/context/CompactionService'
 import { CompactionService } from '../application/context/CompactionService'
 import { createGenerationSegmentSplitWriter } from '../application/session/generation-segment-split'
-import { getSessionMessageTokenizationDigest } from '../application/session/message-derived-data'
 import { RowBackedSessionRepository } from '../application/session/RowBackedSessionRepository'
-import { contextSourceFromRows } from '../application/session/session-context-source'
 import { StreamingWriteCoordinator } from '../application/session/streaming-write-coordinator'
 import { selectTokenEstimationContext } from '../application/token-estimation/TokenEstimationService'
-import { contextPathFacts } from '../persistence/session-context-read'
+import { contextPathFacts } from '../session/context-path-facts'
 import { contextSession, contextSnapshot } from '../persistence/session-context-read.test-support'
 import { generationStreamFixture } from '../testing/generation-stream'
 import { InMemorySessionRecordStore } from '../testing/InMemorySessionRecordStore'
@@ -66,6 +64,7 @@ interface Harness {
   storeBlob: ReturnType<typeof vi.fn>
   session: Session
   sessions: GenerationSessionPort
+  compactionSessions: CompactionSessionPort
   preparedRequests: GenerationPreparationRequest<ModelContext>[]
   /** The object `getSessionSettings` resolves to; mutate it to drive per-chat settings. */
   sessionSettings: SessionSettings
@@ -212,8 +211,27 @@ function createHarness(): Harness {
     },
   } as unknown as ModelInterface
 
+  const fixtureRows = new InMemorySessionRepository()
+  const readFixture = async () => {
+    await fixtureRows.seedSession(session)
+    return fixtureRows
+  }
+  const compactionSessions: CompactionSessionPort = {
+    getSessionHeader: async (id) => (await readFixture()).getSessionHeader(id),
+    getSessionContextSource: async (request) =>
+      (request.expectedRevision === undefined ? await readFixture() : fixtureRows).getSessionContextSource(request),
+    getSessionSettings: async () => sessionSettings,
+    commitSessionCompaction: async (id, operation) => {
+      await readFixture()
+      const result = await fixtureRows.executeSessionCommand(id, { type: 'structure', operation })
+      if (result.delta.structureResult?.applied) Object.assign(session, fixtureRows.inspectSession(id))
+      return { applied: result.delta.structureResult?.applied === true, revision: result.delta.revision }
+    },
+  }
   const sessions: GenerationSessionPort = {
-    getSession: () => Promise.resolve(session),
+    getSessionContextSource: compactionSessions.getSessionContextSource,
+    readSessionMessages: async (request) =>
+      (request.expectedRevision === undefined ? await readFixture() : fixtureRows).readSessionMessages(request),
     isSessionMissingError: (error) => persistenceFailure?.missing === true && error === persistenceFailure.error,
     getSessionSettings: () => Promise.resolve(sessionSettings),
     updateSessionSettings: (_sessionId, update) => {
@@ -248,30 +266,21 @@ function createHarness(): Harness {
     splitStreamingMessage: createGenerationSegmentSplitWriter({
       streamingWrites: new StreamingWriteCoordinator(),
       sessions: {
-        async updateSessionWithMessages(_sessionId, updater, options) {
+        async executeStructureCommand(_sessionId, operation, onCommitted) {
+          if (operation.action !== 'generation-segment-split') throw new Error('Unexpected fixture command')
           if (insertionFailure && !insertionFailure.commit) throw insertionFailure.error
           persistenceCallCount += 1
           if (persistenceFailure && persistenceCallCount >= persistenceFailure.call) throw persistenceFailure.error
-          const previousIds = new Set(session.messages.map((message) => message.id))
-          const previous = session.messages
-          const next = typeof updater === 'function' ? updater(session) : updater
-          Object.assign(session, next)
-          for (const [index, message] of session.messages.entries()) {
-            if (!previousIds.has(message.id)) {
-              inserted.push({
-                message: { ...message, contentParts: [...message.contentParts] },
-                afterMessageId: session.messages[index - 1].id,
-              })
-            } else if (previous.find((old) => old.id === message.id) !== message) {
-              persisted.push({
-                message: { ...message, contentParts: [...message.contentParts] },
-                refreshCounting: true,
-              })
-            }
+          await readFixture()
+          const { delta } = await fixtureRows.executeSessionCommand(session.id, { type: 'structure', operation })
+          if (delta.structureResult?.applied) {
+            Object.assign(session, fixtureRows.inspectSession(session.id))
+            inserted.push({ message: operation.continuation, afterMessageId: operation.afterMessageId })
+            persisted.push({ message: operation.prefix, refreshCounting: true })
           }
-          options?.onFullSessionPersisted?.(session)
+          if (delta.structureResult) onCommitted?.(delta.structureResult)
           if (insertionFailure) throw insertionFailure.error
-          return session
+          return delta.structureResult ?? null
         },
       },
     }),
@@ -288,7 +297,6 @@ function createHarness(): Harness {
       // update fails afterwards (SessionMetadataUpdateError).
       return insertionFailure ? Promise.reject(insertionFailure.error) : Promise.resolve()
     },
-    findMessage: (current, messageId) => current.messages.find((message) => message.id === messageId),
     modifyMessage: (_sessionId, message) => {
       const index = session.messages.findIndex((candidate) => candidate.id === message.id)
       if (index >= 0) {
@@ -401,6 +409,7 @@ function createHarness(): Harness {
     storeBlob,
     session,
     sessions,
+    compactionSessions,
     preparedRequests,
     sessionSettings,
     globalSettings,
@@ -467,37 +476,14 @@ async function boundedHarness() {
   if (!target) throw new Error('Missing target')
   target.id = 'assistant-1'
   Object.assign(harness.session, complete)
-  const rows = new InMemorySessionRowStore()
-  await rows.writeRows(contextSnapshot(complete))
-  harness.sessions.getSessionContextSource = async (request) => {
-    const source = await rows.readContext(request)
-    return source ? contextSourceFromRows(source) : null
-  }
-  harness.sessions.readSessionMessages = async (request) => {
-    const selected = await rows.readMessages(request)
-    if (!selected) return null
-    const { messages: _messages, threads: _threads, compactionPoints: _points, ...header } = complete
-    return { header, revision: selected.revision, messages: selected.messages.map((row) => row.message) }
-  }
-  const getSession = vi.fn(() => Promise.resolve(harness.session))
-  harness.sessions.getSession = getSession
-  const getCompleteSessionSource = vi.fn(async () => {
-    const snapshot = await rows.readSnapshot(complete.id)
-    if (!snapshot) return null
-    const decoded = decodeSessionTree({
-      session: snapshot.record,
-      threads: snapshot.rows.threads,
-      messages: snapshot.rows.messages,
-    })
-    if (!decoded.ok) throw new Error(decoded.reason)
-    return {
-      session: decoded.session,
-      topologyFingerprint: snapshot.record.topologyFingerprint,
-      revision: snapshot.revision,
-    }
-  })
-  harness.sessions.getCompleteSessionSource = getCompleteSessionSource
-  return { ...harness, getSession, getCompleteSessionSource, rows }
+  const repository = new InMemorySessionRepository()
+  await repository.seedSession(complete)
+  harness.sessions.getSessionContextSource = repository.getSessionContextSource
+  harness.sessions.readSessionMessages = repository.readSessionMessages
+  const readSnapshot = vi
+    .spyOn(repository.rowStore, 'readSnapshot')
+    .mockRejectedValue(new Error('Complete reads are forbidden'))
+  return { ...harness, rows: repository.rowStore, repository, readSnapshot }
 }
 
 describe('generation context sources', () => {
@@ -526,21 +512,12 @@ describe('generation context sources', () => {
         },
       ],
     }
-    const repo = new RowBackedSessionRepository({
-      records: new InMemorySessionRecordStore(),
-      rows: new InMemorySessionRowStore(),
-    })
-    await repo.setSession(harness.session)
-    harness.sessions.getSessionContextSource = repo.getSessionContextSource.bind(repo)
-    harness.sessions.readSessionMessages = repo.readSessionMessages.bind(repo)
-    harness.sessions.getSession = repo.getSession.bind(repo)
+    const repo = new InMemorySessionRepository()
+    await repo.seedSession(harness.session)
+    harness.sessions.getSessionContextSource = repo.getSessionContextSource
+    harness.sessions.readSessionMessages = repo.readSessionMessages
     const saveTarget = async (message: Message) => {
-      const current = await repo.getSession('session-1')
-      if (!current) throw new Error('Missing session')
-      await repo.setSession(
-        { ...current, messages: current.messages.map((m) => (m.id === message.id ? message : m)) },
-        { changedMessageId: message.id }
-      )
+      await repo.executeSessionCommand('session-1', { type: 'update', messageId: message.id, updater: message })
     }
     const modify = harness.sessions.modifyMessage
     harness.sessions.modifyMessage = async (...args) => {
@@ -557,18 +534,14 @@ describe('generation context sources', () => {
       if (!concurrentUpdateCommitted) {
         concurrentUpdateCommitted = true
         if (change === 'token-cache') {
-          await repo.patchSessionMessageDerivedData('session-1', [
-            {
-              messageId: 'user-1',
-              text: [
-                {
-                  tokenizerType: 'default',
-                  sourceDigest: getSessionMessageTokenizationDigest(harness.session.messages[0]),
-                  tokens: 42,
-                  calculatedAt: 100,
-                },
-              ],
-            },
+          const plan = await repo.createSessionTokenPlan({ sessionId: 'session-1' })
+          if (!plan) throw new Error('Missing token plan')
+          const cacheKey = 'history-breakdown-v1:default:0:0'
+          const page = await repo.readSessionTokenPage({ plan, offset: 0, limit: 16, cacheKey })
+          const identity = page.entries.find((entry) => entry.messageId === 'user-1')
+          if (!identity) throw new Error('Missing token source')
+          await repo.acceptSessionTokenCacheResults('session-1', [
+            { identity, cacheKey, value: { text: 42, attachments: 0, toolCalls: 0, approximate: false } },
           ])
         } else {
           const target = harness.session.messages[1]
@@ -592,7 +565,7 @@ describe('generation context sources', () => {
     if (operation === 'approve') await harness.service.continuePausedToolCall('session-1', 'assistant-1', 'tool-1')
     else await harness.service.retryFromLastToolCallAfterApiError('session-1', 'assistant-1', 'tool-1')
 
-    const saved = await repo.getSession('session-1')
+    const saved = repo.inspectSession('session-1')
     if (change === 'approval-binding') {
       expect(execute).not.toHaveBeenCalled()
       expect(harness.persisted).toHaveLength(0)
@@ -604,14 +577,24 @@ describe('generation context sources', () => {
       { command: 'pwd' },
       expect.objectContaining({ approved: true, approvalWorkdir: '/workspace', toolCallId: 'tool-1' })
     )
-    expect(saved?.messages[0].tokenCountMap?.default).toBe(42)
+    expect(saved?.messages[0].tokenCountMap).toBeUndefined()
+    const tokenPlan = await repo.createSessionTokenPlan({ sessionId: 'session-1' })
+    const tokenPage = await repo.readSessionTokenPage({
+      plan: tokenPlan!,
+      offset: 0,
+      limit: 16,
+      cacheKey: 'history-breakdown-v1:default:0:0',
+    })
+    expect(tokenPage.entries).toContainEqual(
+      expect.objectContaining({ messageId: 'user-1', value: expect.objectContaining({ text: 42 }) })
+    )
     expect(saved?.messages[1].contentParts).toEqual([
       expect.objectContaining({ state: 'result', result: { stdout: '/workspace' } }),
     ])
   })
 
   it.each(['approve', 'retry'] as const)(
-    'keeps %s for a removed target a no-op on compatibility hosts',
+    'keeps %s for a removed target a no-op without reading unrelated messages',
     async (operation) => {
       const harness = createHarness()
       if (operation === 'approve') await harness.service.continuePausedToolCall('session-1', 'removed-target', 'tool-1')
@@ -626,8 +609,11 @@ describe('generation context sources', () => {
       const harness = createHarness()
       const contextError = new Error('Context storage failed')
       harness.sessions.getSessionContextSource = () => Promise.reject(contextError)
-      if (verification === 'read-failed')
-        harness.sessions.readSessionMessages = () => Promise.reject(new Error('ID storage failed'))
+      if (verification === 'read-failed') {
+        const read = harness.sessions.readSessionMessages
+        harness.sessions.readSessionMessages = (request) =>
+          request.messageIds.length ? Promise.reject(new Error('ID storage failed')) : read(request)
+      }
       await expect(harness.service.continuePausedToolCall('session-1', 'assistant-1', 'tool-1')).rejects.toBe(
         contextError
       )
@@ -635,13 +621,28 @@ describe('generation context sources', () => {
     }
   )
 
+  it('passes the resolved message limit to the fenced context read before hydrating history', async () => {
+    const harness = await boundedHarness()
+    harness.sessionSettings.maxContextMessageCount = 20
+    const source = vi.spyOn(harness.sessions, 'getSessionContextSource')
+    const reads = vi.spyOn(harness.rows, 'readMessages')
+    await harness.service.orchestrate('session-1', targetMessage())
+    expect(source).toHaveBeenCalledWith(
+      expect.objectContaining({
+        maxContextMessageCount: 20,
+        expectedRevision: expect.any(Number),
+      })
+    )
+    expect(new Set(reads.mock.calls.flatMap(([request]) => request.messageIds)).size).toBeLessThanOrEqual(24)
+  })
+
   it('prepares a bounded source and original history before initializing the target', async () => {
     const harness = await boundedHarness()
     const expectedHistory = contextPathFacts(harness.session.messages.slice(0, -1))
     const originalTarget = { ...harness.session.messages.at(-1), timestamp: 42 } as Message
     await harness.service.orchestrate('session-1', originalTarget)
 
-    expect(harness.getSession).not.toHaveBeenCalled()
+    expect(harness.readSnapshot).not.toHaveBeenCalled()
     expect(harness.preparedRequests[0].session).not.toHaveProperty('messages')
     expect(harness.preparedRequests[0].messages.map((message) => message.id)).toEqual([
       'system',
@@ -660,7 +661,7 @@ describe('generation context sources', () => {
     const expectedHistory = contextPathFacts(harness.session.messages)
     await harness.service.orchestrate('session-1', targetMessage(), { appendToMessage: true })
 
-    expect(harness.getSession).not.toHaveBeenCalled()
+    expect(harness.readSnapshot).not.toHaveBeenCalled()
     expect(harness.preparedRequests[0].targetMessageIndex).toBe(5)
     expect(harness.preparedRequests[0].history).toEqual(expectedHistory)
   })
@@ -675,60 +676,54 @@ describe('generation context sources', () => {
       ]
       await harness.service.orchestrate('session-1', { ...targetMessage(), id: targetId }, { contextMessages })
 
-      expect(harness.getSession).not.toHaveBeenCalled()
+      expect(harness.readSnapshot).not.toHaveBeenCalled()
       expect(harness.preparedRequests[0].messages).toBe(contextMessages)
       expect(harness.preparedRequests[0].history).toEqual(contextPathFacts(contextMessages.slice(0, 1)))
       expect(harness.steeringRegister.mock.calls[0][1]).toEqual(new Set(['override-user', targetId]))
     }
   )
 
-  it.each([false, true])('loads target scope lazily and fails closed on tree change: %s', async (changed) => {
+  it('freezes all causal identities before compaction without hydrating omitted history', async () => {
     const harness = await boundedHarness()
-    await harness.service.orchestrate('session-1', targetMessage())
-    const loader = harness.steeringRegister.mock.calls[0][1] as Parameters<GenerationSteeringPort['register']>[1]
-    if (typeof loader !== 'function') throw new Error('Expected lazy scope')
-    if (changed) {
-      harness.session.messages.splice(2, 1)
-      await harness.rows.writeRows(contextSnapshot(harness.session, 2), 1)
-    }
-    const scope = await loader()
-
-    expect(harness.getSession).not.toHaveBeenCalled()
-    expect(harness.getCompleteSessionSource).toHaveBeenCalledTimes(1)
-    if (changed) expect(scope).toBeNull()
-    else expect(scope).toEqual(new Set(harness.session.messages.map((message) => message.id)))
-  })
-
-  it('uses the atomic persisted identity for sparse DFS labels after a deletion', async () => {
-    const harness = await boundedHarness()
-    const snapshot = (await harness.rows.readSnapshot('session-1'))!
-    const messages = snapshot.rows.messages.map((row) => ({ ...row, seq: row.seq * 2 }))
-    const record = {
-      ...snapshot.record,
-      topologyFingerprint: deriveSessionTopologyFingerprint(snapshot.rows.threads, messages),
-      contextReadProjection: deriveContextReadProjection(snapshot.rows.threads, messages),
-    }
-    await harness.rows.writeRows({ ...snapshot, record, revision: 2, rows: { ...snapshot.rows, messages } }, 1)
-    await harness.service.orchestrate('session-1', targetMessage())
-    const scope = harness.steeringRegister.mock.calls[0][1]
-    if (typeof scope !== 'function') throw new Error('Expected lazy scope')
-    expect(await scope()).toEqual(new Set(harness.session.messages.map((message) => message.id)))
-    expect(harness.getSession).not.toHaveBeenCalled()
-  })
-
-  it('preloads the original complete scope for a legacy source without a fingerprint', async () => {
-    const harness = await boundedHarness()
-    const read = harness.sessions.getSessionContextSource
-    harness.sessions.getSessionContextSource = async (request) => {
-      const source = await read?.(request)
-      return source ? { ...source, topologyFingerprint: undefined } : null
-    }
+    const bodies = vi.spyOn(harness.rows, 'readMessages')
     const initialIds = harness.session.messages.map((message) => message.id)
     await harness.service.orchestrate('session-1', targetMessage())
     harness.session.messages.splice(2, 1)
-
-    expect(harness.getSession).toHaveBeenCalledTimes(1)
     expect(harness.steeringRegister.mock.calls[0][1]).toEqual(new Set(initialIds))
+    expect(harness.readSnapshot).not.toHaveBeenCalled()
+    const requested = new Set(bodies.mock.calls.flatMap(([request]) => request.messageIds))
+    expect(requested.size).toBeLessThanOrEqual(5)
+  })
+
+  it('follows stable links when sibling labels are sparse', async () => {
+    const harness = await boundedHarness()
+    const snapshot = harness.rows.snapshot()[0]
+    const messages = snapshot.rows.messages.map((row) => ({ ...row, seq: row.seq * 2 }))
+    await harness.rows.writeRows({ ...snapshot, revision: 2, rows: { ...snapshot.rows, messages } }, 1)
+    await harness.service.orchestrate('session-1', targetMessage())
+    expect(harness.steeringRegister.mock.calls[0][1]).toEqual(
+      new Set(harness.session.messages.map((message) => message.id))
+    )
+    expect(harness.readSnapshot).not.toHaveBeenCalled()
+  })
+
+  it('keeps steering identities isolated from unselected branch descendants', async () => {
+    const harness = await boundedHarness()
+    const pivot = harness.session.messages.at(-2)!.id
+    await harness.repository.executeSessionCommand('session-1', {
+      type: 'structure',
+      operation: {
+        action: 'fork-create',
+        pivotId: pivot,
+        identity: { seedListId: 'seed', storedListId: 'stored', newListId: 'new', createdAt: 1 },
+        append: [{ id: 'private-other-branch', role: 'assistant', contentParts: [] }],
+      },
+    })
+    await harness.service.orchestrate('session-1', targetMessage())
+    const ids = harness.steeringRegister.mock.calls[0][1] as ReadonlySet<string>
+    expect(ids.has('assistant-1')).toBe(true)
+    expect(ids.has('private-other-branch')).toBe(false)
+    expect(harness.readSnapshot).not.toHaveBeenCalled()
   })
 })
 
@@ -1385,6 +1380,7 @@ describe('GenerationService', () => {
   it('compacts between tool steps when the payload exceeds the threshold', async () => {
     const compact = vi.fn<GenerationCompactionPort['compact']>().mockImplementation(async (_id, request) => ({
       status: 'compacted',
+      revision: 1,
       summaryMessageId: 'summary',
       summary: 'Earlier work done.',
       coverage: { ...request, boundaryMessageId: 'assistant-1' },
@@ -1545,19 +1541,16 @@ describe('GenerationService', () => {
         return { success: true, summary: 'A summary' }
       })
       const service = new CompactionService({
-        sessions: {
-          getSession: async () => harness.session,
-          getSessionSettings: async () => harness.sessionSettings,
-          updateSessionWithMessages: async (_id, updater) => {
-            Object.assign(harness.session, updater(harness.session))
-            return harness.session
-          },
-        },
+        sessions: harness.compactionSessions,
         settings: { getSettings: () => harness.globalSettings },
         policy: {
           shouldCompact: async () => true,
           getCompactionContext: (session, settings, pending) =>
-            selectTokenEstimationContext(session, settings.maxContextMessageCount, pending),
+            selectTokenEstimationContext(
+              { messages: session.candidateMessages, compactionPoints: session.compactionPoints },
+              settings.maxContextMessageCount,
+              pending
+            ),
         },
         summaries: { generate },
         createId: () => 'a-summary',
@@ -1651,19 +1644,16 @@ describe('GenerationService', () => {
       return { success: true, summary: 'Work and updated direction' }
     })
     const service = new CompactionService({
-      sessions: {
-        getSession: async () => harness.session,
-        getSessionSettings: async () => harness.sessionSettings,
-        updateSessionWithMessages: async (_id, updater) => {
-          Object.assign(harness.session, updater(harness.session))
-          return harness.session
-        },
-      },
+      sessions: harness.compactionSessions,
       settings: { getSettings: () => harness.globalSettings },
       policy: {
         shouldCompact: async () => true,
         getCompactionContext: (session, settings, pending) =>
-          selectTokenEstimationContext(session, settings.maxContextMessageCount, pending),
+          selectTokenEstimationContext(
+            { messages: session.candidateMessages, compactionPoints: session.compactionPoints },
+            settings.maxContextMessageCount,
+            pending
+          ),
       },
       summaries: { generate },
       createId: () => 'steer-summary',
@@ -1815,6 +1805,7 @@ describe('GenerationService', () => {
   it('reuses a successful mid-run rewrite on later steps', async () => {
     const compact = vi.fn<GenerationCompactionPort['compact']>().mockImplementation(async (_id, request) => ({
       status: 'compacted',
+      revision: 1,
       summaryMessageId: 'summary',
       summary: 'Earlier work done.',
       coverage: { ...request, boundaryMessageId: 'assistant-1' },
@@ -1904,6 +1895,7 @@ describe('GenerationService', () => {
   it('keeps the full payload when a generating split cannot be established', async () => {
     const compact = vi.fn<GenerationCompactionPort['compact']>().mockImplementation(async (_id, request) => ({
       status: 'compacted',
+      revision: 1,
       summaryMessageId: 'summary',
       summary: 'Earlier work done.',
       coverage: { ...request, boundaryMessageId: 'assistant-1' },
@@ -2005,6 +1997,7 @@ describe('GenerationService', () => {
   it('keeps the full payload when the summary receipt belongs to another retained round', async () => {
     const compact = vi.fn<GenerationCompactionPort['compact']>().mockImplementation(async (_id, request) => ({
       status: 'compacted',
+      revision: 1,
       summaryMessageId: 'summary',
       summary: 'Older history only.',
       coverage: { ...request, retainedToolCallId: 'wrong-round', boundaryMessageId: 'user-1' },
@@ -2114,6 +2107,7 @@ describe('GenerationService', () => {
       )
       return Promise.resolve({
         status: 'compacted',
+        revision: 1,
         summaryMessageId: 'summary',
         summary: 'Earlier work done.',
         coverage: { ...request, boundaryMessageId: 'assistant-1' },
@@ -2216,6 +2210,7 @@ describe('GenerationService', () => {
   it('reuses a mid-run rewrite after an earlier image follow-up is dropped', async () => {
     const compact = vi.fn<GenerationCompactionPort['compact']>().mockImplementation(async (_id, request) => ({
       status: 'compacted',
+      revision: 1,
       summaryMessageId: 'summary',
       summary: 'Earlier work done.',
       coverage: { ...request, boundaryMessageId: 'assistant-1' },

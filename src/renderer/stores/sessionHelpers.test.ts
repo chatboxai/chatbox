@@ -19,7 +19,8 @@ const {
   mockGetItem,
   mockReportError,
   mockCleanupOrphanedBlobs,
-  mockGetSession,
+  searchSource,
+  mockGetSessionAgentModeEntry,
   sessionMetaStorage,
 } = vi.hoisted(() => {
   const blobs = new Map<string, string>()
@@ -59,7 +60,12 @@ const {
     }),
     mockSetItem: vi.fn(async () => undefined),
     mockGetItem: vi.fn(async <T>(_key: string, initialValue: T) => initialValue),
-    mockGetSession: vi.fn(),
+    searchSource: {
+      readSessionSearchCandidates: vi.fn(),
+      readSessionSearchWindow: vi.fn(),
+      listSessionsMetaPage: vi.fn(),
+    },
+    mockGetSessionAgentModeEntry: vi.fn(),
     sessionMetaStorage: { getPage: vi.fn() },
     mockReportError: vi.fn(),
     mockCleanupOrphanedBlobs: vi.fn(async () => 0),
@@ -163,12 +169,15 @@ vi.mock('@/app/renderer-application', async () => {
   return {
     rendererApplication: {
       backupOperations: new BackupOperationCoordinator(),
-      sessions: { initialize: vi.fn(), repository: { meta: sessionMetaStorage } },
+      sessions: { initialize: vi.fn(), repository: { meta: sessionMetaStorage }, ...searchSource },
     },
-    sessionRepository: { getSession: mockGetSession },
   }
 })
 
+vi.mock('./session/agent-mode', () => ({ getSessionAgentModeEntry: mockGetSessionAgentModeEntry }))
+
+import { InMemorySessionRepository } from '@chatbox/core/testing'
+import type { SessionSearchResult } from '@chatbox/core/application/session'
 import type { Session } from '@shared/types'
 import {
   isSessionAttachmentRagAuthError,
@@ -964,46 +973,62 @@ describe('preprocessFile local parser fallback', () => {
 })
 
 describe('searchSessions', () => {
-  function storedSession(id: string, text: string): Session {
-    return {
-      id,
-      name: `Session ${id}`,
-      type: 'chat',
-      messages: [{ id: `${id}-message`, role: 'user', contentParts: [{ type: 'text', text }] }],
-    }
-  }
-
   beforeEach(() => {
     mockGetItem.mockClear()
-    mockGetSession.mockReset()
-    sessionMetaStorage.getPage.mockReset()
+    for (const method of Object.values(searchSource)) method.mockReset()
+    mockGetSessionAgentModeEntry.mockReset()
+    mockGetSessionAgentModeEntry.mockReturnValue({ value: 'off', locked: false, lockReason: null })
   })
 
-  it('reads a single session through the repository rather than its storage key', async () => {
-    mockGetSession.mockResolvedValue(storedSession('one', 'needle in a haystack'))
-    const batches: Session[][] = []
-
-    await searchSessions('needle', 'one', (batch) => batches.push(batch))
-
-    expect(mockGetSession).toHaveBeenCalledWith('one')
-    expect(mockGetItem).not.toHaveBeenCalled()
-    expect(batches.flat().map(({ id }) => id)).toEqual(['one'])
-  })
-
-  it('loads every listed session of a page through the repository', async () => {
-    sessionMetaStorage.getPage.mockResolvedValue({
-      items: [{ id: 'one' }, { id: 'two' }],
-      nextCursor: null,
-      total: 2,
-    })
-    mockGetSession.mockImplementation(async (id: string) =>
-      id === 'one' ? storedSession('one', 'needle here') : storedSession('two', 'nothing')
+  async function seed(value: Session) {
+    const repository = new InMemorySessionRepository()
+    await repository.seedSession(value)
+    searchSource.readSessionSearchCandidates.mockImplementation((request) =>
+      repository.readSessionSearchCandidates(request)
     )
-    const batches: Session[][] = []
+    searchSource.readSessionSearchWindow.mockImplementation((request) => repository.readSessionSearchWindow(request))
+    searchSource.listSessionsMetaPage.mockResolvedValue({
+      items: [{ id: value.id, name: value.name, sortOrder: 1 }],
+      nextCursor: null,
+      total: 1,
+    })
+  }
 
-    await searchSessions('needle', undefined, (batch) => batches.push(batch))
+  it('returns light hits and progressive snapshots through bounded row reads', async () => {
+    await seed({
+      id: 'one',
+      name: 'Chat',
+      messages: [{ id: 'm', role: 'user', contentParts: [{ type: 'text', text: 'needle here' }] }],
+    })
+    const progress: SessionSearchResult[] = []
+    const controller = new AbortController()
+    const result = await searchSessions('needle', {
+      sessionId: 'one',
+      signal: controller.signal,
+      onProgress: (value) => progress.push(value),
+    })
+    expect(result.hits).toEqual([{ sessionId: 'one', sessionName: 'Chat', messageId: 'm', preview: 'needle here' }])
+    expect(progress.at(-1)).toEqual(result)
+    expect(searchSource.readSessionSearchWindow).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 'one', signal: controller.signal })
+    )
+    expect(mockGetItem).not.toHaveBeenCalled()
+  })
 
-    expect(mockGetSession.mock.calls.map(([id]) => id)).toEqual(['one', 'two'])
-    expect(batches.flat().map(({ id }) => id)).toEqual(['one'])
+  it('filters system hits using the effective mode from a light header', async () => {
+    await seed({
+      id: 'one',
+      name: 'Chat',
+      messages: [
+        { id: 'system', role: 'system', contentParts: [{ type: 'text', text: 'needle system' }] },
+        { id: 'user', role: 'user', contentParts: [{ type: 'text', text: 'needle user' }] },
+      ],
+    })
+    mockGetSessionAgentModeEntry.mockReturnValue({ value: 'on', locked: false, lockReason: null })
+    expect((await searchSessions('needle')).hits.map((hit) => hit.messageId)).toEqual(['user'])
+    expect(mockGetSessionAgentModeEntry).toHaveBeenCalledWith(
+      'one',
+      expect.not.objectContaining({ messages: expect.anything() })
+    )
   })
 })

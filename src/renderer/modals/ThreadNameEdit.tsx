@@ -1,28 +1,20 @@
 import NiceModal, { useModal } from '@ebay/nice-modal-react'
 import { Button, Input } from '@mantine/core'
-import type { Session } from '@shared/types'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AdaptiveModal } from '@/components/common/AdaptiveModal'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { rendererApplication } from '@/app/renderer-application'
 
-const useSession = (sessionId: string | null) => rendererApplication.sessionHooks.useSession(sessionId)
 import { editThread } from '@/stores/session/threads'
 
 const ThreadNameEdit = NiceModal.create((props: { sessionId: string; threadId: string }) => {
   const { sessionId, threadId } = props
-  const { session: currentSession } = useSession(sessionId)
+  const { read: threadRead } = rendererApplication.sessionHooks.useSessionThread(sessionId, threadId)
   const modal = useModal()
   const { t } = useTranslation()
   const isSmallScreen = useIsSmallScreen()
-  const currentThreadName = useMemo(() => {
-    if (currentSession?.id === threadId) {
-      return currentSession.threadName || ''
-    }
-    const threads = currentSession?.threads ?? []
-    return threads.find((thread: NonNullable<Session['threads']>[number]) => thread.id === threadId)?.name || ''
-  }, [currentSession?.threadName, currentSession?.threads, currentSession?.id, threadId])
+  const currentThreadName = threadRead?.thread.name ?? ''
 
   const [threadName, setThreadName] = useState(currentThreadName)
   useEffect(() => setThreadName(currentThreadName), [currentThreadName])
@@ -33,11 +25,11 @@ const ThreadNameEdit = NiceModal.create((props: { sessionId: string; threadId: s
   }, [modal])
 
   const onSave = useCallback(async () => {
-    if (!currentSession) return
+    if (!threadRead) return
     const trimmed = threadName.trim()
-    await editThread(currentSession.id, threadId, { name: trimmed || currentThreadName })
+    await editThread(sessionId, threadId, { name: trimmed || currentThreadName })
     onClose()
-  }, [onClose, threadId, threadName, currentThreadName, currentSession?.id, currentSession])
+  }, [onClose, threadId, threadName, currentThreadName, sessionId, threadRead])
 
   const onContentInput = useCallback((e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
     setThreadName(e.target.value)

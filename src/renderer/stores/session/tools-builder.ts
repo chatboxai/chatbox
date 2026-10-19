@@ -81,7 +81,7 @@ export interface BuildToolsOptions {
   messages: Message[]
   /** Known file messages before model-context trimming. */
   fileMessages?: Message[]
-  loadFileMessages?: () => Promise<Message[]>
+  fileResourceKeys?: readonly string[]
   agentMode: 'on' | 'off'
   sessionSettings?: SessionSettings
   codeExecution?: {
@@ -352,7 +352,7 @@ export async function buildToolsForSession(
     message.contentParts.some((part) => part.type === 'tool-call' && part.resultStorageKey)
   )
   const needFileToolSet =
-    (hasInlineFileOrLink || hasStoredToolResults || options.loadFileMessages) && model.isSupportToolUse('read-file')
+    (hasInlineFileOrLink || hasStoredToolResults || options.fileResourceKeys) && model.isSupportToolUse('read-file')
   const needSessionAttachmentRagToolSet = sessionAttachmentIds.length > 0 && model.isSupportToolUse('read-file')
   const kbSupported = Boolean(knowledgeBase) && model.isSupportToolUse('knowledge-base')
   const webSupported = webBrowsing && model.isSupportToolUse('web-browsing')
@@ -489,7 +489,7 @@ When you create a Git commit that includes code changes, append this exact trail
   if (needFileToolSet) {
     tools = {
       ...tools,
-      ...buildFileTools(fileMessages, codeExecToolSet?.tools.read_file, options.loadFileMessages).tools,
+      ...buildFileTools(fileMessages, codeExecToolSet?.tools.read_file, options.fileResourceKeys).tools,
     }
   }
 

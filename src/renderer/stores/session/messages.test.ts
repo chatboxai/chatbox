@@ -4,9 +4,7 @@ import { SessionEventBus } from '@chatbox/core/application/session'
 import type { Message, Session } from '@shared/types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { getSessionMock, removeMessageMock, updateMessageMock } = vi.hoisted(() => ({
-  getSessionMock: vi.fn(),
-  removeMessageMock: vi.fn(),
+const { updateMessageMock } = vi.hoisted(() => ({
   updateMessageMock: vi.fn(),
 }))
 
@@ -17,10 +15,8 @@ vi.mock('@/app/renderer-application', async () => {
       generationRuntime: new GenerationRuntimeStore(),
       sessions: {
         executeStructureCommand: vi.fn().mockResolvedValue(null),
-        removeMessage: removeMessageMock,
         updateMessage: updateMessageMock,
       },
-      sessionQueryBridge: { getSession: getSessionMock },
     },
   }
 })
@@ -57,46 +53,43 @@ function message(id: string): Message {
 
 describe('removeMessage runtime cleanup', () => {
   beforeEach(() => {
-    vi.mocked(rendererApplication.sessions.executeStructureCommand).mockReset().mockResolvedValue(null)
-    getSessionMock.mockReset()
-    removeMessageMock.mockReset()
-    removeMessageMock.mockImplementation((_sessionId: string, _messageId: string, onPersisted?: () => void) => {
-      onPersisted?.()
-      return Promise.resolve()
-    })
+    vi.mocked(rendererApplication.sessions.executeStructureCommand)
+      .mockReset()
+      .mockImplementation(async (_sessionId, operation, onCommitted) => {
+        const result = {
+          applied: true,
+          cancelMessageIds: operation.action === 'message-remove' ? [operation.messageId] : [],
+        }
+        onCommitted?.(result)
+        return result
+      })
     updateMessageMock.mockReset()
     updateMessageMock.mockResolvedValue(undefined)
     generationRuntimeStore.clear('session-1')
   })
 
   it('discards a paused generation runtime after removing its message', async () => {
-    const session: Session = {
-      id: 'session-1',
-      name: 'Session',
-      messages: [message('reply-1')],
-    }
-    getSessionMock.mockResolvedValue(session)
-
     const runtime = generationRuntimeStore.start('session-1', 'reply-1')
     generationRuntimeStore.setPhase('session-1', 'reply-1', 'paused', runtime)
 
     await removeMessage('session-1', 'reply-1')
 
-    expect(removeMessageMock).toHaveBeenCalledWith('session-1', 'reply-1', expect.any(Function))
+    expect(rendererApplication.sessions.executeStructureCommand).toHaveBeenCalledWith(
+      'session-1',
+      expect.objectContaining({ action: 'message-remove', messageId: 'reply-1' }),
+      expect.any(Function)
+    )
     expect(generationRuntimeStore.get('session-1', 'reply-1')).toBeUndefined()
   })
 
   it('removes a message without a runtime without leaving a tombstone', async () => {
-    const session: Session = {
-      id: 'session-1',
-      name: 'Session',
-      messages: [message('reply-1')],
-    }
-    getSessionMock.mockResolvedValue(session)
-
     await removeMessage('session-1', 'reply-1')
 
-    expect(removeMessageMock).toHaveBeenCalledWith('session-1', 'reply-1', expect.any(Function))
+    expect(rendererApplication.sessions.executeStructureCommand).toHaveBeenCalledWith(
+      'session-1',
+      expect.objectContaining({ action: 'message-remove', messageId: 'reply-1' }),
+      expect.any(Function)
+    )
     expect(generationRuntimeStore.get('session-1', 'reply-1')).toBeUndefined()
   })
 
@@ -106,7 +99,6 @@ describe('removeMessage runtime cleanup', () => {
     )
     await expect(removeMessage('session-1', 'summary')).resolves.toBeUndefined()
     expect(notifySessionLockBlocked).toHaveBeenCalledWith('generating', expect.any(Function))
-    expect(removeMessageMock).not.toHaveBeenCalled()
   })
 
   it('discards a paused runtime only after the structure content commit', async () => {
@@ -115,14 +107,13 @@ describe('removeMessage runtime cleanup', () => {
     vi.mocked(rendererApplication.sessions.executeStructureCommand).mockImplementationOnce(
       async (_id, _operation, committed) => {
         expect(runtime.abortController.signal.aborted).toBe(false)
-        const result = { applied: true, cancelMessageIds: [], affectedMessageIds: ['paused-structure'] }
+        const result = { applied: true, cancelMessageIds: ['paused-structure'] }
         committed?.(result)
-        throw new Error('metadata failed')
+        return result
       }
     )
-    await expect(removeMessage('session-1', 'paused-structure')).rejects.toThrow('metadata failed')
+    await expect(removeMessage('session-1', 'paused-structure')).resolves.toBeUndefined()
     expect(runtime.abortController.signal.aborted).toBe(true)
-    expect(removeMessageMock).not.toHaveBeenCalled()
   })
 
   it('retains failed Stop ownership until a competing terminal write durably releases it', async () => {
@@ -146,7 +137,13 @@ describe('removeMessage runtime cleanup', () => {
     const dependencies: GenerationCancellationDependencies = {
       sessionEvents: new SessionEventBus(),
       runtime: generationRuntimeStore,
-      getSession: () => Promise.resolve(currentSession),
+      readState: async () => ({
+        messages: currentSession.messages,
+        generatingMessageIds: currentSession.messages
+          .filter((message) => message.generating)
+          .map((message) => message.id),
+        currentConversationGeneratingCount: currentSession.messages.filter((message) => message.generating).length,
+      }),
       removeMessage: vi.fn().mockResolvedValue(undefined),
       persistMessage: persistStoppedMessage,
     }

@@ -1,9 +1,10 @@
+import { projectRowFixture } from '../ports/testing/session-row-fixtures'
+import { readRowContextSource } from '../application/session/row-context'
 import { afterEach, describe, expect, it } from 'vitest'
 import { type BackupRow, DEFAULT_BACKUP_PAGE_LIMITS } from '../backup/session-port'
 import { type SessionRowSnapshot, SessionRowConflictError } from '../ports/session-row-store'
 import type { SessionTextTokenResult } from '../ports/session-text-tokens'
 import { type NodeSessionRowSqlDatabase, openNodeSessionRowDatabase } from './node-sqlite.test-support'
-import { expectedContextMessage } from './session-context-read.test-support'
 import { type SessionRowSqlBindValue, type SessionRowSqlReadOptions, SqlSessionRowStore } from './session-row-sql'
 
 const databases: NodeSessionRowSqlDatabase[] = []
@@ -16,7 +17,7 @@ function fixture(count = 3, text = '正文😀', wideIds = false): SessionRowSna
   const sessionId = 'native-session'
   const threadId = 'active'
   const ids = Array.from({ length: count }, (_, index) => `m-${index}${wideIds ? '界'.repeat(240) : ''}`)
-  return {
+  return projectRowFixture({
     revision: 1,
     record: { id: sessionId, name: 'Native reads', type: 'chat', storageFormat: 'rows', activeThreadId: threadId },
     rows: {
@@ -58,7 +59,7 @@ function fixture(count = 3, text = '正文😀', wideIds = false): SessionRowSna
         message: { id: messageId, role: index % 2 ? 'assistant' : 'user', contentParts: [{ type: 'text', text }] },
       })),
     },
-  }
+  })
 }
 
 function setup(
@@ -106,9 +107,11 @@ describe('structured native SQL read policy', () => {
     const { writer, reader, calls } = setup()
     const snapshot = fixture(4, '正文😀'.repeat(40000))
     await writer.writeRows(snapshot)
-    const first = await reader.readMessageWindow({ sessionId: snapshot.record.id, edge: 'head', limit: 2 })
+    const first = await reader.readTranscriptWindow({ sessionId: snapshot.record.id, origin: 'head', limit: 2 })
     expect(first?.messages).toEqual(snapshot.rows.messages.slice(0, 2))
-    expect(first?.thread).toEqual(snapshot.rows.threads[0])
+    expect(first?.threads.find((thread) => thread.threadId === snapshot.rows.threads[0].threadId)).toMatchObject({
+      name: snapshot.rows.threads[0].name,
+    })
     const payloads = calls.filter(({ sql }) => isPayloadQuery(sql))
     expect(payloads).toHaveLength(1)
     expect(payloads[0].binds).toBe(2)
@@ -116,18 +119,23 @@ describe('structured native SQL read policy', () => {
     expect(calls.some(({ sql }) => sql.includes('response_bytes') || sql.includes('substr('))).toBe(false)
     if (!first?.newer) throw new Error('Missing forward cursor')
     expect(
-      (await reader.readMessageWindow({ sessionId: snapshot.record.id, cursor: first.newer, limit: 2 }))?.messages
+      (await reader.readTranscriptWindow({ sessionId: snapshot.record.id, cursor: first.newer, limit: 2 }))?.messages
     ).toEqual(snapshot.rows.messages.slice(2))
   })
 
   it('retains bounded bridge reads by default', async () => {
     const { writer, reader, calls } = setup({})
     const snapshot = fixture(2, '正文😀'.repeat(40000))
-    snapshot.rows.threads[0].name = 'Wide thread name'.repeat(1000)
+    snapshot.rows.threads[0].name = 'Wide\u0000thread😀'.repeat(1000)
     await writer.writeRows(snapshot)
-    expect((await reader.readMessageWindow({ sessionId: snapshot.record.id, limit: 2 }))?.messages).toEqual(
+    expect((await reader.readTranscriptWindow({ sessionId: snapshot.record.id, limit: 2 }))?.messages).toEqual(
       snapshot.rows.messages
     )
+    expect(
+      (await reader.readTranscriptWindow({ sessionId: snapshot.record.id, limit: 2 }))?.threads.find(
+        (thread) => thread.threadId === 'active'
+      )?.name
+    ).toBe(snapshot.rows.threads[0].name)
     expect(calls.some(({ sql }) => sql.includes('response_bytes'))).toBe(true)
     expect(calls.some(({ sql }) => sql.includes('substr('))).toBe(true)
     expect(Math.max(...calls.map(({ bytes }) => bytes))).toBeLessThan(384 * 1024)
@@ -149,20 +157,22 @@ describe('structured native SQL read policy', () => {
       calls.filter(({ sql }) => sql.startsWith('WITH requested(requested_id')).every(({ rows }) => rows <= 768)
     ).toBe(true)
     calls.length = 0
-    expect((await reader.readStructure({ sessionId: snapshot.record.id }))?.messages).toEqual(
-      snapshot.rows.messages.map(({ message: _message, ...row }) => row)
+    const metadata = await reader.readMessageMetadata({
+      sessionId: snapshot.record.id,
+      messageIds: reversed.slice(0, 200).map((row) => row.messageId),
+      expectedRevision: 1,
+    })
+    expect(metadata?.status === 'ready' && metadata.rows.map((row) => row.messageId)).toEqual(
+      reversed.slice(0, 200).map((row) => row.messageId)
     )
     expect(calls.some(({ sql }) => sql.includes('session_message_payload_chunks'))).toBe(false)
-    expect(
-      (
-        await reader.readThreadSuffix({
-          sessionId: snapshot.record.id,
-          threadId: 'active',
-          afterSeq: 796,
-          expectedRevision: 1,
-        })
-      )?.messages
-    ).toEqual(snapshot.rows.messages.slice(797))
+    const suffix = await reader.readBranchMessagesPage({
+      sessionId: snapshot.record.id,
+      firstMessageId: snapshot.rows.messages[797].messageId,
+      limit: 3,
+      expectedRevision: 1,
+    })
+    expect(suffix?.messages).toEqual(snapshot.rows.messages.slice(797))
     const first = await reader.readThreadsPage({ sessionId: snapshot.record.id, limit: 1 })
     expect(first?.threadIds).toEqual(['active'])
     if (!first?.nextCursor) throw new Error('Missing thread cursor')
@@ -175,10 +185,14 @@ describe('structured native SQL read policy', () => {
     const { writer, reader, calls, writeBytes } = setup()
     const snapshot = fixture(300, 'text', true)
     await writer.writeRows(snapshot)
-    const context = await reader.readContext({ sessionId: snapshot.record.id })
-    expect(context?.messages).toEqual(snapshot.rows.messages.map(expectedContextMessage))
+    const context = await readRowContextSource(reader, { sessionId: snapshot.record.id })
+    expect(context?.candidateMessages).toEqual(snapshot.rows.messages.map((row) => row.message))
     expect(calls.some(({ sql }) => sql.includes('response_bytes'))).toBe(false)
-    const sources = Object.values(context?.textTokens?.sources ?? {})
+    const selected = await reader.readMessages({
+      sessionId: snapshot.record.id,
+      messageIds: snapshot.rows.messages.map((row) => row.messageId),
+    })
+    const sources = Object.values(selected?.textTokens?.sources ?? {})
     expect(sources).toHaveLength(300)
     const results: SessionTextTokenResult[] = sources.map((source) => ({
       source,
@@ -245,7 +259,7 @@ describe('structured native SQL read policy', () => {
     const snapshot = fixture(1)
     await writer.writeRows(snapshot)
     await database.executeBatch([{ sql, params: [] }])
-    await expect(reader.readContext({ sessionId: snapshot.record.id })).rejects.toMatchObject({
+    await expect(readRowContextSource(reader, { sessionId: snapshot.record.id })).rejects.toMatchObject({
       name: 'SessionRowStoreError',
     })
   })
@@ -260,7 +274,7 @@ describe('structured native SQL read policy', () => {
     })
     const snapshot = fixture(3)
     await writer.writeRows(snapshot)
-    const first = await reader.readMessageWindow({ sessionId: snapshot.record.id, limit: 1 })
+    const first = await reader.readTranscriptWindow({ sessionId: snapshot.record.id, limit: 1 })
     if (!first?.older) throw new Error('Missing backward cursor')
     change = () =>
       database.executeBatch([
@@ -268,7 +282,7 @@ describe('structured native SQL read policy', () => {
         { sql: 'UPDATE session_threads SET commit_revision=2 WHERE seq=-1', params: [] },
       ])
     await expect(
-      reader.readMessageWindow({ sessionId: snapshot.record.id, limit: 1, cursor: first.older })
+      reader.readTranscriptWindow({ sessionId: snapshot.record.id, limit: 1, cursor: first.older })
     ).rejects.toBeInstanceOf(SessionRowConflictError)
     expect((await reader.readSnapshot(snapshot.record.id))?.revision).toBe(2)
     await expect(

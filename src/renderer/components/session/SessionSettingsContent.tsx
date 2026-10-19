@@ -13,7 +13,7 @@ import {
   UnstyledButton,
 } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
-import { isChatSession, ModelProviderEnum, type Session, type SessionSettings } from '@shared/types'
+import { ModelProviderEnum, type SessionHeader, type SessionSettings } from '@shared/types'
 import { MAX_TOOL_CALLS_BEFORE_CONFIRMATION, shouldPauseOnToolCallLimit } from '@shared/utils/tool-call-limit-pause'
 import { IconArrowBackUp, IconTrash } from '@tabler/icons-react'
 import { isEqual, omit } from 'lodash'
@@ -50,7 +50,9 @@ import {
 } from '@/stores/session/session-settings-inheritance'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { add as addToast } from '@/stores/toastActions'
-import { getSessionSystemPrompt, type SessionEdit } from './session-edit'
+import type { SessionEdit } from './session-edit'
+import { getMessageText } from '@shared/utils/message'
+import { rendererApplication } from '@/app/renderer-application'
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024
 const TEXT_COMMIT_DELAY_MS = 600
@@ -139,10 +141,12 @@ function useOptimisticSettings(
 export function SessionSettingsContent({
   session,
   mode,
+  draftSystemPrompt,
   onEdit,
 }: {
-  session: Session
+  session: SessionHeader
   mode: SessionMode
+  draftSystemPrompt?: string
   onEdit: (edit: SessionEdit) => unknown
 }) {
   const { t } = useTranslation()
@@ -168,11 +172,21 @@ export function SessionSettingsContent({
   const modelLabel = useModelLabel(settings)
   const keys = visibleSessionParameterKeys(settings)
   const overrideCount = countSessionDifferences(settings, keys, global)
-  const isChat = isChatSession(session)
+  const isChat = session.type !== 'picture'
   const showSystemPrompt = isActionAvailableInMode('session-system-prompt', mode)
 
   const name = useCommittedText(session.name, (value) => void save({ name: value }), false)
-  const systemPrompt = useCommittedText(getSessionSystemPrompt(session), (value) => void save({ systemPrompt: value }))
+  const { read: headerRead } = rendererApplication.sessionHooks.useSessionHeader(
+    draftSystemPrompt === undefined ? session.id : null
+  )
+  const promptRead = rendererApplication.sessionHooks.useSessionMessage(
+    draftSystemPrompt === undefined ? session.id : null,
+    headerRead?.summary.firstSystemMessageId ?? null
+  )
+  const systemPrompt = useCommittedText(
+    draftSystemPrompt ?? (promptRead.message ? getMessageText(promptRead.message) : ''),
+    (value) => void save({ systemPrompt: value })
+  )
 
   const temperatureControl = (fieldId?: string) => (
     <SamplingParamControl
@@ -268,6 +282,7 @@ export function SessionSettingsContent({
               autosize
               minRows={2}
               maxRows={10}
+              disabled={promptRead.isLoading || promptRead.isError}
               value={systemPrompt.value}
               onChange={(e) => systemPrompt.onChange(e.currentTarget.value)}
               onBlur={systemPrompt.onBlur}

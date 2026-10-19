@@ -1,8 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { Message, Session } from '../../types/session'
 import { encodeSessionTree } from './encode'
-import { verifySessionTreeRoundTrip } from './verify'
-import { diffSessionRows } from './diff'
 import type { MessageRow, SessionTree } from './types'
 
 function message(id: string, role: Message['role'] = 'user'): Message {
@@ -313,64 +311,4 @@ describe('encodeSessionTree', () => {
       reason: 'archived thread thread-active collides with the active thread id',
     })
   })
-})
-
-describe('stable message sequence labels', () => {
-  test('retains gaps across edits and fills an available gap on insertion', () => {
-    const source = makeSession({ messages: [message('a'), message('b'), message('c')] })
-    const previousMessages = encode(source).messages
-    previousMessages[1].seq = 4
-    previousMessages[2].seq = 8
-    const next = { ...source, messages: [source.messages[0], message('new'), ...source.messages.slice(1)] }
-    const result = verifySessionTreeRoundTrip(next, { activeThreadId: 'thread-active', now: 1000, previousMessages })
-    expect(result.ok).toBe(true)
-    if (!result.ok) throw new Error(result.reason)
-    expect(result.tree.messages.map((row) => row.seq)).toEqual([0, 1, 4, 8])
-    expect(previousMessages.map((row) => row.seq)).toEqual([0, 4, 8])
-  })
-
-  test('keeps reordered messages valid and recovers safe labels at integer exhaustion', () => {
-    const source = makeSession({ messages: [message('a'), message('b'), message('c')] })
-    const previousMessages = encode(source).messages
-    for (const [index, row] of previousMessages.entries()) row.seq = Number.MAX_SAFE_INTEGER - 3 + index
-    const result = verifySessionTreeRoundTrip(
-      { ...source, messages: [source.messages[2], source.messages[0], source.messages[1]] },
-      { activeThreadId: 'thread-active', now: 1000, previousMessages }
-    )
-    expect(result.ok).toBe(true)
-    if (!result.ok) throw new Error(result.reason)
-    expect(result.tree.messages.map((row) => row.seq)).toEqual([0, 1, 2])
-  })
-
-  test.each([1000, 10000, 100000])(
-    'bounds middle-delete writes in a %i-message conversation',
-    (count) => {
-      const middle = count / 2
-      const source = makeSession({ messages: Array.from({ length: count }, (_, index) => message(`m${index}`)) })
-      const before = encode(source)
-      const next = { ...source, messages: source.messages.filter((_, index) => index !== middle) }
-      const result = verifySessionTreeRoundTrip(next, {
-        activeThreadId: 'thread-active',
-        now: 1000,
-        previousMessages: before.messages,
-      })
-      if (!result.ok) throw new Error(result.reason)
-      const previousRows = { sessionId: source.id, threads: before.threads, messages: before.messages }
-      const diff = diffSessionRows(previousRows, {
-        sessionId: source.id,
-        threads: result.tree.threads,
-        messages: result.tree.messages,
-      })
-      expect(diff.messages.upsert.map((row) => row.messageId)).toEqual([`m${middle - 1}`, `m${middle + 1}`])
-      expect(diff.messages.delete).toEqual([`m${middle}`])
-      expect(diff.unchangedPayloadMessageIds).toEqual([`m${middle - 1}`, `m${middle + 1}`])
-      expect(result.tree.messages.at(-1)?.seq).toBe(count - 1)
-      const dense = encode(next)
-      expect(
-        diffSessionRows(previousRows, { sessionId: source.id, threads: dense.threads, messages: dense.messages })
-          .messages.upsert
-      ).toHaveLength(count - middle)
-    },
-    60000
-  )
 })

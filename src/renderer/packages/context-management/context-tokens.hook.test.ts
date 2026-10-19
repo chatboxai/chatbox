@@ -19,16 +19,17 @@ vi.mock('@/packages/token-estimation/hooks/useTokenEstimation', () => ({
     pendingTasks: 1,
   })),
 }))
-it('forwards partial-source and live calculation state without treating draft work as context work', () => {
+it('forwards the first-window gate and independent draft calculation state', () => {
   const { result } = renderHook(() =>
     useContextTokens({
       sessionId: 's',
-      source: { isPartial: true, candidateMessages: [] },
+      enabled: false,
+      revision: 2,
       settings: {},
       modelSupportToolUseForFile: false,
     })
   )
-  expect(vi.mocked(useTokenEstimation).mock.calls.at(-1)?.[0].contextSourcePending).toBe(true)
+  expect(vi.mocked(useTokenEstimation).mock.calls.at(-1)?.[0].enabled).toBe(false)
   expect(result.current).toMatchObject({
     contextTokens: 123,
     totalTokens: 143,
@@ -38,7 +39,7 @@ it('forwards partial-source and live calculation state without treating draft wo
     pendingContextMessages: 0,
   })
 })
-it('does not submit history without a source', () => {
-  renderHook(() => useContextTokens({ sessionId: 's', source: null, settings: {}, modelSupportToolUseForFile: false }))
-  expect(vi.mocked(useTokenEstimation).mock.calls.at(-1)?.[0].contextMessages).toEqual([])
+it('enables independent history after the first window is ready', () => {
+  renderHook(() => useContextTokens({ sessionId: 's', enabled: true, settings: {}, modelSupportToolUseForFile: false }))
+  expect(vi.mocked(useTokenEstimation).mock.calls.at(-1)?.[0].enabled).toBe(true)
 })

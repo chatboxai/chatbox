@@ -1,6 +1,4 @@
-import { hasPendingPauseInteraction } from '../message-approval'
-import type { Session, SessionType } from '../types'
-import { countCancellableGeneratingAssistantMessages, getGenerationControlMessages } from './generation-state'
+import type { SessionType } from '../types'
 import type { SessionMode } from './mode-policy'
 
 /**
@@ -95,34 +93,6 @@ const ALLOWED: SessionActionGate = { allowed: true }
 
 function blocked(reason: SessionActionBlockReason): SessionActionGate {
   return { allowed: false, reason }
-}
-
-/**
- * Build the lock snapshot from session data plus runtime flags the host
- * tracks outside the session (compaction progress lives in host state, not on
- * the persisted session).
- */
-export function deriveSessionLockState(
-  session: Session,
-  runtime: {
-    compactionRunning?: boolean
-    activeGenerationMessageIds?: ReadonlySet<string>
-  } = {}
-): SessionLockState {
-  const activeGenerationMessageIds = runtime.activeGenerationMessageIds ?? new Set<string>()
-  // Locks are derived from durable `generating` messages only. A runtime id with
-  // no reachable message is NOT treated as generation: paused/stopping runtimes
-  // deliberately outlive `finishActive`, and deleting their message would then
-  // lock the session with nothing left to Stop. The steering split keeps a
-  // generating message visible at every instant instead (see
-  // GenerationService.splitTargetMessageForSteering).
-  const controlMessages = getGenerationControlMessages(session, activeGenerationMessageIds)
-  return {
-    generatingReplyCount: countCancellableGeneratingAssistantMessages(controlMessages, activeGenerationMessageIds),
-    anyReplyGenerating: controlMessages.some((message) => message.generating === true),
-    compactionRunning: runtime.compactionRunning ?? false,
-    awaitingPauseDecision: hasPendingPauseInteraction(session.messages),
-  }
 }
 
 export function isGenerationLocked(locks: SessionLockState): boolean {

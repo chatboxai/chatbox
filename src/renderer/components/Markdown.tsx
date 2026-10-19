@@ -73,6 +73,7 @@ import { MessageMermaid, SVGPreview } from './Mermaid'
 import { SandboxFileLink } from './message-parts/SandboxFileLink'
 import { parseSandboxLinkHref } from './message-parts/sandbox-link'
 import { type StreamingTextSegment, useStreamingTextSegments, wrapStreamingSegmentsInHast } from './streaming-text-fade'
+import { rehypeTranscriptBlocks } from './chat/transcript-markdown-blocks'
 import './shiki-code.css'
 
 const CODE_BLOCK_COLLAPSE_LINE_THRESHOLD = 7
@@ -165,11 +166,12 @@ function Markdown(props: {
     [enableLaTeXRendering, generating]
   )
   const streamingSegments = useStreamingTextSegments(processedChildren, generating, uniqueId)
-  const rehypePlugins = useMemo<RehypePlugins>(
-    () =>
-      streamingSegments.length > 0 ? [rehypeKatex, [rehypeWrapStreamingSegments, streamingSegments]] : [rehypeKatex],
-    [streamingSegments]
-  )
+  const rehypePlugins = useMemo<RehypePlugins>(() => {
+    const plugins: RehypePlugins = [rehypeKatex]
+    if (streamingSegments.length > 0) plugins.push([rehypeWrapStreamingSegments, streamingSegments])
+    plugins.push([rehypeTranscriptBlocks, { sourceId: uniqueId ?? fallbackId }])
+    return plugins
+  }, [streamingSegments, uniqueId, fallbackId])
 
   return (
     <ImageViewer>

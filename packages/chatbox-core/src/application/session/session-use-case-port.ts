@@ -1,24 +1,15 @@
-import type {
-  CurrentThreadIdentity,
-  SessionStructureOperation,
-  SessionStructureResult,
-} from '../../ports/session-structure-command'
-import type { Session, Updater } from '../../types'
-import type { SessionMetadataUpdate } from './session-metadata'
+import type { SessionService } from './SessionService'
+import type { SessionRowRepositoryPort } from '../../ports/session-row-repository'
 
-/**
- * Minimal Session application surface used by the surrounding session use
- * cases. The current Renderer adapts its existing chatStore facade, while a
- * native host can provide the same operations from its SessionService.
- */
-export interface SessionUseCasePort {
-  getCurrentThreadIdentity?(sessionId: string): Promise<CurrentThreadIdentity | null>
-  executeStructureCommand?(
-    sessionId: string,
-    operation: SessionStructureOperation,
-    onCommitted?: (result: SessionStructureResult) => void
-  ): Promise<SessionStructureResult | null>
-  getSession(sessionId: string): Promise<Session | null>
-  updateSession(sessionId: string, updater: Updater<SessionMetadataUpdate>): Promise<Session>
-  updateSessionWithMessages(sessionId: string, updater: Updater<Session>): Promise<Session>
-}
+/** Row-oriented application surface used by thread and naming use cases. */
+export type SessionUseCasePort = Pick<
+  SessionService,
+  | 'getCurrentThreadIdentity'
+  | 'executeStructureCommand'
+  | 'getSessionHeader'
+  | 'readSessionThread'
+  | 'readSessionTranscriptWindow'
+  | 'readSessionMessages'
+  | 'updateSessionHeader'
+> &
+  Pick<SessionRowRepositoryPort, 'readSessionNamingMessages'>

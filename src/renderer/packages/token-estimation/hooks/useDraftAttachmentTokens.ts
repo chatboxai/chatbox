@@ -9,27 +9,32 @@ export function useDraftAttachmentTokens(
   message: Message | undefined,
   tokenizerType: TokenizerType,
   modelSupportToolUseForFile: boolean,
-  sandboxMode = false
+  sandboxMode = false,
+  enabled = true
 ) {
-  const key = JSON.stringify([message?.files, message?.links, tokenizerType, modelSupportToolUseForFile, sandboxMode])
+  const key = enabled
+    ? JSON.stringify([message?.files, message?.links, tokenizerType, modelSupportToolUseForFile, sandboxMode])
+    : ''
   const [resolved, setResolved] = useState<{ key: string; tokens: number; failed: boolean } | null>(null)
   const analysis = useMemo(
     () =>
-      analyzeCurrentInputTokens({
-        constructedMessage: message,
-        tokenizerType,
-        modelSupportToolUseForFile,
-        sandboxMode,
-        currentInputTextTokens: 0,
-      }),
-    [message, tokenizerType, modelSupportToolUseForFile, sandboxMode]
+      enabled
+        ? analyzeCurrentInputTokens({
+            constructedMessage: message,
+            tokenizerType,
+            modelSupportToolUseForFile,
+            sandboxMode,
+            currentInputTextTokens: 0,
+          })
+        : { breakdown: { text: 0, attachments: 0, toolCalls: 0 }, pendingTasks: [], hasApproximateText: true },
+    [enabled, message, tokenizerType, modelSupportToolUseForFile, sandboxMode]
   )
   const matches = resolved?.key === key
   const inputRef = useRef({ message, analysis })
   inputRef.current = { message, analysis }
   useEffect(() => {
     const { message, analysis } = inputRef.current
-    if (!analysis.pendingTasks.length) return
+    if (!enabled || !analysis.pendingTasks.length) return
     let active = true
     const controller = new AbortController()
     void (async () => {
@@ -68,7 +73,7 @@ export function useDraftAttachmentTokens(
       controller.abort()
     }
     // The key covers attachment values and policy; typing text does not restart attachment work.
-  }, [key])
+  }, [key, enabled])
   const isCalculating = analysis.pendingTasks.length > 0 && !matches
   return {
     tokens: analysis.breakdown.attachments + (matches ? resolved.tokens : 0),

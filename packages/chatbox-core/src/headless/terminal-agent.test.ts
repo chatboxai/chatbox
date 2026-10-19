@@ -66,7 +66,7 @@ describe('runHeadlessTerminalAgent production orchestration', () => {
       toolCallCount: 1,
       usage: { inputTokens: 10, outputTokens: 5 },
     })
-    expect(result.session.messages.at(-1)?.contentParts).toEqual(
+    expect(result.message.contentParts).toEqual(
       expect.arrayContaining([expect.objectContaining({ type: 'tool-call', toolCallId: 'call-1' })])
     )
   })

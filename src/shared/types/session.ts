@@ -467,13 +467,12 @@ export const ImageSourceSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('storage-key'), storageKey: z.string() }),
 ])
 
-export const SessionSchema = z.object({
+export const SessionHeaderSchema = z.object({
   id: z.string(),
   type: SessionTypeSchema.optional(),
   name: z.string(),
   folderId: z.string().optional(),
   picUrl: z.string().optional(),
-  messages: z.array(MessageSchema),
   starred: z.boolean().optional(),
   hidden: z.boolean().optional(), // Hidden from session list (e.g., migrated picture sessions)
   archivedAt: z.number().optional(),
@@ -481,13 +480,17 @@ export const SessionSchema = z.object({
   assistantAvatarKey: z.string().optional(),
   backgroundImage: ImageSourceSchema.optional(),
   settings: SessionSettingsSchema.optional(),
-  threads: z.array(SessionThreadSchema).optional(),
   threadName: z.string().optional(),
+})
+
+export const SessionSchema = SessionHeaderSchema.extend({
+  messages: z.array(MessageSchema),
+  threads: z.array(SessionThreadSchema).optional(),
   messageForksHash: z.record(z.string(), MessageForkSchema).optional(),
   compactionPoints: z.array(CompactionPointSchema).optional(),
 })
 
-export const SessionMetaSchema = SessionSchema.pick({
+export const SessionMetaSchema = SessionHeaderSchema.pick({
   id: true,
   name: true,
   folderId: true,
@@ -569,6 +572,7 @@ export type Message = z.infer<typeof MessageSchema>
 export type SessionType = z.infer<typeof SessionTypeSchema>
 export type CompactionPoint = z.infer<typeof CompactionPointSchema>
 export type Session = z.infer<typeof SessionSchema>
+export type SessionHeader = z.infer<typeof SessionHeaderSchema>
 export type SessionMeta = z.infer<typeof SessionMetaSchema>
 export type SessionMetaRecord = z.infer<typeof SessionMetaRecordSchema>
 export type SessionMetaPage = z.infer<typeof SessionMetaPageSchema>

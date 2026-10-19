@@ -1,12 +1,9 @@
 import assert from 'node:assert/strict'
-import { describe, it } from 'vitest'
+import { describe, it, vi } from 'vitest'
+import { rowChatFixture } from '../chat/testing/row-chat-fixture'
 import { GenerationSegmentTransitions } from '../../generation/GenerationSegmentTransitions'
 import type { Message, Session } from '../../types'
-import {
-  applyGenerationSegmentSplit,
-  createGenerationSegmentSplitWriter,
-  type GenerationSegmentSplit,
-} from './generation-segment-split'
+import { createGenerationSegmentSplitWriter, type GenerationSegmentSplit } from './generation-segment-split'
 import { StreamingWriteCoordinator } from './streaming-write-coordinator'
 
 function deferred() {
@@ -30,32 +27,36 @@ const split = (): GenerationSegmentSplit => ({
 })
 const initial = (): Session => ({ id: 'session', name: 'test', type: 'chat', messages: [original()] })
 
-function harness() {
-  let session = initial()
+function harness(input = initial()) {
+  const fixture = rowChatFixture(() => 'unused', input)
   let before: Promise<void> | undefined
   let during: Promise<void> | undefined
   let failure: 'before' | 'metadata' | undefined
   let writes = 0
+  const apply = fixture.rows.applyDiff.bind(fixture.rows)
+  vi.spyOn(fixture.rows, 'applyDiff').mockImplementation(async (...args) => {
+    await during
+    if (failure === 'before') throw new Error('disk write failed')
+    const result = await apply(...args)
+    writes += 1
+    return result
+  })
   const streamingWrites = new StreamingWriteCoordinator()
   const sessions: Parameters<typeof createGenerationSegmentSplitWriter>[0]['sessions'] = {
-    async updateSessionWithMessages(_id, updater, options) {
+    async executeStructureCommand(id, operation, onCommitted) {
       await before
-      const next = typeof updater === 'function' ? updater(session) : { ...session, ...updater }
-      await during
-      if (failure === 'before') throw new Error('disk write failed')
-      session = next
-      writes += 1
-      options?.onFullSessionPersisted?.(session)
+      const result = await fixture.port.executeStructureCommand(id, operation, onCommitted)
       if (failure === 'metadata') throw new Error('metadata failed after commit')
-      return session
+      return result
     },
   }
   const write = createGenerationSegmentSplitWriter({ sessions, streamingWrites })
   return {
     write,
     streamingWrites,
+    fixture,
     get session() {
-      return session
+      return fixture.sessions.get('session')!
     },
     get writes() {
       return writes
@@ -180,46 +181,61 @@ describe('atomic generation segment split', () => {
     assert.equal(h.writes, 0)
   })
 
-  it('does not resurrect a target already finalized by Stop', () => {
-    const session = initial()
-    session.messages[0].generating = false
-    assert.equal(applyGenerationSegmentSplit(session, split()), session)
+  it('does not resurrect a target already finalized by Stop', async () => {
+    const source = initial()
+    source.messages[0].generating = false
+    const h = harness(source)
+    assert.equal(await h.write('session', split(), new AbortController().signal), false)
+    assert.equal(h.writes, 0)
   })
 
-  it('is idempotent and does not mutate the input', () => {
-    const session = initial()
-    const before = structuredClone(session)
-    const updated = applyGenerationSegmentSplit(session, split())
-    assert.deepEqual(session, before)
-    assert.equal(applyGenerationSegmentSplit(updated, split()), updated)
+  it('is idempotent and does not mutate the caller input', async () => {
+    const source = initial()
+    const before = structuredClone(source)
+    const h = harness(source)
+    assert.equal(await h.write('session', split(), new AbortController().signal), true)
+    const result = await h.fixture.port.executeStructureCommand('session', {
+      action: 'generation-segment-split',
+      ...split(),
+    })
+    assert.equal(result?.applied, true)
+    assert.equal(h.writes, 1)
+    assert.deepEqual(source, before)
+    const rows = await h.fixture.repository.readSessionMessages({ sessionId: 'session', messageIds: ['assistant'] })
+    assert.equal(rows?.messages[0].generating, false)
+    assert.equal(
+      h.fixture.rows.snapshot()[0].rows.messages.find((row) => row.messageId === 'assistant')?.status,
+      'settled'
+    )
   })
 
-  it('supports steered user anchors and preserves their causal order', () => {
-    const session = initial()
-    session.messages.push({ id: 'steer', role: 'user', contentParts: text('continue differently') })
-    const updated = applyGenerationSegmentSplit(session, { ...split(), afterMessageId: 'steer' })
+  it('supports steered user anchors and preserves their causal order', async () => {
+    const source = initial()
+    source.messages.push({ id: 'steer', role: 'user', contentParts: text('continue differently') })
+    const h = harness(source)
+    await h.write('session', { ...split(), afterMessageId: 'steer' }, new AbortController().signal)
     assert.deepEqual(
-      updated.messages.map((message) => message.id),
+      h.session.messages.map((message) => message.id),
       ['assistant', 'steer', 'tail']
     )
   })
 
-  it('updates an archived thread without touching the current thread', () => {
-    const session: Session = {
+  it('updates an archived thread without touching the current thread', async () => {
+    const h = harness({
       ...initial(),
       messages: [],
       threads: [{ id: 'thread', name: 'archived', createdAt: 0, messages: [original()] }],
-    }
-    const updated = applyGenerationSegmentSplit(session, split())
-    assert.equal(updated.messages, session.messages)
+    })
+    await h.write('session', split(), new AbortController().signal)
+    assert.deepEqual(h.session.messages, [])
     assert.deepEqual(
-      updated.threads?.[0].messages.map((message) => message.id),
+      h.session.threads?.[0].messages.map((message) => message.id),
       ['assistant', 'tail']
     )
   })
 
-  it('updates a saved fork without inserting into another branch', () => {
-    const session: Session = {
+  it('updates a saved fork without inserting into another branch', async () => {
+    const h = harness({
       ...initial(),
       messages: [{ id: 'pivot', role: 'user', contentParts: text('question') }],
       messageForksHash: {
@@ -232,22 +248,28 @@ describe('atomic generation segment split', () => {
           ],
         },
       },
-    }
-    const updated = applyGenerationSegmentSplit(session, split())
-    assert.equal(updated.messages, session.messages)
+    })
+    await h.write('session', split(), new AbortController().signal)
     assert.deepEqual(
-      updated.messageForksHash?.pivot.lists[1].messages.map((message) => message.id),
+      h.session.messages.map((message) => message.id),
+      ['pivot']
+    )
+    assert.deepEqual(
+      h.session.messageForksHash?.pivot.lists
+        .find((branch) => branch.id === 'saved')
+        ?.messages.map((message) => message.id),
       ['assistant', 'tail']
     )
   })
 
-  it('rejects missing or cross-path anchors without partial updates', () => {
-    const session = initial()
-    assert.throws(
-      () => applyGenerationSegmentSplit(session, { ...split(), afterMessageId: 'missing' }),
+  it('rejects missing or cross-path anchors without partial updates', async () => {
+    const h = harness()
+    await assert.rejects(
+      h.write('session', { ...split(), afterMessageId: 'missing' }, new AbortController().signal),
       /outside the target path/
     )
-    assert.equal(session.messages.length, 1)
-    assert.equal(session.messages[0].generating, true)
+    assert.equal(h.session.messages.length, 1)
+    assert.equal(h.session.messages[0].generating, true)
+    assert.equal(h.writes, 0)
   })
 })

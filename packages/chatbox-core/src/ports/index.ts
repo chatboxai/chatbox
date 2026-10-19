@@ -1,4 +1,5 @@
 export type { AnalyticsEventValue, AnalyticsPort } from './analytics'
+export * from './session-attachment-source'
 export type { AttachmentContentPort, AttachmentDescriptor } from './attachments'
 export type { BlobStoragePort } from './blob-storage'
 export type { PlatformCapabilitiesPort, PlatformCapability } from './capabilities'
@@ -15,7 +16,6 @@ export type {
   SessionStructureResult,
   CurrentThreadIdentity,
 } from './session-structure-command'
-export type { SessionStructureSnapshot } from './session-row-store'
 export {
   isRowsSessionRecord,
   type SessionRecordStorePort,
@@ -23,10 +23,8 @@ export {
 } from './session-record-store'
 export {
   type SessionDataRepositoryPort,
-  type SessionDataWriteOptions,
   type SessionCommand,
   type SessionCommandDelta,
-  type SessionMessageMutation,
   type SessionFolderStorePort,
   type SessionMetaRepositoryPort,
   SessionRepositoryError,
@@ -38,14 +36,11 @@ export {
   type GeneratingMessageRef,
   type SessionMessagesRequest,
   type SessionMessagesSnapshot,
-  type SessionThreadSuffixRequest,
-  type SessionMessageWindow,
-  type SessionMessageWindowCursor,
-  type SessionMessageWindowRequest,
   type SessionThreadPage,
   type SessionThreadPageCursor,
   type SessionThreadPageRequest,
   type SessionRowCommit,
+  type SessionRowMutationResult,
   SessionRowConflictError,
   type SessionRowSnapshot,
   SessionRowStoreError,
@@ -57,3 +52,19 @@ export {
 export * from './session-text-tokens'
 export type { SettingsRepositoryPort, SettingsUpdate } from './settings-repository'
 export type { SettingsStoragePort } from './settings-storage'
+
+export * from './session-transcript-source'
+
+export * from './session-row-relations'
+export * from './session-row-repository'
+
+export * from './session-token-source'
+export * from './session-branch-source'
+
+export * from './session-prompt-cache-source'
+
+export * from './session-token-cache'
+
+export * from './session-artifact-source'
+
+export * from './session-search-source'

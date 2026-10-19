@@ -1,5 +1,6 @@
 import { type Message, MessageSchema } from '@shared/types'
 import { jsonUtf8Blocks } from './json-stream'
+import { deriveMessageFacts } from '../session/message-facts'
 import { CompactBackupProjection, FullBackupProjection, isBackupResourcePath } from './payload-projection'
 
 export const BACKUP_PAYLOAD_BLOCK_BYTES = 128 * 1024
@@ -69,6 +70,7 @@ export class BackupMessageValidator {
   private token: 'string' | 'number' | 'literal' | undefined
   private text = ''
   private stringLength = 0
+  private stringNonWhitespace = false
   private resourceString = false
   private escaped = false
   private unicode: string | undefined
@@ -87,6 +89,7 @@ export class BackupMessageValidator {
 
   private retain(value: string) {
     this.stringLength += value.length
+    this.stringNonWhitespace ||= /\S/.test(value)
     if (this.key && this.stringLength > 1024) throw new Error('Backup JSON key exceeds budget')
     const limit = this.resourceString ? 32768 : 4096
     if (this.resourceString && this.stringLength > limit) throw new Error('Backup resource identifier exceeds budget')
@@ -106,6 +109,8 @@ export class BackupMessageValidator {
       this.full.start(path, container)
       this.withCompact((projection) => projection.start(path, container))
     } else {
+      if (typeof value === 'string')
+        this.withCompact((projection) => projection.text(path, this.stringLength, this.stringNonWhitespace))
       this.full.scalar(path, value)
       this.withCompact((projection) => projection.scalar(path, value))
     }
@@ -213,6 +218,7 @@ export class BackupMessageValidator {
         this.token = 'string'
         this.text = ''
         this.stringLength = 0
+        this.stringNonWhitespace = false
         this.resourceString =
           !this.key && !!frame && isBackupResourcePath([...frame.path, frame.array ? frame.index : (frame.key ?? '')])
         continue
@@ -250,6 +256,10 @@ export class BackupMessageValidator {
     const value = this.finishValue()
     MessageSchema.parse(value)
     return value as Message
+  }
+  finishFacts() {
+    const message = this.finish()
+    return this.compact ? this.compact.facts(message) : deriveMessageFacts(message)
   }
   finishLegacy(): { message: Message; addContentParts: boolean } {
     const value = this.finishValue()

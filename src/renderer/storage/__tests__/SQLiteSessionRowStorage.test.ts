@@ -1,7 +1,15 @@
+import { SESSION_TOKEN_CACHE_SQL } from '../../../../packages/chatbox-core/src/persistence/session-token-cache-sql'
+import { projectRowFixture } from '../../../../packages/chatbox-core/src/ports/testing/session-row-fixtures'
+import {
+  openNodeSessionRowDatabase,
+  type NodeSessionRowSqlDatabase,
+} from '../../../../packages/chatbox-core/src/persistence/node-sqlite.test-support'
+import type { SessionRowSqlBindValue } from '@chatbox/core'
+import { SESSION_TRANSCRIPT_SCHEMA_SQL } from '@chatbox/core/persistence'
 import { CAPACITOR_MESSAGE_ROWS_SCHEMA_SQL } from '@chatbox/core'
 import type { SessionRowCommit, SessionRowSnapshot, SessionRows } from '@chatbox/core/ports'
 import type { MessageRow, ThreadRow } from '@chatbox/core/session/session-tree'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SESSION_TEXT_TOKEN_SCHEMA_SQL } from '../../../../packages/chatbox-core/src/persistence/session-text-token-sql'
 import { SQLiteSessionRowStore } from '../SQLiteSessionRowStorage'
 
@@ -84,16 +92,40 @@ function statementsOf(call: number): string[] {
   return set.map((entry) => entry.statement)
 }
 
-function insertedRows(table: string, width: number): unknown[][] {
+function insertedRows(table: string): unknown[][] {
   return mockDatabase.executeSet.mock.calls.flatMap((call) =>
     (call[0] as Array<{ statement: string; values: unknown[] }>)
       .filter((entry) => entry.statement.startsWith(`INSERT OR REPLACE INTO ${table} (`))
-      .flatMap((entry) =>
-        Array.from({ length: entry.values.length / width }, (_, index) =>
+      .flatMap((entry) => {
+        const width = entry.statement
+          .slice(entry.statement.indexOf('(') + 1, entry.statement.indexOf(')'))
+          .split(',').length
+        return Array.from({ length: entry.values.length / width }, (_, index) =>
           entry.values.slice(index * width, (index + 1) * width)
         )
-      )
+      })
   )
+}
+
+const databases: NodeSessionRowSqlDatabase[] = []
+afterEach(() => {
+  for (const database of databases.splice(0)) database.close()
+})
+function realBridge() {
+  const database = openNodeSessionRowDatabase()
+  databases.push(database)
+  mockDatabase.execute.mockImplementation((sql: string) => database.execute(sql))
+  mockDatabase.query.mockImplementation(async (sql: string, params: SessionRowSqlBindValue[] = []) => ({
+    values: await database.query(sql, params),
+  }))
+  mockDatabase.executeSet.mockImplementation(
+    async (batch: Array<{ statement: string; values: SessionRowSqlBindValue[] }>, transaction: boolean) => {
+      expect(transaction).toBe(true)
+      await database.executeBatch(batch.map((row) => ({ sql: row.statement, params: row.values })))
+      return { changes: { changes: 1 } }
+    }
+  )
+  return new SQLiteSessionRowStore()
 }
 
 describe('SQLiteSessionRowStore', () => {
@@ -117,10 +149,21 @@ describe('SQLiteSessionRowStore', () => {
     await store.initialize()
 
     expect(mockConnection.createConnection).toHaveBeenCalledWith('chatbox-messages', false, 'no-encryption', 1, false)
-    expect(mockDatabase.execute).toHaveBeenCalledTimes(1)
+    expect(
+      mockDatabase.execute.mock.calls.filter(([sql]) =>
+        String(sql).includes('CREATE TABLE IF NOT EXISTS session_threads (')
+      )
+    ).toHaveLength(1)
     const sql = mockDatabase.execute.mock.calls[0][0] as string
     expect(sql.replace(/\s+/g, ' ').trim()).toBe(
-      (CAPACITOR_MESSAGE_ROWS_SCHEMA_SQL + SESSION_TEXT_TOKEN_SCHEMA_SQL).replace(/\s+/g, ' ').trim()
+      (
+        CAPACITOR_MESSAGE_ROWS_SCHEMA_SQL +
+        SESSION_TEXT_TOKEN_SCHEMA_SQL +
+        SESSION_TRANSCRIPT_SCHEMA_SQL +
+        SESSION_TOKEN_CACHE_SQL
+      )
+        .replace(/\s+/g, ' ')
+        .trim()
     )
     expect(sql).toContain(';\nCREATE TABLE')
   })
@@ -189,73 +232,59 @@ describe('SQLiteSessionRowStore', () => {
     expect(mockDatabase.run).not.toHaveBeenCalled()
   })
 
-  it('publishes a bounded diff directly in one atomic transaction', async () => {
-    const store = new SQLiteSessionRowStore()
-
+  it('publishes local edits atomically without replacing unrelated session rows', async () => {
+    const store = realBridge()
+    const initial = projectRowFixture(
+      snapshot({ sessionId: 'session-1', threads: [threadRow('thread-active')], messages: [messageRow('m1')] })
+    )
+    await store.writeRows(initial)
+    mockDatabase.executeSet.mockClear()
+    const changed = {
+      ...initial.rows.messages[0],
+      message: { ...initial.rows.messages[0].message, contentParts: [{ type: 'text' as const, text: 'edited' }] },
+    }
     await store.applyDiff(
-      {
-        sessionId: 'session-1',
-        threads: { upsert: [], delete: [] },
-        messages: { upsert: [], delete: [] },
-      },
-      commit(1)
+      { sessionId: 'session-1', threads: { upsert: [], delete: [] }, messages: { upsert: [changed], delete: [] } },
+      { ...initial, revision: 2 },
+      1
     )
-    expect(mockDatabase.executeSet).toHaveBeenCalledOnce()
-    vi.clearAllMocks()
-    mockDatabase.executeSet.mockResolvedValue({ changes: { changes: 1 } })
-
-    await store.applyDiff(
-      {
-        sessionId: 'session-1',
-        threads: { upsert: [threadRow('thread-active')], delete: [] },
-        messages: { upsert: [messageRow('m2', { seq: 1 })], delete: ['m1'] },
-      },
-      commit(2)
-    )
-
-    expect(mockDatabase.executeSet).toHaveBeenCalledTimes(1)
-    expect(mockDatabase.executeSet.mock.calls[0][1]).toBe(true)
-    expect(statementsOf(0)).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining('INSERT OR REPLACE INTO session_threads'),
-        expect.stringContaining('INSERT OR REPLACE INTO session_messages'),
-        'DELETE FROM session_messages WHERE session_id = ? AND message_id = ?',
-      ])
-    )
-    expect(statementsOf(0).some((sql) => sql.includes('session_threads_staging'))).toBe(false)
+    expect(mockDatabase.executeSet.mock.calls.every((call) => call[1] === true)).toBe(true)
+    const statements = mockDatabase.executeSet.mock.calls.flatMap((_call, index) => statementsOf(index))
+    expect(statements).toContainEqual(expect.stringContaining('session_row_revision_guard'))
+    expect(statements).not.toContain('DELETE FROM session_messages WHERE session_id = ?')
+    expect(
+      (await store.readMessages({ sessionId: 'session-1', messageIds: ['m1'] }))?.messages[0].message.contentParts
+    ).toEqual(changed.message.contentParts)
+    expect(await store.getRevision('session-1')).toBe(2)
   })
 
-  it('falls back to staging when a diff cannot fit in one bridge call', async () => {
-    const store = new SQLiteSessionRowStore()
-    const payload = 'x'.repeat(600 * 1024)
-
-    await store.applyDiff(
-      {
-        sessionId: 'session-1',
-        threads: { upsert: [threadRow('thread-active')], delete: [] },
-        messages: {
-          upsert: [
-            messageRow('m1', {
-              message: { id: 'm1', role: 'user', contentParts: [{ type: 'text', text: payload }] },
-            }),
-          ],
-          delete: [],
-        },
+  it('stages oversized local edits within each native bridge budget', async () => {
+    const store = realBridge()
+    const initial = projectRowFixture(
+      snapshot({ sessionId: 'session-1', threads: [threadRow('thread-active')], messages: [messageRow('m1')] })
+    )
+    await store.writeRows(initial)
+    mockDatabase.executeSet.mockClear()
+    const changed = {
+      ...initial.rows.messages[0],
+      message: {
+        ...initial.rows.messages[0].message,
+        contentParts: [{ type: 'text' as const, text: 'x'.repeat(600 * 1024) }],
       },
-      commit(2)
+    }
+    await store.applyDiff(
+      { sessionId: 'session-1', threads: { upsert: [], delete: [] }, messages: { upsert: [changed], delete: [] } },
+      { ...initial, revision: 2 },
+      1
     )
-
     expect(mockDatabase.executeSet.mock.calls.length).toBeGreaterThan(3)
-    expect(statementsOf(0)).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining('INSERT INTO session_threads_staging'),
-        expect.stringContaining('INSERT INTO session_messages_staging'),
-      ])
-    )
-    const publish = statementsOf(mockDatabase.executeSet.mock.calls.length - 1)
-    expect(publish).toContain('DELETE FROM session_threads WHERE session_id = ?')
-    expect(publish).toContain('DELETE FROM session_messages WHERE session_id = ?')
-    expect(mockDatabase.executeSet.mock.calls.every((call) => call[1] === true)).toBe(true)
+    for (const call of mockDatabase.executeSet.mock.calls) {
+      expect(call[1]).toBe(true)
+      expect(new TextEncoder().encode(JSON.stringify(call[0])).byteLength).toBeLessThanOrEqual(480 * 1024)
+    }
+    expect(
+      (await store.readMessages({ sessionId: 'session-1', messageIds: ['m1'] }))?.messages[0].message.contentParts
+    ).toEqual(changed.message.contentParts)
   })
 
   it('rejects an invalid diff without reaching the bridge', async () => {
@@ -300,7 +329,7 @@ describe('SQLiteSessionRowStore', () => {
     expect(mockDatabase.beginTransaction).not.toHaveBeenCalled()
     expect(mockDatabase.commitTransaction).not.toHaveBeenCalled()
     expect(mockDatabase.rollbackTransaction).not.toHaveBeenCalled()
-    const writtenIds = insertedRows('session_messages_staging', 15).map((values) => values[2])
+    const writtenIds = insertedRows('session_messages_staging').map((values) => values[2])
     expect(writtenIds).toEqual(['m1', 'm2', 'm3'])
   })
 
@@ -390,7 +419,7 @@ describe('SQLiteSessionRowStore', () => {
 
     await store.writeRows(snapshot({ sessionId: 'session-1', threads: [threadRow('thread-active')], messages: [row] }))
 
-    const chunks = insertedRows('session_message_payload_chunks', 4)
+    const chunks = insertedRows('session_message_payload_chunks')
       .sort((left, right) => Number(left[2]) - Number(right[2]))
       .map((values) => String(values[3]))
     expect(JSON.parse(chunks.join(''))).toEqual(row.message)
@@ -452,22 +481,26 @@ describe('SQLiteSessionRowStore', () => {
     expect(mockDatabase.executeSet.mock.calls[2][1]).toBe(true)
   })
 
-  it('guards a diff with its expected revision in the publish transaction', async () => {
-    const store = new SQLiteSessionRowStore()
-
+  it('guards a local diff with its expected revision in the publish transaction', async () => {
+    const store = realBridge()
+    const initial = projectRowFixture(
+      snapshot({ sessionId: 'session-1', threads: [threadRow('thread-active')], messages: [] }, 3)
+    )
+    await store.writeRows(initial)
+    mockDatabase.executeSet.mockClear()
     await store.applyDiff(
-      {
-        sessionId: 'session-1',
-        threads: { upsert: [threadRow('thread-active')], delete: [] },
-        messages: { upsert: [], delete: [] },
-      },
-      commit(4),
+      { sessionId: 'session-1', threads: { upsert: [], delete: [] }, messages: { upsert: [], delete: [] } },
+      { ...initial, revision: 4 },
       3
     )
-
-    expect(statementsOf(0)[0]).toContain('session_row_revision_guard')
-    const guard = (mockDatabase.executeSet.mock.calls[0][0] as Array<{ values: unknown[] }>)[0]
-    expect(guard.values).toEqual(['session-1', 3])
+    const statements = mockDatabase.executeSet.mock.calls.flatMap(
+      ([batch]) => batch as Array<{ statement: string; values: unknown[] }>
+    )
+    expect(statements.find((row) => row.statement.includes('session_row_revision_guard'))?.values).toEqual([
+      'session-1',
+      3,
+    ])
+    expect(await store.getRevision('session-1')).toBe(4)
   })
 
   it('guards a conditional delete and removes every row in one publish transaction', async () => {
@@ -491,6 +524,8 @@ describe('SQLiteSessionRowStore', () => {
 
   it('reports a conditional delete conflict when the committed revision advanced', async () => {
     const store = new SQLiteSessionRowStore()
+    await store.initialize()
+    mockDatabase.query.mockClear()
     mockDatabase.executeSet.mockRejectedValueOnce(new Error('revision guard rejected the delete'))
     mockDatabase.query.mockResolvedValueOnce({ values: [] }).mockResolvedValueOnce({ values: [{ commit_revision: 4 }] })
 
@@ -503,6 +538,8 @@ describe('SQLiteSessionRowStore', () => {
 
   it('does not mistake a missing target for an uncertain committed delete', async () => {
     const store = new SQLiteSessionRowStore()
+    await store.initialize()
+    mockDatabase.query.mockClear()
     mockDatabase.executeSet.mockRejectedValueOnce(new Error('revision guard rejected the delete'))
     mockDatabase.query.mockResolvedValueOnce({ values: [] }).mockResolvedValueOnce({ values: [] })
 
@@ -515,6 +552,8 @@ describe('SQLiteSessionRowStore', () => {
 
   it('accepts an uncertain delete only when its receipt was committed', async () => {
     const store = new SQLiteSessionRowStore()
+    await store.initialize()
+    mockDatabase.query.mockClear()
     mockDatabase.executeSet.mockRejectedValueOnce(new Error('bridge response was lost'))
     mockDatabase.query.mockImplementationOnce((_sql, params: unknown[]) =>
       Promise.resolve({ values: [{ mutation_id: params[1] }] })
@@ -526,6 +565,8 @@ describe('SQLiteSessionRowStore', () => {
 
   it('scans message references by status without selecting the payload column', async () => {
     const store = new SQLiteSessionRowStore()
+    await store.initialize()
+    mockDatabase.query.mockClear()
     mockDatabase.query.mockResolvedValueOnce({
       values: [{ session_id: 'session-1', thread_id: 'thread-active', message_id: 'm2' }],
     })
@@ -540,72 +581,14 @@ describe('SQLiteSessionRowStore', () => {
   })
 
   it('maps stored rows back and leaves an absent prompt context snapshot absent', async () => {
-    const store = new SQLiteSessionRowStore()
-    const record = commit(1).record
-    const serializedRecord = JSON.stringify(record)
-    const serializedMessage = JSON.stringify({ id: 'm1', role: 'user', contentParts: [] })
-    mockDatabase.query
-      .mockResolvedValueOnce({ values: [{ commit_revision: 1 }] })
-      .mockResolvedValueOnce({
-        values: [
-          {
-            session_id: 'session-1',
-            thread_id: 'thread-active',
-            seq: -1,
-            name_length: 13,
-            created_at: 1_000,
-            root_message_id: 'm1',
-            active_leaf_message_id: 'm1',
-            compaction_points_json_length: 2,
-            session_prompt_context_snapshot_json_length: null,
-            session_record_json_length: serializedRecord.length,
-            commit_revision: 1,
-          },
-        ],
-      })
-      .mockResolvedValueOnce({ values: [{ value: 'thread-active' }] })
-      .mockResolvedValueOnce({ values: [{ value: '[]' }] })
-      .mockResolvedValueOnce({ values: [{ value: serializedRecord }] })
-      .mockResolvedValueOnce({
-        values: [
-          {
-            session_id: 'session-1',
-            message_id: 'm1',
-            thread_id: 'thread-active',
-            parent_message_id: null,
-            active_child_id: null,
-            seq: 0,
-            kind: 'message',
-            status: 'settled',
-            created_at: 1_000,
-            updated_at: 1_000,
-            branch_id: null,
-            payload_id: 'payload-m1',
-            payload_chunk_count: 1,
-            payload_utf8_length: new TextEncoder().encode(serializedMessage).byteLength,
-          },
-        ],
-      })
-      .mockResolvedValueOnce({ values: [] })
-      .mockResolvedValueOnce({
-        values: [
-          {
-            i: 0,
-            c: 0,
-            v: serializedMessage,
-            x: 0,
-          },
-        ],
-      })
-      .mockResolvedValueOnce({ values: [{ commit_revision: 1 }] })
-
-    const snapshot = await store.readSnapshot('session-1')
-    const rows = snapshot?.rows
-
-    expect(snapshot).toMatchObject({ record, revision: 1 })
-    expect(rows?.threads[0]).toEqual(threadRow('thread-active', { rootMessageId: 'm1', activeLeafMessageId: 'm1' }))
-    expect(rows?.threads[0] && 'sessionPromptContextSnapshot' in rows.threads[0]).toBe(false)
-    expect(rows?.messages[0]).toEqual(messageRow('m1'))
+    const store = realBridge()
+    const initial = projectRowFixture(
+      snapshot({ sessionId: 'session-1', threads: [threadRow('thread-active')], messages: [messageRow('m1')] })
+    )
+    await store.writeRows(initial)
+    const restored = await store.readSnapshot('session-1')
+    expect(restored).toMatchObject(JSON.parse(JSON.stringify(initial)))
+    expect(restored?.rows.threads[0]).not.toHaveProperty('sessionPromptContextSnapshot')
   })
 
   it('reads an empty session back as null', async () => {

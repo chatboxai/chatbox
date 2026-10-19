@@ -192,7 +192,7 @@ describe('persistStreamingMessage', () => {
 
     await persistStreamingMessage('session-stop-live-snapshot', stopped, { onlyIfGenerating: true })
 
-    expect(stored).toEqual(stopped)
+    expect(stored).toEqual({ ...stopped, status: [] })
   })
 
   it('sets message.timestamp', async () => {

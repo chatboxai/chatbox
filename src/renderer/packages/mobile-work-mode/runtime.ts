@@ -49,7 +49,7 @@ export const capacitorWorkMode = new LocalWorkMode(
       archived
         ? rendererApplication.sessions.listArchivedSessionsMetaPage(cursor, limit)
         : rendererApplication.sessions.listSessionsMetaPage(cursor, limit),
-    getChat: (id) => rendererApplication.sessionQueryBridge.getSession(id),
+    readChatPage: (request) => rendererApplication.sessions.readSessionTranscriptWindow(request),
   }),
   capacitorDocumentParser
 )

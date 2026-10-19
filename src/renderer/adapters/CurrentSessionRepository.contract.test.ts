@@ -1,25 +1,13 @@
-import { SessionEventBus, SessionService, SessionWriteCoordinator } from '@chatbox/core'
-import { MessageAnchorNotFoundError } from '@chatbox/core/application/session'
-import { SessionActionBlockedError } from '@chatbox/core/session/action-gates'
-import { exportBackupArchive, importBackupArchive, prepareBackupExport } from '@chatbox/core/backup'
-import { MemoryStorage } from '../../../packages/chatbox-core/src/backup/sharded.test-support'
-import {
-  UNENCODABLE_REASON,
-  unencodableMessage,
-} from '../../../packages/chatbox-core/src/session/session-tree/unencodable.test-support'
 import 'fake-indexeddb/auto'
-import { type SessionMetaRepositoryPort, SessionRepositoryError } from '@chatbox/core/ports'
-import {
-  createSessionRepositoryContract,
-  runSessionRepositoryContract,
-} from '@chatbox/core/ports/testing/session-repository-contract'
-import { InMemorySessionRepository } from '@chatbox/core/testing'
-import type { Message, Session, SessionMetaPage, SessionMetaRecord } from '@shared/types'
+import { SessionMigrationError } from '@chatbox/core/application/session'
+import { BackupOperationBusyError, DEFAULT_BACKUP_PAGE_LIMITS } from '@chatbox/core/backup'
+import { type SessionMetaRepositoryPort, SessionRowConflictError } from '@chatbox/core/ports'
+import type { Message, Session, SessionMetaPage } from '@shared/types'
 import { IDBFactory } from 'fake-indexeddb'
-import { beforeEach, describe, expect, test, vi } from 'vitest'
-import { IndexedDBSessionMetaStorage } from '@/storage/SessionMetaStorage'
+import { describe, expect, test, vi } from 'vitest'
 import { IndexedDBSessionRowStore } from '@/storage/SessionRowStorage'
 import { type CurrentSessionDataStorage, CurrentSessionRepository } from './CurrentSessionRepository'
+import { unencodableMessage } from '../../../packages/chatbox-core/src/session/session-tree/unencodable.test-support'
 
 vi.mock('../../../packages/chatbox-core/src/session/session-tree/encode', async (importOriginal) => {
   const { failOnUnencodableMarker } = await import(
@@ -28,6 +16,18 @@ vi.mock('../../../packages/chatbox-core/src/session/session-tree/encode', async 
   const actual = await importOriginal<typeof import('../../../packages/chatbox-core/src/session/session-tree/encode')>()
   return { ...actual, encodeSessionTree: failOnUnencodableMarker(actual.encodeSessionTree) }
 })
+
+async function pendingMigrationIds(
+  repository: CurrentSessionRepository,
+  shouldSkip?: (id: string) => Promise<boolean>
+) {
+  const pending: string[] = []
+  for (const candidate of await repository.listSessionMigrationCandidates()) {
+    if (!(await shouldSkip?.(candidate.id)) && (await repository.requiresSessionMigration(candidate)))
+      pending.push(candidate.id)
+  }
+  return pending
+}
 
 function message(id: string, role: Message['role'], timestamp: number): Message {
   return { id, role, contentParts: [{ type: 'text', text: id }], timestamp }
@@ -124,424 +124,229 @@ function createHarness(metaStorage: SessionMetaRepositoryPort = createMetaStorag
   }
 }
 
-function storedRecord(harness: ReturnType<typeof createHarness>, id: string): Record<string, unknown> {
-  return harness.values.get(`session:${id}`) as Record<string, unknown>
+async function createRows(harness: ReturnType<typeof createHarness>, id = 'session') {
+  const { messages, ...header } = createSessionWithMessages(id)
+  return harness.repository.createSessionRows(header, messages)
 }
 
-/** Rows come back in primary-key order, so ids are compared sorted. */
-async function messageRowIds(harness: ReturnType<typeof createHarness>, id: string): Promise<string[]> {
-  const snapshot = await harness.rowStore.readSnapshot(id)
-  return (snapshot?.rows.messages ?? []).map((row) => row.messageId).sort()
-}
-
-describe('CurrentSessionRepository contract', () => {
-  test('keeps published and IndexedDB token seeds aligned after editing and appending', async () => {
-    const { repository, rowStore } = createHarness()
-    const source = createSessionWithMessages('edit-token-seeds')
-    source.messages[0].tokenCountMap = { default: 9 }
-    source.messages[0].tokenCalculatedAt = { default: 100 }
-    source.messages[0].tokenCountApproximate = { default: true }
-    await repository.setSession(source)
-    const events = new SessionEventBus()
-    const publish = vi.spyOn(events, 'publish')
-    const service = new SessionService(repository, new SessionWriteCoordinator(repository), events, {
-      createId: () => 'unused',
-    })
-    await service.updateMessage(source.id, 'user-1', {
-      contentParts: [{ type: 'text', text: 'Edited input' }],
-      tokenCountMap: undefined,
-      tokenCountApproximate: undefined,
-    })
-    const event = publish.mock.calls.at(-1)?.[0]
-    expect(event?.type).toBe('session-command-committed')
-    if (event?.type !== 'session-command-committed') throw new Error('Expected committed command event')
-    const published = event.delta.diff.messages.upsert.find((row) => row.messageId === 'user-1')?.message
-    expect(published).toBeDefined()
-    const saved = (await rowStore.readSnapshot(source.id))?.rows.messages.find(
-      (row) => row.messageId === 'user-1'
-    )?.message
-    expect(published?.tokenCalculatedAt).toBeUndefined()
-    expect(published?.tokenCountMap).toBeUndefined()
-    expect(published?.tokenCountApproximate).toBeUndefined()
-    expect(saved?.tokenCalculatedAt).toBeUndefined()
-    expect(saved?.tokenCountMap).toBeUndefined()
-    expect(saved?.tokenCountApproximate).toBeUndefined()
-    expect(saved?.contentParts).toEqual(published?.contentParts)
-    await service.insertMessage(source.id, message('next', 'user', 300))
-    expect((await repository.getSession(source.id))?.messages.at(-1)?.id).toBe('next')
-  })
-
-  test('reads complete backup sessions while rejecting conflicting writes until the operation finishes', async () => {
-    const source = createHarness()
-    const original = createSessionWithMessages('exclusive-backup')
-    await source.repository.setSession(original)
-    await source.repository.withBackupStorageAccess(async (readSession) => {
-      expect(await readSession(original.id)).toMatchObject(original)
-      await expect(source.repository.setSession({ ...original, name: 'Late' })).rejects.toMatchObject({
-        name: 'BackupOperationBusyError',
-      })
-      await expect(source.repository.meta.clear()).rejects.toMatchObject({ name: 'BackupOperationBusyError' })
-    })
-    await source.repository.setSession({ ...original, name: 'After' })
-    expect((await source.repository.getSession(original.id))?.name).toBe('After')
-  })
-
-  let harness: ReturnType<typeof createHarness>
-
-  beforeEach(() => {
-    harness = createHarness()
-  })
-
-  test.each(['plain', 'unreachable fork', 'summary pivot', 'unencodable'] as const)(
-    'scans the authoritative restored record with %s branches',
-    async (topology) => {
-      const id = 'restored-ownership'
-      await harness.repository.setSession(createSessionWithMessages(id))
-      const restoredMessage = message('restored', 'user', 300)
-      const savedBranch = {
-        position: 1,
-        createdAt: 1,
-        lists: [
-          { id: 'saved', messages: [message('saved-reply', 'assistant', 400)] },
-          { id: 'active', messages: [] },
-        ],
-      }
-      const restored: Session = {
-        ...createSession(id),
-        messages: [topology === 'summary pivot' ? { ...restoredMessage, isSummary: true } : restoredMessage],
-        ...(topology === 'unreachable fork' ? { messageForksHash: { missing: savedBranch } } : {}),
-        ...(topology === 'summary pivot' ? { messageForksHash: { restored: savedBranch } } : {}),
-        ...(topology === 'unencodable'
-          ? {
-              messageForksHash: {
-                restored: {
-                  ...savedBranch,
-                  lists: [savedBranch.lists[0], { id: 'held', messages: [unencodableMessage()] }, savedBranch.lists[1]],
-                  position: 2,
-                },
-              },
-            }
-          : {}),
-      }
-      await harness.repository.withBackupStorageAccess(async (_read, _meta, store) => {
-        const candidate = await store!.beginLegacyRestore!(restored)
-        await candidate.publish()
-        await candidate.dispose()
-      })
-      const updated: Session = {
-        ...restored,
-        messages: [
-          ...restored.messages,
-          {
-            ...message('new-attachment', 'user', 500),
-            files: [{ id: 'file', name: 'document.pdf', fileType: 'application/pdf', sessionAttachmentId: 7 }],
-          },
-        ],
-      }
-      if (topology === 'unencodable') {
-        // 无法迁移的对话后续编辑仍写旧 JSON，残留行不能授权附件删除。
-        await harness.repository.setSession(updated, { baseSession: (await harness.repository.getSession(id))! })
-        expect(await messageRowIds(harness, id)).toEqual(['assistant-1', 'user-1'])
-        await expect(harness.repository.collectSessionAttachmentOwnership(id)).rejects.toThrow(UNENCODABLE_REASON)
-        return
-      }
-      if (topology === 'summary pivot') {
-        // 挂在摘要上的分支修复后可以写成行，分支里的消息仍归属这个对话。
-        await harness.repository.setSession(updated, { baseSession: (await harness.repository.getSession(id))! })
-        const ownership = await harness.repository.collectSessionAttachmentOwnership(id)
-        expect(ownership.messageIds.sort()).toEqual(['new-attachment', 'restored', 'restored~anchor', 'saved-reply'])
-        return
-      }
-      if (topology === 'unreachable fork') {
-        // 不可达分支随编码去掉，后续编辑可以写成行，扫描只认可见消息。
-        await harness.repository.setSession(updated, { baseSession: (await harness.repository.getSession(id))! })
-      } else {
-        // 模拟旧格式导入；即便尚未触发迁移，扫描也必须忽略同 ID 的旧行。
-        await harness.dataStorage.setItemNow(`session:${id}`, updated)
-      }
-      const ownership = await harness.repository.collectSessionAttachmentOwnership(id)
-      expect(ownership.messageIds.sort()).toEqual(['new-attachment', 'restored'])
-      expect(ownership.attachmentReferences).toEqual([{ attachmentId: 7, sessionId: id, messageId: 'new-attachment' }])
+describe('CurrentSessionRepository row boundary', () => {
+  test('preserves legacy settings input when candidate publication fails and retries with normalized settings', async () => {
+    const h = createHarness()
+    const legacy = {
+      ...createSessionWithMessages('upgrade'),
+      settings: { aiProvider: 'openai', model: 'legacy-model' },
     }
-  )
+    h.values.set('session:upgrade', legacy)
+    expect((await h.repository.readUpgradeSessionHeader('upgrade'))?.settings).toMatchObject(legacy.settings)
+    const normalized = { provider: 'openai', modelId: 'legacy-model' }
+    const write = vi.spyOn(h.rowStore, 'writeRows').mockRejectedValueOnce(new Error('disk full'))
+    await expect(h.repository.upgradeLegacySessionSettings('upgrade', normalized)).rejects.toThrow()
+    expect(h.values.get('session:upgrade')).toEqual(legacy)
+    expect(await h.rowStore.readCommit('upgrade')).toBeNull()
+    await h.repository.upgradeLegacySessionSettings('upgrade', normalized)
+    expect(write).toHaveBeenCalledTimes(2)
+    expect((await h.repository.getSessionHeader('upgrade'))?.header.settings).toEqual(normalized)
+    expect(
+      (
+        await h.repository.readSessionTranscriptWindow({ sessionId: 'upgrade', origin: 'tail', limit: 20 })
+      )?.messages.map((row) => row.messageId)
+    ).toEqual(['user-1', 'assistant-1'])
+  })
 
-  test('satisfies the reusable portable repository contract', async () => {
-    const values = new Map<string, unknown>()
-    const inMemoryMeta = new InMemorySessionRepository()
-    const repository = new CurrentSessionRepository({
-      dataStorage: {
-        getItemRaw: <T>(key: string) => Promise.resolve((values.get(key) ?? null) as T | null),
-        getItem: <T>(key: string, initialValue: T) =>
-          Promise.resolve(values.has(key) ? (values.get(key) as T) : initialValue),
-        setItemNow: (key, value) => {
-          values.set(key, value)
-          return Promise.resolve()
-        },
-        removeItem: (key) => {
-          values.delete(key)
-          return Promise.resolve()
-        },
-        getAllKeys: () => Promise.resolve([...values.keys()]),
-      },
-      metaStorage: inMemoryMeta.meta,
-      rowStore: new IndexedDBSessionRowStore(),
+  test('uses published row settings even if the external legacy record remains after an interrupted upgrade', async () => {
+    const h = createHarness()
+    await createRows(h, 'upgrade')
+    await h.repository.executeSessionCommand('upgrade', {
+      type: 'header',
+      updater: { settings: { provider: 'openai', modelId: 'current' } },
     })
-
-    await runSessionRepositoryContract(() => repository)
+    const legacy = { ...createSessionWithMessages('upgrade'), settings: { aiProvider: 'openai', model: 'obsolete' } }
+    h.values.set('session:upgrade', legacy)
+    expect((await h.repository.readUpgradeSessionHeader('upgrade'))?.settings?.modelId).toBe('current')
+    await h.repository.upgradeLegacySessionSettings('upgrade', { provider: 'openai', modelId: 'obsolete' })
+    expect((await h.repository.getSessionHeader('upgrade'))?.header.settings?.modelId).toBe('current')
+    await h.repository.storeLegacyUpgradeInput({ ...createSessionWithMessages('upgrade'), name: 'Obsolete source' })
+    expect((await h.repository.getSessionHeader('upgrade'))?.header.name).toBe('Session')
   })
 
-  test('initializes the current meta storage through the repository boundary', async () => {
-    await harness.repository.initialize()
-
-    expect(harness.metaStorage.initialize).toHaveBeenCalledOnce()
-  })
-
-  test('writes a session as a record without messages plus its message rows', async () => {
-    const session = createSessionWithMessages('session-write')
-
-    await harness.repository.setSession(session)
-
-    const record = storedRecord(harness, 'session-write')
-    expect(record.storageFormat).toBe('rows')
-    expect(record).not.toHaveProperty('messages')
-    expect(record).not.toHaveProperty('threads')
-    expect(await messageRowIds(harness, 'session-write')).toEqual(['assistant-1', 'user-1'])
-    await expect(harness.repository.getSession('session-write')).resolves.toMatchObject({
-      messages: [{ id: 'user-1' }, { id: 'assistant-1' }],
+  test('publishes row headers and serves only the requested transcript page', async () => {
+    const harness = createHarness()
+    await createRows(harness)
+    expect(harness.values.get('session:session')).toMatchObject({ storageFormat: 'rows', rowAuthority: 1 })
+    expect(harness.values.get('session:session')).not.toHaveProperty('messages')
+    expect(await harness.repository.getSessionHeader('session')).toMatchObject({
+      header: { id: 'session' },
+      revision: 1,
     })
-  })
-
-  test('reports full-session write failures with operation and session context', async () => {
-    const cause = new Error('session write failed')
-    harness.setItemNow.mockRejectedValueOnce(cause)
-
-    const error = await harness.repository.setSession(createSession()).catch((reason: unknown) => reason)
-
-    expect(error).toBeInstanceOf(SessionRepositoryError)
-    expect(error).toMatchObject({
-      operation: 'set-session',
-      sessionId: 'session-1',
-      cause,
+    const page = await harness.repository.readSessionTranscriptWindow({
+      sessionId: 'session',
+      limit: 1,
+      origin: 'tail',
     })
+    expect(page?.messages.map((row) => row.messageId)).toEqual(['assistant-1'])
+    expect(page?.older).not.toBeNull()
   })
 
-  test('reads a legacy whole-session record immediately and converts it when migration is scheduled', async () => {
+  test('converts legacy input before exposing the header and preserves its messages', async () => {
+    const harness = createHarness()
     harness.values.set('session:legacy', createSessionWithMessages('legacy'))
-
-    const result = await harness.repository.getSession('legacy')
-
-    expect(result).toMatchObject({
-      id: 'legacy',
-      name: 'Session',
-      messages: [{ id: 'user-1' }, { id: 'assistant-1' }],
-    })
-    expect(storedRecord(harness, 'legacy')).toHaveProperty('messages')
-    await expect(harness.repository.migrateSession('legacy')).resolves.toBe('migrated')
-
-    const record = storedRecord(harness, 'legacy')
-    expect(record.storageFormat).toBe('rows')
-    expect(record).not.toHaveProperty('messages')
-    expect(await messageRowIds(harness, 'legacy')).toEqual(['assistant-1', 'user-1'])
+    expect(await harness.repository.getSessionHeader('legacy')).toMatchObject({ header: { id: 'legacy' } })
+    expect(harness.values.get('session:legacy')).toMatchObject({ rowAuthority: 1, rowFormatVersion: 3 })
+    expect(
+      (await harness.repository.readSessionMessages({ sessionId: 'legacy', messageIds: ['user-1'] }))?.messages[0].id
+    ).toBe('user-1')
   })
 
-  test('returns null for a missing session', async () => {
-    await expect(harness.repository.getSession('missing')).resolves.toBeNull()
+  test('published header reads and migration enumeration do not reopen historical records', async () => {
+    const harness = createHarness()
+    await createRows(harness)
+    harness.getItem.mockClear()
+    await harness.repository.getSessionHeader('session')
+    await harness.repository.getSessionHeader('session')
+    expect(await pendingMigrationIds(harness.repository)).toEqual([])
+    expect(harness.getItem).not.toHaveBeenCalled()
   })
 
-  test('deletes the full-session storage key together with its rows', async () => {
-    await harness.repository.setSession(createSessionWithMessages('session-delete'))
-
-    await harness.repository.deleteSession('session-delete')
-
-    expect(harness.values.has('session:session-delete')).toBe(false)
-    expect(harness.removeItem).toHaveBeenCalledWith('session:session-delete')
-    await expect(harness.rowStore.readSnapshot('session-delete')).resolves.toBeNull()
+  test('candidate listing performs no per-session commit reads or legacy body reads', async () => {
+    const harness = createHarness()
+    await createRows(harness)
+    harness.values.set('session:legacy', createSessionWithMessages('legacy'))
+    const commits = vi.spyOn(harness.rowStore, 'readCommit')
+    harness.getItem.mockClear()
+    const candidates = await harness.repository.listSessionMigrationCandidates()
+    expect(candidates.map((candidate) => candidate.id).sort()).toEqual(['legacy', 'session'])
+    expect(commits).not.toHaveBeenCalled()
+    expect(harness.getItem).not.toHaveBeenCalled()
+    expect(
+      await harness.repository.requiresSessionMigration(candidates.find((candidate) => candidate.id === 'session')!)
+    ).toBe(false)
+    expect(commits).toHaveBeenCalledTimes(1)
+    expect(harness.repository.hasForegroundSessionWork()).toBe(false)
   })
 
-  test('restores a migrated session an earlier version deleted, with its list entry', async () => {
-    await harness.repository.setSession(createSessionWithMessages('deleted-by-earlier-version'))
-    harness.values.delete('session:deleted-by-earlier-version')
+  test('foreground reads stay busy until every overlapping read settles, including failures', async () => {
+    const harness = createHarness()
+    await createRows(harness)
+    const rejectReads: Array<(error: Error) => void> = []
+    vi.spyOn(harness.rowStore, 'readMessages').mockImplementation(
+      () =>
+        new Promise((_, reject) => {
+          rejectReads.push(reject)
+        })
+    )
+    const read = () =>
+      harness.repository
+        .readSessionMessages({ sessionId: 'session', messageIds: ['user-1'] })
+        .catch((error: unknown) => error)
+    const first = read()
+    const second = read()
+    expect(harness.repository.hasForegroundSessionWork()).toBe(true)
+    await vi.waitFor(() => expect(rejectReads).toHaveLength(2))
+    rejectReads[0](new Error('first read failed'))
+    await first
+    expect(harness.repository.hasForegroundSessionWork()).toBe(true)
+    rejectReads[1](new Error('second read failed'))
+    await second
+    expect(harness.repository.hasForegroundSessionWork()).toBe(false)
+    await harness.repository.getSessionHeader('session')
+    expect(harness.repository.hasForegroundSessionWork()).toBe(false)
+  })
 
+  test('keeps invalid source data intact and returns a diagnostic migration error', async () => {
+    const harness = createHarness()
+    const source = { ...createSession('invalid'), messages: [unencodableMessage()] }
+    harness.values.set('session:invalid', source)
+    await expect(harness.repository.getSessionHeader('invalid')).rejects.toBeInstanceOf(SessionMigrationError)
+    expect(harness.values.get('session:invalid')).toBe(source)
+    expect(await harness.rowStore.readCommit('invalid')).toBeNull()
+  })
+
+  test('keeps published rows authoritative after the external marker write fails', async () => {
+    const harness = createHarness()
+    harness.values.set('session:legacy', createSessionWithMessages('legacy'))
+    harness.setItemNow.mockRejectedValueOnce(new Error('marker unavailable'))
+    expect(await harness.repository.getSessionHeader('legacy')).toMatchObject({ revision: 1 })
+    harness.getItem.mockClear()
     const restarted = new CurrentSessionRepository({
       dataStorage: harness.dataStorage,
       metaStorage: harness.metaStorage,
       rowStore: harness.rowStore,
     })
-    await restarted.initialize()
-
-    expect(harness.metaStorage.create).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'deleted-by-earlier-version', sortOrder: 100, createdAt: 100 })
-    )
-    expect(storedRecord(harness, 'deleted-by-earlier-version')).toMatchObject({ storageFormat: 'rows' })
-    expect((await restarted.getSession('deleted-by-earlier-version'))?.messages.map((item) => item.id)).toEqual([
-      'user-1',
-      'assistant-1',
-    ])
+    expect(await restarted.getSessionHeader('legacy')).toMatchObject({ revision: 1 })
+    expect(harness.getItem).not.toHaveBeenCalled()
+    expect(await pendingMigrationIds(harness.repository)).toEqual(['legacy'])
+    expect(await harness.repository.migrateSession('legacy')).toBe('already')
+    expect(harness.values.get('session:legacy')).toMatchObject({ rowAuthority: 1 })
   })
 
-  test('restores a session whose deletion was interrupted without duplicating its list entry', async () => {
-    await harness.repository.setSession(createSessionWithMessages('interrupted-delete'))
-    harness.values.delete('session:interrupted-delete')
-    vi.mocked(harness.metaStorage.getById).mockImplementation((id) =>
-      Promise.resolve(
-        id === 'interrupted-delete' ? ({ id, name: 'Session', sortOrder: 1, createdAt: 1 } as const) : null
-      )
-    )
+  test('repairs an orphaned published row record and missing list entry', async () => {
+    const harness = createHarness()
+    await createRows(harness)
+    harness.values.delete('session:session')
+    expect(await pendingMigrationIds(harness.repository)).toEqual(['session'])
+    expect(await harness.repository.migrateSession('session')).toBe('already')
+    expect(harness.metaStorage.create).toHaveBeenCalledWith(expect.objectContaining({ id: 'session' }))
+    expect(harness.values.get('session:session')).toMatchObject({ rowAuthority: 1 })
+  })
 
-    const restarted = new CurrentSessionRepository({
-      dataStorage: harness.dataStorage,
-      metaStorage: harness.metaStorage,
-      rowStore: harness.rowStore,
+  test('checks recovery protection before touching a candidate record', async () => {
+    const harness = createHarness()
+    harness.values.set('session:protected', createSession('protected'))
+    expect(await pendingMigrationIds(harness.repository, async () => true)).toEqual([])
+    expect(harness.getItem).not.toHaveBeenCalled()
+  })
+
+  test('rejects row writes while raw backup owns the storage lock and resumes afterwards', async () => {
+    const harness = createHarness()
+    await createRows(harness)
+    await harness.repository.withBackupStorageAccess(async (meta, backup) => {
+      expect(meta).toBe(harness.metaStorage)
+      const rows = []
+      for await (const row of backup.iterateBackupRows('session', DEFAULT_BACKUP_PAGE_LIMITS)) rows.push(row.kind)
+      expect(rows.filter((kind) => kind === 'message')).toHaveLength(2)
+      await expect(
+        harness.repository.executeSessionCommand('session', { type: 'header', updater: { name: 'Blocked' } })
+      ).rejects.toBeInstanceOf(BackupOperationBusyError)
     })
-    await restarted.initialize()
-
-    expect(harness.metaStorage.create).not.toHaveBeenCalled()
-    expect((await restarted.getSession('interrupted-delete'))?.messages).toHaveLength(2)
+    await harness.repository.executeSessionCommand('session', { type: 'header', updater: { name: 'Saved' } })
+    expect((await harness.repository.getSessionHeader('session'))?.header.name).toBe('Saved')
   })
 
-  test('lists only valid full-session identifiers', async () => {
-    harness.values.set('session:one', createSession('one'))
-    harness.values.set('session:two', createSession('two'))
-    harness.values.set('session:', {})
-    harness.values.set('session:undefined', {})
-    harness.values.set('settings', {})
-
-    await expect(harness.repository.getAllSessionIds()).resolves.toEqual(['one', 'two'])
-  })
-
-  test('leaves out the draft held under the not-yet-created chat id', async () => {
-    harness.values.set('session:one', createSession('one'))
-    harness.values.set('session:new', createSession('new'))
-
-    await expect(harness.repository.getAllSessionIds()).resolves.toEqual(['one'])
-    await expect(harness.repository.listUnmigratedSessionIds()).resolves.toEqual(['one'])
-  })
-
-  test('delegates meta operations without changing their arguments', async () => {
-    const record: SessionMetaRecord = {
-      id: 'session-1',
-      name: 'Session',
-      type: 'chat',
-      sortOrder: 10,
-      createdAt: 10,
-    }
-
-    await harness.repository.meta.create(record)
-
-    expect(harness.metaStorage.create).toHaveBeenCalledWith(record)
-  })
-
-  test('preserves command domain errors and leaves the durable rows unchanged', async () => {
-    const original = createSessionWithMessages()
-    original.messages.push({ ...message('summary', 'assistant', 300), isSummary: true })
-    original.compactionPoints = [{ boundaryMessageId: 'assistant-1', summaryMessageId: 'summary', createdAt: 300 }]
-    original.messages[1].generating = true
-    await harness.repository.setSession(original)
-    const revision = await harness.rowStore.getRevision(original.id)
-
-    const missingAnchor = await harness.repository
-      .executeSessionCommand(original.id, {
-        type: 'structure',
-        operation: {
-          action: 'message-insert-after',
-          message: message('continuation', 'assistant', 400),
-          previousId: 'missing',
-          requireAnchor: true,
-        },
-      })
-      .catch((error: unknown) => error)
-    expect.soft(missingAnchor).toBeInstanceOf(MessageAnchorNotFoundError)
-    expect.soft(missingAnchor).toMatchObject({ sessionId: original.id, anchorMessageId: 'missing' })
-
-    const blocked = await harness.repository
-      .executeSessionCommand(original.id, {
-        type: 'structure',
-        operation: {
-          action: 'message-remove',
-          messageId: 'summary',
-          replacementPivotId: 'replacement',
-          guard: { action: 'delete-summary', activeGenerationMessageIds: new Set(['assistant-1']) },
-        },
-      })
-      .catch((error: unknown) => error)
-    expect(blocked).toBeInstanceOf(SessionActionBlockedError)
-    expect(await harness.rowStore.getRevision(original.id)).toBe(revision)
-    expect((await harness.repository.getSession(original.id))?.messages.map((item) => item.id)).toEqual(
-      original.messages.map((item) => item.id)
+  test('preserves revision conflict errors for the window controller', async () => {
+    const harness = createHarness()
+    await createRows(harness)
+    const conflict = new SessionRowConflictError('session', 1, 2)
+    vi.spyOn(harness.rowStore, 'readTranscriptWindow').mockRejectedValueOnce(conflict)
+    await expect(harness.repository.readSessionTranscriptWindow({ sessionId: 'session', limit: 20 })).rejects.toBe(
+      conflict
     )
   })
 
-  test('normalizes backend failures with operation and session context', async () => {
-    const cause = new Error('backend failed')
-    harness.getItem.mockRejectedValueOnce(cause)
+  test('deletes row authority and the record together', async () => {
+    const harness = createHarness()
+    await createRows(harness)
+    await harness.repository.deleteSession('session')
+    expect(await harness.repository.getSessionHeader('session')).toBeNull()
+    expect(harness.values.has('session:session')).toBe(false)
+    expect(await harness.rowStore.readCommit('session')).toBeNull()
+  })
 
-    const error = await harness.repository.getSession('session-1').catch((reason: unknown) => reason)
-
-    expect(error).toBeInstanceOf(SessionRepositoryError)
-    expect(error).toMatchObject({
-      operation: 'get-session',
-      sessionId: 'session-1',
-      cause,
+  test('initializes and normalizes metadata storage failures', async () => {
+    const harness = createHarness()
+    await harness.repository.initialize()
+    expect(harness.metaStorage.initialize).toHaveBeenCalled()
+    vi.mocked(harness.metaStorage.update).mockRejectedValueOnce(new Error('disk unavailable'))
+    await expect(harness.repository.meta.update('session', { name: 'Saved' })).rejects.toMatchObject({
+      name: 'SessionRepositoryError',
+      operation: 'update-meta',
+      sessionId: 'session',
     })
   })
-})
 
-describe('CurrentSessionRepository shared behavior contract', () => {
-  for (const contractCase of createSessionRepositoryContract(
-    () => createHarness(new IndexedDBSessionMetaStorage()).repository
-  )) {
-    test(contractCase.name, contractCase.run)
-  }
-})
-
-test('publishes restored row markers and rolls them back before normal repository reads resume', async () => {
-  const source = createHarness()
-  const original = {
-    ...createSessionWithMessages('restore-marker'),
-    name: 'Imported',
-    settings: { agentMode: { value: 'off' as const, locked: false, lockReason: null } },
-  }
-  original.messages.push({
-    id: 'summary',
-    role: 'assistant',
-    isSummary: true,
-    contentParts: [{ type: 'text', text: 'Summary' }],
+  test('filters reserved record keys while retaining legacy migration candidates', async () => {
+    const harness = createHarness()
+    for (const id of ['', 'new', 'undefined', 'valid']) harness.values.set(`session:${id}`, createSession(id))
+    expect(await harness.repository.getAllSessionIds()).toEqual(['valid'])
+    expect(await pendingMigrationIds(harness.repository)).toEqual(['valid'])
   })
-  await source.repository.setSession(original)
-  let archive = new Blob()
-  await source.repository.withBackupStorageAccess(async (_reader, metaStorage, sessionStore) => {
-    if (!sessionStore) throw new Error('Missing backup store')
-    const options = {
-      storage: new MemoryStorage(),
-      metaStorage,
-      sessionStore,
-      exportItems: ['conversations'] as ['conversations'],
-      includeKeys: false,
-      application: { version: 'test', platform: 'test' },
-    }
-    const prepared = await prepareBackupExport(options, { singleSessionBytes: 1 })
-    await exportBackupArchive({
-      ...options,
-      prepared,
-      writeArchive: async (stream) => {
-        const parts: Uint8Array<ArrayBuffer>[] = []
-        for await (const chunk of stream()) parts.push(new Uint8Array(chunk))
-        archive = new Blob(parts)
-        return { boundedMemory: true }
-      },
-    })
-  })
-  const target = createHarness()
-  await target.repository.withBackupStorageAccess(async (_reader, metaStorage, sessionStore) => {
-    if (!sessionStore) throw new Error('Missing backup store')
-    await importBackupArchive(archive, { storage: new MemoryStorage(), metaStorage, sharded: { store: sessionStore } })
-  })
-  expect((await target.repository.getSession(original.id))?.name).toBe('Imported')
-  expect(storedRecord(target, original.id).storageFormat).toBe('rows')
-  expect((await target.repository.getSessionReadModel(original.id))?.kind).toBe('window')
-  await target.repository.setSession({ ...original, name: 'After restore' })
-  expect((await target.repository.getSession(original.id))?.name).toBe('After restore')
-  expect([...target.values.keys()].filter((key) => key.startsWith('__chatbox_backup_import'))).toEqual([])
-  source.rowStore.close()
-  target.rowStore.close()
 })

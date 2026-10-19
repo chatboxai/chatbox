@@ -97,6 +97,7 @@ describe('resolveSessionPromptContextSnapshot', () => {
     userMessageCount: 10,
     hasAssistantMessage: true,
     hasLegacyCommandHistory: true,
+    fileResourceKeys: [],
     sandboxSeedAttachments: [],
   }
 

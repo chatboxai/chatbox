@@ -1,7 +1,9 @@
+import { stageLegacySessionRows, prepareLegacySessionRows } from './legacy-row-import'
+import type { BackupSessionCandidate } from './session-port'
 import type { CopilotDetail, Message, Session, SessionMetaRecord, Settings } from '@shared/types'
 import { v4 as uuidv4 } from 'uuid'
 import { migrateSession } from '../application/session/compatibility/session-load'
-import { hasPausedToolCall } from '../application/session/session-metadata'
+import { hasPendingPauseInteraction } from '../message-approval'
 import {
   combineMemoryStateTokens,
   createMemoryStateToken,
@@ -40,12 +42,7 @@ import {
 import { mergeRestoredSessionFolders } from './session-folders'
 import { importShardedBackup, type ShardedBackupOptions } from './sharded-backup'
 import type { BackupManifestV3 } from './sharded-format'
-import {
-  AGENT_PERSONA_BACKUP_KEYS,
-  BackupStorageKey,
-  backupSessionStorageKey,
-  COPILOT_BACKUP_KEYS,
-} from './storage-keys'
+import { AGENT_PERSONA_BACKUP_KEYS, BackupStorageKey, COPILOT_BACKUP_KEYS } from './storage-keys'
 import {
   type BackupFile,
   type BackupManifest,
@@ -557,6 +554,7 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
   const importWarnings: BackupWarning[] = []
   const rehydrationRollbacks: Array<() => Promise<void>> = []
   let stagedResourceCount = 0
+  const rowCandidates: BackupSessionCandidate[] = []
   let commitStarted = false
   let commitCompleted = false
 
@@ -603,6 +601,7 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
         failures.push(error)
       }
     }
+    for (const candidate of [...rowCandidates].reverse()) await restore(() => candidate.rollback())
     for (const rollbackRehydration of rehydrationRollbacks.reverse()) await restore(rollbackRehydration)
     for (const metaId of changedMetaIds.reverse()) {
       await restore(async () => {
@@ -670,6 +669,7 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
         } else if (isBackupSessionPath(entry.path)) {
           const value = parseJson(entry.data, entry.path)
           if (!isBackupSession(value)) throw new Error(`Invalid session entry: ${entry.path}`)
+          prepareLegacySessionRows(value)
           // Validation needs each distinct reference once; repeated attachments must not grow memory.
           const references = new Map<string, Pick<ResourceReference, 'storageKey' | 'sessionId' | 'kind'>>()
           for (const { storageKey, sessionId, kind } of collectSessionResourceReferences(value).references)
@@ -712,6 +712,7 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
     options.onProgress?.({ phase: 'validating', current: 0, total: 1 })
     const manifestValue = stagedEntries.get(BACKUP_MANIFEST_PATH)?.value
     const manifest = BackupManifestSchema.parse(manifestValue)
+    if (manifest.sessions.length && !options.sharded) throw new Error('Session restoration requires row storage')
     validateManifestEntries(manifest, stagedEntries)
     for (const descriptor of manifest.sessions) {
       if (stagedEntries.get(descriptor.path)?.session?.id !== descriptor.id)
@@ -730,7 +731,6 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
 
     const existingStoreKeys = new Set(await options.storage.getAllKeys())
     const changedKeys = [
-      ...manifest.sessions.map((session) => backupSessionStorageKey(session.id)),
       ...(manifest.data.settings ? [BackupStorageKey.Settings] : []),
       ...(manifest.data.copilots ? [BackupStorageKey.MyCopilots] : []),
       ...(manifest.data.sessionSettings
@@ -828,14 +828,16 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
           if (rehydrated.rollback) rehydrationRollbacks.push(rehydrated.rollback)
         }
         session = translateImportedSessionMemoryState(session, importedMemoryState)
-        await options.storage.setItemNow(backupSessionStorageKey(session.id), session)
+        const candidate = await stageLegacySessionRows(options.sharded!.store, session, options.signal)
+        rowCandidates.push(candidate)
+        await candidate.publish(options.signal)
 
         const meta = {
           ...restoreSessionMetaResourceKeys(descriptor.meta, resourceKeyMap),
           // The restored body owns folder membership; an explicit key clears a
           // folder the local metadata still holds when `update` merges.
           folderId: session.folderId,
-          hasPausedToolCall: hasPausedToolCall(migrateSession(session)),
+          hasPausedToolCall: hasPendingPauseInteraction(migrateSession(session).messages),
           recoveryArchived: descriptor.meta.recoveryArchived,
         }
         const existingMeta = await options.metaStorage.getById(session.id)
@@ -904,6 +906,7 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
 
     throwIfAborted(options.signal)
     commitCompleted = true
+    for (const candidate of rowCandidates) await candidate.dispose()
     await cleanupTemps()
     return {
       manifest,
@@ -921,6 +924,7 @@ export async function importBackupArchive(file: BackupFile, options: BackupImpor
       }
     }
     try {
+      for (const candidate of rowCandidates) await candidate.dispose()
       await cleanupTemps()
     } catch (cleanupError) {
       throw new AggregateError([error, cleanupError], 'Backup failed and temporary cleanup is incomplete')

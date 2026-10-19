@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { Message, Session } from '../types'
+import { InMemorySessionRepository } from '../testing/InMemorySessionRepository'
 import {
   assertSessionActionAllowed,
-  deriveSessionLockState,
   getSessionActionGate,
   getSubmitAvailability,
   IDLE_SESSION_LOCK_STATE,
@@ -25,8 +25,27 @@ function locks(overrides: Partial<SessionLockState>): SessionLockState {
   return { ...IDLE_SESSION_LOCK_STATE, ...overrides }
 }
 
-describe('deriveSessionLockState', () => {
-  it('derives generating counts, the placeholder window, and pause state from the session', () => {
+async function readLocks(
+  session: Session,
+  runtime: { compactionRunning?: boolean; activeGenerationMessageIds?: ReadonlySet<string> } = {}
+): Promise<SessionLockState> {
+  const repository = new InMemorySessionRepository()
+  await repository.seedSession(session)
+  const control = await repository.readSessionGenerationControl({
+    sessionId: session.id,
+    activeGenerationMessageIds: [...(runtime.activeGenerationMessageIds ?? [])],
+  })
+  expect(control).not.toBeNull()
+  return {
+    generatingReplyCount: control!.generatingReplyCount,
+    anyReplyGenerating: control!.anyReplyGenerating,
+    awaitingPauseDecision: control!.awaitingPauseDecision,
+    compactionRunning: runtime.compactionRunning ?? false,
+  }
+}
+
+describe('row generation locks', () => {
+  it('derives generating counts, the placeholder window, and pause state from rows', async () => {
     const session: Session = {
       id: 'session-1',
       name: 'Session',
@@ -49,7 +68,7 @@ describe('deriveSessionLockState', () => {
       ],
     }
 
-    const state = deriveSessionLockState(session, {
+    const state = await readLocks(session, {
       compactionRunning: true,
       activeGenerationMessageIds: new Set(['streaming']),
     })
@@ -61,7 +80,7 @@ describe('deriveSessionLockState', () => {
     expect(isGenerationLocked(state)).toBe(true)
   })
 
-  it('locks the composer on a tool-call-limit pause, not just on approvals', () => {
+  it('locks the composer on a tool-call-limit pause, not just on approvals', async () => {
     const session: Session = {
       id: 'session-limit',
       name: 'Session',
@@ -84,7 +103,7 @@ describe('deriveSessionLockState', () => {
       ],
     }
 
-    const state = deriveSessionLockState(session)
+    const state = await readLocks(session)
 
     expect(state.awaitingPauseDecision).toBe(true)
     expect(state.anyReplyGenerating).toBe(false)
@@ -94,7 +113,7 @@ describe('deriveSessionLockState', () => {
     })
   })
 
-  it('ignores a paused tool call this build offers no action for', () => {
+  it('ignores a paused tool call this build offers no action for', async () => {
     const session: Session = {
       id: 'session-unknown-pause',
       name: 'Session',
@@ -114,17 +133,17 @@ describe('deriveSessionLockState', () => {
       ],
     }
 
-    expect(deriveSessionLockState(session).awaitingPauseDecision).toBe(false)
+    expect((await readLocks(session)).awaitingPauseDecision).toBe(false)
   })
 
-  it('reports an idle session as fully unlocked', () => {
+  it('reports an idle session as fully unlocked', async () => {
     const session: Session = {
       id: 'session-2',
       name: 'Session',
       messages: [message({ id: 'done', generating: false })],
     }
 
-    expect(deriveSessionLockState(session)).toEqual(IDLE_SESSION_LOCK_STATE)
+    expect(await readLocks(session)).toEqual(IDLE_SESSION_LOCK_STATE)
   })
 })
 
@@ -232,13 +251,13 @@ describe('getSessionActionGate', () => {
     expect(getSessionActionGate('switch-fork', preparing, { sessionMode: 'chat' })).toEqual({ allowed: true })
   })
 
-  it.each(['chat', 'work', undefined] as const)('keeps actionable pauses on the %s branch', (sessionMode) => {
+  it.each(['chat', 'work', undefined] as const)('keeps actionable pauses on the %s branch', async (sessionMode) => {
     for (const pauseReason of [
       { type: 'user_exec_approval', command: 'ls' },
       { type: 'tool_call_limit', maxToolCalls: 25 },
       undefined,
     ] as const) {
-      const state = deriveSessionLockState({
+      const state = await readLocks({
         id: 'paused',
         name: 'Paused',
         messages: [

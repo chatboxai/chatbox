@@ -1,4 +1,4 @@
-import { RowBackedSessionRepository, SessionEventBus } from '@chatbox/core/application/session'
+import { RowBackedSessionRepository, SessionEventBus, SessionRowWriteQueue } from '@chatbox/core/application/session'
 import { InMemorySessionRecordStore, InMemorySessionRowStore } from '@chatbox/core/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -13,7 +13,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/app/renderer-application', () => ({
   rendererApplication: { generationRuntime: { abort: mocks.abort } },
 }))
-vi.mock('@/components/chat/MessageList', () => ({ clearScrollPositionCache: mocks.cleanup }))
 vi.mock('@/packages/session-startup-recovery', () => ({ sessionStartupRecovery: { forget: mocks.cleanup } }))
 vi.mock('@/platform', () => ({ default: { type: 'desktop', builtInBrowser: { forSession: mocks.forSession } } }))
 vi.mock('@/stores/session/naming', () => ({
@@ -37,11 +36,14 @@ const { registerSessionUiEffects } = await import('./session-ui-effects')
 
 describe('session browser cleanup', () => {
   it('routes committed row headers to title eligibility and skips writes without metadata or hidden writes', async () => {
+    const rows = new InMemorySessionRowStore()
     const repository = new RowBackedSessionRepository({
       records: new InMemorySessionRecordStore(),
-      rows: new InMemorySessionRowStore(),
+      rows,
+      backup: rows,
+      writes: new SessionRowWriteQueue((_id, action) => action()),
     })
-    await repository.setSession({ id: 'a', name: 'Untitled', messages: [] })
+    await repository.createSessionRows({ id: 'a', name: 'Untitled' }, [])
     const result = await repository.executeSessionCommand('a', {
       type: 'append',
       messages: [{ id: 'u', role: 'user', contentParts: [{ type: 'text', text: 'Hello' }] }],
@@ -53,6 +55,7 @@ describe('session browser cleanup', () => {
       type: 'session-command-committed' as const,
       delta: result.delta,
       meta: { id: 'a', name: 'Untitled' },
+      metaRevision: result.delta.revision,
       preserveCachedGeneratingMessages: false,
     }
     await events.publish(event)

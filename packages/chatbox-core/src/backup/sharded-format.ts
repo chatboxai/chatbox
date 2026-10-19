@@ -3,7 +3,7 @@ import { z } from 'zod'
 import type { BackupRow } from './session-port'
 import { BackupJsonEntrySchema, BackupManifestSchema, BackupSessionEntrySchema } from './types'
 
-const id = z.string().min(1).max(1024)
+const id = z.string().min(1)
 const nullableId = id.nullable()
 const order = z.number().int().safe()
 export const BackupPayloadReferenceSchema = z.object({
@@ -19,6 +19,61 @@ export function compareBackupIds(left: string, right: string): number {
   return a.length - b.length
 }
 
+const factsSchema = z.object({
+  role: MessageSchema.shape.role,
+  contextEligible: z.boolean(),
+  autoTitleEligible: z.boolean(),
+  promptCacheChars: order.nonnegative().max(4000),
+  hasToolCall: z.boolean(),
+  fileResourceKeys: z.array(z.string()).optional(),
+  imageStorageKeys: z.array(z.string()),
+  attachmentOwnershipIds: z.array(z.number().int().safe()),
+  isForkMarker: z.boolean().optional(),
+  hasFiles: z.boolean(),
+  paused: z.boolean(),
+  webSearchSignInError: z.boolean(),
+  hasLegacyCommand: z.boolean(),
+  steered: z.boolean(),
+  hasError: z.boolean().optional(),
+  finishReason: MessageSchema.shape.finishReason,
+  timestamp: z.number().optional(),
+  seedAttachments: z
+    .array(
+      z.object({
+        name: z.string(),
+        storageKey: z.string(),
+        rawStorageKey: z.string().optional(),
+        id: z.string().optional(),
+      })
+    )
+    .optional(),
+})
+const summarySchema = z.object({
+  hasAutoTitleContent: z.boolean(),
+  firstNamingUserMessageId: id.optional(),
+  lastNamingAssistantMessageId: id.optional(),
+  messageCount: order.nonnegative(),
+  userMessageCount: order.nonnegative(),
+  assistantMessageCount: order.nonnegative(),
+  fileMessageCount: order.nonnegative(),
+  generatingMessageCount: order.nonnegative(),
+  pausedMessageCount: order.nonnegative(),
+  webSearchSignInErrorCount: order.nonnegative(),
+  legacyCommandMessageCount: order.nonnegative(),
+  steeredMessageCount: order.nonnegative(),
+  lastUserMessageId: id.optional(),
+  lastNonSummaryMessageId: id.optional(),
+  lastConversationMessageId: id.optional(),
+  lastSummaryMessageId: id.optional(),
+  firstSystemMessageId: id.optional(),
+})
+const forkSchema = z.object({
+  pivotId: id,
+  branchPointId: id,
+  selectedBranchId: id,
+  count: order.positive(),
+  position: order.nonnegative(),
+})
 const logicalBackupRowSchema = z.discriminatedUnion('kind', [
   z
     .object({
@@ -45,10 +100,13 @@ const logicalBackupRowSchema = z.discriminatedUnion('kind', [
               'presentation',
               'contextReadProjection',
               'topologyFingerprint',
+              'rowFormatVersion',
+              'rowAuthority',
             ].some((key) => Object.hasOwn(session, key)),
           'Backup header contains storage-only fields'
         ),
       activeThreadId: id,
+      rowFormatVersion: z.literal(3).optional(),
       forkCreatedAt: z.record(id, z.number().finite()).optional(),
     })
     .strict(),
@@ -63,6 +121,8 @@ const logicalBackupRowSchema = z.discriminatedUnion('kind', [
       selectedLeafId: nullableId,
       compactionPoints: z.array(CompactionPointSchema),
       sessionPromptContextSnapshot: SessionThreadSchema.shape.sessionPromptContextSnapshot,
+      summary: summarySchema.optional(),
+      control: z.object({ generatingAssistantCount: order.nonnegative() }).optional(),
     })
     .strict(),
   z
@@ -79,6 +139,13 @@ const logicalBackupRowSchema = z.discriminatedUnion('kind', [
       createdAt: z.number().finite(),
       updatedAt: z.number().finite(),
       value: MessageSchema.passthrough(),
+      facts: factsSchema.optional(),
+      selected: z.boolean().optional(),
+      forkCreatedAt: z.number().finite().optional(),
+      forkPivotId: id.optional(),
+      fork: forkSchema.optional(),
+      pendingBranchId: id.optional(),
+      pendingBranchSeq: order.nonnegative().optional(),
       payload: z
         .object({
           encoding: z.literal('json-utf8'),
@@ -124,9 +191,11 @@ export function toLogicalBackupRow(row: BackupRow): LogicalBackupRow {
       presentation,
       contextReadProjection,
       topologyFingerprint,
+      rowFormatVersion,
+      rowAuthority,
       ...session
     } = row.record
-    return { kind: 'header', session, activeThreadId, forkCreatedAt }
+    return { kind: 'header', session, activeThreadId, forkCreatedAt, rowFormatVersion }
   }
   if (row.kind === 'thread') {
     const t = row.thread
@@ -140,6 +209,8 @@ export function toLogicalBackupRow(row: BackupRow): LogicalBackupRow {
       selectedLeafId: t.activeLeafMessageId,
       compactionPoints: t.compactionPoints,
       sessionPromptContextSnapshot: t.sessionPromptContextSnapshot,
+      summary: t.summary,
+      control: t.control,
     }
   }
   const m = row.message
@@ -156,6 +227,13 @@ export function toLogicalBackupRow(row: BackupRow): LogicalBackupRow {
     createdAt: m.createdAt,
     updatedAt: m.updatedAt,
     value: m.message,
+    facts: m.facts,
+    selected: m.selected,
+    forkCreatedAt: m.forkCreatedAt,
+    forkPivotId: m.forkPivotId,
+    fork: m.fork,
+    pendingBranchId: m.pendingBranchId,
+    pendingBranchSeq: m.pendingBranchSeq,
   }
 }
 
@@ -168,6 +246,7 @@ export function fromLogicalBackupRow(row: LogicalBackupRow, sessionId: string): 
         storageFormat: 'rows',
         activeThreadId: row.activeThreadId,
         forkCreatedAt: row.forkCreatedAt,
+        ...(row.rowFormatVersion === 3 ? { rowFormatVersion: 3 as const, rowAuthority: 1 as const } : {}),
       },
     }
   if (row.kind === 'thread')
@@ -183,6 +262,8 @@ export function fromLogicalBackupRow(row: LogicalBackupRow, sessionId: string): 
         activeLeafMessageId: row.selectedLeafId,
         compactionPoints: row.compactionPoints,
         sessionPromptContextSnapshot: row.sessionPromptContextSnapshot,
+        summary: row.summary,
+        control: row.control,
       },
     }
   return {
@@ -201,6 +282,13 @@ export function fromLogicalBackupRow(row: LogicalBackupRow, sessionId: string): 
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       message: row.value,
+      facts: row.facts,
+      selected: row.selected,
+      forkCreatedAt: row.forkCreatedAt,
+      forkPivotId: row.forkPivotId,
+      fork: row.fork,
+      pendingBranchId: row.pendingBranchId,
+      pendingBranchSeq: row.pendingBranchSeq,
     },
   }
 }
@@ -211,7 +299,7 @@ export class BackupGraphValidator {
   private threads = new Map<string, Extract<LogicalBackupRow, { kind: 'thread' }>>()
   private messages = new Map<string, Omit<Extract<LogicalBackupRow, { kind: 'message' }>, 'value' | 'payload'>>()
   private indexBytes = 0
-  private lastMessage?: { threadId: string; order: number }
+  private lastMessage?: { threadId: string; order: number; id: string }
   private lastThread = -2
   constructor(
     private readonly sessionId: string,
@@ -225,7 +313,12 @@ export class BackupGraphValidator {
       if (this.header || row.session.id !== this.sessionId) throw new Error('Invalid backup header identity')
       this.header = row
     } else if (row.kind === 'thread') {
-      if (!this.header || this.lastMessage || row.order !== this.lastThread + 1 || this.threads.has(row.id))
+      if (
+        !this.header ||
+        this.lastMessage ||
+        (this.header.rowFormatVersion === 3 ? row.order <= this.lastThread : row.order !== this.lastThread + 1) ||
+        this.threads.has(row.id)
+      )
         throw new Error('Invalid backup thread order')
       this.threads.set(row.id, row)
       this.lastThread = row.order
@@ -237,10 +330,13 @@ export class BackupGraphValidator {
         row.value.id !== row.id ||
         (last &&
           (compareBackupIds(row.threadId, last.threadId) < 0 ||
-            (row.threadId === last.threadId && row.order <= last.order)))
+            (row.threadId === last.threadId &&
+              (row.order < last.order ||
+                (row.order === last.order &&
+                  (this.header?.rowFormatVersion !== 3 || compareBackupIds(row.id, last.id) <= 0))))))
       )
         throw new Error('Invalid backup message identity or order')
-      this.lastMessage = { threadId: row.threadId, order: row.order }
+      this.lastMessage = { threadId: row.threadId, order: row.order, id: row.id }
       const { value, payload, ...structural } = row
       this.messages.set(row.id, structural)
     }
@@ -251,7 +347,11 @@ export class BackupGraphValidator {
     for (const m of this.messages.values()) {
       if (m.parentId !== null) {
         const parent = this.messages.get(m.parentId)
-        if (!parent || parent.threadId !== m.threadId || parent.order >= m.order)
+        if (
+          !parent ||
+          parent.threadId !== m.threadId ||
+          (this.header?.rowFormatVersion !== 3 && parent.order >= m.order)
+        )
           throw new Error('Invalid backup parent relation')
       } else if (this.threads.get(m.threadId)?.rootMessageId !== m.id) throw new Error('Invalid backup root relation')
       if (m.selectedChildId !== null) {
@@ -259,6 +359,17 @@ export class BackupGraphValidator {
         if (!child || child.parentId !== m.id || child.threadId !== m.threadId)
           throw new Error('Invalid backup selected child')
       }
+    }
+    const rooted = new Set<string>()
+    for (const message of this.messages.values()) {
+      const path = new Set<string>()
+      let cursor: typeof message | undefined = message
+      while (cursor && !rooted.has(cursor.id)) {
+        if (path.has(cursor.id)) throw new Error('Cyclic backup parent relation')
+        path.add(cursor.id)
+        cursor = cursor.parentId === null ? undefined : this.messages.get(cursor.parentId)
+      }
+      for (const id of path) rooted.add(id)
     }
     const children = new Map<string, number>()
     for (const message of this.messages.values())

@@ -1,4 +1,4 @@
-import { hasConversationStarted, resolveSessionMode } from '@chatbox/core/session/mode-policy'
+import { resolveSessionMode } from '@chatbox/core/session/mode-policy'
 import {
   ActionIcon,
   Badge,
@@ -204,7 +204,7 @@ const AgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProps>(fun
   const [subPanelPosition, setSubPanelPosition] = useState<SubPanelPosition | null>(null)
   const settleFrameRef = useRef<number>()
   const isNewSession = sessionId === 'new'
-  const { header: currentSession, readModel } = useSessionPresentation(isNewSession ? null : sessionId)
+  const { header: currentSession, read: headerRead } = useSessionPresentation(isNewSession ? null : sessionId)
 
   // Agent mode state
   const setAgentModeSmartSwitchingDefault = useUIStore((s) => s.setAgentModeSmartSwitchingDefault)
@@ -578,13 +578,7 @@ const AgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProps>(fun
   // conversation starts — mirroring the work-side `entry.locked` in the other
   // direction. Same-mode toggles are unaffected; the store enforces the same
   // rule in setSessionAgentMode.
-  const conversationStarted = useMemo(
-    () =>
-      readModel?.kind === 'full'
-        ? hasConversationStarted(readModel.session)
-        : readModel?.kind === 'window' && readModel.summary.userMessageCount > 0,
-    [readModel]
-  )
+  const conversationStarted = (headerRead?.summary.userMessageCount ?? 0) > 0
 
   // --- Mode button ---
   const ModeButton: FC<{ value: Extract<AgentModeValue, 'on' | 'off'>; label: string }> = ({ value, label }) => {
@@ -624,11 +618,7 @@ const AgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProps>(fun
 
   const isChatModeSelected = agentModeUIState.displayValue === 'off'
   const smartSwitchingEnabled = entry.value === 'auto' && isChatModeSelected
-  const smartSwitchingExpired =
-    !isNewSession &&
-    (readModel?.kind === 'full'
-      ? readModel.session.messages.some((message) => message.role === 'user')
-      : readModel?.kind === 'window' && readModel.summary.userMessageCount > 0)
+  const smartSwitchingExpired = !isNewSession && (headerRead?.summary.userMessageCount ?? 0) > 0
   const isSmartSwitchingDisabled = entry.locked || !modelSupportsAgentMode || smartSwitchingExpired
   const modeDescription = agentModeUIState.isActive
     ? t('Full capability, rigorous and precise. Built for multi-step tasks.')

@@ -5,10 +5,10 @@ import { contextSnapshot } from '../persistence/session-context-read.test-suppor
 import { SqlSessionRowStore } from '../persistence/session-row-sql'
 import { decodeSessionTree } from '../session/session-tree/decode'
 import { exportBackupArchive } from './export-backup'
-import { importBackupArchive } from './import-backup'
+import { importBackupArchiveWithRows as importBackupArchive, readImportedSession } from './import.test-support'
 import { legacyBackupSource } from './legacy-source'
 import { prepareBackupExport } from './preflight'
-import { prepareSessionForBackup } from './resources'
+import { preparedSessionFixture } from './export.test-support'
 import { MemoryMetaStorage, MemoryStorage } from './sharded.test-support'
 import { BackupStorageKey, backupSessionStorageKey } from './storage-keys'
 import { BackupWarningSchema } from './types'
@@ -69,7 +69,7 @@ it.each([
     const restoredParts =
       format === 'v3'
         ? (await restoredRows.readSnapshot(session.id))?.rows.messages[0].message.contentParts
-        : (restored.values.get(backupSessionStorageKey(session.id)) as Session | undefined)?.messages[0].contentParts
+        : (await readImportedSession(restored, session.id)).messages[0].contentParts
     expect(restoredParts).toEqual([expect.objectContaining(image)])
   } finally {
     database.close()
@@ -105,7 +105,7 @@ it.each(['legacy', 'v2', 'v3'] as const)('preserves distinct read failure reason
           )
     const result = await exportBackupArchive({
       ...options,
-      sessionStore: format === 'legacy' ? undefined : store,
+      sessionStore: store,
       prepared,
       writeArchive: async (stream) => {
         for await (const part of stream()) void part
@@ -165,7 +165,7 @@ it('uses each prepared v2 JSON byte size at the exact threshold and reclassifies
       messages: snapshot.rows.messages,
     })
     if (!decoded.ok) throw new Error(decoded.reason)
-    const expected = new TextEncoder().encode(JSON.stringify(prepareSessionForBackup(decoded.session))).length
+    const expected = new TextEncoder().encode(JSON.stringify(preparedSessionFixture(decoded.session))).length
     const options = {
       storage: new MemoryStorage(),
       metaStorage: new MemoryMetaStorage(),
@@ -209,7 +209,7 @@ it('uses each prepared v2 JSON byte size at the exact threshold and reclassifies
 })
 
 it('round trips a mixed v3 archive with global settings and rolls both domains back on cancellation', async () => {
-  const { importBackupArchive } = await import('./import-backup')
+  const { importBackupArchiveWithRows: importBackupArchive } = await import('./import.test-support')
   const database = openNodeSessionRowDatabase()
   const destinationDb = openNodeSessionRowDatabase()
   try {
@@ -376,7 +376,7 @@ it('keeps thousands of ordinary messages within the v2 budget', async () => {
     expect(plan.formatVersion).toBe(2)
     if (plan.sessions[0].layout !== 'single') throw new Error('Expected a single-file session')
     expect(plan.sessions[0].size).toBe(
-      new TextEncoder().encode(JSON.stringify(prepareSessionForBackup(decoded.session))).length
+      new TextEncoder().encode(JSON.stringify(preparedSessionFixture(decoded.session))).length
     )
   } finally {
     database.close()

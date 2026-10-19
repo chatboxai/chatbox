@@ -88,7 +88,7 @@ describe('SessionService working directory folders', () => {
     const { service } = createHarness()
     const session = await service.createSession({ name: 'A', messages: [], settings: workSettings('/work/api') })
 
-    const moved = await service.updateSession(session.id, { settings: workSettings('/work/web') })
+    const moved = await service.updateSessionHeader(session.id, { settings: workSettings('/work/web') })
 
     const folders = await service.listSessionFolders()
     expect(folders.map((folder) => folder.workingDirectory)).toEqual(['/work/api', '/work/web'])
@@ -101,7 +101,7 @@ describe('SessionService working directory folders', () => {
     await service.updateSessionFolders((folders) => [...folders, { id: 'manual', name: 'Manual' }])
     await service.moveSessionToFolder(session.id, 'manual')
 
-    const updated = await service.updateSession(session.id, { settings: workSettings('/work/web') })
+    const updated = await service.updateSessionHeader(session.id, { settings: workSettings('/work/web') })
 
     expect(updated.folderId).toBe('manual')
   })
@@ -111,7 +111,7 @@ describe('SessionService working directory folders', () => {
     const session = await service.createSession({ name: 'A', messages: [], settings: workSettings('/work/api') })
     await service.moveSessionToFolder(session.id, undefined)
 
-    const renamed = await service.updateSession(session.id, { name: 'Renamed' })
+    const renamed = await service.updateSessionHeader(session.id, { name: 'Renamed' })
 
     expect(renamed.folderId).toBeUndefined()
   })
@@ -120,7 +120,7 @@ describe('SessionService working directory folders', () => {
     const { service } = createHarness()
     const session = await service.createSession({ name: 'A', messages: [] })
 
-    const updated = await service.updateSession(session.id, { settings: workSettings('/work/api') })
+    const updated = await service.updateSessionHeader(session.id, { settings: workSettings('/work/api') })
 
     expect(updated.folderId).toBe((await service.listSessionFolders())[0].id)
   })

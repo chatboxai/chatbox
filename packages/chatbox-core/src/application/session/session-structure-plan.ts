@@ -1,84 +1,203 @@
-import { deriveSessionRecord } from '../../session/session-tree/encode'
-import type { MessageRow, MessageRowMetadata, SessionRecordV2, ThreadRow } from '../../session/session-tree/types'
-import type { SessionStructureSnapshot } from '../../ports/session-row-store'
-import type { SessionStructureResult } from '../../ports/session-structure-command'
+import type { SessionKnownMessageMetadata, SessionMessageRelationsSelector } from '../../ports/session-row-relations'
+import type { SessionMessageStructureGuard, SessionStructureResult } from '../../ports/session-structure-command'
+import type { MessageRow, MessageRowMetadata, SessionRowRecord, ThreadRow } from '../../session/session-tree/types'
+import { assertSessionActionAllowed } from '../../session/action-gates'
+import { deriveMessageFacts } from '../../session/message-facts'
+import { resolveSessionMode } from '../../session/mode-policy'
 import type { Message } from '../../types'
-import { contextRecordHeader } from './session-context-source'
+import { emptySessionCommandPlan, type SessionCommandPlan } from './session-command'
+import { deriveSessionGenerationControl } from './session-generation-control'
 
-export interface StructurePlan {
-  record: SessionRecordV2
-  threads: ThreadRow[]
-  messages: MessageRowMetadata[]
-  upsertMessages: MessageRow[]
+/** Each read is fenced to this command's revision. Callers never expose a complete tree. */
+export interface StructureCommandReader {
+  record: SessionRowRecord
+  revision: number
+  activeThread: ThreadRow
+  metadata(ids: readonly string[]): Promise<SessionKnownMessageMetadata[]>
+  messages(ids: readonly string[]): Promise<MessageRow[]>
+  thread(threadId: string): Promise<ThreadRow | null>
+  latestArchivedThread(): Promise<ThreadRow | null>
+  relations(
+    threadId: string,
+    selector: SessionMessageRelationsSelector,
+    limit: number
+  ): Promise<SessionKnownMessageMetadata[]>
+}
+
+export interface StructurePlan extends SessionCommandPlan {
   result: SessionStructureResult
 }
 
-export function structureActivePath(
-  snapshot: Pick<SessionStructureSnapshot, 'record' | 'threads' | 'messages'>
-): MessageRowMetadata[] {
-  const thread = snapshot.threads.find((row) => row.threadId === snapshot.record.activeThreadId)
-  if (!thread) throw new Error('Active thread is missing')
-  const byId = new Map(snapshot.messages.map((row) => [row.messageId, row]))
-  const path: MessageRowMetadata[] = []
+export function emptyStructurePlan(reader: Pick<StructureCommandReader, 'record'>): StructurePlan {
+  return { ...emptySessionCommandPlan(reader.record), result: { applied: false, cancelMessageIds: [] } }
+}
+
+export function putMetadata(plan: StructurePlan, row: MessageRowMetadata): void {
+  const payload = plan.diff.messages.upsert.find((candidate) => candidate.messageId === row.messageId)
+  if (payload) {
+    Object.assign(payload, row)
+    return
+  }
+  const rows = (plan.diff.messageMetadataUpsert ??= [])
+  const index = rows.findIndex((candidate) => candidate.messageId === row.messageId)
+  if (index < 0) rows.push(row)
+  else rows[index] = row
+}
+
+export function putThread(plan: StructurePlan, thread: ThreadRow): void {
+  const rows = plan.diff.threads.upsert
+  const index = rows.findIndex((candidate) => candidate.threadId === thread.threadId)
+  if (index < 0) rows.push(thread)
+  else rows[index] = thread
+}
+
+export async function readMetadata(
+  reader: StructureCommandReader,
+  id: string | null
+): Promise<SessionKnownMessageMetadata | undefined> {
+  return id === null ? undefined : (await reader.metadata([id]))[0]
+}
+
+/** Resolve the shared summaries between the user pivot and its branch heads. */
+export async function readBranchPoint(
+  reader: StructureCommandReader,
+  pivot: SessionKnownMessageMetadata
+): Promise<SessionKnownMessageMetadata> {
+  let point = pivot
   const visited = new Set<string>()
-  let id = thread.rootMessageId
-  while (id !== null) {
-    const row = byId.get(id)
-    if (!row || row.threadId !== thread.threadId || visited.has(id)) throw new Error('Invalid active thread path')
-    visited.add(id)
-    path.push(row)
-    id = row.activeChildId
+  while (point.activeChildId) {
+    if (visited.has(point.messageId)) throw new Error('A summary chain contains a cycle')
+    visited.add(point.messageId)
+    const next = await readMetadata(reader, point.activeChildId)
+    if (!next || next.threadId !== pivot.threadId || next.parentMessageId !== point.messageId)
+      throw new Error('The branch point has an invalid selected child')
+    if (next.kind !== 'summary') break
+    point = next
   }
-  return path
+  return point
 }
 
-export function projectStructurePresentation(
-  record: SessionRecordV2,
-  threads: ThreadRow[],
-  messages: Message[]
-): SessionRecordV2 {
-  const derived = deriveSessionRecord({ ...contextRecordHeader(record), messages }, record.activeThreadId)
+export async function readUserPivot(
+  reader: StructureCommandReader,
+  row: SessionKnownMessageMetadata
+): Promise<SessionKnownMessageMetadata> {
+  let pivot = row
+  const visited = new Set<string>()
+  while (pivot.kind === 'summary' && pivot.parentMessageId) {
+    if (visited.has(pivot.messageId)) throw new Error('A summary chain contains a cycle')
+    visited.add(pivot.messageId)
+    const parent = await readMetadata(reader, pivot.parentMessageId)
+    if (!parent || parent.threadId !== row.threadId) throw new Error('Missing summary parent')
+    pivot = parent
+  }
+  return pivot
+}
+
+export async function readChildren(
+  reader: StructureCommandReader,
+  point: MessageRowMetadata,
+  limit = 2,
+  options: Omit<Extract<SessionMessageRelationsSelector, { kind: 'children' }>, 'kind' | 'parentMessageId'> = {}
+): Promise<SessionKnownMessageMetadata[]> {
+  return reader.relations(point.threadId, { kind: 'children', parentMessageId: point.messageId, ...options }, limit)
+}
+
+export async function nextChildSeq(reader: StructureCommandReader, point: MessageRowMetadata): Promise<number> {
+  const last = (await readChildren(reader, point, 1, { reverse: true }))[0]
+  const seq = Math.max(last?.seq ?? -1, point.pendingBranchSeq ?? -1) + 1
+  if (!Number.isSafeInteger(seq)) throw new Error('Sibling order exhausted')
+  return seq
+}
+
+export function newMessageRow(
+  sessionId: string,
+  threadId: string,
+  message: Message,
+  parentMessageId: string | null,
+  seq: number,
+  branchId: string | null = null
+): MessageRow {
+  if (!message.id || !Number.isSafeInteger(seq) || seq < 0) throw new Error('Invalid new message identity or order')
+  const createdAt = message.timestamp ?? 0
   return {
-    ...record,
-    presentation: {
-      ...derived.presentation!,
-      hasThreads: threads.some((thread) => thread.seq !== -1),
-      hasForks: Object.keys(record.forkCreatedAt ?? {}).length > 0,
-    },
+    sessionId,
+    threadId,
+    messageId: message.id,
+    parentMessageId,
+    activeChildId: null,
+    seq,
+    branchId,
+    kind: message.isSummary ? 'summary' : 'message',
+    status: message.generating ? 'generating' : 'settled',
+    createdAt,
+    updatedAt: message.updatedAt ?? createdAt,
+    facts: deriveMessageFacts(message),
+    message: { ...message, contentParts: [...message.contentParts] },
   }
 }
 
-/** Reindex selected thread trees after links change, retaining their DFS sibling order. */
-export function reindexStructureThreads(threads: readonly ThreadRow[], messages: MessageRowMetadata[]) {
-  const byId = new Map(messages.map((row) => [row.messageId, row]))
-  const children = new Map<string, MessageRowMetadata[]>()
-  for (const row of messages) {
-    if (!row.parentMessageId) continue
-    const siblings = children.get(row.parentMessageId) ?? []
-    siblings.push(row)
-    children.set(row.parentMessageId, siblings)
+export async function assertNewMessages(reader: StructureCommandReader, messages: readonly Message[]): Promise<void> {
+  const ids = messages.map((message) => message.id)
+  if (new Set(ids).size !== ids.length || ids.some((id) => !id)) throw new Error('Duplicate new message identity')
+  if ((await reader.metadata(ids)).length) throw new Error('Message identity already exists')
+}
+
+export function appendNewChain(
+  plan: StructurePlan,
+  parent: MessageRowMetadata,
+  messages: readonly Message[],
+  firstSeq: number,
+  branchId: string | null
+): void {
+  let previous: MessageRowMetadata = { ...parent, pendingBranchId: undefined, pendingBranchSeq: undefined }
+  for (const [index, message] of messages.entries()) {
+    const row = newMessageRow(
+      plan.record.id,
+      parent.threadId,
+      message,
+      previous.messageId,
+      index ? 0 : firstSeq,
+      index ? null : branchId
+    )
+    putMetadata(plan, { ...previous, activeChildId: row.messageId })
+    plan.diff.messages.upsert.push(row)
+    plan.appendedMessageIds.push(row.messageId)
+    previous = row
   }
-  for (const siblings of children.values()) siblings.sort((left, right) => left.seq - right.seq)
-  const subtreeEnds = new Map<string, number>()
-  const indexed = threads.map((thread) => {
-    let seq = 0
-    const stack: Array<{ id: string; closing: boolean }> = thread.rootMessageId
-      ? [{ id: thread.rootMessageId, closing: false }]
-      : []
-    while (stack.length) {
-      const entry = stack.pop()!
-      if (entry.closing) {
-        subtreeEnds.set(entry.id, seq)
-        continue
-      }
-      byId.get(entry.id)!.seq = seq++
-      stack.push({ id: entry.id, closing: true })
-      for (const child of [...(children.get(entry.id) ?? [])].reverse())
-        stack.push({ id: child.messageId, closing: false })
+}
+
+export async function assertStructureGuard(
+  reader: StructureCommandReader,
+  guard: SessionMessageStructureGuard | undefined,
+  target?: MessageRowMetadata
+): Promise<void> {
+  if (!guard) return
+  const runtimeRows = await reader.metadata([...(guard.activeGenerationMessageIds ?? [])])
+  const control = deriveSessionGenerationControl(reader.activeThread, runtimeRows)
+  assertSessionActionAllowed(
+    guard.action,
+    {
+      ...control,
+      compactionRunning: guard.compactionRunning ?? false,
+    },
+    {
+      messageGenerating: target?.status === 'generating',
+      sessionMode: resolveSessionMode(reader.record.settings?.agentMode?.value),
     }
-    let leaf = thread.rootMessageId
-    while (leaf && byId.get(leaf)?.activeChildId) leaf = byId.get(leaf)!.activeChildId
-    return { ...thread, activeLeafMessageId: leaf }
-  })
-  return { threads: indexed, subtreeEnds }
+  )
+}
+
+export function markBranchNavigation(
+  plan: StructurePlan,
+  point: MessageRowMetadata,
+  firstMessageId: string | null,
+  mode: 'create' | 'select' = 'select'
+): void {
+  plan.result.applied = true
+  plan.result.navigation = {
+    type: 'branch',
+    mode,
+    sharedPrefixEnd: { threadId: point.threadId, messageId: point.messageId },
+    firstMessageId,
+  }
 }

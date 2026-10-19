@@ -1,3 +1,7 @@
+import type { SessionTokenCacheStorePort } from './session-token-cache'
+import type { SessionBranchStorePort } from './session-branch-source'
+import type { SessionRowRangeMutations, SessionRowRelationsPort } from './session-row-relations'
+import type { SessionTranscriptStorePort } from './session-transcript-source'
 import type {
   MessageRow,
   MessageRowMetadata,
@@ -5,7 +9,6 @@ import type {
   SessionRecordV2,
   ThreadRow,
 } from '../session/session-tree/types'
-import type { SessionContextRequest, SessionContextRows } from './session-context-source'
 import type { SessionTextTokenRead, SessionTextTokenStorePort } from './session-text-tokens'
 
 export interface SessionRows {
@@ -14,16 +17,9 @@ export interface SessionRows {
   messages: MessageRow[]
 }
 
-export interface SessionStructureSnapshot extends SessionRowCommit {
-  threads: ThreadRow[]
-  messages: MessageRowMetadata[]
-}
-
-export interface SessionRowsDiff {
+export interface SessionRowsDiff extends SessionRowRangeMutations {
   /** Structural edits retain the committed payload and require an expected revision. */
   messageMetadataUpsert?: MessageRowMetadata[]
-  /** Upserted rows with payloads identical to the expected revision. Stores may reuse those payloads only under CAS. */
-  unchangedPayloadMessageIds?: string[]
   sessionId: string
   threads: { upsert: ThreadRow[]; delete: string[] }
   messages: { upsert: MessageRow[]; delete: string[] }
@@ -35,43 +31,17 @@ export interface SessionRowCommit {
   revision: number
 }
 
+/** Projections produced by the same successful row publication. */
+export interface SessionRowMutationResult extends SessionRowCommit {
+  threads: ThreadRow[]
+  /** Final explicit point writes and derived fork pivots; selected-path range changes remain scoped by the diff. */
+  messageMetadata: MessageRowMetadata[]
+}
+
 /** One complete, internally consistent row-store snapshot. */
 export interface SessionRowSnapshot extends SessionRowCommit {
   rows: SessionRows
   textTokens?: SessionTextTokenRead
-}
-
-/** Opaque continuation of one thread's active path at one committed revision. */
-interface SessionMessageWindowIdentity {
-  sessionId: string
-  threadId: string
-  revision: number
-}
-
-export type SessionMessageWindowCursor = SessionMessageWindowIdentity &
-  ({ beforeMessageId: string; afterMessageId?: never } | { afterMessageId: string; beforeMessageId?: never })
-
-export interface SessionMessageWindowRequest {
-  sessionId: string
-  /** Defaults to the active thread for a first page, or the cursor's thread. */
-  threadId?: string
-  /** Number of messages, from 1 to 200. Payload bytes may vary per message. */
-  limit: number
-  /** First window origin; mutually exclusive with a continuation cursor. Defaults to tail. */
-  edge?: 'head' | 'tail'
-  cursor?: SessionMessageWindowCursor
-  /** Fence the first window of another thread to an existing read snapshot. */
-  expectedRevision?: number
-}
-
-/** Read-only partial view; never pass a window to a complete-session write API. */
-export interface SessionMessageWindow extends SessionRowCommit {
-  textTokens?: SessionTextTokenRead
-  thread: ThreadRow
-  /** Active-path messages in chronological order, including summary rows. */
-  messages: MessageRow[]
-  older: SessionMessageWindowCursor | null
-  newer: SessionMessageWindowCursor | null
 }
 
 /** Active thread first, followed by archived threads in reverse archive order. */
@@ -104,13 +74,6 @@ export interface SessionMessagesSnapshot extends SessionRowCommit {
   messages: MessageRow[]
 }
 
-export interface SessionThreadSuffixRequest {
-  sessionId: string
-  threadId: string
-  afterSeq: number
-  expectedRevision: number
-}
-
 export interface GeneratingMessageRef {
   sessionId: string
   threadId: string
@@ -118,12 +81,16 @@ export interface GeneratingMessageRef {
 }
 
 export type SessionRowStoreOperation =
+  | 'read-message-metadata'
+  | 'read-message-relations'
   | 'initialize'
   | 'read-rows'
-  | 'read-message-window'
+  | 'read-commit'
+  | 'read-thread'
+  | 'read-transcript'
+  | 'read-navigation'
   | 'read-thread-page'
   | 'read-messages'
-  | 'read-context'
   | 'write-rows'
   | 'apply-diff'
   | 'delete-rows'
@@ -161,28 +128,26 @@ export class SessionRowConflictError extends Error {
  * either the complete old snapshot or the complete new snapshot; drivers may
  * use invisible staging transactions before one atomic publish transaction.
  */
-export interface SessionRowStorePort extends Partial<SessionTextTokenStorePort> {
+export interface SessionRowStorePort
+  extends SessionBranchStorePort,
+    SessionTranscriptStorePort,
+    SessionRowRelationsPort,
+    SessionTokenCacheStorePort,
+    Partial<SessionTextTokenStorePort> {
   initialize(): Promise<void>
-  /** Rows, record and revision from one committed snapshot; null when the session has no visible rows. */
-  readStructure?(request: { sessionId: string; expectedRevision?: number }): Promise<SessionStructureSnapshot | null>
   readSnapshot(sessionId: string): Promise<SessionRowSnapshot | null>
-  /** Reads only the selected path window. Stale cursors throw SessionRowConflictError; restart at the tail. */
-  readMessageWindow(request: SessionMessageWindowRequest): Promise<SessionMessageWindow | null>
   /** Bounded thread identities without message or compaction payloads. */
   readThreadsPage?(request: SessionThreadPageRequest): Promise<SessionThreadPage | null>
   /** Returns rows in deduplicated request order, across active, archived and fork paths. */
   readMessages(request: SessionMessagesRequest): Promise<SessionMessagesSnapshot | null>
-  /** Rows whose DFS labels must move when inserting before an inactive branch. */
-  readThreadSuffix?(request: SessionThreadSuffixRequest): Promise<SessionMessagesSnapshot | null>
-  /** Reuse committed payloads only when their session and revision match the selected snapshot. */
-  readContext(
-    request: SessionContextRequest,
-    knownSnapshot?: Pick<SessionRowSnapshot, 'rows' | 'revision'>
-  ): Promise<SessionContextRows | null>
   /** Replaces rows and commit metadata atomically. Callers keep the snapshot immutable until the write settles. */
   writeRows(snapshot: SessionRowSnapshot, expectedRevision?: number | null): Promise<void>
   /** Applies a diff and publishes its commit metadata atomically. */
-  applyDiff(diff: SessionRowsDiff, commit: SessionRowCommit, expectedRevision?: number): Promise<void>
+  applyDiff(
+    diff: SessionRowsDiff,
+    commit: SessionRowCommit,
+    expectedRevision?: number
+  ): Promise<SessionRowMutationResult>
   /** Deletes a session only when its committed revision still matches, when provided. */
   deleteRows(sessionId: string, expectedRevision?: number | null): Promise<void>
   hasRows(sessionId: string): Promise<boolean>

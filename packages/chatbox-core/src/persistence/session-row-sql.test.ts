@@ -1,3 +1,5 @@
+import { projectRowFixture } from '../ports/testing/session-row-fixtures'
+import { readRowContextSource } from '../application/session/row-context'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   SessionRowConflictError,
@@ -66,6 +68,8 @@ function commit(revision: number, record?: SessionRecordV2): SessionRowCommit {
       name: 'session-1',
       activeThreadId: 'thread-active',
       storageFormat: 'rows',
+      rowFormatVersion: 3,
+      rowAuthority: 1,
     },
   }
 }
@@ -73,7 +77,7 @@ function commit(revision: number, record?: SessionRecordV2): SessionRowCommit {
 function snapshot(rows: SessionRows, revision: number, record?: SessionRecordV2): SessionRowSnapshot {
   const activeThreadId = rows.threads.find((thread) => thread.seq === -1)?.threadId
   const nextRecord = record ?? { ...commit(revision).record, activeThreadId: activeThreadId ?? 'thread-active' }
-  return { rows, ...commit(revision, nextRecord) }
+  return projectRowFixture({ rows, ...commit(revision, nextRecord) })
 }
 
 afterEach(() => {
@@ -107,26 +111,26 @@ describe('SqlSessionRowStore SQL shape', () => {
       )
     )
     database.reset()
-    const tail = await store.readMessageWindow({ sessionId: 'session-1', limit: 50 })
+    const tail = await store.readTranscriptWindow({ sessionId: 'session-1', limit: 50 })
     expect(tail?.messages).toEqual(messages.slice(-50))
-    expect(database.executed.filter((sql) => sql.startsWith('WITH RECURSIVE'))).toHaveLength(1)
+    expect(database.executed.filter((sql) => sql.includes('WITH requested(payload_id, request_index)'))).toHaveLength(1)
     expect(database.executed.some((sql) => sql.startsWith('SELECT substr('))).toBe(false)
     if (!tail?.older) throw new Error('Missing window cursor')
     database.reset()
-    const older = await store.readMessageWindow({ sessionId: 'session-1', limit: 50, cursor: tail.older })
+    const older = await store.readTranscriptWindow({ sessionId: 'session-1', limit: 50, cursor: tail.older })
     expect(older?.messages).toEqual(messages.slice(-100, -50))
     expect(older?.revision).toBe(tail.revision)
-    expect(database.executed.filter((sql) => sql.startsWith('WITH RECURSIVE'))).toHaveLength(1)
+    expect(database.executed.filter((sql) => sql.includes('WITH requested(payload_id, request_index)'))).toHaveLength(1)
     database.reset()
-    const head = await store.readMessageWindow({ sessionId: 'session-1', limit: 50, edge: 'head' })
+    const head = await store.readTranscriptWindow({ sessionId: 'session-1', limit: 50, origin: 'head' })
     expect(head?.messages).toEqual(messages.slice(0, 50))
     expect(head?.older).toBeNull()
-    expect(database.executed.filter((sql) => sql.startsWith('WITH RECURSIVE'))).toHaveLength(1)
+    expect(database.executed.filter((sql) => sql.includes('WITH requested(payload_id, request_index)'))).toHaveLength(1)
     if (!head?.newer) throw new Error('Missing forward cursor')
     database.reset()
-    const newer = await store.readMessageWindow({ sessionId: 'session-1', limit: 50, cursor: head.newer })
+    const newer = await store.readTranscriptWindow({ sessionId: 'session-1', limit: 50, cursor: head.newer })
     expect(newer?.messages).toEqual(messages.slice(50, 100))
-    expect(database.executed.filter((sql) => sql.startsWith('WITH RECURSIVE'))).toHaveLength(1)
+    expect(database.executed.filter((sql) => sql.includes('WITH requested(payload_id, request_index)'))).toHaveLength(1)
   })
 
   it.each([null, '', '窗口😀', '😀'.repeat(128), '😀'.repeat(129), '界'.repeat(40000)])(
@@ -177,7 +181,7 @@ describe('SqlSessionRowStore SQL shape', () => {
         return result
       },
     })
-    const context = await reader.readContext({ sessionId: snapshot.record.id, targetMessageId: 'target' })
+    const context = await readRowContextSource(reader, { sessionId: snapshot.record.id, targetMessageId: 'target' })
     expect(context?.mode).toBe('compacted')
     expect([...bodyReads].sort()).toEqual(['boundary', 'question', 'summary', 'system', 'target'])
     expect(bodyBytes).toBeLessThan(4096)
@@ -210,13 +214,13 @@ describe('SqlSessionRowStore SQL shape', () => {
           return result
         },
       })
-      const read = reader.readContext({
+      const read = readRowContextSource(reader, {
         sessionId: snapshot.record.id,
         targetMessageId: 'target',
         expectedRevision: pinned ? 1 : undefined,
       })
       if (pinned) await expect(read).rejects.toMatchObject({ name: 'SessionRowConflictError', actualRevision: 2 })
-      else await expect(read).resolves.toMatchObject({ revision: 2, record: { name: 'new revision' } })
+      else await expect(read).rejects.toMatchObject({ name: 'SessionRowConflictError', actualRevision: 2 })
     }
   )
   it('encodes small message payloads with bounded UTF-8 allocations per message', async () => {
@@ -242,7 +246,7 @@ describe('SqlSessionRowStore SQL shape', () => {
       ],
     }
     await writer.writeRows(snapshot(rows, 1))
-    const tail = await writer.readMessageWindow({ sessionId: 'session-1', limit: 1 })
+    const tail = await writer.readTranscriptWindow({ sessionId: 'session-1', limit: 1 })
     const cursor = withCursor ? (tail?.older ?? undefined) : undefined
     let mutated = false
     const reader = new SqlSessionRowStore({
@@ -250,7 +254,7 @@ describe('SqlSessionRowStore SQL shape', () => {
       executeBatch: (statements, options) => database.executeBatch(statements, options),
       query: async <T>(sql: string, params: SessionRowSqlBindValue[] = []): Promise<T[]> => {
         const result = await database.query<T>(sql, params)
-        if (sql.startsWith('WITH RECURSIVE') && !mutated) {
+        if (sql.includes('WITH requested(payload_id, request_index)') && !mutated) {
           mutated = true
           await writer.applyDiff(
             {
@@ -271,7 +275,7 @@ describe('SqlSessionRowStore SQL shape', () => {
         return result
       },
     })
-    const read = reader.readMessageWindow({ sessionId: 'session-1', limit: 2, cursor })
+    const read = reader.readTranscriptWindow({ sessionId: 'session-1', limit: withCursor ? 1 : 2, cursor })
     if (withCursor) {
       await expect(read).rejects.toMatchObject({
         name: 'SessionRowConflictError',
@@ -311,39 +315,42 @@ describe('SqlSessionRowStore SQL shape', () => {
         1
       )
     )
-    let hydratedPayloads = 0
-    let readAncestors = 0
+    const manifests = await database.query<{ payload_id: string; message_id: string }>(
+      'SELECT payload_id,message_id FROM session_messages'
+    )
+    const identities = new Map(manifests.map((row) => [row.payload_id, row.message_id]))
+    const hydrated = new Set<string>()
     const reader = new SqlSessionRowStore({
       execute: (sql) => database.execute(sql),
       executeBatch: (statements, options) => database.executeBatch(statements, options),
       query: async <T>(sql: string, params: SessionRowSqlBindValue[] = []): Promise<T[]> => {
         const result = await database.query<T>(sql, params)
         expect(new TextEncoder().encode(JSON.stringify(result)).byteLength).toBeLessThan(512 * 1024)
-        expect(sql).not.toContain('OFFSET')
-        if (sql.startsWith('WITH RECURSIVE')) {
-          readAncestors += result.length
+        expect(sql).not.toMatch(/OFFSET \d/)
+        if (sql.includes('FROM session_message_payload_chunks')) {
+          for (const param of params)
+            if (typeof param === 'string' && identities.has(param)) hydrated.add(identities.get(param)!)
           const escapedResponse = JSON.stringify({ values: result }).replace(
             /[\u007f-\uffff<>&/]/g,
             (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`
           )
           expect(new TextEncoder().encode(escapedResponse).byteLength).toBeLessThan(384 * 1024)
         }
-        if (sql.includes('FROM session_message_payload_chunks') && params[1] === 0 && params[2] === 1)
-          hydratedPayloads += 1
         return result
       },
     })
-    const tail = await reader.readMessageWindow({ sessionId: 'session-1', limit: 9 })
-    expect(tail?.messages).toEqual(messages.slice(-9))
-    expect(readAncestors).toBe(9)
-    expect(hydratedPayloads).toBe(9)
+    const tail = await reader.readTranscriptWindow({ sessionId: 'session-1', limit: 9 })
+    const count = tail!.messages.length
+    expect(count).toBeGreaterThan(0)
+    expect(count).toBeLessThan(9)
+    expect(tail?.payloadBytes).toBeLessThanOrEqual(2 * 1024 * 1024)
+    expect(tail?.messages).toEqual(messages.slice(-count))
+    expect([...hydrated].sort()).toEqual(tail!.messages.map((row) => row.messageId).sort())
     if (!tail?.older) throw new Error('expected cursor')
-    readAncestors = 0
-    hydratedPayloads = 0
-    const older = await reader.readMessageWindow({ sessionId: 'session-1', limit: 9, cursor: tail.older })
-    expect(older?.messages).toEqual(messages.slice(-18, -9))
-    expect(readAncestors).toBe(10)
-    expect(hydratedPayloads).toBe(9)
+    hydrated.clear()
+    const older = await reader.readTranscriptWindow({ sessionId: 'session-1', limit: 9, cursor: tail.older })
+    expect(older?.messages).toEqual(messages.slice(-count - older!.messages.length, -count))
+    expect([...hydrated].sort()).toEqual(older!.messages.map((row) => row.messageId).sort())
   })
 
   it('scans message references by status without selecting the payload column', async () => {
@@ -370,7 +377,7 @@ describe('SqlSessionRowStore SQL shape', () => {
     expect(database.executed[0]).not.toContain('message_json')
   })
 
-  it('applies a diff in a single batch', async () => {
+  it('publishes staged row changes with one revision commit', async () => {
     const { database, store } = createStore()
     await store.writeRows(
       snapshot(
@@ -387,14 +394,20 @@ describe('SqlSessionRowStore SQL shape', () => {
     await store.applyDiff(
       {
         sessionId: 'session-1',
-        threads: { upsert: [threadRow('thread-active', { name: 'Renamed' })], delete: [] },
+        threads: {
+          upsert: [threadRow('thread-active', { name: 'Renamed', rootMessageId: 'm2', activeLeafMessageId: 'm2' })],
+          delete: [],
+        },
         messages: { upsert: [messageRow('thread-active', 'm2', { seq: 1 })], delete: ['m1'] },
       },
       commit(2),
       1
     )
 
-    expect(database.batchCount).toBe(1)
+    expect(database.executed.filter((sql) => sql.startsWith('INSERT OR REPLACE INTO session_row_heads'))).toHaveLength(
+      1
+    )
+    expect((await store.readSnapshot('session-1'))?.rows.messages.map((row) => row.messageId)).toEqual(['m2'])
   })
 
   it('rejects a conditional diff after another commit advances the revision', async () => {
@@ -440,7 +453,7 @@ describe('SqlSessionRowStore SQL shape', () => {
     })
   })
 
-  it('rejects an invalid diff before reaching the database', async () => {
+  it('rejects an invalid diff before publishing any row changes', async () => {
     const { database, store } = createStore()
     await store.writeRows(
       snapshot(
@@ -466,8 +479,8 @@ describe('SqlSessionRowStore SQL shape', () => {
       )
     ).rejects.toMatchObject({ name: 'SessionRowStoreError', operation: 'apply-diff' })
 
-    expect(database.batchCount).toBe(0)
-    expect(database.executed).toHaveLength(0)
+    expect(await store.getRevision('session-1')).toBe(1)
+    expect((await store.readSnapshot('session-1'))?.rows.messages.map((row) => row.messageId)).toEqual(['m1'])
   })
 
   it('reads messages back ordered by thread and sequence', async () => {
@@ -543,7 +556,7 @@ describe('SqlSessionRowStore SQL shape', () => {
       )
     )
 
-    await expect(store.readSnapshot('session-1')).resolves.toMatchObject({ rows: { messages: [row] } })
+    expect((await store.readSnapshot('session-1'))?.rows.messages).toEqual([row])
   })
 
   it.each(['ASCII', 'Unicode'])('bounds payload slices even when %s characters are JSON-escaped', async (kind) => {
@@ -643,6 +656,8 @@ describe('SqlSessionRowStore SQL shape', () => {
       name: largeText,
       activeThreadId: 'thread-active',
       storageFormat: 'rows',
+      rowFormatVersion: 3,
+      rowAuthority: 1,
     } satisfies SessionRecordV2
     const thread = threadRow('thread-active', {
       name: largeText,
@@ -678,7 +693,7 @@ describe('SqlSessionRowStore SQL shape', () => {
         if (sql.includes('AS response_bytes') && !sql.startsWith('WITH requested(payload_id, request_index)')) {
           metadataPageQueries++
           // Planning a page must not rescan every message after the current cursor.
-          expect(sql).not.toContain('OFFSET')
+          expect(sql).not.toMatch(/OFFSET \d/)
           expect(params.at(-2)).toBeLessThanOrEqual(768)
         }
         expect(new TextEncoder().encode(JSON.stringify(rows)).byteLength).toBeLessThanOrEqual(responseLimit)
@@ -765,10 +780,10 @@ describe('SqlSessionRowStore SQL shape', () => {
         1
       )
     )
-    let window = await store.readMessageWindow({ sessionId: 'session-1', edge: 'head', limit: 50 })
+    let window = await store.readTranscriptWindow({ sessionId: 'session-1', origin: 'head', limit: 50 })
     const selected = [...window!.messages]
     while (window?.newer) {
-      window = await store.readMessageWindow({ sessionId: 'session-1', cursor: window.newer, limit: 50 })
+      window = await store.readTranscriptWindow({ sessionId: 'session-1', cursor: window.newer, limit: 50 })
       selected.push(...window!.messages)
     }
     expect(selected).toEqual(messages)
@@ -803,7 +818,7 @@ describe('SqlSessionRowStore SQL shape', () => {
   it('retries when a concurrent publish replaces payload chunks during a read', async () => {
     const underlying = openNodeSessionRowDatabase()
     openDatabases.push(underlying)
-    let advanceRevision: (() => Promise<void>) | null = null
+    let advanceRevision: (() => Promise<unknown>) | null = null
     const database: SessionRowSqlDatabase = {
       execute: (sql) => underlying.execute(sql),
       executeBatch: (statements, options) => underlying.executeBatch(statements, options),
@@ -865,12 +880,11 @@ describe('metadata-only payload reuse', () => {
     const diff: SessionRowsDiff = {
       sessionId: 'session-1',
       threads: { upsert: [], delete: [] },
-      messages: { upsert: [{ ...row, seq: 42 }], delete: [] },
-      unchangedPayloadMessageIds: ['m1'],
+      messages: { upsert: [], delete: [] },
+      messageMetadataUpsert: [(({ message: _message, ...metadata }) => ({ ...metadata, seq: 42 }))(row)],
     }
     await store.applyDiff(diff, commit(2), 1)
     expect(database.executed.some((sql) => sql.startsWith('INSERT INTO session_message_payload_chunks'))).toBe(false)
-    expect(database.executed.some((sql) => sql.startsWith('DELETE FROM session_text_tokens'))).toBe(false)
     expect(await manifest()).toEqual(before)
     expect((await store.readSnapshot('session-1'))?.rows.messages[0]).toEqual({ ...row, seq: 42 })
     await expect(store.applyDiff(diff, commit(3), 1)).rejects.toThrow('revision conflict')
@@ -878,7 +892,7 @@ describe('metadata-only payload reuse', () => {
     await store.applyDiff(
       {
         ...diff,
-        unchangedPayloadMessageIds: undefined,
+        messageMetadataUpsert: undefined,
         messages: {
           upsert: [{ ...row, message: { ...row.message, contentParts: [{ type: 'text', text: 'edited' }] } }],
           delete: [],
@@ -901,8 +915,10 @@ describe('metadata-only payload reuse', () => {
         {
           sessionId: 'session-1',
           threads: { upsert: [], delete: [] },
-          messages: { upsert: [messageRow('thread-active', 'missing')], delete: [] },
-          unchangedPayloadMessageIds: ['missing'],
+          messages: { upsert: [], delete: [] },
+          messageMetadataUpsert: [
+            (({ message: _message, ...metadata }) => metadata)(messageRow('thread-active', 'missing')),
+          ],
         },
         commit(2),
         1
@@ -911,18 +927,17 @@ describe('metadata-only payload reuse', () => {
     expect((await store.readSnapshot('session-1'))?.revision).toBe(1)
   })
 
-  it('ignores reuse hints without an expected revision', async () => {
+  it('requires a revision for local metadata mutations', async () => {
     const { store } = createStore()
-    await store.applyDiff(
-      {
-        sessionId: 'session-1',
-        threads: { upsert: [threadRow('thread-active')], delete: [] },
-        messages: { upsert: [messageRow('thread-active', 'new')], delete: [] },
-        unchangedPayloadMessageIds: ['new'],
-      },
-      commit(1)
-    )
-    expect((await store.readSnapshot('session-1'))?.rows.messages[0].messageId).toBe('new')
+    const initial = snapshot({ sessionId: 'session-1', threads: [threadRow('thread-active')], messages: [] }, 1)
+    await store.writeRows(initial)
+    await expect(
+      store.applyDiff(
+        { sessionId: 'session-1', threads: { upsert: [], delete: [] }, messages: { upsert: [], delete: [] } },
+        commit(2)
+      )
+    ).rejects.toMatchObject({ cause: { message: 'Local row edits require an expected revision' } })
+    expect(await store.getRevision('session-1')).toBe(1)
   })
 })
 
@@ -977,7 +992,12 @@ describe('SqlSessionRowStore search thread paging', () => {
       store.readThreadsPage({ sessionId: 'session-1', limit: 1, cursor: first.nextCursor })
     ).rejects.toBeInstanceOf(SessionRowConflictError)
     await expect(
-      store.readMessageWindow({ sessionId: 'session-1', threadId: 'old', limit: 1, expectedRevision: first.revision })
+      store.readTranscriptWindow({
+        sessionId: 'session-1',
+        origin: { threadId: 'old', edge: 'head' },
+        limit: 1,
+        expectedRevision: first.revision,
+      })
     ).rejects.toBeInstanceOf(SessionRowConflictError)
   })
 

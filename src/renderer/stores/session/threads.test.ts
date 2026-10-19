@@ -1,6 +1,5 @@
 import { SessionEventBus, SessionService, SessionWriteCoordinator } from '@chatbox/core/application/session'
 import { InMemorySessionRepository } from '@chatbox/core/testing'
-import { buildSessionExportThreads } from '@chatbox/core/utils/chat-export'
 import type { AgentModeEntry, CompactionPoint, Message, Session } from '@shared/types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -29,7 +28,6 @@ vi.mock('@/app/renderer-application', async () => {
       get sessions() {
         return sessionHarness.service!
       },
-      sessionQueryBridge: { getSession: (id: string) => sessionHarness.service!.getSession(id) },
     },
   }
 })
@@ -75,20 +73,19 @@ function testSession(): Session {
 let repository: InMemorySessionRepository
 
 function updatedSession(): Session {
-  expect(repository.writeOptions).toHaveLength(1)
-  return repository.sessions.get('session-1')!
+  return repository.inspectSession('session-1')!
 }
 
 // Compaction points must travel with their message list across every
 // archive/restore flow, or the send path (which reads only
 // session.compactionPoints) loses the compaction after a thread restore.
 describe('thread flows carry compaction points with their messages', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks()
     uiStoreState.sessionAgentModeMap = {}
     generationRuntimeStore.abort('session-1')
     repository = new InMemorySessionRepository()
-    repository.sessions.set('session-1', testSession())
+    await repository.seedSession(testSession())
     sessionHarness.service = new SessionService(
       repository,
       new SessionWriteCoordinator(repository),
@@ -104,7 +101,7 @@ describe('thread flows carry compaction points with their messages', () => {
 
     const updated = updatedSession()
     expect(updated.compactionPoints).toEqual([threadPoint])
-    const archived = updated.threads?.find((t) => t.id === 'new-thread-id')
+    const archived = updated.threads?.find((t) => t.id === 'session-1')
     expect(archived?.compactionPoints).toEqual([activePoint])
   })
 
@@ -113,7 +110,7 @@ describe('thread flows carry compaction points with their messages', () => {
 
     const updated = updatedSession()
     expect(updated.compactionPoints).toBeUndefined()
-    const archived = updated.threads?.find((t) => t.id === 'new-thread-id')
+    const archived = updated.threads?.find((t) => t.id === 'session-1')
     expect(archived?.compactionPoints).toEqual([activePoint])
   })
 
@@ -136,7 +133,7 @@ describe('thread flows carry compaction points with their messages', () => {
   })
 
   it('removeCurrentThread clears compaction points when no thread remains', async () => {
-    repository.sessions.set('session-1', { ...testSession(), threads: [] })
+    await repository.seedSession({ ...testSession(), threads: [] })
 
     await removeCurrentThread('session-1')
 
@@ -144,14 +141,14 @@ describe('thread flows carry compaction points with their messages', () => {
   })
 
   it('does not create a thread in work mode', async () => {
-    repository.sessions.set('session-1', {
+    await repository.seedSession({
       ...testSession(),
       settings: { agentMode: { value: 'on', locked: true, lockReason: null } },
     })
 
     await refreshContextAndCreateNewThread('session-1')
 
-    expect(repository.writeOptions).toHaveLength(0)
+    expect(await repository.rowStore.getRevision('session-1')).toBe(2)
   })
 
   it('does not create a thread when work mode lives in the legacy uiStore map', async () => {
@@ -161,25 +158,25 @@ describe('thread flows carry compaction points with their messages', () => {
 
     await refreshContextAndCreateNewThread('session-1')
 
-    expect(repository.writeOptions).toHaveLength(0)
+    expect(await repository.rowStore.getRevision('session-1')).toBe(1)
   })
 
   it('archives a compaction that committed after the snapshot was taken', async () => {
     const initial = { ...testSession(), messages: [message('u1', { role: 'user' })], compactionPoints: undefined }
-    repository.sessions.set('session-1', initial)
+    await repository.seedSession(initial)
     const service = rendererApplication.sessions
     const readIdentity = service.getCurrentThreadIdentity.bind(service)
     vi.spyOn(service, 'getCurrentThreadIdentity').mockImplementationOnce(async (sessionId) => {
       const identity = await readIdentity(sessionId)
       // Compaction commits after the operation identifies its current thread.
-      repository.sessions.set(sessionId, testSession())
+      await repository.seedSession({ ...testSession(), id: sessionId })
       return identity
     })
 
     await refreshContextAndCreateNewThread('session-1')
 
     const updated = updatedSession()
-    const archived = updated.threads?.find((t) => t.id === 'new-thread-id')
+    const archived = updated.threads?.find((t) => t.id === 'session-1')
     expect(archived?.messages.map((m) => m.id)).toEqual(['u1', 'a1', 'summary-active'])
     expect(archived?.compactionPoints).toEqual([activePoint])
     expect(updated.compactionPoints).toBeUndefined()
@@ -204,16 +201,15 @@ describe('thread flows carry compaction points with their messages', () => {
         },
       },
     }
-    repository.sessions.set('session-1', session)
+    await repository.seedSession(session)
 
     await compressAndCreateThread('session-1', 'Summary')
 
     const updated = updatedSession()
     expect(updated.messageForksHash?.[pivot.id]).toBeDefined()
+    expect(updated.threads?.[0].messages.at(-1)?.id).toBe('active-reply')
     expect(
-      buildSessionExportThreads(updated, true, true).map(
-        (thread) => thread.messages.at(-1)?.contentParts.find((part) => part.type === 'text')?.text
-      )
-    ).toEqual(['saved-reply', 'active-reply', 'Previous conversation summary:\n\nSummary'])
+      updated.messageForksHash?.[pivot.id].lists.flatMap((branch) => branch.messages).map((message) => message.id)
+    ).toContain('saved-reply')
   })
 })

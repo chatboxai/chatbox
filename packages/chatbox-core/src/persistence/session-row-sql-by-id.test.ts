@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
+import { projectRowFixture } from '../ports/testing/session-row-fixtures'
 import type { SessionRows } from '../ports/session-row-store'
 import type { MessageRow } from '../session/session-tree/types'
 import { type NodeSessionRowSqlDatabase, openNodeSessionRowDatabase } from './node-sqlite.test-support'
@@ -154,10 +155,11 @@ describe('SqlSessionRowStore bounded by-ID metadata reads', () => {
       }
     })
     const messages = Array.from({ length: 1200 }, (_, index) => message(`m${index}`, index))
-    await writer.writeRows(snapshot(messages))
+    const initial = projectRowFixture(snapshot(messages))
+    await writer.writeRows(initial)
     await writer.applyDiff(
       { sessionId: 'session', threads: { upsert: [], delete: [] }, messages: { upsert: [], delete: ['m50'] } },
-      { ...snapshot(messages), revision: 2 },
+      { ...initial, revision: 2 },
       1
     )
     const wanted = messages.filter((_, index) => index % 2 === 0 && index !== 50).reverse()
@@ -216,7 +218,7 @@ describe('SqlSessionRowStore bounded by-ID metadata reads', () => {
     ])
     await expect(reader.readMessages({ sessionId: 'session', messageIds: ['m1'] })).rejects.toMatchObject({
       name: 'SessionRowStoreError',
-      cause: { message: 'Message metadata exceeds the native response budget' },
+      cause: { message: 'Message structural metadata exceeds the native response budget' },
     })
   })
 

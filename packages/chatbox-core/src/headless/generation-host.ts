@@ -1,7 +1,11 @@
+import { RowBackedSessionRepository } from '../application/session/RowBackedSessionRepository'
+import { SessionRowWriteQueue } from '../application/session/SessionRowWriteQueue'
+import { InMemorySessionRecordStore } from '../persistence/memory-session-record-store'
+import { InMemorySessionRowStore } from '../persistence/memory-session-row-store'
 import { buildContext } from '@shared/context/builder'
 import { convertToModelMessages } from '@shared/services/model-message-converter'
 import type { ModelInterface } from '@shared/models/types'
-import { createMessage, type Message, type Session } from '@shared/types'
+import { createMessage, type Message, type SessionHeader } from '@shared/types'
 import type { ToolSet } from 'ai'
 import { createDefaultSettings } from '../domain/settings/settings-defaults'
 import { GenerationService, type GenerationServiceDependencies } from '../generation/GenerationService'
@@ -15,21 +19,37 @@ export async function generateTerminalSession(options: {
   tools: ToolSet
   maxSteps: number
   signal: AbortSignal
-}): Promise<Session> {
+}): Promise<Message> {
   const target = createMessage('assistant', '')
   const settings = { modelId: options.model.modelId, stream: true, pauseOnToolCallLimit: false }
-  const session: Session = {
+  const header: SessionHeader = {
     id: target.id,
     name: 'Headless terminal evaluation',
     type: 'chat',
     settings,
-    messages: [createMessage('system', options.systemPrompt), createMessage('user', options.instruction), target],
   }
   const globalSettings = createDefaultSettings()
-  const save = (message: Message) => {
-    const index = session.messages.findIndex((candidate) => candidate.id === message.id)
-    if (index < 0) throw new Error(`Unknown headless message: ${message.id}`)
-    session.messages[index] = structuredClone(message)
+  const rows = new InMemorySessionRowStore()
+  const repository = new RowBackedSessionRepository({
+    records: new InMemorySessionRecordStore(),
+    rows,
+    backup: rows,
+    writes: new SessionRowWriteQueue((_id, run) => run()),
+  })
+  await repository.createSessionRows(header, [
+    createMessage('system', options.systemPrompt),
+    createMessage('user', options.instruction),
+    target,
+  ])
+  const save = async (message: Message, onlyIfGenerating = false) => {
+    await repository.executeSessionCommand(header.id, {
+      type: 'update',
+      messageId: message.id,
+      updater: (current) => {
+        if (!current) throw new Error('Terminal generation message is unavailable')
+        return onlyIfGenerating && !current.generating ? current : message
+      },
+    })
   }
   const attachments = { read: async () => null }
   const unsupported = async (): Promise<never> => {
@@ -37,21 +57,27 @@ export async function generateTerminalSession(options: {
   }
   const dependencies: GenerationServiceDependencies<null> = {
     sessions: {
-      getSession: async () => session,
-      getSessionSettings: async () => session.settings,
+      getSessionContextSource: (request) => repository.getSessionContextSource(request),
+      readSessionMessages: (request) => repository.readSessionMessages(request),
+      getSessionSettings: async () => (await repository.getSessionHeader(header.id))?.header.settings,
       updateSessionSettings: async (_id, update) => {
-        session.settings = update(session.settings)
+        await repository.executeSessionCommand(header.id, {
+          type: 'header',
+          updater: (current) => {
+            if (!current) throw new Error('Terminal generation header is unavailable')
+            return { ...current, settings: update(current.settings) }
+          },
+        })
       },
       initializeTargetMessage: async (message) => ({ ...message, generating: true }),
-      persistStreamingMessage: async (_id, message) => save(message),
-      updateStreamingCache: (_id, message) => save(message),
+      persistStreamingMessage: async (_id, message, options) => save(message, options?.onlyIfGenerating),
+      updateStreamingCache: () => {},
       modifyMessage: async (_id, message) => save(message),
-      findMessage: (current, id) => current.messages.find((message) => message.id === id),
-      insertMessageAfter: async (_id, message, anchor) => {
-        if (session.messages.some((item) => item.id === message.id)) return
-        const index = session.messages.findIndex((item) => item.id === anchor)
-        if (index < 0) throw new Error('Headless message anchor is missing')
-        session.messages.splice(index + 1, 0, structuredClone(message))
+      insertMessageAfter: async (_id, message, previousId) => {
+        await repository.executeSessionCommand(header.id, {
+          type: 'structure',
+          operation: { action: 'message-insert-after', message, previousId, requireAnchor: true },
+        })
       },
       handleGenerationError: (error, message) => ({
         ...message,
@@ -93,7 +119,7 @@ export async function generateTerminalSession(options: {
     attachments,
     capabilities: { supports: (capability) => capability === 'agent-mode' },
     host: {
-      getConfig: async () => ({ uuid: session.id }),
+      getConfig: async () => ({ uuid: header.id }),
       getKnowledgeBase: () => undefined,
       getWebBrowsing: () => false,
       getAgentModeEntry: () => ({ value: 'on', locked: true }),
@@ -118,9 +144,11 @@ export async function generateTerminalSession(options: {
     },
     logger: { log: () => undefined },
   }
-  await new GenerationService(dependencies).orchestrate(session.id, target, {
+  await new GenerationService(dependencies).orchestrate(header.id, target, {
     skipAgentModeSuggestion: true,
     externalAbortSignal: options.signal,
   })
-  return session
+  const result = await repository.readSessionMessages({ sessionId: header.id, messageIds: [target.id] })
+  if (!result?.messages[0]) throw new Error('Terminal result is unavailable')
+  return result.messages[0]
 }

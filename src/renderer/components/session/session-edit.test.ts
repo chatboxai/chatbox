@@ -1,14 +1,13 @@
-import { createMessage, type Session } from '@shared/types'
+import { type SessionHeader } from '@shared/types'
 import { describe, expect, it } from 'vitest'
 import { restoreSessionParameters, SESSION_PARAMETER_KEYS } from '@/stores/session/session-settings-inheritance'
-import { applySessionEdit, getSessionSystemPrompt } from './session-edit'
+import { applySessionEdit } from './session-edit'
 
-function makeSession(overrides: Partial<Session> = {}): Session {
+function makeSession(overrides: Partial<SessionHeader> = {}): SessionHeader {
   return {
     id: 'session-1',
     name: 'Weekly report',
     type: 'chat',
-    messages: [createMessage('system', 'Be concise.'), createMessage('user', 'hi')],
     settings: {
       provider: 'openai',
       modelId: 'gpt-4o',
@@ -21,18 +20,6 @@ function makeSession(overrides: Partial<Session> = {}): Session {
 }
 
 describe('applySessionEdit', () => {
-  it('replaces, adds and removes the system prompt', () => {
-    const session = makeSession()
-    expect(getSessionSystemPrompt(applySessionEdit(session, { systemPrompt: 'Answer in French.' }))).toBe(
-      'Answer in French.'
-    )
-    const withoutPrompt = applySessionEdit(session, { systemPrompt: '  ' })
-    expect(withoutPrompt.messages.some((message) => message.role === 'system')).toBe(false)
-    const added = applySessionEdit(withoutPrompt, { systemPrompt: 'New prompt' })
-    expect(added.messages[0].role).toBe('system')
-    expect(getSessionSystemPrompt(added)).toBe('New prompt')
-  })
-
   it('keeps the previous name when the new one is blank', () => {
     expect(applySessionEdit(makeSession(), { name: '   ' }).name).toBe('Weekly report')
     expect(applySessionEdit(makeSession(), { name: ' Pricing ' }).name).toBe('Pricing')

@@ -1,13 +1,21 @@
-import type { Session } from '@shared/types'
+import type { Session, SessionHeader } from '@shared/types'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 const { sessionsById, getSessionMock, updateSessionCacheSyncMock, updateSessionMock } = vi.hoisted(() => {
   const sessions = new Map<string, Session>()
-  type SessionUpdater = Partial<Session> | ((session: Session) => Partial<Session>)
+  type SessionUpdater = Partial<SessionHeader> | ((session: SessionHeader) => SessionHeader)
   const applyUpdate = (sessionId: string, update: SessionUpdater) => {
     const session = sessions.get(sessionId)
     if (!session) return null
-    const patch = typeof update === 'function' ? update(session) : update
+    const {
+      messages: _messages,
+      threads: _threads,
+      messageForksHash: _forks,
+      compactionPoints: _points,
+      threadName: _threadName,
+      ...header
+    } = session
+    const patch = typeof update === 'function' ? update(header) : update
     const next = { ...session, ...patch }
     sessions.set(sessionId, next)
     return next
@@ -40,16 +48,15 @@ vi.mock('@/platform', () => ({
   default: { type: 'web' },
 }))
 
-vi.mock('@/app/renderer-application', () => ({
-  rendererApplication: {
-    sessions: { updateSession: updateSessionMock },
-    sessionQueryBridge: {
-      getSession: getSessionMock,
-      updateSessionCache: updateSessionCacheSyncMock,
+vi.mock('@/app/renderer-application', async () => {
+  const { createRowSessionFixtureReads } = await import('../testing/row-session-fixture')
+  return {
+    rendererApplication: {
+      sessions: { ...createRowSessionFixtureReads(getSessionMock), updateSessionHeader: updateSessionMock },
+      sessionHooks: { useSessionHeader: () => ({ session: null }) },
     },
-    sessionHooks: { useSession: () => ({ session: null }) },
-  },
-}))
+  }
+})
 
 import { uiStore } from '../../uiStore'
 import {
@@ -129,7 +136,9 @@ describe('setSessionAgentMode', () => {
       settings: { agentMode: { value: 'on', locked: true, lockReason: 'message_sent' } },
     })
 
-    await setSessionAgentMode('session-race', 'off')
+    await expect(setSessionAgentMode('session-race', 'off')).rejects.toThrow(
+      'Conversation changed while choosing its mode'
+    )
 
     expect(sessionsById.get('session-race')?.settings?.agentMode).toEqual({
       value: 'on',

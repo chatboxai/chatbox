@@ -1,7 +1,8 @@
-import { isThreadHistoryAvailable, resolveSessionMode, type SessionMode } from '@chatbox/core/session/mode-policy'
+import { rendererApplication } from '@/app/renderer-application'
+import { resolveSessionMode, type SessionMode } from '@chatbox/core/session/mode-policy'
 import { Button, Loader, SegmentedControl } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
-import type { Session } from '@shared/types'
+import type { SessionHeader } from '@shared/types'
 import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Drawer } from 'vaul'
@@ -21,7 +22,7 @@ export function SessionSheet({
   isError,
   onRetry,
 }: {
-  session: Session | undefined
+  session: SessionHeader | undefined
   sessionId?: string
   isError?: boolean
   onRetry?: () => void
@@ -29,10 +30,11 @@ export function SessionSheet({
   const { t } = useTranslation()
   const sessionId = session?.id ?? requestedSessionId ?? ''
   const panel = useSessionPanel(sessionId)
+  const threadQuery = rendererApplication.sessionHooks.useSessionThreads(sessionId, { enabled: panel.open })
   const mode = resolveSessionMode(useSessionAgentMode(sessionId).value)
   const close = useCallback(() => closeSessionPanel(sessionId), [sessionId])
 
-  const showThreads = session ? isThreadHistoryAvailable(session, mode) : false
+  const showThreads = session ? mode === 'chat' || threadQuery.threads.length > 1 : false
   const tab = panel.tab === 'threads' && showThreads ? 'threads' : 'settings'
 
   return (
@@ -97,7 +99,7 @@ export function SessionSheet({
 }
 
 /** Keyed per conversation, so edits still pending when the sheet moves on land in the chat they were typed in. */
-function SheetSessionSettings({ session, mode }: { session: Session; mode: SessionMode }) {
+function SheetSessionSettings({ session, mode }: { session: SessionHeader; mode: SessionMode }) {
   const onEdit = usePersistedSessionEdit(session)
   return <SessionSettingsContent session={session} mode={mode} onEdit={onEdit} />
 }

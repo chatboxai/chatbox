@@ -1,5 +1,5 @@
 import type { SessionHeader } from '@chatbox/core/ports'
-import { type Session, type SessionSettings, SessionSettingsSchema } from '@shared/types'
+import { type SessionSettings, SessionSettingsSchema } from '@shared/types'
 import { useMemo } from 'react'
 import { rendererApplication } from '@/app/renderer-application'
 import type { TokenModel } from '@/packages/token'
@@ -10,7 +10,7 @@ import { type GlobalChatDefaults, inheritChatSettings } from './session-settings
 const useSession = (sessionId: string | null) => rendererApplication.sessionHooks.useSessionHeader(sessionId)
 
 function mergeDefaultSessionSettings(
-  session: Pick<Session, 'type' | 'settings'>,
+  session: Pick<SessionHeader, 'type' | 'settings'>,
   globalSettings: GlobalChatDefaults
 ): SessionSettings {
   if (session.type === 'picture') {
@@ -60,7 +60,7 @@ export async function getSessionSettings(sessionId: string, header?: SessionHead
  * resolution the InputBox feeds into useTokenEstimation, so counts cached
  * against it (e.g. the draft worker's) stay addressable from non-React code.
  */
-export function getSessionTokenModel(session: Pick<Session, 'type' | 'settings'>): TokenModel | undefined {
+export function getSessionTokenModel(session: Pick<SessionHeader, 'type' | 'settings'>): TokenModel | undefined {
   const { provider, modelId } = mergeDefaultSessionSettings(session, settingsStore.getState().getSettings())
   return provider && modelId ? { provider, modelId } : undefined
 }

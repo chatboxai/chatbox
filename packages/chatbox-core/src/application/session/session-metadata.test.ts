@@ -1,11 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import type { Message, Session, SessionMeta } from '../../types'
-import {
-  assertNoMessageDataUpdate,
-  getSessionMetadataSnapshot,
-  hasPausedToolCall,
-  projectSessionMeta,
-} from './session-metadata'
+import { projectSessionMeta } from './session-metadata'
+import { deriveMessageFacts } from '../../session/message-facts'
 
 describe('projectSessionMeta', () => {
   test('preserves the previous pick semantics for absent and explicitly undefined optional fields', () => {
@@ -45,7 +41,11 @@ function session(overrides: Partial<Session>): Session {
   }
 }
 
-describe('hasPausedToolCall', () => {
+function pausedFacts(value: Session) {
+  return value.messages.some((message) => deriveMessageFacts(message).paused)
+}
+
+describe('message pause facts', () => {
   test('detects a paused tool call in the message list', () => {
     const pausedSession = session({
       messages: [
@@ -65,7 +65,7 @@ describe('hasPausedToolCall', () => {
       ],
     })
 
-    expect(hasPausedToolCall(pausedSession)).toBe(true)
+    expect(pausedSession.messages.some((message) => deriveMessageFacts(message).paused)).toBe(true)
   })
 
   test('detects a tool-call-limit pause', () => {
@@ -87,7 +87,7 @@ describe('hasPausedToolCall', () => {
       ],
     })
 
-    expect(hasPausedToolCall(limitedSession)).toBe(true)
+    expect(limitedSession.messages.some((message) => deriveMessageFacts(message).paused)).toBe(true)
   })
 
   test('ignores a paused tool call whose pause reason surfaces no action', () => {
@@ -111,7 +111,7 @@ describe('hasPausedToolCall', () => {
       ],
     })
 
-    expect(hasPausedToolCall(strandedSession)).toBe(false)
+    expect(pausedFacts(strandedSession)).toBe(false)
   })
 
   test('returns false when no tool call is paused', () => {
@@ -119,61 +119,6 @@ describe('hasPausedToolCall', () => {
       messages: [message({ id: 'message-1', contentParts: [{ type: 'text', text: 'hi' }] })],
     })
 
-    expect(hasPausedToolCall(idleSession)).toBe(false)
-  })
-})
-
-describe('session metadata update helpers', () => {
-  test('returns a snapshot without message-owned fields', () => {
-    const result = getSessionMetadataSnapshot(
-      session({
-        messages: [message({ id: 'message-1' })],
-        threads: [
-          {
-            id: 'thread-1',
-            name: 'Thread',
-            messages: [message({ id: 'thread-message-1' })],
-            createdAt: 1,
-          },
-        ],
-        messageForksHash: {
-          'message-1': {
-            position: 0,
-            lists: [{ id: 'fork-1', messages: [message({ id: 'fork-message-1' })] }],
-            createdAt: 1,
-          },
-        },
-        compactionPoints: [{ summaryMessageId: 'summary-1', boundaryMessageId: 'message-1', createdAt: 1 }],
-        settings: {
-          provider: 'openai',
-          modelId: 'gpt-4.1',
-        },
-      })
-    )
-
-    expect(result).toEqual({
-      id: 'session-id',
-      name: 'Session',
-      settings: {
-        provider: 'openai',
-        modelId: 'gpt-4.1',
-      },
-    })
-  })
-
-  test('rejects message-owned fields in metadata updates', () => {
-    expect(() => assertNoMessageDataUpdate({ settings: { modelId: 'gpt-4.1' } })).not.toThrow()
-    expect(() => assertNoMessageDataUpdate({ messages: [] })).toThrow(
-      'updateSession cannot update "messages". Use updateSessionWithMessages for message data.'
-    )
-    expect(() => assertNoMessageDataUpdate({ threads: [] })).toThrow(
-      'updateSession cannot update "threads". Use updateSessionWithMessages for message data.'
-    )
-    expect(() => assertNoMessageDataUpdate({ messageForksHash: {} })).toThrow(
-      'updateSession cannot update "messageForksHash". Use updateSessionWithMessages for message data.'
-    )
-    expect(() => assertNoMessageDataUpdate({ compactionPoints: [] })).toThrow(
-      'updateSession cannot update "compactionPoints". Use updateSessionWithMessages for message data.'
-    )
+    expect(pausedFacts(idleSession)).toBe(false)
   })
 })

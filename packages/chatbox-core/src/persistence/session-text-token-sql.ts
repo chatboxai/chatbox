@@ -83,14 +83,15 @@ function validResult(result: SessionTextTokenResult): boolean {
 function* batches<T>(
   items: readonly T[],
   values: (item: T) => SessionRowSqlBindValue[],
-  limit = BATCH_SIZE
+  limit = BATCH_SIZE,
+  bounded = true
 ): Generator<T[]> {
   let batch: T[] = []
   let bytes = 16 * 1024
   for (const item of items) {
-    const size = encoder.encode(JSON.stringify(values(item))).byteLength + 128
-    if (size + 16 * 1024 > BUDGET) throw new Error('Text token source exceeds the native request budget')
-    if (batch.length === limit || bytes + size > BUDGET) {
+    const size = bounded ? encoder.encode(JSON.stringify(values(item))).byteLength + 128 : 0
+    if (bounded && size + 16 * 1024 > BUDGET) throw new Error('Text token source exceeds the native request budget')
+    if (batch.length === limit || (bounded && bytes + size > BUDGET)) {
       yield batch
       batch = []
       bytes = 16 * 1024
@@ -111,7 +112,10 @@ interface TokenRecord {
 
 /** Same-database numerical owner. Payload reads, staging and conversation CAS remain with the row store. */
 export class SessionTextTokenSqlCache {
-  constructor(private readonly database: SessionRowSqlDatabase) {}
+  constructor(
+    private readonly database: SessionRowSqlDatabase,
+    private readonly boundedReads = true
+  ) {}
 
   async read(sources: readonly SessionTextTokenSource[], checkPresence = true): Promise<SessionTextTokenResult[]> {
     const results: SessionTextTokenResult[] = []
@@ -129,7 +133,8 @@ export class SessionTextTokenSqlCache {
     for (const batch of batches(
       sources.filter((source) => validSource(source) && (!checkPresence || present.has(source.sessionId))),
       values,
-      288
+      288,
+      this.boundedReads
     )) {
       // Keep requested sources as the outer loop so readback probes the existing session/message keys.
       const sql = `WITH requested(request_index,session_id,message_id,payload_id) AS (VALUES ${batch.map((_, i) => `(${i},?,?,?)`).join(',')})

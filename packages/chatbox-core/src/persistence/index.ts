@@ -24,6 +24,7 @@ export {
   type SessionRowSqlBatchOptions,
   type SessionRowSqlBindValue,
   type SessionRowSqlDatabase,
+  type SessionRowSqlReadOptions,
   type SessionRowSqlStatement,
   SqlSessionRowStore,
 } from './session-row-sql'

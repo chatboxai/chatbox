@@ -1,6 +1,3 @@
-import type { SessionStructureSnapshot } from '../ports/session-row-store'
-import type { MessageRowMetadata } from '../session/session-tree/types'
-import { assertSessionThreadPageRevision, validateSessionThreadPageRequest } from './session-thread-page'
 import { throwIfAborted } from '../backup/abort'
 import { type BackupPageLimits, type BackupRow, backupPageLimits } from '../backup/session-port'
 import type { SessionContextMessage, SessionContextRequest, SessionContextRows } from '../ports/session-context-source'
@@ -8,11 +5,8 @@ import {
   type GeneratingMessageRef,
   type SessionMessagesRequest,
   type SessionMessagesSnapshot,
-  type SessionThreadSuffixRequest,
   type SessionMessageWindow,
   type SessionMessageWindowRequest,
-  type SessionThreadPage,
-  type SessionThreadPageRequest,
   type SessionRowCommit,
   SessionRowConflictError,
   type SessionRowSnapshot,
@@ -21,11 +15,16 @@ import {
   type SessionRowStorePort,
   type SessionRows,
   type SessionRowsDiff,
+  type SessionStructureSnapshot,
+  type SessionThreadPage,
+  type SessionThreadPageRequest,
+  type SessionThreadSuffixRequest,
 } from '../ports/session-row-store'
 import type { SessionTextTokenRead, SessionTextTokenResult, SessionTextTokenSource } from '../ports/session-text-tokens'
 import type {
   MessageRow,
   MessageRowKind,
+  MessageRowMetadata,
   MessageRowStatus,
   SessionRecordV2,
   ThreadRow,
@@ -52,6 +51,7 @@ import {
   SessionTextTokenSqlCache,
   textTokenCleanupStatement,
 } from './session-text-token-sql'
+import { assertSessionThreadPageRevision, validateSessionThreadPageRequest } from './session-thread-page'
 
 export type SessionRowSqlBindValue = string | number | null
 
@@ -89,6 +89,11 @@ export interface SessionRowSqlDatabase {
   executeBatch(statements: Iterable<SessionRowSqlStatement>, options?: SessionRowSqlBatchOptions): Promise<void>
 }
 
+export interface SessionRowSqlReadOptions {
+  /** JSON bridge budgets are optional for structured native transports. Row and bind limits still apply. */
+  readByteBudget?: 'bounded' | 'none'
+}
+
 interface ThreadRecord {
   session_id: string
   thread_id: string
@@ -119,6 +124,10 @@ interface ThreadMetadataRecord {
   compaction_points_json_inline: string | null
   session_prompt_context_snapshot_json_inline: string | null
   session_record_json_inline: string | null
+  name_nul_encoded?: number
+  compaction_points_json_nul_encoded?: number
+  session_prompt_context_snapshot_json_nul_encoded?: number
+  session_record_json_nul_encoded?: number
 }
 
 interface MessagePayloadRecord {
@@ -194,16 +203,24 @@ const UPDATE_SESSION_COMMIT_SQL =
 // Four inline fields across eight threads leave room for escaped structural IDs
 // within the metadata response budget. Larger text stays on the sliced path.
 const THREAD_INLINE_TEXT_BYTES = 512
-const THREAD_METADATA_COLUMNS =
-  'session_id, thread_id, seq, length(name) AS name_length, created_at, root_message_id, active_leaf_message_id, length(compaction_points_json) AS compaction_points_json_length, length(session_prompt_context_snapshot_json) AS session_prompt_context_snapshot_json_length, length(session_record_json) AS session_record_json_length, commit_revision, ' +
-  ['name', 'compaction_points_json', 'session_prompt_context_snapshot_json', 'session_record_json']
-    .map(
-      (column) =>
-        `CASE WHEN length(CAST(${column} AS BLOB)) <= ${THREAD_INLINE_TEXT_BYTES} AND instr(${column}, char(0)) = 0 THEN ${column} ELSE NULL END AS ${column}_inline`
-    )
-    .join(', ')
+function threadMetadataColumns(bounded = true): string {
+  return (
+    'session_id, thread_id, seq, length(name) AS name_length, created_at, root_message_id, active_leaf_message_id, length(compaction_points_json) AS compaction_points_json_length, length(session_prompt_context_snapshot_json) AS session_prompt_context_snapshot_json_length, length(session_record_json) AS session_record_json_length, commit_revision, ' +
+    ['name', 'compaction_points_json', 'session_prompt_context_snapshot_json', 'session_record_json']
+      .map((column) =>
+        bounded
+          ? `CASE WHEN length(CAST(${column} AS BLOB)) <= ${THREAD_INLINE_TEXT_BYTES} AND instr(${column}, char(0)) = 0 THEN ${column} ELSE NULL END AS ${column}_inline`
+          : `CASE WHEN instr(${column}, char(0)) > 0 THEN json_quote(${column}) ELSE ${column} END AS ${column}_inline,
+              (instr(${column}, char(0)) > 0) AS ${column}_nul_encoded`
+      )
+      .join(', ')
+  )
+}
+const THREAD_METADATA_COLUMNS = threadMetadataColumns()
 const SELECT_THREADS_PAGE_SQL = `SELECT ${THREAD_METADATA_COLUMNS} FROM session_threads WHERE session_id = ? ORDER BY seq, thread_id LIMIT ? OFFSET ?`
 const SELECT_WINDOW_THREADS_SQL = `SELECT ${THREAD_METADATA_COLUMNS} FROM session_threads WHERE session_id = ? AND (seq = -1 OR thread_id = ?)`
+const SELECT_NATIVE_THREADS_PAGE_SQL = `SELECT ${threadMetadataColumns(false)} FROM session_threads WHERE session_id = ? ORDER BY seq, thread_id LIMIT ? OFFSET ?`
+const SELECT_NATIVE_WINDOW_THREADS_SQL = `SELECT ${threadMetadataColumns(false)} FROM session_threads WHERE session_id = ? AND (seq = -1 OR thread_id = ?)`
 function sqlJsonStringBytes(column: string): string {
   // GLOB stops at NUL; checking it separately keeps suffixes in the escaped path.
   return `(CASE WHEN instr(${column}, char(0)) = 0 AND ${column} NOT GLOB '*[^A-Za-z0-9._:-]*'
@@ -223,6 +240,10 @@ const SELECT_SEARCH_THREADS_PAGE_SQL = `WITH page AS (
 SELECT CASE WHEN response_bytes <= ? THEN thread_id END AS thread_id, page_count,
   (response_bytes > ?) AS oversized FROM sized
 WHERE response_bytes <= ? OR row_number = 1 ORDER BY ${SEARCH_THREAD_ORDER}`
+const SELECT_NATIVE_SEARCH_THREADS_PAGE_SQL = `SELECT thread_id, COUNT(*) OVER () AS page_count, 0 AS oversized FROM (
+  SELECT thread_id, seq FROM session_threads WHERE session_id = ?
+  ORDER BY ${SEARCH_THREAD_ORDER} LIMIT ? OFFSET ?
+) ORDER BY ${SEARCH_THREAD_ORDER}`
 
 function messageRecordEstimatedJsonBytes(prefix = ''): string {
   return `512 + ${[
@@ -242,22 +263,27 @@ function messageRecordEstimatedJsonBytes(prefix = ''): string {
 const MESSAGE_RECORD_ESTIMATED_JSON_BYTES = messageRecordEstimatedJsonBytes()
 // Carry the cumulative budget through recursion so a wide row stops lookahead
 // before traversing the remainder of the requested window.
-function selectWindowMessagePathSql(forward: boolean): string {
+function selectWindowMessagePathSql(forward: boolean, bounded = true): string {
   return `WITH RECURSIVE path AS (
-  SELECT m.*, 0 AS depth, ${messageRecordEstimatedJsonBytes('m.')} AS response_bytes
+  SELECT m.*, 0 AS depth${bounded ? `, ${messageRecordEstimatedJsonBytes('m.')} AS response_bytes` : ''}
   FROM session_messages m
   WHERE m.session_id = ? AND m.thread_id = ? AND m.message_id = ?
   UNION ALL
-  SELECT m.*, path.depth + 1, path.response_bytes + ${messageRecordEstimatedJsonBytes('m.')}
+  SELECT m.*, path.depth + 1${bounded ? `, path.response_bytes + ${messageRecordEstimatedJsonBytes('m.')}` : ''}
   FROM path JOIN session_messages m
     ON m.session_id = path.session_id AND m.thread_id = path.thread_id AND m.message_id = path.${forward ? 'active_child_id' : 'parent_message_id'}
-  WHERE path.depth + 1 < ? AND m.seq ${forward ? '>' : '<'} path.seq AND path.response_bytes < ?
+  WHERE path.depth + 1 < ? AND m.seq ${forward ? '>' : '<'} path.seq${bounded ? ' AND path.response_bytes < ?' : ''}
 )
-SELECT ${MESSAGE_COLUMNS} FROM path WHERE response_bytes <= ? OR depth = 0 ORDER BY depth`
+SELECT ${MESSAGE_COLUMNS} FROM path${bounded ? ' WHERE response_bytes <= ? OR depth = 0' : ''} ORDER BY depth`
 }
 const SELECT_WINDOW_MESSAGE_ANCESTORS_SQL = selectWindowMessagePathSql(false)
 const SELECT_WINDOW_MESSAGE_DESCENDANTS_SQL = selectWindowMessagePathSql(true)
-function selectMessagePageSql(hasCursor: boolean, suffix = false): string {
+function selectMessagePageSql(hasCursor: boolean, suffix = false, bounded = true): string {
+  if (!bounded) {
+    return `SELECT ${MESSAGE_COLUMNS} FROM session_messages
+      WHERE session_id = ?${suffix ? ' AND thread_id = ? AND seq > ?' : ''}${hasCursor ? ' AND (thread_id, seq, message_id) > (?, ?, ?)' : ''}
+      ORDER BY thread_id, seq, message_id LIMIT ?`
+  }
   return `WITH page AS (
     SELECT ${MESSAGE_COLUMNS}
     FROM session_messages
@@ -299,7 +325,7 @@ const PAYLOAD_CHUNK_RESPONSE_OVERHEAD = 96
 // the response envelope within the payload's soft bridge budget.
 const PAYLOAD_CHUNK_SLICE_CHARACTERS = Math.floor((PAYLOAD_READ_RESPONSE_BUDGET - 1024) / 12)
 const THREAD_PAGE_SIZE = 8
-// Keep a metadata response safely below Capacitor's 512 KiB bridge limit. The
+// Reserve bridge headroom with a conservative metadata response budget.
 // Safe identifier characters need no JSON escaping. Other text keeps a six-times
 // allowance, plus fixed object/numeric overhead, before choosing a fitting page.
 const MESSAGE_PAGE_RESPONSE_BUDGET = 384 * 1024
@@ -341,32 +367,49 @@ const CONTEXT_MESSAGE_ESTIMATED_JSON_BYTES = `CASE WHEN ${CONTEXT_MESSAGE_VALID_
 const CONTEXT_PATH_COLUMNS = ['session_id', 'thread_id', ...CONTEXT_MESSAGE_COLUMNS.split(', ')]
   .map((column) => `m.${column}`)
   .join(', ')
-const SELECT_CONTEXT_ANCESTORS_SQL = `WITH RECURSIVE path AS (
+function selectContextAncestorsSql(bounded = true): string {
+  const path = `WITH RECURSIVE path AS (
   SELECT ${CONTEXT_PATH_COLUMNS}, 0 AS depth FROM session_messages m
   WHERE m.session_id = ? AND m.thread_id = ? AND m.message_id = ?
   UNION ALL
   SELECT ${CONTEXT_PATH_COLUMNS}, path.depth + 1 FROM path JOIN session_messages m
     ON m.session_id = path.session_id AND m.thread_id = path.thread_id AND m.message_id = path.parent_message_id
   WHERE path.depth + 1 < ? AND m.seq < path.seq
-), sized AS (
+)`
+  if (!bounded) {
+    return `${path} SELECT ${CONTEXT_MESSAGE_COLUMNS.split(', ')
+      .map((column, index) => `${column} AS ${CONTEXT_MESSAGE_WIRE_ALIASES[index]}`)
+      .join(', ')}, CASE WHEN ${CONTEXT_MESSAGE_VALID_TYPES} THEN 0 ELSE 1 END AS x FROM path ORDER BY depth`
+  }
+  return `${path}, sized AS (
   SELECT ${CONTEXT_MESSAGE_COLUMNS}, depth,
     SUM(${CONTEXT_MESSAGE_ESTIMATED_JSON_BYTES}) OVER (ORDER BY depth) AS response_bytes
   FROM path
 )
 SELECT ${CONTEXT_MESSAGE_COLUMNS.split(', ')
-  .map(
-    (column, index) =>
-      `CASE WHEN response_bytes <= ${MESSAGE_PAGE_RESPONSE_BUDGET} THEN ${column} END AS ${CONTEXT_MESSAGE_WIRE_ALIASES[index]}`
-  )
-  .join(', ')},
+    .map(
+      (column, index) =>
+        `CASE WHEN response_bytes <= ${MESSAGE_PAGE_RESPONSE_BUDGET} THEN ${column} END AS ${CONTEXT_MESSAGE_WIRE_ALIASES[index]}`
+    )
+    .join(', ')},
   (response_bytes > ${MESSAGE_PAGE_RESPONSE_BUDGET}) AS x
 FROM sized WHERE response_bytes <= ${MESSAGE_PAGE_RESPONSE_BUDGET} OR depth = 0
 ORDER BY depth`
+}
+const SELECT_CONTEXT_ANCESTORS_SQL = selectContextAncestorsSql()
+const SELECT_NATIVE_CONTEXT_ANCESTORS_SQL = selectContextAncestorsSql(false)
 const textEncoder = new TextEncoder()
 let payloadSequence = 0
 
-function selectMessageIdsSql(count: number): string {
+function selectMessageIdsSql(count: number, bounded = true): string {
   const requested = Array.from({ length: count }, (_, index) => `(?, ${index})`).join(', ')
+  if (!bounded) {
+    return `WITH requested(requested_id, request_index) AS (VALUES ${requested})
+      SELECT ${MESSAGE_COLUMNS}, request_index, MAX(request_index) OVER () AS last_request_index,
+        0 AS metadata_oversized
+      FROM requested JOIN session_messages m ON m.message_id = requested.requested_id
+      WHERE m.session_id = ? AND request_index >= ? ORDER BY request_index`
+  }
   // An integer input cursor preserves caller order even when IDs are missing or
   // SQLite and JavaScript order Unicode strings differently.
   return `WITH requested(requested_id, request_index) AS (VALUES ${requested}), sized AS (
@@ -402,7 +445,12 @@ function isSafeAsciiPayload(value: string): boolean {
   return /^[\x20-\x7e]*$/.test(value) && !/[<>&/='`]/.test(value)
 }
 
-function selectMessagePayloadChunksSql(count: number, ascii = false): string {
+function selectMessagePayloadChunksSql(count: number, ascii = false, bounded = true): string {
+  if (!bounded) {
+    return `WITH requested(payload_id, request_index) AS (VALUES ${Array.from({ length: count }, (_, index) => `(?, ${index})`).join(', ')})
+      SELECT request_index AS i, chunk_index AS c, value AS v, 0 AS x
+      FROM session_message_payload_chunks JOIN requested USING(payload_id) ORDER BY request_index, chunk_index`
+  }
   return `WITH requested(payload_id, request_index) AS (VALUES ${Array.from({ length: count }, (_, index) => `(?, ${index})`).join(', ')}), chunks AS (
     SELECT request_index, chunk_index, value,
       SUM(CASE WHEN typeof(value) = 'text' AND typeof(chunk_index) = 'integer'
@@ -738,11 +786,23 @@ function toMessageMetadata(record: MessageRecord): MessageRowMetadata {
  */
 export class SqlSessionRowStore implements SessionRowStorePort {
   private initializePromise: Promise<void> | null = null
+  private readonly boundedReads: boolean
 
   constructor(
     private readonly database: SessionRowSqlDatabase,
-    private readonly createBackupId?: () => string
-  ) {}
+    private readonly createBackupId?: () => string,
+    options: SessionRowSqlReadOptions = {}
+  ) {
+    this.boundedReads = options.readByteBudget !== 'none'
+  }
+
+  private get threadsPageSql(): string {
+    return this.boundedReads ? SELECT_THREADS_PAGE_SQL : SELECT_NATIVE_THREADS_PAGE_SQL
+  }
+
+  private get windowThreadsSql(): string {
+    return this.boundedReads ? SELECT_WINDOW_THREADS_SQL : SELECT_NATIVE_WINDOW_THREADS_SQL
+  }
 
   initialize(): Promise<void> {
     if (!this.initializePromise) {
@@ -800,7 +860,7 @@ export class SqlSessionRowStore implements SessionRowStorePort {
       [sessionId]
     )
     active.forEach(checkThread)
-    const { record } = readCommitMetadata(sessionId, await this.readThreadRecords(active), revision)
+    const { record } = readCommitMetadata(sessionId, await this.readThreadRecords(active, true), revision)
     await assertRevision()
     yield bounded({ kind: 'header', record })
     for (let offset = 0; ; offset++) {
@@ -808,7 +868,7 @@ export class SqlSessionRowStore implements SessionRowStorePort {
       const page = await this.database.query<ThreadMetadataRecord>(SELECT_THREADS_PAGE_SQL, [sessionId, 1, offset])
       if (!page.length) break
       page.forEach(checkThread)
-      const threads = await this.readThreadRecords(page)
+      const threads = await this.readThreadRecords(page, true)
       await assertRevision()
       yield bounded({ kind: 'thread', thread: toThreadRow(threads[0]) })
     }
@@ -912,7 +972,7 @@ export class SqlSessionRowStore implements SessionRowStorePort {
         let textTokens: SessionTextTokenRead
         try {
           const threadMetadata = await this.readPages<ThreadMetadataRecord>(
-            SELECT_THREADS_PAGE_SQL,
+            this.threadsPageSql,
             sessionId,
             THREAD_PAGE_SIZE
           )
@@ -946,7 +1006,7 @@ export class SqlSessionRowStore implements SessionRowStorePort {
         assertSessionThreadPageRevision(request, before)
         let page: SessionThreadPage | null
         try {
-          const metadata = await this.database.query<ThreadMetadataRecord>(SELECT_WINDOW_THREADS_SQL, [sessionId, null])
+          const metadata = await this.database.query<ThreadMetadataRecord>(this.windowThreadsSql, [sessionId, null])
           if (!metadata.length) {
             page = null
           } else {
@@ -959,14 +1019,14 @@ export class SqlSessionRowStore implements SessionRowStorePort {
             const commit = readCommitMetadata(sessionId, [{ ...active, session_record_json: sessionRecord }], before)
             const offset = request.cursor?.offset ?? 0
             const rows = await this.database.query<{ thread_id: string | null; page_count: number; oversized: number }>(
-              SELECT_SEARCH_THREADS_PAGE_SQL,
+              this.boundedReads ? SELECT_SEARCH_THREADS_PAGE_SQL : SELECT_NATIVE_SEARCH_THREADS_PAGE_SQL,
               [
                 sessionId,
                 request.limit + 1,
                 offset,
-                MESSAGE_PAGE_RESPONSE_BUDGET,
-                MESSAGE_PAGE_RESPONSE_BUDGET,
-                MESSAGE_PAGE_RESPONSE_BUDGET,
+                ...(this.boundedReads
+                  ? [MESSAGE_PAGE_RESPONSE_BUDGET, MESSAGE_PAGE_RESPONSE_BUDGET, MESSAGE_PAGE_RESPONSE_BUDGET]
+                  : []),
               ]
             )
             if (rows.some((row) => row.oversized || row.thread_id === null)) {
@@ -1009,7 +1069,7 @@ export class SqlSessionRowStore implements SessionRowStorePort {
         assertMessageWindowRevision(request, before)
         let window: SessionMessageWindow | null
         try {
-          const metadata = await this.database.query<ThreadMetadataRecord>(SELECT_WINDOW_THREADS_SQL, [
+          const metadata = await this.database.query<ThreadMetadataRecord>(this.windowThreadsSql, [
             sessionId,
             request.threadId ?? request.cursor?.threadId ?? null,
           ])
@@ -1025,14 +1085,17 @@ export class SqlSessionRowStore implements SessionRowStorePort {
             const selected: MessageRecord[] = []
             while (traversal.nextMessageId !== null && traversal.remaining > 0) {
               const ancestors = await this.database.query<MessageRecord>(
-                traversal.forward ? SELECT_WINDOW_MESSAGE_DESCENDANTS_SQL : SELECT_WINDOW_MESSAGE_ANCESTORS_SQL,
+                this.boundedReads
+                  ? traversal.forward
+                    ? SELECT_WINDOW_MESSAGE_DESCENDANTS_SQL
+                    : SELECT_WINDOW_MESSAGE_ANCESTORS_SQL
+                  : selectWindowMessagePathSql(traversal.forward, false),
                 [
                   sessionId,
                   threadId,
                   traversal.nextMessageId,
                   Math.min(traversal.remaining, MESSAGE_PAGE_MAX_ROWS),
-                  MESSAGE_PAGE_RESPONSE_BUDGET,
-                  MESSAGE_PAGE_RESPONSE_BUDGET,
+                  ...(this.boundedReads ? [MESSAGE_PAGE_RESPONSE_BUDGET, MESSAGE_PAGE_RESPONSE_BUDGET] : []),
                 ]
               )
               if (ancestors.length === 0) traversal.accept(undefined)
@@ -1136,16 +1199,22 @@ export class SqlSessionRowStore implements SessionRowStorePort {
           const selected: ContextMessageRecord[] = []
           let contextPageSize = CONTEXT_MESSAGE_INITIAL_ROWS
           while (traversal.nextMessageId !== null) {
-            const ancestors = await this.database.query<SelectedContextMessageRecord>(SELECT_CONTEXT_ANCESTORS_SQL, [
-              request.sessionId,
-              current.thread.threadId,
-              traversal.nextMessageId,
-              current.checkpoint ? MESSAGE_ANCESTOR_BATCH_SIZE : contextPageSize,
-            ])
+            const ancestors = await this.database.query<SelectedContextMessageRecord>(
+              this.boundedReads ? SELECT_CONTEXT_ANCESTORS_SQL : SELECT_NATIVE_CONTEXT_ANCESTORS_SQL,
+              [
+                request.sessionId,
+                current.thread.threadId,
+                traversal.nextMessageId,
+                current.checkpoint ? MESSAGE_ANCESTOR_BATCH_SIZE : contextPageSize,
+              ]
+            )
             if (ancestors.length === 0) traversal.accept(undefined)
             for (const wireRow of ancestors) {
               if (traversal.nextMessageId === null) break
-              if (wireRow.x === 1) throw new Error('Context metadata exceeds the native response budget')
+              if (wireRow.x === 1)
+                throw new Error(
+                  this.boundedReads ? 'Context metadata exceeds the native response budget' : 'Invalid context metadata'
+                )
               const row: ContextMessageRecord = {
                 message_id: wireRow.i,
                 parent_message_id: wireRow.p,
@@ -1225,7 +1294,7 @@ export class SqlSessionRowStore implements SessionRowStorePort {
       let result: Result | null
       try {
         const metadata = await this.readPages<ThreadMetadataRecord>(
-          SELECT_THREADS_PAGE_SQL,
+          this.threadsPageSql,
           request.sessionId,
           THREAD_PAGE_SIZE
         )
@@ -1251,14 +1320,16 @@ export class SqlSessionRowStore implements SessionRowStorePort {
   private async readMessageRecordsByIds(sessionId: string, ids: string[]): Promise<MessageRecord[]> {
     const unique = [...new Set(ids)]
     const found = new Map<string, MessageRecord>()
-    const baseBytes = MESSAGE_ID_REQUEST_OVERHEAD + textEncoder.encode(JSON.stringify(sessionId)).byteLength + 1
+    const baseBytes = this.boundedReads
+      ? MESSAGE_ID_REQUEST_OVERHEAD + textEncoder.encode(JSON.stringify(sessionId)).byteLength + 1
+      : 0
     for (let offset = 0; offset < unique.length; ) {
       const batch: string[] = []
       let requestBytes = baseBytes
       while (offset < unique.length && batch.length < MESSAGE_PAGE_MAX_ROWS) {
         const id = unique[offset]
-        const idBytes = textEncoder.encode(JSON.stringify(id)).byteLength + 1
-        if (requestBytes + idBytes > MESSAGE_ID_REQUEST_BUDGET) {
+        const idBytes = this.boundedReads ? textEncoder.encode(JSON.stringify(id)).byteLength + 1 : 0
+        if (this.boundedReads && requestBytes + idBytes > MESSAGE_ID_REQUEST_BUDGET) {
           if (batch.length === 0) throw new Error('Message selection ID exceeds the native request budget')
           break
         }
@@ -1266,7 +1337,7 @@ export class SqlSessionRowStore implements SessionRowStorePort {
         requestBytes += idBytes
         offset++
       }
-      const sql = selectMessageIdsSql(batch.length)
+      const sql = selectMessageIdsSql(batch.length, this.boundedReads)
       let cursor = 0
       while (cursor < batch.length) {
         const records = await this.database.query<SelectedMessageRecord>(sql, [...batch, sessionId, cursor])
@@ -1303,12 +1374,12 @@ export class SqlSessionRowStore implements SessionRowStorePort {
 
   async readTextTokenResults(sources: readonly SessionTextTokenSource[]): Promise<SessionTextTokenResult[]> {
     await this.initialize()
-    return new SessionTextTokenSqlCache(this.database).read(sources)
+    return new SessionTextTokenSqlCache(this.database, this.boundedReads).read(sources)
   }
 
   async acceptTextTokenResults(results: readonly SessionTextTokenResult[]): Promise<SessionTextTokenResult[]> {
     await this.initialize()
-    return new SessionTextTokenSqlCache(this.database).accept(results)
+    return new SessionTextTokenSqlCache(this.database, this.boundedReads).accept(results)
   }
 
   private async readTokenSnapshot(sources: Record<string, SessionTextTokenSource>): Promise<SessionTextTokenRead> {
@@ -1499,9 +1570,10 @@ export class SqlSessionRowStore implements SessionRowStorePort {
       const params: SessionRowSqlBindValue[] = [sessionId]
       if (suffix) params.push(suffix.threadId, suffix.afterSeq)
       if (cursor) params.push(cursor.thread_id, cursor.seq, cursor.message_id)
-      params.push(MESSAGE_PAGE_MAX_ROWS, MESSAGE_PAGE_RESPONSE_BUDGET)
+      params.push(MESSAGE_PAGE_MAX_ROWS)
+      if (this.boundedReads) params.push(MESSAGE_PAGE_RESPONSE_BUDGET)
       const page = await this.database.query<MessageRecord>(
-        selectMessagePageSql(cursor !== undefined, Boolean(suffix)),
+        selectMessagePageSql(cursor !== undefined, Boolean(suffix), this.boundedReads),
         params
       )
       if (page.length === 0) return records
@@ -1513,13 +1585,27 @@ export class SqlSessionRowStore implements SessionRowStorePort {
   private async readThreadText(
     record: ThreadMetadataRecord,
     column: 'name' | 'compaction_points_json' | 'session_prompt_context_snapshot_json' | 'session_record_json',
-    length: number | null
+    length: number | null,
+    bounded = this.boundedReads
   ): Promise<string | null> {
+    const inline = record[`${column}_inline`]
+    if (!bounded) {
+      if (inline !== null && typeof inline !== 'string') {
+        throw new Error(`thread ${record.thread_id} has invalid ${column} text`)
+      }
+      // Some SQLite drivers truncate returned strings at NUL. SQL quotes just
+      // those values so the complete stored text survives native conversion.
+      if (record[`${column}_nul_encoded`] === 1 && typeof inline === 'string') {
+        const decoded: unknown = JSON.parse(inline)
+        if (typeof decoded !== 'string') throw new Error(`thread ${record.thread_id} has invalid ${column} text`)
+        return decoded
+      }
+      return inline
+    }
     if (length === null) return null
     if (!Number.isSafeInteger(length) || length < 0) {
       throw new Error(`thread ${record.thread_id} has an invalid ${column} length`)
     }
-    const inline = record[`${column}_inline`]
     if (typeof inline === 'string' && [...inline].length === length) return inline
     let value = ''
     for (let offset = 1; offset <= length; offset += THREAD_TEXT_SLICE_CHARACTERS) {
@@ -1538,23 +1624,28 @@ export class SqlSessionRowStore implements SessionRowStorePort {
     return value
   }
 
-  private async readThreadRecords(records: ThreadMetadataRecord[]): Promise<ThreadRecord[]> {
+  private async readThreadRecords(
+    records: ThreadMetadataRecord[],
+    bounded = this.boundedReads
+  ): Promise<ThreadRecord[]> {
     const hydrated: ThreadRecord[] = []
     for (const record of records) {
       const [name, compactionPoints, promptSnapshot, sessionRecord] = await Promise.all([
-        this.readThreadText(record, 'name', record.name_length === null ? null : Number(record.name_length)),
-        this.readThreadText(record, 'compaction_points_json', Number(record.compaction_points_json_length)),
+        this.readThreadText(record, 'name', record.name_length === null ? null : Number(record.name_length), bounded),
+        this.readThreadText(record, 'compaction_points_json', Number(record.compaction_points_json_length), bounded),
         this.readThreadText(
           record,
           'session_prompt_context_snapshot_json',
           record.session_prompt_context_snapshot_json_length === null
             ? null
-            : Number(record.session_prompt_context_snapshot_json_length)
+            : Number(record.session_prompt_context_snapshot_json_length),
+          bounded
         ),
         this.readThreadText(
           record,
           'session_record_json',
-          record.session_record_json_length === null ? null : Number(record.session_record_json_length)
+          record.session_record_json_length === null ? null : Number(record.session_record_json_length),
+          bounded
         ),
       ])
       if (compactionPoints === null) {
@@ -1681,9 +1772,13 @@ export class SqlSessionRowStore implements SessionRowStorePort {
     let cursor = 0
 
     while (cursor < missing.length) {
-      const firstIdBytes = textEncoder.encode(JSON.stringify(missing[cursor].payload_id)).byteLength + 1
+      const firstIdBytes = this.boundedReads
+        ? textEncoder.encode(JSON.stringify(missing[cursor].payload_id)).byteLength + 1
+        : 0
       const ascii: boolean =
-        mode === 'sampled' && ASCII_PAYLOAD_ID_REQUEST_OVERHEAD + firstIdBytes <= PAYLOAD_READ_REQUEST_BUDGET
+        this.boundedReads &&
+        mode === 'sampled' &&
+        ASCII_PAYLOAD_ID_REQUEST_OVERHEAD + firstIdBytes <= PAYLOAD_READ_REQUEST_BUDGET
       const batch: Record[] = []
       let batchBytes = 0
       let requestBytes = ascii ? ASCII_PAYLOAD_ID_REQUEST_OVERHEAD : PAYLOAD_ID_REQUEST_OVERHEAD
@@ -1691,6 +1786,10 @@ export class SqlSessionRowStore implements SessionRowStorePort {
       for (let index = cursor; index < missing.length && batch.length < PAYLOAD_READ_BATCH_MESSAGES; index += 1) {
         const record = missing[index]
         const { chunkCount, expectedLength } = this.validatePayloadManifest(record)
+        if (!this.boundedReads) {
+          batch.push(record)
+          continue
+        }
         const idRequestBytes = textEncoder.encode(JSON.stringify(record.payload_id)).byteLength + 1
         if (PAYLOAD_ID_REQUEST_OVERHEAD + idRequestBytes > PAYLOAD_READ_REQUEST_BUDGET) {
           throw new Error('Message payload ID exceeds the native request budget')
@@ -1717,7 +1816,7 @@ export class SqlSessionRowStore implements SessionRowStorePort {
         continue
       }
       const wireChunks = await this.database.query<SelectedPayloadWireRecord>(
-        selectMessagePayloadChunksSql(batch.length, ascii),
+        selectMessagePayloadChunksSql(batch.length, ascii, this.boundedReads),
         batch.map((record) => record.payload_id)
       )
       if (wireChunks.some((chunk) => chunk.x === 1)) {
@@ -1747,7 +1846,7 @@ export class SqlSessionRowStore implements SessionRowStorePort {
         if (list) list.push(chunk)
         else payloads.set(chunk.payload_id, [chunk])
       }
-      if (mode === 'sampling') {
+      if (this.boundedReads && mode === 'sampling') {
         for (const record of batch) this.parseMessagePayload(record, payloads.get(record.payload_id) ?? [])
         if (chunks.every((chunk) => isSafeAsciiPayload(chunk.value))) {
           observedExpansion = chunks.reduce(

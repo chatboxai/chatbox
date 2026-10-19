@@ -5,6 +5,7 @@ import {
 } from './session-branch-preview'
 import type { SessionBranchPreviewRequest } from '../ports/session-branch-source'
 import {
+  SESSION_TOKEN_PAGE_MESSAGES,
   validateTokenCacheRequest,
   validTokenCacheResult,
   type SessionTokenCacheRequest,
@@ -463,7 +464,7 @@ export class InMemorySessionRowStore implements SessionRowStorePort, BackupSessi
     return clone({ record: state.record, revision: state.revision, entries })
   }
   async acceptTokenCache(results: readonly SessionTokenCacheResult[]): Promise<void> {
-    if (results.length > 16) throw new Error('Token cache write exceeds page size')
+    if (results.length > SESSION_TOKEN_PAGE_MESSAGES) throw new Error('Token cache write exceeds page size')
     for (const result of results) {
       if (!validTokenCacheResult(result)) continue
       const { identity, cacheKey, value } = result

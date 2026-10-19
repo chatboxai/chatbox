@@ -3,7 +3,7 @@ import type {
   SessionTokenCacheRequest,
   SessionTokenCacheResult,
 } from '../ports/session-token-cache'
-import { validTokenCachedValue, validTokenCacheResult } from '../ports/session-token-cache'
+import { SESSION_TOKEN_PAGE_MESSAGES, validTokenCachedValue, validTokenCacheResult } from '../ports/session-token-cache'
 import type { SessionRowSqlDatabase } from './session-row-sql'
 
 export const SESSION_TOKEN_CACHE_SQL = `
@@ -63,7 +63,7 @@ export async function acceptSqlTokenCache(
   database: SessionRowSqlDatabase,
   results: readonly SessionTokenCacheResult[]
 ): Promise<void> {
-  if (results.length > 16) throw new Error('Token cache write exceeds page size')
+  if (results.length > SESSION_TOKEN_PAGE_MESSAGES) throw new Error('Token cache write exceeds page size')
   const valid = results.filter(validTokenCacheResult)
   if (!valid.length) return
   await database.executeBatch(

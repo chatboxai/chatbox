@@ -1,4 +1,4 @@
-import { SESSION_TOKEN_PAGE_BYTES } from '../../ports/session-token-cache'
+import { SESSION_TOKEN_PAGE_BYTES, SESSION_TOKEN_PAGE_MESSAGES } from '../../ports/session-token-cache'
 import { selectContextEntries, type ContextSelectionEntry } from '@shared/context/builder'
 import { findLatestApplicableCompactionPoint } from '@shared/context/compaction-points'
 import { isContextEligibleMessage } from '@shared/context/message-eligibility'
@@ -191,10 +191,10 @@ export async function readRowContextSource(
   }
   const ids = [...new Set([...candidates.map((entry) => entry.id), ...(plan.target ? [plan.target.messageId] : [])])]
   const messages = new Map<string, Message>()
-  for (let index = 0; index < ids.length; index += 16) {
+  for (let index = 0; index < ids.length; index += SESSION_TOKEN_PAGE_MESSAGES) {
     const selection = await rows.readMessages({
       sessionId: request.sessionId,
-      messageIds: ids.slice(index, index + 16),
+      messageIds: ids.slice(index, index + SESSION_TOKEN_PAGE_MESSAGES),
       expectedRevision: plan.revision,
     })
     if (!selection) throw new SessionRowConflictError(request.sessionId, plan.revision, null)
@@ -251,7 +251,13 @@ export async function readRowTokenPage(
   request: SessionTokenPageRequest
 ): Promise<SessionTokenPage> {
   const { plan, offset, limit } = request
-  if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 16)
+  if (
+    !Number.isSafeInteger(offset) ||
+    offset < 0 ||
+    !Number.isSafeInteger(limit) ||
+    limit < 1 ||
+    limit > SESSION_TOKEN_PAGE_MESSAGES
+  )
     throw new Error('Invalid token page')
   const ids = plan.messageIds.slice(offset, offset + limit)
   const cache = await rows.readTokenCache({

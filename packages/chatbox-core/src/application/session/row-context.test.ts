@@ -1,3 +1,4 @@
+import { SESSION_TOKEN_PAGE_MESSAGES } from '../../ports/session-token-cache'
 import { describe, expect, test, vi } from 'vitest'
 import { selectContextMessages } from '@shared/context/builder'
 import { deriveMessageFacts, addSummaryRow, emptyThreadSummary } from '../../session/message-facts'
@@ -57,6 +58,17 @@ async function fixture(count = 80, compact = false) {
 }
 
 describe('row context and independent token pages', () => {
+  test('reads complete generation context in shared-size batches', async () => {
+    const f = await fixture(SESSION_TOKEN_PAGE_MESSAGES * 2 + 7)
+    const read = vi.spyOn(f.store, 'readMessages')
+    const source = await readRowContextSource(f.store, { sessionId: 's', targetMessageId: f.messages.at(-1)!.id })
+    expect(source?.candidateMessages).toEqual(f.messages.slice(0, -1))
+    const batches = read.mock.calls.map(([request]) => request.messageIds)
+    expect(batches.some((ids) => ids.length === SESSION_TOKEN_PAGE_MESSAGES)).toBe(true)
+    expect(batches.every((ids) => ids.length <= SESSION_TOKEN_PAGE_MESSAGES)).toBe(true)
+    expect(new Set(batches.flat())).toEqual(new Set(f.messages.map((message) => message.id)))
+  })
+
   test.each([0, 20, 50, undefined])('token identities match send selection for history limit %s', async (limit) => {
     const f = await fixture(80, true)
     const read = vi.spyOn(f.store, 'readMessages')

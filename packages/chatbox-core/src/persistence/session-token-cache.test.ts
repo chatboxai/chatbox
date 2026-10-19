@@ -1,3 +1,4 @@
+import { createRowTokenPlan, readRowTokenPage } from '../application/session/row-context'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { InMemorySessionRowStore } from '../testing/InMemorySessionRowStore'
 import { testTokenCache } from '../ports/testing/session-token-cache-contract'
@@ -5,7 +6,11 @@ import { openNodeSessionRowDatabase, type NodeSessionRowSqlDatabase } from './no
 import { SqlSessionRowStore } from './session-row-sql'
 import { InMemorySessionRepository } from '../testing/InMemorySessionRepository'
 import { TokenEstimationService } from '../application/token-estimation/TokenEstimationService'
-import { SESSION_TOKEN_CACHE_VERSION, SESSION_TOKEN_PAGE_BYTES } from '../ports/session-token-cache'
+import {
+  SESSION_TOKEN_CACHE_VERSION,
+  SESSION_TOKEN_PAGE_BYTES,
+  SESSION_TOKEN_PAGE_MESSAGES,
+} from '../ports/session-token-cache'
 const databases: NodeSessionRowSqlDatabase[] = []
 afterEach(() => {
   vi.restoreAllMocks()
@@ -13,6 +18,56 @@ afterEach(() => {
 })
 for (const kind of ['memory', 'SQL'] as const)
   describe(`${kind} numerical token projection`, () => {
+    it('accepts a full shared-size page and rejects oversized reads and writes', async () => {
+      const fixture = new InMemorySessionRepository()
+      const count = SESSION_TOKEN_PAGE_MESSAGES + 1
+      await fixture.createSessionRows(
+        { id: 'page-boundary', name: 'Page boundary' },
+        Array.from({ length: count }, (_, i) => ({
+          id: `m${i}`,
+          role: 'user' as const,
+          contentParts: [{ type: 'text' as const, text: `Message ${i}` }],
+        }))
+      )
+      const database = kind === 'SQL' ? openNodeSessionRowDatabase() : null
+      if (database) databases.push(database)
+      const store = database ? new SqlSessionRowStore(database) : fixture.rowStore
+      if (database) await store.writeRows((await fixture.rowStore.readSnapshot('page-boundary'))!)
+      const plan = (await createRowTokenPlan(store, { sessionId: 'page-boundary' }))!
+      const request = {
+        plan,
+        offset: 0,
+        limit: SESSION_TOKEN_PAGE_MESSAGES,
+        cacheKey: `${SESSION_TOKEN_CACHE_VERSION}:default:0:0`,
+      }
+      const page = await readRowTokenPage(store, request)
+      expect(page.messages).toHaveLength(SESSION_TOKEN_PAGE_MESSAGES)
+      expect(page.nextOffset).toBe(SESSION_TOKEN_PAGE_MESSAGES)
+      const results = page.entries.map((identity) => ({
+        identity,
+        cacheKey: request.cacheKey,
+        value: { text: 12, attachments: 0, toolCalls: 0, approximate: false },
+      }))
+      await store.acceptTokenCache(results)
+      const warm = await readRowTokenPage(store, request)
+      expect(warm.messages).toEqual([])
+      expect(warm.entries.map((entry) => entry.value)).toEqual(results.map((result) => result.value))
+      expect(
+        (await readRowTokenPage(store, { ...request, offset: SESSION_TOKEN_PAGE_MESSAGES })).messages
+      ).toHaveLength(1)
+      await expect(readRowTokenPage(store, { ...request, limit: count })).rejects.toThrow('Invalid token page')
+      await expect(
+        store.readTokenCache({
+          sessionId: plan.sessionId,
+          messageIds: plan.messageIds,
+          expectedRevision: plan.revision,
+          cacheKey: request.cacheKey,
+        })
+      ).rejects.toThrow('Invalid token cache selection')
+      await expect(store.acceptTokenCache([...results, results[0]])).rejects.toThrow(
+        'Token cache write exceeds page size'
+      )
+    })
     it('returns warm counts without body reads and rejects stale payload results', async () => {
       if (kind === 'memory') return testTokenCache(new InMemorySessionRowStore())
       const db = openNodeSessionRowDatabase()
@@ -55,7 +110,7 @@ it('limits cache-miss payload pages by bytes and keeps one oversized message alo
   const first = await repo.readSessionTokenPage({
     plan,
     offset: 0,
-    limit: 16,
+    limit: SESSION_TOKEN_PAGE_MESSAGES,
     cacheKey: `${SESSION_TOKEN_CACHE_VERSION}:default:0:0`,
   })
   expect(first.messages.map((message) => message.id)).toEqual(['a'])

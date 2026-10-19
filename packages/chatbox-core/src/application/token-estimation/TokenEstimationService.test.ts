@@ -1,7 +1,9 @@
+import { SESSION_TOKEN_PAGE_MESSAGES } from '../../ports/session-token-cache'
 import { selectContextMessages } from '@shared/context'
 import { setRuntimeRegistry } from '@shared/model-registry'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Message } from '../../types'
+import { SessionEventBus } from '../session/session-events'
 import {
   SESSION_TEXT_TOKEN_VERSION,
   type SessionTokenCacheResult,
@@ -24,6 +26,7 @@ const message = (id: string, text = 'batch content'): Message => ({
 })
 function fixture(messages: Message[], get = vi.fn(async (_key: string): Promise<string | null> => null)) {
   let payloadVersion = 0
+  const events = new SessionEventBus()
   const accepted: SessionTextTokenResult[] = []
   const numerical = new Map<string, SessionTokenCacheResult>()
   const repository = {
@@ -34,7 +37,7 @@ function fixture(messages: Message[], get = vi.fn(async (_key: string): Promise<
     ),
     createSessionTokenPlan: vi.fn<SessionTokenRepositoryPort['createSessionTokenPlan']>(async (request) => ({
       sessionId: request.sessionId,
-      revision: 1,
+      revision: payloadVersion + 1,
       header: { id: request.sessionId, name: 'Tokens' },
       thread: {
         sessionId: request.sessionId,
@@ -102,7 +105,8 @@ function fixture(messages: Message[], get = vi.fn(async (_key: string): Promise<
     ),
   }
   return {
-    service: new TokenEstimationService({ get }, repository),
+    service: new TokenEstimationService({ get }, repository, events),
+    events,
     repository,
     get,
     changePayload() {
@@ -139,17 +143,23 @@ describe('row token estimation', () => {
     expect(instructions.contextMessageCount).toBe(0)
     expect(progress.mock.calls.at(-1)?.[0].contextTokens).toBe(result.contextTokens)
   })
-  it('reads at most sixteen bodies per page and cancels before the next page', async () => {
-    const f = fixture(Array.from({ length: 40 }, (_, i) => message(`m${i}`)))
+  it('uses the shared page limit and cancels before the next page', async () => {
+    const total = SESSION_TOKEN_PAGE_MESSAGES * 2 + 7
+    const f = fixture(Array.from({ length: total }, (_, i) => message(`m${i}`)))
     const progress = vi.fn()
     await f.service.estimate({ sessionId: 's' }, { onProgress: progress })
     expect(progress.mock.calls.map(([, done, total]) => [done, total])).toEqual([
-      [16, 40],
-      [32, 40],
-      [40, 40],
+      [SESSION_TOKEN_PAGE_MESSAGES, total],
+      [SESSION_TOKEN_PAGE_MESSAGES * 2, total],
+      [total, total],
     ])
     expect(progress.mock.calls.map(([result]) => result.approximation.context)).toEqual([true, true, false])
-    expect(f.repository.readSessionTokenPage.mock.calls.map(([request]) => request.limit)).toEqual([16, 16, 16])
+    expect(f.repository.readSessionTokenPage.mock.calls.map(([request]) => request.limit)).toEqual([
+      SESSION_TOKEN_PAGE_MESSAGES,
+      SESSION_TOKEN_PAGE_MESSAGES,
+      SESSION_TOKEN_PAGE_MESSAGES,
+    ])
+    await f.events.publish({ type: 'session-list-reset' })
     const controller = new AbortController()
     f.repository.readSessionTokenPage.mockClear()
     await expect(
@@ -199,6 +209,153 @@ describe('row token estimation', () => {
     expect(attached.tokenCountMap).toBeUndefined()
     expect(f.repository.acceptSessionTextTokenResults).toHaveBeenCalled()
   })
+  it('reuses completed history for sending while recalculating draft and instructions', async () => {
+    const f = fixture(Array.from({ length: 33 }, (_, i) => message(`m${i}`)))
+    const history = await f.service.estimate({ sessionId: 's' })
+    const pages = f.repository.readSessionTokenPage.mock.calls.length
+    const progress = vi.fn()
+    const draft = message('draft', 'new input '.repeat(20))
+    const instructions = 'Updated memory '.repeat(30)
+    const expected = await service.estimate({ constructedMessage: draft, additionalInstructions: instructions })
+    const sent = await f.service.estimate(
+      {
+        sessionId: 's',
+        constructedMessage: draft,
+        maxContextMessageCount: Number.MAX_SAFE_INTEGER,
+        resolveInstructions: async () => instructions,
+      },
+      { onProgress: progress }
+    )
+    expect(f.repository.readSessionTokenPage).toHaveBeenCalledTimes(pages)
+    expect(f.repository.createSessionTokenPlan).toHaveBeenCalledTimes(2)
+    expect(sent.currentInputTokens).toBe(expected.currentInputTokens)
+    expect(sent.contextTokens).toBe(history.contextTokens + expected.contextTokens)
+    expect(sent.totalTokens).toBe(history.totalTokens + expected.totalTokens)
+    expect(progress).toHaveBeenLastCalledWith(sent, 33, 33)
+    const plain = await f.service.estimate({ sessionId: 's' })
+    expect(plain).toEqual(history)
+  })
+
+  it('validates revision, context range, thread and tokenization policy before reuse', async () => {
+    const messages = Array.from({ length: 120 }, (_, i) => message(`m${i}`))
+    const f = fixture(messages)
+    await f.service.estimate({ sessionId: 's' })
+    f.repository.readSessionTokenPage.mockClear()
+    messages[0] = message('m0', 'Changed history '.repeat(100))
+    f.changePayload()
+    const changed = await f.service.estimate({ sessionId: 's' })
+    expect(f.repository.readSessionTokenPage).toHaveBeenCalledTimes(2)
+    const limited = await f.service.estimate({ sessionId: 's', maxContextMessageCount: 4 })
+    expect(limited.contextMessageCount).toBe(4)
+    expect(limited.contextTokens).toBeLessThan(changed.contextTokens)
+    expect(f.repository.readSessionTokenPage).toHaveBeenCalledTimes(3)
+    await f.service.estimate({ sessionId: 's', model: { provider: 'deepseek', modelId: 'deepseek-chat' } })
+    expect(f.repository.readSessionTokenPage).toHaveBeenCalledTimes(5)
+    await f.service.estimate({ sessionId: 's', sandboxMode: true })
+    expect(f.repository.readSessionTokenPage).toHaveBeenCalledTimes(7)
+    await f.service.estimate({ sessionId: 's', modelSupportToolUseForFile: true })
+    expect(f.repository.readSessionTokenPage).toHaveBeenCalledTimes(9)
+    const plan = (await f.repository.createSessionTokenPlan({ sessionId: 's' }))!
+    f.repository.createSessionTokenPlan.mockResolvedValue({ ...plan, thread: { ...plan.thread, threadId: 'other' } })
+    await f.service.estimate({ sessionId: 's' })
+    expect(f.repository.readSessionTokenPage).toHaveBeenCalledTimes(11)
+  })
+
+  it('invalidates aggregates on deletion and replacement even when revisions are reused', async () => {
+    const f = fixture([message('m')])
+    await f.service.estimate({ sessionId: 's' })
+    await f.events.publish({ type: 'session-deleted', ids: ['s'] })
+    await f.service.estimate({ sessionId: 's' })
+    await f.events.publish({ type: 'session-list-reset' })
+    await f.service.estimate({ sessionId: 's' })
+    expect(f.repository.readSessionTokenPage).toHaveBeenCalledTimes(3)
+  })
+
+  it('does not retain an aggregate completed across a source reset', async () => {
+    const f = fixture([message('m')])
+    await f.service.estimate(
+      { sessionId: 's' },
+      {
+        onProgress: () => {
+          void f.events.publish({ type: 'session-list-reset' })
+        },
+      }
+    )
+    await f.service.estimate({ sessionId: 's' })
+    expect(f.repository.readSessionTokenPage).toHaveBeenCalledTimes(2)
+  })
+
+  it('never reuses a canceled partial estimate', async () => {
+    const f = fixture(Array.from({ length: 233 }, (_, i) => message(`m${i}`)))
+    const controller = new AbortController()
+    await expect(
+      f.service.estimate(
+        { sessionId: 's' },
+        {
+          signal: controller.signal,
+          onProgress: () => controller.abort(),
+        }
+      )
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    f.repository.readSessionTokenPage.mockClear()
+    const result = await f.service.estimate({ sessionId: 's' })
+    expect(result.contextMessageCount).toBe(233)
+    expect(f.repository.readSessionTokenPage).toHaveBeenCalledTimes(3)
+  })
+
+  it('bounds aggregate retention and requires lifecycle events for reuse', async () => {
+    const f = fixture([message('m')])
+    for (let i = 0; i < 17; i++) await f.service.estimate({ sessionId: `s${i}` })
+    f.repository.readSessionTokenPage.mockClear()
+    await f.service.estimate({ sessionId: 's16' })
+    expect(f.repository.readSessionTokenPage).not.toHaveBeenCalled()
+    await f.service.estimate({ sessionId: 's0' })
+    expect(f.repository.readSessionTokenPage).toHaveBeenCalledTimes(1)
+    const isolated = new TokenEstimationService({ get: f.get }, f.repository)
+    await isolated.estimate({ sessionId: 's16' })
+    await isolated.estimate({ sessionId: 's16' })
+    expect(f.repository.readSessionTokenPage).toHaveBeenCalledTimes(3)
+  })
+
+  it('reuses stable history and only rereads mutable attachments', async () => {
+    const attached: Message = {
+      ...message('file'),
+      files: [{ id: 'file', name: 'notes.txt', fileType: 'text/plain', storageKey: 'notes' }],
+    }
+    let content = 'Initial document'
+    const f = fixture(
+      [...Array.from({ length: 40 }, (_, i) => message(`m${i}`)), attached],
+      vi.fn(async () => content)
+    )
+    const first = await f.service.estimate({ sessionId: 's' })
+    f.repository.readSessionTokenPage.mockClear()
+    content = 'Updated document '.repeat(100)
+    const second = await f.service.estimate({ sessionId: 's' })
+    expect(f.repository.readSessionTokenPage).toHaveBeenCalledTimes(1)
+    expect(f.repository.readSessionTokenPage.mock.calls[0][0].plan.messageIds).toEqual(['file'])
+    expect(second.contextMessageCount).toBe(41)
+    expect(second.contextTokens).toBeGreaterThan(first.contextTokens)
+    expect(f.get).toHaveBeenCalledTimes(2)
+    expect(await f.service.estimate({ sessionId: 's' })).toEqual(second)
+  })
+
+  it('rechecks missing attachments without retaining their incomplete status in the stable sum', async () => {
+    const attached: Message = {
+      ...message('file'),
+      files: [{ id: 'file', name: 'notes.txt', fileType: 'text/plain', storageKey: 'notes' }],
+    }
+    const get = vi
+      .fn<(_key: string) => Promise<string | null>>()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue('Recovered content')
+    const f = fixture([message('stable'), attached], get)
+    expect((await f.service.estimate({ sessionId: 's' })).missingAttachments?.context).toBe(true)
+    const recovered = await f.service.estimate({ sessionId: 's' })
+    expect(recovered.missingAttachments?.context).toBe(false)
+    expect(recovered.approximation.context).toBe(false)
+    expect(f.repository.readSessionTokenPage.mock.calls[1][0].plan.messageIds).toEqual(['file'])
+  })
+
   it('rechecks external attachment content for every independent estimate', async () => {
     const attached: Message = {
       ...message('file'),

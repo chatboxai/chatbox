@@ -1,6 +1,7 @@
 import type { SessionRowCommit } from './session-row-store'
 
 export const SESSION_TOKEN_CACHE_VERSION = 'history-breakdown-v1'
+export const SESSION_TOKEN_PAGE_MESSAGES = 100
 export const SESSION_TOKEN_PAGE_BYTES = 2 * 1024 * 1024
 
 /** Numerical projection of one immutable message payload and attachment policy. */
@@ -40,7 +41,7 @@ export function validateTokenCacheRequest(request: SessionTokenCacheRequest): vo
   if (
     !request.sessionId ||
     new TextEncoder().encode(request.sessionId).length > 1024 ||
-    request.messageIds.length > 16 ||
+    request.messageIds.length > SESSION_TOKEN_PAGE_MESSAGES ||
     request.messageIds.some((id) => !id || new TextEncoder().encode(id).length > 1024) ||
     !Number.isSafeInteger(request.expectedRevision) ||
     request.expectedRevision < 1 ||

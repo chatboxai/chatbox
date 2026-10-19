@@ -2,4 +2,8 @@ import { TokenEstimationService } from '@chatbox/core/application/token-estimati
 import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
 import { rendererApplication } from '@/app/renderer-application'
 
-export const rendererTokenEstimation = new TokenEstimationService(currentBlobStorage, rendererApplication.sessions)
+export const rendererTokenEstimation = new TokenEstimationService(
+  currentBlobStorage,
+  rendererApplication.sessions,
+  rendererApplication.sessionEvents
+)

@@ -128,7 +128,8 @@ describe.each(drivers)('revision-owned header and transcript on %s', (driver) =>
       updater: { contentParts: [{ type: 'text', text: 'External' }] },
     })
     expect(await window.openSearch('m50')).toBe(true)
-    expect(window.getSnapshot().rows[0].message.contentParts).toEqual([{ type: 'text', text: 'External' }])
+    const target = window.getSnapshot().rows.find((row) => row.messageId === 'm50')
+    expect(target?.message.contentParts).toEqual([{ type: 'text', text: 'External' }])
     expect(window.getSnapshot().revision).toBe(await h.rows.getRevision('s'))
     acknowledge(window)
   })

@@ -3,12 +3,18 @@ import type { CompactionPoint, Message } from '@shared/types'
 import { uploadedFilePath } from '@shared/uploaded-file-tools'
 import { describe, expect, it, vi } from 'vitest'
 import { buildContext } from './builder'
+import { buildCompactionHandoff, getContextHistoryStartNote } from './compaction-handoff'
+import { CONTEXT_HISTORY_START_MESSAGE_ID } from './model-projection'
 import type { AttachmentResolver } from './types'
 
 function createMockResolver(contents: Map<string, string> = new Map()): AttachmentResolver {
   return {
     read: vi.fn().mockImplementation(async (key: string) => contents.get(key) ?? null),
   }
+}
+
+function historyIds(messages: Message[]): string[] {
+  return messages.map((message) => message.id).filter((id) => id !== CONTEXT_HISTORY_START_MESSAGE_ID)
 }
 
 function createMessage(overrides: Partial<Message> & { id: string; role: Message['role'] }): Message {
@@ -130,7 +136,17 @@ describe('buildContext', () => {
 
       // Split segments are ordinary history messages: plain tail slicing keeps
       // the steer between its segment and continuation without special casing.
-      expect(result.map((message) => message.id)).toEqual(['segment', 'steered', 'continuation'])
+      // The window then opens with an assistant turn, so a user note leads it.
+      expect(result.map((message) => message.id)).toEqual([
+        CONTEXT_HISTORY_START_MESSAGE_ID,
+        'segment',
+        'steered',
+        'continuation',
+      ])
+      expect(result[0]).toMatchObject({
+        role: 'user',
+        contentParts: [{ type: 'text', text: getContextHistoryStartNote() }],
+      })
     })
 
     it('should limit messages to maxContextMessageCount', async () => {
@@ -239,8 +255,8 @@ describe('buildContext', () => {
       // 21 messages: overflow 1 → drop one whole chunk (5). 24: overflow 4 →
       // still one chunk. The boundary (and thus the request prefix) is stable
       // across the intermediate turns instead of sliding every turn.
-      expect(base[0].id).toBe('m5')
-      expect(grown[0].id).toBe('m5')
+      expect(historyIds(base)[0]).toBe('m5')
+      expect(historyIds(grown)[0]).toBe('m5')
       expect(grown.slice(0, base.length).map((m) => m.id)).toEqual(base.map((m) => m.id))
     })
 
@@ -255,7 +271,7 @@ describe('buildContext', () => {
     it('never serves more than the configured limit', async () => {
       for (let count = 20; count <= 30; count += 1) {
         const result = await buildContext(makeMessages(count), limitOptions)
-        expect(result.length).toBeLessThanOrEqual(20)
+        expect(historyIds(result).length).toBeLessThanOrEqual(20)
       }
     })
   })
@@ -289,9 +305,15 @@ describe('buildContext', () => {
         compactionPoints,
       })
 
-      expect(result.map((m) => m.id)).toContain('summary')
-      expect(result.map((m) => m.id)).not.toContain('1')
-      expect(result.map((m) => m.id)).not.toContain('2')
+      expect(result.map((m) => m.id)).toEqual(['sys', '3', '4'])
+      expect(result[1]).toMatchObject({
+        role: 'user',
+        contentParts: [
+          { type: 'text', text: buildCompactionHandoff('Summary of conversation', 'reference').text },
+          { type: 'text', text: 'Test message' },
+        ],
+      })
+      expect(messages.find((message) => message.id === 'summary')?.role).toBe('assistant')
     })
 
     it('summarizes a finalized segment behind the compaction boundary', async () => {
@@ -341,9 +363,11 @@ describe('buildContext', () => {
         compactionPoints,
       })
 
-      expect(result.map((m) => m.id)).toContain('new-summary')
-      expect(result.map((m) => m.id)).toContain('5')
-      expect(result.map((m) => m.id)).not.toContain('old-summary')
+      expect(result.map((m) => m.id)).toEqual(['5'])
+      expect(result[0].contentParts[0]).toEqual({
+        type: 'text',
+        text: buildCompactionHandoff('Test message', 'reference').text,
+      })
     })
 
     it('should preserve system message after compaction', async () => {
@@ -408,7 +432,11 @@ describe('buildContext', () => {
         compactionPoints,
       })
 
-      expect(result.map((m) => m.id)).toEqual(['old-summary', '3', '4', '5'])
+      expect(result.map((m) => m.id)).toEqual(['3', '4', '5'])
+      expect(result[0].contentParts[0]).toEqual({
+        type: 'text',
+        text: buildCompactionHandoff('Test message', 'reference').text,
+      })
     })
   })
 

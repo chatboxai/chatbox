@@ -65,6 +65,7 @@ export class BasicGenerationPreparation<TContext> implements GenerationPreparati
       compactionPoints: request.compactionPoints,
       maxContextMessageCount: request.settings.maxContextMessageCount,
       modelSupportToolUseForFile: false,
+      language: request.globalSettings.language,
     })
     const tools = (await this.options.prepareTools?.(request, promptMessages)) ?? { tools: {} }
     if (Object.keys(tools.tools).length === 0) {

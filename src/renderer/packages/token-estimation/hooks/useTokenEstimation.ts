@@ -15,6 +15,7 @@ import type { ExactDraftTokens, TokenEstimationResult, TokenizerType } from '../
 import { useDraftAttachmentTokens } from './useDraftAttachmentTokens'
 
 export const LONG_DRAFT_TOKENIZATION_DEBOUNCE_MS = 200
+
 import { rendererTokenEstimation as historicalTokens } from '../row-history-service'
 
 export interface UseTokenEstimationOptions {
@@ -25,6 +26,8 @@ export interface UseTokenEstimationOptions {
   model?: { provider: string; modelId: string }
   modelSupportToolUseForFile: boolean
   sandboxMode?: boolean
+  /** App language code for the wording the model-facing projection adds to the history. */
+  language?: string
 }
 
 interface DraftTokenResult {
@@ -145,6 +148,7 @@ export function useTokenEstimation(
       maxContextMessageCount: options.maxContextMessageCount,
       modelSupportToolUseForFile,
       sandboxMode,
+      language: options.language,
     },
   })
   const contextTokens = history.result?.contextTokens ?? 0

@@ -23,7 +23,6 @@ import { getCompactionContext } from './compaction-context'
 import { checkOverflow } from './compaction-detector'
 import { getConfiguredContextWindow } from './context-pressure'
 import { generateSummaryWithStream } from './summary-generator'
-
 const log = getLogger('compaction')
 
 const compactionService = new CompactionService({
@@ -54,6 +53,7 @@ const compactionService = new CompactionService({
           maxContextMessageCount: sessionSettings.maxContextMessageCount,
           modelSupportToolUseForFile: policy.modelSupportToolUseForFile ?? false,
           sandboxMode: policy.sandboxMode,
+          language: globalSettings.language,
         })
         const contextTokens = estimate.totalTokens
 

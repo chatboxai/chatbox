@@ -1,8 +1,8 @@
 import { SESSION_TOKEN_PAGE_MESSAGES } from '../../ports/session-token-cache'
-import { selectContextMessages } from '@shared/context'
+import { getContextProjectionText, selectContextMessages } from '@shared/context'
 import { setRuntimeRegistry } from '@shared/model-registry'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { Message } from '../../types'
+import type { CompactionPoint, Message } from '../../types'
 import { SessionEventBus } from '../session/session-events'
 import {
   SESSION_TEXT_TOKEN_VERSION,
@@ -18,13 +18,16 @@ import {
   getCompactionThresholdTokens,
   FALLBACK_CONTEXT_WINDOW_TOKENS,
 } from './TokenEstimationService'
-
 const message = (id: string, text = 'batch content'): Message => ({
   id,
   role: 'user',
   contentParts: [{ type: 'text', text }],
 })
-function fixture(messages: Message[], get = vi.fn(async (_key: string): Promise<string | null> => null)) {
+function fixture(
+  messages: Message[],
+  get = vi.fn(async (_key: string): Promise<string | null> => null),
+  compactionPoints: CompactionPoint[] = []
+) {
   let payloadVersion = 0
   const events = new SessionEventBus()
   const accepted: SessionTextTokenResult[] = []
@@ -35,30 +38,34 @@ function fixture(messages: Message[], get = vi.fn(async (_key: string): Promise<
         for (const result of results) numerical.set(`${result.cacheKey}:${result.identity.payloadId}`, result)
       }
     ),
-    createSessionTokenPlan: vi.fn<SessionTokenRepositoryPort['createSessionTokenPlan']>(async (request) => ({
-      sessionId: request.sessionId,
-      revision: payloadVersion + 1,
-      header: { id: request.sessionId, name: 'Tokens' },
-      thread: {
+    createSessionTokenPlan: vi.fn<SessionTokenRepositoryPort['createSessionTokenPlan']>(async (request) => {
+      const selected = selectTokenEstimationContext({ messages, compactionPoints }, request.maxContextMessageCount)
+      return {
         sessionId: request.sessionId,
-        threadId: 'thread',
-        seq: -1,
-        name: 'Active',
-        createdAt: 1,
-        compactionPoints: [],
-        rootMessageId: messages[0]?.id ?? null,
-        activeLeafMessageId: messages.at(-1)?.id ?? null,
-      },
-      beforeTarget: {
-        userMessageCount: messages.length,
-        hasAssistantMessage: false,
-        hasLegacyCommandHistory: false,
-        sandboxSeedAttachments: [],
-        fileResourceKeys: [],
-      },
-      messageIds: selectTokenEstimationContext({ messages }, request.maxContextMessageCount).map((value) => value.id),
-      canManualCompact: messages.some((value) => value.role !== 'system' && !value.isSummary),
-    })),
+        revision: payloadVersion + 1,
+        header: { id: request.sessionId, name: 'Tokens' },
+        thread: {
+          sessionId: request.sessionId,
+          threadId: 'thread',
+          seq: -1,
+          name: 'Active',
+          createdAt: 1,
+          compactionPoints,
+          rootMessageId: messages[0]?.id ?? null,
+          activeLeafMessageId: messages.at(-1)?.id ?? null,
+        },
+        beforeTarget: {
+          userMessageCount: messages.length,
+          hasAssistantMessage: false,
+          hasLegacyCommandHistory: false,
+          sandboxSeedAttachments: [],
+          fileResourceKeys: [],
+        },
+        messageIds: selected.map((value) => value.id),
+        projectionEntries: selected.map(({ role, isSummary }) => ({ role, isSummary })),
+        canManualCompact: messages.some((value) => value.role !== 'system' && !value.isSummary),
+      }
+    }),
     readSessionTokenPage: vi.fn<SessionTokenRepositoryPort['readSessionTokenPage']>(
       async ({ plan, offset, limit, cacheKey }) => {
         const ids = plan.messageIds.slice(offset, offset + limit)
@@ -142,6 +149,67 @@ describe('row token estimation', () => {
     expect(result.contextMessageCount).toBe(1)
     expect(instructions.contextMessageCount).toBe(0)
     expect(progress.mock.calls.at(-1)?.[0].contextTokens).toBe(result.contextTokens)
+  })
+  describe('model-facing projection wording', () => {
+    const summary: Message = {
+      id: 'summary',
+      role: 'assistant',
+      isSummary: true,
+      contentParts: [{ type: 'text', text: 'Earlier work summary' }],
+    }
+    const compacted = (next: Message) =>
+      fixture([message('old'), summary, next], undefined, [
+        { summaryMessageId: 'summary', boundaryMessageId: 'old', createdAt: 1 },
+      ])
+    // Same selected text with no summary, so nothing is projected.
+    const plain = (next: Message) => fixture([{ ...summary, role: 'user', isSummary: false }, next])
+    const wordingTokens = async (next: Message, language?: string) =>
+      (
+        await service.estimate({
+          additionalInstructions: getContextProjectionText([summary, next], { language }),
+        })
+      ).contextTokens
+
+    it.each([
+      ['a user turn', message('next', 'Next question')],
+      ['an assistant turn', { ...message('next', 'Partial answer'), role: 'assistant' as const }],
+    ])('counts the handoff wording when the summary is followed by %s', async (_, next) => {
+      const projected = await compacted(next).service.estimate({ sessionId: 's' })
+      const baseline = await plain(next).service.estimate({ sessionId: 's' })
+
+      expect(projected.contextMessageCount).toBe(2)
+      expect(await wordingTokens(next)).toBeGreaterThan(0)
+      expect(projected.contextTokens).toBe(baseline.contextTokens + (await wordingTokens(next)))
+    })
+
+    it('follows the session language', async () => {
+      const next = message('next', 'Next question')
+      const f = compacted(next)
+      const en = await f.service.estimate({ sessionId: 's', language: 'en' })
+      const zh = await f.service.estimate({ sessionId: 's', language: 'zh-Hans' })
+
+      expect(getContextProjectionText([summary, next], { language: 'zh-Hans' })).not.toBe(
+        getContextProjectionText([summary, next], { language: 'en' })
+      )
+      expect(zh.contextTokens - en.contextTokens).toBe(
+        (await wordingTokens(next, 'zh-Hans')) - (await wordingTokens(next, 'en'))
+      )
+    })
+
+    it('keeps counting the wording when the history aggregate is reused', async () => {
+      const next = message('next', 'Next question')
+      const f = compacted(next)
+      const first = await f.service.estimate({ sessionId: 's', language: 'zh-Hans' })
+      const pages = f.repository.readSessionTokenPage.mock.calls.length
+      const reused = await f.service.estimate({ sessionId: 's', language: 'zh-Hans' })
+      const switched = await f.service.estimate({ sessionId: 's', language: 'en' })
+
+      expect(f.repository.readSessionTokenPage).toHaveBeenCalledTimes(pages)
+      expect(reused).toEqual(first)
+      expect(first.contextTokens - switched.contextTokens).toBe(
+        (await wordingTokens(next, 'zh-Hans')) - (await wordingTokens(next, 'en'))
+      )
+    })
   })
   it('uses the shared page limit and cancels before the next page', async () => {
     const total = SESSION_TOKEN_PAGE_MESSAGES * 2 + 7

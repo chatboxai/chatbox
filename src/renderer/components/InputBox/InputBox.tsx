@@ -736,6 +736,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const sandboxMode = agentModeEntry.value === 'on' && sandboxQuery.data === true
     const policyPending = isModelToolCapabilityLoading || (agentModeEntry.value === 'on' && sandboxQuery.isLoading)
 
+    const language = useSettingsStore((state) => state.language)
     // Calculate the live input and selected-history token counts.
     const {
       contextTokens,
@@ -758,6 +759,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       modelSupportToolUseForFile,
       sandboxMode,
       constructedMessage: preConstructedMessage.message,
+      language,
     })
     const isCalculating = contextPending || policyPending || tokensCalculating
     const isTotalApproximate =

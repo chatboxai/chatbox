@@ -173,6 +173,7 @@ async function buildToolsForPausedToolCall(
     modelSupportToolUseForFile: model.isSupportToolUse('read-file'),
     maxContextMessageCount: settings.maxContextMessageCount,
     sandboxMode: canExecuteCode,
+    language: settingsService.getSettings().language,
   })
 
   const knowledgeBase = uiStore.getState().sessionKnowledgeBaseMap[session.id]

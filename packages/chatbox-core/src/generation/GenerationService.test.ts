@@ -1490,7 +1490,7 @@ describe('GenerationService', () => {
       )
     ).toBe(true)
     expect(stepResult).toEqual({
-      messages: [{ role: 'assistant', content: 'Earlier work done.' }, bulky[3], bulky[4]],
+      messages: [{ role: 'user', content: expect.stringContaining('Earlier work done.') }, bulky[3], bulky[4]],
     })
   })
 
@@ -1610,7 +1610,9 @@ describe('GenerationService', () => {
       await harness.service.orchestrate('session-1', targetMessage())
       expect(generate).toHaveBeenCalledOnce()
       expect(harness.inserted).toHaveLength(0)
-      expect(nextStep).toEqual({ messages: [{ role: 'assistant', content: 'A summary' }, ...payload.slice(1)] })
+      expect(nextStep).toEqual({
+        messages: [{ role: 'user', content: expect.stringContaining('A summary') }, ...payload.slice(1)],
+      })
       expect(harness.session.messages.map((message) => message.id)).toEqual(['user-1', 'b-history'])
       expect(harness.session.messageForksHash?.['user-1'].lists[0].messages.map((message) => message.id)).toEqual([
         'a-history',
@@ -1732,7 +1734,9 @@ describe('GenerationService', () => {
     await harness.service.orchestrate('session-1', targetMessage())
     expect(generate).toHaveBeenCalledOnce()
     expect(harness.inserted).toHaveLength(1)
-    expect(nextStep).toEqual({ messages: [{ role: 'assistant', content: 'Work and updated direction' }, ...tail] })
+    expect(nextStep).toEqual({
+      messages: [{ role: 'user', content: expect.stringContaining('Work and updated direction') }, ...tail],
+    })
     expect(harness.session.compactionPoints).toEqual([expect.objectContaining({ boundaryMessageId: 'steered-user' })])
   })
 
@@ -1887,8 +1891,8 @@ describe('GenerationService', () => {
 
     expect(compact).toHaveBeenCalledOnce()
     expect(stepResults).toEqual([
-      { messages: [{ role: 'assistant', content: 'Earlier work done.' }, bulky[3], bulky[4]] },
-      { messages: [{ role: 'assistant', content: 'Earlier work done.' }, bulky[3], bulky[4]] },
+      { messages: [{ role: 'user', content: expect.stringContaining('Earlier work done.') }, bulky[3], bulky[4]] },
+      { messages: [{ role: 'user', content: expect.stringContaining('Earlier work done.') }, bulky[3], bulky[4]] },
     ])
   })
 
@@ -2304,8 +2308,8 @@ describe('GenerationService', () => {
 
     expect(compact).toHaveBeenCalledOnce()
     expect(stepResults).toEqual([
-      { messages: [{ role: 'assistant', content: 'Earlier work done.' }, t2Assistant, t2Result] },
-      { messages: [{ role: 'assistant', content: 'Earlier work done.' }, t2Assistant, t2Result] },
+      { messages: [{ role: 'user', content: expect.stringContaining('Earlier work done.') }, t2Assistant, t2Result] },
+      { messages: [{ role: 'user', content: expect.stringContaining('Earlier work done.') }, t2Assistant, t2Result] },
     ])
   })
 

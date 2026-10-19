@@ -1,3 +1,4 @@
+import { buildCompactionHandoff, getCompactionHandoffMode } from '@shared/context/compaction-handoff'
 import { VIEW_IMAGE_FOLLOW_UP_LABEL_PREFIX } from '@shared/tools/view-image'
 import type { MessageContentParts } from '@shared/types'
 import type { ModelMessage } from 'ai'
@@ -171,10 +172,22 @@ export function resolveKeptModelMessageStartIndex(messages: ModelMessage[], keep
 export function rewriteModelMessagesWithSummary(
   messages: ModelMessage[],
   summary: string,
-  keepStartIndex: number
+  keepStartIndex: number,
+  language?: string
 ): ModelMessage[] {
   const leadingSystem = messages.slice(0, keepStartIndex).filter((message) => message.role === 'system')
-  return [...leadingSystem, { role: 'assistant', content: summary }, ...messages.slice(keepStartIndex)]
+  const [next, ...rest] = messages.slice(keepStartIndex)
+  const { text } = buildCompactionHandoff(summary, getCompactionHandoffMode(next?.role), language)
+  if (next?.role === 'user') {
+    // One user turn: the summary leads the user message that follows it.
+    const merged: ModelMessage = {
+      ...next,
+      content:
+        typeof next.content === 'string' ? `${text}\n\n${next.content}` : [{ type: 'text', text }, ...next.content],
+    }
+    return [...leadingSystem, merged, ...rest]
+  }
+  return [...leadingSystem, { role: 'user', content: text }, ...(next ? [next, ...rest] : [])]
 }
 
 /**

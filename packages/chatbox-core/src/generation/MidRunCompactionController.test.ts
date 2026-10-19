@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { buildCompactionHandoff } from '@shared/context/compaction-handoff'
 import type { MessageContentParts } from '@shared/types'
 import type { ModelMessage } from 'ai'
 import { describe, it } from 'vitest'
@@ -22,7 +23,7 @@ function round(id: string, chars = 20_000): ModelMessage[] {
   ]
 }
 
-function harness(threshold = 57_600) {
+function harness(threshold = 57_600, language?: string) {
   const abort = new AbortController()
   const source: ModelMessage[] = [
     { role: 'system', content: 'system' },
@@ -37,6 +38,7 @@ function harness(threshold = 57_600) {
   let declineSplit = false
   const controller = new MidRunCompactionController({
     thresholdTokens: threshold,
+    language,
     signal: abort.signal,
     getTargetMessageId: () => currentId,
     getContentParts: () => parts,
@@ -119,9 +121,25 @@ describe('MidRunCompactionController', () => {
       h.setFailure(undefined)
       const rewritten = await h.controller.prepareStep(h.source, 2)
       assert.equal(h.compactions, 2)
-      assert.equal(rewritten[1].content, 'summary-2')
+      assert.deepEqual(rewritten[1], { role: 'user', content: buildCompactionHandoff('summary-2', 'resume').text })
     })
   }
+
+  it('resumes the task in the session language before the retained tool rounds', async () => {
+    const h = harness(200, 'zh-Hans')
+    h.source[1] = { role: 'user', content: 'history '.repeat(1000) }
+    h.append('current-tool', 10)
+    const rewritten = await h.controller.prepareStep(h.source, 1)
+    assert.deepEqual(
+      rewritten.map((message) => message.role),
+      ['system', 'user', 'assistant', 'tool']
+    )
+    assert.deepEqual(rewritten[1], {
+      role: 'user',
+      content: buildCompactionHandoff('summary-1', 'resume', 'zh-Hans').text,
+    })
+    assert.match(String(rewritten[1].content), /继续完成尚未完成的任务/)
+  })
 
   it('stops planning after the generation path becomes stale', async () => {
     const h = harness(200)
@@ -163,7 +181,7 @@ describe('MidRunCompactionController', () => {
         h.append(`t${step}`)
         effective = await h.controller.prepareStep(h.source, step)
         assert.ok(!collectToolCallIds(effective).has('t1'), 'must not resurrect the raw prefix')
-        assert.equal(effective[1].content, 'summary-1')
+        assert.deepEqual(effective[1], { role: 'user', content: buildCompactionHandoff('summary-1', 'resume').text })
       }
       assert.equal(h.compactions, 2, 'do not retry a failing summarizer every step')
     })

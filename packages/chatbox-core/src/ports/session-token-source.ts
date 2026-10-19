@@ -1,9 +1,9 @@
+import type { ContextProjectionEntry } from '@shared/context/model-projection'
 import type { SessionTokenCacheEntry, SessionTokenCacheResult } from './session-token-cache'
 import type { Message, SessionHeader } from '../types/session'
 import type { ThreadRow } from '../session/session-tree/types'
 import type { SessionContextBeforeTarget } from './session-context-source'
 import type { SessionTextTokenRead } from './session-text-tokens'
-
 export interface SessionTokenPlanRequest {
   sessionId: string
   threadId?: string
@@ -19,6 +19,8 @@ export interface SessionTokenPlan {
   thread: ThreadRow
   beforeTarget: SessionContextBeforeTarget
   messageIds: string[]
+  /** Role facts of `messageIds`, in order, for the wording the model-facing projection adds. */
+  projectionEntries: ContextProjectionEntry[]
   canManualCompact: boolean
 }
 

@@ -11,6 +11,8 @@ export interface UseContextTokensOptions {
   modelSupportToolUseForFile: boolean
   sandboxMode?: boolean
   constructedMessage?: Message
+  /** App language code for the wording the model-facing projection adds to the history. */
+  language?: string
 }
 
 export interface UseContextTokensResult {

@@ -10,7 +10,6 @@ import type { ToolSet } from 'ai'
 import { createDefaultSettings } from '../domain/settings/settings-defaults'
 import { GenerationService, type GenerationServiceDependencies } from '../generation/GenerationService'
 import { GenerationRuntimeStore } from '../generation/runtime-store'
-
 /** One isolated, in-memory terminal evaluation. Persistence callbacks retain production stream state. */
 export async function generateTerminalSession(options: {
   model: ModelInterface
@@ -100,6 +99,7 @@ export async function generateTerminalSession(options: {
       prepare: async (request) => {
         const promptMessages = await buildContext(request.messages.slice(0, request.targetMessageIndex), {
           attachmentResolver: attachments,
+          language: request.globalSettings.language,
         })
         return {
           promptMessages,

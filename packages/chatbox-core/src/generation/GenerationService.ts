@@ -816,6 +816,7 @@ export class GenerationService<TContext> {
               Object.keys(prepared.tools).length > 0 && isAutoCompactionEnabled(settings, globalSettings)
                 ? compaction.getThresholdTokens(settings, globalSettings)
                 : null,
+            language: globalSettings.language,
             signal: controller.signal,
             getContentParts: () => [...infoParts, ...processorState.contentParts],
             splitPrefix: (prefix, tail) => splitGeneratingSegment(targetMessage.id, 'compacted', prefix, tail),

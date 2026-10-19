@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
       sandboxSeedAttachments: [],
     },
     messageIds: ['history'],
+    projectionEntries: [{ role: 'user' as const }],
     canManualCompact: true,
   })),
   readPage: vi.fn(

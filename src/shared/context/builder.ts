@@ -3,6 +3,7 @@ import { orderSteeredMessagesForModel } from '../utils/message'
 import { injectAttachments } from './attachments'
 import { findLatestApplicableCompactionPoint } from './compaction-points'
 import { isContextEligibleMessage } from './message-eligibility'
+import { projectContextMessagesForModel } from './model-projection'
 import type { ContextBuilderOptions, ContextPreparationOptions, ContextSelectionOptions } from './types'
 
 export { injectAttachments } from './attachments'
@@ -17,17 +18,19 @@ export async function buildContext(messages: Message[], options: ContextBuilderO
   return await injectAttachments(contextMessages, attachmentResolver, modelSupportToolUseForFile, sandboxMode)
 }
 
-/** The shared send window, before attachment injection. */
+/** The model-facing send window, before attachment injection. */
 export function prepareContextMessages(messages: Message[], options: ContextPreparationOptions): Message[] {
-  return selectContextMessages(messages, options)
+  return projectContextMessagesForModel(selectContextMessages(messages, options), { language: options.language })
 }
 
 /**
  * The message-selection half of context building: causal ordering, eligibility,
  * compaction-point slicing, error filtering, and the message-count limit —
  * everything that decides WHICH messages are in context, with their content
- * untouched. Exposed so token estimation can measure exactly the selection
- * the send path will use. Returns the original message references.
+ * untouched. Exposed so token estimation and compaction planning work on
+ * exactly the selection the send path will use; the wording the model-facing
+ * projection adds is available from `getContextProjectionText`. Returns the
+ * original message references.
  */
 export type ContextSelectionEntry = Pick<
   Message,

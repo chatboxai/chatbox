@@ -28,13 +28,16 @@ export interface ContextSelectionOptions {
   maxContextMessageCount?: number
 }
 
-/** Shared send window used by sending and compaction. */
-export type ContextPreparationOptions = ContextSelectionOptions
+/** The model-facing send window: selection plus its projection. */
+export interface ContextPreparationOptions extends ContextSelectionOptions {
+  /** App language code (`Settings['language']`) for the wording the projection adds. */
+  language?: string
+}
 
 /**
  * Options for context building
  */
-export interface ContextBuilderOptions extends ContextSelectionOptions {
+export interface ContextBuilderOptions extends ContextPreparationOptions {
   /**
    * Resolver for accessing attachments
    */

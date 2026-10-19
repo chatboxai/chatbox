@@ -1,3 +1,4 @@
+import { buildCompactionHandoff } from '@shared/context/compaction-handoff'
 import type { MessageContentParts } from '@shared/types'
 import type { ModelMessage } from 'ai'
 import { describe, expect, it } from 'vitest'
@@ -70,8 +71,22 @@ describe('mid-run compaction helpers', () => {
     ]
     const rewritten = rewriteModelMessagesWithSummary(messages, 'Earlier work done.', 4)
     expect(rewritten[0]).toEqual({ role: 'system', content: 'You are helpful.' })
-    expect(rewritten[1]).toEqual({ role: 'assistant', content: 'Earlier work done.' })
+    expect(rewritten[1]).toEqual({
+      role: 'user',
+      content: buildCompactionHandoff('Earlier work done.', 'resume').text,
+    })
     expect(rewritten.slice(2)).toEqual(messages.slice(4))
+  })
+
+  it('leads a retained user turn with the summary instead of adding a second user turn', () => {
+    const messages: ModelMessage[] = [user('task'), assistantCall('t1'), toolResult('t1', 100), user('steer')]
+    const rewritten = rewriteModelMessagesWithSummary(messages, 'Earlier work done.', 3, 'zh-Hans')
+    expect(rewritten).toEqual([
+      {
+        role: 'user',
+        content: `${buildCompactionHandoff('Earlier work done.', 'reference', 'zh-Hans').text}\n\nsteer`,
+      },
+    ])
   })
 
   it('splits generating content parts at the first kept tool call', () => {

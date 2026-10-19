@@ -270,6 +270,7 @@ export async function prepareAgentGenerationHarness(
     modelSupportToolUseForFile: model.isSupportToolUse('read-file'),
     maxContextMessageCount: settings.maxContextMessageCount,
     sandboxMode: canExecuteCode,
+    language: globalSettings.language,
   })
 
   // Agent mode owns its identity header: session-level system messages are

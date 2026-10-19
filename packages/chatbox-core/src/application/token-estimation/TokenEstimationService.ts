@@ -4,7 +4,7 @@ import {
   SESSION_TOKEN_PAGE_MESSAGES,
   type SessionTokenCacheResult,
 } from '../../ports/session-token-cache'
-import { injectAttachments, selectContextMessages } from '@shared/context'
+import { getContextProjectionText, injectAttachments, selectContextMessages } from '@shared/context'
 import { estimateMessageToolCallTokens } from '@shared/context/tool-tokens'
 import { getRegistryModelMeta, getUnambiguousRegistryModelContextWindow } from '@shared/model-registry'
 import { analyzeAttachmentTokens, estimateImageTokens } from '@shared/token-estimation/attachments'
@@ -30,7 +30,6 @@ import {
   getCompactionThresholdForContextWindow,
   LONG_DRAFT_TOKENIZATION_THRESHOLD,
 } from './math'
-
 export {
   DEFAULT_COMPACTION_THRESHOLD,
   estimateDraftTokensImmediately,
@@ -80,6 +79,8 @@ export interface TokenEstimationRequest {
   maxContextMessageCount?: number
   /** Host instructions appended to the system prompt, outside the conversation history. */
   additionalInstructions?: string
+  /** App language code for the wording the model-facing projection adds to the history. */
+  language?: string
 }
 
 function emptyBreakdown(): TokenBreakdown {
@@ -305,7 +306,10 @@ export class TokenEstimationService {
       request
     )
     check()
-    const instructions = estimateBoundedText(additional, type)
+    // The projection wording depends on the plan and language, not on cached
+    // per-message counts, so it stays outside the history aggregate.
+    const projection = plan ? getContextProjectionText(plan.projectionEntries, { language: request.language }) : ''
+    const instructions = estimateBoundedText([additional, projection].filter(Boolean).join('\n\n'), type)
     let history = emptyBreakdown()
     let approximate = false
     let stableHistory = emptyBreakdown()

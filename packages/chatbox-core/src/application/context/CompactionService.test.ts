@@ -1,4 +1,4 @@
-import { selectContextMessages } from '@shared/context'
+import { buildCompactionHandoff, selectContextMessages } from '@shared/context'
 import type { SessionContextSource } from '../../ports/session-context-source'
 import { InMemorySessionRecordStore } from '../../testing/InMemorySessionRecordStore'
 import { InMemorySessionRowStore } from '../../testing/InMemorySessionRowStore'
@@ -13,7 +13,6 @@ import type { LoggerPort } from '../../ports'
 import type { Message, Session, SessionSettings, Settings } from '../../types'
 import { selectTokenEstimationContext } from '../token-estimation/TokenEstimationService'
 import { CompactionService, type CompactionSummaryPort } from './CompactionService'
-
 function message(id: string, role: Message['role']): Message {
   return { id, role, contentParts: [{ type: 'text', text: id }] }
 }
@@ -237,10 +236,16 @@ describe('CompactionService', () => {
     const request = { kind: 'generation' as const, targetMessageId: 'target', retainedToolCallId: 'retained' }
     const result = await harness.service.run('session-1', request)
     expect(result).toMatchObject({ status: 'compacted', coverage: { ...request, boundaryMessageId: 'recent-user' } })
-    expect(harness.generate.mock.calls[0][0].messages.map((message) => message.id)).toEqual([
-      'old-summary',
-      'recent-user',
-    ])
+    // The prior summary leads the user turn after it as plain history, without a handoff directive.
+    const summarized = harness.generate.mock.calls[0][0].messages
+    expect(summarized.map((message) => message.id)).toEqual(['recent-user'])
+    expect(summarized[0]).toMatchObject({
+      role: 'user',
+      contentParts: [
+        { type: 'text', text: buildCompactionHandoff('old-summary', 'history').text },
+        ...message('recent-user', 'user').contentParts,
+      ],
+    })
     expect(harness.session.compactionPoints).toBeUndefined()
     expect(harness.session.threads[0].compactionPoints?.at(-1)?.boundaryMessageId).toBe('recent-user')
   })

@@ -15,6 +15,8 @@ import {
 export interface MidRunCompactionOptions {
   /** Null disables this run's automatic compaction. */
   thresholdTokens: number | null
+  /** App language code for the summary handoff wording. */
+  language?: string
   signal: AbortSignal
   getContentParts(): MessageContentParts
   /** True only when both the prefix and continuation are durable. */
@@ -48,7 +50,7 @@ export class MidRunCompactionController {
         this.rewrite = undefined
         return source
       }
-      effective = rewriteModelMessagesWithSummary(source, this.rewrite.summary, previousStart)
+      effective = rewriteModelMessagesWithSummary(source, this.rewrite.summary, previousStart, this.options.language)
     }
 
     const { thresholdTokens, signal } = this.options
@@ -112,7 +114,7 @@ export class MidRunCompactionController {
         return effective
       }
       this.rewrite = { summary: result.summary, keepToolCallId }
-      return rewriteModelMessagesWithSummary(source, result.summary, keepStart)
+      return rewriteModelMessagesWithSummary(source, result.summary, keepStart, this.options.language)
     } catch (error) {
       // Keep the LAST successful rewrite when a later compact fails; falling
       // back to the raw SDK transcript would resurrect every discarded prefix.

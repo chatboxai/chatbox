@@ -18,7 +18,6 @@ import type {
 } from '../../ports/session-token-source'
 import type { SessionHeader, Message } from '../../types'
 import type { SessionRecordV2, ThreadRow } from '../../session/session-tree/types'
-
 export function contextHeader(record: SessionRecordV2, activeThread: ThreadRow): SessionHeader {
   const {
     storageFormat: _storage,
@@ -242,6 +241,7 @@ export async function createRowTokenPlan(
     thread: plan.thread,
     beforeTarget: plan.beforeTarget,
     messageIds: selected.map((entry) => entry.id),
+    projectionEntries: selected.map(({ role, isSummary }) => ({ role, isSummary })),
     canManualCompact: full.some((entry) => !entry.isSummary && entry.role !== 'system'),
   }
 }

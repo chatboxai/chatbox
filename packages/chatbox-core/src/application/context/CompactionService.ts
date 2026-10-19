@@ -1,3 +1,4 @@
+import { projectContextMessagesForModel } from '@shared/context/model-projection'
 import { flattenToolCallPartsToText } from '@shared/context/tool-flatten'
 import type { LoggerPort, SettingsRepositoryPort } from '../../ports'
 import type { Message, SessionHeader, SessionSettings, Settings } from '../../types'
@@ -147,7 +148,9 @@ export class CompactionService {
       if (options.abortSignal?.aborted) return { status: 'cancelled' }
       const summaryResult = await this.options.summaries.generate({
         sessionId,
-        messages: flattenToolCallPartsToText(plan.messages),
+        messages: flattenToolCallPartsToText(
+          projectContextMessagesForModel(plan.messages, { language: globalSettings.language, purpose: 'summarize' })
+        ),
         sessionSettings: session.settings,
         language: globalSettings.language,
         prompt: options.prompt?.trim() || globalSettings.compactionPrompt,

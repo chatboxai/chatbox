@@ -2047,5 +2047,10 @@
   "Chatbox AI license missing for signed-out user": "<strong>請登入</strong><br/>您正在使用 Chatbox AI 提供的模型服務，登入後即可立即使用。<br/><OpenChatboxLoginButton>Chatbox AI 登入</OpenChatboxLoginButton>",
   "Chatbox AI license missing for signed-in user": "<strong>無 Chatbox AI 帳號</strong><br/>您正在使用 Chatbox AI 模型，領取免費方案後即可立即使用。<br/><OpenClaimFreePlanButton>領取免費方案</OpenClaimFreePlanButton>",
   "Chatbox AI manual license not found": "<strong>找不到 Chatbox AI 授權碼</strong><br/>請檢查手動輸入的 Chatbox AI 授權碼並重試。<br/><OpenManualLicenseButton>重新輸入授權碼</OpenManualLicenseButton>",
-  "After claiming your free plan, open Chatbox AI settings to activate it": "領取免費方案後，請<OpenChatboxSettingsButton>開啟 Chatbox AI 設定</OpenChatboxSettingsButton>完成啟用。"
+  "After claiming your free plan, open Chatbox AI settings to activate it": "領取免費方案後，請<OpenChatboxSettingsButton>開啟 Chatbox AI 設定</OpenChatboxSettingsButton>完成啟用。",
+  "Uses the API key configured for the DeepSeek model provider.": "使用 DeepSeek 模型提供方設定的 API 金鑰。",
+  "You have selected DeepSeek as the search provider, but a DeepSeek API key has not been entered yet. DeepSeek search uses the same API key as the DeepSeek model provider. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your API key, or choose a different search provider.": "您已選擇 DeepSeek 作為搜尋提供方，但尚未輸入 DeepSeek API key。DeepSeek 搜尋與 DeepSeek 模型提供方使用同一個 API key。請<OpenExtensionSettingButton>點擊這裡開啟設定</OpenExtensionSettingButton>並輸入您的 API key，或選擇其他搜尋提供方。",
+  "DeepSeek API Key": "DeepSeek API 金鑰",
+  "DeepSeek API key is missing": "尚未填寫 DeepSeek API 金鑰",
+  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "請在網頁搜尋設定或 DeepSeek 模型提供方設定中填寫 DeepSeek API 金鑰，兩處共用同一個金鑰。"
 }

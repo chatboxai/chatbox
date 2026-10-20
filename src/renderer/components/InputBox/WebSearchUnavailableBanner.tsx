@@ -15,13 +15,11 @@ type BannerProps = { sessionId: string; errorCount: number; latestHasError: bool
 export function WebSearchUnavailableBanner(props: BannerProps) {
   const { t } = useTranslation()
   const isSmallScreen = useIsSmallScreen()
-  const webSearchConfiguration = useSettingsStore((state) => state.extension.webSearch)
-  const licenseKey = useSettingsStore((state) => state.licenseKey)
+  const webSearchConfigurationIssue = useSettingsStore((state) => getWebSearchConfigurationIssue(state))
   const [, refreshDismissedState] = useState(0)
   const sessionId = props.sessionId
   const dismissed = dismissedSessionIds.has(sessionId)
-  const stillRequiresChatboxSignIn =
-    getWebSearchConfigurationIssue(webSearchConfiguration, licenseKey) === 'chatbox-ai-sign-in'
+  const stillRequiresChatboxSignIn = webSearchConfigurationIssue === 'chatbox-ai-sign-in'
   if (!stillRequiresChatboxSignIn || dismissed || props.errorCount === 0 || props.latestHasError !== false) return null
 
   const dismiss = () => {

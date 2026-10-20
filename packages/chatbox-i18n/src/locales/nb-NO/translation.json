@@ -2047,5 +2047,10 @@
   "Chatbox AI license missing for signed-out user": "<strong>Logg inn</strong><br/>Du bruker en modell levert av Chatbox AI. Logg inn for å begynne å bruke den med én gang.<br/><OpenChatboxLoginButton>Logg inn på Chatbox AI</OpenChatboxLoginButton>",
   "Chatbox AI license missing for signed-in user": "<strong>Ingen Chatbox AI-konto</strong><br/>Du bruker en Chatbox AI-modell. Hent gratisabonnementet for å begynne å bruke den med én gang.<br/><OpenClaimFreePlanButton>Hent gratisabonnementet</OpenClaimFreePlanButton>",
   "Chatbox AI manual license not found": "<strong>Fant ikke Chatbox AI-lisensen</strong><br/>Kontroller Chatbox AI-lisensnøkkelen du skrev inn manuelt, og prøv igjen.<br/><OpenManualLicenseButton>Skriv inn lisensnøkkelen på nytt</OpenManualLicenseButton>",
-  "After claiming your free plan, open Chatbox AI settings to activate it": "Etter at du har hentet gratisabonnementet, <OpenChatboxSettingsButton>åpner du Chatbox AI-innstillingene</OpenChatboxSettingsButton> for å aktivere det."
+  "After claiming your free plan, open Chatbox AI settings to activate it": "Etter at du har hentet gratisabonnementet, <OpenChatboxSettingsButton>åpner du Chatbox AI-innstillingene</OpenChatboxSettingsButton> for å aktivere det.",
+  "Uses the API key configured for the DeepSeek model provider.": "Bruker API-nøkkelen til DeepSeek-modellleverandøren.",
+  "You have selected DeepSeek as the search provider, but a DeepSeek API key has not been entered yet. DeepSeek search uses the same API key as the DeepSeek model provider. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your API key, or choose a different search provider.": "Du har valgt DeepSeek som søkeleverandør, men har ikke angitt en DeepSeek API-nøkkel ennå. DeepSeek-søk bruker samme API-nøkkel som DeepSeek-modelleverandøren. <OpenExtensionSettingButton>Klikk her for å åpne innstillingene</OpenExtensionSettingButton> og skriv inn API-nøkkelen, eller velg en annen søkeleverandør.",
+  "DeepSeek API Key": "DeepSeek API-nøkkel",
+  "DeepSeek API key is missing": "DeepSeek API-nøkkel mangler",
+  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "Legg til en DeepSeek API-nøkkel i innstillingene for nettsøk eller for DeepSeek-modelleverandøren. Begge bruker samme nøkkel."
 }

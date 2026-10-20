@@ -118,6 +118,9 @@ function _errorI18nKeys(t: (key: string) => string) {
   t(
     'You have selected SearXNG as the search provider, but an instance URL has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your SearXNG instance URL, or choose a different search provider.'
   )
+  t(
+    'You have selected DeepSeek as the search provider, but a DeepSeek API key has not been entered yet. DeepSeek search uses the same API key as the DeepSeek model provider. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your API key, or choose a different search provider.'
+  )
   t('Failed to read webpage content. Please try again later or use a different URL.')
   t(
     'The current search provider does not support reading webpages. Please <OpenExtensionSettingButton>choose a different search provider</OpenExtensionSettingButton> that supports this capability.'
@@ -307,6 +310,8 @@ function _otherI18nKeys(t: (key: string) => string) {
   t('Activate Chatbox AI, or pick another search provider.')
   t('Tavily API key is missing')
   t('Add a Tavily API key in Web Search settings.')
+  t('DeepSeek API key is missing')
+  t('Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.')
   t('BoCha API key is missing')
   t('Add a BoCha API key in Web Search settings.')
   t('Querit API key is missing')

@@ -1,14 +1,17 @@
 import { cachified } from '@epic-web/cachified'
+import { resolveNativeWebSearchApiKey } from '@shared/services/native-web-search'
 import type { SearchResultItem } from '@shared/types'
 import { truncate } from 'lodash'
 import platform from '@/platform'
 import { getExtensionSettings, getLanguage, getLicenseKey } from '@/stores/settingActions'
+import { settingsStore } from '@/stores/settingsStore'
 import { ChatboxAIAPIError } from '../../../shared/models/errors'
 import type WebSearch from './base'
 import { BingSearch } from './bing'
 import { BingNewsSearch } from './bing-news'
 import { BochaSearch } from './bocha'
 import { ChatboxSearch } from './chatbox-search'
+import { DeepSeekSearch } from './deepseek'
 import { QueritSearch } from './querit'
 import { normalizeSearxngBaseUrl, SearxngSearch } from './searxng'
 import { TavilySearch } from './tavily'
@@ -40,6 +43,14 @@ function getSearchProviders() {
         selectedProviders.push(new BingNewsSearch()) // 国内和移动端容易被重定向到 Bing 首页
       }
       break
+    case 'deepseek': {
+      const apiKey = resolveNativeWebSearchApiKey(settingsStore.getState(), provider).trim()
+      if (!apiKey) {
+        throw ChatboxAIAPIError.fromCodeName('deepseek_api_key_required', 'deepseek_api_key_required')
+      }
+      selectedProviders.push(new DeepSeekSearch(apiKey))
+      break
+    }
     case 'tavily':
       if (!settings.webSearch.tavilyApiKey) {
         throw ChatboxAIAPIError.fromCodeName('tavily_api_key_required', 'tavily_api_key_required')

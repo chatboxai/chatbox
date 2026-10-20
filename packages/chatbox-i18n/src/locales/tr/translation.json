@@ -2047,5 +2047,10 @@
   "Chatbox AI license missing for signed-out user": "<strong>Lütfen giriş yapın</strong><br/>Chatbox AI tarafından sağlanan bir modeli kullanıyorsunuz. Hemen kullanmaya başlamak için giriş yapın.<br/><OpenChatboxLoginButton>Chatbox AI'a giriş yap</OpenChatboxLoginButton>",
   "Chatbox AI license missing for signed-in user": "<strong>Chatbox AI hesabı yok</strong><br/>Bir Chatbox AI modeli kullanıyorsunuz. Hemen kullanmaya başlamak için ücretsiz planı alın.<br/><OpenClaimFreePlanButton>Ücretsiz planı al</OpenClaimFreePlanButton>",
   "Chatbox AI manual license not found": "<strong>Chatbox AI lisansı bulunamadı</strong><br/>Elle girdiğiniz Chatbox AI lisans anahtarını kontrol edip tekrar deneyin.<br/><OpenManualLicenseButton>Lisans anahtarını yeniden gir</OpenManualLicenseButton>",
-  "After claiming your free plan, open Chatbox AI settings to activate it": "Ücretsiz planı aldıktan sonra etkinleştirmek için <OpenChatboxSettingsButton>Chatbox AI ayarlarını açın</OpenChatboxSettingsButton>."
+  "After claiming your free plan, open Chatbox AI settings to activate it": "Ücretsiz planı aldıktan sonra etkinleştirmek için <OpenChatboxSettingsButton>Chatbox AI ayarlarını açın</OpenChatboxSettingsButton>.",
+  "Uses the API key configured for the DeepSeek model provider.": "DeepSeek model sağlayıcısının API anahtarını kullanır.",
+  "You have selected DeepSeek as the search provider, but a DeepSeek API key has not been entered yet. DeepSeek search uses the same API key as the DeepSeek model provider. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your API key, or choose a different search provider.": "Arama sağlayıcısı olarak DeepSeek seçtiniz, ancak henüz bir DeepSeek API anahtarı girilmedi. DeepSeek araması, DeepSeek model sağlayıcısıyla aynı API anahtarını kullanır. Lütfen <OpenExtensionSettingButton>ayarları açmak için buraya tıklayın</OpenExtensionSettingButton> ve API anahtarınızı girin ya da farklı bir arama sağlayıcısı seçin.",
+  "DeepSeek API Key": "DeepSeek API Anahtarı",
+  "DeepSeek API key is missing": "DeepSeek API anahtarı eksik",
+  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "Web Araması ayarlarında veya DeepSeek model sağlayıcısı ayarlarında bir DeepSeek API anahtarı ekleyin. İkisi aynı anahtarı paylaşır."
 }

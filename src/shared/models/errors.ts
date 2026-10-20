@@ -362,6 +362,12 @@ export class ChatboxAIAPIError extends BaseError {
       i18nKey:
         'You have selected SearXNG as the search provider, but an instance URL has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your SearXNG instance URL, or choose a different search provider.',
     },
+    deepseek_api_key_required: {
+      name: 'deepseek_api_key_required',
+      code: 20048,
+      i18nKey:
+        'You have selected DeepSeek as the search provider, but a DeepSeek API key has not been entered yet. DeepSeek search uses the same API key as the DeepSeek model provider. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your API key, or choose a different search provider.',
+    },
     parse_link_failed: {
       name: 'parse_link_failed',
       code: 20037,

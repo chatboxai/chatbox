@@ -1,5 +1,5 @@
 import { Flex, Select, Text, UnstyledButton } from '@mantine/core'
-import type { Settings } from '@shared/types'
+import { ModelProviderEnum, type Settings } from '@shared/types'
 import { IconCheck, IconX } from '@tabler/icons-react'
 import { createFileRoute } from '@tanstack/react-router'
 import { ofetch } from 'ofetch'
@@ -12,11 +12,12 @@ import { SettingRow, SettingsPage, SettingsSection } from '@/components/settings
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { PROVIDERS_WITH_PARSE_LINK } from '@/packages/web-search'
 import { BochaSearch } from '@/packages/web-search/bocha'
+import { DeepSeekSearch } from '@/packages/web-search/deepseek'
 import { WEB_SEARCH_PROVIDERS, type WebSearchProviderValue } from '@/packages/web-search/constants'
 import { QUERIT_SEARCH_URL } from '@/packages/web-search/querit'
 import { SearxngSearch } from '@/packages/web-search/searxng'
 import platform from '@/platform'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useProviderSettings, useSettingsStore } from '@/stores/settingsStore'
 
 export const Route = createFileRoute('/settings/web-search')({
   component: RouteComponent,
@@ -74,6 +75,9 @@ export function RouteComponent() {
   const setSettings = useSettingsStore((state) => state.setSettings)
   const extension = useSettingsStore((state) => state.extension)
   const licenseKey = useSettingsStore((state) => state.licenseKey)
+  const { providerSettings: deepseekSettings, setProviderSettings: setDeepSeekSettings } = useProviderSettings(
+    ModelProviderEnum.DeepSeek
+  )
   const webSearch = extension.webSearch
   const provider = webSearch.provider
 
@@ -107,6 +111,21 @@ export function RouteComponent() {
             />
           )}
         />
+        {provider === 'deepseek' && (
+          <CheckedFieldRow
+            id="deepseek-api-key"
+            label={t('DeepSeek API Key')}
+            description={t('Uses the API key configured for the DeepSeek model provider.')}
+            secret
+            value={deepseekSettings?.apiKey ?? ''}
+            onChange={(apiKey) => setDeepSeekSettings({ apiKey })}
+            check={async (apiKey) => {
+              await new DeepSeekSearch(apiKey).search('Chatbox')
+            }}
+            failureMessage={t('Connection failed!')}
+            getKeyUrl="https://platform.deepseek.com/api_keys"
+          />
+        )}
         {provider === 'searxng' && (
           <CheckedFieldRow
             key="searxng"

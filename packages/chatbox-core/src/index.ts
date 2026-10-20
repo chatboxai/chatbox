@@ -45,12 +45,15 @@ export {
   reportNativeContent,
 } from '@shared/services/native-report'
 export {
+  getNativeWebSearchProviderLabel,
   hasNativeWebSearchConfiguration,
+  type NativeWebSearchCredentialSources,
   type NativeWebSearchOptions,
   type NativeWebSearchProvider,
   type NativeWebSearchResultItem,
   nativeWebSearchProviderOptions,
   normalizeNativeWebSearchSettings,
+  resolveNativeWebSearchApiKey,
   searchNativeWeb,
 } from '@shared/services/native-web-search'
 export type {

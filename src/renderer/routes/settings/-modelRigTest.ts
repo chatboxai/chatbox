@@ -1,3 +1,4 @@
+import { resolveNativeWebSearchApiKey } from '@shared/services/native-web-search'
 import type { Settings } from '@shared/types'
 import { ModelProviderEnum } from '@shared/types'
 import type { PictureRef } from './-modelRigSettings'
@@ -144,6 +145,12 @@ async function testSearchSlot(deps: ModelRigTestDeps): Promise<SlotTestResult> {
   }
   if (provider === 'tavily' && !deps.settings.extension?.webSearch?.tavilyApiKey) {
     return fail('Tavily API key is missing', 'Add a Tavily API key in Web Search settings.')
+  }
+  if (provider === 'deepseek' && !resolveNativeWebSearchApiKey(deps.settings, provider).trim()) {
+    return fail(
+      'DeepSeek API key is missing',
+      'Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.'
+    )
   }
   if (provider === 'bocha' && !deps.settings.extension?.webSearch?.bochaApiKey) {
     return fail('BoCha API key is missing', 'Add a BoCha API key in Web Search settings.')

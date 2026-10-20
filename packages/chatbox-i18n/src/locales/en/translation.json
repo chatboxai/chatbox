@@ -2047,5 +2047,10 @@
   "Export pre-migration data": "Export pre-migration data",
   "Save the original conversation as JSON for recovery. Attached files are not included. Your chat will not be changed.": "Save the original conversation as JSON for recovery. Attached files are not included. Your chat will not be changed.",
   "No pre-migration data is available for this chat.": "No pre-migration data is available for this chat.",
-  "Could not export pre-migration data. Your chat has not been changed.": "Could not export pre-migration data. Your chat has not been changed."
+  "Could not export pre-migration data. Your chat has not been changed.": "Could not export pre-migration data. Your chat has not been changed.",
+  "Uses the API key configured for the DeepSeek model provider.": "Uses the API key configured for the DeepSeek model provider.",
+  "You have selected DeepSeek as the search provider, but a DeepSeek API key has not been entered yet. DeepSeek search uses the same API key as the DeepSeek model provider. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your API key, or choose a different search provider.": "You have selected DeepSeek as the search provider, but a DeepSeek API key has not been entered yet. DeepSeek search uses the same API key as the DeepSeek model provider. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your API key, or choose a different search provider.",
+  "DeepSeek API Key": "DeepSeek API Key",
+  "DeepSeek API key is missing": "DeepSeek API key is missing",
+  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key."
 }

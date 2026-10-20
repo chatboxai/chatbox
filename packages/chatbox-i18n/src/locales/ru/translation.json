@@ -2047,5 +2047,10 @@
   "Chatbox AI license missing for signed-out user": "<strong>Войдите в аккаунт</strong><br/>Вы используете модель, предоставленную Chatbox AI. Войдите, чтобы начать пользоваться ею сразу.<br/><OpenChatboxLoginButton>Войти в Chatbox AI</OpenChatboxLoginButton>",
   "Chatbox AI license missing for signed-in user": "<strong>Нет аккаунта Chatbox AI</strong><br/>Вы используете модель Chatbox AI. Получите бесплатный тариф, чтобы начать пользоваться ею сразу.<br/><OpenClaimFreePlanButton>Получить бесплатный тариф</OpenClaimFreePlanButton>",
   "Chatbox AI manual license not found": "<strong>Лицензия Chatbox AI не найдена</strong><br/>Проверьте введённый вручную лицензионный ключ Chatbox AI и повторите попытку.<br/><OpenManualLicenseButton>Ввести ключ повторно</OpenManualLicenseButton>",
-  "After claiming your free plan, open Chatbox AI settings to activate it": "После получения бесплатного плана <OpenChatboxSettingsButton>откройте настройки Chatbox AI</OpenChatboxSettingsButton>, чтобы активировать его."
+  "After claiming your free plan, open Chatbox AI settings to activate it": "После получения бесплатного плана <OpenChatboxSettingsButton>откройте настройки Chatbox AI</OpenChatboxSettingsButton>, чтобы активировать его.",
+  "Uses the API key configured for the DeepSeek model provider.": "Использует ключ API поставщика моделей DeepSeek.",
+  "You have selected DeepSeek as the search provider, but a DeepSeek API key has not been entered yet. DeepSeek search uses the same API key as the DeepSeek model provider. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your API key, or choose a different search provider.": "Вы выбрали DeepSeek в качестве поискового провайдера, но ещё не ввели API-ключ DeepSeek. Поиск DeepSeek использует тот же API-ключ, что и провайдер моделей DeepSeek. <OpenExtensionSettingButton>Нажмите здесь, чтобы открыть настройки</OpenExtensionSettingButton>, и введите API-ключ или выберите другой поисковый провайдер.",
+  "DeepSeek API Key": "API-ключ DeepSeek",
+  "DeepSeek API key is missing": "Отсутствует API-ключ DeepSeek",
+  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "Добавьте API-ключ DeepSeek в настройках веб-поиска или провайдера моделей DeepSeek. Они используют один и тот же ключ."
 }

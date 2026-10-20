@@ -2047,5 +2047,10 @@
   "Chatbox AI license missing for signed-out user": "<strong>يرجى تسجيل الدخول</strong><br/>أنت تستخدم نموذجًا مقدمًا من Chatbox AI. سجّل الدخول لبدء استخدامه فورًا.<br/><OpenChatboxLoginButton>تسجيل الدخول إلى Chatbox AI</OpenChatboxLoginButton>",
   "Chatbox AI license missing for signed-in user": "<strong>لا يوجد حساب Chatbox AI</strong><br/>أنت تستخدم نموذج Chatbox AI. احصل على الخطة المجانية لبدء استخدامه فورًا.<br/><OpenClaimFreePlanButton>احصل على الخطة المجانية</OpenClaimFreePlanButton>",
   "Chatbox AI manual license not found": "<strong>لم يتم العثور على ترخيص Chatbox AI</strong><br/>تحقق من مفتاح ترخيص Chatbox AI الذي أدخلته يدويًا ثم حاول مرة أخرى.<br/><OpenManualLicenseButton>إعادة إدخال مفتاح الترخيص</OpenManualLicenseButton>",
-  "After claiming your free plan, open Chatbox AI settings to activate it": "بعد الحصول على الخطة المجانية، <OpenChatboxSettingsButton>افتح إعدادات Chatbox AI</OpenChatboxSettingsButton> لتفعيلها."
+  "After claiming your free plan, open Chatbox AI settings to activate it": "بعد الحصول على الخطة المجانية، <OpenChatboxSettingsButton>افتح إعدادات Chatbox AI</OpenChatboxSettingsButton> لتفعيلها.",
+  "Uses the API key configured for the DeepSeek model provider.": "يستخدم مفتاح API لمزود DeepSeek.",
+  "You have selected DeepSeek as the search provider, but a DeepSeek API key has not been entered yet. DeepSeek search uses the same API key as the DeepSeek model provider. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your API key, or choose a different search provider.": "لقد اخترت DeepSeek كمزود بحث، ولكن لم يتم إدخال مفتاح DeepSeek API بعد. يستخدم بحث DeepSeek مفتاح API نفسه الخاص بمزود نماذج DeepSeek. يرجى <OpenExtensionSettingButton>النقر هنا لفتح الإعدادات</OpenExtensionSettingButton> وإدخال مفتاح API، أو اختيار مزود بحث آخر.",
+  "DeepSeek API Key": "مفتاح DeepSeek API",
+  "DeepSeek API key is missing": "مفتاح DeepSeek API مفقود",
+  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "أضف مفتاح DeepSeek API في إعدادات البحث على الويب أو إعدادات مزود نماذج DeepSeek. يستخدم كلاهما المفتاح نفسه."
 }

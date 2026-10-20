@@ -2047,5 +2047,10 @@
   "Chatbox AI license missing for signed-out user": "<strong>ログインしてください</strong><br/>Chatbox AI が提供するモデルを使用しています。ログインするとすぐに利用できます。<br/><OpenChatboxLoginButton>Chatbox AI にログイン</OpenChatboxLoginButton>",
   "Chatbox AI license missing for signed-in user": "<strong>Chatbox AI アカウントがありません</strong><br/>Chatbox AI モデルを使用しています。無料プランを取得するとすぐに利用できます。<br/><OpenClaimFreePlanButton>無料プランを取得</OpenClaimFreePlanButton>",
   "Chatbox AI manual license not found": "<strong>Chatbox AI ライセンスが見つかりません</strong><br/>手動入力した Chatbox AI ライセンスキーを確認して再試行してください。<br/><OpenManualLicenseButton>ライセンスキーを再入力</OpenManualLicenseButton>",
-  "After claiming your free plan, open Chatbox AI settings to activate it": "無料プランを取得したら、<OpenChatboxSettingsButton>Chatbox AI の設定を開いて</OpenChatboxSettingsButton>有効化してください。"
+  "After claiming your free plan, open Chatbox AI settings to activate it": "無料プランを取得したら、<OpenChatboxSettingsButton>Chatbox AI の設定を開いて</OpenChatboxSettingsButton>有効化してください。",
+  "Uses the API key configured for the DeepSeek model provider.": "DeepSeek モデルプロバイダーの API キーを使用します。",
+  "You have selected DeepSeek as the search provider, but a DeepSeek API key has not been entered yet. DeepSeek search uses the same API key as the DeepSeek model provider. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your API key, or choose a different search provider.": "検索プロバイダーとして DeepSeek を選択していますが、DeepSeek API キーがまだ入力されていません。DeepSeek 検索は DeepSeek モデルプロバイダーと同じ API キーを使用します。<OpenExtensionSettingButton>ここをクリックして設定を開き</OpenExtensionSettingButton>、API キーを入力するか、別の検索プロバイダーを選択してください。",
+  "DeepSeek API Key": "DeepSeek API キー",
+  "DeepSeek API key is missing": "DeepSeek API キーが未入力です",
+  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "Web 検索設定または DeepSeek モデルプロバイダー設定で DeepSeek API キーを入力してください。どちらも同じキーを共有します。"
 }

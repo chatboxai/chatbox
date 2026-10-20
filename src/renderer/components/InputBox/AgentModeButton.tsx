@@ -76,10 +76,8 @@ const AgentModeButton: FC<AgentModeButtonProps> = ({
   const openTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const closeTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const entry = useSessionAgentMode(sessionId)
-  const webSearchConfiguration = useSettingsStore((state) => state.extension.webSearch)
-  const licenseKey = useSettingsStore((state) => state.licenseKey)
-  const hasWebSearchWarning =
-    webBrowsingMode && getWebSearchConfigurationIssue(webSearchConfiguration, licenseKey) !== null
+  const webSearchConfigurationIssue = useSettingsStore((state) => getWebSearchConfigurationIssue(state))
+  const hasWebSearchWarning = webBrowsingMode && webSearchConfigurationIssue !== null
   const settingsOpened =
     Boolean((location.search as Record<string, unknown>)?.settings) || location.pathname.startsWith('/settings')
 

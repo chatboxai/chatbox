@@ -2047,5 +2047,10 @@
   "Export pre-migration data": "导出迁移前数据",
   "Save the original conversation as JSON for recovery. Attached files are not included. Your chat will not be changed.": "将原始对话保存为 JSON 以便恢复，不包含附件文件。此操作不会更改对话。",
   "No pre-migration data is available for this chat.": "此对话没有可用的迁移前数据。",
-  "Could not export pre-migration data. Your chat has not been changed.": "无法导出迁移前数据。对话未被更改。"
+  "Could not export pre-migration data. Your chat has not been changed.": "无法导出迁移前数据。对话未被更改。",
+  "Uses the API key configured for the DeepSeek model provider.": "使用 DeepSeek 模型提供方配置的 API 密钥。",
+  "You have selected DeepSeek as the search provider, but a DeepSeek API key has not been entered yet. DeepSeek search uses the same API key as the DeepSeek model provider. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your API key, or choose a different search provider.": "您已选择 DeepSeek 作为搜索提供方，但尚未输入 DeepSeek API key。DeepSeek 搜索与 DeepSeek 模型提供方使用同一个 API key。请<OpenExtensionSettingButton>点击这里打开设置</OpenExtensionSettingButton>并输入您的 API key，或选择其他搜索提供方。",
+  "DeepSeek API Key": "DeepSeek API 密钥",
+  "DeepSeek API key is missing": "尚未填写 DeepSeek API 密钥",
+  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "请在网页搜索设置或 DeepSeek 模型提供方设置中填写 DeepSeek API 密钥，两处共用同一个密钥。"
 }

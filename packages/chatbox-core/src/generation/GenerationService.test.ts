@@ -29,6 +29,7 @@ import {
   type GenerationSessionPort,
   type GenerationSteeringPort,
 } from './GenerationService'
+import { BasicGenerationPreparation } from './BasicGenerationPreparation'
 import { createModelMessageTokenCounter, estimateModelMessagesTokens, textTokenCounter } from './mid-run-compaction'
 import { estimateToolDefinitionTokens } from './request-overhead'
 import { GenerationRuntimeStore } from './runtime-store'
@@ -638,6 +639,77 @@ describe('generation context sources', () => {
     expect(saved?.messages[1].contentParts).toEqual([
       expect.objectContaining({ state: 'result', result: { stdout: '/workspace' } }),
     ])
+  })
+
+  it.each([
+    ['an approved tool call', 'approve', 'paused'],
+    ['a denied tool call', 'deny', 'paused'],
+    ['a retried pending tool call', 'retry', 'call'],
+    ['a retried finished tool call', 'retry', 'result'],
+  ] as const)('ends the prompt context of %s with its resumed target', async (_label, operation, state) => {
+    const harness = createHarness()
+    harness.setTools({ user_exec: { execute: async () => ({ stdout: '/workspace' }) } } as unknown as ToolSet)
+    harness.session.messages[1] = {
+      ...targetMessage(),
+      generating: false,
+      finishReason: state === 'paused' ? 'tool-call-paused' : undefined,
+      error: operation === 'retry' ? 'provider disconnected' : undefined,
+      contentParts: [
+        {
+          type: 'tool-call',
+          toolCallId: 'tool-1',
+          toolName: 'user_exec',
+          state,
+          args: { command: 'pwd' },
+          ...(state === 'paused'
+            ? { pauseReason: { type: 'user_exec_approval' as const, command: 'pwd', workdir: '/workspace' } }
+            : {}),
+          ...(state === 'result' ? { result: { stdout: '/workspace' } } : {}),
+        },
+      ],
+    }
+    const repo = new InMemorySessionRepository()
+    await repo.seedSession(harness.session)
+    harness.sessions.getSessionContextSource = repo.getSessionContextSource
+    harness.sessions.readSessionMessages = repo.readSessionMessages
+    const modify = harness.sessions.modifyMessage
+    harness.sessions.modifyMessage = async (...args) => {
+      await modify(...args)
+      await repo.executeSessionCommand('session-1', { type: 'update', messageId: args[1].id, updater: args[1] })
+    }
+    if (state === 'paused') {
+      harness.runtime.start('session-1', 'assistant-1')
+      harness.runtime.setPhase('session-1', 'assistant-1', 'paused')
+    }
+
+    if (operation === 'approve') await harness.service.continuePausedToolCall('session-1', 'assistant-1', 'tool-1')
+    else if (operation === 'deny') await harness.service.stopPausedToolCall('session-1', 'assistant-1', 'tool-1')
+    else await harness.service.retryFromLastToolCallAfterApiError('session-1', 'assistant-1', 'tool-1')
+
+    const request = harness.preparedRequests.at(-1)
+    if (!request) throw new Error('The resumed request was not prepared')
+    const beforeTarget = request.messages.slice(0, request.targetMessageIndex)
+    expect(request.preserveLastPromptMessageToolCalls).toBe(true)
+    expect(beforeTarget.at(-1)?.id).toBe('assistant-1')
+    expect(beforeTarget.filter((message) => message.id === 'assistant-1')).toHaveLength(1)
+  })
+
+  it('keeps the target of a fresh generation out of its prompt context', async () => {
+    const harness = createHarness()
+    const repo = new InMemorySessionRepository()
+    await repo.seedSession(harness.session)
+    harness.sessions.getSessionContextSource = repo.getSessionContextSource
+    harness.sessions.readSessionMessages = repo.readSessionMessages
+
+    await harness.service.orchestrate('session-1', targetMessage())
+
+    const request = harness.preparedRequests.at(-1)
+    if (!request) throw new Error('The request was not prepared')
+    expect(request.preserveLastPromptMessageToolCalls).toBe(false)
+    expect(request.messages[request.targetMessageIndex]?.id).toBe('assistant-1')
+    expect(request.messages.slice(0, request.targetMessageIndex).map((message) => message.id)).not.toContain(
+      'assistant-1'
+    )
   })
 
   it.each(['approve', 'retry'] as const)(
@@ -3101,6 +3173,70 @@ describe('GenerationService', () => {
       }),
     ])
     expect(harness.runtime.get('session-1')).toBeUndefined()
+  })
+
+  describe('portable preparation of a resumed tool exchange', () => {
+    const pauses = {
+      approval: [{ type: 'user_exec_approval' as const, command: 'pwd', workdir: '/workspace' }],
+      'tool limit': [
+        { type: 'tool_call_limit' as const, maxToolCalls: 25 },
+        { type: 'tool_call_limit' as const, maxToolCalls: 25 },
+      ],
+    }
+
+    async function prepareResumedRequest(pause: keyof typeof pauses) {
+      harness.setTools({ user_exec: { execute: async () => ({ stdout: '/workspace' }) } } as unknown as ToolSet)
+      harness.session.messages[1] = {
+        ...targetMessage(),
+        generating: false,
+        finishReason: 'tool-call-paused',
+        contentParts: pauses[pause].map((pauseReason, index) => ({
+          type: 'tool-call' as const,
+          state: 'paused' as const,
+          toolCallId: `tool-${index + 1}`,
+          toolName: 'user_exec',
+          args: { command: 'pwd' },
+          pauseReason,
+          stepIndex: 0,
+        })),
+      }
+      harness.runtime.start('session-1', 'assistant-1')
+      harness.runtime.setPhase('session-1', 'assistant-1', 'paused')
+
+      await harness.service.continuePausedToolCall('session-1', 'assistant-1', 'tool-1')
+
+      const request = harness.preparedRequests.at(-1)
+      if (!request) throw new Error('The resumed request was not prepared')
+      expect(request.preserveLastPromptMessageToolCalls).toBe(true)
+      expect(request.messages[request.targetMessageIndex - 1]).toEqual(
+        expect.objectContaining({ id: 'assistant-1', generating: true })
+      )
+      return new BasicGenerationPreparation<ModelContext>({
+        prepareTools: async () => ({ tools: { user_exec: tool({ inputSchema: jsonSchema({}) }) } }),
+      }).prepare(request)
+    }
+
+    it.each(Object.keys(pauses) as Array<keyof typeof pauses>)(
+      'keeps the executed tool exchange when continuing a paused %s',
+      async (pause) => {
+        const prepared = await prepareResumedRequest(pause)
+
+        expect(prepared.promptMessages.at(-1)).toEqual(
+          expect.objectContaining({ id: 'assistant-1', role: 'assistant' })
+        )
+        const assistant = prepared.coreMessages.find((message) => message.role === 'assistant')
+        expect(assistant?.content).toEqual(
+          pauses[pause].map((_pauseReason, index) =>
+            expect.objectContaining({ type: 'tool-call', toolCallId: `tool-${index + 1}` })
+          )
+        )
+        expect(prepared.coreMessages.find((message) => message.role === 'tool')?.content).toEqual(
+          pauses[pause].map((_pauseReason, index) =>
+            expect.objectContaining({ type: 'tool-result', toolCallId: `tool-${index + 1}` })
+          )
+        )
+      }
+    )
   })
 
   it('stops every call in a tool-limit batch without resuming generation', async () => {

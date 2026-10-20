@@ -1,7 +1,7 @@
 import { createMemoryToolContext, type MemoryToolContext } from '@chatbox/core/application/memory'
 import type { SessionContextBeforeTarget, SessionHeader } from '@chatbox/core/ports'
 import { buildAgentPersonaPrompt, buildMemoriesSection } from '@shared/agent-persona/prompt'
-import { buildContext, flattenToolCallPartsToText } from '@shared/context'
+import { buildContext, flattenToolCallPartsToText, selectMessagesBeforeTarget } from '@shared/context'
 import type { AttachmentPolicy } from '@shared/context/attachments'
 import type { AttachmentResolver } from '@shared/context/types'
 import { ChatboxAIAPIError, OCRError } from '@shared/models/errors'
@@ -263,12 +263,8 @@ export async function prepareAgentGenerationHarness(
     isPro,
   })
 
-  const messagesForPrompt = (await refreshSessionAttachmentStatuses(messages.slice(0, targetMsgIx))).map((message) =>
-    // A resumed continuation keeps its target message flagged `generating` for the UI,
-    // but its tool calls/results are exactly the context the follow-up request must
-    // continue from — without this the eligibility filter drops the whole message and
-    // the model restarts the task from scratch.
-    message.id === resumedMessage?.id && message.generating ? { ...message, generating: false } : message
+  const messagesForPrompt = await refreshSessionAttachmentStatuses(
+    selectMessagesBeforeTarget(messages, targetMsgIx, preserveLastPromptMessageToolCalls)
   )
   const attachmentPolicy = {
     modelSupportToolUseForFile: model.isSupportToolUse('read-file'),

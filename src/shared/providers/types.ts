@@ -75,6 +75,11 @@ export interface ProviderDefinition {
    */
   curatedModelIds?: string[]
   /**
+   * Replays stored assistant reasoning as plain text on every turn. Declare it only for providers
+   * whose request adapter sends reasoning history in a field the service accepts.
+   */
+  reasoningReplay?: 'plain-text'
+  /**
    * Factory function to create a model instance.
    * This replaces the switch statement in getModel().
    */

@@ -1,5 +1,6 @@
 import type { ModelInterface } from '@shared/models/types'
-import type { Message, Session } from '@shared/types'
+import '@shared/providers/definitions/ollama'
+import { type Message, ModelProviderEnum, type Session } from '@shared/types'
 import { jsonSchema, tool } from 'ai'
 import { describe, expect, it, vi } from 'vitest'
 import { createDefaultSettings } from '../domain/settings'
@@ -219,4 +220,42 @@ describe('BasicGenerationPreparation', () => {
       expect(request.messages[2].generating).toBe(true)
     }
   )
+  it.each([
+    [ModelProviderEnum.Ollama, true],
+    [ModelProviderEnum.DeepSeek, true],
+    [ModelProviderEnum.OpenAI, false],
+  ] as const)('replays stored %s plain-text reasoning with a resumed tool exchange: %s', async (provider, replayed) => {
+    const request = createRequest()
+    request.settings = { ...request.settings, provider }
+    request.messages.splice(2, 0, {
+      id: 'prior-tool-call',
+      role: 'assistant',
+      contentParts: [
+        { type: 'reasoning', text: 'I need to read the file' },
+        {
+          type: 'tool-call',
+          state: 'result',
+          toolCallId: 'call-1',
+          toolName: 'read_file',
+          args: { path: 'input.txt' },
+          result: 'File contents',
+        },
+      ],
+    })
+    request.targetMessageIndex = 3
+    const preparation = new BasicGenerationPreparation<TestContext>({
+      prepareTools: async (): Promise<BasicGenerationToolPreparation> => ({
+        tools: { read_file: tool({ inputSchema: jsonSchema({ type: 'object' }) }) },
+      }),
+    })
+
+    const prepared = await preparation.prepare(request)
+
+    const reasoning = prepared.coreMessages.flatMap((message) =>
+      message.role === 'assistant' && Array.isArray(message.content)
+        ? message.content.filter((part) => part.type === 'reasoning')
+        : []
+    )
+    expect(reasoning).toEqual(replayed ? [{ type: 'reasoning', text: 'I need to read the file' }] : [])
+  })
 })

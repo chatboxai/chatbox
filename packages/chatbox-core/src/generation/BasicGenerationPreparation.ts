@@ -97,8 +97,8 @@ export class BasicGenerationPreparation<TContext> implements GenerationPreparati
       request.model.reasoningReplaySource
     )
     // Anthropic signed replay also needs the Renderer harness's unsigned-resume
-    // handling, so this path replays only the Responses and Gemini protocols.
-    const portableReplay = replay.replayNamespaces.some((namespace) => namespace === 'openai' || namespace === 'google')
+    // handling, so this path applies every other route's replay policy.
+    const portableReplay = !replay.replayNamespaces.includes('anthropic')
     const preparedMessages = await prepareModelMessages({
       messages: promptMessages,
       model: request.model,

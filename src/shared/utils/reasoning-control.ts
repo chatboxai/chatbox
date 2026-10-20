@@ -1,6 +1,7 @@
 import { pickPersistableProviderMetadata } from '../models/provider-part-metadata'
 import { isDeepSeekReasoningEffortModel, isDeepSeekReasoningModel } from '../models/utils/deepseek'
 import { usesBedrockConverseProtocol } from '../providers/api-style'
+import { getProviderDefinition } from '../providers/registry'
 import type { MessageContentParts, ModelProvider, ProviderModelInfo, ProviderOptions } from '../types'
 import { ModelProviderEnum } from '../types'
 import {
@@ -462,7 +463,8 @@ export interface ReasoningReplayPolicy {
  * providers are dropped rather than replayed as Gemini thought parts.
  *
  * DeepSeek thinking mode keeps its existing all-turns plain-text behavior (see
- * `shouldPreserveDeepSeekReasoning`).
+ * `shouldPreserveDeepSeekReasoning`). Providers whose definition declares
+ * `reasoningReplay: 'plain-text'` use the same channel.
  */
 export function resolveReasoningReplayPolicy(
   provider: ModelProvider | undefined,
@@ -486,7 +488,10 @@ function resolveReasoningReplayRoute(
   if (model?.apiStyle === 'google') {
     return { preserveReasoning: 'all-turns', signedReasoningOnly: true, replayNamespaces: ['google'] }
   }
-  if (shouldPreserveDeepSeekReasoning(provider, model)) {
+  if (
+    shouldPreserveDeepSeekReasoning(provider, model) ||
+    (provider && getProviderDefinition(provider)?.reasoningReplay === 'plain-text')
+  ) {
     return { preserveReasoning: 'all-turns', signedReasoningOnly: false, replayNamespaces: [] }
   }
   return { preserveReasoning: false, signedReasoningOnly: false, replayNamespaces: [] }

@@ -265,7 +265,7 @@ export function SettingsRoot() {
       )
     }
     return (
-      <div className="flex-1 h-full overflow-auto bg-chatbox-background-secondary">
+      <div className="flex-1 h-full overflow-auto bg-chatbox-background-grouped">
         <div className="flex flex-col gap-5 px-3 pt-3 pb-6">
           <SettingsSearchInput value={query} onChange={setQuery} />
           {query ? (

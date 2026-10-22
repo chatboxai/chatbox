@@ -61,6 +61,7 @@
   --chatbox-background-tertiary: #dee2e6;
   --chatbox-background-tertiary-hover: #ced4da;
   --chatbox-background-disabled: #e9ecef;
+  --chatbox-background-grouped: var(--chatbox-background-secondary);
 
   --chatbox-background-brand-primary: var(--chatbox-brand);
   --chatbox-background-brand-primary-hover: color-mix(in srgb, var(--chatbox-brand), black 12%);
@@ -112,29 +113,33 @@
   --ring: var(--chatbox-tint-brand);
 }
 
+/* Dark layers are derived from the user's theme-color surfaces (sunken shell, raised
+   controls, hover), borders and gray fills are translucent white over those surfaces, and
+   text tints are one neutral gray scale. */
 :root[data-mantine-color-scheme="dark"] {
   /* colors */
-  --chatbox-tint-primary: #ffffff;
-  --chatbox-tint-secondary: #ced4da;
-  --chatbox-tint-tertiary: #828282;
+  --chatbox-tint-primary: #ececec;
+  --chatbox-tint-secondary: #bdbdbd;
+  --chatbox-tint-tertiary: #999999;
 
   --chatbox-tint-white: #ffffff;
   --chatbox-tint-black: #000000;
-  --chatbox-tint-gray: #868e96;
+  --chatbox-tint-gray: #999999;
 
-  --chatbox-tint-disabled: #696969;
+  --chatbox-tint-disabled: #5f5f5f;
   --chatbox-brand: #228be6;
-  --chatbox-tint-brand: var(--chatbox-brand);
-  --chatbox-tint-placeholder: #828282;
-  --chatbox-tint-error: #f03e3e;
-  --chatbox-tint-error-disabled: rgb(224, 49, 49, 0.5);
-  --chatbox-tint-warning: #ffe066;
+  /* Brand text and icons sit on dark surfaces, so they use a lifted brand; fills keep the brand itself. */
+  --chatbox-tint-brand: color-mix(in srgb, var(--chatbox-brand), white 30%);
+  --chatbox-tint-placeholder: #999999;
+  --chatbox-tint-error: #ff6b6b;
+  --chatbox-tint-error-disabled: rgb(255, 107, 107, 0.5);
+  --chatbox-tint-warning: #ffd43b;
   --chatbox-tint-success: #63e6be;
 
-  --chatbox-border-primary: #495057;
-  --chatbox-border-secondary: #868e96;
-  --chatbox-border-warning: #ffe066;
-  --chatbox-border-error: #f03e3e;
+  --chatbox-border-primary: rgb(255 255 255 / 12%);
+  --chatbox-border-secondary: rgb(255 255 255 / 24%);
+  --chatbox-border-warning: #ffd43b;
+  --chatbox-border-error: #ff6b6b;
   --chatbox-border-success: #63e6be;
   --chatbox-border-brand: var(--chatbox-brand);
 
@@ -143,22 +148,25 @@
   --chatbox-shadow-notice: inset 0 4px 8px rgb(255 255 255 / 3%);
 
   --chatbox-background-primary: #242424;
-  --chatbox-background-primary-hover: #1f1f1f;
+  /* Also the shell and sidebar background on wide layouts, so it sits below the primary surface. */
+  --chatbox-background-primary-hover: color-mix(in srgb, var(--chatbox-background-primary), black 14%);
   --chatbox-background-secondary: #3b3b3b;
-  --chatbox-background-secondary-hover: #495057;
+  --chatbox-background-secondary-hover: color-mix(in srgb, var(--chatbox-background-secondary), white 7%);
   --chatbox-background-tertiary: #424242;
-  --chatbox-background-tertiary-hover: #696969;
-  --chatbox-background-disabled: #2e2e2e;
+  --chatbox-background-tertiary-hover: color-mix(in srgb, var(--chatbox-background-tertiary), white 9%);
+  --chatbox-background-disabled: color-mix(in srgb, var(--chatbox-background-primary), white 4%);
+  /* Page behind grouped cards: one step below the primary surface, so cards read as raised. */
+  --chatbox-background-grouped: color-mix(in srgb, var(--chatbox-background-primary), black 32%);
 
   --chatbox-background-brand-primary: var(--chatbox-brand);
   --chatbox-background-brand-primary-hover: color-mix(in srgb, var(--chatbox-brand), black 12%);
-  --chatbox-background-brand-secondary: color-mix(in srgb, var(--chatbox-brand), transparent 80%);
-  --chatbox-background-brand-secondary-hover: color-mix(in srgb, var(--chatbox-brand), transparent 76%);
+  --chatbox-background-brand-secondary: color-mix(in srgb, var(--chatbox-brand), transparent 86%);
+  --chatbox-background-brand-secondary-hover: color-mix(in srgb, var(--chatbox-brand), transparent 80%);
 
-  --chatbox-background-gray-primary: #343a40;
-  --chatbox-background-gray-primary-hover: #212529;
-  --chatbox-background-gray-secondary: rgb(134, 142, 150, 0.15);
-  --chatbox-background-gray-secondary-hover: rgb(134, 142, 150, 0.2);
+  --chatbox-background-gray-primary: rgb(255 255 255 / 16%);
+  --chatbox-background-gray-primary-hover: rgb(255 255 255 / 22%);
+  --chatbox-background-gray-secondary: rgb(255 255 255 / 7%);
+  --chatbox-background-gray-secondary-hover: rgb(255 255 255 / 11%);
 
   --chatbox-background-success-primary: #099268;
   --chatbox-background-success-primary-hover: #087f5b;
@@ -175,8 +183,30 @@
   --chatbox-background-warning-secondary: rgb(250, 176, 5, 0.15);
   --chatbox-background-warning-secondary-hover: rgb(250, 176, 5, 0.2);
 
-  --chatbox-background-mask-overlay: rgb(31, 31, 31, 0.78);
-  --chatbox-background-mask-lighten: rgb(173, 181, 189, 0.48);
+  --chatbox-background-mask-overlay: rgb(0 0 0 / 60%);
+  --chatbox-background-mask-lighten: rgb(255 255 255 / 14%);
+}
+
+/* Mantine's own dark semantics follow the Chatbox tokens, so unstyled Mantine text, default
+   buttons and borders match the rest of the UI and the selected theme color. */
+:root[data-mantine-color-scheme="dark"][data-mantine-color-scheme] {
+  --mantine-color-body: var(--chatbox-background-primary);
+  --mantine-color-text: var(--chatbox-tint-primary);
+  --mantine-color-dimmed: var(--chatbox-tint-tertiary);
+  --mantine-color-placeholder: var(--chatbox-tint-placeholder);
+  --mantine-color-default: color-mix(in srgb, var(--chatbox-background-primary), white 4%);
+  --mantine-color-default-hover: color-mix(in srgb, var(--chatbox-background-primary), white 9%);
+  --mantine-color-default-color: var(--chatbox-tint-primary);
+  --mantine-color-default-border: var(--chatbox-border-primary);
+}
+
+/* Mantine's dark inputs read its fixed dark palette directly; point them at the same tokens. */
+:root[data-mantine-color-scheme="dark"] .mantine-Input-wrapper {
+  --input-disabled-bg: var(--chatbox-background-disabled);
+}
+:root[data-mantine-color-scheme="dark"] .mantine-Input-wrapper[data-variant="default"] {
+  --input-bg: var(--mantine-color-default);
+  --input-bd: var(--chatbox-border-primary);
 }
 
 :root[data-mantine-color-scheme="light"][data-mantine-color-scheme],

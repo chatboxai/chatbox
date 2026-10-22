@@ -51,7 +51,7 @@
   "src/renderer/components/settings/skills/SkillsSection.tsx": 4,
   "src/renderer/components/settings/skills/SkillsSpotlight.tsx": 3,
   "src/renderer/components/StyledMenu.tsx": 9,
-  "src/renderer/hooks/useAppTheme.ts": 4,
+  "src/renderer/hooks/useAppTheme.ts": 3,
   "src/renderer/i18n/changelogs/changelog_en.ts": 4,
   "src/renderer/i18n/changelogs/changelog_zh_Hans.ts": 4,
   "src/renderer/i18n/changelogs/changelog_zh_Hant.ts": 2,

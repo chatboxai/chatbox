@@ -28,6 +28,9 @@ const h = vi.hoisted(() => ({
   heightChanged: null as ((height: number) => void) | null,
   initialLocations: [] as unknown[],
   hideSystem: false,
+  threadCount: 1,
+  agentMode: 'off' as 'off' | 'on',
+  renderMenu: vi.fn(),
   smallScreen: false,
   activity: 'idle' as 'idle' | 'generating',
   atTop: null as ((value: boolean) => void) | null,
@@ -41,6 +44,11 @@ vi.mock('@/app/renderer-application', () => ({
   rendererApplication: {
     sessions: { readSessionTranscriptWindow: h.read, shouldConfirmPromptCacheDelete: vi.fn(async () => false) },
     sessionQueryBridge: { registerWindow: h.registerWindow },
+    sessionHooks: {
+      useSessionThreads: () => ({
+        threads: Array.from({ length: h.threadCount }, (_, index) => ({ threadId: `thread-${index}` })),
+      }),
+    },
   },
 }))
 vi.mock('@chatbox/react/query', async (original) => ({
@@ -69,7 +77,7 @@ vi.mock('@/hooks/useSessionLockState', () => ({
     data: { cancellableMessages: [] },
   }),
 }))
-vi.mock('@/stores/session/agent-mode', () => ({ useSessionAgentMode: () => ({ value: 'off' }) }))
+vi.mock('@/stores/session/agent-mode', () => ({ useSessionAgentMode: () => ({ value: h.agentMode }) }))
 vi.mock('@/lib/utils', () => ({ cn: (...items: unknown[]) => items.filter(Boolean).join(' ') }))
 vi.mock('@/hooks/useScreenChange', () => ({ useIsSmallScreen: () => h.smallScreen }))
 vi.mock('@/stores/sessionActivityStore', () => ({ useSessionActivity: () => h.activity }))
@@ -111,7 +119,12 @@ vi.mock('@/stores/session/threads', () => ({
 vi.mock('@/utils/session-lock-copy', () => ({ notifySessionLockBlocked: vi.fn() }))
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
 vi.mock('../Markdown', () => ({ BlockCodeCollapsedStateProvider: ({ children }: { children: ReactNode }) => children }))
-vi.mock('../ActionMenu', () => ({ default: ({ children }: { children: ReactNode }) => children }))
+vi.mock('../ActionMenu', () => ({
+  default: ({ children, items }: { children: ReactNode; items: Array<{ text?: string }> }) => {
+    h.renderMenu(items)
+    return children
+  },
+}))
 vi.mock('../common/ErrorBoundary', () => ({ ErrorBoundary: ({ children }: { children: ReactNode }) => children }))
 vi.mock('./Message', () => ({
   default: ({ msg, readOnly }: { msg: Body; readOnly?: boolean }) => {
@@ -357,6 +370,9 @@ beforeEach(() => {
   h.heightChanged = null
   h.initialLocations.length = 0
   h.hideSystem = false
+  h.threadCount = 1
+  h.agentMode = 'off'
+  h.renderMenu.mockClear()
   h.smallScreen = false
   h.activity = 'idle'
   h.atTop = null
@@ -421,6 +437,63 @@ function scrollGeometry(element: HTMLElement, scrollTop: number) {
 }
 
 describe('row transcript host', () => {
+  test.each(['off', 'on'] as const)('hides the sole thread heading and menu in agent mode %s', async (mode) => {
+    h.agentMode = mode
+    const view = render(<Host search="m0" />)
+    await waitFor(() => expect(h.firstReady).toBe(true))
+    expect(view.queryByText('Current')).toBeNull()
+    expect(h.renderMenu).not.toHaveBeenCalled()
+    expect(view.getByTestId('message-m1')).toBeTruthy()
+  })
+  test.each(['off', 'on'] as const)('hides a sole empty thread heading in agent mode %s', async (mode) => {
+    h.agentMode = mode
+    h.read.mockImplementation(async (request: SessionTranscriptRequest) => {
+      const result = page(request)
+      result.messages = []
+      result.threads[0].rootMessageId = null
+      result.threads[0].activeLeafMessageId = null
+      result.older = null
+      result.newer = null
+      return result
+    })
+    const view = render(<Host />)
+    await waitFor(() => expect(h.firstReady).toBe(true))
+    expect(view.queryByText('Current')).toBeNull()
+    expect(h.renderMenu).not.toHaveBeenCalled()
+  })
+  test.each(['off', 'on'] as const)(
+    'shows multi-thread headings when only one thread is loaded in mode %s',
+    async (mode) => {
+      h.agentMode = mode
+      h.threadCount = 2
+      const view = render(<Host search="m0" />)
+      await waitFor(() => expect(h.firstReady).toBe(true))
+      expect(h.controller?.getSnapshot().threads).toHaveLength(1)
+      expect(view.getAllByText('Current')).toHaveLength(1)
+      const actions = h.renderMenu.mock.calls
+        .at(-1)?.[0]
+        .flatMap((item: { text?: string }) => (item.text ? [item.text] : []))
+      expect(actions).toEqual(
+        mode === 'on'
+          ? ['Edit Thread Name', 'Show in Thread List']
+          : ['Edit Thread Name', 'Show in Thread List', 'Continue this thread', 'Move to Conversations', 'delete']
+      )
+    }
+  )
+  test('updates heading visibility when thread metadata changes without rereading message bodies', async () => {
+    const view = render(<Host search="m0" />)
+    await waitFor(() => expect(h.firstReady).toBe(true))
+    expect(view.queryByText('Current')).toBeNull()
+    h.threadCount = 2
+    view.rerender(<Host search="m0" />)
+    expect(view.getByText('Current')).toBeTruthy()
+    h.threadCount = 1
+    view.rerender(<Host search="m0" />)
+    expect(view.queryByText('Current')).toBeNull()
+    expect(view.getByTestId('message-m1')).toBeTruthy()
+    expect(h.read).toHaveBeenCalledTimes(1)
+  })
+
   test.each([false, true])('uses the existing navigation controls on smallScreen=%s', async (smallScreen) => {
     h.smallScreen = smallScreen
     const view = render(<Host search="m0" />)
@@ -596,6 +669,7 @@ describe('row transcript host', () => {
     expect(user.parentElement?.classList.contains('pt-5')).toBe(true)
   })
   test.each([false, true])('shows historical thread dates with an empty thread=%s', async (empty) => {
+    h.threadCount = 2
     h.read.mockImplementation(async (request: SessionTranscriptRequest) => {
       const result = page(request)
       result.threads[0] = { ...result.threads[0], seq: 0, name: 'History', createdAt: 1_700_000_000_000 }
@@ -633,6 +707,7 @@ describe('row transcript host', () => {
     { role: 'system' as const, hideSystem: true },
   ])('retains the first thread title for a $role root with hideSystem=$hideSystem', async ({ role, hideSystem }) => {
     h.hideSystem = hideSystem
+    h.threadCount = 2
     h.read.mockImplementation(async (request: SessionTranscriptRequest) => {
       const result = page(request)
       result.messages[0].message.role = role

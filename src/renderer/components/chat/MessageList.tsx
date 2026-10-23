@@ -95,9 +95,16 @@ const MessageList = forwardRef<
   const virtuoso = useRef<VirtuosoHandle>(null)
   const lastItem = useRef<HTMLDivElement>(null)
   const owner = useMemo(() => Symbol(session.id), [session.id])
+  const { threads: sessionThreads } = rendererApplication.sessionHooks.useSessionThreads(session.id, {
+    enabled: transcript.firstWindowReady,
+  })
+  const showThreadLabels = sessionThreads.length > 1
   const items = useMemo(
-    () => buildTranscriptRenderItems(transcript.rows, transcript.threads),
-    [transcript.rows, transcript.threads]
+    () =>
+      buildTranscriptRenderItems(transcript.rows, transcript.threads).filter(
+        (item) => showThreadLabels || item.type !== 'thread'
+      ),
+    [transcript.rows, transcript.threads, showThreadLabels]
   )
   const rowsById = useMemo(() => new Map(transcript.rows.map((row) => [row.messageId, row])), [transcript.rows])
   const threadById = useMemo(
@@ -598,7 +605,7 @@ const MessageList = forwardRef<
   const renderMessage = (message: SessionMessage, first: boolean, last: boolean) => {
     const row = rowsById.get(message.id)!
     const thread = threadById.get(row.threadId)
-    const showThread = row.messageId === thread?.rootMessageId
+    const showThread = showThreadLabels && row.messageId === thread?.rootMessageId
     const hidden = hideSystemPrompt && message.role === 'system'
     const spacing = first ? 'pt-4' : last ? '!pb-4' : ''
     return (

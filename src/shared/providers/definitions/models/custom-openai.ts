@@ -3,6 +3,7 @@ import { extractReasoningMiddleware, wrapLanguageModel } from 'ai'
 import AbstractAISDKModel from '../../../models/abstract-ai-sdk'
 import { fetchRemoteModels, getOpenAICompatibleProviderOptionsKey } from '../../../models/openai-compatible'
 import type { CallChatCompletionOptions } from '../../../models/types'
+import { isDeepSeekReasoningModel, normalizeDeepSeekReasoningEffort } from '../../../models/utils/deepseek'
 import { createFetchWithProxy } from '../../../models/utils/fetch-proxy'
 import { createOpenAIChatCompletionSseFetch } from '../../../models/utils/openai-chat-sse-termination'
 import type { ProviderModelInfo } from '../../../types'
@@ -37,10 +38,20 @@ export default class CustomOpenAI extends AbstractAISDKModel {
   }
 
   protected getCallSettings(options: CallChatCompletionOptions) {
-    const openAICompatibleOptions = pickOpenAICompatibleReasoningOptions(
-      this.options.model.modelId,
-      options.providerOptions
-    )
+    const modelId = this.options.model.modelId
+    // The reasoning control writes DeepSeek's namespace for custom compatible
+    // endpoints too. The compatible SDK needs those values in its own namespace.
+    // Keep OpenAI-only flags filtered and don't carry stale DeepSeek options to
+    // other model families.
+    const deepseekOptions = isDeepSeekReasoningModel(modelId) ? options.providerOptions?.deepseek : undefined
+    const thinking = deepseekOptions?.thinking
+    const reasoningEffort = normalizeDeepSeekReasoningEffort(modelId, deepseekOptions?.reasoningEffort)
+    const compatibleOptions = {
+      ...pickOpenAICompatibleReasoningOptions(modelId, options.providerOptions),
+      ...(thinking ? { thinking } : {}),
+      ...(reasoningEffort ? { reasoningEffort } : {}),
+    }
+    const openAICompatibleOptions = Object.keys(compatibleOptions).length ? compatibleOptions : undefined
     return {
       temperature: this.options.temperature,
       topP: this.options.topP,

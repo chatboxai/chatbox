@@ -33,7 +33,12 @@ vi.mock('@/packages/token', () => ({ estimateTokensFromMessages: () => 0 }))
 
 import { resetSessionGenerationLocksForTests } from '@chatbox/core/generation'
 import { rendererApplication } from '@/app/renderer-application'
-import { startAutoDialogue } from './generation'
+import {
+  AUTO_DIALOGUE_CONFIRM_TIMEOUT_MS,
+  autoDialogueConfirmStore,
+  resolveAutoDialogueConfirm,
+  startAutoDialogue,
+} from './generation'
 
 function textMessage(id: string, role: Message['role'], text: string): Message {
   return { id, role, contentParts: [{ type: 'text', text }] }
@@ -41,6 +46,7 @@ function textMessage(id: string, role: Message['role'], text: string): Message {
 
 describe('startAutoDialogue', () => {
   let session: Session
+  let stopAutoConfirm: () => void
 
   function finishMessage(id: string, patch: Partial<Message>) {
     Object.assign(session.messages.find((m) => m.id === id) as Message, { generating: false, ...patch })
@@ -68,9 +74,16 @@ describe('startAutoDialogue', () => {
       finishMessage(msg.id, { finishReason: 'stop' })
       return Promise.resolve()
     })
+    // Confirm every turn unless a test opts out.
+    stopAutoConfirm = autoDialogueConfirmStore.subscribe((state) => {
+      if (state['session-1']) resolveAutoDialogueConfirm('session-1', true)
+    })
   })
 
   afterEach(() => {
+    stopAutoConfirm()
+    resolveAutoDialogueConfirm('session-1', false)
+    vi.useRealTimers()
     resetSessionGenerationLocksForTests()
     rendererApplication.generationRuntime.dispose()
   })
@@ -129,5 +142,37 @@ describe('startAutoDialogue', () => {
     await startAutoDialogue('session-1')
 
     expect(orchestrateGenerationMock).toHaveBeenCalledTimes(20)
+  })
+
+  it('waits for confirmation before each later turn and stops when declined', async () => {
+    stopAutoConfirm()
+    const run = startAutoDialogue('session-1')
+
+    await vi.waitFor(() => expect(autoDialogueConfirmStore.getState()['session-1']).toBeDefined())
+    expect(orchestrateGenerationMock).toHaveBeenCalledTimes(1)
+
+    resolveAutoDialogueConfirm('session-1', true)
+    await vi.waitFor(() => expect(orchestrateGenerationMock).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(autoDialogueConfirmStore.getState()['session-1']).toBeDefined())
+
+    resolveAutoDialogueConfirm('session-1', false)
+    await run
+
+    expect(orchestrateGenerationMock).toHaveBeenCalledTimes(2)
+    expect(orchestrateGenerationMock.mock.calls.map(([, msg]) => msg.role)).toEqual(['user', 'assistant'])
+    expect(autoDialogueConfirmStore.getState()['session-1']).toBeUndefined()
+  })
+
+  it('stops when the next turn is not confirmed within 10 minutes', async () => {
+    stopAutoConfirm()
+    vi.useFakeTimers()
+    const run = startAutoDialogue('session-1')
+
+    await vi.waitFor(() => expect(autoDialogueConfirmStore.getState()['session-1']).toBeDefined())
+    await vi.advanceTimersByTimeAsync(AUTO_DIALOGUE_CONFIRM_TIMEOUT_MS)
+    await run
+
+    expect(orchestrateGenerationMock).toHaveBeenCalledTimes(1)
+    expect(autoDialogueConfirmStore.getState()['session-1']).toBeUndefined()
   })
 })

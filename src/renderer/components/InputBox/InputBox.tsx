@@ -119,6 +119,7 @@ import ProviderImageIcon from '../icons/ProviderImageIcon'
 import ModelSelectorV2 from '../ModelSelectorV2'
 import AgentModeButton from './AgentModeButton'
 import { FileMiniCard, getParserTypeLabel, ImageMiniCard } from './Attachments'
+import { AutoDialogueConfirmBar } from './AutoDialogueConfirmBar'
 import { getAgentModeUIState } from './agentModeState'
 import { ComposerSettingsMenu } from './ComposerSettingsMenu'
 import { ImageUploadInput } from './ImageUploadInput'
@@ -1517,6 +1518,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
           )}
           {currentSession && !isNewSession && <WebSearchUnavailableBanner session={currentSession} />}
           {currentSessionId && !isNewSession && <QueuedMessagesBar sessionId={currentSessionId} />}
+          {currentSessionId && !isNewSession && <AutoDialogueConfirmBar sessionId={currentSessionId} />}
           {currentSession && !isNewSession && (
             <ErrorBoundary name="pending-action-bar">
               <PendingActionBar session={currentSession} />

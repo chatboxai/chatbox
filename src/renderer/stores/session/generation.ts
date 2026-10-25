@@ -7,6 +7,7 @@ import { findMessageContext } from '@shared/session/message-forks'
 import { type CompactionPoint, createMessage, type Message, type Session, type SessionSettings } from '@shared/types'
 import { countMessageWords } from '@shared/utils/message'
 import { v4 as uuidv4 } from 'uuid'
+import { createStore } from 'zustand'
 import { currentGenerationService } from '@/adapters/CurrentGenerationService'
 import { rendererApplication } from '@/app/renderer-application'
 import { assessContextPressure, getConfiguredContextWindow } from '@/packages/context-management/context-pressure'
@@ -199,42 +200,79 @@ export function saveAndResendMessage(
 }
 
 const AUTO_DIALOGUE_MAX_TURNS = 20
+export const AUTO_DIALOGUE_CONFIRM_TIMEOUT_MS = 10 * 60 * 1000
+
+/** Pending "run the next turn?" confirmations of AI vs AI dialogues, keyed by session id. */
+export const autoDialogueConfirmStore = createStore<Record<string, ((confirmed: boolean) => void) | undefined>>(
+  () => ({})
+)
+
+export function resolveAutoDialogueConfirm(sessionId: string, confirmed: boolean) {
+  const resolve = autoDialogueConfirmStore.getState()[sessionId]
+  if (!resolve) return
+  autoDialogueConfirmStore.setState({ [sessionId]: undefined })
+  resolve(confirmed)
+}
+
+/** Resolves true when the user confirms, false when they stop or nobody confirms in time. */
+function waitForAutoDialogueConfirm(sessionId: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolveAutoDialogueConfirm(sessionId, false), AUTO_DIALOGUE_CONFIRM_TIMEOUT_MS)
+    autoDialogueConfirmStore.setState({
+      [sessionId]: (confirmed) => {
+        clearTimeout(timer)
+        resolve(confirmed)
+      },
+    })
+  })
+}
 
 /**
- * AI vs AI: alternately generate a user-side reply (roles swapped) and an assistant reply,
- * until a generation is stopped, fails or pauses, or the turn cap is reached.
+ * AI vs AI: alternately generate a user-side reply (roles swapped) and an assistant reply.
+ * Every turn after the first waits for the user to confirm, so no tokens are spent unattended.
+ * Stops when the user declines, nobody confirms within 10 minutes, a generation is stopped,
+ * fails or pauses, or the turn cap is reached.
  * @param sessionId Session ID
  * @param userSidePrompt System prompt for the user-side AI; falls back to the session's system prompt
  */
-export function startAutoDialogue(sessionId: string, userSidePrompt?: string) {
-  return withSessionGenerationLock(sessionId, async () => {
-    const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
-    if (!session || !supportsSessionGeneration(session.type)) {
+export async function startAutoDialogue(sessionId: string, userSidePrompt?: string) {
+  // Restarting replaces a dialogue that is still waiting for confirmation.
+  resolveAutoDialogueConfirm(sessionId, false)
+  for (let turn = 0; turn < AUTO_DIALOGUE_MAX_TURNS; turn++) {
+    if (turn > 0 && !(await waitForAutoDialogueConfirm(sessionId))) {
       return
     }
-    let asUser = session.messages[session.messages.length - 1]?.role !== 'user'
-    for (let turn = 0; turn < AUTO_DIALOGUE_MAX_TURNS; turn++, asUser = !asUser) {
-      const msg = createMessage(asUser ? 'user' : 'assistant', '')
-      msg.generating = true
-      const preparationLease = rendererApplication.generationRuntime.acquireGenerationPreparationLease(sessionId)
-      if (!preparationLease) return
-      try {
-        await insertMessage(sessionId, msg)
-      } finally {
-        rendererApplication.generationRuntime.releaseGenerationPreparationLease(preparationLease)
-      }
-      const thread = await getMessageThreadContext(sessionId, msg.id)
-      await currentGenerationService.orchestrate(
-        sessionId,
-        msg,
-        asUser ? { contextMessages: swapRolesForUserSide(thread, msg.id, userSidePrompt) } : undefined
-      )
-      const done = (await getMessageThreadContext(sessionId, msg.id)).find((m) => m.id === msg.id)
-      if (!done || done.error || done.finishReason === 'canceled' || done.finishReason === 'tool-call-paused') {
-        return
-      }
+    const finished = await withSessionGenerationLock(sessionId, () => runAutoDialogueTurn(sessionId, userSidePrompt))
+    if (!finished) {
+      return
     }
-  })
+  }
+}
+
+/** Generate one AI vs AI turn; the side to speak is whichever did not write the last message. */
+async function runAutoDialogueTurn(sessionId: string, userSidePrompt?: string): Promise<boolean> {
+  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
+  if (!session || !supportsSessionGeneration(session.type)) {
+    return false
+  }
+  const asUser = session.messages[session.messages.length - 1]?.role !== 'user'
+  const msg = createMessage(asUser ? 'user' : 'assistant', '')
+  msg.generating = true
+  const preparationLease = rendererApplication.generationRuntime.acquireGenerationPreparationLease(sessionId)
+  if (!preparationLease) return false
+  try {
+    await insertMessage(sessionId, msg)
+  } finally {
+    rendererApplication.generationRuntime.releaseGenerationPreparationLease(preparationLease)
+  }
+  const thread = await getMessageThreadContext(sessionId, msg.id)
+  await currentGenerationService.orchestrate(
+    sessionId,
+    msg,
+    asUser ? { contextMessages: swapRolesForUserSide(thread, msg.id, userSidePrompt) } : undefined
+  )
+  const done = (await getMessageThreadContext(sessionId, msg.id)).find((m) => m.id === msg.id)
+  return Boolean(done && !done.error && done.finishReason !== 'canceled' && done.finishReason !== 'tool-call-paused')
 }
 
 /** Present the conversation from the user side: swap user/assistant, optionally with its own system prompt. */

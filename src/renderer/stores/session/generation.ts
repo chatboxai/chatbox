@@ -15,7 +15,7 @@ import { settingsStore } from '@/stores/settingsStore'
 import { guardSessionAction } from './action-guard'
 import { createAttachmentResolver } from './attachment-resolver'
 import { createNewFork, createSaveAndResendFork, findMessageLocation } from './forks'
-import { insertMessageAfter, modifyMessage } from './messages'
+import { insertMessage, insertMessageAfter, modifyMessage } from './messages'
 import { getSessionSettings, getSessionTokenModel } from './session-settings'
 import type { AgentModeEntrySource } from './types'
 
@@ -196,6 +196,56 @@ export function saveAndResendMessage(
     await createNewFork(sessionId, editedMessage.id)
     await runGenerateMore(sessionId, editedMessage.id)
   })
+}
+
+const AUTO_DIALOGUE_MAX_TURNS = 20
+
+/**
+ * AI vs AI: alternately generate a user-side reply (roles swapped) and an assistant reply,
+ * until a generation is stopped, fails or pauses, or the turn cap is reached.
+ * @param sessionId Session ID
+ * @param userSidePrompt System prompt for the user-side AI; falls back to the session's system prompt
+ */
+export function startAutoDialogue(sessionId: string, userSidePrompt?: string) {
+  return withSessionGenerationLock(sessionId, async () => {
+    const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
+    if (!session || !supportsSessionGeneration(session.type)) {
+      return
+    }
+    let asUser = session.messages[session.messages.length - 1]?.role !== 'user'
+    for (let turn = 0; turn < AUTO_DIALOGUE_MAX_TURNS; turn++, asUser = !asUser) {
+      const msg = createMessage(asUser ? 'user' : 'assistant', '')
+      msg.generating = true
+      const preparationLease = rendererApplication.generationRuntime.acquireGenerationPreparationLease(sessionId)
+      if (!preparationLease) return
+      try {
+        await insertMessage(sessionId, msg)
+      } finally {
+        rendererApplication.generationRuntime.releaseGenerationPreparationLease(preparationLease)
+      }
+      const thread = await getMessageThreadContext(sessionId, msg.id)
+      await currentGenerationService.orchestrate(
+        sessionId,
+        msg,
+        asUser ? { contextMessages: swapRolesForUserSide(thread, msg.id, userSidePrompt) } : undefined
+      )
+      const done = (await getMessageThreadContext(sessionId, msg.id)).find((m) => m.id === msg.id)
+      if (!done || done.error || done.finishReason === 'canceled' || done.finishReason === 'tool-call-paused') {
+        return
+      }
+    }
+  })
+}
+
+/** Present the conversation from the user side: swap user/assistant, optionally with its own system prompt. */
+function swapRolesForUserSide(messages: Message[], targetId: string, systemPrompt?: string): Message[] {
+  const swappedRole = { user: 'assistant', assistant: 'user' } as const
+  const swapped = messages
+    .filter((m) => !(systemPrompt && m.role === 'system'))
+    .map((m) =>
+      m.id !== targetId && (m.role === 'user' || m.role === 'assistant') ? { ...m, role: swappedRole[m.role] } : m
+    )
+  return systemPrompt ? [createMessage('system', systemPrompt), ...swapped] : swapped
 }
 
 type GenerateMoreFn = (sessionId: string, msgId: string) => Promise<void>

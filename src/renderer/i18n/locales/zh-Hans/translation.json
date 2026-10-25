@@ -68,6 +68,7 @@
   "AI Explain": "AI 解释",
   "AI explanation consumes additional tokens": "AI 解释会消耗额外 token",
   "ai provider no implemented paint tips": "当前 AI 模型提供方（{{aiProvider}}）暂时不支持绘图功能，目前仅 Chatbox AI、 OpenAI 与 Azure OpenAI 支持该功能，如有需要请<0>打开设置切换</0> AI 模型提供方",
+  "AI vs AI: let AI play the user side (input text becomes its persona)": "AI 互聊：让 AI 扮演用户方自动对话（输入框内容将作为它的人设）",
   "AI can be wrong. Verify key facts.": "AI 可能出错，请核实重要信息。",
   "AI-generated images may not be accurate. Review output carefully.": "AI 生成的图像可能不准确。请仔细核对输出内容。",
   "AIHubMix integration in Chatbox offers 10% discount": "在Chatbox中接入AIHubMix可享受10%优惠",

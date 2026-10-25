@@ -25,6 +25,7 @@ import {
   IconCirclePlus,
   IconFilePencil,
   IconFolder,
+  IconMessages,
   IconPhoto,
   IconPlayerStopFilled,
   IconWand,
@@ -168,6 +169,7 @@ export type InputBoxProps = {
   onStartNewThread?(): Promise<(() => Promise<boolean>) | undefined>
   onClickSessionSettings?(): boolean | Promise<boolean>
   onViewCompactionSummary?(summaryMessageId: string): void
+  onStartAutoDialogue?(userSidePrompt: string): void
 }
 
 function getSessionAttachmentProgressValue(embeddedChunks?: number, totalChunks?: number): number | undefined {
@@ -211,6 +213,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       onStartNewThread,
       onClickSessionSettings,
       onViewCompactionSummary,
+      onStartAutoDialogue,
     },
     ref
   ) => {
@@ -1924,6 +1927,27 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   draftCopilotId={draftCopilotId}
                   draftCopilotName={draftCopilotName}
                 />
+
+                {onStartAutoDialogue && (
+                  <Tooltip
+                    label={t('AI vs AI: let AI play the user side (input text becomes its persona)')}
+                    position="top"
+                    withArrow
+                  >
+                    <UnstyledButton
+                      aria-label={t('AI vs AI: let AI play the user side (input text becomes its persona)')}
+                      onClick={() => onStartAutoDialogue(latestInputRef.current.trim())}
+                      disabled={generating}
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors disabled:opacity-50"
+                    >
+                      <IconMessages
+                        size={toolbarIconSize}
+                        strokeWidth={1.8}
+                        className="text-[var(--chatbox-tint-secondary)]"
+                      />
+                    </UnstyledButton>
+                  </Tooltip>
+                )}
 
                 {!isSmallScreen &&
                   canCreateThread &&

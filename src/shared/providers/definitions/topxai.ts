@@ -5,7 +5,7 @@ import TopxAI from './models/topxai'
 const TOPXAI_API_HOST = 'https://ai.topxea.com/v1'
 
 // Model ids, context windows and output limits as the live catalogue lists
-// them: https://ai.topxea.com/api/pricing (read 2026-10-06).
+// them: https://ai.topxea.com/api/pricing (read 2026-10-25).
 export const topxAIProvider = defineProvider({
   id: ModelProviderEnum.TopxAI,
   name: 'TopxAI',
@@ -61,32 +61,25 @@ export const topxAIProvider = defineProvider({
         contextWindow: 500_000,
       },
       {
-        modelId: 'kimi-k3',
-        nickname: 'Kimi K3',
-        capabilities: ['reasoning', 'tool_use'],
-        contextWindow: 1_048_576,
-        maxOutput: 128_000,
-      },
-      {
-        modelId: 'deepseek-v4-pro',
-        nickname: 'DeepSeek V4 Pro',
-        capabilities: ['reasoning', 'tool_use'],
-        contextWindow: 1_048_576,
-        maxOutput: 384_000,
-      },
-      {
-        modelId: 'deepseek-flash',
-        nickname: 'DeepSeek V4.1 Flash',
+        modelId: 'kimi-k3.1-pro',
+        nickname: 'Kimi K3.1 Pro',
         capabilities: ['vision', 'reasoning', 'tool_use'],
         contextWindow: 1_048_576,
-        maxOutput: 384_000,
+        maxOutput: 131_072,
+      },
+      {
+        modelId: 'deepseek-flash-Abliterated',
+        nickname: 'DeepSeek Flash Abliterated',
+        capabilities: ['vision', 'reasoning', 'tool_use'],
+        contextWindow: 1_048_576,
+        maxOutput: 262_144,
       },
       {
         modelId: 'GLM-5.3-Abliterated',
         nickname: 'GLM-5.3-Abliterated',
         capabilities: ['reasoning', 'tool_use'],
         contextWindow: 1_000_000,
-        maxOutput: 128_000,
+        maxOutput: 131_072,
       },
     ],
   },

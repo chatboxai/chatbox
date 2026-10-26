@@ -41,7 +41,6 @@ export class InMemorySessionRepository implements SessionRepositoryPort {
   readonly getCurrentThreadIdentity = this.data.getCurrentThreadIdentity.bind(this.data)
   readonly projectLatestSession = this.data.projectLatestSession.bind(this.data)
   readonly projectSessionMetadata = this.data.projectSessionMetadata.bind(this.data)
-  readonly repairSessionRecordProjection = this.data.repairSessionRecordProjection.bind(this.data)
   readonly readSessionBranchPreview = this.data.readSessionBranchPreview.bind(this.data)
   readonly readSessionBranchMessagesPage = this.data.readSessionBranchMessagesPage.bind(this.data)
   readonly readSessionSearchWindow = this.data.readSessionSearchWindow.bind(this.data)
@@ -109,7 +108,6 @@ export class InMemorySessionRepository implements SessionRepositoryPort {
       },
       previousRevision
     )
-    await this.recordStore.setRecord(tree.session)
   }
 
   /** Test-only DTO projection for assertions and archive fixtures. */

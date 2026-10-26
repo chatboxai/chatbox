@@ -102,7 +102,6 @@ export class SessionService {
   private readonly getLastUsedModels: NonNullable<SessionServiceOptions['getLastUsedModels']>
   private readonly getVisibleSessionMetas: NonNullable<SessionServiceOptions['getVisibleSessionMetas']>
   private readonly pendingMetaRepairs = new Set<string>()
-  private readonly pendingRecordRepairs = new Set<string>()
   private readonly pendingArchiveListRefreshes = new Set<string>()
   private archiveStateRevision = 0
   private initialization: Promise<void> | null = null
@@ -583,8 +582,7 @@ export class SessionService {
   }
 
   private async handleProjectionFailure(result: SessionCommandWriteResult): Promise<void> {
-    if (result.delta.recordProjectionError !== undefined) this.pendingRecordRepairs.add(result.delta.sessionId)
-    if (result.projectionError === undefined && result.delta.recordProjectionError === undefined) return
+    if (result.projectionError === undefined) return
     if (
       result.delta.previousHeader?.hidden !== result.delta.header.hidden ||
       result.delta.previousHeader?.archivedAt !== result.delta.header.archivedAt
@@ -593,7 +591,7 @@ export class SessionService {
     this.scheduleMetaProjectionRepair(result.delta.sessionId)
     await this.log('warn', 'Session rows committed; metadata projection will be retried', {
       sessionId: result.delta.sessionId,
-      error: describeError(result.projectionError ?? result.delta.recordProjectionError),
+      error: describeError(result.projectionError),
     })
   }
 
@@ -992,10 +990,6 @@ export class SessionService {
   private async repairMetaProjection(sessionId: string): Promise<void> {
     const refreshArchiveLists = this.pendingArchiveListRefreshes.delete(sessionId)
     try {
-      if (this.pendingRecordRepairs.has(sessionId)) {
-        await this.repository.repairSessionRecordProjection(sessionId)
-        this.pendingRecordRepairs.delete(sessionId)
-      }
       const result = await this.writes.reprojectMeta(sessionId)
       if (!result?.meta || result.metaRevision === null) return
       await this.events.publish({

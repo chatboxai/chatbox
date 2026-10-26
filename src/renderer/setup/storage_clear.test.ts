@@ -1,24 +1,34 @@
 import { getDefaultStore } from 'jotai'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { sessionRepository } from '@/app/renderer-application'
 import { inputBoxPreConstructedMessageFamily } from '@/stores/atoms/uiAtoms'
 
-const { blobStore, sessionStore, metaRecords, recentBlobKeys, lateTouchedBlobKeys, mockGetImageGenerationStorage } =
-  vi.hoisted(() => {
-    const blobs = new Map<string, string>()
-    const sessions = new Map<string, unknown>()
-    return {
-      blobStore: blobs,
-      sessionStore: sessions,
-      metaRecords: [] as Array<{ id: string; hidden?: boolean }>,
-      recentBlobKeys: [] as string[],
-      lateTouchedBlobKeys: new Set<string>(),
-      mockGetImageGenerationStorage: vi.fn(() => ({
-        initialize: async () => undefined,
-        getTotal: async () => 0,
-        getPage: async () => ({ items: [], nextCursor: null }),
-      })),
-    }
-  })
+const {
+  blobStore,
+  sessionStore,
+  sessionRecordIds,
+  metaRecords,
+  recentBlobKeys,
+  lateTouchedBlobKeys,
+  mockGetImageGenerationStorage,
+} = vi.hoisted(() => {
+  const blobs = new Map<string, string>()
+  const sessions = new Map<string, unknown>()
+  return {
+    blobStore: blobs,
+    sessionStore: sessions,
+    sessionRecordIds: () =>
+      [...sessions.keys()].filter((key) => key.startsWith('session:')).map((key) => key.slice('session:'.length)),
+    metaRecords: [] as Array<{ id: string; hidden?: boolean }>,
+    recentBlobKeys: [] as string[],
+    lateTouchedBlobKeys: new Set<string>(),
+    mockGetImageGenerationStorage: vi.fn(() => ({
+      initialize: async () => undefined,
+      getTotal: async () => 0,
+      getPage: async () => ({ items: [], nextCursor: null }),
+    })),
+  }
+})
 
 vi.mock('@/platform', () => ({
   default: {
@@ -49,6 +59,9 @@ vi.mock('@/app/renderer-application', async () => {
   const { collectHeaderResourceReferences, collectMessageReferences } = await import('@chatbox/core/resources')
   return {
     sessionRepository: {
+      getAllSessionIds: vi.fn(async () => sessionRecordIds()),
+      listSessionRecordIds: vi.fn(async () => sessionRecordIds()),
+      requiresSessionMigration: vi.fn(async () => false),
       iterateSessionResourceReferences: vi.fn(async function* (id: string) {
         const session = sessionStore.get(`session:${id}`) as import('@shared/types').Session | undefined
         if (!session) throw new Error('Missing resource owner')
@@ -67,7 +80,8 @@ vi.mock('@/app/renderer-application', async () => {
 
 vi.mock('@/stores/sessionHelpers', () => ({
   getMetaStorage: async () => ({
-    getAllIncludingHidden: async () => metaRecords,
+    getAllIncludingHidden: async () => [...metaRecords],
+    getById: async (id: string) => metaRecords.find((record) => record.id === id) ?? null,
   }),
 }))
 
@@ -107,6 +121,16 @@ describe('cleanupOrphanedBlobs', () => {
     metaRecords.length = 0
     recentBlobKeys.length = 0
     lateTouchedBlobKeys.clear()
+    vi.mocked(sessionRepository.getAllSessionIds)
+      .mockReset()
+      .mockImplementation(async () => sessionRecordIds())
+    vi.mocked(sessionRepository.listSessionRecordIds)
+      .mockReset()
+      .mockImplementation(async () => sessionRecordIds())
+    vi.mocked(sessionRepository.requiresSessionMigration)
+      .mockReset()
+      .mockImplementation(async () => false)
+    vi.mocked(sessionRepository.iterateSessionResourceReferences).mockClear()
   })
 
   it('protects recently written in-flight blobs from deletion', async () => {
@@ -228,6 +252,85 @@ describe('cleanupOrphanedBlobs', () => {
     expect(deleted).toBe(0)
     expect(blobStore.has('file:orphan')).toBe(true)
     expect(blobStore.has('file:referenced')).toBe(true)
+  })
+
+  it('aborts without deleting or reading references while a listed session has no row commit', async () => {
+    blobStore.set('file:migrated', 'x')
+    blobStore.set('file:unmigrated', 'x')
+    blobStore.set('file:orphan', 'x')
+    seedSession('migrated', { fileStorageKeys: ['file:migrated'] })
+    seedSession('unmigrated', { fileStorageKeys: ['file:unmigrated'] })
+    vi.mocked(sessionRepository.requiresSessionMigration).mockImplementation(
+      async (candidate) => candidate.id === 'unmigrated'
+    )
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    const deleted = await cleanupOrphanedBlobs()
+
+    expect(deleted).toBe(0)
+    expect([...blobStore.keys()].sort()).toEqual(['file:migrated', 'file:orphan', 'file:unmigrated'])
+    expect(sessionRepository.iterateSessionResourceReferences).toHaveBeenCalledWith('migrated')
+    expect(sessionRepository.iterateSessionResourceReferences).not.toHaveBeenCalledWith('unmigrated')
+    expect(warn).toHaveBeenCalledWith(
+      'storage_clear: session unmigrated has no row commit (unmigrated or missing), aborting without deleting'
+    )
+    warn.mockRestore()
+  })
+
+  it('keeps every blob when a session without metadata still has a legacy record', async () => {
+    blobStore.set('file:lost', 'x')
+    blobStore.set('file:orphan', 'x')
+    sessionStore.set('session:lost', { id: 'lost', messages: [] })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    expect(await cleanupOrphanedBlobs()).toBe(0)
+    expect([...blobStore.keys()].sort()).toEqual(['file:lost', 'file:orphan'])
+    expect(sessionRepository.iterateSessionResourceReferences).not.toHaveBeenCalled()
+    expect(sessionRepository.requiresSessionMigration).not.toHaveBeenCalled()
+    expect(warn).toHaveBeenCalledWith(
+      'storage_clear: session lost is outside the metadata snapshot and needs a fresh scan, aborting without deleting'
+    )
+    warn.mockRestore()
+  })
+
+  it('does not block cleanup for a session with rows only and no metadata', async () => {
+    blobStore.set('file:orphan', 'x')
+    vi.mocked(sessionRepository.getAllSessionIds).mockResolvedValue(['remnant'])
+
+    expect(await cleanupOrphanedBlobs()).toBe(1)
+    expect(blobStore.size).toBe(0)
+    expect(sessionRepository.iterateSessionResourceReferences).not.toHaveBeenCalled()
+  })
+
+  it('aborts if migration publishes metadata after the scan snapshot', async () => {
+    blobStore.set('file:lost', 'x')
+    vi.mocked(sessionRepository.getAllSessionIds).mockImplementationOnce(() => {
+      metaRecords.push({ id: 'lost' })
+      return Promise.resolve(['lost'])
+    })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    expect(await cleanupOrphanedBlobs()).toBe(0)
+    expect(blobStore.has('file:lost')).toBe(true)
+    warn.mockRestore()
+  })
+
+  it('aborts with a time-budget warning when the identity check runs past the deadline', async () => {
+    blobStore.set('file:orphan', 'x')
+    const clock = vi.spyOn(Date, 'now')
+    vi.mocked(sessionRepository.getAllSessionIds).mockImplementationOnce(async () => {
+      clock.mockReturnValue(Number.MAX_SAFE_INTEGER)
+      return ['remnant']
+    })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    expect(await cleanupOrphanedBlobs()).toBe(0)
+    expect(blobStore.has('file:orphan')).toBe(true)
+    expect(warn).toHaveBeenCalledWith(
+      'storage_clear: reference scan exceeded its time budget (1 session identities), aborting without deleting'
+    )
+    clock.mockRestore()
+    warn.mockRestore()
   })
 
   it('keeps blobs referenced by hidden (archived) sessions and deletes true orphans', async () => {

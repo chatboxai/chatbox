@@ -10,11 +10,6 @@ type MigrationRows = Pick<SessionRowStorePort, 'getRevision' | 'writeRows'> & {
   readCommit(sessionId: string): Promise<SessionRowCommit | null>
 }
 
-export interface SessionRowMigrationResult extends SessionRowCommit {
-  /** The authoritative commit succeeded; retry only the external record projection. */
-  recordProjectionError?: unknown
-}
-
 export class SessionMigrationError extends Error {
   readonly name = 'SessionMigrationError'
 
@@ -35,7 +30,10 @@ function nextRevision(sessionId: string, previous: number | null): number {
   return previous + 1
 }
 
-/** Converts historical input once, before the session is exposed to row business operations. */
+/**
+ * Converts historical input once, before the session is exposed to row business operations.
+ * The whole-session source record stays byte-identical: older app versions still read it.
+ */
 export class SessionRowMigration {
   constructor(
     private readonly records: SessionRecordStorePort,
@@ -44,17 +42,14 @@ export class SessionRowMigration {
     private readonly now: () => number = Date.now
   ) {}
 
-  ensureRows(
-    sessionId: string,
-    upgradeSettings?: SessionHeader['settings']
-  ): Promise<SessionRowMigrationResult | null> {
+  ensureRows(sessionId: string, upgradeSettings?: SessionHeader['settings']): Promise<SessionRowCommit | null> {
     return this.writes.run(sessionId, () => this.migrate(sessionId, upgradeSettings))
   }
 
   private async migrate(
     sessionId: string,
     upgradeSettings?: SessionHeader['settings']
-  ): Promise<SessionRowMigrationResult | null> {
+  ): Promise<SessionRowCommit | null> {
     const committed = await this.rows.readCommit(sessionId)
     if (committed) {
       if (committed.record.rowAuthority !== 1)
@@ -98,34 +93,14 @@ export class SessionRowMigration {
     } catch (error) {
       return this.recoverPublication(sessionId, error)
     }
-    return this.projectRecord(candidate)
+    return { record: candidate.record, revision: candidate.revision }
   }
 
-  /** Safe to call from a bounded recovery job; never rereads legacy message bodies. */
-  repairRecordProjection(sessionId: string): Promise<SessionRowMigrationResult | null> {
-    return this.writes.run(sessionId, async () => {
-      const committed = await this.rows.readCommit(sessionId)
-      if (!committed) return null
-      if (committed.record.rowAuthority !== 1 || committed.record.rowFormatVersion !== 3)
-        throw new SessionMigrationError(sessionId, 'source', new Error('Unsupported row format version'))
-      return this.projectRecord(committed)
-    })
-  }
-
-  private async recoverPublication(sessionId: string, error: unknown): Promise<SessionRowMigrationResult> {
+  private async recoverPublication(sessionId: string, error: unknown): Promise<SessionRowCommit> {
     const current = await this.rows.readCommit(sessionId)
     // The atomic write may have completed before its acknowledgement failed, or another opener may have won CAS.
-    if (current?.record.rowAuthority === 1 && current.record.rowFormatVersion === 3) return this.projectRecord(current)
+    if (current?.record.rowAuthority === 1 && current.record.rowFormatVersion === 3) return current
     if (error instanceof SessionRowConflictError) throw error
     throw new SessionMigrationError(sessionId, 'publication', error)
-  }
-
-  private async projectRecord(committed: SessionRowCommit): Promise<SessionRowMigrationResult> {
-    try {
-      await this.records.setRecord(committed.record)
-      return { record: committed.record, revision: committed.revision }
-    } catch (recordProjectionError) {
-      return { record: committed.record, revision: committed.revision, recordProjectionError }
-    }
   }
 }

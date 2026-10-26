@@ -386,17 +386,22 @@ describe('incremental backup host import', () => {
     expect((await f.rows.readCommit('s'))?.record.name).toBe('new')
   })
 
-  it('still updates the directory when the independent record projection fails', async () => {
+  it('imports over a whole-session record without rewriting it', async () => {
     const f = setup(),
       target = createBackupImportTarget(f.options)
-    const issues: BackupImportIssue[] = []
-    await target.begin(manifest, (issue) => issues.push(issue))
-    await target.appendRecords(backupRecords(fixture('new', 'saved rows')))
-    vi.spyOn(f.records, 'setRecord').mockRejectedValueOnce(new Error('record store unavailable'))
-    await expect(target.prepare()).rejects.toThrow('Recover Conversation List')
+    const legacy = { id: 'legacy', name: 'before upgrade', type: 'chat' as const, messages: [] }
+    await f.records.setRecord(legacy)
+    const setRecord = vi.spyOn(f.records, 'setRecord')
+    await target.begin(manifest)
+    await target.appendRecords([
+      ...backupRecords(fixture('legacy', 'imported')),
+      ...backupRecords(fixture('new', 'saved rows')),
+    ])
+    await target.prepare()
+    expect(setRecord).not.toHaveBeenCalled()
+    expect(await f.records.getRecord('legacy')).toEqual(legacy)
+    expect(await f.records.getRecord('new')).toBeNull()
     expect(await f.metadata.getById('new')).toMatchObject({ id: 'new', name: 'saved rows' })
-    expect(target.getSummary()).toMatchObject({ importedSessions: 1, importedMessages: 2 })
-    expect(issues).toMatchObject([{ code: 'session-projection', sessionId: 'new' }])
     await cleanupBackupImport(f.options)
     expect((await f.rows.readCommit('new'))?.record.name).toBe('saved rows')
   })

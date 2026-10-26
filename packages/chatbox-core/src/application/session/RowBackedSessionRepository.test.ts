@@ -44,8 +44,7 @@ describe('row-only session repository', () => {
       activeThreadId: 's',
       summary: { messageCount: 2, firstSystemMessageId: 'system', lastUserMessageId: 'user' },
     })
-    expect(await records.getRecord('s')).toMatchObject({ storageFormat: 'rows', rowFormatVersion: 3, rowAuthority: 1 })
-    expect(await records.getRecord('s')).not.toHaveProperty('messages')
+    expect(await records.getRecord('s')).toBeNull()
   })
 
   it('reads only four naming bodies after screening system rows as metadata', async () => {
@@ -268,21 +267,19 @@ describe('row-only session repository', () => {
     expect(await repository.getSessionHeader('s')).toMatchObject({ revision: 5, header: { name: '4' } })
   })
 
-  it('returns the committed delta if the repairable record projection fails', async () => {
+  it('keeps a migrated whole-session record unchanged across commits and removes it on deletion', async () => {
     const { repository, records } = setup()
-    await repository.createSessionRows({ id: 's', name: 'Rows' }, [message('first')])
-    const failure = new Error('Projection unavailable')
-    const project = vi.spyOn(records, 'setRecord').mockRejectedValueOnce(failure)
-    const result = await repository.executeSessionCommand('s', { type: 'append', messages: [message('second')] })
-    expect(result.delta).toMatchObject({ revision: 2, recordProjectionError: failure })
-    expect(await repository.readSessionMessages({ sessionId: 's', messageIds: ['second'] })).toMatchObject({
-      revision: 2,
-      messages: [{ id: 'second' }],
-    })
+    const legacy = { id: 's', name: 'Before upgrade', type: 'chat' as const, messages: [message('first')] }
+    await records.setRecord(legacy)
+    const setRecord = vi.spyOn(records, 'setRecord')
+    await repository.executeSessionCommand('s', { type: 'append', messages: [message('second')] })
     await repository.executeSessionCommand('s', { type: 'header', updater: { name: 'Latest' } })
-    await repository.repairSessionRecordProjection('s')
-    expect(await records.getRecord('s')).toMatchObject({ name: 'Latest' })
-    expect(project).toHaveBeenCalledTimes(3)
+    expect((await repository.getSessionHeader('s'))?.header.name).toBe('Latest')
+    expect(setRecord).not.toHaveBeenCalled()
+    expect(await records.getRecord('s')).toEqual(legacy)
+    await repository.deleteSession('s')
+    expect(await records.getRecord('s')).toBeNull()
+    expect(await repository.getAllSessionIds()).toEqual([])
   })
 
   it('serializes external projection callbacks with deletion and reads latest state', async () => {
@@ -352,6 +349,7 @@ describe('row-only session repository', () => {
     release.resolve()
     await Promise.all([deletion, creation])
     expect(events).toEqual(['old-meta-deleted', 'created'])
-    expect(await records.getRecord('s')).toMatchObject({ name: 'After' })
+    expect(await records.getRecord('s')).toBeNull()
+    expect((await repository.getSessionHeader('s'))?.header.name).toBe('After')
   })
 })

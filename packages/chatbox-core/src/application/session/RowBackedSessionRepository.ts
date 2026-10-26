@@ -82,7 +82,6 @@ export interface RowBackedSessionRepositoryOptions {
   rows: SessionRowStorePort & SessionRowRelationsPort & SessionBranchStorePort
   writes: SessionRowWriteQueue
   now?: () => number
-  onRecordProjectionError?: (sessionId: string, error: unknown) => void
 }
 
 function requireRowRecord(record: SessionRecordV2): SessionRowRecord {
@@ -119,20 +118,18 @@ function hasChanges(plan: SessionCommandPlan, previous: SessionRowRecord): boole
   )
 }
 
-/** The write queue owns every mutation, projection repair, and deletion of a session. */
+/** The write queue owns every mutation and deletion of a session. */
 export class RowBackedSessionRepository implements SessionRowRepositoryPort {
   private readonly records: SessionRecordStorePort
   private readonly rows: SessionRowStorePort & SessionRowRelationsPort & SessionBranchStorePort
   private readonly writes: SessionRowWriteQueue
   private readonly migration: SessionRowMigration
-  private readonly onRecordProjectionError?: RowBackedSessionRepositoryOptions['onRecordProjectionError']
   private initialization?: Promise<void>
 
   constructor(options: RowBackedSessionRepositoryOptions) {
     this.records = options.records
     this.rows = options.rows
     this.writes = options.writes
-    this.onRecordProjectionError = options.onRecordProjectionError
     this.migration = new SessionRowMigration(this.records, this.rows, this.writes, options.now)
   }
 
@@ -152,11 +149,7 @@ export class RowBackedSessionRepository implements SessionRowRepositoryPort {
   ): Promise<SessionRowCommit | null> {
     await this.initialize()
     const result = await this.migration.ensureRows(sessionId, upgradeSettings)
-    if (result) {
-      requireRowRecord(result.record)
-      if (result.recordProjectionError !== undefined)
-        this.reportProjectionError(sessionId, result.recordProjectionError)
-    }
+    if (result) requireRowRecord(result.record)
     return result
   }
 
@@ -202,12 +195,6 @@ export class RowBackedSessionRepository implements SessionRowRepositoryPort {
   async projectSessionMetadata<T>(sessionId: string, project: () => Promise<T>): Promise<T> {
     await this.initialize()
     return this.writes.run(sessionId, project)
-  }
-
-  async repairSessionRecordProjection(sessionId: string): Promise<void> {
-    await this.initialize()
-    const result = await this.migration.repairRecordProjection(sessionId)
-    if (result?.recordProjectionError !== undefined) throw result.recordProjectionError
   }
 
   async projectLatestSession<T>(
@@ -639,7 +626,6 @@ export class RowBackedSessionRepository implements SessionRowRepositoryPort {
         appendMessages: shape ? [shape.marker] : undefined,
         verifySource,
       })
-      const projectionError = await this.projectRecord(record)
       return {
         record,
         revision,
@@ -648,7 +634,6 @@ export class RowBackedSessionRepository implements SessionRowRepositoryPort {
         header,
         diff: { sessionId: record.id, threads: { upsert: [thread], delete: [] }, messages: { upsert: [], delete: [] } },
         appendedMessageIds: [],
-        ...(projectionError === undefined ? {} : { recordProjectionError: projectionError }),
       }
     })
   }
@@ -697,7 +682,6 @@ export class RowBackedSessionRepository implements SessionRowRepositoryPort {
         { record, revision, rows: { sessionId: header.id, threads: [thread], messages: rows } },
         previousRevision
       )
-      const projectionError = await this.projectRecord(record)
       return {
         record,
         revision,
@@ -710,7 +694,6 @@ export class RowBackedSessionRepository implements SessionRowRepositoryPort {
           messages: { upsert: rows, delete: [] },
         },
         appendedMessageIds: rows.map((row) => row.messageId),
-        ...(projectionError === undefined ? {} : { recordProjectionError: projectionError }),
       }
     })
   }
@@ -858,8 +841,10 @@ export class RowBackedSessionRepository implements SessionRowRepositoryPort {
     await this.initialize()
     await this.withWrite(sessionId, async () => {
       const revision = await this.rows.getRevision(sessionId)
-      await this.rows.deleteRows(sessionId, revision)
+      // The whole-session record goes first: if deletion stops before the rows, the session survives as a
+      // row-only session instead of being migrated again from its pre-upgrade content.
       await this.records.removeRecord(sessionId)
+      await this.rows.deleteRows(sessionId, revision)
       await projectDeletion?.()
     })
   }
@@ -889,24 +874,6 @@ export class RowBackedSessionRepository implements SessionRowRepositoryPort {
     })
   }
 
-  private async projectRecord(record: SessionRowRecord): Promise<unknown | undefined> {
-    try {
-      await this.records.setRecord(record)
-      return undefined
-    } catch (error) {
-      this.reportProjectionError(record.id, error)
-      return error
-    }
-  }
-
-  private reportProjectionError(sessionId: string, error: unknown): void {
-    try {
-      this.onRecordProjectionError?.(sessionId, error)
-    } catch {
-      /* A diagnostic sink cannot change a committed result. */
-    }
-  }
-
   private async commitPlan(
     previous: SessionRowCommit,
     active: ThreadRow,
@@ -921,7 +888,6 @@ export class RowBackedSessionRepository implements SessionRowRepositoryPort {
     const committedRecord = requireRowRecord(published.record)
     const nextActive = published.threads.find((thread) => thread.threadId === committedRecord.activeThreadId)
     if (!nextActive) throw new Error('The committed result has no active thread projection')
-    const recordProjectionError = changed ? await this.projectRecord(committedRecord) : undefined
     const bodyIds = new Set(plan.diff.messages.upsert.map((row) => row.messageId))
     const metadataIds = new Set(plan.diff.messageMetadataUpsert?.map((row) => row.messageId))
     const structural = 'result' in plan && plan.result.applied
@@ -948,7 +914,6 @@ export class RowBackedSessionRepository implements SessionRowRepositoryPort {
       diff: plan.diff,
       appendedMessageIds: plan.appendedMessageIds,
       ...('result' in plan ? { structureResult: plan.result } : {}),
-      ...(recordProjectionError === undefined ? {} : { recordProjectionError }),
     }
   }
 

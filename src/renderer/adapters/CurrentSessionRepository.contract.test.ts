@@ -176,8 +176,7 @@ describe('CurrentSessionRepository row boundary', () => {
   test('publishes row headers and serves only the requested transcript page', async () => {
     const harness = createHarness()
     await createRows(harness)
-    expect(harness.values.get('session:session')).toMatchObject({ storageFormat: 'rows', rowAuthority: 1 })
-    expect(harness.values.get('session:session')).not.toHaveProperty('messages')
+    expect(harness.values.has('session:session')).toBe(false)
     expect(await harness.repository.getSessionHeader('session')).toMatchObject({
       header: { id: 'session' },
       revision: 1,
@@ -195,7 +194,7 @@ describe('CurrentSessionRepository row boundary', () => {
     const harness = createHarness()
     harness.values.set('session:legacy', createSessionWithMessages('legacy'))
     expect(await harness.repository.getSessionHeader('legacy')).toMatchObject({ header: { id: 'legacy' } })
-    expect(harness.values.get('session:legacy')).toMatchObject({ rowAuthority: 1, rowFormatVersion: 3 })
+    expect(harness.values.get('session:legacy')).toEqual(createSessionWithMessages('legacy'))
     expect(
       (await harness.repository.readSessionMessages({ sessionId: 'legacy', messageIds: ['user-1'] }))?.messages[0].id
     ).toBe('user-1')
@@ -265,32 +264,35 @@ describe('CurrentSessionRepository row boundary', () => {
     expect(await harness.rowStore.readCommit('invalid')).toBeNull()
   })
 
-  test('keeps published rows authoritative after the external marker write fails', async () => {
+  test('migrates a legacy record once and never rewrites it', async () => {
     const harness = createHarness()
     harness.values.set('session:legacy', createSessionWithMessages('legacy'))
-    harness.setItemNow.mockRejectedValueOnce(new Error('marker unavailable'))
     expect(await harness.repository.getSessionHeader('legacy')).toMatchObject({ revision: 1 })
+    await harness.repository.executeSessionCommand('legacy', {
+      type: 'append',
+      messages: [message('user-2', 'user', 300)],
+    })
     harness.getItem.mockClear()
     const restarted = new CurrentSessionRepository({
       dataStorage: harness.dataStorage,
       metaStorage: harness.metaStorage,
       rowStore: harness.rowStore,
     })
-    expect(await restarted.getSessionHeader('legacy')).toMatchObject({ revision: 1 })
+    expect(await restarted.getSessionHeader('legacy')).toMatchObject({ revision: 2 })
     expect(harness.getItem).not.toHaveBeenCalled()
-    expect(await pendingMigrationIds(harness.repository)).toEqual(['legacy'])
-    expect(await harness.repository.migrateSession('legacy')).toBe('already')
-    expect(harness.values.get('session:legacy')).toMatchObject({ rowAuthority: 1 })
+    expect(await pendingMigrationIds(restarted)).toEqual([])
+    expect(await restarted.migrateSession('legacy')).toBe('already')
+    expect(harness.setItemNow).not.toHaveBeenCalled()
+    expect(harness.values.get('session:legacy')).toEqual(createSessionWithMessages('legacy'))
   })
 
-  test('repairs an orphaned published row record and missing list entry', async () => {
+  test('needs no migration for a row-only session and repairs its missing list entry on request', async () => {
     const harness = createHarness()
     await createRows(harness)
-    harness.values.delete('session:session')
-    expect(await pendingMigrationIds(harness.repository)).toEqual(['session'])
+    expect(await pendingMigrationIds(harness.repository)).toEqual([])
     expect(await harness.repository.migrateSession('session')).toBe('already')
     expect(harness.metaStorage.create).toHaveBeenCalledWith(expect.objectContaining({ id: 'session' }))
-    expect(harness.values.get('session:session')).toMatchObject({ rowAuthority: 1 })
+    expect(harness.values.has('session:session')).toBe(false)
   })
 
   test('checks recovery protection before touching a candidate record', async () => {

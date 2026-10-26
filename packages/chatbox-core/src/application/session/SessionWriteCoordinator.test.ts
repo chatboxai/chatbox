@@ -31,7 +31,6 @@ function fixture() {
     readSessionTokenPage: unavailable,
     projectLatestSession: (id, project) => owner.run(id, () => project(read)),
     projectSessionMetadata: (id, project) => owner.run(id, project),
-    repairSessionRecordProjection: async () => {},
     readSessionTranscriptWindow: unavailable,
     readSessionThread: unavailable,
     readSessionThreadSummariesPage: unavailable,

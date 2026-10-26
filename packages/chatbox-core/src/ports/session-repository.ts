@@ -64,8 +64,6 @@ export interface SessionCommandDelta extends SessionRowCommit {
   previousRevision: number | null
   header: SessionHeader
   previousHeader?: SessionHeader
-  /** The row commit succeeded; only the external record projection needs repair. */
-  recordProjectionError?: unknown
   diff: SessionRowsDiff
   /** The newly appended active-path rows, excluding the previous tail link update. */
   appendedMessageIds: string[]

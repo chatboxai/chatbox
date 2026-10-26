@@ -39,14 +39,6 @@ function setup() {
   return { records, storage, rows, writes, migration }
 }
 
-function deferred() {
-  let resolve = () => {}
-  const promise = new Promise<void>((done) => {
-    resolve = done
-  })
-  return { promise, resolve }
-}
-
 describe('row publication and migration', () => {
   it.each(['rowAuthority', 'rowFormatVersion'] as const)(
     'rejects a commit missing %s before reading or overwriting legacy input',
@@ -58,7 +50,6 @@ describe('row publication and migration', () => {
       rows.readCommit.mockResolvedValue({ record: candidate.record, revision: candidate.revision })
       const readRecord = vi.spyOn(records, 'getRecord')
       await expect(migration.ensureRows(source.id)).rejects.toMatchObject({ stage: 'source' })
-      await expect(migration.repairRecordProjection(source.id)).rejects.toMatchObject({ stage: 'source' })
       expect(readRecord).not.toHaveBeenCalled()
       expect(rows.writeRows).not.toHaveBeenCalled()
       expect(await records.getRecord(source.id)).toEqual(source)
@@ -117,13 +108,13 @@ describe('row publication and migration', () => {
     })
   })
 
-  it('publishes valid legacy input into real row storage before projecting the record', async () => {
+  it('publishes valid legacy input into real row storage and leaves the source record unchanged', async () => {
     const { records, rows, storage, migration } = setup()
     await records.setRecord(source)
     const result = await migration.ensureRows(source.id)
     expect(result).toMatchObject({ revision: 1, record: { id: source.id, rowAuthority: 1 } })
     expect((await storage.readSnapshot(source.id))?.rows.messages[0].message).toEqual(source.messages[0])
-    expect(await records.getRecord(source.id)).toEqual(result?.record)
+    expect(await records.getRecord(source.id)).toEqual(source)
     expect(rows.writeRows).toHaveBeenCalledTimes(1)
   })
 
@@ -141,14 +132,11 @@ describe('row publication and migration', () => {
     expect(rows.writeRows).not.toHaveBeenCalled()
   })
 
-  it('keeps committed rows authoritative if the external projection fails', async () => {
+  it('keeps committed rows authoritative over the unchanged source record', async () => {
     const { records, rows, storage, migration } = setup()
     await records.setRecord(source)
-    const setRecord = vi.spyOn(records, 'setRecord').mockRejectedValueOnce(new Error('Projection unavailable'))
-    expect(await migration.ensureRows(source.id)).toMatchObject({
-      revision: 1,
-      recordProjectionError: expect.any(Error),
-    })
+    const setRecord = vi.spyOn(records, 'setRecord')
+    expect(await migration.ensureRows(source.id)).toMatchObject({ revision: 1 })
     const committed = await storage.readSnapshot(source.id)
     if (!committed) throw new Error('Missing commit')
     await storage.applyDiff(
@@ -160,8 +148,8 @@ describe('row publication and migration', () => {
     expect(await migration.ensureRows(source.id)).toMatchObject({ revision: 2, record: { name: 'New name' } })
     expect(readRecord).not.toHaveBeenCalled()
     expect(rows.writeRows).toHaveBeenCalledTimes(1)
-    expect(await migration.repairRecordProjection(source.id)).toMatchObject({ revision: 2 })
-    expect(setRecord).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'New name' }))
+    expect(setRecord).not.toHaveBeenCalled()
+    expect(await records.getRecord(source.id)).toEqual(source)
   })
 
   it('recognizes an atomic write whose acknowledgement failed', async () => {
@@ -203,59 +191,5 @@ describe('row publication and migration', () => {
     await expect(migration.ensureRows(source.id)).rejects.toMatchObject({ stage: 'source' })
     expect(await records.getRecord(source.id)).toEqual(marker)
     expect(rows.writeRows).not.toHaveBeenCalled()
-  })
-
-  it('serializes a delayed projection with later header updates', async () => {
-    const { records, storage, migration, writes } = setup()
-    await records.setRecord(source)
-    await migration.ensureRows(source.id)
-    const entered = deferred()
-    const release = deferred()
-    const original = records.setRecord.bind(records)
-    vi.spyOn(records, 'setRecord').mockImplementationOnce(async (record) => {
-      entered.resolve()
-      await release.promise
-      await original(record)
-    })
-    const repair = migration.repairRecordProjection(source.id)
-    await entered.promise
-    const edit = writes.run(source.id, async () => {
-      const current = await storage.readSnapshot(source.id)
-      if (!current) throw new Error('Missing commit')
-      const commit = { record: { ...current.record, name: 'Latest' }, revision: 2 }
-      await storage.applyDiff(
-        { sessionId: source.id, threads: { upsert: [], delete: [] }, messages: { upsert: [], delete: [] } },
-        commit,
-        1
-      )
-      await records.setRecord(commit.record)
-    })
-    release.resolve()
-    await Promise.all([repair, edit])
-    expect(await records.getRecord(source.id)).toMatchObject({ name: 'Latest' })
-  })
-
-  it('does not resurrect a record when deletion follows a delayed repair', async () => {
-    const { records, storage, migration, writes } = setup()
-    await records.setRecord(source)
-    await migration.ensureRows(source.id)
-    const entered = deferred()
-    const release = deferred()
-    const original = records.setRecord.bind(records)
-    vi.spyOn(records, 'setRecord').mockImplementationOnce(async (record) => {
-      entered.resolve()
-      await release.promise
-      await original(record)
-    })
-    const repair = migration.repairRecordProjection(source.id)
-    await entered.promise
-    const deletion = writes.run(source.id, async () => {
-      await storage.deleteRows(source.id)
-      await records.removeRecord(source.id)
-    })
-    release.resolve()
-    await Promise.all([repair, deletion])
-    expect(await migration.repairRecordProjection(source.id)).toBeNull()
-    expect(await records.getRecord(source.id)).toBeNull()
   })
 })

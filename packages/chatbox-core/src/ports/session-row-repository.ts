@@ -141,7 +141,6 @@ export interface SessionRowRepositoryPort
   projectLatestSession<T>(sessionId: string, project: (current: SessionHeaderRead | null) => Promise<T>): Promise<T>
   /** Metadata-only recovery must serialize without reading or migrating unreadable content. */
   projectSessionMetadata<T>(sessionId: string, project: () => Promise<T>): Promise<T>
-  repairSessionRecordProjection(sessionId: string): Promise<void>
   readSessionBranchPreview(request: SessionBranchPreviewRequest): Promise<SessionBranchPreview | null>
   readSessionBranchMessagesPage(request: SessionBranchMessagesRequest): Promise<SessionBranchMessagesPage | null>
   readSessionTranscriptWindow(request: SessionTranscriptRequest): Promise<SessionTranscriptPage | null>

@@ -132,12 +132,13 @@ describe('row-based thread copy', () => {
     expect(await repository.getSessionHeader('copy')).toMatchObject({ header: { name: 'Existing' }, revision: 1 })
   })
 
-  it('reports a committed target despite a failed external record projection', async () => {
+  it('commits the copy as rows without a whole-session record', async () => {
     const repository = new InMemorySessionRepository()
     await repository.seedSession(source())
-    vi.spyOn(repository.recordStore, 'setRecord').mockRejectedValueOnce(new Error('record unavailable'))
+    const setRecord = vi.spyOn(repository.recordStore, 'setRecord')
     const result = await repository.copySessionThreadRows(request)
-    expect(result.recordProjectionError).toBeInstanceOf(Error)
+    expect(setRecord).not.toHaveBeenCalled()
+    expect(await repository.recordStore.getRecord('copy')).toBeNull()
     expect(await repository.rowStore.getRevision('copy')).toBe(result.revision)
     expect(repository.inspectSession('copy')?.messages).toHaveLength(2)
   })

@@ -134,20 +134,15 @@ export function createBackupImportTarget(options: BackupHostOptions): BackupImpo
       summary.importedSessions++
       summary.importedMessages += prepared?.messageCount ?? activeMessages
       const record = active.commit.record
-      const projections = await Promise.allSettled([
-        Promise.resolve().then(() => options.records.setRecord(record)),
-        Promise.resolve().then(() =>
-          options.metadata.createMany([
-            createSessionMetaRecord(record, activeMeta?.sortOrder ?? -Date.now(), activeMeta?.createdAt ?? Date.now()),
-          ])
-        ),
-      ])
-      const failures = projections.filter((entry) => entry.status === 'rejected').map((entry) => entry.reason)
-      if (failures.length) {
+      try {
+        await options.metadata.createMany([
+          createSessionMetaRecord(record, activeMeta?.sortOrder ?? -Date.now(), activeMeta?.createdAt ?? Date.now()),
+        ])
+      } catch (error) {
         const message =
           'Conversation data was saved, but its list could not be updated. Use Recover Conversation List in settings.'
         reportIssue?.({ code: 'session-projection', objectId: record.id, sessionId: record.id, message })
-        throw new AggregateError(failures, message)
+        throw new AggregateError([error], message)
       }
     }
     activeMessages = activeThreads = skippedThreads = 0

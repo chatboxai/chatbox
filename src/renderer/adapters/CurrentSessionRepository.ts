@@ -18,9 +18,7 @@ import {
   type SessionRowStorePort,
   SessionWriteConflictError,
 } from '@chatbox/core/ports'
-import * as Sentry from '@sentry/react'
 import type { Session, SessionHeader, SessionMetaPage, SessionMetaRecord } from '@shared/types'
-import { getLogger } from '@/lib/utils'
 import platform from '@/platform'
 import storage from '@/storage'
 import { type CurrentSessionDataStorage, CurrentSessionRecordStore } from './CurrentSessionRecordStore'
@@ -31,7 +29,6 @@ export type { CurrentSessionDataStorage } from './CurrentSessionRecordStore'
 export type SessionMigrationOutcome = 'migrated' | 'already' | 'missing'
 export interface SessionMigrationCandidate {
   id: string
-  recordExists: boolean
 }
 
 type RepositoryRows = ConstructorParameters<typeof RowBackedSessionRepository>[0]['rows']
@@ -42,7 +39,6 @@ export interface CurrentSessionRepositoryOptions {
   rowStore?: SessionRowStorePort
 }
 
-const log = getLogger('session-repository')
 const SESSION_STORAGE_LOCK = 'chatbox-session-storage'
 let exclusiveStorageRequested = false
 const activeStorageOperations = new Set<Promise<void>>()
@@ -257,7 +253,6 @@ export class CurrentSessionRepository implements SessionRepositoryPort {
   private readonly createRowStore: () => SessionRowStorePort
   private readonly createMetaStorage: () => SessionMetaRepositoryPort
   private data: RowBackedSessionRepository | null = null
-  private readonly projectionRepairs = new Set<string>()
   private foregroundOperations = 0
 
   hasForegroundSessionWork(): boolean {
@@ -296,11 +291,6 @@ export class CurrentSessionRepository implements SessionRepositoryPort {
             )
           })
         ),
-        onRecordProjectionError: (sessionId, error) => {
-          this.projectionRepairs.add(sessionId)
-          log.warn(`session ${sessionId} record projection needs repair`, error)
-          Sentry.captureException(error, { tags: { operation: 'session-record-projection' }, extra: { sessionId } })
-        },
       })
     }
     return this.data
@@ -489,12 +479,6 @@ export class CurrentSessionRepository implements SessionRepositoryPort {
     return this.withForegroundSessionWork(() => this.getData().deleteSession(...args))
   }
 
-  repairSessionRecordProjection(
-    ...args: Parameters<SessionRepositoryPort['repairSessionRecordProjection']>
-  ): ReturnType<SessionRepositoryPort['repairSessionRecordProjection']> {
-    return this.getData().repairSessionRecordProjection(...args)
-  }
-
   projectLatestSession<T>(sessionId: string, project: (current: SessionHeaderRead | null) => Promise<T>): Promise<T> {
     return this.getData().projectLatestSession(sessionId, project)
   }
@@ -507,13 +491,15 @@ export class CurrentSessionRepository implements SessionRepositoryPort {
     return normalizeRepositoryError('list-session-ids', () => this.getData().getAllSessionIds())
   }
 
+  /** Ids that still have a `session:<id>` record; record values are not read. */
+  listSessionRecordIds(): Promise<string[]> {
+    return normalizeRepositoryError('list-session-ids', () => this.records.listIds())
+  }
+
   /** Lists only identities; each candidate is inspected in a separate idle tick. */
   listSessionMigrationCandidates(): Promise<SessionMigrationCandidate[]> {
     return normalizeRepositoryError('list-session-ids', async () => {
-      const data = this.getData()
-      await data.initialize()
-      const recordIds = new Set(await this.records.listIds())
-      return (await data.getAllSessionIds()).map((id) => ({ id, recordExists: recordIds.has(id) }))
+      return (await this.getData().getAllSessionIds()).map((id) => ({ id }))
     })
   }
 
@@ -522,18 +508,13 @@ export class CurrentSessionRepository implements SessionRepositoryPort {
       'list-session-ids',
       async () => {
         const commit = await this.createRowStore().readCommit(candidate.id)
-        return (
-          commit?.record.rowAuthority !== 1 ||
-          commit.record.rowFormatVersion !== 3 ||
-          !candidate.recordExists ||
-          this.projectionRepairs.has(candidate.id)
-        )
+        return commit?.record.rowAuthority !== 1 || commit.record.rowFormatVersion !== 3
       },
       candidate.id
     )
   }
 
-  /** Publishes verified rows and repairs their independent list/record projections. */
+  /** Publishes verified rows and repairs their independent list projection. */
   migrateSession(id: string): Promise<SessionMigrationOutcome> {
     return normalizeRepositoryError(
       'get-session',
@@ -542,8 +523,6 @@ export class CurrentSessionRepository implements SessionRepositoryPort {
         await data.initialize()
         const previous = await this.createRowStore().readCommit(id)
         if (!(await data.getSessionHeader(id))) return 'missing'
-        await data.repairSessionRecordProjection(id)
-        this.projectionRepairs.delete(id)
         await data.projectLatestSession(id, async (read) => {
           if (!read) return
           const meta = this.createMetaStorage()

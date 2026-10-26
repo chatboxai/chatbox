@@ -12,10 +12,10 @@ export function isRowsSessionRecord(record: StoredSessionRecord): record is Sess
 }
 
 /**
- * Session-level records, addressed by session id. Rows of the same session are
- * written separately through `SessionRowStorePort`; the two writes are not one
- * transaction, so promotion keeps a complete V1 record first and writes the
- * compact row marker last.
+ * Whole-session records, addressed by session id: the input of row migration.
+ * A migrated record is never rewritten, because older app versions keep reading
+ * it after a downgrade; the row store's head commit is authoritative instead.
+ * Deleting a session removes its record too.
  */
 export interface SessionRecordStorePort {
   initialize(): Promise<void>

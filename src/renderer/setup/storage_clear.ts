@@ -61,8 +61,8 @@ export interface StartupStorageCleanupHandle {
 
 /**
  * Starts the web/mobile startup cleanup after the row migration has drained.
- * The scan reads every session, so running it first would turn the trickle
- * migration back into a bulk startup migration.
+ * The scan never migrates: it deletes nothing while any listed session still
+ * needs migration, so running it earlier would only abort.
  */
 export function startStartupStorageCleanup(options: StartupStorageCleanupOptions): StartupStorageCleanupHandle {
   const delayMs = options.delayMs ?? 10 * 1000
@@ -179,6 +179,7 @@ async function doCleanupOrphanedBlobs(options?: CleanupOptions): Promise<number>
   // 因此逐会话让出事件循环并受总时限约束。
   const metaStorage = await getMetaStorage()
   const allSessionsMeta = await metaStorage.getAllIncludingHidden()
+  const listedSessionIds = new Set(allSessionsMeta.map((session) => session.id))
   for (const sessionMeta of allSessionsMeta) {
     // 孤儿判定必须建立在全量扫描之上：扫描超时只能安全放弃（不删任何东西），
     // 留待下一次运行重新扫描。
@@ -189,6 +190,14 @@ async function doCleanupOrphanedBlobs(options?: CleanupOptions): Promise<number>
       return 0
     }
     await yieldIfNeeded()
+    // 清理不触发迁移：会话没有行提交（尚未迁移，或行数据已缺失）时整次清理放弃删除；
+    // 未迁移的会话由后台迁移或打开会话完成升级。
+    if (await sessionRepository.requiresSessionMigration({ id: sessionMeta.id })) {
+      console.warn(
+        `storage_clear: session ${sessionMeta.id} has no row commit (unmigrated or missing), aborting without deleting`
+      )
+      return 0
+    }
     for await (const reference of sessionRepository.iterateSessionResourceReferences(sessionMeta.id)) {
       if (Date.now() > deadline) return 0
       needDeletedSet.delete(reference.storageKey)
@@ -231,6 +240,29 @@ async function doCleanupOrphanedBlobs(options?: CleanupOptions): Promise<number>
   } catch (e) {
     console.error('storage_clear: failed to scan image generation storage', e)
     return 0
+  }
+
+  // Enumerate after the metadata snapshot so a concurrent migration cannot add an
+  // identity to the scan's metadata boundary. An unlisted id that still has a legacy
+  // record is unmigrated or mid-migration (rows can be published before its metadata),
+  // and newly published metadata requires a fresh scan.
+  const sessionIds = await sessionRepository.getAllSessionIds()
+  const recordIds = new Set(await sessionRepository.listSessionRecordIds())
+  for (const id of sessionIds) {
+    if (Date.now() > deadline) {
+      console.warn(
+        `storage_clear: reference scan exceeded its time budget (${sessionIds.length} session identities), aborting without deleting`
+      )
+      return 0
+    }
+    await yieldIfNeeded()
+    if (listedSessionIds.has(id)) continue
+    if (recordIds.has(id) || (await metaStorage.getById(id))) {
+      console.warn(
+        `storage_clear: session ${id} is outside the metadata snapshot and needs a fresh scan, aborting without deleting`
+      )
+      return 0
+    }
   }
 
   // 扫描可能耗时较长，而 file:<name>-<size>-<mtime> 是确定性 key：扫描期间用户重新

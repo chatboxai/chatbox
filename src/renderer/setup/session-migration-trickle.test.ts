@@ -65,8 +65,8 @@ function start(
 function createRepository(outcomes: Record<string, SessionMigrationOutcome | Error>) {
   const ids = Object.keys(outcomes)
   return {
-    listSessionMigrationCandidates: vi.fn(() => Promise.resolve(ids.map((id) => ({ id, recordExists: true })))),
-    requiresSessionMigration: vi.fn(async (_candidate: { id: string; recordExists: boolean }) => true),
+    listSessionMigrationCandidates: vi.fn(() => Promise.resolve(ids.map((id) => ({ id })))),
+    requiresSessionMigration: vi.fn(async (_candidate: { id: string }) => true),
     migrateSession: vi.fn((id: string) => {
       const outcome = outcomes[id]
       return outcome instanceof Error ? Promise.reject(outcome) : Promise.resolve(outcome)
@@ -133,7 +133,7 @@ describe('startSessionMigrationTrickle', () => {
     const migrated: string[] = []
     const { scheduler, handle } = start({
       repository: {
-        listSessionMigrationCandidates: async () => [{ id: 'a', recordExists: true }],
+        listSessionMigrationCandidates: async () => [{ id: 'a' }],
         requiresSessionMigration: async () => true,
         migrateSession: async (id) => {
           migrated.push(id)
@@ -166,10 +166,7 @@ describe('startSessionMigrationTrickle', () => {
     const migrated: string[] = []
     const { scheduler, handle } = start({
       repository: {
-        listSessionMigrationCandidates: async () => [
-          { id: 'a', recordExists: true },
-          { id: 'b', recordExists: true },
-        ],
+        listSessionMigrationCandidates: async () => [{ id: 'a' }, { id: 'b' }],
         requiresSessionMigration: async () => true,
         migrateSession: async (id) => {
           if (id === 'a') await activeMigration
@@ -209,8 +206,8 @@ describe('startSessionMigrationTrickle', () => {
 
   test('skips inspecting protected candidates and prevents full maintenance afterward', async () => {
     const repository = {
-      listSessionMigrationCandidates: vi.fn(async () => [{ id: 'blocked', recordExists: true }]),
-      requiresSessionMigration: vi.fn(async (_candidate: { id: string; recordExists: boolean }) => true),
+      listSessionMigrationCandidates: vi.fn(async () => [{ id: 'blocked' }]),
+      requiresSessionMigration: vi.fn(async (_candidate: { id: string }) => true),
       migrateSession: vi.fn(async (): Promise<SessionMigrationOutcome> => 'migrated'),
     }
     const { scheduler, handle } = start({ repository, shouldSkipSession: async () => true })

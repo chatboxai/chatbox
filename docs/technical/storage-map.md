@@ -35,7 +35,7 @@ RN 当前组装采用 Capacitor-compatible SQLite。相同文件名和 schema �
 | `settings` | 服务商与模型配置、API Key / Provider OAuth 等凭据、语言主题、代理、MCP 等；服务商配置在 `providers` 下 |
 | `configs` | 当前主要是安装实例 `uuid` |
 | `configVersion` | 数据迁移版本，不是 App 版本号 |
-| `session:<id>` | 旧格式完整 Session，或带 `storageFormat: 'rows'` 的会话记录 |
+| `session:<id>` | 旧格式完整 Session；迁移到行存储后保持原样，供降级后的 v1.23 读取 |
 | `myCopilots` | 自定义助手列表：提示词、头像、背景、收藏等 |
 | `agent-soul` / `agent-memories` | 全局 Agent 人设与记忆 |
 | `copilot-memories` | 助手自己的记忆 |
@@ -77,7 +77,7 @@ RN 使用带命名空间的 AsyncStorage，例如 `@chatbox/v1:auth-info:chatbox
 
 目录是展示侧栏所需的信息，不包含完整消息正文。生图记录保存任务与图片引用，图片内容走附件库。
 
-旧版完整 Session JSON 位于 `session:<id>`，由本地升级门禁读取。正常会话通过独立 header、线程和消息行访问；目录与 KV 中的会话记录服务于列表和恢复投影，消息库保存权威正文及关系。消息以 `sessionId` / `messageId` 定位，`threadId` 表示线程，`parentMessageId` 表示父消息，`activeChildId` 表示当前选中的后续分支；线程保存当前叶子和压缩边界。
+旧版完整 Session JSON 位于 `session:<id>`，是行迁移的输入。迁移、后续编辑和恢复都不改写它：降级安装的 v1.23 仍从这里读取升级前的会话；只有删除会话时连同目录记录一起删除。新版附件清理只按行数据判断引用，不扫描这些旧记录；目录内会话缺少有效行提交，或目录快照外的会话仍有 `session:<id>` 旧记录（尚未迁移或迁移中，行可能先于目录记录发布）时，整次清理放弃删除；快照后新建目录记录的会话留待下一次扫描，只剩行数据、既无旧记录也无目录记录的会话（例如在 v1.23 中删除的会话）不阻塞清理。只被旧记录引用的附件（例如升级后删除的图片）会被清理，降级后 v1.23 中对应位置的附件可能缺失。升级后新建的会话没有这个 key。正常会话通过独立 header、线程和消息行访问；目录服务于列表，消息库的提交头保存权威会话记录、正文及关系。消息以 `sessionId` / `messageId` 定位，`threadId` 表示线程，`parentMessageId` 表示父消息，`activeChildId` 表示当前选中的后续分支；线程保存当前叶子和压缩边界。
 
 每条消息保存一个完整 `Message`：IndexedDB 的 `messages` 行持有完整对象，SQLite 的 `session_messages.message_json` 持有完整 JSON。正文不按大小切换持久化格式。分页在消息边界结束，超过页目标预算的单条消息单独处理；桥接请求可以切片传输同一行文本，但不会生成正常消息分片表。Capacitor 主 KV 的 `key_value_chunks` 属于通用 KV 存储，与消息行格式独立。
 

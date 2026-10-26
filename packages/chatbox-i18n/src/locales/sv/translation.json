@@ -1044,6 +1044,7 @@
   "Smart Switching": "Smart växling",
   "Smartest AI-Powered Services for Rapid Access": "De smartaste AI-drivna tjänsterna för snabb åtkomst",
   "Some files were not uploaded": "Vissa filer laddades inte upp",
+  "Some messages could not be loaded": "Vissa meddelanden kunde inte läsas in",
   "Sorry, the current model {{model}} API itself does not support image understanding. If you need to send images, please switch to another model or use the recommended <OpenMorePlanButton>Chatbox AI Models</OpenMorePlanButton>.": "Tyvärr stöder inte själva {{model}} API:et bildförståelse. Om du behöver skicka bilder, vänligen byt till en annan modell eller använd de rekommenderade <OpenMorePlanButton>Chatbox AI-modellerna</OpenMorePlanButton>.",
   "Spam or advertising": "Skräppost eller reklam",
   "Specific model settings": "Specifika modellinställningar",
@@ -1123,6 +1124,7 @@
   "This chat has downloadable files generated in the sandbox. Deleting it will permanently remove those files.": "Den här chatten har nedladdningsbara filer som genererats i sandlådan. Om du raderar den tas dessa filer bort permanent.",
   "This conversation already has cached context. Deleting an earlier message will invalidate that cache, so the next reply may cost more and take longer.": "Den här konversationen har redan cachad kontext. Om du tar bort ett tidigare meddelande ogiltigförklaras cachen, så nästa svar kan kosta mer och ta längre tid.",
   "This conversation already has cached context. Switching models will invalidate that cache, so the next reply may cost more and take longer.": "Den här konversationen har redan cachad kontext. Om du byter modell ogiltigförklaras cachen, så nästa svar kan kosta mer och ta längre tid.",
+  "This conversation could not be loaded": "Den här konversationen kunde inte läsas in",
   "This document contains too much text for chat attachments. Please upload it through Knowledge Base instead.": "Detta dokument innehåller för mycket text för chattbilagor. Vänligen ladda upp det via Knowledge Base istället.",
   "This feature is not available on your system. Please check the system requirements.": "Denna funktion är inte tillgänglig på ditt system. Vänligen kontrollera systemkraven.",
   "This feature requires WSL2 on Windows. Please install WSL2 to use sandbox features.": "Denna funktion kräver WSL2 på Windows. Vänligen installera WSL2 för att använda sandlådefunktioner.",
@@ -1969,5 +1971,7 @@
   "Restore conversations, settings and resources from a backup.": "Återställ konversationer, inställningar och resurser från en säkerhetskopia.",
   "A conversation could not be converted. Local data was kept.": "En konversation kunde inte konverteras. Lokala data behölls.",
   "Conversations only (V1 JSON)": "Endast konversationer (V1 JSON)",
+  "Earlier messages could not be loaded": "Tidigare meddelanden kunde inte läsas in",
+  "Later messages could not be loaded": "Senare meddelanden kunde inte läsas in",
   "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 innehåller konversationstext, historik och förgreningar. Bilagor och inställningar ingår inte."
 }

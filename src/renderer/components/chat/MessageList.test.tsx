@@ -174,6 +174,8 @@ vi.mock('react-virtuoso', async () => {
           atBottomStateChange(value: boolean): void
           style?: React.CSSProperties
           className?: string
+          components?: Record<'Header' | 'Footer', React.ComponentType<{ context: unknown }>>
+          context?: unknown
         },
         ref
       ) => {
@@ -217,11 +219,13 @@ vi.mock('react-virtuoso', async () => {
             data-first-index={props.firstItemIndex}
             onScroll={props.onScroll}
           >
+            {props.components && <props.components.Header context={props.context} />}
             {props.data.map((item, index) =>
               !h.unmountedItems.has(item.key) && (h.tailMounted || index < props.data.length - 1) ? (
                 <div key={item.key}>{props.itemContent(index, item)}</div>
               ) : null
             )}
+            {props.components && <props.components.Footer context={props.context} />}
           </div>
         )
       }
@@ -604,6 +608,65 @@ describe('row transcript host', () => {
     fireEvent.click(view.getByRole('button', { name: 'Previous message' }))
     expect(h.scrollToIndex).toHaveBeenCalledExactlyOnceWith({ index: 49, align: 'start', behavior: 'smooth' })
     expect(h.read).toHaveBeenCalledTimes(1)
+  })
+
+  test('reports a failed older page as the first list row', async () => {
+    const view = render(<Host search="m60" />)
+    await waitFor(() => expect(h.firstReady).toBe(true))
+    h.read.mockRejectedValueOnce(new Error('Page read failed'))
+    await act(async () => {
+      await h.controller?.loadOlder()
+    })
+    const notice = view.getByRole('alert')
+    expect(notice.textContent).toContain('Earlier messages could not be loaded')
+    expect(notice.textContent).toContain('Page read failed')
+    const list = view.getByTestId('virtuoso')
+    expect(list.firstElementChild?.contains(notice)).toBe(true)
+    expect(view.queryByRole('button', { name: 'Dismiss' })).toBeNull()
+    fireEvent.click(view.getByRole('button', { name: 'Try Again' }))
+    expect(view.queryByRole('alert')).toBeNull()
+    await waitFor(() => expect(h.read).toHaveBeenCalledTimes(3))
+    await waitFor(() => expect(view.getByTestId('session-transcript').dataset.transcriptFirstMessageId).toBe('m0'))
+    expect(view.queryByRole('alert')).toBeNull()
+  })
+
+  test('reports a failed newer page as the last list row', async () => {
+    const view = render(<Host search="m60" />)
+    await waitFor(() => expect(h.firstReady).toBe(true))
+    h.read.mockRejectedValueOnce(new Error('Page read failed'))
+    await act(async () => {
+      await h.controller?.loadNewer()
+    })
+    const notice = view.getByRole('alert')
+    expect(notice.textContent).toContain('Later messages could not be loaded')
+    expect(view.getByTestId('virtuoso').lastElementChild?.contains(notice)).toBe(true)
+    expect(view.queryByRole('button', { name: 'Dismiss' })).toBeNull()
+  })
+
+  test('reports a failed navigation above the list until a retry succeeds', async () => {
+    const view = render(<Host search="m60" />)
+    await waitFor(() => expect(h.firstReady).toBe(true))
+    h.read.mockRejectedValueOnce(new Error('Window read failed'))
+    await act(async () => {
+      await h.controller?.navigate({ messageId: 'm200' })
+    })
+    const notice = view.getByRole('alert')
+    expect(notice.textContent).toContain('Some messages could not be loaded')
+    expect(view.getByTestId('session-transcript').contains(notice)).toBe(false)
+    expect(view.queryByRole('button', { name: 'Dismiss' })).toBeNull()
+    fireEvent.click(view.getByRole('button', { name: 'Try Again' }))
+    await waitFor(() => expect(view.getByTestId('session-transcript').dataset.transcriptFirstMessageId).not.toBe('m60'))
+    expect(view.queryByRole('alert')).toBeNull()
+  })
+
+  test('shows a conversation that failed to open as the empty state with only a retry', async () => {
+    h.read.mockRejectedValue(new Error('Storage unavailable'))
+    const view = render(<Host />)
+    await waitFor(() => expect(view.getByText('This conversation could not be loaded')).toBeTruthy())
+    expect(view.getByRole('alert').textContent).toContain('Storage unavailable')
+    expect(view.getByTestId('session-transcript').contains(view.getByRole('alert'))).toBe(true)
+    expect(view.getByRole('button', { name: 'Try Again' })).toBeTruthy()
+    expect(view.queryByRole('button', { name: 'Dismiss' })).toBeNull()
   })
 
   test('still scrolls between loaded messages after a page read fails', async () => {

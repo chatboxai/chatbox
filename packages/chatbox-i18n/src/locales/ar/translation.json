@@ -1044,6 +1044,7 @@
   "Smart Switching": "تبديل ذكي",
   "Smartest AI-Powered Services for Rapid Access": "أذكى خدمات مدعومة بـ AI للوصول السريع",
   "Some files were not uploaded": "لم يتم رفع بعض الملفات",
+  "Some messages could not be loaded": "تعذّر تحميل بعض الرسائل",
   "Sorry, the current model {{model}} API itself does not support image understanding. If you need to send images, please switch to another model or use the recommended <OpenMorePlanButton>Chatbox AI Models</OpenMorePlanButton>.": "عذرًا، نموذج {{model}} الحالي لا يدعم فهم الصور. إذا كنت بحاجة إلى إرسال صور، يرجى التبديل إلى نموذج آخر أو استخدام <OpenMorePlanButton>نماذج Chatbox AI</OpenMorePlanButton> الموصى بها.",
   "Spam or advertising": "رسائل مزعجة أو إعلانية",
   "Specific model settings": "إعدادات النموذج المحددة",
@@ -1123,6 +1124,7 @@
   "This chat has downloadable files generated in the sandbox. Deleting it will permanently remove those files.": "تحتوي هذه المحادثة على ملفات قابلة للتنزيل تم إنشاؤها في الصندوق الرملي (sandbox). سيؤدي حذفها إلى إزالة هذه الملفات نهائيًا.",
   "This conversation already has cached context. Deleting an earlier message will invalidate that cache, so the next reply may cost more and take longer.": "هذه المحادثة لديها بالفعل سياق مخزّن مؤقتاً. حذف رسالة سابقة سيُبطل ذلك التخزين، لذا قد يكون الرد التالي أعلى تكلفة ويستغرق وقتاً أطول.",
   "This conversation already has cached context. Switching models will invalidate that cache, so the next reply may cost more and take longer.": "هذه المحادثة لديها بالفعل سياق مخزّن مؤقتاً. تبديل النموذج سيُبطل ذلك التخزين، لذا قد يكون الرد التالي أعلى تكلفة ويستغرق وقتاً أطول.",
+  "This conversation could not be loaded": "تعذّر تحميل هذه المحادثة",
   "This document contains too much text for chat attachments. Please upload it through Knowledge Base instead.": "يحتوي هذا المستند على نص كثير جداً بالنسبة لمرفقات الدردشة. يرجى رفعه من خلال قاعدة المعرفة بدلاً من ذلك.",
   "This feature is not available on your system. Please check the system requirements.": "هذه الميزة غير متاحة على نظامك. يرجى التحقق من متطلبات النظام.",
   "This feature requires WSL2 on Windows. Please install WSL2 to use sandbox features.": "تتطلب هذه الميزة WSL2 على نظام ويندوز. يرجى تثبيت WSL2 لاستخدام ميزات الحاوية المعزولة (sandbox).",
@@ -1969,5 +1971,7 @@
   "Restore conversations, settings and resources from a backup.": "استعد المحادثات والإعدادات والموارد من نسخة احتياطية.",
   "A conversation could not be converted. Local data was kept.": "تعذر تحويل محادثة. تم الاحتفاظ بالبيانات المحلية.",
   "Conversations only (V1 JSON)": "المحادثات فقط (V1 JSON)",
+  "Earlier messages could not be loaded": "تعذّر تحميل الرسائل السابقة",
+  "Later messages could not be loaded": "تعذّر تحميل الرسائل اللاحقة",
   "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "يتضمن V1 نصوص المحادثات وسجلها وفروعها. لا يتضمن المرفقات والإعدادات."
 }

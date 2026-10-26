@@ -1044,6 +1044,7 @@
   "Smart Switching": "智能切换",
   "Smartest AI-Powered Services for Rapid Access": "最智能的 AI 服务，快速访问",
   "Some files were not uploaded": "部分文件未上传",
+  "Some messages could not be loaded": "部分消息未能加载",
   "Sorry, the current model {{model}} API itself does not support image understanding. If you need to send images, please switch to another model or use the recommended <OpenMorePlanButton>Chatbox AI Models</OpenMorePlanButton>.": "抱歉，当前模型 {{model}} API 本身不支持图片理解。如果您需要发送图片，请切换到其他模型或使用推荐的 <OpenMorePlanButton>Chatbox AI Models</OpenMorePlanButton>。",
   "Spam or advertising": "垃圾广告",
   "Specific model settings": "特定模型设置",
@@ -1123,6 +1124,7 @@
   "This chat has downloadable files generated in the sandbox. Deleting it will permanently remove those files.": "此对话包含沙盒生成的可下载文件，删除后这些文件将被永久移除。",
   "This conversation already has cached context. Deleting an earlier message will invalidate that cache, so the next reply may cost more and take longer.": "这段对话已经有缓存上下文。删除较早的消息会使缓存失效，下一次回复可能更贵、也更慢。",
   "This conversation already has cached context. Switching models will invalidate that cache, so the next reply may cost more and take longer.": "这段对话已经有缓存上下文。切换模型会使缓存失效，下一次回复可能更贵、也更慢。",
+  "This conversation could not be loaded": "此对话无法加载",
   "This document contains too much text for chat attachments. Please upload it through Knowledge Base instead.": "该文档包含的文本过多，不适合作为聊天附件。请改为通过“知识库”上传。",
   "This feature is not available on your system. Please check the system requirements.": "该功能在您的系统上不可用。请检查系统要求。",
   "This feature requires WSL2 on Windows. Please install WSL2 to use sandbox features.": "此功能需要 Windows 上的 WSL2。请安装 WSL2 以使用沙箱功能。",
@@ -1969,5 +1971,7 @@
   "Restore conversations, settings and resources from a backup.": "从 备份恢复会话、设置和资源。",
   "A conversation could not be converted. Local data was kept.": "一个会话无法转换，已保留本地数据。",
   "Conversations only (V1 JSON)": "仅导出对话（V1 JSON）",
+  "Earlier messages could not be loaded": "更早的消息未能加载",
+  "Later messages could not be loaded": "后面的消息未能加载",
   "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 包含对话文本、历史线程和分支，不包含附件和配置。"
 }

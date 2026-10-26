@@ -1044,6 +1044,7 @@
   "Smart Switching": "スマート切り替え",
   "Smartest AI-Powered Services for Rapid Access": "迅速なアクセスのための最もスマートなAI搭載サービス",
   "Some files were not uploaded": "一部のファイルがアップロードされませんでした",
+  "Some messages could not be loaded": "一部のメッセージを読み込めませんでした",
   "Sorry, the current model {{model}} API itself does not support image understanding. If you need to send images, please switch to another model or use the recommended <OpenMorePlanButton>Chatbox AI Models</OpenMorePlanButton>.": "申し訳ありませんが、現在のモデル {{model}} のAPI自体は画像認識をサポートしていません。画像を送信する必要がある場合は、別のモデルに切り替えるか、推奨されている<OpenMorePlanButton>Chatbox AIモデル</OpenMorePlanButton>をご利用ください。",
   "Spam or advertising": "スパムまたは広告",
   "Specific model settings": "特定のモデル設定",
@@ -1123,6 +1124,7 @@
   "This chat has downloadable files generated in the sandbox. Deleting it will permanently remove those files.": "このチャットにはサンドボックスで生成されたダウンロード可能なファイルがあります。削除すると、これらのファイルは完全に削除されます。",
   "This conversation already has cached context. Deleting an earlier message will invalidate that cache, so the next reply may cost more and take longer.": "この会話にはすでにキャッシュ済みのコンテキストがあります。以前のメッセージを削除するとキャッシュが無効になり、次の返信はコストが高くなり、時間もかかる可能性があります。",
   "This conversation already has cached context. Switching models will invalidate that cache, so the next reply may cost more and take longer.": "この会話にはすでにキャッシュ済みのコンテキストがあります。モデルを切り替えるとキャッシュが無効になり、次の返信はコストが高くなり、時間もかかる可能性があります。",
+  "This conversation could not be loaded": "この会話を読み込めませんでした",
   "This document contains too much text for chat attachments. Please upload it through Knowledge Base instead.": "このドキュメントにはテキストが含まれすぎており、チャット添付用としては適していません。代わりにナレッジベースからアップロードしてください。",
   "This feature is not available on your system. Please check the system requirements.": "この機能はご利用のシステムでは利用できません。システム要件を確認してください。",
   "This feature requires WSL2 on Windows. Please install WSL2 to use sandbox features.": "この機能にはWindows上のWSL2が必要です。サンドボックス機能を使用するにはWSL2をインストールしてください。",
@@ -1969,5 +1971,7 @@
   "Restore conversations, settings and resources from a backup.": "バックアップから会話、設定、リソースを復元します。",
   "A conversation could not be converted. Local data was kept.": "会話を変換できませんでした。ローカルデータは保持されました。",
   "Conversations only (V1 JSON)": "会話のみ（V1 JSON）",
+  "Earlier messages could not be loaded": "以前のメッセージを読み込めませんでした",
+  "Later messages could not be loaded": "以降のメッセージを読み込めませんでした",
   "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 には会話のテキスト、履歴、分岐が含まれます。添付ファイルと設定は含まれません。"
 }

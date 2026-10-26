@@ -1044,6 +1044,7 @@
   "Smart Switching": "Cambio inteligente",
   "Smartest AI-Powered Services for Rapid Access": "Los servicios con tecnología AI más inteligentes para un acceso rápido",
   "Some files were not uploaded": "Algunos archivos no se cargaron",
+  "Some messages could not be loaded": "No se pudieron cargar algunos mensajes",
   "Sorry, the current model {{model}} API itself does not support image understanding. If you need to send images, please switch to another model or use the recommended <OpenMorePlanButton>Chatbox AI Models</OpenMorePlanButton>.": "Lo sentimos, la API del modelo actual {{model}} no admite la comprensión de imágenes. Si necesita enviar imágenes, cambie a otro modelo o utilice los <OpenMorePlanButton>Modelos Chatbox AI</OpenMorePlanButton> recomendados.",
   "Spam or advertising": "Spam o publicidad",
   "Specific model settings": "Ajustes específicos del modelo",
@@ -1123,6 +1124,7 @@
   "This chat has downloadable files generated in the sandbox. Deleting it will permanently remove those files.": "Este chat tiene archivos descargables generados en el sandbox. Si lo eliminas, esos archivos se eliminarán de forma permanente.",
   "This conversation already has cached context. Deleting an earlier message will invalidate that cache, so the next reply may cost more and take longer.": "Esta conversación ya tiene contexto en caché. Eliminar un mensaje anterior invalidará esa caché, así que la próxima respuesta puede costar más y tardar más.",
   "This conversation already has cached context. Switching models will invalidate that cache, so the next reply may cost more and take longer.": "Esta conversación ya tiene contexto en caché. Cambiar de modelo invalidará esa caché, así que la próxima respuesta puede costar más y tardar más.",
+  "This conversation could not be loaded": "No se pudo cargar esta conversación",
   "This document contains too much text for chat attachments. Please upload it through Knowledge Base instead.": "Este documento contiene demasiado texto para los adjuntos de chat. Por favor, súbalo a través de la Base de Conocimiento en su lugar.",
   "This feature is not available on your system. Please check the system requirements.": "Esta función no está disponible en su sistema. Por favor, verifique los requisitos del sistema.",
   "This feature requires WSL2 on Windows. Please install WSL2 to use sandbox features.": "Esta función requiere WSL2 en Windows. Por favor, instale WSL2 para utilizar las funciones de sandbox.",
@@ -1969,5 +1971,7 @@
   "Restore conversations, settings and resources from a backup.": "Restaura conversaciones, ajustes y recursos desde una copia de seguridad.",
   "A conversation could not be converted. Local data was kept.": "No se pudo convertir una conversación. Se conservaron los datos locales.",
   "Conversations only (V1 JSON)": "Solo conversaciones (V1 JSON)",
+  "Earlier messages could not be loaded": "No se pudieron cargar los mensajes anteriores",
+  "Later messages could not be loaded": "No se pudieron cargar los mensajes posteriores",
   "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 incluye el texto, el historial y las ramas de las conversaciones. No incluye archivos adjuntos ni configuración."
 }

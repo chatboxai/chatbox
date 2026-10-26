@@ -1044,6 +1044,7 @@
   "Smart Switching": "스마트 전환",
   "Smartest AI-Powered Services for Rapid Access": "빠른 액세스를 위한 가장 스마트한 AI 기반 서비스",
   "Some files were not uploaded": "일부 파일이 업로드되지 않았습니다",
+  "Some messages could not be loaded": "일부 메시지를 불러오지 못했습니다",
   "Sorry, the current model {{model}} API itself does not support image understanding. If you need to send images, please switch to another model or use the recommended <OpenMorePlanButton>Chatbox AI Models</OpenMorePlanButton>.": "죄송합니다. 현재 모델 {{model}} API 자체는 이미지 이해를 지원하지 않습니다. 이미지를 보내야 하는 경우 다른 모델로 전환하거나 권장되는 <OpenMorePlanButton>Chatbox AI 모델</OpenMorePlanButton>을 사용하세요.",
   "Spam or advertising": "스팸 또는 광고",
   "Specific model settings": "특정 모델 설정",
@@ -1123,6 +1124,7 @@
   "This chat has downloadable files generated in the sandbox. Deleting it will permanently remove those files.": "이 채팅에는 샌드박스에서 생성된 다운로드 가능한 파일이 있습니다. 삭제하면 해당 파일이 영구적으로 제거됩니다.",
   "This conversation already has cached context. Deleting an earlier message will invalidate that cache, so the next reply may cost more and take longer.": "이 대화에는 이미 캐시된 컨텍스트가 있습니다. 이전 메시지를 삭제하면 캐시가 무효화되어 다음 답변이 더 비싸고 더 오래 걸릴 수 있습니다.",
   "This conversation already has cached context. Switching models will invalidate that cache, so the next reply may cost more and take longer.": "이 대화에는 이미 캐시된 컨텍스트가 있습니다. 모델을 전환하면 캐시가 무효화되어 다음 답변이 더 비싸고 더 오래 걸릴 수 있습니다.",
+  "This conversation could not be loaded": "이 대화를 불러오지 못했습니다",
   "This document contains too much text for chat attachments. Please upload it through Knowledge Base instead.": "이 문서에는 채팅 첨부물로 포함하기에 너무 많은 텍스트가 있습니다. 대신 지식 베이스를 통해 업로드하십시오.",
   "This feature is not available on your system. Please check the system requirements.": "이 기능은 현재 시스템에서 사용할 수 없습니다. 시스템 요구 사항을 확인해 주세요.",
   "This feature requires WSL2 on Windows. Please install WSL2 to use sandbox features.": "이 기능은 Windows에서 WSL2가 필요합니다. 샌드박스 기능을 사용하려면 WSL2를 설치하세요.",
@@ -1969,5 +1971,7 @@
   "Restore conversations, settings and resources from a backup.": "백업에서 대화, 설정 및 리소스를 복원합니다.",
   "A conversation could not be converted. Local data was kept.": "대화를 변환하지 못했습니다. 로컬 데이터는 유지되었습니다.",
   "Conversations only (V1 JSON)": "대화만 (V1 JSON)",
+  "Earlier messages could not be loaded": "이전 메시지를 불러오지 못했습니다",
+  "Later messages could not be loaded": "이후 메시지를 불러오지 못했습니다",
   "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1에는 대화 텍스트, 기록 및 분기가 포함됩니다. 첨부 파일과 설정은 포함되지 않습니다."
 }

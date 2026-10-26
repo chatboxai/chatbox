@@ -14,6 +14,7 @@ import {
   IconListTree,
   IconMessagePlus,
   IconPencil,
+  IconReload,
   IconSwitch3,
   IconTrash,
 } from '@tabler/icons-react'
@@ -22,6 +23,7 @@ import {
   type FC,
   forwardRef,
   memo,
+  type ReactNode,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -31,9 +33,9 @@ import {
   useState,
 } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
+import { type ContextProp, Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import { rendererApplication } from '@/app/renderer-application'
-import { contentColumnClassName } from '@/components/layout/contentColumn'
+import { contentColumnClassName, paddedContentColumnClassName } from '@/components/layout/contentColumn'
 import { platformTypeAtom } from '@/hooks/useNeedRoomForWinControls'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { useSessionControls } from '@/hooks/useSessionLockState'
@@ -48,6 +50,7 @@ import { uiStore, useUIStore } from '@/stores/uiStore'
 import { notifySessionLockBlocked } from '@/utils/session-lock-copy'
 import ActionMenu from '../ActionMenu'
 import { ErrorBoundary } from '../common/ErrorBoundary'
+import { ErrorNotice, ErrorNoticeAction, ErrorNoticeActions, ErrorNoticeDetails } from '../common/ErrorNotice'
 import { ScalableIcon } from '../common/ScalableIcon'
 import Loading from '../icons/Loading'
 import { BlockCodeCollapsedStateProvider } from '../Markdown'
@@ -686,6 +689,36 @@ const MessageList = forwardRef<
       </Stack>
     )
   }
+  // A failure is reported where it happened: at the list edge that failed to page, as the empty state when
+  // nothing could be opened, or above the list for navigation. Retrying is the only way out of the error, so
+  // the notice stays until it succeeds.
+  const transcriptErrorAt = !transcript.error
+    ? null
+    : transcript.rows.length === 0
+      ? 'open'
+      : transcript.operation?.kind === 'older' || transcript.operation?.kind === 'newer'
+        ? transcript.operation.kind
+        : 'navigate'
+  const transcriptErrorNotice = transcript.error && transcriptErrorAt && (
+    <ErrorNotice
+      icon="error"
+      title={
+        {
+          open: t('This conversation could not be loaded'),
+          older: t('Earlier messages could not be loaded'),
+          newer: t('Later messages could not be loaded'),
+          navigate: t('Some messages could not be loaded'),
+        }[transcriptErrorAt]
+      }
+    >
+      <ErrorNoticeDetails text={transcript.error.message} />
+      <ErrorNoticeActions>
+        <ErrorNoticeAction icon={IconReload} onClick={() => void transcript.retry()}>
+          {t('Try Again')}
+        </ErrorNoticeAction>
+      </ErrorNoticeActions>
+    </ErrorNotice>
+  )
   return (
     <div className={cn('w-full h-full min-h-0 mx-auto flex flex-col', className)}>
       <BlockCodeCollapsedStateProvider defaultCollapsed={!!settingsStore.getState().autoCollapseCodeBlock}>
@@ -715,6 +748,11 @@ const MessageList = forwardRef<
               </Flex>
             )}
           </Transition>
+        )}
+        {transcriptErrorAt === 'navigate' && (
+          <div className={cn('shrink-0 py-2', !isSmallScreen && 'px-[28px]')}>
+            <div className={paddedContentColumnClassName(widthFull)}>{transcriptErrorNotice}</div>
+          </div>
         )}
         <div
           ref={container}
@@ -790,6 +828,12 @@ const MessageList = forwardRef<
               followOutput={false}
               skipAnimationFrameInResizeObserver
               initialTopMostItemIndex={0}
+              components={transcriptListComponents}
+              context={{
+                columnClassName: paddedContentColumnClassName(widthFull),
+                olderNotice: transcriptErrorAt === 'older' ? transcriptErrorNotice : null,
+                newerNotice: transcriptErrorAt === 'newer' ? transcriptErrorNotice : null,
+              }}
               scrollerRef={(element) => {
                 scroller.current = element instanceof HTMLElement ? element : null
                 setViewportHeight(scroller.current?.clientHeight ?? 0)
@@ -862,13 +906,13 @@ const MessageList = forwardRef<
               )}
             />
           )}
-          {transcript.error && (
-            <Button className="absolute top-2 left-1/2 -translate-x-1/2" onClick={() => void transcript.retry()}>
-              {t('Try Again')}
-            </Button>
-          )}
           {(transcript.isLoadingOlder || transcript.isLoadingNewer) && (
             <Loader className="absolute top-2 left-1/2" size="xs" />
+          )}
+          {transcriptErrorAt === 'open' && (
+            <div className="absolute inset-0 flex overflow-y-auto px-md pb-16">
+              <div className="m-auto w-full max-w-[560px]">{transcriptErrorNotice}</div>
+            </div>
           )}
           {!isSmallScreen && transcript.firstWindowReady && (
             <TranscriptMinimap key={session.id} transcript={transcript} onNavigate={navigate} />
@@ -910,6 +954,41 @@ const MessageList = forwardRef<
   )
 })
 export default memo(MessageList)
+
+interface TranscriptListContext {
+  columnClassName: string
+  olderNotice: ReactNode
+  newerNotice: ReactNode
+}
+// Chromium and Firefox keep the visible messages in place through CSS scroll anchoring, except at the very top
+// where the row simply appears in view. WebKit has no scroll anchoring, so the row reproduces that behaviour.
+const browserAnchorsScroll = typeof CSS !== 'undefined' && CSS.supports('overflow-anchor', 'auto')
+/** A row above the messages that moves them only when the list is scrolled to the very top. */
+function TranscriptHeadRow({ className, children }: { className: string; children: ReactNode }) {
+  const row = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const element = row.current
+    const scroller = element?.closest<HTMLElement>('[data-virtuoso-scroller]')
+    if (browserAnchorsScroll || !element || !scroller) return
+    if (scroller.scrollTop > 0) scroller.scrollTop += element.offsetHeight
+    return () => {
+      if (scroller.scrollTop > 0) scroller.scrollTop -= element.offsetHeight
+    }
+  }, [])
+  return (
+    <div ref={row} className={className}>
+      {children}
+    </div>
+  )
+}
+const transcriptListComponents = {
+  Header: ({ context }: ContextProp<TranscriptListContext>) =>
+    context.olderNotice ? (
+      <TranscriptHeadRow className={cn(context.columnClassName, 'pt-4')}>{context.olderNotice}</TranscriptHeadRow>
+    ) : null,
+  Footer: ({ context }: ContextProp<TranscriptListContext>) =>
+    context.newerNotice ? <div className={cn(context.columnClassName, 'pb-4')}>{context.newerNotice}</div> : null,
+}
 
 const TranscriptMinimap = memo(
   ({

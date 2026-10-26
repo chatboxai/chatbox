@@ -1044,6 +1044,7 @@
   "Smart Switching": "Smart Switching",
   "Smartest AI-Powered Services for Rapid Access": "Smartest AI-Powered Services for Rapid Access",
   "Some files were not uploaded": "Some files were not uploaded",
+  "Some messages could not be loaded": "Some messages could not be loaded",
   "Sorry, the current model {{model}} API itself does not support image understanding. If you need to send images, please switch to another model or use the recommended <OpenMorePlanButton>Chatbox AI Models</OpenMorePlanButton>.": "Sorry, the current model {{model}} API itself does not support image understanding. If you need to send images, please switch to another model or use the recommended <OpenMorePlanButton>Chatbox AI Models</OpenMorePlanButton>.",
   "Spam or advertising": "Spam or advertising",
   "Specific model settings": "Specific model settings",
@@ -1123,6 +1124,7 @@
   "This chat has downloadable files generated in the sandbox. Deleting it will permanently remove those files.": "This chat has downloadable files generated in the sandbox. Deleting it will permanently remove those files.",
   "This conversation already has cached context. Deleting an earlier message will invalidate that cache, so the next reply may cost more and take longer.": "This conversation already has cached context. Deleting an earlier message will invalidate that cache, so the next reply may cost more and take longer.",
   "This conversation already has cached context. Switching models will invalidate that cache, so the next reply may cost more and take longer.": "This conversation already has cached context. Switching models will invalidate that cache, so the next reply may cost more and take longer.",
+  "This conversation could not be loaded": "This conversation could not be loaded",
   "This document contains too much text for chat attachments. Please upload it through Knowledge Base instead.": "This document contains too much text for chat attachments. Please upload it through Knowledge Base instead.",
   "This feature is not available on your system. Please check the system requirements.": "This feature is not available on your system. Please check the system requirements.",
   "This feature requires WSL2 on Windows. Please install WSL2 to use sandbox features.": "This feature requires WSL2 on Windows. Please install WSL2 to use sandbox features.",
@@ -1969,5 +1971,7 @@
   "Restore conversations, settings and resources from a backup.": "Restore conversations, settings and resources from a backup.",
   "A conversation could not be converted. Local data was kept.": "A conversation could not be converted. Local data was kept.",
   "Conversations only (V1 JSON)": "Conversations only (V1 JSON)",
+  "Earlier messages could not be loaded": "Earlier messages could not be loaded",
+  "Later messages could not be loaded": "Later messages could not be loaded",
   "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 includes conversation text, history and branches. Attachments and configuration are not included."
 }

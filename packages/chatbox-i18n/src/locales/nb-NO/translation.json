@@ -1044,6 +1044,7 @@
   "Smart Switching": "Smart bytte",
   "Smartest AI-Powered Services for Rapid Access": "De smarteste AI-drevne tjenestene for rask tilgang",
   "Some files were not uploaded": "Noen filer ble ikke lastet opp",
+  "Some messages could not be loaded": "Noen meldinger kunne ikke lastes inn",
   "Sorry, the current model {{model}} API itself does not support image understanding. If you need to send images, please switch to another model or use the recommended <OpenMorePlanButton>Chatbox AI Models</OpenMorePlanButton>.": "Beklager, den gjeldende {{model}}-API-en støtter ikke bildeforståelse. Hvis du trenger å sende bilder, vennligst bytt til en annen modell eller bruk de anbefalte <OpenMorePlanButton>Chatbox AI-modellene</OpenMorePlanButton>.",
   "Spam or advertising": "Spam eller reklame",
   "Specific model settings": "Spesifikke modellinnstillinger",
@@ -1123,6 +1124,7 @@
   "This chat has downloadable files generated in the sandbox. Deleting it will permanently remove those files.": "Denne chatten har nedlastbare filer som er generert i sandkassen. Hvis du sletter den, fjernes disse filene permanent.",
   "This conversation already has cached context. Deleting an earlier message will invalidate that cache, so the next reply may cost more and take longer.": "Denne samtalen har allerede bufret kontekst. Hvis du sletter en tidligere melding, ugyldiggjøres hurtigbufferen, så neste svar kan koste mer og ta lenger tid.",
   "This conversation already has cached context. Switching models will invalidate that cache, so the next reply may cost more and take longer.": "Denne samtalen har allerede bufret kontekst. Hvis du bytter modell, ugyldiggjøres hurtigbufferen, så neste svar kan koste mer og ta lenger tid.",
+  "This conversation could not be loaded": "Denne samtalen kunne ikke lastes inn",
   "This document contains too much text for chat attachments. Please upload it through Knowledge Base instead.": "Dette dokumentet inneholder for mye tekst for chatevedlegg. Vennligst last det opp via Knowledge Base i stedet.",
   "This feature is not available on your system. Please check the system requirements.": "Denne funksjonen er ikke tilgjengelig på systemet ditt. Vennligst sjekk systemkravene.",
   "This feature requires WSL2 on Windows. Please install WSL2 to use sandbox features.": "Denne funksjonen krever WSL2 på Windows. Vennligst installer WSL2 for å bruke sandkassefunksjoner.",
@@ -1969,5 +1971,7 @@
   "Restore conversations, settings and resources from a backup.": "Gjenopprett samtaler, innstillinger og ressurser fra en sikkerhetskopi.",
   "A conversation could not be converted. Local data was kept.": "En samtale kunne ikke konverteres. Lokale data ble beholdt.",
   "Conversations only (V1 JSON)": "Bare samtaler (V1 JSON)",
+  "Earlier messages could not be loaded": "Tidligere meldinger kunne ikke lastes inn",
+  "Later messages could not be loaded": "Senere meldinger kunne ikke lastes inn",
   "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 inkluderer samtaletekst, historikk og forgreninger. Vedlegg og innstillinger er ikke inkludert."
 }

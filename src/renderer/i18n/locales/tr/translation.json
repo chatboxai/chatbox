@@ -1043,6 +1043,7 @@
   "Smart Switching": "Akıllı Geçiş",
   "Smartest AI-Powered Services for Rapid Access": "Hızlı Erişim için En Akıllı AI Destekli Hizmetler",
   "Some files were not uploaded": "Bazı dosyalar yüklenmedi",
+  "Some messages could not be loaded": "Bazı mesajlar yüklenemedi",
   "Sorry, the current model {{model}} API itself does not support image understanding. If you need to send images, please switch to another model or use the recommended <OpenMorePlanButton>Chatbox AI Models</OpenMorePlanButton>.": "Üzgünüz, geçerli model {{model}} API'si görsel anlamayı desteklemiyor. Görsel göndermek istiyorsanız lütfen başka bir modele geçin veya önerilen <OpenMorePlanButton>Chatbox AI Modellerini</OpenMorePlanButton> kullanın.",
   "Spam or advertising": "İstenmeyen içerik veya reklam",
   "Specific model settings": "Belirli model ayarları",
@@ -1121,6 +1122,7 @@
   "This chat has downloadable files generated in the sandbox. Deleting it will permanently remove those files.": "Bu sohbette sanal alanda oluşturulmuş indirilebilir dosyalar var. Silmek bu dosyaları kalıcı olarak kaldırır.",
   "This conversation already has cached context. Deleting an earlier message will invalidate that cache, so the next reply may cost more and take longer.": "Bu konuşmanın zaten önbelleğe alınmış bir bağlamı var. Daha eski bir mesajı silmek bu önbelleği geçersiz kılar; bu nedenle sonraki yanıt daha pahalıya gelebilir ve daha uzun sürebilir.",
   "This conversation already has cached context. Switching models will invalidate that cache, so the next reply may cost more and take longer.": "Bu konuşmanın zaten önbelleğe alınmış bir bağlamı var. Model değiştirmek bu önbelleği geçersiz kılar; bu nedenle sonraki yanıt daha pahalıya gelebilir ve daha uzun sürebilir.",
+  "This conversation could not be loaded": "Bu sohbet yüklenemedi",
   "This document contains too much text for chat attachments. Please upload it through Knowledge Base instead.": "Bu belge sohbet ekleri için çok fazla metin içeriyor. Lütfen bunun yerine Bilgi Tabanı üzerinden yükleyin.",
   "This feature is not available on your system. Please check the system requirements.": "Bu özellik sisteminizde kullanılamıyor. Lütfen sistem gereksinimlerini kontrol edin.",
   "This feature requires WSL2 on Windows. Please install WSL2 to use sandbox features.": "Bu özellik Windows'ta WSL2 gerektirir. Sanal alan özelliklerini kullanmak için lütfen WSL2 kurun.",
@@ -1965,5 +1967,7 @@
   "Restore conversations, settings and resources from a backup.": "Konuşmaları, ayarları ve kaynakları bir yedeğinden geri yükleyin.",
   "A conversation could not be converted. Local data was kept.": "Bir sohbet dönüştürülemedi. Yerel veriler korundu.",
   "Conversations only (V1 JSON)": "Yalnızca konuşmalar (V1 JSON)",
+  "Earlier messages could not be loaded": "Önceki mesajlar yüklenemedi",
+  "Later messages could not be loaded": "Sonraki mesajlar yüklenemedi",
   "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1, konuşma metnini, geçmişini ve dallarını içerir. Ekler ve yapılandırma dahil edilmez."
 }

@@ -9,8 +9,6 @@ const SESSION_KEY_PREFIX = 'session:'
 const RESERVED_SESSION_IDS = new Set(['', 'undefined', 'new'])
 
 export interface CurrentSessionDataStorage {
-  copyItem?(source: string, destination: string): Promise<boolean>
-  openBackupValue?(key: string): Promise<import('@chatbox/core/backup').BackupFile | null>
   getItem<T>(key: string, initialValue: T): Promise<T>
   getItemRaw<T>(key: string): Promise<T | null>
   setItemNow<T>(key: string, value: T): Promise<void>

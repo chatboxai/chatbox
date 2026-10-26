@@ -164,11 +164,9 @@ vi.mock('@/i18n', () => ({
   default: {},
 }))
 
-vi.mock('@/app/renderer-application', async () => {
-  const { BackupOperationCoordinator } = await import('@chatbox/core/backup')
+vi.mock('@/app/renderer-application', () => {
   return {
     rendererApplication: {
-      backupOperations: new BackupOperationCoordinator(),
       sessions: { initialize: vi.fn(), repository: { meta: sessionMetaStorage }, ...searchSource },
     },
   }
@@ -176,8 +174,8 @@ vi.mock('@/app/renderer-application', async () => {
 
 vi.mock('./session/agent-mode', () => ({ getSessionAgentModeEntry: mockGetSessionAgentModeEntry }))
 
-import { InMemorySessionRepository } from '@chatbox/core/testing'
 import type { SessionSearchResult } from '@chatbox/core/application/session'
+import { InMemorySessionRepository } from '@chatbox/core/testing'
 import type { Session } from '@shared/types'
 import {
   isSessionAttachmentRagAuthError,

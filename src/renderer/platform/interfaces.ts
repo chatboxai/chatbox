@@ -27,9 +27,9 @@ import type { SessionAttachmentRagController } from './session-attachment-rag/in
 export type PlatformType = SharedPlatformType
 
 export interface Storage {
+  /** Copy a value inside the backend; returns false when the source is absent. */
   copyStoreValue?(source: string, destination: string): Promise<boolean>
-  openBackupValue?(key: string): Promise<import('@chatbox/core/backup').BackupFile | null>
-  /** Returns space freed by bulk rewrites, such as a backup restore, to the file system. */
+  /** Return unused storage pages to the file system. */
   compactStore?(): Promise<void>
   /** Removes several keys at once; the batch is atomic where the backend supports transactions. */
   delStoreValues?(keys: string[]): Promise<void>
@@ -78,8 +78,8 @@ export interface Platform extends Storage {
   /** Whether this platform is backed by the Electron main/preload bridge. */
   isDesktopLike: boolean
 
-  backupBlobStreams?: import('@chatbox/core/backup').BackupStorage['blobStreams']
   exporter: Exporter
+  resourceFiles?: ResourceFileStorage
 
   // 系统相关
 
@@ -110,9 +110,9 @@ export interface Platform extends Storage {
   onUpdaterDownloaded?(callback: (data: { version: string }) => void): () => void
   onUpdaterError?(callback: (data: { message: string }) => void): () => void
   checkForUpdate?(): Promise<{ started: boolean }>
-  setBackupOperationActive?(active: boolean): Promise<void>
-  onBackupCloseRequest?(callback: () => void): () => void
-  finishBackupClose?(confirmed: boolean): Promise<void>
+  setTaskCloseProtection?(active: boolean): Promise<void>
+  onTaskCloseRequest?(callback: () => void): () => void
+  finishTaskClose?(confirmed: boolean): Promise<void>
   onNavigate?(callback: (path: string) => void): () => void
   openLink(url: string): Promise<void>
   getDeviceName(): Promise<string>
@@ -314,6 +314,12 @@ export interface Platform extends Storage {
   onMaximizedChange(callback: (isMaximized: boolean) => void): () => void
 }
 
+/** Raw bytes in managed resource files, including their stored text or data URL encoding. */
+export interface ResourceFileStorage {
+  open(key: string): Promise<import('@chatbox/core/io').ClosableByteSource | null>
+  create(key: string): Promise<import('@chatbox/core/io').ByteSink>
+}
+
 export interface StreamingExportResult {
   boundedMemory: boolean
   delivery?: 'share-sheet'
@@ -328,7 +334,6 @@ export interface Exporter {
   exportTextFile: (filename: string, content: string) => Promise<void>
   exportImageFile: (basename: string, base64: string) => Promise<void>
   exportByUrl: (filename: string, url: string) => Promise<void>
-  exportStreamingJson: (filename: string, dataCallback: () => AsyncGenerator<string, void, unknown>) => Promise<void>
   exportStreamingFile: (
     filename: string,
     dataCallback: () => AsyncGenerator<Uint8Array, void, unknown>,

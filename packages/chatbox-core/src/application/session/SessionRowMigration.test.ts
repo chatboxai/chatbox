@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { type SessionRowCommit, type SessionRowSnapshot, SessionRowConflictError } from '../../ports/session-row-store'
+import { type SessionRowSnapshot, SessionRowConflictError } from '../../ports/session-row-store'
 import { verifySessionTreeRoundTrip } from '../../session/session-tree/verify'
 import { InMemorySessionRecordStore } from '../../testing/InMemorySessionRecordStore'
 import { InMemorySessionRowStore } from '../../testing/InMemorySessionRowStore'
@@ -18,25 +18,21 @@ const source: Session = {
 function snapshot(session = source, revision = 1): SessionRowSnapshot {
   const result = verifySessionTreeRoundTrip(session, { activeThreadId: session.id, now: 1 })
   if (!result.ok) throw new Error(result.reason)
+  const converted = convertLegacyTreeToRowFormat(result.tree, result.session.messageForksHash)
   return {
-    record: result.tree.session,
+    record: converted.session,
     revision,
-    rows: { sessionId: session.id, threads: result.tree.threads, messages: result.tree.messages },
+    rows: { sessionId: session.id, threads: converted.threads, messages: converted.messages },
   }
 }
 
 function setup() {
   const records = new InMemorySessionRecordStore()
   const storage = new InMemorySessionRowStore()
-  // The fixture exposes commit metadata independently from the migration's row-write port.
   const rows = {
-    readCommit: vi.fn(async (id: string): Promise<SessionRowCommit | null> => {
-      const current = await storage.readSnapshot(id)
-      return current ? { record: current.record, revision: current.revision } : null
-    }),
+    readCommit: vi.fn(storage.readCommit.bind(storage)),
     getRevision: vi.fn(storage.getRevision.bind(storage)),
     writeRows: vi.fn(storage.writeRows.bind(storage)),
-    readSnapshot: vi.fn(storage.readSnapshot.bind(storage)),
   }
   const writes = new SessionRowWriteQueue((_sessionId, operation) => operation())
   const migration = new SessionRowMigration(records, rows, writes, () => 1)
@@ -52,12 +48,22 @@ function deferred() {
 }
 
 describe('row publication and migration', () => {
-  it('reports unpublished rows whose original input is missing', async () => {
-    const { storage, migration, rows } = setup()
-    await storage.writeRows(snapshot())
-    await expect(migration.ensureRows(source.id)).rejects.toMatchObject({ stage: 'source' })
-    expect(rows.writeRows).not.toHaveBeenCalled()
-  })
+  it.each(['rowAuthority', 'rowFormatVersion'] as const)(
+    'rejects a commit missing %s before reading or overwriting legacy input',
+    async (field) => {
+      const { records, migration, rows } = setup()
+      await records.setRecord(source)
+      const candidate = snapshot()
+      delete candidate.record[field]
+      rows.readCommit.mockResolvedValue({ record: candidate.record, revision: candidate.revision })
+      const readRecord = vi.spyOn(records, 'getRecord')
+      await expect(migration.ensureRows(source.id)).rejects.toMatchObject({ stage: 'source' })
+      await expect(migration.repairRecordProjection(source.id)).rejects.toMatchObject({ stage: 'source' })
+      expect(readRecord).not.toHaveBeenCalled()
+      expect(rows.writeRows).not.toHaveBeenCalled()
+      expect(await records.getRecord(source.id)).toEqual(source)
+    }
+  )
 
   it('repairs duplicate IDs and unreachable branch records at the conversion boundary', async () => {
     const { records, storage, migration } = setup()
@@ -121,41 +127,19 @@ describe('row publication and migration', () => {
     expect(rows.writeRows).toHaveBeenCalledTimes(1)
   })
 
-  it('rebuilds an unpublished candidate from the original input with fresh CAS', async () => {
+  it('opens current rows from commit metadata without reading legacy input or all message bodies', async () => {
     const { records, rows, storage, migration } = setup()
-    await records.setRecord(source)
-    await storage.writeRows(snapshot({ ...source, name: 'Incomplete candidate', messages: [] }, 4))
-    const result = await migration.ensureRows(source.id)
-    expect(result).toMatchObject({ revision: 5, record: { name: source.name, rowAuthority: 1 } })
-    expect(rows.writeRows.mock.calls[0][1]).toBe(4)
-    expect((await storage.readSnapshot(source.id))?.rows.messages).toHaveLength(1)
+    await storage.writeRows(snapshot())
+    const readRecord = vi.spyOn(records, 'getRecord')
+    const readSnapshot = vi.spyOn(storage, 'readSnapshot')
+    expect(await migration.ensureRows(source.id)).toMatchObject({
+      revision: 1,
+      record: { rowAuthority: 1, rowFormatVersion: 3 },
+    })
+    expect(readRecord).not.toHaveBeenCalled()
+    expect(readSnapshot).not.toHaveBeenCalled()
+    expect(rows.writeRows).not.toHaveBeenCalled()
   })
-
-  it.each([undefined, 1] as const)(
-    'upgrades unversioned published rows once with rowAuthority %s',
-    async (rowAuthority) => {
-      const { records, rows, storage, migration } = setup()
-      const published = snapshot()
-      if (rowAuthority !== undefined) published.record.rowAuthority = rowAuthority
-      expect(published.record.rowFormatVersion).toBeUndefined()
-      await storage.writeRows(published)
-      await records.setRecord(published.record)
-
-      const result = await migration.ensureRows(source.id)
-      expect(result).toMatchObject({ revision: 2, record: { rowAuthority: 1, rowFormatVersion: 3 } })
-      expect(rows.readSnapshot).toHaveBeenCalledTimes(1)
-      expect(rows.writeRows).toHaveBeenCalledTimes(1)
-      expect(rows.writeRows.mock.calls[0][1]).toBe(1)
-      expect((await storage.readSnapshot(source.id))?.rows.messages[0].message).toEqual(source.messages[0])
-      expect(await records.getRecord(source.id)).toEqual(result?.record)
-
-      rows.readSnapshot.mockClear()
-      rows.writeRows.mockClear()
-      expect(await migration.ensureRows(source.id)).toMatchObject({ revision: 2 })
-      expect(rows.readSnapshot).not.toHaveBeenCalled()
-      expect(rows.writeRows).not.toHaveBeenCalled()
-    }
-  )
 
   it('keeps committed rows authoritative if the external projection fails', async () => {
     const { records, rows, storage, migration } = setup()
@@ -195,15 +179,7 @@ describe('row publication and migration', () => {
     await records.setRecord(source)
     rows.writeRows.mockImplementationOnce(async () => {
       const winner = snapshot({ ...source, name: 'Winner' })
-      const converted = convertLegacyTreeToRowFormat({ session: winner.record, ...winner.rows })
-      await storage.writeRows(
-        {
-          ...winner,
-          record: converted.session,
-          rows: { sessionId: source.id, threads: converted.threads, messages: converted.messages },
-        },
-        null
-      )
+      await storage.writeRows(winner, null)
       throw new SessionRowConflictError(source.id, null, 1)
     })
     expect(await migration.ensureRows(source.id)).toMatchObject({ record: { name: 'Winner' } })

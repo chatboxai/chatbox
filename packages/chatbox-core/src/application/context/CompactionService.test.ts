@@ -77,7 +77,6 @@ function createHarness(
   const repository = new RowBackedSessionRepository({
     records,
     rows,
-    backup: rows,
     writes: new SessionRowWriteQueue((_id, run) => run()),
   })
   const seedFixture = async () => {

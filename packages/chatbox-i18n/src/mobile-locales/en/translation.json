@@ -356,7 +356,7 @@
   "Connecting...": "Connecting...",
   "Delete Server": "Delete Server",
   "Disconnected": "Disconnected",
-  "Local MCP servers are only available on desktop. This configuration is preserved in your backups.": "Local MCP servers are only available on desktop. This configuration is preserved in your backups.",
+  "Local MCP servers are only available on desktop. This configuration is saved in your settings.": "Local MCP servers are only available on desktop. This configuration is saved in your settings.",
   "MCP Servers": "MCP Servers",
   "MCP server not found": "MCP server not found",
   "No valid MCP servers found": "No valid MCP servers found",

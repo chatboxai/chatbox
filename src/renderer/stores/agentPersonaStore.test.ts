@@ -56,10 +56,8 @@ import {
   readSoul,
   retireCopilotMemories,
   updateSoul,
-  withAgentPersonaLocks,
   writeSoul,
 } from './agentPersonaStore'
-import { enableCopilotMemory, getCopilotMemorySelection } from './copilotStore'
 
 beforeEach(() => {
   storageValues.clear()
@@ -296,38 +294,4 @@ describe('snapshot memory scope', () => {
     expect(snapshot.memoryCopilotId).toBeUndefined()
     expect(snapshot.memories.map((entry) => entry.content)).toEqual(['global fact'])
   })
-})
-
-test('persona backup coordinates preference mirrors and entry writes through restore', async () => {
-  await enableCopilotMemory({ id: 'before-restore', name: 'Before' })
-  await addMemory('before')
-  let enter!: () => void
-  let release!: () => void
-  const entered = new Promise<void>((resolve) => {
-    enter = resolve
-  })
-  const released = new Promise<void>((resolve) => {
-    release = resolve
-  })
-  const restore = withAgentPersonaLocks(async () => {
-    enter()
-    await released
-    storageValues.set(AGENT_MEMORIES_STORAGE_KEY, [{ id: 'imported', content: 'imported', createdAt: 1 }])
-    storageValues.set('copilot-memory-owners', [{ id: 'imported', name: 'Imported' }])
-    storageValues.set('copilot-memory-state-tokens', [{ id: 'imported', token: 'imported-token' }])
-  })
-  await entered
-  const entry = addMemory('after')
-  const preference = enableCopilotMemory({ id: 'after-restore', name: 'After' })
-  release()
-  await Promise.all([restore, entry, preference])
-  expect((await listMemories()).map((memory) => memory.content)).toEqual(['imported', 'after'])
-  await expect(getCopilotMemorySelection('imported')).resolves.toMatchObject({
-    scope: { type: 'copilot', copilotId: 'imported' },
-    memoryStateToken: 'imported-token',
-  })
-  await expect(getCopilotMemorySelection('after-restore')).resolves.toMatchObject({
-    scope: { type: 'copilot', copilotId: 'after-restore' },
-  })
-  await expect(getCopilotMemorySelection('before-restore')).resolves.toMatchObject({ scope: { type: 'global' } })
 })

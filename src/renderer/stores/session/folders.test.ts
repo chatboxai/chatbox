@@ -5,7 +5,6 @@ import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 const { state } = vi.hoisted(() => ({ state: { folders: [] as SessionFolder[] } }))
 
-vi.mock('@/app/backup-operation-guard', () => ({ guardBackupWrite: vi.fn(async () => true) }))
 vi.mock('@/app/renderer-application', () => ({
   rendererApplication: {
     sessions: {

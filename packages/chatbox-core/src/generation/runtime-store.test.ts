@@ -3,6 +3,21 @@ import type { Message } from '../types'
 import { GenerationRuntimeStore } from './runtime-store'
 
 describe('GenerationRuntimeStore', () => {
+  it('lists generating conversations once while excluding paused runtimes and pending storage work', () => {
+    const store = new GenerationRuntimeStore()
+    store.start('active', 'one')
+    store.start('active', 'two')
+    store.start('paused', 'three')
+    store.setPhase('paused', 'three', 'paused')
+    store.start('stopping', 'four')
+    store.setPhase('stopping', 'four', 'stopping')
+    store.acquireGenerationPreparationLease('attachments')
+    store.registerUnsettledStreamDrain('draining', new Promise<void>(() => {}))
+    expect(store.getGeneratingSessionIds()).toEqual(['active', 'stopping'])
+    expect(() => store.start('new', 'five')).not.toThrow()
+    store.dispose()
+  })
+
   it('keeps only the current runtime stream and freezes it when stopping', () => {
     const store = new GenerationRuntimeStore()
     const first = store.start('s', 'a')

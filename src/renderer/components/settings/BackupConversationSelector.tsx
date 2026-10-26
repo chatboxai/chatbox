@@ -1,87 +1,110 @@
-import type { BackupSessionSelection } from '@chatbox/react'
 import { Badge, Button, Checkbox, Group, Text, TextInput } from '@mantine/core'
 import { IconSearch } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
-import classes from './BackupExportDialog.module.css'
+import classes from './BackupConversationSelector.module.css'
 
+export interface BackupConversationOption {
+  id: string
+  name: string
+  selected: boolean
+  archived?: boolean
+  hidden?: boolean
+}
+
+/** Displays the supplied page; selection and catalog loading belong to the caller. */
 export function BackupConversationSelector({
-  selection,
-  disabled,
+  options,
+  query,
+  allSelected,
+  isLoading,
+  error,
+  hasMore,
+  disabled = false,
+  onQueryChange,
+  onSelectAll,
+  onToggle,
+  onLoadMore,
+  onRetry,
 }: {
-  selection: BackupSessionSelection
-  disabled: boolean
+  options: readonly BackupConversationOption[]
+  query: string
+  allSelected: boolean
+  isLoading: boolean
+  error?: string
+  hasMore: boolean
+  disabled?: boolean
+  onQueryChange(query: string): void
+  onSelectAll(selected: boolean): void
+  onToggle(id: string): void
+  onLoadMore(): void
+  onRetry(): void
 }) {
   const { t } = useTranslation()
-  const allSelected = selection.selectedSessionIds.length === selection.options.length
   return (
     <>
       <TextInput
         leftSection={<IconSearch size={16} />}
         aria-label={String(t('Search conversations'))}
         placeholder={String(t('Search conversations'))}
-        value={selection.query}
+        value={query}
         disabled={disabled}
-        onChange={(event) => selection.setQuery(event.currentTarget.value)}
+        onChange={(event) => onQueryChange(event.currentTarget.value)}
       />
       <Group justify="flex-end" gap="xs">
         <Button
           size="compact-sm"
           variant="subtle"
-          disabled={disabled || selection.isLoading || !!selection.error}
-          onClick={() => selection.selectAll(!allSelected)}
+          disabled={disabled || isLoading || !!error}
+          onClick={() => onSelectAll(!allSelected)}
         >
           {allSelected ? t('Deselect all conversations') : t('Select all conversations')}
         </Button>
       </Group>
       <div className={classes.list}>
-        {selection.isLoading ? (
-          <Text p="md" size="sm" c="dimmed">
-            {t('Loading conversations...')}
-          </Text>
-        ) : selection.error ? (
+        {options.map((option) => (
+          <Checkbox.Card
+            key={option.id}
+            className={classes.row}
+            checked={option.selected}
+            disabled={disabled}
+            onClick={() => onToggle(option.id)}
+            aria-label={option.name}
+          >
+            <Group wrap="nowrap" gap="sm">
+              <Checkbox.Indicator />
+              <Text size="sm" flex={1} truncate title={option.name}>
+                {option.name}
+              </Text>
+              {(option.archived || option.hidden) && (
+                <Badge size="xs" variant="light" color="gray">
+                  {option.archived ? t('Archived') : t('Hidden')}
+                </Badge>
+              )}
+            </Group>
+          </Checkbox.Card>
+        ))}
+        {error ? (
           <Group p="md">
             <Text size="sm" c="red">
-              {t('Could not load conversations')}
+              {error}
             </Text>
-            <Button size="compact-sm" disabled={disabled} onClick={selection.refresh}>
+            <Button size="compact-sm" disabled={disabled || isLoading} onClick={onRetry}>
               {t('Retry')}
             </Button>
           </Group>
-        ) : (
-          <>
-            {selection.visibleOptions.map((option) => (
-              <Checkbox.Card
-                key={option.id}
-                className={classes.row}
-                checked={selection.isSelected(option.id)}
-                disabled={disabled}
-                onClick={() => selection.toggle(option.id)}
-                aria-label={option.name}
-              >
-                <Group wrap="nowrap" gap="sm">
-                  <Checkbox.Indicator />
-                  <Text size="sm" flex={1} truncate title={option.name}>
-                    {option.name}
-                  </Text>
-                  {(option.archived || option.hidden) && (
-                    <Badge size="xs" variant="light" color="gray">
-                      {option.archived ? t('Archived') : t('Hidden')}
-                    </Badge>
-                  )}
-                </Group>
-              </Checkbox.Card>
-            ))}
-            {selection.visibleOptions.length === 0 && (
-              <Text p="md" size="sm" c="dimmed">
-                {t('No conversations found')}
-              </Text>
-            )}
-            {selection.hasMore && (
-              <Button fullWidth variant="subtle" disabled={disabled} onClick={selection.showMore}>
-                {t('Show more')}
-              </Button>
-            )}
-          </>
+        ) : isLoading ? (
+          <Text p="md" size="sm" c="dimmed">
+            {t('Loading conversations...')}
+          </Text>
+        ) : options.length === 0 ? (
+          <Text p="md" size="sm" c="dimmed">
+            {t('No conversations found')}
+          </Text>
+        ) : null}
+        {hasMore && !error && (
+          <Button fullWidth variant="subtle" disabled={disabled || isLoading} onClick={onLoadMore}>
+            {t('Show more')}
+          </Button>
         )}
       </div>
     </>

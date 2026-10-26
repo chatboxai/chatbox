@@ -15,7 +15,7 @@ import {
   type SessionRowCommit,
   type SessionTranscriptThread,
 } from '@chatbox/core/ports'
-import type { MessageRowMetadata } from '@chatbox/core/session/session-tree'
+import type { MessageRowMetadata, ThreadRow } from '@chatbox/core/session/session-tree'
 import {
   TRANSCRIPT_MESSAGES,
   TRANSCRIPT_THREADS,
@@ -32,8 +32,6 @@ import {
   SESSION_ROW_MESSAGE_STORE,
   STATUS_INDEX,
   SELECTED_PAUSED,
-  plainThreadRow,
-  type PersistedThreadRow,
 } from './session-row-idb-records'
 
 export function idbRelationReader(tx: IDBTransaction, sessionId: string): SessionRelationReader {
@@ -175,11 +173,10 @@ export function readIndexedDBRelations(db: IDBDatabase, request: SessionMessageR
 export function readIndexedDBThreadState(db: IDBDatabase, request: SessionThreadStateRequest) {
   return withCommit(db, request, async (tx, commit) => {
     const id = request.threadId ?? commit.record.activeThreadId
-    const stored = await requestValue<PersistedThreadRow | undefined>(
+    const thread = await requestValue<ThreadRow | undefined>(
       tx.objectStore(SESSION_ROW_THREAD_STORE).get([request.sessionId, id])
     )
-    if (!stored) return null
-    const thread = plainThreadRow(stored)
+    if (!thread) return null
     return thread.summary
       ? { ...commit, status: 'ready' as const, thread: { ...thread, summary: thread.summary } }
       : { ...commit, status: 'projection-unavailable' as const, messageIds: [], threadIds: [id] }

@@ -9,7 +9,7 @@ import { CHATBOX_QA_PREFLIGHT } from './qa-preflight'
 // solve electron breaking changes, see https://www.electronjs.org/docs/latest/breaking-changes#behavior-changed-directory-databases-in-userdata-will-be-deleted
 // since 1.21.0, and this NEEDS to be the first import that initializes Electron's app module.
 import './legacy-database-migration'
-import { registerBackupIpc } from './backup-ipc'
+import { registerFileTransferIpc } from './file-transfer-ipc'
 
 /* eslint global-require: off, no-console: off, promise/always-return: off */
 
@@ -291,8 +291,8 @@ let mainWindow: BrowserWindow | null = null
 // it is held here and opened once startup has created the window.
 let startupWindowCreated = false
 let startupDeepLink: string | undefined
-let backupOperationActive = false
-let backupQuitRequested = false
+let taskCloseProtected = false
+let taskQuitRequested = false
 let tray: Tray | null = null
 
 // --------- 快捷键 ---------
@@ -525,8 +525,8 @@ async function createWindow() {
   }
 
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
-    backupOperationActive = false
-    backupQuitRequested = false
+    taskCloseProtected = false
+    taskQuitRequested = false
     // The OS or the user ended the process; nothing in the renderer failed.
     if (details.reason === 'killed' || details.reason === 'clean-exit') {
       log.warn(`Renderer process exited: ${details.reason} (exit code ${details.exitCode})`)
@@ -606,9 +606,9 @@ async function createWindow() {
 
   // 窗口关闭时保存窗口大小与位置
   mainWindow.on('close', (event) => {
-    if (backupOperationActive) {
+    if (taskCloseProtected) {
       event.preventDefault()
-      mainWindow?.webContents.send('backup-operation:close-requested')
+      mainWindow?.webContents.send('task-operation:close-requested')
       return
     }
     if (mainWindow) {
@@ -617,8 +617,8 @@ async function createWindow() {
   })
 
   mainWindow.on('closed', () => {
-    backupOperationActive = false
-    backupQuitRequested = false
+    taskCloseProtected = false
+    taskQuitRequested = false
     mainWindow = null
   })
 
@@ -814,10 +814,10 @@ if (quitForInstallRequested) {
         destroyTray()
       })
       app.on('before-quit', (event) => {
-        if (backupOperationActive) {
+        if (taskCloseProtected) {
           event.preventDefault()
-          backupQuitRequested = true
-          mainWindow?.webContents.send('backup-operation:close-requested')
+          taskQuitRequested = true
+          mainWindow?.webContents.send('task-operation:close-requested')
           return
         }
         destroyTray()
@@ -867,7 +867,7 @@ app.on('open-url', async (_event, url) => {
 
 // --------- IPC 监听 ---------
 
-registerBackupIpc()
+registerFileTransferIpc()
 
 ipcMain.handle('getStoreValue', (event, key) => {
   return store.get(key)
@@ -1230,24 +1230,24 @@ function closeMainWindow() {
 }
 
 ipcMain.handle('window:close', () => {
-  if (backupOperationActive) {
-    mainWindow?.webContents.send('backup-operation:close-requested')
+  if (taskCloseProtected) {
+    mainWindow?.webContents.send('task-operation:close-requested')
     return
   }
   closeMainWindow()
 })
 
-ipcMain.handle('backup-operation:set-active', (event, active: unknown) => {
+ipcMain.handle('task-operation:set-active', (event, active: unknown) => {
   if (event.sender !== mainWindow?.webContents || typeof active !== 'boolean') return
-  backupOperationActive = active
+  taskCloseProtected = active
 })
 
-ipcMain.handle('backup-operation:finish-close', (event, confirmed: unknown) => {
+ipcMain.handle('task-operation:finish-close', (event, confirmed: unknown) => {
   if (event.sender !== mainWindow?.webContents || typeof confirmed !== 'boolean') return
-  const quit = backupQuitRequested
-  backupQuitRequested = false
+  const quit = taskQuitRequested
+  taskQuitRequested = false
   if (!confirmed) return
-  backupOperationActive = false
+  taskCloseProtected = false
   if (quit) app.quit()
   else closeMainWindow()
 })

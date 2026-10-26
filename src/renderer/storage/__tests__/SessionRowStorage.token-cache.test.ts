@@ -3,7 +3,6 @@ import { IDBFactory, IDBObjectStore } from 'fake-indexeddb'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { testTokenCache } from '../../../../packages/chatbox-core/src/ports/testing/session-token-cache-contract'
 import { IndexedDBSessionRowStore, SESSION_ROW_MESSAGE_STORE } from '../SessionRowStorage'
-import { SESSION_ROW_PAYLOAD_STORE } from '../session-row-idb-records'
 beforeEach(() => {
   globalThis.indexedDB = new IDBFactory()
 })
@@ -21,8 +20,6 @@ it('reads and accepts counts from thin projections while payload updates invalid
   expect(get.mock.instances.map((objectStore) => (objectStore as IDBObjectStore).name)).not.toContain(
     SESSION_ROW_MESSAGE_STORE
   )
-  expect(get.mock.instances.map((objectStore) => (objectStore as IDBObjectStore).name)).not.toContain(
-    SESSION_ROW_PAYLOAD_STORE
-  )
+  expect(get.mock.instances.map((objectStore) => (objectStore as IDBObjectStore).name)).not.toContain('payloads')
   store.close()
 })

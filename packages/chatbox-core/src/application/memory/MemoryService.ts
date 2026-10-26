@@ -62,9 +62,10 @@ export interface MemoryStateSettings {
   memoryStateToken?: string
 }
 export interface MemoryStorageScope {
-  /** Read imported or rolled-back values without re-entering the service queue. */
+  /** Refresh while retaining the storage and preference locks. */
   reload(): Promise<void>
 }
+
 export interface MemoryServiceOptions {
   storage: Pick<KeyValueStoragePort, 'get' | 'set'>
   preferenceLists?: {
@@ -83,7 +84,7 @@ export type LiveMemoryPreferences = Pick<
   'enable' | 'disable' | 'select' | 'isEnabled' | 'pausedScope'
 >
 
-/** Owns durable memory values and serializes them with backup access. */
+/** Owns durable memory values and serializes mutations with prompt-context capture. */
 export class MemoryService {
   private snapshot: MemorySnapshot = {
     memories: [],
@@ -157,9 +158,6 @@ export class MemoryService {
   }
   reload(): Promise<void> {
     return this.enqueue(() => this.read())
-  }
-  async flush(): Promise<void> {
-    await this.queue
   }
   withStorageLock<T>(operation: (scope: MemoryStorageScope) => Promise<T>): Promise<T> {
     return this.enqueue(

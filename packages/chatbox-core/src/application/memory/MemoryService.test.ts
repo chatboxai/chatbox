@@ -23,6 +23,78 @@ function deferred() {
 }
 
 describe('MemoryService', () => {
+  test('failed cold scope resolution drains stale token reads before storage reload', async () => {
+    const { storage, memory } = harness()
+    const tokenReadEntered = deferred()
+    const releaseToken = deferred()
+    const get = storage.get.bind(storage)
+    let firstOwnersRead = true
+    let firstTokenRead = true
+    vi.spyOn(storage, 'get').mockImplementation(async (key) => {
+      if (key === COPILOT_MEMORY_OWNERS_STORAGE_KEY && firstOwnersRead) {
+        firstOwnersRead = false
+        throw new Error('owners read failed')
+      }
+      if (key === COPILOT_MEMORY_TOKENS_STORAGE_KEY && firstTokenRead) {
+        firstTokenRead = false
+        tokenReadEntered.resolve()
+        await releaseToken.promise
+        return [{ id: 'copilot', token: 'old-token' }]
+      }
+      return get(key)
+    })
+    const selection = expect(memory.getCopilotMemorySelection('copilot')).rejects.toThrow('owners read failed')
+    await tokenReadEntered.promise
+    let updateStarted = false
+    const replacing = memory.withStorageLock(async ({ reload }) => {
+      updateStarted = true
+      await storage.set(COPILOT_MEMORY_OWNERS_STORAGE_KEY, [{ id: 'copilot', name: 'Updated' }])
+      await storage.set(COPILOT_MEMORY_TOKENS_STORAGE_KEY, [{ id: 'copilot', token: 'new-token' }])
+      await reload()
+    })
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    const replacedBeforeReadFinished = updateStarted
+    releaseToken.resolve()
+    await Promise.all([selection, replacing])
+    expect(replacedBeforeReadFinished).toBe(false)
+    expect(await memory.getCopilotMemorySelection('copilot')).toMatchObject({ memoryStateToken: 'new-token' })
+    expect(memory.peekState('copilot', {})).toMatchObject({ scope: { type: 'copilot' } })
+    expect(memory.getSnapshot()).toMatchObject({ tokens: [{ id: 'copilot', token: 'new-token' }], error: null })
+  })
+
+  test('storage scope excludes writes and reloads replaced values before queued operations resume', async () => {
+    const { storage, memory } = harness()
+    await memory.hydrate()
+    await memory.addMemory('before')
+    const entered = deferred()
+    const release = deferred()
+    const replacing = memory.withStorageLock(async ({ reload }) => {
+      entered.resolve()
+      await release.promise
+      await storage.set(AGENT_MEMORIES_STORAGE_KEY, [{ id: 'replaced', content: 'replaced', createdAt: 1 }])
+      await storage.set(COPILOT_MEMORY_OWNERS_STORAGE_KEY, [{ id: 'replaced-copilot', name: 'Updated' }])
+      await storage.set(COPILOT_MEMORY_TOKENS_STORAGE_KEY, [{ id: 'replaced-copilot', token: 'replaced-token' }])
+      await reload()
+    })
+    await entered.promise
+    const adding = memory.addMemory('after')
+    let completed = false
+    void adding.then(() => {
+      completed = true
+    })
+    await Promise.resolve()
+    expect(completed).toBe(false)
+    release.resolve()
+    await Promise.all([replacing, adding])
+    expect(memory.getSnapshot().memories.map((entry) => entry.content)).toEqual(['replaced', 'after'])
+    expect(await memory.getCopilotMemorySelection('replaced-copilot')).toMatchObject({
+      scope: { type: 'copilot' },
+      memoryStateToken: 'replaced-token',
+    })
+    await expect(memory.withStorageLock(() => Promise.reject(new Error('cancelled')))).rejects.toThrow('cancelled')
+    await expect(memory.addMemory('recovered')).resolves.toMatchObject({ ok: true })
+  })
+
   test('serializes memory mutations, preserves every scope, and publishes durable entries', async () => {
     const { memory } = harness()
     await memory.hydrate()
@@ -126,19 +198,16 @@ describe('MemoryService', () => {
     expect(memory.getSnapshot().error).toBeNull()
   })
 
-  test('backup excludes writes and reloads imported values before queued operations resume', async () => {
-    const { storage, memory } = harness()
+  test('keeps prompt-context capture ahead of queued memory writes', async () => {
+    const { memory } = harness()
     await memory.hydrate()
     await memory.addMemory('before')
     const entered = deferred()
     const release = deferred()
-    const importing = memory.withStorageLock(async ({ reload }) => {
+    const capture = memory.withStorageLock(async () => {
       entered.resolve()
       await release.promise
-      await storage.set(AGENT_MEMORIES_STORAGE_KEY, [{ id: 'imported', content: 'imported', createdAt: 1 }])
-      await storage.set(COPILOT_MEMORY_OWNERS_STORAGE_KEY, [{ id: 'imported-copilot', name: 'Imported' }])
-      await storage.set(COPILOT_MEMORY_TOKENS_STORAGE_KEY, [{ id: 'imported-copilot', token: 'imported-token' }])
-      await reload()
+      expect(memory.getSnapshot().memories.map((entry) => entry.content)).toEqual(['before'])
     })
     await entered.promise
     const adding = memory.addMemory('after')
@@ -149,12 +218,8 @@ describe('MemoryService', () => {
     await Promise.resolve()
     expect(completed).toBe(false)
     release.resolve()
-    await Promise.all([importing, adding])
-    expect(memory.getSnapshot().memories.map((entry) => entry.content)).toEqual(['imported', 'after'])
-    expect(await memory.getCopilotMemorySelection('imported-copilot')).toMatchObject({
-      scope: { type: 'copilot' },
-      memoryStateToken: 'imported-token',
-    })
+    await Promise.all([capture, adding])
+    expect(memory.getSnapshot().memories.map((entry) => entry.content)).toEqual(['before', 'after'])
     await expect(memory.withStorageLock(() => Promise.reject(new Error('cancelled')))).rejects.toThrow('cancelled')
     await expect(memory.addMemory('recovered')).resolves.toMatchObject({ ok: true })
   })
@@ -189,45 +254,6 @@ describe('MemoryService', () => {
     await failed
     await reload
     expect(memory.getSnapshot().copilotMemories).toEqual({ fresh: [{ id: 'fresh', content: 'fresh', createdAt: 2 }] })
-  })
-
-  test('failed cold scope resolution drains stale token reads before import reload', async () => {
-    const { storage, memory } = harness()
-    const tokenReadEntered = deferred()
-    const releaseToken = deferred()
-    const get = storage.get.bind(storage)
-    let firstOwnersRead = true
-    let firstTokenRead = true
-    vi.spyOn(storage, 'get').mockImplementation(async (key) => {
-      if (key === COPILOT_MEMORY_OWNERS_STORAGE_KEY && firstOwnersRead) {
-        firstOwnersRead = false
-        throw new Error('owners read failed')
-      }
-      if (key === COPILOT_MEMORY_TOKENS_STORAGE_KEY && firstTokenRead) {
-        firstTokenRead = false
-        tokenReadEntered.resolve()
-        await releaseToken.promise
-        return [{ id: 'copilot', token: 'old-token' }]
-      }
-      return get(key)
-    })
-    const selection = expect(memory.getCopilotMemorySelection('copilot')).rejects.toThrow('owners read failed')
-    await tokenReadEntered.promise
-    let importStarted = false
-    const importing = memory.withStorageLock(async ({ reload }) => {
-      importStarted = true
-      await storage.set(COPILOT_MEMORY_OWNERS_STORAGE_KEY, [{ id: 'copilot', name: 'Imported' }])
-      await storage.set(COPILOT_MEMORY_TOKENS_STORAGE_KEY, [{ id: 'copilot', token: 'new-token' }])
-      await reload()
-    })
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
-    const importedBeforeReadFinished = importStarted
-    releaseToken.resolve()
-    await Promise.all([selection, importing])
-    expect(importedBeforeReadFinished).toBe(false)
-    expect(await memory.getCopilotMemorySelection('copilot')).toMatchObject({ memoryStateToken: 'new-token' })
-    expect(memory.peekState('copilot', {})).toMatchObject({ scope: { type: 'copilot' } })
-    expect(memory.getSnapshot()).toMatchObject({ tokens: [{ id: 'copilot', token: 'new-token' }], error: null })
   })
 
   test('corrupt memory lists are safe and failed hydration is retryable', async () => {

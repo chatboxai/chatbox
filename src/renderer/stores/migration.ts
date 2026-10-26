@@ -1,4 +1,3 @@
-import type { LegacyBackupDataStore } from '@chatbox/core/backup'
 import type { SessionTranscriptCursor } from '@chatbox/core/ports'
 import {
   LEGACY_PROVIDER_MODEL_KEYS,
@@ -112,42 +111,6 @@ async function openUpgradeMessages(sessionId: string): Promise<UpgradeMessages> 
           expectedRevision: read.revision,
         })
       )?.messages[0],
-  }
-}
-
-/** Legacy documents exist only inside the import parsing adapter. */
-function legacyMigrationInput(input: LegacyBackupDataStore): MigrateStore {
-  return {
-    getData: (key, fallback) => input.getData(key, fallback),
-    setData: (key, value) => input.setData(key, value),
-    setAll: (values) => input.setAll(values),
-    getSessionHeader: async (id) => {
-      const source = await input.getSession(id)
-      if (!source) return null
-      const {
-        messages: _messages,
-        threads: _threads,
-        messageForksHash: _forks,
-        compactionPoints: _points,
-        ...header
-      } = source
-      return header
-    },
-    importSession: (source) => input.setSession(source),
-    updateSessionSettings: async (id, settings) => {
-      const source = await input.getSession(id)
-      if (!source) throw new Error(`Missing imported session ${id}`)
-      await input.setSession({ ...source, settings })
-    },
-    async openMessages(id) {
-      const source = await input.getSession(id)
-      return {
-        messages: (async function* () {
-          if (source) yield* source.messages
-        })(),
-        read: async (messageId) => source?.messages.find((message) => message.id === messageId),
-      }
-    },
   }
 }
 
@@ -268,8 +231,7 @@ async function migrateStorage() {
   }
 }
 
-export async function migrateOnData(input: MigrateStore | LegacyBackupDataStore, canRelaunch = true) {
-  const dataStore = 'getSession' in input ? legacyMigrationInput(input) : input
+export async function migrateOnData(dataStore: MigrateStore, canRelaunch = true) {
   let needRelaunch = false
   let configVersion = await dataStore.getData(StorageKey.ConfigVersion, 0)
 

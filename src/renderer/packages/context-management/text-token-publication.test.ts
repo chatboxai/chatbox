@@ -20,7 +20,6 @@ async function setup() {
   const rows = new SqlSessionRowStore(db)
   const repo = new RowBackedSessionRepository({
     rows,
-    backup: rows,
     records: new InMemorySessionRecordStore(),
     writes: new SessionRowWriteQueue((_id, action) => action()),
   })

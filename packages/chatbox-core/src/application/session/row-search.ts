@@ -1,4 +1,4 @@
-import { throwIfAborted } from '../../backup/abort'
+import { throwIfAborted } from '../../utils/abort'
 import type { SessionRowRelationsPort } from '../../ports/session-row-relations'
 import type { SessionHeaderRead } from '../../ports/session-row-repository'
 import { SessionRowConflictError } from '../../ports/session-row-store'

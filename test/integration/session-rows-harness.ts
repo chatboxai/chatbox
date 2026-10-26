@@ -1,15 +1,15 @@
 import 'fake-indexeddb/auto'
-import { IDBFactory } from 'fake-indexeddb'
+import type { Message, Session } from '@chatbox/core'
 import {
+  createSessionMetaRecord,
   RowBackedSessionRepository,
   SessionRowWriteQueue,
-  createSessionMetaRecord,
 } from '@chatbox/core/application/session'
 import { SqlSessionRowStore } from '@chatbox/core/persistence'
-import type { Message, Session } from '@chatbox/core'
 import { InMemorySessionRecordStore, InMemorySessionRepository, InMemorySettingsStorage } from '@chatbox/core/testing'
 import { createChatApplication } from '@chatbox/react'
 import { SessionTranscriptWindowController } from '@chatbox/react/query'
+import { IDBFactory } from 'fake-indexeddb'
 import { openNodeSessionRowDatabase } from '../../packages/chatbox-core/src/persistence/node-sqlite.test-support'
 import { IndexedDBSessionRowStore } from '../../src/renderer/storage/SessionRowStorage'
 
@@ -49,7 +49,6 @@ export async function setupRows(driver: Driver, initial = source()) {
     new RowBackedSessionRepository({
       rows,
       records,
-      backup: rows,
       writes: new SessionRowWriteQueue((_id, run) => run()),
     })
   const repository = Object.assign(createRepository(), {

@@ -21,13 +21,11 @@ vi.mock('../uiStore', () => ({
 }))
 vi.mock('@/app/renderer-application', async () => {
   const { GenerationRuntimeStore } = await import('@chatbox/core/generation')
-  const { BackupOperationCoordinator } = await import('@chatbox/core/backup')
   const { createRowSessionFixtureReads } = await import('./testing/row-session-fixture')
   const reads = createRowSessionFixtureReads(getSessionMock)
   readControlMock.mockImplementation(reads.readSessionGenerationControl)
   return {
     rendererApplication: {
-      backupOperations: new BackupOperationCoordinator(),
       generationRuntime: new GenerationRuntimeStore(),
       sessions: { ...reads, readSessionGenerationControl: readControlMock },
     },
@@ -59,15 +57,6 @@ function session(overrides: Partial<Session> = {}): Session {
 }
 
 describe('guardSessionAction', () => {
-  it('rejects a new user action during backup and allows it after cleanup', async () => {
-    getSessionMock.mockResolvedValue(session())
-    await rendererApplication.backupOperations.run('export', async () => {
-      expect(await guardSessionAction('session-1', 'submit-message')).toBe(false)
-      expect(await guardSessionAction('session-1', 'switch-fork')).toBe(false)
-    })
-    expect(await guardSessionAction('session-1', 'submit-message')).toBe(true)
-  })
-
   beforeEach(() => {
     vi.clearAllMocks()
     getSessionMock.mockResolvedValue(session())

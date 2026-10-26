@@ -1,7 +1,6 @@
 import { directoryFolderName, findDirectoryFolder, normalizeWorkingDirectory } from '@chatbox/core/application/session'
 import type { SessionFolder } from '@shared/types'
 import { v4 as uuidv4 } from 'uuid'
-import { guardBackupWrite } from '@/app/backup-operation-guard'
 import { rendererApplication } from '@/app/renderer-application'
 import { uiStore } from '../uiStore'
 
@@ -11,7 +10,6 @@ import { uiStore } from '../uiStore'
  * project that already collects the directory is returned instead of a new one.
  */
 export async function createSessionFolder(name: string, workingDirectory?: string): Promise<SessionFolder | null> {
-  if (!(await guardBackupWrite())) return null
   const directory = workingDirectory ? normalizeWorkingDirectory(workingDirectory) : undefined
   const id = uuidv4()
   const folders = await rendererApplication.sessions.updateSessionFolders((current) => {
@@ -26,7 +24,6 @@ export async function createSessionFolder(name: string, workingDirectory?: strin
 }
 
 export async function renameSessionFolder(folderId: string, name: string): Promise<void> {
-  if (!(await guardBackupWrite())) return
   await rendererApplication.sessions.updateSessionFolders((folders) =>
     folders.map((folder) => (folder.id === folderId ? { ...folder, name } : folder))
   )
@@ -34,7 +31,6 @@ export async function renameSessionFolder(folderId: string, name: string): Promi
 
 /** Removes the folder; its sessions are listed as unfiled again. */
 export async function deleteSessionFolder(folderId: string): Promise<void> {
-  if (!(await guardBackupWrite())) return
   await rendererApplication.sessions.updateSessionFolders((folders) =>
     folders.filter((folder) => folder.id !== folderId)
   )
@@ -46,7 +42,6 @@ export async function deleteSessionFolder(folderId: string): Promise<void> {
  * the target folder so the moved session stays visible.
  */
 export async function moveSessionToFolder(sessionId: string, folderId: string | undefined): Promise<void> {
-  if (!(await guardBackupWrite())) return
   await rendererApplication.sessions.moveSessionToFolder(sessionId, folderId)
   if (folderId) uiStore.getState().setSessionFolderCollapsed(folderId, false)
 }

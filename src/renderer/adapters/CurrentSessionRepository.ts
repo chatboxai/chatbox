@@ -6,16 +6,16 @@ import {
   SessionRowWriteQueue,
 } from '@chatbox/core/application/session'
 import { SessionActionBlockedError } from '@chatbox/core/session/action-gates'
-import { BackupOperationBusyError, type BackupSessionStore, throwIfAborted } from '@chatbox/core/backup'
+import { throwIfAborted } from '@chatbox/core/utils/abort'
 import {
   type SessionHeaderRead,
   type SessionMetaRepositoryPort,
   SessionRepositoryError,
+  SessionStorageBusyError,
   type SessionRepositoryOperation,
   type SessionRepositoryPort,
   SessionRowConflictError,
   type SessionRowStorePort,
-  type StoredSessionRecord,
   SessionWriteConflictError,
 } from '@chatbox/core/ports'
 import * as Sentry from '@sentry/react'
@@ -23,7 +23,6 @@ import type { Session, SessionHeader, SessionMetaPage, SessionMetaRecord } from 
 import { getLogger } from '@/lib/utils'
 import platform from '@/platform'
 import storage from '@/storage'
-import { rendererBackupSessionStore } from './backup-session-store'
 import { type CurrentSessionDataStorage, CurrentSessionRecordStore } from './CurrentSessionRecordStore'
 import { collectSessionOwnership } from './session-ownership'
 
@@ -45,15 +44,15 @@ export interface CurrentSessionRepositoryOptions {
 
 const log = getLogger('session-repository')
 const SESSION_STORAGE_LOCK = 'chatbox-session-storage'
-let backupRequested = false
+let exclusiveStorageRequested = false
 const activeStorageOperations = new Set<Promise<void>>()
 
 function withSharedSessionStorageAccess<Result>(action: () => Promise<Result>): Promise<Result> {
-  if (backupRequested) return Promise.reject(new BackupOperationBusyError())
+  if (exclusiveStorageRequested) return Promise.reject(new SessionStorageBusyError())
   const result = Promise.resolve().then(async () => {
     if (typeof navigator === 'undefined' || !navigator.locks) return action()
     return navigator.locks.request(SESSION_STORAGE_LOCK, { mode: 'shared', ifAvailable: true }, (lock) => {
-      if (!lock) throw new BackupOperationBusyError()
+      if (!lock) throw new SessionStorageBusyError()
       return action()
     })
   })
@@ -69,20 +68,20 @@ function withSharedSessionStorageAccess<Result>(action: () => Promise<Result>): 
   return result
 }
 
-/** Prevents session writes in every renderer context while raw backup data is replaced. */
+/** Waits for active writes and excludes other renderer contexts during storage upgrades. */
 export async function withExclusiveSessionStorageLock<Result>(
   action: () => Promise<Result>,
   signal?: AbortSignal
 ): Promise<Result> {
-  if (backupRequested) throw new BackupOperationBusyError()
-  backupRequested = true
+  if (exclusiveStorageRequested) throw new SessionStorageBusyError()
+  exclusiveStorageRequested = true
   try {
     await Promise.all(activeStorageOperations)
     throwIfAborted(signal)
     if (typeof navigator === 'undefined' || !navigator.locks) return await action()
     return await navigator.locks.request(SESSION_STORAGE_LOCK, { mode: 'exclusive', signal }, action)
   } finally {
-    backupRequested = false
+    exclusiveStorageRequested = false
   }
 }
 
@@ -99,7 +98,7 @@ async function normalizeRepositoryError<T>(
       error instanceof SessionWriteConflictError ||
       error instanceof SessionRowConflictError ||
       error instanceof SessionMigrationError ||
-      error instanceof BackupOperationBusyError ||
+      error instanceof SessionStorageBusyError ||
       error instanceof MessageAnchorNotFoundError ||
       error instanceof SessionActionBlockedError
     )
@@ -208,56 +207,6 @@ class CurrentSessionMetaRepository implements SessionMetaRepositoryPort {
  * UI side effects.
  */
 export class CurrentSessionRepository implements SessionRepositoryPort {
-  withBackupStorageAccess<Result>(
-    action: (metaStorage: SessionMetaRepositoryPort, backupStore: BackupSessionStore) => Promise<Result>,
-    signal?: AbortSignal
-  ): Promise<Result> {
-    return withExclusiveSessionStorageLock(async () => {
-      const metaStorage = this.createMetaStorage()
-      await metaStorage.initialize()
-      const rows = this.createRowStore()
-      if (!('iterateBackupRows' in rows && 'beginBackupRestore' in rows)) {
-        throw new Error('Bounded session backup reads are unavailable')
-      }
-      const dataStorage = this.backupDataStorage
-      const snapshots = {
-        stage: (token: string, session: Session) => dataStorage.setItemNow(token, session),
-        capture: async (id: string, token: string) => {
-          if (dataStorage.copyItem) return dataStorage.copyItem(`session:${id}`, token)
-          const previous = await this.records.getRecord(id)
-          if (previous) await dataStorage.setItemNow(token, previous)
-          return previous !== null
-        },
-        restore: async (id: string, token: string, existed: boolean) => {
-          if (!existed) return this.records.removeRecord(id)
-          if (dataStorage.copyItem) {
-            if (!(await dataStorage.copyItem(token, `session:${id}`)))
-              throw new Error('Backup recovery record is missing')
-          } else {
-            const previous = await dataStorage.getItem<StoredSessionRecord | null>(token, null)
-            if (!previous) throw new Error('Backup recovery record is missing')
-            await this.records.setRecord(previous)
-          }
-        },
-        remove: (token: string) => dataStorage.removeItem(token),
-      }
-      const backupStore = rendererBackupSessionStore(
-        rows as SessionRowStorePort & BackupSessionStore,
-        this.records,
-        snapshots,
-        {
-          listSessionIds: () => this.records.listIds(),
-          open: dataStorage.openBackupValue ? (id) => dataStorage.openBackupValue!(`session:${id}`) : undefined,
-          readValue: async (id) => {
-            const record = await this.records.getRecord(id)
-            if (!record || ('storageFormat' in record && record.storageFormat === 'rows')) return null
-            return record as Session
-          },
-        }
-      )
-      return action(metaStorage, backupStore)
-    }, signal)
-  }
   collectSessionAttachmentOwnership(sessionId: string) {
     return withSharedSessionStorageAccess(() => collectSessionOwnership(this.getData(), sessionId))
   }
@@ -294,7 +243,8 @@ export class CurrentSessionRepository implements SessionRepositoryPort {
 
   /** Retain an older file's split input until row publication. Existing records remain authoritative. */
   async storeLegacyUpgradeInput(source: Session): Promise<void> {
-    await this.withBackupStorageAccess(async () => {
+    await withExclusiveSessionStorageLock(async () => {
+      await this.records.initialize()
       const rows = this.createRowStore()
       if ((await rows.hasRows(source.id)) || (await this.records.getRecord(source.id))) return
       await this.records.setRecord(source)
@@ -303,7 +253,6 @@ export class CurrentSessionRepository implements SessionRepositoryPort {
 
   readonly meta: SessionMetaRepositoryPort
 
-  private readonly backupDataStorage: CurrentSessionDataStorage
   private readonly records: CurrentSessionRecordStore
   private readonly createRowStore: () => SessionRowStorePort
   private readonly createMetaStorage: () => SessionMetaRepositoryPort
@@ -325,7 +274,6 @@ export class CurrentSessionRepository implements SessionRepositoryPort {
   }
 
   constructor(options: CurrentSessionRepositoryOptions = {}) {
-    this.backupDataStorage = options.dataStorage ?? storage
     this.records = new CurrentSessionRecordStore(options.dataStorage ?? storage)
     this.createRowStore = () => options.rowStore ?? platform.getSessionRowStore()
     this.createMetaStorage = () => options.metaStorage ?? platform.getSessionMetaStorage()
@@ -335,13 +283,9 @@ export class CurrentSessionRepository implements SessionRepositoryPort {
   private getData(): RowBackedSessionRepository {
     if (!this.data) {
       const rows = this.createRowStore()
-      if (!('readBranchMessagesPage' in rows && 'iterateBackupRows' in rows && 'beginBackupRestore' in rows)) {
-        throw new Error('Session row reads and backup are unavailable')
-      }
       this.data = new RowBackedSessionRepository({
         records: this.records,
         rows: rows as RepositoryRows,
-        backup: rows as SessionRowStorePort & BackupSessionStore,
         writes: new SessionRowWriteQueue((sessionId, action) =>
           withSharedSessionStorageAccess(async () => {
             if (typeof navigator === 'undefined' || !navigator.locks) return action()

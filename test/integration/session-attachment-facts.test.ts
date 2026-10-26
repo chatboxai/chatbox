@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SessionAttachmentFacts } from '@chatbox/core/ports'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { collectSessionOwnership } from '../../src/renderer/adapters/session-ownership'
 import { drivers, message, setupRows, source } from './session-rows-harness'
 
@@ -67,7 +67,7 @@ describe.each(drivers)('%s attachment metadata', (driver) => {
     cleanups.push(h.dispose)
     const bodies = vi.spyOn(h.rows, 'readMessages')
     const snapshots = vi.spyOn(h.rows, 'readSnapshot')
-    const backup = vi.spyOn(h.rows, 'iterateBackupRows')
+    const completeRows = vi.spyOn(h.rows, 'iterateRows')
     const pages = vi.spyOn(h.rows, 'readMessageRelationsPage')
     const selected: SessionAttachmentFacts[] = []
     for await (const row of h.repository.iterateSessionAttachmentFacts({ sessionId: 's', scope: 'active-path' }))
@@ -81,7 +81,7 @@ describe.each(drivers)('%s attachment metadata', (driver) => {
     expect(ownership.attachmentReferences.map((claim) => claim.attachmentId).sort()).toEqual([42, 43, 44])
     expect(bodies).not.toHaveBeenCalled()
     expect(snapshots).not.toHaveBeenCalled()
-    expect(backup).not.toHaveBeenCalled()
+    expect(completeRows).not.toHaveBeenCalled()
   })
 
   it('rejects revision changes before completion, including changes after the last yielded row', async () => {

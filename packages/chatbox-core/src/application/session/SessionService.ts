@@ -314,6 +314,15 @@ export class SessionService {
     return this.folders
   }
 
+  /** Refresh projections after a host-owned durable restore. */
+  async reloadFromStorage(): Promise<void> {
+    this.resetGenerationRecovery()
+    this.folders = null
+    const folders = await this.listSessionFolders()
+    await this.events.publish({ type: 'session-folders-changed', folders })
+    await this.publishListReset({ visible: true, archived: true })
+  }
+
   /**
    * Applies `update` to the current folder list and returns the resulting
    * list; `null` leaves it unchanged. Folder writes run one at a time, so

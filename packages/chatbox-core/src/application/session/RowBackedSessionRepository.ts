@@ -1,20 +1,6 @@
-import { readRowSearchWindow, selectedSearchCandidates } from './row-search'
-import type { SessionSearchWindowRequest, SessionSearchCandidatesRequest } from '../../ports/session-search-source'
-import { throwIfAborted } from '../../backup/abort'
-import type { SessionArtifactRequest } from '../../ports/session-artifact-source'
-import { iterateRowArtifactMarkdown } from './row-artifact'
-import { iterateRowResourceReferences } from '../../backup/row-resources'
-import { iterateRowAttachmentFacts } from './row-attachments'
-import type { SessionAttachmentFactsRequest } from '../../ports/session-attachment-source'
-import type { SessionTokenCacheResult } from '../../ports/session-token-cache'
-import { readRowConversationState } from './row-conversation-state'
-import type { SessionConversationStateRequest } from '../../ports/session-row-repository'
-import { readRowPromptCacheDecision } from './row-prompt-cache'
-import type { BackupSessionStore } from '../../backup/session-port'
 import { v5 as uuidv5 } from 'uuid'
-import { prepareSessionCopyShape } from './session-copy-shape'
-import { copyThreadMetadata, stageSessionCopy } from './session-thread-copy'
-import type { SessionCopyRequest, SessionThreadCopyRequest } from '../../ports/session-row-repository'
+import type { SessionArtifactRequest } from '../../ports/session-artifact-source'
+import type { SessionAttachmentFactsRequest } from '../../ports/session-attachment-source'
 import type {
   SessionBranchMessagesRequest,
   SessionBranchPreviewRequest,
@@ -24,9 +10,9 @@ import type { SessionContextRequest, SessionContextSource } from '../../ports/se
 import type { SessionMessageDerivedWriteResult, SessionMessagesSource } from '../../ports/session-message-source'
 import type { SessionRecordStorePort } from '../../ports/session-record-store'
 import {
-  SessionWriteConflictError,
   type SessionCommand,
   type SessionCommandDelta,
+  SessionWriteConflictError,
 } from '../../ports/session-repository'
 import type {
   SessionKnownMessageMetadata,
@@ -35,39 +21,55 @@ import type {
   SessionRowRelationsPort,
 } from '../../ports/session-row-relations'
 import type {
+  SessionConversationStateRequest,
+  SessionCopyRequest,
   SessionForkOptionsPage,
   SessionForkOptionsRequest,
   SessionHeaderRead,
   SessionRowRepositoryPort,
+  SessionThreadCopyRequest,
   SessionThreadSummariesPage,
 } from '../../ports/session-row-repository'
 import {
-  SessionRowConflictError,
   type SessionMessagesRequest,
   type SessionRowCommit,
+  SessionRowConflictError,
   type SessionRowStorePort,
   type SessionThreadPageRequest,
 } from '../../ports/session-row-store'
+import type { SessionSearchCandidatesRequest, SessionSearchWindowRequest } from '../../ports/session-search-source'
 import type { CurrentThreadIdentity } from '../../ports/session-structure-command'
 import type { SessionTextTokenResult, SessionTextTokenWriteResult } from '../../ports/session-text-tokens'
+import type { SessionTokenCacheResult } from '../../ports/session-token-cache'
+import type { SessionTokenPageRequest, SessionTokenPlanRequest } from '../../ports/session-token-source'
 import type {
   SessionNavigationRepairRequest,
   SessionThreadRequest,
   SessionTranscriptRequest,
 } from '../../ports/session-transcript-source'
+import { iterateRowResourceReferences } from '../../resources/row-resources'
 import { addSummaryRow, deriveMessageFacts, emptyThreadSummary } from '../../session/message-facts'
 import type { MessageRow, SessionRecordV2, SessionRowRecord, ThreadRow } from '../../session/session-tree/types'
-import { SessionHeaderSchema, type Message, type SessionHeader } from '../../types/session'
+import { type Message, type SessionHeader, SessionHeaderSchema } from '../../types/session'
+import { throwIfAborted } from '../../utils/abort'
 import { applySessionMessageDerivedPatch, type SessionMessageDerivedPatch } from './message-derived-data'
-import { planSessionCommand, emptySessionCommandPlan, type SessionCommandPlan } from './session-command'
-import { readRowContextSource, createRowTokenPlan, readRowTokenPage } from './row-context'
-import type { SessionTokenPlanRequest, SessionTokenPageRequest } from '../../ports/session-token-source'
-import { deriveSessionGenerationControl } from './session-generation-control'
-import { planForkStructure } from './session-fork-command'
-import { planGenerationSegmentSplit } from './session-generation-segment-command'
-import { planCompactionStructure } from './session-compaction-command'
-import { planMessageStructure } from './session-message-structure'
+import { iterateRowArtifactMarkdown } from './row-artifact'
+import { iterateRowAttachmentFacts } from './row-attachments'
+import { createRowTokenPlan, readRowContextSource, readRowTokenPage } from './row-context'
+import { readRowConversationState } from './row-conversation-state'
+import { readRowPromptCacheDecision } from './row-prompt-cache'
+import { readRowSearchWindow, selectedSearchCandidates } from './row-search'
+import { SessionRowMigration } from './SessionRowMigration'
+import type { SessionRowWriteQueue } from './SessionRowWriteQueue'
+import { SessionNotFoundError } from './SessionWriteCoordinator'
 import { planBackgroundFollowUp } from './session-background-command'
+import { emptySessionCommandPlan, planSessionCommand, type SessionCommandPlan } from './session-command'
+import { planCompactionStructure } from './session-compaction-command'
+import { prepareSessionCopyShape } from './session-copy-shape'
+import { planForkStructure } from './session-fork-command'
+import { deriveSessionGenerationControl } from './session-generation-control'
+import { planGenerationSegmentSplit } from './session-generation-segment-command'
+import { planMessageStructure } from './session-message-structure'
 import { sessionRowHeader } from './session-row-header'
 import {
   newMessageRow,
@@ -77,15 +79,12 @@ import {
   type StructurePlan,
 } from './session-structure-plan'
 import { currentThreadIdentity, planThreadStructure } from './session-thread-command'
-import { SessionRowMigration } from './SessionRowMigration'
-import { SessionRowWriteQueue } from './SessionRowWriteQueue'
-import { SessionNotFoundError } from './SessionWriteCoordinator'
+import { copyThreadMetadata, stageSessionCopy } from './session-thread-copy'
 
 export interface RowBackedSessionRepositoryOptions {
   records: SessionRecordStorePort
   rows: SessionRowStorePort & SessionRowRelationsPort & SessionBranchStorePort
   writes: SessionRowWriteQueue
-  backup: BackupSessionStore
   now?: () => number
   onRecordProjectionError?: (sessionId: string, error: unknown) => void
 }
@@ -128,7 +127,6 @@ function hasChanges(plan: SessionCommandPlan, previous: SessionRowRecord): boole
 export class RowBackedSessionRepository implements SessionRowRepositoryPort {
   private readonly records: SessionRecordStorePort
   private readonly rows: SessionRowStorePort & SessionRowRelationsPort & SessionBranchStorePort
-  private readonly backup: BackupSessionStore
   private readonly writes: SessionRowWriteQueue
   private readonly migration: SessionRowMigration
   private readonly onRecordProjectionError?: RowBackedSessionRepositoryOptions['onRecordProjectionError']
@@ -137,7 +135,6 @@ export class RowBackedSessionRepository implements SessionRowRepositoryPort {
   constructor(options: RowBackedSessionRepositoryOptions) {
     this.records = options.records
     this.rows = options.rows
-    this.backup = options.backup
     this.writes = options.writes
     this.onRecordProjectionError = options.onRecordProjectionError
     this.migration = new SessionRowMigration(this.records, this.rows, this.writes, options.now)
@@ -280,7 +277,7 @@ export class RowBackedSessionRepository implements SessionRowRepositoryPort {
 
   async *iterateSessionResourceReferences(sessionId: string, signal?: AbortSignal) {
     if (!(await this.ensureRows(sessionId))) throw new Error('Resource scan session is unavailable')
-    yield* iterateRowResourceReferences(this.backup, sessionId, signal)
+    yield* iterateRowResourceReferences(this.rows, sessionId, signal)
   }
 
   async *iterateSessionAttachmentFacts(request: SessionAttachmentFactsRequest) {
@@ -644,14 +641,15 @@ export class RowBackedSessionRepository implements SessionRowRepositoryPort {
         throw new Error('Session identity already exists')
       const revision = incrementRevision(expectedTargetRevision ?? 0)
       await stageSessionCopy({
-        store: this.backup,
+        store: this.rows,
         sourceSessionId: request.sessionId,
+        sourceRevision: request.expectedRevision,
         sourceThreadId: request.scope.type === 'thread' ? sourceThreadId : undefined,
         record,
         expectedTargetRevision,
         mapThread,
         mapThreadId,
-        transformMessage: shape?.transform,
+        transformActiveMessage: shape?.transform,
         appendMessages: shape ? [shape.marker] : undefined,
         verifySource,
       })

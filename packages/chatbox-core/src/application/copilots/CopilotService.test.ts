@@ -41,6 +41,56 @@ function deferred<T>() {
 }
 
 describe('CopilotService', () => {
+  test('storage callback failures preserve the Copilot snapshot while reload failures are reported', async () => {
+    const storage = new MemoryStorage()
+    const service = new CopilotService({ storage })
+    await service.upsert(copilot('saved'))
+    const snapshot = service.getSnapshot()
+    await expect(service.withStorageLock(() => Promise.reject(new Error('operation canceled')))).rejects.toThrow(
+      'operation canceled'
+    )
+    expect(service.getSnapshot()).toBe(snapshot)
+    await expect(
+      service.withStorageLock(async (scope) => {
+        await scope.reload()
+        throw new Error('invalid update')
+      })
+    ).rejects.toThrow('invalid update')
+    expect(service.getSnapshot().error).toBeNull()
+    vi.spyOn(storage, 'get').mockRejectedValueOnce(new Error('read failed'))
+    await expect(service.withStorageLock((scope) => scope.reload())).rejects.toThrow('read failed')
+    expect(service.getSnapshot()).toMatchObject({ isLoading: false, error: new Error('read failed') })
+  })
+
+  test('storage access waits for writes, excludes edits, and reloads replaced data inside its lock', async () => {
+    const storage = new MemoryStorage()
+    const service = new CopilotService({ storage })
+    const writeBarrier = deferred<void>()
+    const enteredUpdate = deferred<void>()
+    const finishUpdate = deferred<void>()
+    const originalSet = storage.set.bind(storage)
+    vi.spyOn(storage, 'set').mockImplementationOnce(async (key, value) => {
+      await writeBarrier.promise
+      await originalSet(key, value)
+    })
+
+    const first = service.upsert(copilot('before'))
+    const update = service.withStorageLock(async (scope) => {
+      expect(await storage.get(MY_COPILOTS_STORAGE_KEY)).toEqual([expect.objectContaining({ id: 'before' })])
+      enteredUpdate.resolve()
+      await finishUpdate.promise
+      await storage.set(MY_COPILOTS_STORAGE_KEY, [copilot('replaced')])
+      await scope.reload()
+    })
+    const after = service.upsert(copilot('after'))
+    writeBarrier.resolve()
+    await enteredUpdate.promise
+    expect(service.getSnapshot().copilots.map((item) => item.id)).toEqual(['before'])
+    finishUpdate.resolve()
+    await Promise.all([first, update, after])
+    expect(service.getSnapshot().copilots.map((item) => item.id)).toEqual(['after', 'replaced'])
+  })
+
   test('serializes initialization and concurrent edits without replacing previously saved records', async () => {
     const storage = new MemoryStorage()
     const read = deferred<unknown>()
@@ -114,7 +164,6 @@ describe('CopilotService', () => {
     await expect(service.upsert(copilot('failed'))).rejects.toThrow('disk full')
     expect(service.getSnapshot().copilots).toBe(saved)
     expect(service.getSnapshot().error?.message).toBe('disk full')
-    await expect(service.flush()).rejects.toThrow('disk full')
     await service.upsert(copilot('retried'))
     expect(set).toHaveBeenCalledTimes(2)
     expect(service.getSnapshot().copilots.map((item) => item.id)).toEqual(['retried', 'saved'])
@@ -133,37 +182,26 @@ describe('CopilotService', () => {
     expect(service.getSnapshot().copilots.map((item) => item.id)).toEqual(['new', 'saved'])
   })
 
-  test('backup access waits for writes, excludes edits, and reloads imported data inside its lock', async () => {
+  test('keeps resource scans between completed and queued definition writes', async () => {
     const storage = new MemoryStorage()
     const service = new CopilotService({ storage })
-    const writeBarrier = deferred<void>()
-    const enteredBackup = deferred<void>()
-    const finishBackup = deferred<void>()
-    const originalSet = storage.set.bind(storage)
-    vi.spyOn(storage, 'set').mockImplementationOnce(async (key, value) => {
-      await writeBarrier.promise
-      await originalSet(key, value)
-    })
-
+    const entered = deferred<void>()
+    const release = deferred<void>()
     const first = service.upsert(copilot('before'))
-    const backup = service.withStorageLock(async (scope) => {
+    const scan = service.withStorageLock(async () => {
       expect(await storage.get(MY_COPILOTS_STORAGE_KEY)).toEqual([expect.objectContaining({ id: 'before' })])
-      enteredBackup.resolve()
-      await finishBackup.promise
-      await storage.set(MY_COPILOTS_STORAGE_KEY, [copilot('imported')])
-      await scope.reload()
+      entered.resolve()
+      await release.promise
     })
     const after = service.upsert(copilot('after'))
-    writeBarrier.resolve()
-    await enteredBackup.promise
+    await entered.promise
     expect(service.getSnapshot().copilots.map((item) => item.id)).toEqual(['before'])
-    finishBackup.resolve()
-    await Promise.all([first, backup, after])
-    expect(service.getSnapshot().copilots.map((item) => item.id)).toEqual(['after', 'imported'])
-    await service.flush()
+    release.resolve()
+    await Promise.all([first, scan, after])
+    expect(service.getSnapshot().copilots.map((item) => item.id)).toEqual(['after', 'before'])
   })
 
-  test('malformed saved data remains untouched until an import replaces and reloads it', async () => {
+  test('malformed saved data remains untouched until repaired storage is reloaded', async () => {
     const storage = new MemoryStorage()
     const malformed = [{ ...copilot('invalid'), description: 42 }]
     storage.values.set(MY_COPILOTS_STORAGE_KEY, malformed)
@@ -171,33 +209,21 @@ describe('CopilotService', () => {
     await expect(service.hydrate()).rejects.toThrow('Invalid saved Copilots')
     await expect(service.upsert(copilot('new'))).rejects.toThrow('Invalid saved Copilots')
     expect(await storage.get(MY_COPILOTS_STORAGE_KEY)).toEqual(malformed)
-    await service.withStorageLock(async (scope) => {
-      await storage.set(MY_COPILOTS_STORAGE_KEY, [copilot('repaired')])
-      await scope.reload()
-    })
+    await storage.set(MY_COPILOTS_STORAGE_KEY, [copilot('repaired')])
+    await service.reload()
     await service.upsert(copilot('new'))
     expect(service.getSnapshot().copilots.map((item) => item.id)).toEqual(['new', 'repaired'])
   })
 
-  test('backup callback failures preserve the Copilot snapshot while reload failures are reported', async () => {
+  test('resource scan failures preserve the Copilot snapshot', async () => {
     const storage = new MemoryStorage()
     const service = new CopilotService({ storage })
     await service.upsert(copilot('saved'))
     const snapshot = service.getSnapshot()
-    await expect(service.withStorageLock(() => Promise.reject(new Error('export canceled')))).rejects.toThrow(
-      'export canceled'
-    )
+    await expect(service.withStorageLock(() => Promise.reject(new Error('scan failed')))).rejects.toThrow('scan failed')
     expect(service.getSnapshot()).toBe(snapshot)
-    await expect(
-      service.withStorageLock(async (scope) => {
-        await scope.reload()
-        throw new Error('invalid backup')
-      })
-    ).rejects.toThrow('invalid backup')
-    expect(service.getSnapshot().error).toBeNull()
-    vi.spyOn(storage, 'get').mockRejectedValueOnce(new Error('read failed'))
-    await expect(service.withStorageLock((scope) => scope.reload())).rejects.toThrow('read failed')
-    expect(service.getSnapshot()).toMatchObject({ isLoading: false, error: new Error('read failed') })
+    await service.upsert(copilot('next'))
+    expect(service.getSnapshot().copilots).toHaveLength(2)
   })
 
   test('removing a definition only writes myCopilots and leaves historical session data intact', async () => {

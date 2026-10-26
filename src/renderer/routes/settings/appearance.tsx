@@ -11,7 +11,6 @@ import { AssistantAvatar, UserAvatar } from '@/components/common/Avatar'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import SliderWithInput from '@/components/common/SliderWithInput'
 import { handleImageInputAndSave, ImageInStorage } from '@/components/Image'
-import { useBackupOperationActive } from '@/components/settings/DataSections'
 import { InterfaceColorPresets } from '@/components/settings/InterfaceColorPresets'
 import { SettingRow, SettingsPage, SettingsSection, useSettingsDensity } from '@/components/settings/SettingsLayout'
 import { languageNameMap, languages } from '@/i18n/locales'
@@ -50,7 +49,7 @@ function ImageUploadButton({ label, onFile }: { label: string; onFile: (file: Fi
   )
 }
 
-function FontSizeControl({ disabled }: { disabled: boolean }) {
+function FontSizeControl() {
   const { t } = useTranslation()
   const fontSize = useSettingsStore((s) => s.fontSize)
   const setSettings = useSettingsStore((s) => s.setSettings)
@@ -70,7 +69,6 @@ function FontSizeControl({ disabled }: { disabled: boolean }) {
         value={draft}
         onChange={setDraft}
         onChangeEnd={(value) => setSettings({ fontSize: value })}
-        disabled={disabled}
         label={null}
         aria-label={t('Font Size') ?? undefined}
       />
@@ -89,15 +87,12 @@ export function RouteComponent() {
   const { setSettings, ...settings } = useSettingsStore((state) => state)
   const density = useSettingsDensity()
   const segmentedSize = density === 'touch' ? 'sm' : 'xs'
-  // A restore writes settings directly; changes made meanwhile would overwrite the restored ones.
-  const backupActive = useBackupOperationActive()
-
   return (
     <SettingsPage
       title={t('Appearance')}
       description={t('Theme, text size, avatars and background. Changes apply immediately.')}
     >
-      <fieldset disabled={backupActive} className="m-0 flex min-w-0 flex-col gap-6 border-0 p-0">
+      <fieldset className="m-0 flex min-w-0 flex-col gap-6 border-0 p-0">
         <SettingsSection>
           <SettingRow
             id="theme"
@@ -142,12 +137,7 @@ export function RouteComponent() {
             controlLayout="block"
             control={<InterfaceColorPresets />}
           />
-          <SettingRow
-            id="font-size"
-            label={t('Font Size')}
-            controlLayout="block"
-            control={<FontSizeControl disabled={backupActive} />}
-          />
+          <SettingRow id="font-size" label={t('Font Size')} controlLayout="block" control={<FontSizeControl />} />
           <SettingRow
             id="startup-page"
             label={t('Startup Page')}

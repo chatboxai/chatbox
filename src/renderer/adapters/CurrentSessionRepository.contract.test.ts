@@ -1,12 +1,16 @@
 import 'fake-indexeddb/auto'
 import { SessionMigrationError } from '@chatbox/core/application/session'
-import { BackupOperationBusyError, DEFAULT_BACKUP_PAGE_LIMITS } from '@chatbox/core/backup'
+import { SessionStorageBusyError } from '@chatbox/core/ports'
 import { type SessionMetaRepositoryPort, SessionRowConflictError } from '@chatbox/core/ports'
 import type { Message, Session, SessionMetaPage } from '@shared/types'
 import { IDBFactory } from 'fake-indexeddb'
 import { describe, expect, test, vi } from 'vitest'
 import { IndexedDBSessionRowStore } from '@/storage/SessionRowStorage'
-import { type CurrentSessionDataStorage, CurrentSessionRepository } from './CurrentSessionRepository'
+import {
+  type CurrentSessionDataStorage,
+  CurrentSessionRepository,
+  withExclusiveSessionStorageLock,
+} from './CurrentSessionRepository'
 import { unencodableMessage } from '../../../packages/chatbox-core/src/session/session-tree/unencodable.test-support'
 
 vi.mock('../../../packages/chatbox-core/src/session/session-tree/encode', async (importOriginal) => {
@@ -296,17 +300,16 @@ describe('CurrentSessionRepository row boundary', () => {
     expect(harness.getItem).not.toHaveBeenCalled()
   })
 
-  test('rejects row writes while raw backup owns the storage lock and resumes afterwards', async () => {
+  test('rejects row writes while a storage upgrade owns the lock and resumes afterwards', async () => {
     const harness = createHarness()
     await createRows(harness)
-    await harness.repository.withBackupStorageAccess(async (meta, backup) => {
-      expect(meta).toBe(harness.metaStorage)
+    await withExclusiveSessionStorageLock(async () => {
       const rows = []
-      for await (const row of backup.iterateBackupRows('session', DEFAULT_BACKUP_PAGE_LIMITS)) rows.push(row.kind)
+      for await (const row of harness.rowStore.iterateRows({ sessionId: 'session' })) rows.push(row.kind)
       expect(rows.filter((kind) => kind === 'message')).toHaveLength(2)
       await expect(
         harness.repository.executeSessionCommand('session', { type: 'header', updater: { name: 'Blocked' } })
-      ).rejects.toBeInstanceOf(BackupOperationBusyError)
+      ).rejects.toBeInstanceOf(SessionStorageBusyError)
     })
     await harness.repository.executeSessionCommand('session', { type: 'header', updater: { name: 'Saved' } })
     expect((await harness.repository.getSessionHeader('session'))?.header.name).toBe('Saved')

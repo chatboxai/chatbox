@@ -1,4 +1,3 @@
-import { webBackupBlobs, readWebBlob, deleteWebBlob, listWebBlobKeys, writeWebBlob } from './web-backup-blobs'
 import type { SessionRowStorePort } from '@chatbox/core/ports'
 import { type AnalyticsEventParams, GOOGLE_ANALYTICS_MEASUREMENT_ID } from '@shared/analytics'
 import * as defaults from '@shared/defaults'
@@ -22,7 +21,6 @@ export default class WebPlatform extends IndexedDBStorage implements Platform {
   public type: PlatformType = 'web'
   public readonly isDesktopLike = false
 
-  public backupBlobStreams = webBackupBlobs
   public exporter = new WebExporter()
 
   private imageGenerationStorage: ImageGenerationStorage | null = null
@@ -117,16 +115,16 @@ export default class WebPlatform extends IndexedDBStorage implements Platform {
   }
 
   public async getStoreBlob(key: string): Promise<string | null> {
-    return readWebBlob(key)
+    return localforage.getItem<string>(key)
   }
   public async setStoreBlob(key: string, value: string): Promise<void> {
-    await writeWebBlob(key, value)
+    await localforage.setItem(key, value)
   }
   public async delStoreBlob(key: string) {
-    return deleteWebBlob(key)
+    return localforage.removeItem(key)
   }
   public async listStoreBlobKeys(): Promise<string[]> {
-    return listWebBlobKeys()
+    return localforage.keys()
   }
 
   public async initTracking() {

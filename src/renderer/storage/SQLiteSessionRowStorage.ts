@@ -1,12 +1,3 @@
-import type { SessionBranchPreviewRequest } from '@chatbox/core/ports'
-import type { SessionTokenCacheRequest, SessionTokenCacheResult } from '@chatbox/core/ports'
-import type { SessionBranchMessagesRequest } from '@chatbox/core/ports'
-import type {
-  SessionMessageMetadataRequest,
-  SessionMessageRelationsRequest,
-  SessionThreadStateRequest,
-} from '@chatbox/core/ports'
-import type { BackupPageLimits } from '@chatbox/core/backup'
 import { CapacitorSQLite, SQLiteConnection, type SQLiteDBConnection } from '@capacitor-community/sqlite'
 import {
   SessionRowConflictError,
@@ -16,25 +7,37 @@ import {
   type SessionRowSqlStatement,
   SqlSessionRowStore,
 } from '@chatbox/core'
-import { INSERT_MESSAGE_NAVIGATION_SQL, textTokenCleanupStatement } from '@chatbox/core/persistence'
+import {
+  INSERT_MESSAGE_NAVIGATION_SQL,
+  stagedMetadataStatements,
+  textTokenCleanupStatement,
+} from '@chatbox/core/persistence'
 import type {
-  SessionNavigationRepairRequest,
-  SessionNavigationPage,
-  SessionThreadRead,
-  SessionThreadRequest,
-  SessionTranscriptPage,
-  SessionTranscriptRequest,
   GeneratingMessageRef,
+  SessionBranchMessagesRequest,
+  SessionBranchPreviewRequest,
+  SessionMessageMetadataRequest,
+  SessionMessageRelationsRequest,
   SessionMessagesRequest,
   SessionMessagesSnapshot,
-  SessionThreadPage,
-  SessionThreadPageRequest,
+  SessionNavigationPage,
+  SessionNavigationRepairRequest,
   SessionRowCommit,
+  SessionRowIterationRequest,
   SessionRowSnapshot,
   SessionRowStorePort,
   SessionRowsDiff,
   SessionTextTokenResult,
   SessionTextTokenSource,
+  SessionThreadPage,
+  SessionThreadPageRequest,
+  SessionThreadRead,
+  SessionThreadRequest,
+  SessionThreadStateRequest,
+  SessionTokenCacheRequest,
+  SessionTokenCacheResult,
+  SessionTranscriptPage,
+  SessionTranscriptRequest,
 } from '@chatbox/core/ports'
 import type { MessageRowStatus } from '@chatbox/core/session/session-tree'
 
@@ -42,7 +45,7 @@ const DB_NAME = 'chatbox-messages'
 
 const BRIDGE_CALL_LIMIT = 512 * 1024
 const BRIDGE_BATCH_TARGET = 480 * 1024
-const TEXT_CHUNK_LIMIT = 128 * 1024
+const TEXT_SLICE_CHARACTERS = 16 * 1024
 const STAGING_INSERT_BIND_LIMIT = 900
 const encoder = new TextEncoder()
 let mutationSequence = 0
@@ -50,11 +53,8 @@ let mutationSequence = 0
 const THREAD_COLUMNS =
   'session_id, thread_id, seq, name, created_at, root_message_id, active_leaf_message_id, compaction_points_json, session_prompt_context_snapshot_json, session_record_json, commit_revision, projection_json'
 const MESSAGE_COLUMNS =
-  'session_id, message_id, thread_id, parent_message_id, active_child_id, seq, kind, status, created_at, updated_at, branch_id, payload_id, payload_chunk_count, payload_utf8_length, row_metadata_json, selected_depth'
+  'session_id, message_id, thread_id, parent_message_id, active_child_id, seq, kind, status, created_at, updated_at, branch_id, payload_id, payload_utf8_length, row_metadata_json, selected_depth, message_json'
 const INSERT_STAGED_MESSAGE_SQL = `INSERT OR REPLACE INTO session_messages_staging (mutation_id, ${MESSAGE_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-const INSERT_PAYLOAD_CHUNK_SQL =
-  'INSERT OR REPLACE INTO session_message_payload_chunks (session_id, payload_id, chunk_index, value) VALUES (?, ?, ?, ?)'
-
 interface NativeStatement {
   statement: string
   values: SessionRowSqlBindValue[]
@@ -71,21 +71,14 @@ function utf8Size(value: unknown): number {
 }
 
 function splitText(value: string): string[] {
-  const chunks: string[] = []
-  let current = ''
-  let size = 0
-  for (const codePoint of value) {
-    const pointSize = encoder.encode(codePoint).byteLength
-    if (current && size + pointSize > TEXT_CHUNK_LIMIT) {
-      chunks.push(current)
-      current = ''
-      size = 0
-    }
-    current += codePoint
-    size += pointSize
+  const slices: string[] = []
+  for (let offset = 0; offset < value.length; ) {
+    let end = Math.min(value.length, offset + TEXT_SLICE_CHARACTERS)
+    if (end < value.length && value.charCodeAt(end - 1) >= 0xd800 && value.charCodeAt(end - 1) <= 0xdbff) end--
+    slices.push(value.slice(offset, end))
+    offset = end
   }
-  if (current || value.length === 0) chunks.push(current)
-  return chunks
+  return slices
 }
 
 function toNative(statement: SessionRowSqlStatement): NativeStatement {
@@ -151,7 +144,7 @@ function coalesceStagingInserts(batch: NativeStatement[]): NativeStatement[] {
     const width =
       statement.statement === INSERT_STAGED_MESSAGE_SQL
         ? 17
-        : statement.statement === INSERT_PAYLOAD_CHUNK_SQL || statement.statement === INSERT_MESSAGE_NAVIGATION_SQL
+        : statement.statement === INSERT_MESSAGE_NAVIGATION_SQL
           ? 4
           : 0
     if (width === 0 || statement.values.length !== width) {
@@ -176,7 +169,7 @@ function stageJsonColumns(
   const staged = [...params]
   for (const { index, column } of indexes) {
     const value = staged[index]
-    if (typeof value !== 'string') continue
+    if (typeof value !== 'string' || utf8Size(value) <= 32 * 1024) continue
     staged[index] = ''
     for (const chunk of splitText(value)) append(column, chunk)
   }
@@ -184,6 +177,7 @@ function stageJsonColumns(
 }
 
 class CapacitorSessionRowSqlDatabase implements SessionRowSqlDatabase {
+  readonly maxStatementBytes = BRIDGE_CALL_LIMIT - 1024
   private operationTail: Promise<void> = Promise.resolve()
 
   constructor(private readonly connect: () => Promise<SQLiteDBConnection>) {}
@@ -261,11 +255,12 @@ class CapacitorSessionRowSqlDatabase implements SessionRowSqlDatabase {
     const staged = this.toStagingStatements(statements, mutationId, options)
     const tokenCleanup = textTokenCleanupStatement(options.sessionId)
     const cleanup: SessionRowSqlStatement[] = [
+      { sql: 'DELETE FROM session_row_local_metadata WHERE mutation_id=?', params: [mutationId] },
       { sql: 'DELETE FROM session_threads_staging WHERE mutation_id = ?', params: [mutationId] },
       { sql: 'DELETE FROM session_messages_staging WHERE mutation_id = ?', params: [mutationId] },
       {
-        sql: 'DELETE FROM session_message_payload_chunks WHERE session_id = ? AND NOT EXISTS (SELECT 1 FROM session_messages WHERE session_messages.payload_id = session_message_payload_chunks.payload_id) AND NOT EXISTS (SELECT 1 FROM session_messages_staging WHERE session_messages_staging.payload_id = session_message_payload_chunks.payload_id)',
-        params: [options.sessionId],
+        sql: 'DELETE FROM session_message_navigation WHERE NOT EXISTS (SELECT 1 FROM session_messages WHERE session_messages.payload_id = session_message_navigation.payload_id) AND NOT EXISTS (SELECT 1 FROM session_messages_staging WHERE session_messages_staging.payload_id = session_message_navigation.payload_id)',
+        params: [],
       },
       { sql: 'DELETE FROM session_row_staging_mutations WHERE mutation_id = ?', params: [mutationId] },
     ]
@@ -387,6 +382,7 @@ class CapacitorSessionRowSqlDatabase implements SessionRowSqlDatabase {
               { index: 7, column: 'compaction_points_json' },
               { index: 8, column: 'session_prompt_context_snapshot_json' },
               { index: 9, column: 'session_record_json' },
+              { index: 11, column: 'projection_json' },
             ],
             (column, chunk) => {
               appends.push({
@@ -403,17 +399,25 @@ class CapacitorSessionRowSqlDatabase implements SessionRowSqlDatabase {
           break
         }
         case 'upsert-message': {
-          yield {
-            sql: INSERT_STAGED_MESSAGE_SQL,
-            params: [mutationId, ...statement.params],
-          }
+          const appends: SessionRowSqlStatement[] = []
+          const params = stageJsonColumns(statement.params, [{ index: 15, column: 'message_json' }], (column, part) =>
+            appends.push({
+              sql: `UPDATE session_messages_staging SET ${column}=${column}||? WHERE mutation_id=? AND session_id=? AND message_id=?`,
+              params: [part, mutationId, statement.params[0], statement.params[1]],
+            })
+          )
+          const metadata = params[13]
+          const largeMetadata = typeof metadata === 'string' && utf8Size(metadata) > 32 * 1024
+          if (largeMetadata) params[13] = null
+          yield { sql: INSERT_STAGED_MESSAGE_SQL, params: [mutationId, ...params] }
+          yield* appends
+          if (largeMetadata) yield* stagedMetadataStatements(mutationId, String(params[0]), String(params[1]), metadata)
           break
         }
         case 'insert-message-navigation':
-        case 'insert-message-payload-chunk':
           yield statement
           break
-        case 'delete-orphan-message-payloads':
+        case 'delete-orphan-message-navigation':
         case 'delete-stale-text-tokens':
           break
         default:
@@ -537,12 +541,24 @@ export class SQLiteSessionRowStore implements SessionRowStorePort {
     return this.store.getRevision(sessionId)
   }
 
-  iterateBackupRows(sessionId: string, limits: BackupPageLimits, signal?: AbortSignal, threadId?: string) {
-    return this.store.iterateBackupRows(sessionId, limits, signal, threadId)
+  iterateRows(request: SessionRowIterationRequest) {
+    return this.store.iterateRows(request)
   }
 
-  beginBackupRestore(sessionId: string, expectedRevision?: number | null) {
-    return this.store.beginBackupRestore(sessionId, expectedRevision)
+  stageRows(commit: SessionRowCommit, expectedRevision: number | null) {
+    return this.store.stageRows(commit, expectedRevision)
+  }
+
+  stageImportRows(commit: SessionRowCommit, expectedRevision: number | null, jobId: string) {
+    return this.store.stageImportRows(commit, expectedRevision, jobId)
+  }
+
+  resumeImportRows(candidateId: string) {
+    return this.store.resumeImportRows(candidateId)
+  }
+
+  collectImportGarbage(): Promise<void> {
+    return this.store.collectImportGarbage()
   }
 
   listSessionIds(): Promise<string[]> {

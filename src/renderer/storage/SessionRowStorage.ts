@@ -1,3 +1,4 @@
+import { stageIndexedDBImportRows, resumeIndexedDBImportRows } from './session-row-idb-import'
 import type { SessionBranchPreviewRequest } from '@chatbox/core/ports'
 import { readIndexedDBTokenCache, acceptIndexedDBTokenCache } from './session-row-idb-token-cache'
 import type { SessionTokenCacheRequest, SessionTokenCacheResult } from '@chatbox/core/ports'
@@ -37,33 +38,29 @@ import type {
   SessionTranscriptPage,
   SessionNavigationPage,
 } from '@chatbox/core/ports'
-import { iterateIndexedDBBackupRows, beginIndexedDBBackupRestore } from './session-row-idb-backup'
+import { createRowTransferStore, iterateIndexedDBRows, stageIndexedDBRows } from './session-row-idb-transfer'
+import type { SessionRowIterationRequest } from '@chatbox/core/ports'
 import {
   readStoredMessage,
   putStoredMessages,
   deleteStoredMessage,
   type StoredMessageRow,
-} from './session-row-idb-payload'
-import type { BackupPageLimits } from '@chatbox/core/backup'
+} from './session-row-idb-messages'
 import {
   SESSION_ROW_DB_NAME,
   SESSION_ROW_THREAD_STORE,
   SESSION_ROW_MESSAGE_STORE,
-  SESSION_ROW_PAYLOAD_STORE,
   SESSION_ROW_TOKEN_CACHE_STORE,
   MESSAGE_ORDER_INDEX,
-  MESSAGE_PAYLOAD_INDEX,
   SESSION_INDEX,
   STATUS_INDEX,
   ROW_STORES,
   REVISION_HEAD_THREAD_ID,
   type RevisionHeadRow,
-  type PersistedThreadRow,
   isRevisionHeadRow,
   storedRevision,
   revisionHead,
   revisionTombstone,
-  plainThreadRow,
   readStoredCommit,
 } from './session-row-idb-records'
 import { selectedDepths, assertSessionReadRevision, validateSessionMessagesRequest } from '@chatbox/core/persistence'
@@ -84,7 +81,7 @@ import type { MessageRow, MessageRowStatus, ThreadRow } from '@chatbox/core/sess
 import { reportDbOpenSucceeded, toDbOpenError, watchDbOpenBlocked, watchDbVersionChange } from './db-schema-guard'
 
 export { SESSION_ROW_DB_NAME, SESSION_ROW_THREAD_STORE, SESSION_ROW_MESSAGE_STORE } from './session-row-idb-records'
-const DB_VERSION = 3
+const DB_VERSION = 1
 
 function assertCommit(sessionId: string, rows: SessionRows, commit: SessionRowCommit): void {
   if (!Number.isSafeInteger(commit.revision) || commit.revision <= 0) {
@@ -198,14 +195,14 @@ export class IndexedDBSessionRowStore implements SessionRowStorePort {
 
       request.onsuccess = () => {
         const db = request.result
-        this.db = db
-        reportDbOpenSucceeded(SESSION_ROW_DB_NAME)
         watchDbVersionChange(SESSION_ROW_DB_NAME, db, () => {
           if (this.db === db) {
             this.db = null
             this.initPromise = null
           }
         })
+        this.db = db
+        reportDbOpenSucceeded(SESSION_ROW_DB_NAME)
         resolve()
       }
 
@@ -219,19 +216,12 @@ export class IndexedDBSessionRowStore implements SessionRowStorePort {
           const messages = db.createObjectStore(SESSION_ROW_MESSAGE_STORE, { keyPath: ['sessionId', 'messageId'] })
           messages.createIndex(SESSION_INDEX, 'sessionId', { unique: false })
           messages.createIndex(STATUS_INDEX, ['status', 'sessionId', 'threadId', 'messageId'], { unique: false })
+          messages.createIndex(MESSAGE_ORDER_INDEX, ['sessionId', 'threadId', 'seq', 'messageId'])
         }
         if (!db.objectStoreNames.contains(SESSION_ROW_TOKEN_CACHE_STORE))
           db.createObjectStore(SESSION_ROW_TOKEN_CACHE_STORE, { keyPath: ['sessionId', 'messageId', 'cacheKey'] })
         createTranscriptStores(db, request.transaction!)
-        const messages = request.transaction!.objectStore(SESSION_ROW_MESSAGE_STORE)
-        if (!messages.indexNames.contains(MESSAGE_ORDER_INDEX))
-          messages.createIndex(MESSAGE_ORDER_INDEX, ['sessionId', 'threadId', 'seq', 'messageId'])
-        if (!messages.indexNames.contains(MESSAGE_PAYLOAD_INDEX))
-          messages.createIndex(MESSAGE_PAYLOAD_INDEX, ['sessionId', 'messageId', 'payload.id'])
-        if (!db.objectStoreNames.contains(SESSION_ROW_PAYLOAD_STORE)) {
-          const payloads = db.createObjectStore(SESSION_ROW_PAYLOAD_STORE, { keyPath: ['payloadId', 'index'] })
-          payloads.createIndex(SESSION_INDEX, 'sessionId')
-        }
+        createRowTransferStore(db)
       }
     })
   }
@@ -289,14 +279,27 @@ export class IndexedDBSessionRowStore implements SessionRowStorePort {
     })
   }
 
-  async *iterateBackupRows(sessionId: string, limits: BackupPageLimits, signal?: AbortSignal, threadId?: string) {
-    const db = await this.ensureDatabase('read-rows', sessionId)
-    yield* iterateIndexedDBBackupRows(db, sessionId, limits, signal, threadId)
+  async *iterateRows(request: SessionRowIterationRequest) {
+    yield* iterateIndexedDBRows(await this.ensureDatabase('read-rows', request.sessionId), request)
   }
 
-  async beginBackupRestore(sessionId: string, expectedRevision?: number | null) {
-    const db = await this.ensureDatabase('write-rows', sessionId)
-    return beginIndexedDBBackupRestore(db, sessionId, expectedRevision)
+  async stageRows(commit: SessionRowCommit, expectedRevision: number | null) {
+    const captured = structuredClone(commit)
+    return stageIndexedDBRows(await this.ensureDatabase('write-rows', captured.record.id), captured, expectedRevision)
+  }
+
+  async stageImportRows(commit: SessionRowCommit, expectedRevision: number | null, jobId: string) {
+    const captured = structuredClone(commit)
+    return stageIndexedDBImportRows(
+      await this.ensureDatabase('write-rows', captured.record.id),
+      captured,
+      expectedRevision,
+      jobId
+    )
+  }
+
+  async resumeImportRows(candidateId: string) {
+    return resumeIndexedDBImportRows(await this.ensureDatabase('write-rows'), candidateId)
   }
 
   async repairNavigationProjections(request: SessionNavigationRepairRequest): Promise<void> {
@@ -363,16 +366,16 @@ export class IndexedDBSessionRowStore implements SessionRowStorePort {
       }
 
       tx.oncomplete = () => {
-        const storedThreads = threadRequest.result as Array<PersistedThreadRow | RevisionHeadRow>
+        const storedThreads = threadRequest.result as Array<ThreadRow | RevisionHeadRow>
         const head = storedThreads.find(isRevisionHeadRow)
-        const persisted = storedThreads.filter((row): row is PersistedThreadRow => !isRevisionHeadRow(row))
+        const persisted = storedThreads.filter((row): row is ThreadRow => !isRevisionHeadRow(row))
         if (persisted.length === 0 && messages.length === 0) {
           resolve(null)
           return
         }
         try {
           const commit = readStoredCommit(sessionId, persisted, head)
-          resolve({ rows: { sessionId, threads: persisted.map(plainThreadRow), messages }, ...commit })
+          resolve({ rows: { sessionId, threads: persisted, messages }, ...commit })
         } catch (error) {
           reject(new SessionRowStoreError('read-rows', error, sessionId))
         }
@@ -673,7 +676,7 @@ export class IndexedDBSessionRowStore implements SessionRowStorePort {
       const request = tx.objectStore(SESSION_ROW_THREAD_STORE).get([sessionId, REVISION_HEAD_THREAD_ID])
 
       tx.oncomplete = () => {
-        resolve(storedRevision(request.result as PersistedThreadRow | RevisionHeadRow | undefined))
+        resolve(storedRevision(request.result as ThreadRow | RevisionHeadRow | undefined))
       }
       tx.onerror = () => reject(new SessionRowStoreError('get-revision', tx.error, sessionId))
       tx.onabort = () => reject(new SessionRowStoreError('get-revision', tx.error, sessionId))

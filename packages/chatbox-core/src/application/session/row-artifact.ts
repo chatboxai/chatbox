@@ -1,4 +1,4 @@
-import { throwIfAborted } from '../../backup/abort'
+import { throwIfAborted } from '../../utils/abort'
 import type { SessionArtifactRequest } from '../../ports/session-artifact-source'
 import type { SessionMessageRelationsCursor } from '../../ports/session-row-relations'
 import type { SessionRowStorePort } from '../../ports/session-row-store'

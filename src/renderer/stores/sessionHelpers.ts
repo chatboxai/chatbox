@@ -18,7 +18,6 @@ import type { DocumentParserConfig } from '@shared/types/settings'
 import { BrowserAttachmentAdapter } from '@/adapters/BrowserAttachmentAdapter'
 import { CapacitorAttachmentAdapter } from '@/adapters/CapacitorAttachmentAdapter'
 import { DesktopAttachmentAdapter } from '@/adapters/DesktopAttachmentAdapter'
-import { withSessionWorkAccess } from '@/adapters/session-work-lock'
 import { rendererApplication } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
 import { PREVIEW_LINES } from '@/packages/context-management/attachment-payload'
@@ -703,9 +702,7 @@ export function prepareFileAttachment(
   settings: SessionSettings,
   options?: AttachmentPreparationOptions
 ): Promise<AttachmentPreparationResult> {
-  return rendererApplication.backupOperations.runWrite(() =>
-    withSessionWorkAccess(() => prepareFileAttachmentAccepted(file, settings, options))
-  )
+  return prepareFileAttachmentAccepted(file, settings, options)
 }
 
 async function prepareFileAttachmentAccepted(
@@ -757,9 +754,7 @@ async function prepareFileAttachmentAccepted(
  * @returns 预处理后的链接信息
  */
 export function preprocessLink(url: string, settings: SessionSettings) {
-  return rendererApplication.backupOperations.runWrite(() =>
-    withSessionWorkAccess(() => preprocessLinkAccepted(url, settings))
-  )
+  return preprocessLinkAccepted(url, settings)
 }
 
 async function preprocessLinkAccepted(

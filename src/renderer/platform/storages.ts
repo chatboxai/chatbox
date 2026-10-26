@@ -1,4 +1,3 @@
-import { MAX_BACKUP_RESOURCE_ENTRY_BYTES, openSqlBackupValue } from '@chatbox/core/backup'
 import { CapacitorSQLite, SQLiteConnection, type SQLiteDBConnection } from '@capacitor-community/sqlite'
 import localforage from 'localforage'
 import { StorageKey } from '@/storage'
@@ -93,15 +92,10 @@ export class LocalStorage implements Storage {
   }
 }
 
-const resourceTextEncoder = new TextEncoder()
-
 class SQLiteStorage {
   private static readonly BRIDGE_CHUNK_SIZE = 256 * 1024
   private static readonly CHUNKS_PER_WRITE = 2
-  /** Escaped request bytes per transaction while streaming a backup resource, within the soft bridge budget. */
-  private static readonly RESOURCE_WRITE_BYTES = 320 * 1024
   private static readonly MANIFEST_PEEK_LENGTH = 128
-  /** Compaction rewrites the whole file, so it runs only when enough of it is free. */
   private static readonly COMPACT_MIN_FREE_BYTES = 8 * 1024 * 1024
   private static readonly COMPACT_MIN_FREE_RATIO = 0.25
   // Even six-times JSON escaping keeps a complete small value below 100 KiB.
@@ -272,15 +266,40 @@ class SQLiteStorage {
     for (let index = 0; index < manifest.chunkCount; index++) {
       const result = await this.database.query(
         `
-          SELECT value
+          SELECT CASE WHEN instr(value, char(0)) = 0 THEN value
+            ELSE hex(substr(CAST(value AS BLOB), 1, ${SQLiteStorage.BLOB_SLICE_SIZE})) END AS value,
+            instr(value, char(0)) > 0 AS contains_nul,
+            length(CAST(value AS BLOB)) AS byte_length
           FROM key_value_chunks
           WHERE key = ? AND generation = ? AND chunk_index = ?;
         `,
         [key, manifest.generation, index]
       )
-      const value = result.values?.[0]?.value
+      const row = result.values?.[0]
+      const value = row?.value
       if (typeof value !== 'string') throw new Error(`Stored value chunk is missing for key "${key}"`)
-      chunks.push(value)
+      if (!row?.contains_nul) {
+        chunks.push(value)
+        continue
+      }
+      const byteLength = row.byte_length
+      if (!Number.isSafeInteger(byteLength) || byteLength < 0) throw new Error('Stored value chunk length is invalid')
+      const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
+      chunks.push(decoder.decode(this.decodeHex(value), { stream: true }))
+      for (
+        let offset = SQLiteStorage.BLOB_SLICE_SIZE + 1;
+        offset <= byteLength;
+        offset += SQLiteStorage.BLOB_SLICE_SIZE
+      ) {
+        const slice = await this.database.query(
+          'SELECT hex(substr(CAST(value AS BLOB), ?, ?)) AS value FROM key_value_chunks WHERE key = ? AND generation = ? AND chunk_index = ?',
+          [offset, SQLiteStorage.BLOB_SLICE_SIZE, key, manifest.generation, index]
+        )
+        const hex = slice.values?.[0]?.value
+        if (typeof hex !== 'string') throw new Error(`Stored value chunk is missing for key "${key}"`)
+        chunks.push(decoder.decode(this.decodeHex(hex), { stream: true }))
+      }
+      chunks.push(decoder.decode())
     }
     return chunks.join('')
   }
@@ -332,20 +351,7 @@ class SQLiteStorage {
     }
   }
 
-  async openBackupValue(key: string) {
-    await this.ensureInitialized()
-    return this.enqueueOperation(key, () =>
-      openSqlBackupValue(
-        {
-          query: async <T>(sql: string, params: Array<string | number | null> = []) =>
-            ((await this.database.query(sql, params)).values as T[]) ?? [],
-        },
-        key
-      )
-    )
-  }
-
-  /** Rebuilds the database file when staged and rolled-back values left a large share of it free. */
+  /** Returns unused database pages to the file system when enough space can be reclaimed. */
   async compact(): Promise<void> {
     await this.ensureInitialized()
     const pragma = async (name: string) => {
@@ -415,74 +421,6 @@ class SQLiteStorage {
     const acquire = (index: number): Promise<unknown> =>
       this.enqueueOperation(ordered[index], () => (index + 1 < ordered.length ? acquire(index + 1) : remove()))
     await acquire(0)
-  }
-
-  /** Stage bounded native chunks, then publish one manifest for an absent key. */
-  async writeStream(key: string, chunks: AsyncIterable<string>): Promise<void> {
-    await this.ensureInitialized()
-    await this.enqueueOperation(key, async () => {
-      const existing = await this.database.query('SELECT 1 AS present FROM key_value WHERE key = ?', [key])
-      if (existing.values?.length) throw new Error('Backup resource already exists')
-      const generation = uuidv4()
-      let count = 0
-      let length = 0
-      let batch: Array<{ statement: string; values: Array<string | number> }> = []
-      let batchBytes = 0
-      const flush = async () => {
-        if (!batch.length) return
-        const statements = batch
-        batch = []
-        batchBytes = 0
-        await this.database.executeSet(statements, true)
-      }
-      const write = async (value: string) => {
-        if (!value) return
-        length += value.length
-        if (++count > 100_000 || length > Math.ceil(MAX_BACKUP_RESOURCE_ENTRY_BYTES / 3) * 4 + 4096)
-          throw new Error('Backup resource exceeds budget')
-        const bytes = resourceTextEncoder.encode(JSON.stringify(value)).length + 256
-        if (batchBytes + bytes > SQLiteStorage.RESOURCE_WRITE_BYTES) await flush()
-        batch.push({
-          statement: 'INSERT INTO key_value_chunks(key,generation,chunk_index,value) VALUES (?,?,?,?)',
-          values: [key, generation, count - 1, value],
-        })
-        batchBytes += bytes
-      }
-      try {
-        // Emit fixed-size fragments regardless of upstream chunk boundaries.
-        let pending = ''
-        for await (const chunk of chunks) {
-          const text = pending + chunk
-          let offset = 0
-          while (text.length - offset > 16384) {
-            const last = text.charCodeAt(offset + 16383)
-            const size = last >= 0xd800 && last <= 0xdbff ? 16383 : 16384
-            await write(text.slice(offset, offset + size))
-            offset += size
-          }
-          pending = text.slice(offset)
-        }
-        const last = pending.charCodeAt(pending.length - 1)
-        if (last >= 0xd800 && last <= 0xdbff) throw new Error('Backup resource contains invalid Unicode')
-        await write(pending)
-        await flush()
-        await this.database.executeSet(
-          [
-            {
-              statement: 'INSERT INTO key_value(key,value) VALUES (?,?)',
-              values: [key, count ? this.createChunkManifest(generation, count, length) : ''],
-            },
-          ],
-          true
-        )
-      } catch (error) {
-        await this.database.executeSet(
-          [{ statement: 'DELETE FROM key_value_chunks WHERE key = ? AND generation = ?', values: [key, generation] }],
-          true
-        )
-        throw error
-      }
-    })
   }
 
   // 插入或更新数据
@@ -610,27 +548,25 @@ export class MobileSQLiteStorage implements Storage {
   private sqliteStorage: SQLiteStorage
 
   constructor(database?: SQLiteDBConnection) {
-    this.sqliteStorage = database
-      ? new SQLiteStorage(database)
-      : (MobileSQLiteStorage.sharedStorage ??= new SQLiteStorage())
+    if (database) {
+      this.sqliteStorage = new SQLiteStorage(database)
+    } else {
+      MobileSQLiteStorage.sharedStorage ??= new SQLiteStorage()
+      this.sqliteStorage = MobileSQLiteStorage.sharedStorage
+    }
   }
 
   public copyStoreValue(source: string, destination: string) {
     return this.sqliteStorage.copyItem(source, destination)
   }
-  public openBackupValue(key: string) {
-    return this.sqliteStorage.openBackupValue(key)
-  }
+
   public compactStore() {
     return this.sqliteStorage.compact()
   }
+
   public delStoreValues(keys: string[]) {
     return this.sqliteStorage.removeItems(keys)
   }
-  public get backupResourceStorage() {
-    return this.sqliteStorage
-  }
-
   public async setStoreValue(key: string, value: any) {
     await this.sqliteStorage.setItem(key, JSON.stringify(value))
   }

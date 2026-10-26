@@ -18,7 +18,7 @@ function setup() {
   const records = new InMemorySessionRecordStore()
   const rows = new InMemorySessionRowStore()
   const writes = new SessionRowWriteQueue((_id, operation) => operation())
-  const repository = new RowBackedSessionRepository({ records, rows, writes, backup: rows })
+  const repository = new RowBackedSessionRepository({ records, rows, writes })
   return { records, rows, writes, repository }
 }
 
@@ -252,7 +252,7 @@ describe('row-only session repository', () => {
 
   it('serializes read-modify-write commands across repositories sharing one owner', async () => {
     const { repository, records, rows, writes } = setup()
-    const other = new RowBackedSessionRepository({ records, rows, writes, backup: rows })
+    const other = new RowBackedSessionRepository({ records, rows, writes })
     await repository.createSessionRows({ id: 's', name: '0' }, [])
     await Promise.all(
       [repository, other, repository, other].map((repo) =>

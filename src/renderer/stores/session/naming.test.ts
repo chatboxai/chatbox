@@ -3,7 +3,7 @@ import type { SessionHeader } from '@chatbox/core/ports'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-  syncAutoTitle: vi.fn(),
+  syncAutoTitle: vi.fn(async () => {}),
   clearSessionState: vi.fn(),
   getSettings: vi.fn(),
 }))
@@ -21,11 +21,9 @@ vi.mock('@/adapters/CurrentModelFactory', () => ({ currentModelFactory: {} }))
 vi.mock('@/packages/model-calls/message-utils', () => ({ convertToModelMessages: vi.fn() }))
 vi.mock('@/settings-runtime', () => ({ settingsService: { getSettings: mocks.getSettings } }))
 vi.mock('@/utils/sentry', () => ({ reportError: vi.fn() }))
-vi.mock('@/app/renderer-application', async () => {
-  const { BackupOperationCoordinator } = await import('@chatbox/core/backup')
+vi.mock('@/app/renderer-application', () => {
   return {
     rendererApplication: {
-      backupOperations: new BackupOperationCoordinator(),
       sessions: {},
     },
   }

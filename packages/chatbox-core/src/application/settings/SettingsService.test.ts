@@ -18,7 +18,7 @@ class MemorySettingsStorage implements SettingsStoragePort {
 }
 
 describe('SettingsService', () => {
-  test('reloads restored settings before the next user edit', async () => {
+  test('reloads external settings changes before the next user edit', async () => {
     const storage = new MemorySettingsStorage({
       ...createDefaultSettings(),
       language: 'en',

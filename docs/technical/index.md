@@ -1,6 +1,6 @@
 # Chatbox Pro 技术设计文档
 
-> Last updated: 2026-09
+> Last updated: 2026-10
 
 本目录包含 Chatbox Pro 的系统设计与技术决策文档，面向工程师和技术负责人。
 
@@ -11,7 +11,6 @@
 | 文档 | 描述 |
 |------|------|
 | [跨平台架构](./architecture.md) | 应用整体架构、平台抽象层、进程模型、模块划分 |
-| [React Native 会话行存储与窗口读取](./react-native-session-row-storage.md) | 共享持久化协议、双向分页、压缩点上下文、备份兼容性与真机验证边界 |
 | [AI 供应商系统](./ai-providers.md) | 模型供应商注册表、OAuth 登录集成、模型类层级、能力声明、自建供应商 |
 | [Provider 网络兼容性请求](./provider-networking.md) | 改善网络兼容性的跨平台传输矩阵、Desktop 主进程直连、relay 与取消边界 |
 | [Cursor / OpenCode 订阅登录](./subscription-oauth-research.md) | 两个订阅产品的官方登录机制、Cursor 无私有 API 接入、OpenCode Zen / Go API Key 网关 |
@@ -22,7 +21,7 @@
 | [聊天/工作模式分化](./chat-work-mode-split.md) | 在下方回答平铺回退、模式策略（mode-policy）、队列/steering 聊天禁用、生成中切分支、性能与兼容性决策 |
 | [App 存储地图](./storage-map.md) | 业务分类、平台介质、关键 key、附件与备份范围 |
 | [存储架构](./storage.md) | 混合存储策略、跨平台方案、版本迁移历史 |
-| [数据备份归档](./data-backup.md) | ZIP v2 格式、资源范围、流式导入导出、事务恢复与安全限制 |
+| [数据备份与恢复边界](./data-backup.md) | 设置入口可用状态、普通数据操作、V3 与 V1/V2 适配交付边界 |
 | [Token 估算系统](./token-estimation.md) | 独立行数据、首窗门控、分批缓存与发送上下文一致性 |
 | [工具步间上下文压缩](./mid-run-compaction.md) | 生成分段、分支归属、摘要边界与步间上下文替换 |
 | [上下文管理系统](./context-management.md) | 上下文构建流程、AttachmentResolver 抽象、Compaction 机制 |

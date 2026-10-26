@@ -6,7 +6,7 @@ import { migrateSession } from './compatibility/session-load'
 import { SessionRowWriteQueue } from './SessionRowWriteQueue'
 import type { SessionHeader } from '../../types'
 
-type MigrationRows = Pick<SessionRowStorePort, 'getRevision' | 'writeRows' | 'readSnapshot'> & {
+type MigrationRows = Pick<SessionRowStorePort, 'getRevision' | 'writeRows'> & {
   readCommit(sessionId: string): Promise<SessionRowCommit | null>
 }
 
@@ -56,33 +56,23 @@ export class SessionRowMigration {
     upgradeSettings?: SessionHeader['settings']
   ): Promise<SessionRowMigrationResult | null> {
     const committed = await this.rows.readCommit(sessionId)
-    if (committed?.record.rowAuthority !== undefined && committed.record.rowAuthority !== 1) {
-      throw new SessionMigrationError(sessionId, 'source', new Error('Unsupported row publication version'))
-    }
-    if (committed?.record.rowFormatVersion !== undefined && committed.record.rowFormatVersion !== 3)
-      throw new SessionMigrationError(sessionId, 'source', new Error('Unsupported row format version'))
-    if (committed?.record.rowAuthority === 1) {
-      if (committed.record.rowFormatVersion === 3) return committed
-      return this.upgradePublished(committed)
+    if (committed) {
+      if (committed.record.rowAuthority !== 1)
+        throw new SessionMigrationError(sessionId, 'source', new Error('Unsupported row publication version'))
+      if (committed.record.rowFormatVersion !== 3)
+        throw new SessionMigrationError(sessionId, 'source', new Error('Unsupported row format version'))
+      return committed
     }
 
-    const expectedRevision = committed?.revision ?? (await this.rows.getRevision(sessionId))
+    const expectedRevision = await this.rows.getRevision(sessionId)
     const source = await this.records.getRecord(sessionId)
-    if (!source) {
-      if (committed) {
-        throw new SessionMigrationError(sessionId, 'source', new Error('Unpublished rows have no original input'))
-      }
-      return null
-    }
+    if (!source) return null
     if (source.id !== sessionId) {
       throw new SessionMigrationError(sessionId, 'source', new Error('Record identity does not match'))
     }
 
     if (isRowsSessionRecord(source)) {
-      if (!committed) {
-        throw new SessionMigrationError(sessionId, 'source', new Error('Published session rows are missing'))
-      }
-      return this.upgradePublished(committed)
+      throw new SessionMigrationError(sessionId, 'source', new Error('Published session rows are missing'))
     }
 
     let verified: ReturnType<typeof verifySessionTreeRoundTrip>
@@ -111,35 +101,13 @@ export class SessionRowMigration {
     return this.projectRecord(candidate)
   }
 
-  private async upgradePublished(committed: SessionRowCommit): Promise<SessionRowMigrationResult> {
-    const sessionId = committed.record.id
-    const snapshot = await this.rows.readSnapshot(sessionId)
-    if (!snapshot || snapshot.revision !== committed.revision)
-      throw new SessionRowConflictError(sessionId, committed.revision, snapshot?.revision ?? null)
-    let converted: ReturnType<typeof convertLegacyTreeToRowFormat>
-    try {
-      converted = convertLegacyTreeToRowFormat({ session: snapshot.record, ...snapshot.rows })
-    } catch (error) {
-      throw new SessionMigrationError(sessionId, 'validation', error)
-    }
-    const candidate = {
-      record: converted.session,
-      revision: nextRevision(sessionId, committed.revision),
-      rows: { sessionId, threads: converted.threads, messages: converted.messages },
-    }
-    try {
-      await this.rows.writeRows(candidate, committed.revision)
-    } catch (error) {
-      return this.recoverPublication(sessionId, error)
-    }
-    return this.projectRecord(candidate)
-  }
-
   /** Safe to call from a bounded recovery job; never rereads legacy message bodies. */
   repairRecordProjection(sessionId: string): Promise<SessionRowMigrationResult | null> {
     return this.writes.run(sessionId, async () => {
       const committed = await this.rows.readCommit(sessionId)
-      if (!committed || committed.record.rowAuthority !== 1) return null
+      if (!committed) return null
+      if (committed.record.rowAuthority !== 1 || committed.record.rowFormatVersion !== 3)
+        throw new SessionMigrationError(sessionId, 'source', new Error('Unsupported row format version'))
       return this.projectRecord(committed)
     })
   }

@@ -1,4 +1,4 @@
-import { BackupOperationBusyError } from '@chatbox/core/backup'
+import { SessionStorageBusyError } from '@chatbox/core/ports'
 import type { SessionMigrationOutcome } from '@/adapters/CurrentSessionRepository'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { type SessionMigrationTrickleOptions, startSessionMigrationTrickle } from './session-migration-trickle'
@@ -75,8 +75,8 @@ function createRepository(outcomes: Record<string, SessionMigrationOutcome | Err
 }
 
 describe('startSessionMigrationTrickle', () => {
-  test('retries backup contention without completing or recording migration failures', async () => {
-    const repository = createRepository({ a: new BackupOperationBusyError() })
+  test('retries storage contention without completing or recording migration failures', async () => {
+    const repository = createRepository({ a: new SessionStorageBusyError() })
     const { scheduler, handle, log } = start({ repository })
     let completed = false
     void handle.done.then(() => {

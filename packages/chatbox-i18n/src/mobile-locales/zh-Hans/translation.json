@@ -356,7 +356,7 @@
   "Connecting...": "正在连接…",
   "Delete Server": "删除服务器",
   "Disconnected": "未连接",
-  "Local MCP servers are only available on desktop. This configuration is preserved in your backups.": "本地 MCP 服务器仅支持桌面端。此配置会保留在备份中。",
+  "Local MCP servers are only available on desktop. This configuration is saved in your settings.": "本地 MCP 服务器仅支持桌面端。此配置保存在设置中。",
   "MCP Servers": "MCP 服务器",
   "MCP server not found": "未找到 MCP 服务器",
   "No valid MCP servers found": "未找到有效的 MCP 服务器配置",

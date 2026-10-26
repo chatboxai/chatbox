@@ -42,6 +42,7 @@ export {
   type SessionRowCommit,
   type SessionRowMutationResult,
   SessionRowConflictError,
+  SessionStorageBusyError,
   type SessionRowSnapshot,
   SessionRowStoreError,
   type SessionRowStoreOperation,
@@ -68,3 +69,5 @@ export * from './session-token-cache'
 export * from './session-artifact-source'
 
 export * from './session-search-source'
+
+export * from './session-row-transfer'

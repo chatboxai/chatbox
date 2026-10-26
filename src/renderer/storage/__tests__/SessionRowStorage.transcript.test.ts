@@ -40,37 +40,20 @@ it('uses only thin stores for commit, navigation, and target ancestry', async ()
   store.close()
 })
 
-it('upgrades v2 rows additively and can repair missing projections without changing the commit', async () => {
-  const fixture = transcriptFixture()
-  const db = await new Promise<IDBDatabase>((resolve, reject) => {
-    const open = indexedDB.open(SESSION_ROW_DB_NAME, 2)
-    open.onupgradeneeded = () => {
-      const threads = open.result.createObjectStore(SESSION_ROW_THREAD_STORE, { keyPath: ['sessionId', 'threadId'] })
-      threads.createIndex('bySession', 'sessionId')
-      const messages = open.result.createObjectStore(SESSION_ROW_MESSAGE_STORE, { keyPath: ['sessionId', 'messageId'] })
-      messages.createIndex('bySession', 'sessionId')
-      for (const row of fixture.rows.threads) threads.put(row)
-      threads.put(revisionHead('transcript', fixture))
-      for (const row of fixture.rows.messages) messages.put(row)
-    }
-    open.onsuccess = () => resolve(open.result)
-    open.onerror = () => reject(open.error)
-  })
-  db.close()
+it('repairs missing navigation projections without changing the commit', async () => {
   const store = new IndexedDBSessionRowStore()
-  await store.initialize()
+  await store.writeRows(transcriptFixture())
   expect(
     (await store.readTranscriptWindow({ sessionId: 'transcript', origin: 'tail', limit: 2 }))?.messages.map(
       (row) => row.messageId
     )
   ).toEqual(['active-1', 'active-2'])
-  const upgraded = await new Promise<IDBDatabase>((resolve) => {
+  const db = await new Promise<IDBDatabase>((resolve) => {
     const request = indexedDB.open(SESSION_ROW_DB_NAME)
     request.onsuccess = () => resolve(request.result)
   })
-  expect(upgraded.version).toBe(3)
   await new Promise<void>((resolve) => {
-    const tx = upgraded.transaction(TRANSCRIPT_MESSAGES, 'readwrite')
+    const tx = db.transaction(TRANSCRIPT_MESSAGES, 'readwrite')
     const request = tx.objectStore(TRANSCRIPT_MESSAGES).get(['transcript', 'old-0'])
     request.onsuccess = () => {
       const { navigation: _navigation, ...row } = request.result
@@ -86,7 +69,7 @@ it('upgrades v2 rows additively and can repair missing projections without chang
     (await store.readNavigationPage({ sessionId: 'transcript', origin: 'head', limit: 1 }))?.needsProjection
   ).toEqual([])
   expect((await store.readCommit('transcript'))?.revision).toBe(1)
-  upgraded.close()
+  db.close()
   store.close()
 })
 
@@ -113,20 +96,59 @@ it('rejects malformed revision-head identities and revisions', async () => {
   store.close()
 })
 
-it('reuses the chunk manifest size when writing and repairing long-message navigation', async () => {
+it('preserves complete Unicode bodies and their byte counts when repairing navigation', async () => {
   const store = new IndexedDBSessionRowStore()
   const fixture = transcriptFixture()
   const message = fixture.rows.messages[0].message
-  message.contentParts = [{ type: 'text', text: 'x'.repeat(256 * 1024) }]
-  const payloadBytes = new TextEncoder().encode(JSON.stringify(message)).length
-  const stringify = vi.spyOn(JSON, 'stringify')
+  const text = '工具🦋"\\\u0000'.repeat(40_000)
+  message.contentParts = [{ type: 'text', text }]
+  const serialized = JSON.stringify(message)
+  const payloadBytes = new TextEncoder().encode(serialized).length
+  expect(payloadBytes).toBeGreaterThan(256 * 1024)
+  expect(payloadBytes).toBeGreaterThan(serialized.length)
   await store.writeRows(fixture)
-  expect(stringify.mock.calls.some(([value]) => value === message)).toBe(false)
   const page = await store.readTranscriptWindow({ sessionId: 'transcript', origin: 'head', limit: 1 })
   expect(page?.payloadBytes).toBe(payloadBytes)
+  expect(page?.messages[0].message).toEqual(message)
   expect(
     (await store.readNavigationPage({ sessionId: 'transcript', origin: 'head', limit: 1 }))?.entries[0].preview
-  ).toHaveLength(300)
+  ).toBe(text.slice(0, 300))
+
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open(SESSION_ROW_DB_NAME)
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+  expect(db.objectStoreNames.contains('payloads')).toBe(false)
+  const storedRow = await new Promise<unknown>((resolve, reject) => {
+    const tx = db.transaction(SESSION_ROW_MESSAGE_STORE, 'readonly')
+    const request = tx.objectStore(SESSION_ROW_MESSAGE_STORE).get(['transcript', message.id])
+    tx.oncomplete = () => resolve(request.result)
+    tx.onabort = tx.onerror = () => reject(tx.error)
+  })
+  expect(storedRow).toEqual({ ...fixture.rows.messages[0], selectedDepth: 0 })
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(TRANSCRIPT_MESSAGES, 'readwrite')
+    const request = tx.objectStore(TRANSCRIPT_MESSAGES).get(['transcript', message.id])
+    request.onsuccess = () => {
+      const { navigation: _navigation, ...metadata } = request.result
+      tx.objectStore(TRANSCRIPT_MESSAGES).put(metadata)
+    }
+    tx.oncomplete = () => resolve()
+    tx.onabort = tx.onerror = () => reject(tx.error)
+  })
+  expect(
+    (await store.readNavigationPage({ sessionId: 'transcript', origin: 'head', limit: 1 }))?.needsProjection
+  ).toEqual([message.id])
+  await store.repairNavigationProjections({ sessionId: 'transcript', messageIds: [message.id], expectedRevision: 1 })
+  const repairedNavigation = await store.readNavigationPage({ sessionId: 'transcript', origin: 'head', limit: 1 })
+  expect(repairedNavigation?.needsProjection).toEqual([])
+  expect(repairedNavigation?.entries[0].preview).toBe(text.slice(0, 300))
+  const repairedPage = await store.readTranscriptWindow({ sessionId: 'transcript', origin: 'head', limit: 1 })
+  expect(repairedPage?.payloadBytes).toBe(payloadBytes)
+  expect(repairedPage?.messages[0].message).toEqual(message)
+  expect((await store.readCommit('transcript'))?.revision).toBe(1)
+  db.close()
   store.close()
 })
 

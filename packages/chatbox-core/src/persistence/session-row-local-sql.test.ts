@@ -1,14 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RowBackedSessionRepository } from '../application/session/RowBackedSessionRepository'
 import { SessionRowWriteQueue } from '../application/session/SessionRowWriteQueue'
-import { InMemorySessionRecordStore } from './memory-session-record-store'
-import type { Message } from '../types'
-import type { MessageRow, MessageRowMetadata } from '../session/session-tree/types'
-import type { SessionRowsDiff, SessionRowStorePort } from '../ports/session-row-store'
+import type { SessionRowStorePort, SessionRowsDiff } from '../ports/session-row-store'
 import { relationFixture } from '../ports/testing/session-row-relations-contract'
+import type { MessageRow, MessageRowMetadata } from '../session/session-tree/types'
 import { InMemorySessionRowStore } from '../testing/InMemorySessionRowStore'
+import type { Message } from '../types'
+import { InMemorySessionRecordStore } from './memory-session-record-store'
+import { type NodeSessionRowSqlDatabase, openNodeSessionRowDatabase } from './node-sqlite.test-support'
 import { SqlSessionRowStore } from './session-row-sql'
-import { openNodeSessionRowDatabase, type NodeSessionRowSqlDatabase } from './node-sqlite.test-support'
+
 const databases: NodeSessionRowSqlDatabase[] = []
 function sqlStore() {
   const database = openNodeSessionRowDatabase()
@@ -148,7 +149,6 @@ for (const [name, factory] of [
         const store = factory()
         const repository = new RowBackedSessionRepository({
           rows: store,
-          backup: store,
           records: new InMemorySessionRecordStore(),
           writes: new SessionRowWriteQueue((_id, run) => run()),
         })
@@ -211,7 +211,6 @@ for (const [name, factory] of [
       const store = factory()
       const repository = new RowBackedSessionRepository({
         rows: store,
-        backup: store,
         records: new InMemorySessionRecordStore(),
         writes: new SessionRowWriteQueue((_id, run) => run()),
       })
@@ -508,16 +507,15 @@ it('slices large row metadata for bounded reads and staged metadata edits', asyn
   expect(result?.status === 'ready' && result.rows[0].facts.seedAttachments).toEqual(point.facts!.seedAttachments)
   expect(Math.max(...reads)).toBeLessThan(64 * 1024)
 })
-it('restores row projections and selected depth through a SQL backup candidate', async () => {
+it('restores row projections and selected depth through a staged SQL row candidate', async () => {
   const { store, database } = sqlStore()
   const fixture = relationFixture()
   delete fixture.rows.messages[0].pendingBranchId
   delete fixture.rows.messages[0].pendingBranchSeq
   fixture.rows.messages.find((row) => row.messageId === 'old-1')!.branchId = 'original'
-  const candidate = await store.beginBackupRestore('transcript')
-  await candidate.append({ kind: 'header', record: fixture.record })
-  for (const thread of fixture.rows.threads) await candidate.append({ kind: 'thread', thread })
-  for (const message of fixture.rows.messages) await candidate.append({ kind: 'message', message })
+  const candidate = await store.stageRows(fixture, null)
+  for (const thread of fixture.rows.threads) await candidate.appendThread(thread)
+  for (const message of fixture.rows.messages) await candidate.appendMessage(message)
   await candidate.publish()
   const result = await store.readThreadState({ sessionId: 'transcript', threadId: 'old', expectedRevision: 1 })
   expect(result?.status === 'ready' && result.thread.summary.messageCount).toBe(3)

@@ -22,11 +22,9 @@ const { generationRuntimeMock, sessionsMock, sessionQueryBridgeMock, clearQueueM
   clearQueueMock: vi.fn(),
 }))
 
-vi.mock('@/app/renderer-application', async () => {
-  const { BackupOperationCoordinator } = await import('@chatbox/core/backup')
+vi.mock('@/app/renderer-application', () => {
   return {
     rendererApplication: {
-      backupOperations: new BackupOperationCoordinator(),
       generationRuntime: generationRuntimeMock,
       sessions: sessionsMock,
       sessionQueryBridge: sessionQueryBridgeMock,

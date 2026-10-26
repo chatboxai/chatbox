@@ -43,7 +43,7 @@ export type CompactionServiceResult =
       coverage: CompactionCoverage
       revision: number
     }
-  | { status: 'skipped'; reason: 'not_needed' | 'no_model' | 'busy' | 'backup_busy' | 'stale_path' }
+  | { status: 'skipped'; reason: 'not_needed' | 'no_model' | 'busy' | 'stale_path' }
   | { status: 'cancelled' }
   | { status: 'failed'; failure: CompactionFailure }
 

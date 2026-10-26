@@ -1,3 +1,7 @@
+import { convertLegacyTreeToRowFormat, legacyActiveThreadId } from '../../application/session/compatibility/row-format'
+import { migrateSession } from '../../application/session/compatibility/session-load'
+import { verifySessionTreeRoundTrip } from '../../session/session-tree/verify'
+import type { Session } from '../../types/session'
 import { addSummaryRow, deriveMessageFacts, emptyThreadSummary } from '../../session/message-facts'
 import type { SessionRowSnapshot } from '../session-row-store'
 
@@ -38,4 +42,14 @@ export function projectRowFixture(snapshot: SessionRowSnapshot): SessionRowSnaps
     }
   }
   return snapshot
+}
+
+/** Constructs canonical storage fixtures from compact test inputs. */
+export function prepareSessionRowsFixture(source: Session) {
+  const verified = verifySessionTreeRoundTrip(migrateSession(source), {
+    activeThreadId: legacyActiveThreadId(source),
+    now: 0,
+  })
+  if (!verified.ok) throw new Error(verified.reason)
+  return convertLegacyTreeToRowFormat(verified.tree, verified.session.messageForksHash)
 }

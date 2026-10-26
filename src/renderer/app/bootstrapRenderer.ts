@@ -25,7 +25,6 @@ import { isSessionGenerating } from '@/stores/sessionActivityStore'
 import { initSettingsStore } from '@/stores/settingsStore'
 import { initUpdateListeners } from '@/stores/updateStore'
 import { reportError } from '@/utils/sentry'
-import { registerNativeBackupProtection } from './native-backup-protection'
 import type { RendererApplication } from './createRendererApplication'
 import { sessionRepository } from './renderer-application'
 
@@ -33,8 +32,6 @@ const log = getLogger('index')
 
 let sessionMigrationTrickle: SessionMigrationTrickleHandle | null = null
 let stopStartupStorageCleanup: (() => void) | null = null
-let unregisterNativeBackupProtection: (() => void) | null = null
-let unregisterBackupMigration: (() => void) | null = null
 
 /** Foreground row reads, commands and generation take priority over background migration. */
 function isSessionWorkInFlight(): boolean {
@@ -47,6 +44,7 @@ function isSessionWorkInFlight(): boolean {
 /** Runs the pre-render migration and telemetry phase in its historical order. */
 export async function initializeRenderer(): Promise<void> {
   log.info('initializeApp')
+  await (await import('./renderer-backup')).rendererBackupService.cleanupBeforeBootstrap()
 
   let migrationError: unknown
   try {
@@ -115,22 +113,7 @@ export async function bootstrapRenderer(application: RendererApplication): Promi
       }).stop
     })
   }
-  unregisterNativeBackupProtection ??= registerNativeBackupProtection(application.backupOperations, platform)
   sessionMigrationTrickle ??= startMigration()
-  unregisterBackupMigration ??= application.backupOperations.registerParticipant({
-    pauseAndDrain: async () => {
-      await sessionMigrationTrickle?.pauseAndDrain()
-    },
-    resume: ({ rescan }) => {
-      if (rescan) {
-        sessionMigrationTrickle?.stop()
-        sessionMigrationTrickle = startMigration()
-      } else {
-        sessionMigrationTrickle?.resume()
-      }
-      if (sessionMigrationTrickle) scheduleStorageCleanup(sessionMigrationTrickle)
-    },
-  })
 
   scheduleStorageCleanup(sessionMigrationTrickle)
 
@@ -145,12 +128,8 @@ export async function bootstrapRenderer(application: RendererApplication): Promi
 
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {
-    unregisterNativeBackupProtection?.()
-    unregisterNativeBackupProtection = null
     sessionMigrationTrickle?.stop()
     sessionMigrationTrickle = null
-    unregisterBackupMigration?.()
-    unregisterBackupMigration = null
     stopStartupStorageCleanup?.()
     stopStartupStorageCleanup = null
   })

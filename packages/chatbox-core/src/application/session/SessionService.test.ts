@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from 'vitest'
 import { createTestRecord, createTestSession, InMemorySessionRepository } from '../../testing/InMemorySessionRepository'
-import type { Session } from '../../types'
+import type { Session, SessionFolder } from '../../types'
 import { SessionService } from './SessionService'
 import { SessionNotFoundError, SessionWriteCoordinator } from './SessionWriteCoordinator'
 import { type SessionApplicationEvent, SessionEventBus } from './session-events'
@@ -26,6 +26,37 @@ function createHarness() {
 }
 
 describe('SessionService', () => {
+  test('refreshes cached folders and both session lists after imported data changes', async () => {
+    const { repository, events, published, writes } = createHarness()
+    let persisted: SessionFolder[] = [{ id: 'old', name: 'Old' }]
+    const load = vi.fn(async () => persisted)
+    const save = vi.fn(async (folders: SessionFolder[]) => {
+      persisted = folders
+    })
+    const service = new SessionService(repository, writes, events, {
+      createId: () => 'id',
+      now: () => 100,
+      folders: { load, save },
+    })
+    expect(await service.listSessionFolders()).toEqual([{ id: 'old', name: 'Old' }])
+    const imported = { ...createTestSession('imported'), folderId: 'new' }
+    await repository.seedSession(imported)
+    repository.records.set(imported.id, createTestRecord(imported, 100))
+    persisted = [{ id: 'new', name: 'Imported' }]
+    await service.reloadFromStorage()
+    expect(await service.listSessionFolders()).toEqual(persisted)
+    expect(load).toHaveBeenCalledTimes(2)
+    expect(save).not.toHaveBeenCalled()
+    expect(published.map((event) => event.type)).toEqual(['session-folders-changed', 'session-list-reset'])
+    expect(published[0]).toMatchObject({ folders: [{ id: 'new', name: 'Imported' }] })
+    expect(published[1]).toMatchObject({
+      visible: { items: [expect.objectContaining({ id: 'imported' })] },
+      archived: { items: [] },
+    })
+    await service.updateSessionFolders((folders) => [...folders, { id: 'next', name: 'Next' }])
+    expect(persisted.map((folder) => folder.id)).toEqual(['new', 'next'])
+  })
+
   test('saves folders, lists pages in folder order and files sessions', async () => {
     const { repository, published, service } = createHarness()
     const saved: unknown[] = []
@@ -67,20 +98,6 @@ describe('SessionService', () => {
     await folderService.moveSessionToFolder('a', undefined, 0)
     expect(repository.records.get('a')?.folderId).toBeUndefined()
     expect(repository.records.get('a')?.sortOrder).toBe(0)
-  })
-
-  test('does not create or reorder sessions while backup storage access is active', async () => {
-    const { service, writes } = createHarness()
-    const session = await service.createSession({ name: 'Original', type: 'chat', messages: [] })
-    await writes.withBackupAccess(async () => {
-      await expect(service.createSession({ name: 'New', type: 'chat', messages: [] })).rejects.toMatchObject({
-        name: 'BackupOperationBusyError',
-      })
-      await expect(service.updateSessionSortOrder(session.id, 200)).rejects.toMatchObject({
-        name: 'BackupOperationBusyError',
-      })
-    })
-    expect((await service.getSessionHeader(session.id))?.header.name).toBe('Original')
   })
 
   test('reads a session header and summaries without hydrating message payloads', async () => {

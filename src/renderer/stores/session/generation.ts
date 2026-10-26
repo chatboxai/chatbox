@@ -12,7 +12,6 @@ import { v4 as uuidv4 } from 'uuid'
 import { currentGenerationService } from '@/adapters/CurrentGenerationService'
 import { rendererApplication } from '@/app/renderer-application'
 import { estimateTokensFromMessages } from '@/packages/token'
-import { guardBackupWrite } from '@/app/backup-operation-guard'
 import { guardSessionAction } from './action-guard'
 import { createAttachmentResolver } from './attachment-resolver'
 import { createNewFork, createSaveAndResendFork } from './forks'
@@ -60,7 +59,6 @@ export async function generate(
     agentModeEntrySource?: AgentModeEntrySource
   }
 ) {
-  if (!(await guardBackupWrite())) return
   return withSessionGenerationLock(sessionId, () => _generateWithoutSessionLock(sessionId, targetMsg, options))
 }
 
@@ -107,7 +105,6 @@ async function generateReplyBelowWithoutSessionLock(sessionId: string, msgId: st
  * drains unsettled streams before dispatching.
  */
 export async function generateMore(sessionId: string, msgId: string) {
-  if (!(await guardBackupWrite())) return
   const session = (await rendererApplication.sessions.getSessionHeader(sessionId))?.header ?? null
   if (!session || !supportsSessionGeneration(session.type)) {
     return
@@ -151,7 +148,6 @@ export async function saveAndResendMessage(
   editedMessage: Message,
   options?: { runGenerateMore?: GenerateMoreFn }
 ) {
-  if (!(await guardBackupWrite())) return
   const runGenerateMore = options?.runGenerateMore ?? generateReplyBelowWithoutSessionLock
   // The target is resolved again inside the session lock. It may have started
   // streaming since the editor's pre-check, including the short window before
@@ -223,7 +219,6 @@ export async function regenerateInNewFork(
   msg: Message,
   options?: { runGenerateMore?: GenerateMoreFn }
 ) {
-  if (!(await guardBackupWrite())) return
   return withSessionGenerationLock(sessionId, async () => {
     if (!(await guardSessionAction(sessionId, 'regenerate'))) {
       return

@@ -65,7 +65,7 @@ export class SettingsService implements SettingsRepositoryPort {
     return this.hydrationPromise
   }
 
-  /** Refresh the in-memory settings after a completed external restore. */
+  /** Refresh subscribers after an external storage update. */
   async reloadFromStorage(): Promise<Settings> {
     this.assertActive()
     await this.flushPersistence()

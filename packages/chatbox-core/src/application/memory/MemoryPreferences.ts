@@ -34,7 +34,6 @@ export interface MemoryPreferencesOptions {
 }
 
 export interface MemoryPreferenceStorageScope {
-  reload(): Promise<void>
   enable(owner: CopilotMemoryOwner): Promise<void>
   disable(id: string): Promise<void>
   retire(id: string): Promise<void>
@@ -59,7 +58,6 @@ export class MemoryPreferences {
     const run = this.mutation.then(async () => {
       await Promise.allSettled(pendingWrites)
       return operation({
-        reload: () => this.reload(),
         enable: (owner) => this.applyEnable(owner),
         disable: (id) => this.applyDisable(id),
         retire: (id) => this.applyRetire(id),
@@ -70,15 +68,6 @@ export class MemoryPreferences {
     })
     this.mutation = finished.catch(() => undefined)
     return finished
-  }
-
-  private async reload(): Promise<void> {
-    const results = await Promise.allSettled([
-      this.options.owners.reload?.() ?? this.options.owners.read(),
-      this.options.tokens.reload?.() ?? this.options.tokens.read(),
-    ])
-    const failed = results.find((result) => result.status === 'rejected')
-    if (failed?.status === 'rejected') throw failed.reason
   }
 
   private changeToken(tokens: CopilotMemoryStateToken[], id: string): CopilotMemoryStateToken[] {

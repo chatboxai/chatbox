@@ -1,9 +1,10 @@
-import { projectRowFixture } from '../ports/testing/session-row-fixtures'
-import { readRowContextSource } from '../application/session/row-context'
 import { afterEach, describe, expect, it } from 'vitest'
-import { type BackupRow, DEFAULT_BACKUP_PAGE_LIMITS } from '../backup/session-port'
-import { type SessionRowSnapshot, SessionRowConflictError } from '../ports/session-row-store'
+import { readRowContextSource } from '../application/session/row-context'
+import { SessionRowConflictError, type SessionRowSnapshot } from '../ports/session-row-store'
+import type { SessionStoredRow } from '../ports/session-row-transfer'
 import type { SessionTextTokenResult } from '../ports/session-text-tokens'
+import { projectRowFixture } from '../ports/testing/session-row-fixtures'
+import { iterateRowResourceReferences } from '../resources/row-resources'
 import { type NodeSessionRowSqlDatabase, openNodeSessionRowDatabase } from './node-sqlite.test-support'
 import { type SessionRowSqlBindValue, type SessionRowSqlReadOptions, SqlSessionRowStore } from './session-row-sql'
 
@@ -207,38 +208,66 @@ describe('structured native SQL read policy', () => {
     ).toEqual([865, 37])
   })
 
-  it('keeps payload write chunks and archive record/block limits', async () => {
+  it.each(['bounded', 'none'] as const)('iterates complete thread metadata with %s reads', async (readByteBudget) => {
+    const { writer, reader, calls } = setup({ readByteBudget })
+    const snapshot = fixture(3, '正文😀', true)
+    snapshot.record.name = '会话😀'.repeat(200)
+    snapshot.rows.messages[0].message.contentParts.push({ type: 'image', storageKey: 'picture:attachment' })
+    const thread = snapshot.rows.threads[0]
+    thread.name = '历史线程😀'.repeat(200)
+    thread.compactionPoints = [
+      {
+        summaryMessageId: snapshot.rows.messages[2].messageId,
+        boundaryMessageId: snapshot.rows.messages[0].messageId,
+        createdAt: 1,
+      },
+    ]
+    snapshot.rows.messages[2].kind = 'summary'
+    thread.sessionPromptContextSnapshot = {
+      version: 1,
+      soul: '记忆😀'.repeat(200),
+      memories: [],
+      workspaceInstructions: 'instructions',
+      workspaceDirectories: [],
+      capturedAt: 1,
+    }
+    await writer.writeRows(snapshot)
+    const rows: SessionStoredRow[] = []
+    for await (const row of reader.iterateRows({ sessionId: snapshot.record.id })) rows.push(row)
+    expect(rows.filter((row) => row.kind === 'thread').map((row) => row.thread)).toEqual(snapshot.rows.threads)
+    expect(rows.filter((row) => row.kind === 'message').map((row) => row.message)).toEqual(snapshot.rows.messages)
+    for (const column of [
+      'name',
+      'compaction_points_json',
+      'session_prompt_context_snapshot_json',
+      'session_record_json',
+    ])
+      expect(calls.some(({ sql }) => sql.includes(`substr(${column}`))).toBe(readByteBudget === 'bounded')
+    const resourceKeys: string[] = []
+    for await (const reference of iterateRowResourceReferences(reader, snapshot.record.id))
+      resourceKeys.push(reference.storageKey)
+    expect(resourceKeys).toEqual(['picture:attachment'])
+  })
+
+  it('stores and iterates complete large messages', async () => {
     const { reader, database } = setup()
     const snapshot = fixture(2, '正文😀'.repeat(40000))
     snapshot.rows.threads[0].name = 'Active'
     await reader.writeRows(snapshot)
-    const chunks = await database.query<{ bytes: number }>(
-      'SELECT length(CAST(value AS BLOB)) AS bytes FROM session_message_payload_chunks'
+    const bodies = await database.query<{ bytes: number }>(
+      'SELECT length(CAST(message_json AS BLOB)) AS bytes FROM session_messages'
     )
-    expect(chunks.length).toBeGreaterThan(2)
-    expect(Math.max(...chunks.map(({ bytes }) => bytes))).toBeLessThanOrEqual(128 * 1024)
-    const limits = { ...DEFAULT_BACKUP_PAGE_LIMITS, maxRecordBytes: 32 * 1024 }
-    const rows: BackupRow[] = []
-    for await (const row of reader.iterateBackupRows(snapshot.record.id, limits)) rows.push(row)
-    expect(rows.every((row) => encoder.encode(JSON.stringify(row)).byteLength <= limits.maxRecordBytes)).toBe(true)
-    const archived = rows.find((row) => row.kind === 'message')
-    if (archived?.kind !== 'message' || !archived.payload?.chunks) throw new Error('Missing archive payload blocks')
-    let blockCount = 0
-    for await (const block of archived.payload.chunks()) {
-      expect(block.byteLength).toBeLessThanOrEqual(128 * 1024)
-      blockCount++
-    }
-    expect(blockCount).toBeGreaterThan(1)
+    expect(bodies).toHaveLength(2)
+    expect(bodies.every(({ bytes }) => bytes > 128 * 1024)).toBe(true)
+    const rows: SessionStoredRow[] = []
+    for await (const row of reader.iterateRows({ sessionId: snapshot.record.id })) rows.push(row)
+    expect(rows.filter((row) => row.kind === 'message').map((row) => row.message)).toEqual(snapshot.rows.messages)
   })
 
   it.each([
-    'UPDATE session_message_payload_chunks SET value=CAST(value AS BLOB)',
-    'UPDATE session_message_payload_chunks SET chunk_index=-1',
-    'UPDATE session_message_payload_chunks SET chunk_index=0.5',
-    'DELETE FROM session_message_payload_chunks',
-    'UPDATE session_messages SET payload_chunk_count=2',
+    'UPDATE session_messages SET message_json=CAST(message_json AS BLOB)',
     'UPDATE session_messages SET payload_utf8_length=1',
-    "UPDATE session_message_payload_chunks SET value='[' || substr(value,2)",
+    "UPDATE session_messages SET message_json='[' || substr(message_json,2)",
   ])('rejects corrupt data under native policy: %s', async (sql) => {
     const { writer, reader, database } = setup()
     const snapshot = fixture(1)
@@ -251,7 +280,7 @@ describe('structured native SQL read policy', () => {
 
   it.each([
     "UPDATE session_messages SET parent_message_id=CAST('bad' AS BLOB)",
-    'UPDATE session_messages SET payload_chunk_count=0',
+    'UPDATE session_messages SET payload_utf8_length=-1',
     'UPDATE session_messages SET seq=0.5',
     "UPDATE session_threads SET compaction_points_json='{'",
   ])('rejects invalid context metadata: %s', async (sql) => {

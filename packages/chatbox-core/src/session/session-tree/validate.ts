@@ -1,4 +1,4 @@
-import type { MessageRow, SessionTree, ThreadRow } from './types'
+import type { MessageRowMetadata, SessionRecordV2, ThreadRow } from './types'
 
 export type SessionTreeValidationResult = { ok: true } | { ok: false; reason: string }
 
@@ -7,7 +7,11 @@ function childKey(threadId: string, parentMessageId: string): string {
 }
 
 /** Check the structural invariants a session tree must hold for decoding to be well defined. */
-export function validateSessionTree(tree: SessionTree): SessionTreeValidationResult {
+export function validateSessionTree(tree: {
+  session: SessionRecordV2
+  threads: ThreadRow[]
+  messages: MessageRowMetadata[]
+}): SessionTreeValidationResult {
   if (tree.session.rowFormatVersion !== undefined && tree.session.rowFormatVersion !== 3) {
     return { ok: false, reason: 'Unsupported session row format version' }
   }
@@ -40,7 +44,7 @@ export function validateSessionTree(tree: SessionTree): SessionTreeValidationRes
     }
   }
 
-  const rowsById = new Map<string, MessageRow>()
+  const rowsById = new Map<string, MessageRowMetadata>()
   const threadMessageIds = new Map<string, Set<string>>()
   for (const row of tree.messages) {
     if (!Number.isSafeInteger(row.seq) || row.seq < 0) {
@@ -71,7 +75,7 @@ export function validateSessionTree(tree: SessionTree): SessionTreeValidationRes
       continue
     }
     const walked: string[] = []
-    let current: MessageRow | undefined = row
+    let current: MessageRowMetadata | undefined = row
     while (current !== undefined) {
       const origin = chainOrigin.get(current.messageId)
       if (origin === null) {
@@ -89,8 +93,8 @@ export function validateSessionTree(tree: SessionTree): SessionTreeValidationRes
     }
   }
 
-  const childrenByParent = new Map<string, MessageRow[]>()
-  const rootsByThread = new Map<string, MessageRow[]>()
+  const childrenByParent = new Map<string, MessageRowMetadata[]>()
+  const rootsByThread = new Map<string, MessageRowMetadata[]>()
   for (const row of tree.messages) {
     if (row.parentMessageId === null) {
       const roots = rootsByThread.get(row.threadId)

@@ -3,7 +3,7 @@ import { IconCircleCheck, IconCircleX } from '@tabler/icons-react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { DiagnosticLogsRow, useBackupOperationActive } from '@/components/settings/DataSections'
+import { DiagnosticLogsRow } from '@/components/settings/DataSections'
 import { isValidProxyAddress } from '@/components/settings/proxy-address'
 import { SettingRow, SettingSwitchRow, SettingsPage, SettingsSection } from '@/components/settings/SettingsLayout'
 import { useFieldDraft } from '@/hooks/useFieldDraft'
@@ -33,7 +33,7 @@ async function checkConnection(): Promise<ConnectionResult> {
   }
 }
 
-function ProxyRow({ disabled }: { disabled: boolean }) {
+function ProxyRow() {
   const { t } = useTranslation()
   const proxy = useSettingsStore((s) => s.proxy)
   const setSettings = useSettingsStore((s) => s.setSettings)
@@ -66,7 +66,7 @@ function ProxyRow({ disabled }: { disabled: boolean }) {
               id={fieldId}
               flex={1}
               size="sm"
-              disabled={disabled || testing}
+              disabled={testing}
               aria-label={t('Network Proxy') ?? undefined}
               placeholder="socks5://127.0.0.1:6153"
               value={draft}
@@ -82,7 +82,6 @@ function ProxyRow({ disabled }: { disabled: boolean }) {
                 variant="default"
                 size="sm"
                 loading={testing}
-                disabled={disabled}
                 onClick={async () => {
                   flush()
                   const run = ++testRun.current
@@ -125,12 +124,11 @@ export function RouteComponent() {
   const { t } = useTranslation()
   const allowReportingAndTracking = useSettingsStore((s) => s.allowReportingAndTracking)
   const setSettings = useSettingsStore((s) => s.setSettings)
-  const backupActive = useBackupOperationActive()
 
   return (
     <SettingsPage title={t('Advanced')} description={t('Network, diagnostics and privacy.')}>
       <SettingsSection title={t('Network')}>
-        <ProxyRow disabled={backupActive} />
+        <ProxyRow />
       </SettingsSection>
       <SettingsSection title={t('Diagnostics & privacy')}>
         <DiagnosticLogsRow />
@@ -140,7 +138,6 @@ export function RouteComponent() {
           description={t(
             'Chatbox respects your privacy and only uploads anonymous error data and events when necessary. You can change your preferences at any time in the settings.'
           )}
-          disabled={backupActive}
           checked={allowReportingAndTracking}
           onChange={(checked) => setSettings({ allowReportingAndTracking: checked })}
         />

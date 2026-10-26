@@ -78,6 +78,7 @@ export interface SessionDataRepositoryPort extends SessionRowRepositoryPort {}
 export interface SessionMetaRepositoryPort {
   initialize(): Promise<void>
   create(record: SessionMetaRecord): Promise<void>
+  /** Inserts new records and replaces existing records with matching IDs. */
   createMany(records: SessionMetaRecord[]): Promise<void>
   update(id: string, updates: Partial<SessionMetaRecord>): Promise<SessionMetaRecord | null>
   getById(id: string): Promise<SessionMetaRecord | null>
@@ -85,6 +86,8 @@ export interface SessionMetaRepositoryPort {
   deleteMany(ids: string[]): Promise<void>
   getAll(): Promise<SessionMetaRecord[]>
   getAllIncludingHidden(): Promise<SessionMetaRecord[]>
+  /** Bounded identities for visible, hidden, and archived sessions. Callers own snapshot isolation. */
+  iterateIds?(): AsyncIterable<string>
   getArchived(): Promise<SessionMetaRecord[]>
   getArchivedPage(cursor: number, limit?: number): Promise<SessionMetaPage>
   /**

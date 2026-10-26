@@ -17,7 +17,6 @@ async function fixture(messages: Message[], compactionPoints?: Session['compacti
   const repo = new RowBackedSessionRepository({
     records,
     rows,
-    backup: rows,
     writes: new SessionRowWriteQueue((_id, run) => run()),
   })
   await repo.getSessionHeader('s')

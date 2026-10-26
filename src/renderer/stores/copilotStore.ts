@@ -1,6 +1,6 @@
 import type { CopilotMemoryOwner, CopilotMemorySelection } from '@chatbox/core/application/memory'
 import type { MemoryScope, SessionPromptContextSnapshot } from '@shared/types/agent-persona'
-import { reloadCopilotDefinitions, rendererMemoryService, withCopilotDefinitionsLock } from './memoryRuntime'
+import { rendererMemoryService } from './memoryRuntime'
 
 export {
   COPILOT_MEMORY_OWNERS_STORAGE_KEY,
@@ -16,23 +16,6 @@ export {
   myCopilotsAtom,
   removeMyCopilot,
 } from './memoryRuntime'
-
-/** Reload persisted definitions and memory state before conversations resume after restoration. */
-export function reloadCopilotState(): Promise<void> {
-  return withCopilotDefinitionsLock(() =>
-    rendererMemoryService.withStorageLock(async ({ reload }) => {
-      const results = await Promise.allSettled([reloadCopilotDefinitions(), reload()])
-      const failure = results.find((result) => result.status === 'rejected')
-      if (failure?.status === 'rejected') throw failure.reason
-    })
-  )
-}
-
-export function withCopilotMemoryPreferencesLock<T>(
-  operation: (scope: { reload(): Promise<void> }) => Promise<T>
-): Promise<T> {
-  return rendererMemoryService.withStorageLock(operation)
-}
 
 /**
  * Give a copilot its own memory list. Ownership is tracked per copilot id rather

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import StoreStorage, { StorageKeyGenerator } from '../StoreStorage'
+import { StorageKeyGenerator } from '../StoreStorage'
 
 const { values } = vi.hoisted(() => ({ values: new Map<string, unknown>() }))
 
@@ -12,16 +12,6 @@ vi.mock('@/platform', () => ({
     getStoreValue: async (key: string) => values.get(key),
   },
 }))
-
-describe('StoreStorage pending writes', () => {
-  it('flushes accepted debounced settings and copilot writes before backup reads', async () => {
-    const storage = new StoreStorage()
-    await storage.setItem('myCopilots', [{ id: 'latest' }])
-    expect(values.has('myCopilots')).toBe(false)
-    await storage.flushPendingWrites()
-    expect(await storage.getItem('myCopilots', [])).toEqual([{ id: 'latest' }])
-  })
-})
 
 describe('StorageKeyGenerator.fileUniqKey', () => {
   it('returns the first computed key when native path becomes available later', () => {

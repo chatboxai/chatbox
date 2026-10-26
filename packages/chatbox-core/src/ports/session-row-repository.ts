@@ -130,7 +130,7 @@ export interface SessionRowRepositoryPort
   iterateSessionResourceReferences(
     sessionId: string,
     signal?: AbortSignal
-  ): AsyncIterable<import('../backup/resources').ResourceReference>
+  ): AsyncIterable<import('../resources').ResourceReference>
   readSessionGeneratingMessageIds(sessionId: string): Promise<string[]>
   readSessionGenerationControl(request: SessionGenerationControlRequest): Promise<SessionGenerationControl | null>
   readSessionNamingMessages(request: {

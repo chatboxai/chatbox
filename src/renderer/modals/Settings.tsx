@@ -16,7 +16,6 @@ import { Toaster } from 'sonner'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import SettingsKnowledgeBaseRouteComponent from '@/components/knowledge-base/KnowledgeBase'
 import { Modal } from '@/components/layout/Overlay'
-import { useBackupNavigationGuard } from '@/hooks/useBackupNavigationGuard'
 import useNeedRoomForWinControls from '@/hooks/useNeedRoomForWinControls'
 import { getSettingsSearchParam, navigateToDynamicPath, router } from '@/router'
 import { RouteComponent as SettingsAboutRouteComponent } from '@/routes/settings/about'
@@ -230,7 +229,6 @@ const modalRouter = createRouter({
 })
 
 export const SettingsModal: FC<SettingsModalProps> = (props) => {
-  useBackupNavigationGuard()
   const { t } = useTranslation()
   const location = useLocation()
   const { needRoomForMacWindowControls } = useNeedRoomForWinControls()

@@ -30,6 +30,7 @@ vi.mock('@/platform', () => ({
 
 vi.mock('@/storage', () => ({
   default: {
+    getAllKeys: vi.fn(async () => [...sessionStore.keys()]),
     getBlobKeys: vi.fn(async () => [...blobStore.keys()]),
     delBlob: vi.fn((key: string) => {
       blobStore.delete(key)
@@ -45,14 +46,20 @@ vi.mock('../storage/blob-write-tracker', () => ({
 }))
 
 vi.mock('@/app/renderer-application', async () => {
-  const { BackupOperationCoordinator, collectSessionResourceReferences } = await import('@chatbox/core/backup')
+  const { collectHeaderResourceReferences, collectMessageReferences } = await import('@chatbox/core/resources')
   return {
-    rendererApplication: { backupOperations: new BackupOperationCoordinator() },
     sessionRepository: {
       iterateSessionResourceReferences: vi.fn(async function* (id: string) {
-        const session = sessionStore.get(`session:${id}`)
+        const session = sessionStore.get(`session:${id}`) as import('@shared/types').Session | undefined
         if (!session) throw new Error('Missing resource owner')
-        yield* collectSessionResourceReferences(session as import('@shared/types').Session).references
+        yield* collectHeaderResourceReferences(session)
+        const references: import('@chatbox/core/resources').ResourceReference[] = []
+        for (const message of [...session.messages, ...(session.threads ?? []).flatMap((thread) => thread.messages)])
+          collectMessageReferences(message, session.id, references)
+        for (const fork of Object.values(session.messageForksHash ?? {}))
+          for (const branch of fork.lists)
+            for (const message of branch.messages) collectMessageReferences(message, session.id, references)
+        yield* references
       }),
     },
   }

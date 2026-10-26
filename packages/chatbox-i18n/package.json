@@ -7,7 +7,8 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./mobile": "./src/mobile.ts"
+    "./mobile": "./src/mobile.ts",
+    "./backup-import-issues": "./src/backup-import-issues.ts"
   },
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.json"

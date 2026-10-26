@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { transcriptFixture, createSessionTranscriptContract } from '../ports/testing/session-transcript-contract'
-import { openNodeSessionRowDatabase, type NodeSessionRowSqlDatabase } from './node-sqlite.test-support'
+import { createSessionTranscriptContract, transcriptFixture } from '../ports/testing/session-transcript-contract'
+import { type NodeSessionRowSqlDatabase, openNodeSessionRowDatabase } from './node-sqlite.test-support'
 import { SqlSessionRowStore } from './session-row-sql'
 import * as tokens from './session-text-token-sql'
 
@@ -73,7 +73,7 @@ describe('SQL transcript query boundaries', () => {
       messageIds: ['old-0', 'old-1'],
       expectedRevision: 1,
     })
-    const payloadReads = query.mock.calls.filter(([sql]) => sql.includes('session_message_payload_chunks'))
+    const payloadReads = query.mock.calls.filter(([sql]) => sql.startsWith('WITH requested(payload_id, request_index)'))
     expect(payloadReads).toHaveLength(2)
     expect(payloadReads.every(([, params]) => params?.length === 1)).toBe(true)
     expect((await store.readCommit('transcript'))?.revision).toBe(1)

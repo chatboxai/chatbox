@@ -1,0 +1,25 @@
+{
+  "configVersion": 15,
+  "chat-sessions-list": [
+    {
+      "id": "fixture-session",
+      "name": "Fixture conversation"
+    }
+  ],
+  "session:fixture-session": {
+    "id": "fixture-session",
+    "name": "Fixture conversation",
+    "messages": [
+      {
+        "id": "fixture-message",
+        "role": "user",
+        "contentParts": [
+          {
+            "type": "text",
+            "text": "Hello 你好"
+          }
+        ]
+      }
+    ]
+  }
+}

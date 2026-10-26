@@ -20,15 +20,8 @@ function invalidScalar(column: string): string {
   if (column === 'created_at' || column === 'updated_at')
     return `(typeof(${column}) NOT IN ('integer','real') OR abs(${column})>1.7976931348623157e308)`
   if (column === 'eligible') return `(eligible IS NOT NULL AND (typeof(eligible)<>'integer' OR eligible NOT IN (0,1)))`
-  if (
-    ['seq', 'payload_chunk_count', 'payload_utf8_length', 'created_at', 'updated_at', 'selected_depth'].includes(column)
-  ) {
-    const minimum =
-      column === 'payload_chunk_count'
-        ? 1
-        : ['seq', 'payload_utf8_length', 'selected_depth'].includes(column)
-          ? 0
-          : -9007199254740991
+  if (['seq', 'payload_utf8_length', 'created_at', 'updated_at', 'selected_depth'].includes(column)) {
+    const minimum = ['seq', 'payload_utf8_length', 'selected_depth'].includes(column) ? 0 : -9007199254740991
     const invalid = `(typeof(${column})<>'integer' OR ${column}<${minimum} OR ${column}>9007199254740991)`
     return column === 'selected_depth' ? `(${column} IS NOT NULL AND ${invalid})` : invalid
   }

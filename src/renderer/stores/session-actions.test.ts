@@ -1,5 +1,5 @@
-import type { InMemorySessionRepository } from '@chatbox/core/testing'
 import { resetSessionGenerationLocksForTests } from '@chatbox/core/generation'
+import type { InMemorySessionRepository } from '@chatbox/core/testing'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { rendererApplication } from '@/app/renderer-application'
 import type {
@@ -80,7 +80,6 @@ vi.mock('@/i18n', () => ({ default: { t: (key: string) => key, language: 'en' } 
 vi.mock('@/app/renderer-application', async () => {
   const { SessionService, SessionWriteCoordinator, SessionEventBus } = await import('@chatbox/core/application/session')
   const { InMemorySessionRepository } = await import('@chatbox/core/testing')
-  const { BackupOperationCoordinator } = await import('@chatbox/core/backup')
   const { GenerationRuntimeStore } = await import('@chatbox/core/generation')
   const { QueryClient } = await import('@tanstack/react-query')
   const repository = new InMemorySessionRepository()
@@ -92,7 +91,6 @@ vi.mock('@/app/renderer-application', async () => {
   })
   return {
     rendererApplication: {
-      backupOperations: new BackupOperationCoordinator(),
       generationRuntime: new GenerationRuntimeStore(),
       queryClient: new QueryClient(),
       sessions,

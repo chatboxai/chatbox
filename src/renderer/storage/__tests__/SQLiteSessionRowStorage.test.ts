@@ -1,16 +1,17 @@
-import { SESSION_TOKEN_CACHE_SQL } from '../../../../packages/chatbox-core/src/persistence/session-token-cache-sql'
-import { projectRowFixture } from '../../../../packages/chatbox-core/src/ports/testing/session-row-fixtures'
-import {
-  openNodeSessionRowDatabase,
-  type NodeSessionRowSqlDatabase,
-} from '../../../../packages/chatbox-core/src/persistence/node-sqlite.test-support'
 import type { SessionRowSqlBindValue } from '@chatbox/core'
-import { SESSION_TRANSCRIPT_SCHEMA_SQL } from '@chatbox/core/persistence'
 import { CAPACITOR_MESSAGE_ROWS_SCHEMA_SQL } from '@chatbox/core'
+import { SESSION_TRANSCRIPT_SCHEMA_SQL } from '@chatbox/core/persistence'
 import type { SessionRowCommit, SessionRowSnapshot, SessionRows } from '@chatbox/core/ports'
 import type { MessageRow, ThreadRow } from '@chatbox/core/session/session-tree'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  type NodeSessionRowSqlDatabase,
+  openNodeSessionRowDatabase,
+} from '../../../../packages/chatbox-core/src/persistence/node-sqlite.test-support'
+import { SESSION_ROW_PROJECTION_SCHEMA_SQL } from '../../../../packages/chatbox-core/src/persistence/session-row-projection-sql'
 import { SESSION_TEXT_TOKEN_SCHEMA_SQL } from '../../../../packages/chatbox-core/src/persistence/session-text-token-sql'
+import { SESSION_TOKEN_CACHE_SQL } from '../../../../packages/chatbox-core/src/persistence/session-token-cache-sql'
+import { projectRowFixture } from '../../../../packages/chatbox-core/src/ports/testing/session-row-fixtures'
 import { SQLiteSessionRowStore } from '../SQLiteSessionRowStorage'
 
 const mockDatabase = vi.hoisted(() => ({
@@ -160,7 +161,8 @@ describe('SQLiteSessionRowStore', () => {
         CAPACITOR_MESSAGE_ROWS_SCHEMA_SQL +
         SESSION_TEXT_TOKEN_SCHEMA_SQL +
         SESSION_TRANSCRIPT_SCHEMA_SQL +
-        SESSION_TOKEN_CACHE_SQL
+        SESSION_TOKEN_CACHE_SQL +
+        SESSION_ROW_PROJECTION_SCHEMA_SQL
       )
         .replace(/\s+/g, ' ')
         .trim()
@@ -410,8 +412,8 @@ describe('SQLiteSessionRowStore', () => {
     expect(serializedMessages).toBe(count)
   })
 
-  it('preserves a multi-megabyte unicode payload across code-point-safe chunks', async () => {
-    const store = new SQLiteSessionRowStore()
+  it('stores a complete multi-megabyte Unicode message using bounded transport', async () => {
+    const store = realBridge()
     const payload = `${'中文😀\\'.repeat(256 * 1024)}tail`
     const row = messageRow('huge', {
       message: { id: 'huge', role: 'user', contentParts: [{ type: 'text', text: payload }] },
@@ -419,10 +421,9 @@ describe('SQLiteSessionRowStore', () => {
 
     await store.writeRows(snapshot({ sessionId: 'session-1', threads: [threadRow('thread-active')], messages: [row] }))
 
-    const chunks = insertedRows('session_message_payload_chunks')
-      .sort((left, right) => Number(left[2]) - Number(right[2]))
-      .map((values) => String(values[3]))
-    expect(JSON.parse(chunks.join(''))).toEqual(row.message)
+    const stored = await store.readMessages({ sessionId: 'session-1', messageIds: ['huge'] })
+    expect(stored?.messages.map(({ message }) => message)).toEqual([row.message])
+    expect(insertedRows('session_messages_staging')).toHaveLength(1)
     expect(mockDatabase.executeSet.mock.calls.every((call) => call[1] === true)).toBe(true)
     for (const call of mockDatabase.executeSet.mock.calls) {
       expect(new TextEncoder().encode(JSON.stringify(call[0])).byteLength).toBeLessThanOrEqual(512 * 1024)
@@ -517,7 +518,7 @@ describe('SQLiteSessionRowStore', () => {
       'DELETE FROM session_threads WHERE session_id = ?',
       'DELETE FROM session_messages WHERE session_id = ?',
       expect.stringContaining('DELETE FROM session_text_tokens'),
-      expect.stringContaining('DELETE FROM session_message_payload_chunks'),
+      expect.stringContaining('DELETE FROM session_message_navigation'),
       expect.stringContaining('INSERT OR REPLACE INTO session_row_delete_receipts'),
     ])
   })

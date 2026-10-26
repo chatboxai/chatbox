@@ -3,7 +3,7 @@ import { IconChevronRight } from '@tabler/icons-react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
-import { BackupRestoreSections, DataRecoveryRow, useBackupOperationActive } from '@/components/settings/DataSections'
+import { BackupRestoreSections, DataRecoveryRow } from '@/components/settings/DataSections'
 import { SettingRow, SettingsPage, SettingsSection } from '@/components/settings/SettingsLayout'
 
 export const Route = createFileRoute('/settings/data')({
@@ -12,7 +12,6 @@ export const Route = createFileRoute('/settings/data')({
 
 export function RouteComponent() {
   const { t } = useTranslation()
-  const backupActive = useBackupOperationActive()
 
   return (
     <SettingsPage title={t('Data & Backup')} description={t('Back up, restore and recover your conversations.')}>
@@ -27,14 +26,13 @@ export function RouteComponent() {
               variant="subtle"
               color="chatbox-gray"
               size="compact-sm"
-              disabled={backupActive}
               rightSection={<ScalableIcon icon={IconChevronRight} size={16} />}
             >
               {t('View')}
             </Button>
           }
         />
-        <DataRecoveryRow disabled={backupActive} />
+        <DataRecoveryRow />
       </SettingsSection>
       <BackupRestoreSections />
     </SettingsPage>

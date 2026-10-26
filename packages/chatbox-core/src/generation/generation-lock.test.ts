@@ -7,7 +7,7 @@ import {
 } from './generation-lock'
 
 describe('session generation lock', () => {
-  it('cancels the backup wait while accepted submission work keeps running', async () => {
+  it('cancels waiting while accepted submission work keeps running', async () => {
     let finish = () => {}
     const active = withSessionGenerationLock(
       'active',

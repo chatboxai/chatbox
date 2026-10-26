@@ -301,7 +301,7 @@ function rawStorageOwnerGroups(root) {
         'src/renderer/adapters/CurrentSessionRepository.ts',
         'src/renderer/adapters/RendererSessionFolderStore.ts',
         'src/renderer/adapters/RendererSettingsStorage.ts',
-        'src/renderer/adapters/RendererStoragePersistence.ts',
+        'src/renderer/app/renderer-backup.ts',
       ],
     },
     {
@@ -317,11 +317,7 @@ function rawStorageOwnerGroups(root) {
     },
     {
       name: 'migration and recovery owners',
-      files: [
-        'src/renderer/pages/SettingDialog/AdvancedSettingTab.tsx',
-        'src/renderer/components/settings/DataSections.tsx',
-        'src/renderer/stores/migration.ts',
-      ],
+      files: ['src/renderer/stores/migration.ts'],
     },
     {
       name: 'storage maintenance and diagnostics',
@@ -1022,11 +1018,6 @@ function findSessionStorageViolations(root, readSourceFile) {
     join(root, 'src/renderer/adapters/CurrentSessionRecordStore.ts'),
     join(root, 'src/renderer/adapters/CurrentSessionRepository.ts'),
     join(root, 'src/renderer/stores/migration.ts'),
-    join(root, 'src/renderer/packages/backup/import-backup.ts'),
-    join(root, 'src/renderer/packages/backup/legacy-import.ts'),
-    join(root, 'packages/chatbox-core/src/backup/import-backup.ts'),
-    join(root, 'packages/chatbox-core/src/backup/legacy-import.ts'),
-    join(root, 'src/renderer/pages/SettingDialog/AdvancedSettingTab.tsx'),
   ])
   const rawImportOwners = rawStorageOwners(root)
   const sourceDirectories = [join(root, 'src'), join(root, 'packages')]

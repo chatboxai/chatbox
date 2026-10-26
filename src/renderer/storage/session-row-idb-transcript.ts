@@ -27,7 +27,7 @@ import type {
 } from '@chatbox/core/ports'
 import { SessionRowConflictError } from '@chatbox/core/ports'
 import type { MessageRow, ThreadRow } from '@chatbox/core/session/session-tree'
-import { readStoredMessage, type StoredMessageRow } from './session-row-idb-payload'
+import { readStoredMessage, type StoredMessageRow } from './session-row-idb-messages'
 import {
   REVISION_HEAD_THREAD_ID,
   MESSAGE_STAGE,
@@ -43,8 +43,6 @@ import {
   SESSION_ROW_THREAD_STORE,
   SESSION_INDEX,
   isRevisionHeadRow,
-  revisionHead,
-  type PersistedThreadRow,
   type RevisionHeadRow,
 } from './session-row-idb-records'
 
@@ -77,7 +75,7 @@ export function putTranscriptMessage(
   projection?: SessionMessageNavigationProjection,
   payloadBytes?: number
 ): void {
-  const { message, payload: _payload, ...metadata } = row
+  const { message, ...metadata } = row
   tx.objectStore(TRANSCRIPT_MESSAGES).put({
     ...metadata,
     tokenPayloadId: uuid(),
@@ -86,7 +84,7 @@ export function putTranscriptMessage(
     pausedKey: Number(row.facts?.paused ?? false),
     namingRole: row.facts?.autoTitleEligible ? row.facts.role : '',
     conversationKey: Number(row.kind !== 'summary' && row.facts?.role !== 'system' && !row.facts?.isForkMarker),
-    payloadBytes: payloadBytes ?? row.payload?.size ?? new TextEncoder().encode(JSON.stringify(message)).length,
+    payloadBytes: payloadBytes ?? new TextEncoder().encode(JSON.stringify(message)).length,
     ...(projection ? { navigation: projection } : message ? { navigation: navigationProjection(message) } : {}),
   })
 }
@@ -97,26 +95,6 @@ export function createTranscriptStores(db: IDBDatabase, tx: IDBTransaction): voi
     threads.createIndex(SESSION_INDEX, 'sessionId')
     threads.createIndex(THREAD_SUMMARY_ORDER, ['sessionId', 'searchOrder', 'threadId'])
     threads.createIndex(NONEMPTY_ORDER, ['sessionId', 'nonempty', 'order', 'threadId'])
-    const cursor = tx.objectStore(SESSION_ROW_THREAD_STORE).openCursor()
-    cursor.onsuccess = () => {
-      if (!cursor.result) return
-      const row = cursor.result.value as PersistedThreadRow | RevisionHeadRow
-      if (!isRevisionHeadRow(row) && typeof row.threadId === 'string' && typeof row.seq === 'number')
-        putTranscriptThread(tx, row)
-      if (!isRevisionHeadRow(row) && row.seq === -1 && row.sessionRecord && row.commitRevision) {
-        const oldHead = tx.objectStore(SESSION_ROW_THREAD_STORE).get([row.sessionId, REVISION_HEAD_THREAD_ID])
-        oldHead.onsuccess = () => {
-          if (
-            !oldHead.result ||
-            (oldHead.result.commitRevision === row.commitRevision && !oldHead.result.sessionRecord)
-          )
-            tx.objectStore(SESSION_ROW_THREAD_STORE).put(
-              revisionHead(row.sessionId, { record: row.sessionRecord!, revision: row.commitRevision! })
-            )
-        }
-      }
-      cursor.result.continue()
-    }
   }
   if (!db.objectStoreNames.contains(TRANSCRIPT_MESSAGES)) {
     const messages = db.createObjectStore(TRANSCRIPT_MESSAGES, { keyPath: ['sessionId', 'messageId'] })
@@ -125,12 +103,6 @@ export function createTranscriptStores(db: IDBDatabase, tx: IDBTransaction): voi
     messages.createIndex(RELATION_CHILDREN, ['sessionId', 'threadId', 'parentKey', 'seq', 'messageId'])
     messages.createIndex(RELATION_BRANCH, ['sessionId', 'threadId', 'parentKey', 'branchKey', 'seq', 'messageId'])
     messages.createIndex(SELECTED_ORDER, ['sessionId', 'threadId', 'selectedDepth', 'messageId'])
-    const cursor = tx.objectStore(SESSION_ROW_MESSAGE_STORE).openCursor()
-    cursor.onsuccess = () => {
-      if (!cursor.result) return
-      putTranscriptMessage(tx, cursor.result.value as StoredMessageRow)
-      cursor.result.continue()
-    }
   }
   if (!db.objectStoreNames.contains(MESSAGE_STAGE)) {
     const stage = db.createObjectStore(MESSAGE_STAGE, { keyPath: ['sessionId', 'messageId'] })
@@ -324,43 +296,5 @@ export function readIndexedDBBranch(db: IDBDatabase, request: SessionBranchMessa
     if (expected !== undefined && expected !== revision)
       throw new SessionRowConflictError(request.sessionId, expected, revision)
     return commit ? readBranchMessagesPage(request, commit, reader(tx, request.sessionId)) : null
-  })
-}
-
-/** Restored logical rows rebuild the physical selected-path index before publication. */
-export async function rebuildRestoredSelectedDepths(tx: IDBTransaction, sessionId: string): Promise<void> {
-  const head = await requestValue<RevisionHeadRow | undefined>(
-    tx.objectStore(SESSION_ROW_THREAD_STORE).get([sessionId, REVISION_HEAD_THREAD_ID])
-  )
-  if (head?.sessionRecord?.rowFormatVersion !== 3) return
-  const messages = tx.objectStore(TRANSCRIPT_MESSAGES)
-  await new Promise<void>((resolve, reject) => {
-    const request = tx.objectStore(SESSION_ROW_THREAD_STORE).index(SESSION_INDEX).openCursor(sessionId)
-    request.onerror = () => reject(request.error)
-    request.onsuccess = () => {
-      const cursor = request.result
-      if (!cursor) return resolve()
-      const thread = cursor.value as PersistedThreadRow | RevisionHeadRow
-      if (isRevisionHeadRow(thread)) {
-        cursor.continue()
-        return
-      }
-      const walk = async () => {
-        let messageId = thread.rootMessageId
-        let parent: string | null = null
-        let depth = 0
-        while (messageId !== null) {
-          const row = await requestValue<TranscriptMessageMetadata | undefined>(messages.get([sessionId, messageId]))
-          if (!row || row.threadId !== thread.threadId || row.parentMessageId !== parent || row.selected !== true)
-            throw new Error('Invalid restored selected path')
-          await requestValue(messages.put({ ...row, selectedDepth: depth++ }))
-          parent = messageId
-          messageId = row.activeChildId
-        }
-      }
-      walk()
-        .then(() => cursor.continue())
-        .catch(reject)
-    }
   })
 }

@@ -1,47 +1,16 @@
-import { queryRowMetadata, sqlMetadataStringBytes } from './session-row-metadata-sql'
-import { SESSION_TOKEN_CACHE_SQL, readSqlTokenCache, acceptSqlTokenCache } from './session-token-cache-sql'
-import {
-  validateTokenCacheRequest,
-  type SessionTokenCacheRequest,
-  type SessionTokenCacheResult,
-} from '../ports/session-token-cache'
-import { readBranchMessagesPage, validateBranchMessagesRequest } from './session-branch-reader'
 import type { SessionBranchMessagesRequest, SessionBranchPreviewRequest } from '../ports/session-branch-source'
-import { validateBranchPreviewRequest } from './session-branch-preview'
-import { readSqlBranchPreview } from './session-branch-preview-sql'
-import { applySqlLocalMutation } from './session-row-local-sql'
-import { readMetadataSelection, readRelationsPage } from './session-row-relations-read'
-import { sqlRelationReader } from './session-row-relations-sql'
 import type {
   SessionMessageMetadataRequest,
   SessionMessageRelationsRequest,
   SessionThreadStateRequest,
 } from '../ports/session-row-relations'
-import { initializeRowProjectionSchema, rowExtra, parseRowExtra, selectedDepths } from './session-row-projection-sql'
-import type {
-  SessionNavigationRepairRequest,
-  SessionThreadRequest,
-  SessionTranscriptRequest,
-} from '../ports/session-transcript-source'
-import { navigationProjection, validateNavigationRepair, validateTranscriptRequest } from './session-transcript-read'
-import {
-  SESSION_TRANSCRIPT_SCHEMA_SQL,
-  INSERT_MESSAGE_NAVIGATION_SQL,
-  withSqlTranscriptCommit,
-  sqlTranscriptReader,
-  readSqlTranscriptThread,
-  readTranscriptPage,
-  readNavigationPage,
-} from './session-transcript-sql'
-import { throwIfAborted } from '../backup/abort'
-import { type BackupPageLimits, type BackupRow, backupPageLimits } from '../backup/session-port'
 import {
   type GeneratingMessageRef,
   type SessionMessagesRequest,
   type SessionMessagesSnapshot,
   type SessionRowCommit,
-  type SessionRowMutationResult,
   SessionRowConflictError,
+  type SessionRowMutationResult,
   type SessionRowSnapshot,
   SessionRowStoreError,
   type SessionRowStoreOperation,
@@ -51,7 +20,18 @@ import {
   type SessionThreadPage,
   type SessionThreadPageRequest,
 } from '../ports/session-row-store'
+import type { SessionRowIterationRequest, SessionStoredRow } from '../ports/session-row-transfer'
 import type { SessionTextTokenRead, SessionTextTokenResult, SessionTextTokenSource } from '../ports/session-text-tokens'
+import {
+  type SessionTokenCacheRequest,
+  type SessionTokenCacheResult,
+  validateTokenCacheRequest,
+} from '../ports/session-token-cache'
+import type {
+  SessionNavigationRepairRequest,
+  SessionThreadRequest,
+  SessionTranscriptRequest,
+} from '../ports/session-transcript-source'
 import type {
   MessageRow,
   MessageRowKind,
@@ -61,9 +41,24 @@ import type {
   ThreadRow,
 } from '../session/session-tree/types'
 import type { CompactionPoint, Message, SessionThread } from '../types/session'
+import { throwIfAborted } from '../utils/abort'
 import { CAPACITOR_MESSAGE_ROWS_SCHEMA_SQL } from './capacitor-compatible-schema'
+import { validateBranchPreviewRequest } from './session-branch-preview'
+import { readSqlBranchPreview } from './session-branch-preview-sql'
+import { readBranchMessagesPage, validateBranchMessagesRequest } from './session-branch-reader'
 import { assertSessionReadRevision, validateSessionMessagesRequest } from './session-message-selection'
-import { createSqlBackupCandidate } from './session-row-sql-backup'
+import { applySqlLocalMutation } from './session-row-local-sql'
+import { queryRowMetadata, sqlMetadataStringBytes } from './session-row-metadata-sql'
+import {
+  parseRowExtra,
+  rowExtra,
+  selectedDepths,
+  SESSION_ROW_PROJECTION_SCHEMA_SQL,
+} from './session-row-projection-sql'
+import { readMetadataSelection, readRelationsPage } from './session-row-relations-read'
+import { sqlRelationReader } from './session-row-relations-sql'
+import { createSqlRowWriter } from './session-row-transfer-sql'
+import { createSqlImportWriter, resumeSqlImportWriter } from './session-row-import-sql'
 import {
   createTextTokenSource,
   SESSION_TEXT_TOKEN_SCHEMA_SQL,
@@ -71,6 +66,17 @@ import {
   textTokenCleanupStatement,
 } from './session-text-token-sql'
 import { assertSessionThreadPageRevision, validateSessionThreadPageRequest } from './session-thread-page'
+import { acceptSqlTokenCache, readSqlTokenCache, SESSION_TOKEN_CACHE_SQL } from './session-token-cache-sql'
+import { navigationProjection, validateNavigationRepair, validateTranscriptRequest } from './session-transcript-read'
+import {
+  INSERT_MESSAGE_NAVIGATION_SQL,
+  readNavigationPage,
+  readSqlTranscriptThread,
+  readTranscriptPage,
+  SESSION_TRANSCRIPT_SCHEMA_SQL,
+  sqlTranscriptReader,
+  withSqlTranscriptCommit,
+} from './session-transcript-sql'
 
 export type SessionRowSqlBindValue = string | number | null
 
@@ -84,9 +90,8 @@ export interface SessionRowSqlStatement {
     | 'advance-session-revision'
     | 'upsert-thread'
     | 'upsert-message'
-    | 'insert-message-payload-chunk'
     | 'insert-message-navigation'
-    | 'delete-orphan-message-payloads'
+    | 'delete-orphan-message-navigation'
     | 'delete-stale-text-tokens'
 }
 
@@ -98,6 +103,8 @@ export interface SessionRowSqlBatchOptions {
 }
 
 export interface SessionRowSqlDatabase {
+  /** Only JSON bridge transports need a per-statement envelope limit. */
+  readonly maxStatementBytes?: number
   /** Runs DDL that may hold several statements. */
   execute(sql: string): Promise<void>
   query<T>(sql: string, params?: SessionRowSqlBindValue[]): Promise<T[]>
@@ -151,7 +158,6 @@ interface ThreadMetadataRecord {
 interface MessagePayloadRecord {
   message_id: string
   payload_id: string
-  payload_chunk_count: number
   payload_utf8_length: number
 }
 
@@ -173,15 +179,10 @@ interface MessageRecord extends ContextMessageRecord {
   branch_id: string | null
 }
 
-interface PayloadChunkRecord {
-  payload_id: string
-  chunk_index: number
-  value: string
-}
-
-interface PayloadChunkSliceRecord {
+interface PayloadSliceRecord {
   value: string
   value_length: number
+  value_type: string
 }
 
 interface TextSliceRecord {
@@ -201,11 +202,9 @@ interface SessionIdRecord {
 const THREAD_COLUMNS =
   'session_id, thread_id, seq, name, created_at, root_message_id, active_leaf_message_id, compaction_points_json, session_prompt_context_snapshot_json, session_record_json, commit_revision, projection_json'
 const MESSAGE_COLUMNS =
-  'session_id, message_id, thread_id, parent_message_id, active_child_id, seq, kind, status, created_at, updated_at, branch_id, payload_id, payload_chunk_count, payload_utf8_length, row_metadata_json, selected_depth'
+  'session_id, message_id, thread_id, parent_message_id, active_child_id, seq, kind, status, created_at, updated_at, branch_id, payload_id, payload_utf8_length, row_metadata_json, selected_depth'
 const UPSERT_THREAD_SQL = `INSERT OR REPLACE INTO session_threads (${THREAD_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-const UPSERT_MESSAGE_SQL = `INSERT OR REPLACE INTO session_messages (${MESSAGE_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-const INSERT_MESSAGE_PAYLOAD_CHUNK_SQL =
-  'INSERT OR REPLACE INTO session_message_payload_chunks (session_id, payload_id, chunk_index, value) VALUES (?, ?, ?, ?)'
+const UPSERT_MESSAGE_SQL = `INSERT OR REPLACE INTO session_messages (${MESSAGE_COLUMNS}, message_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 const DELETE_SESSION_THREADS_SQL = 'DELETE FROM session_threads WHERE session_id = ?'
 const DELETE_SESSION_MESSAGES_SQL = 'DELETE FROM session_messages WHERE session_id = ?'
 const GUARD_REVISION_EXHAUSTION_SQL =
@@ -308,29 +307,27 @@ const SELECT_MESSAGE_REFS_BY_STATUS_SQL =
   'SELECT session_id, thread_id, message_id FROM session_messages WHERE status = ? ORDER BY session_id, thread_id, message_id'
 const SELECT_SESSION_REVISION_SQL =
   'SELECT revision AS commit_revision FROM session_row_heads WHERE session_id = ? LIMIT 1'
-const SELECT_MESSAGE_PAYLOAD_CHUNK_SLICE_SQL = `WITH chunk AS (
-  SELECT value FROM session_message_payload_chunks WHERE payload_id = ? AND chunk_index = ? LIMIT 1
-)
-SELECT length(value) AS value_length, substr(value, ?, ?) AS value FROM chunk`
-const DELETE_ORPHAN_MESSAGE_PAYLOADS_SQL =
-  'DELETE FROM session_message_payload_chunks WHERE session_id = ? AND NOT EXISTS (SELECT 1 FROM session_messages WHERE session_messages.payload_id = session_message_payload_chunks.payload_id)'
+const SELECT_MESSAGE_PAYLOAD_SLICE_SQL = `SELECT typeof(message_json) AS value_type,
+  length(message_json) AS value_length, substr(message_json, ?, ?) AS value
+  FROM session_messages WHERE payload_id = ? LIMIT 1`
+const DELETE_ORPHAN_MESSAGE_NAVIGATION_SQL =
+  'DELETE FROM session_message_navigation WHERE NOT EXISTS (SELECT 1 FROM session_messages WHERE session_messages.payload_id = session_message_navigation.payload_id) AND NOT EXISTS (SELECT 1 FROM session_messages_staging WHERE session_messages_staging.payload_id = session_message_navigation.payload_id)'
 
-const PAYLOAD_CHUNK_BYTES = 128 * 1024
 const PAYLOAD_READ_RESPONSE_BUDGET = 384 * 1024
 const PAYLOAD_READ_REQUEST_BUDGET = 384 * 1024
 const PAYLOAD_READ_BATCH_MESSAGES = 768
 // Covers compact keys, safe integer fields, response envelope and iOS column names.
-const PAYLOAD_CHUNK_RESPONSE_OVERHEAD = 96
+const PAYLOAD_RESPONSE_OVERHEAD = 96
 // One SQLite character can become a 12-byte escaped surrogate pair. Reserve
 // the response envelope within the payload's soft bridge budget.
-const PAYLOAD_CHUNK_SLICE_CHARACTERS = Math.floor((PAYLOAD_READ_RESPONSE_BUDGET - 1024) / 12)
+const PAYLOAD_SLICE_CHARACTERS = Math.floor((PAYLOAD_READ_RESPONSE_BUDGET - 1024) / 12)
 const THREAD_PAGE_SIZE = 8
 // Reserve bridge headroom with a conservative metadata response budget.
 // Safe identifier characters need no JSON escaping. Other text keeps a six-times
 // allowance, plus fixed object/numeric overhead, before choosing a fitting page.
 const MESSAGE_PAGE_RESPONSE_BUDGET = 384 * 1024
-/** Payload bytes of small backup messages materialized together during an export read. */
-const BACKUP_PAYLOAD_BATCH_BYTES = 384 * 1024
+/** Complete message bodies materialized together during row iteration. */
+const ROW_ITERATION_BATCH_BYTES = 384 * 1024
 // Every metadata row contributes at least 512 estimated bytes. Rows beyond
 // this bounded lookahead cannot fit in the current response budget.
 const MESSAGE_PAGE_MAX_ROWS = Math.floor(MESSAGE_PAGE_RESPONSE_BUDGET / 512)
@@ -384,27 +381,24 @@ function isSafeAsciiPayload(value: string): boolean {
   return /^[\x20-\x7e]*$/.test(value) && !/[<>&/='`]/.test(value)
 }
 
-function selectMessagePayloadChunksSql(count: number, ascii = false, bounded = true): string {
-  if (!bounded) {
-    return `WITH requested(payload_id, request_index) AS (VALUES ${Array.from({ length: count }, (_, index) => `(?, ${index})`).join(', ')})
-      SELECT request_index AS i, chunk_index AS c, value AS v, 0 AS x
-      FROM session_message_payload_chunks JOIN requested USING(payload_id) ORDER BY request_index, chunk_index`
-  }
-  return `WITH requested(payload_id, request_index) AS (VALUES ${Array.from({ length: count }, (_, index) => `(?, ${index})`).join(', ')}), chunks AS (
-    SELECT request_index, chunk_index, value,
-      SUM(CASE WHEN typeof(value) = 'text' AND typeof(chunk_index) = 'integer'
-        AND chunk_index >= 0 AND chunk_index <= 9007199254740991
-        THEN ${ascii ? sqlPayloadJsonStringBytes('value') : '6 * length(CAST(value AS BLOB))'} + ${PAYLOAD_CHUNK_RESPONSE_OVERHEAD}
+function selectMessagePayloadsSql(count: number, ascii = false, bounded = true): string {
+  const requested = `WITH requested(payload_id, request_index) AS (VALUES ${Array.from({ length: count }, (_, index) => `(?, ${index})`).join(', ')})`
+  if (!bounded)
+    return `${requested}
+    SELECT request_index AS i, message_json AS v, 0 AS x
+    FROM session_messages JOIN requested USING(payload_id) ORDER BY request_index`
+  return `${requested}, bodies AS (
+    SELECT request_index, message_json,
+      SUM(CASE WHEN typeof(message_json) = 'text'
+        THEN ${ascii ? sqlPayloadJsonStringBytes('message_json') : '6 * length(CAST(message_json AS BLOB))'} + ${PAYLOAD_RESPONSE_OVERHEAD}
         ELSE ${PAYLOAD_READ_RESPONSE_BUDGET + 1} END) OVER () AS response_bytes,
-      ROW_NUMBER() OVER (ORDER BY request_index, chunk_index) AS row_number
-    FROM session_message_payload_chunks JOIN requested USING(payload_id)
+      ROW_NUMBER() OVER (ORDER BY request_index) AS row_number
+    FROM session_messages JOIN requested USING(payload_id)
   )
   SELECT CASE WHEN response_bytes <= ${PAYLOAD_READ_RESPONSE_BUDGET} THEN request_index END AS i,
-    CASE WHEN response_bytes <= ${PAYLOAD_READ_RESPONSE_BUDGET} THEN chunk_index END AS c,
-    CASE WHEN response_bytes <= ${PAYLOAD_READ_RESPONSE_BUDGET} THEN value END AS v,
+    CASE WHEN response_bytes <= ${PAYLOAD_READ_RESPONSE_BUDGET} THEN message_json END AS v,
     (response_bytes > ${PAYLOAD_READ_RESPONSE_BUDGET}) AS x
-  FROM chunks WHERE response_bytes <= ${PAYLOAD_READ_RESPONSE_BUDGET} OR row_number = 1
-  ORDER BY request_index, chunk_index`
+  FROM bodies WHERE response_bytes <= ${PAYLOAD_READ_RESPONSE_BUDGET} OR row_number = 1 ORDER BY request_index`
 }
 
 // Reserve the largest SQL shape and cursor plus envelope headroom. Each ID's
@@ -414,19 +408,18 @@ const MESSAGE_ID_REQUEST_OVERHEAD =
     JSON.stringify({ statement: selectMessageIdsSql(MESSAGE_PAGE_MAX_ROWS), values: [Number.MAX_SAFE_INTEGER] })
   ).byteLength + 1024
 const PAYLOAD_ID_REQUEST_OVERHEAD =
-  textEncoder.encode(
-    JSON.stringify({ statement: selectMessagePayloadChunksSql(PAYLOAD_READ_BATCH_MESSAGES), values: [] })
-  ).byteLength + 1024
+  textEncoder.encode(JSON.stringify({ statement: selectMessagePayloadsSql(PAYLOAD_READ_BATCH_MESSAGES), values: [] }))
+    .byteLength + 1024
 const ASCII_PAYLOAD_ID_REQUEST_OVERHEAD =
   textEncoder.encode(
-    JSON.stringify({ statement: selectMessagePayloadChunksSql(PAYLOAD_READ_BATCH_MESSAGES, true), values: [] })
+    JSON.stringify({ statement: selectMessagePayloadsSql(PAYLOAD_READ_BATCH_MESSAGES, true), values: [] })
   ).byteLength + 1024
 
 function jsonStringResponseBytes(value: string): number {
   return /[^A-Za-z0-9._:-]/.test(value) ? 6 * textEncoder.encode(value).byteLength : value.length
 }
 
-type SelectedPayloadWireRecord = { i: number; c: number; v: string; x: 0 } | { x: 1 }
+type SelectedPayloadWireRecord = { i: number; v: string; x: 0 } | { x: 1 }
 type SelectedMessageRecord = { request_index: number; last_request_index: number } & (
   | (MessageRecord & { metadata_oversized: 0 })
   | { metadata_oversized: 1 }
@@ -459,7 +452,7 @@ function requireStructuralId(value: string | null, description: string): void {
   }
 }
 
-function validateThreadRow(thread: ThreadRow, sessionId: string): void {
+export function validateThreadRow(thread: ThreadRow, sessionId: string): void {
   requireSessionId(thread.sessionId, 'thread row')
   if (!thread.threadId) {
     throw new Error('thread row is missing a threadId')
@@ -475,7 +468,7 @@ function validateThreadRow(thread: ThreadRow, sessionId: string): void {
   }
 }
 
-function validateMessageRow(message: MessageRowMetadata, sessionId: string): void {
+export function validateMessageRow(message: MessageRowMetadata, sessionId: string): void {
   requireSessionId(message.sessionId, 'message row')
   if (!message.threadId) {
     throw new Error('message row is missing a threadId')
@@ -531,41 +524,11 @@ function createPayloadId(message: MessageRow): string {
   return `${message.sessionId}:${message.messageId}:${nonce}`
 }
 
-function* splitPayload(value: string): Generator<string> {
-  if (value.length <= PAYLOAD_CHUNK_BYTES && textEncoder.encode(value).byteLength <= PAYLOAD_CHUNK_BYTES) {
-    yield value
-    return
-  }
-  let current = ''
-  let size = 0
-  for (const codePoint of value) {
-    const code = codePoint.codePointAt(0)!
-    const pointSize = code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4
-    if (current && size + pointSize > PAYLOAD_CHUNK_BYTES) {
-      yield current
-      current = ''
-      size = 0
-    }
-    current += codePoint
-    size += pointSize
-  }
-  if (current || value.length === 0) yield current
-}
-
 export function* messageStatements(message: MessageRow, selectedDepth?: number): Generator<SessionRowSqlStatement> {
   const payload = { ...message.message }
   const serialized = serializeJson(payload, `message ${message.messageId}`)
   const payloadId = createPayloadId(message)
-  let chunkCount = 0
-  let utf8Length = 0
-  for (const chunk of splitPayload(serialized)) {
-    utf8Length += textEncoder.encode(chunk).byteLength
-    yield {
-      kind: 'insert-message-payload-chunk',
-      sql: INSERT_MESSAGE_PAYLOAD_CHUNK_SQL,
-      params: [message.sessionId, payloadId, chunkCount++, chunk],
-    }
-  }
+  const utf8Length = textEncoder.encode(serialized).byteLength
   const projection = navigationProjection(payload)
   yield {
     kind: 'insert-message-navigation',
@@ -588,10 +551,10 @@ export function* messageStatements(message: MessageRow, selectedDepth?: number):
       message.updatedAt,
       message.branchId,
       payloadId,
-      chunkCount,
       utf8Length,
       rowExtra(message),
       selectedDepth ?? null,
+      serialized,
     ],
   }
 }
@@ -691,7 +654,7 @@ export class SqlSessionRowStore implements SessionRowStorePort {
 
   constructor(
     private readonly database: SessionRowSqlDatabase,
-    private readonly createBackupId?: () => string,
+    private readonly createRowId?: () => string,
     options: SessionRowSqlReadOptions = {}
   ) {
     this.boundedReads = options.readByteBudget !== 'none'
@@ -707,14 +670,16 @@ export class SqlSessionRowStore implements SessionRowStorePort {
 
   initialize(): Promise<void> {
     if (!this.initializePromise) {
-      this.initializePromise = this.database
-        .execute(
-          CAPACITOR_MESSAGE_ROWS_SCHEMA_SQL +
-            SESSION_TEXT_TOKEN_SCHEMA_SQL +
-            SESSION_TRANSCRIPT_SCHEMA_SQL +
-            SESSION_TOKEN_CACHE_SQL
+      this.initializePromise = Promise.resolve()
+        .then(() =>
+          this.database.execute(
+            CAPACITOR_MESSAGE_ROWS_SCHEMA_SQL +
+              SESSION_TEXT_TOKEN_SCHEMA_SQL +
+              SESSION_TRANSCRIPT_SCHEMA_SQL +
+              SESSION_TOKEN_CACHE_SQL +
+              SESSION_ROW_PROJECTION_SCHEMA_SQL
+          )
         )
-        .then(() => initializeRowProjectionSchema(this.database))
         .catch((error: unknown) => {
           this.initializePromise = null
           throw new SessionRowStoreError('initialize', error)
@@ -933,159 +898,86 @@ export class SqlSessionRowStore implements SessionRowStorePort {
     )
   }
 
-  async beginBackupRestore(sessionId: string, expectedRevision?: number | null) {
+  async stageRows(commit: SessionRowCommit, expectedRevision: number | null) {
     await this.initialize()
-    return createSqlBackupCandidate(
-      this.database,
-      sessionId,
-      { thread: threadStatement, message: messageStatements },
-      this.createBackupId,
-      expectedRevision
-    )
+    return createSqlRowWriter(this.database, commit, expectedRevision, this.createRowId)
   }
 
-  async *iterateBackupRows(
-    sessionId: string,
-    requested: BackupPageLimits,
-    signal?: AbortSignal,
-    threadId?: string
-  ): AsyncGenerator<BackupRow> {
-    const limits = backupPageLimits(requested)
+  async stageImportRows(commit: SessionRowCommit, expectedRevision: number | null, jobId: string) {
+    const captured = { record: structuredClone(commit.record), revision: commit.revision }
     await this.initialize()
+    return createSqlImportWriter(this.database, captured, expectedRevision, jobId)
+  }
+
+  async resumeImportRows(candidateId: string) {
+    await this.initialize()
+    return resumeSqlImportWriter(this.database, candidateId)
+  }
+
+  async collectImportGarbage(): Promise<void> {
+    await this.initialize()
+    await this.database.executeBatch([{ sql: DELETE_ORPHAN_MESSAGE_NAVIGATION_SQL, params: [] }])
+  }
+
+  async *iterateRows(request: SessionRowIterationRequest): AsyncGenerator<SessionStoredRow> {
+    const { sessionId, threadId, signal, expectedRevision } = request
+    await this.initialize()
+    throwIfAborted(signal)
     const revision = await this.readRevision(sessionId)
-    const assertRevision = async () => {
+    if (expectedRevision !== undefined && expectedRevision !== revision)
+      throw new SessionRowConflictError(sessionId, expectedRevision, revision)
+    if (revision === null) return
+    const check = async () => {
       throwIfAborted(signal)
       const actual = await this.readRevision(sessionId)
       if (actual !== revision) throw new SessionRowConflictError(sessionId, revision, actual)
     }
-    const checkThread = (row: ThreadMetadataRecord) => {
-      for (const size of [
-        row.name_length,
-        row.compaction_points_json_length,
-        row.session_prompt_context_snapshot_json_length,
-        row.session_record_json_length,
-      ]) {
-        if (size !== null && size > limits.maxRecordBytes)
-          throw new Error('Backup thread or header requires payload blocks')
-      }
-    }
-    const bounded = (row: BackupRow): BackupRow => {
-      if (textEncoder.encode(JSON.stringify(row)).byteLength > limits.maxRecordBytes)
-        throw new Error('Backup record requires payload blocks')
-      return row
-    }
-    const active = await this.database.query<ThreadMetadataRecord>(
-      `SELECT ${THREAD_METADATA_COLUMNS} FROM session_threads WHERE session_id = ? AND seq = -1`,
-      [sessionId]
-    )
-    active.forEach(checkThread)
-    const { record } = readCommitMetadata(sessionId, await this.readThreadRecords(active, true), revision)
-    await assertRevision()
-    yield bounded({ kind: 'header', record })
-    for (let offset = 0; ; offset++) {
-      await assertRevision()
+    for (let offset = 0; ; offset += THREAD_PAGE_SIZE) {
+      await check()
       const page = await this.database.query<ThreadMetadataRecord>(
         threadId
-          ? SELECT_THREADS_PAGE_SQL.replace('session_id = ?', 'session_id = ? AND thread_id = ?')
-          : SELECT_THREADS_PAGE_SQL,
-        threadId ? [sessionId, threadId, 1, offset] : [sessionId, 1, offset]
+          ? this.threadsPageSql.replace('session_id = ?', 'session_id = ? AND thread_id = ?')
+          : this.threadsPageSql,
+        threadId ? [sessionId, threadId, THREAD_PAGE_SIZE, offset] : [sessionId, THREAD_PAGE_SIZE, offset]
       )
       if (!page.length) break
-      page.forEach(checkThread)
-      const threads = await this.readThreadRecords(page, true)
-      await assertRevision()
-      yield bounded({ kind: 'thread', thread: toThreadRow(threads[0]) })
+      const threads = await this.readThreadRecords(page)
+      await check()
+      for (const thread of threads) {
+        throwIfAborted(signal)
+        yield { kind: 'thread', thread: toThreadRow(thread) }
+      }
     }
     let cursor: MessageRecord | undefined
     for (;;) {
-      await assertRevision()
-      const params: SessionRowSqlBindValue[] = threadId ? [sessionId, threadId] : [sessionId]
+      await check()
+      const params: SessionRowSqlBindValue[] = [sessionId]
+      if (threadId !== undefined) params.push(threadId)
       if (cursor) params.push(cursor.thread_id, cursor.seq, cursor.message_id)
-      params.push(limits.maxPageRows, Math.min(limits.maxPageBytes, MESSAGE_PAGE_RESPONSE_BUDGET))
+      params.push(MESSAGE_PAGE_MAX_ROWS)
+      if (this.boundedReads) params.push(MESSAGE_PAGE_RESPONSE_BUDGET)
       const page = await this.database.query<MessageRecord>(
-        selectMessagePageSql(cursor !== undefined, true, Boolean(threadId)),
+        selectMessagePageSql(!!cursor, this.boundedReads, threadId !== undefined),
         params
       )
       if (!page.length) break
-      const shells = page.map((entry) => toMessageRow(entry, { id: entry.message_id, role: 'user', contentParts: [] }))
-      const oversized = page.map(
-        (entry, index) =>
-          textEncoder.encode(JSON.stringify({ kind: 'message', message: shells[index] })).length -
-            textEncoder.encode(JSON.stringify(shells[index].message)).length +
-            entry.payload_utf8_length >
-          limits.maxRecordBytes
-      )
-      // Read bounded runs of small payloads together; each run is followed by one revision check.
-      let batch: MessageRow[] = []
-      let batchEnd = 0
-      const readBatch = async (start: number) => {
-        const records: MessageRecord[] = []
-        let bytes = 0
-        let end = start
-        for (; end < page.length && !oversized[end]; end++) {
-          if (records.length && bytes + page[end].payload_utf8_length > BACKUP_PAYLOAD_BATCH_BYTES) break
-          records.push(page[end])
-          bytes += page[end].payload_utf8_length
+      for (let start = 0; start < page.length; ) {
+        let end = start,
+          bytes = 0
+        do {
+          bytes += page[end++].payload_utf8_length
+        } while (end < page.length && bytes + page[end].payload_utf8_length <= ROW_ITERATION_BATCH_BYTES)
+        const rows = await this.readMessageRows(page.slice(start, end), null)
+        await check()
+        for (const message of rows) {
+          throwIfAborted(signal)
+          yield { kind: 'message', message }
         }
-        batch = await this.readMessageRows(records, Object.create(null))
-        batchEnd = end
-        await assertRevision()
-      }
-      for (const [index, entry] of page.entries()) {
-        const shell = shells[index]
-        if (oversized[index]) {
-          const { chunkCount, expectedLength } = this.validatePayloadManifest(entry)
-          const database = this.database
-          const chunks = async function* () {
-            let bytes = 0
-            const [summary] = await database.query<{ count: number; size: number; first: number; last: number }>(
-              'SELECT COUNT(*) AS count, COALESCE(SUM(length(CAST(value AS BLOB))), 0) AS size, MIN(chunk_index) AS first, MAX(chunk_index) AS last FROM session_message_payload_chunks WHERE payload_id = ?',
-              [entry.payload_id]
-            )
-            if (
-              !summary ||
-              summary.count !== chunkCount ||
-              summary.size !== expectedLength ||
-              summary.first !== 0 ||
-              summary.last !== chunkCount - 1
-            )
-              throw new Error('Invalid backup payload manifest')
-            for (let index = 0; index < chunkCount; index++) {
-              let length: number | undefined
-              for (let offset = 1; length === undefined || offset <= length; offset += PAYLOAD_CHUNK_SLICE_CHARACTERS) {
-                await assertRevision()
-                const [slice] = await database.query<{ value: string | null; length: number; type: string }>(
-                  `SELECT typeof(value) AS type, length(value) AS length, CASE WHEN typeof(value) = 'text' THEN substr(value, ?, ?) ELSE NULL END AS value FROM session_message_payload_chunks WHERE payload_id = ? AND chunk_index = ?`,
-                  [offset, PAYLOAD_CHUNK_SLICE_CHARACTERS, entry.payload_id, index]
-                )
-                if (
-                  !slice ||
-                  slice.type !== 'text' ||
-                  typeof slice.value !== 'string' ||
-                  !Number.isSafeInteger(slice.length) ||
-                  slice.length < 0 ||
-                  (length !== undefined && length !== slice.length)
-                )
-                  throw new Error('Invalid backup payload slice')
-                length = slice.length
-                const data = textEncoder.encode(slice.value)
-                bytes += data.length
-                if (bytes > expectedLength) throw new Error('Backup payload size mismatch')
-                await assertRevision()
-                yield data
-              }
-            }
-            if (bytes !== expectedLength) throw new Error('Backup payload size mismatch')
-          }
-          yield bounded({ kind: 'message', message: shell, payload: { size: expectedLength, chunks } })
-          continue
-        }
-        if (index >= batchEnd) await readBatch(index)
-        yield bounded({ kind: 'message', message: batch[index - (batchEnd - batch.length)] })
+        start = end
       }
       cursor = page[page.length - 1]
     }
-    await assertRevision()
+    await check()
   }
 
   async readSnapshot(sessionId: string): Promise<SessionRowSnapshot | null> {
@@ -1368,7 +1260,7 @@ export class SqlSessionRowStore implements SessionRowStorePort {
           { kind: 'delete-session-threads', sql: DELETE_SESSION_THREADS_SQL, params: [sessionId] },
           { kind: 'delete-session-messages', sql: DELETE_SESSION_MESSAGES_SQL, params: [sessionId] },
           textTokenCleanupStatement(sessionId),
-          { kind: 'delete-orphan-message-payloads', sql: DELETE_ORPHAN_MESSAGE_PAYLOADS_SQL, params: [sessionId] },
+          { kind: 'delete-orphan-message-navigation', sql: DELETE_ORPHAN_MESSAGE_NAVIGATION_SQL, params: [] },
         ],
         { sessionId, mode: 'delete', expectedRevision }
       )
@@ -1422,9 +1314,9 @@ export class SqlSessionRowStore implements SessionRowStorePort {
         yield* messageStatements(message, depths.get(message.messageId))
       }
       yield {
-        kind: 'delete-orphan-message-payloads',
-        sql: DELETE_ORPHAN_MESSAGE_PAYLOADS_SQL,
-        params: [rows.sessionId],
+        kind: 'delete-orphan-message-navigation',
+        sql: DELETE_ORPHAN_MESSAGE_NAVIGATION_SQL,
+        params: [],
       }
       yield textTokenCleanupStatement(rows.sessionId)
     } catch (error) {
@@ -1567,60 +1459,56 @@ export class SqlSessionRowStore implements SessionRowStorePort {
     return hydrated
   }
 
-  private validatePayloadManifest(record: MessagePayloadRecord): { chunkCount: number; expectedLength: number } {
-    const chunkCount = Number(record.payload_chunk_count)
+  private validatePayloadManifest(record: MessagePayloadRecord): { expectedLength: number } {
     const expectedLength = Number(record.payload_utf8_length)
     if (
       typeof record.payload_id !== 'string' ||
       !record.payload_id ||
-      !Number.isSafeInteger(chunkCount) ||
-      chunkCount < 1 ||
       !Number.isSafeInteger(expectedLength) ||
       expectedLength < 0
-    ) {
-      throw new Error(`message ${record.message_id} has an invalid payload manifest`)
-    }
-    return { chunkCount, expectedLength }
+    )
+      throw new Error('Invalid message payload metadata')
+    return { expectedLength }
   }
 
-  private parseMessagePayload(record: MessagePayloadRecord, chunks: PayloadChunkRecord[]): Message {
-    const { chunkCount, expectedLength } = this.validatePayloadManifest(record)
-    if (chunks.length !== chunkCount) {
-      throw new Error(`message ${record.message_id} payload has ${chunks.length} chunks, expected ${chunkCount}`)
-    }
-    chunks.sort((left, right) => Number(left.chunk_index) - Number(right.chunk_index))
-    for (let index = 0; index < chunks.length; index += 1) {
-      if (Number(chunks[index].chunk_index) !== index) {
-        throw new Error(`message ${record.message_id} payload chunk ${index} is missing`)
-      }
-    }
-    const serialized = chunks.map((chunk) => chunk.value).join('')
-    if (textEncoder.encode(serialized).byteLength !== expectedLength) {
-      throw new Error(`message ${record.message_id} payload length does not match its manifest`)
-    }
-    return JSON.parse(serialized) as Message
+  private parseMessagePayload(record: MessagePayloadRecord, serialized: string | undefined): Message {
+    const { expectedLength } = this.validatePayloadManifest(record)
+    if (typeof serialized !== 'string' || textEncoder.encode(serialized).byteLength !== expectedLength)
+      throw new Error('Message payload length does not match its metadata')
+    const message: unknown = JSON.parse(serialized)
+    if (
+      !message ||
+      typeof message !== 'object' ||
+      Array.isArray(message) ||
+      (message as Message).id !== record.message_id
+    )
+      throw new Error('Message payload identity does not match its row')
+    return message as Message
   }
 
-  private async readPayloadChunk(record: MessagePayloadRecord, index: number): Promise<PayloadChunkRecord> {
-    const slices: string[] = []
+  private async readLargePayload(record: MessagePayloadRecord): Promise<string> {
+    const parts: string[] = []
     let length: number | undefined
-    for (let offset = 1; length === undefined || offset <= length; offset += PAYLOAD_CHUNK_SLICE_CHARACTERS) {
-      const rows = await this.database.query<PayloadChunkSliceRecord>(SELECT_MESSAGE_PAYLOAD_CHUNK_SLICE_SQL, [
-        record.payload_id,
-        index,
+    for (let offset = 1; length === undefined || offset <= length; offset += PAYLOAD_SLICE_CHARACTERS) {
+      const rows = await this.database.query<PayloadSliceRecord>(SELECT_MESSAGE_PAYLOAD_SLICE_SQL, [
         offset,
-        PAYLOAD_CHUNK_SLICE_CHARACTERS,
+        PAYLOAD_SLICE_CHARACTERS,
+        record.payload_id,
       ])
       const row = rows[0]
-      if (rows.length !== 1 || !row) throw new Error(`message ${record.message_id} payload chunk ${index} is missing`)
-      const nextLength = Number(row.value_length)
-      if (!Number.isSafeInteger(nextLength) || nextLength < 0 || (length !== undefined && nextLength !== length)) {
-        throw new Error(`message ${record.message_id} payload chunk ${index} length is invalid`)
-      }
-      length = nextLength
-      slices.push(row.value)
+      if (
+        rows.length !== 1 ||
+        row.value_type !== 'text' ||
+        typeof row.value !== 'string' ||
+        !Number.isSafeInteger(row.value_length) ||
+        row.value_length < 0 ||
+        (length !== undefined && length !== row.value_length)
+      )
+        throw new Error('Invalid whole message payload slice')
+      length = row.value_length
+      parts.push(row.value)
     }
-    return { payload_id: record.payload_id, chunk_index: index, value: slices.join('') }
+    return parts.join('')
   }
 
   private async readMessageRows(
@@ -1631,33 +1519,6 @@ export class SqlSessionRowStore implements SessionRowStorePort {
     return this.readMessagePayloads(records, toMessageRow, sources, records[0]?.session_id ?? '', knownMessages)
   }
 
-  private async readLargePayloadChunks(record: MessagePayloadRecord): Promise<PayloadChunkRecord[]> {
-    const { chunkCount, expectedLength } = this.validatePayloadManifest(record)
-    const [actual] = await this.database.query<{
-      chunk_count: number
-      utf8_length: number
-      first_index: number | null
-      last_index: number | null
-    }>(
-      `SELECT COUNT(*) AS chunk_count, COALESCE(SUM(length(CAST(value AS BLOB))), 0) AS utf8_length,
-        MIN(chunk_index) AS first_index, MAX(chunk_index) AS last_index
-      FROM session_message_payload_chunks WHERE payload_id = ?`,
-      [record.payload_id]
-    )
-    if (
-      !actual ||
-      Number(actual.chunk_count) !== chunkCount ||
-      Number(actual.utf8_length) !== expectedLength ||
-      actual.first_index !== 0 ||
-      actual.last_index !== chunkCount - 1
-    ) {
-      throw new Error(`message ${record.message_id} actual payload chunks do not match its manifest`)
-    }
-    const chunks: PayloadChunkRecord[] = []
-    for (let index = 0; index < chunkCount; index += 1) chunks.push(await this.readPayloadChunk(record, index))
-    return chunks
-  }
-
   private async readMessagePayloads<Record extends MessagePayloadRecord, Result>(
     records: Record[],
     project: (record: Record, message: Message) => Result,
@@ -1666,7 +1527,7 @@ export class SqlSessionRowStore implements SessionRowStorePort {
     knownMessages?: ReadonlyMap<string, Message>
   ): Promise<Result[]> {
     const missing = knownMessages ? records.filter((record) => !knownMessages.has(record.message_id)) : records
-    const payloads = new Map<string, PayloadChunkRecord[]>()
+    const payloads = new Map<string, string>()
     let mode: 'sampling' | 'sampled' | 'conservative' = 'sampling'
     let observedExpansion = 2
     let cursor = 0
@@ -1685,7 +1546,7 @@ export class SqlSessionRowStore implements SessionRowStorePort {
 
       for (let index = cursor; index < missing.length && batch.length < PAYLOAD_READ_BATCH_MESSAGES; index += 1) {
         const record = missing[index]
-        const { chunkCount, expectedLength } = this.validatePayloadManifest(record)
+        const { expectedLength } = this.validatePayloadManifest(record)
         if (!this.boundedReads) {
           batch.push(record)
           continue
@@ -1694,7 +1555,7 @@ export class SqlSessionRowStore implements SessionRowStorePort {
         if (PAYLOAD_ID_REQUEST_OVERHEAD + idRequestBytes > PAYLOAD_READ_REQUEST_BUDGET) {
           throw new Error('Message payload ID exceeds the native request budget')
         }
-        const overhead = chunkCount * PAYLOAD_CHUNK_RESPONSE_OVERHEAD
+        const overhead = PAYLOAD_RESPONSE_OVERHEAD
         if (6 * expectedLength + overhead > PAYLOAD_READ_RESPONSE_BUDGET) break
         // Observed expansion is a packing hint. SQL verifies every actual chunk
         // before returning any body, including when later text expands further.
@@ -1711,12 +1572,12 @@ export class SqlSessionRowStore implements SessionRowStorePort {
 
       if (batch.length === 0) {
         const record = missing[cursor]
-        payloads.set(record.payload_id, await this.readLargePayloadChunks(record))
+        payloads.set(record.payload_id, await this.readLargePayload(record))
         cursor += 1
         continue
       }
       const wireChunks = await this.database.query<SelectedPayloadWireRecord>(
-        selectMessagePayloadChunksSql(batch.length, ascii, this.boundedReads),
+        selectMessagePayloadsSql(batch.length, ascii, this.boundedReads),
         batch.map((record) => record.payload_id)
       )
       if (wireChunks.some((chunk) => chunk.x === 1)) {
@@ -1727,27 +1588,22 @@ export class SqlSessionRowStore implements SessionRowStorePort {
         }
         throw new Error('Message payload exceeds the native response budget')
       }
-      const chunks: PayloadChunkRecord[] = wireChunks.map((chunk) => {
+      const chunks = wireChunks.map((chunk) => {
         if (
           chunk.x !== 0 ||
           !Number.isSafeInteger(chunk.i) ||
           chunk.i < 0 ||
           chunk.i >= batch.length ||
-          !Number.isSafeInteger(chunk.c) ||
-          chunk.c < 0 ||
           typeof chunk.v !== 'string'
-        ) {
+        )
           throw new Error('Invalid message payload wire record')
-        }
-        return { payload_id: batch[chunk.i].payload_id, chunk_index: chunk.c, value: chunk.v }
+        const payloadId = batch[chunk.i].payload_id
+        if (payloads.has(payloadId)) throw new Error('Duplicate message payload wire record')
+        payloads.set(payloadId, chunk.v)
+        return { value: chunk.v }
       })
-      for (const chunk of chunks) {
-        const list = payloads.get(chunk.payload_id)
-        if (list) list.push(chunk)
-        else payloads.set(chunk.payload_id, [chunk])
-      }
       if (this.boundedReads && mode === 'sampling') {
-        for (const record of batch) this.parseMessagePayload(record, payloads.get(record.payload_id) ?? [])
+        for (const record of batch) this.parseMessagePayload(record, payloads.get(record.payload_id))
         if (chunks.every((chunk) => isSafeAsciiPayload(chunk.value))) {
           observedExpansion = chunks.reduce(
             (maximum, chunk) =>
@@ -1774,9 +1630,7 @@ export class SqlSessionRowStore implements SessionRowStorePort {
 
     return records.map((record) => {
       const known = knownMessages?.get(record.message_id)
-      const message = known
-        ? structuredClone(known)
-        : this.parseMessagePayload(record, payloads.get(record.payload_id) ?? [])
+      const message = known ? structuredClone(known) : this.parseMessagePayload(record, payloads.get(record.payload_id))
       if (sources) {
         const source = createTextTokenSource(sessionId, message, record.payload_id)
         if (source) sources[record.message_id] = source

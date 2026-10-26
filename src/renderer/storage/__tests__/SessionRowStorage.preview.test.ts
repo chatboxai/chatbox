@@ -6,7 +6,7 @@ import {
   previewMessage,
 } from '../../../../packages/chatbox-core/src/ports/testing/session-branch-preview-contract'
 import { IndexedDBSessionRowStore } from '../SessionRowStorage'
-import { SESSION_ROW_DB_NAME, SESSION_ROW_MESSAGE_STORE, SESSION_ROW_PAYLOAD_STORE } from '../session-row-idb-records'
+import { SESSION_ROW_DB_NAME, SESSION_ROW_MESSAGE_STORE } from '../session-row-idb-records'
 
 const stores: IndexedDBSessionRowStore[] = []
 function createStore() {
@@ -58,15 +58,11 @@ describe('IndexedDB compact branch preview', () => {
       expect(transaction).toHaveBeenCalledTimes(1)
       expect(transaction.mock.calls[0][1]).toBe('readonly')
       expect(
-        get.mock.instances.filter((store) =>
-          [SESSION_ROW_MESSAGE_STORE, SESSION_ROW_PAYLOAD_STORE].includes((store as IDBObjectStore).name)
-        )
+        get.mock.instances.filter((store) => [SESSION_ROW_MESSAGE_STORE].includes((store as IDBObjectStore).name))
       ).toHaveLength(0)
       expect(
         all.mock.instances.filter((store) =>
-          [SESSION_ROW_MESSAGE_STORE, SESSION_ROW_PAYLOAD_STORE, 'transcriptMessages'].includes(
-            (store as IDBObjectStore).name
-          )
+          [SESSION_ROW_MESSAGE_STORE, 'transcriptMessages'].includes((store as IDBObjectStore).name)
         )
       ).toHaveLength(0)
     }

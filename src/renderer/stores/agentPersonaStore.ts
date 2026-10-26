@@ -9,7 +9,7 @@ import { z } from 'zod'
 import { buildWorkspaceInstructions, normalizeWorkspaceDirectory } from '@/packages/model-calls/workspace-instructions'
 import platform from '@/platform'
 import storage from '@/storage'
-import { reloadCopilotDefinitions, rendererMemoryService, withCopilotDefinitionsLock } from './memoryRuntime'
+import { rendererMemoryService } from './memoryRuntime'
 
 /**
  * Agent persona storage: the user's Soul document and agent-written memories.
@@ -23,8 +23,7 @@ import { reloadCopilotDefinitions, rendererMemoryService, withCopilotDefinitions
 export const AGENT_SOUL_STORAGE_KEY = 'agent-soul'
 export { AGENT_MEMORIES_STORAGE_KEY, COPILOT_MEMORIES_STORAGE_KEY } from '@chatbox/core/application/memory'
 export { rendererMemoryService } from './memoryRuntime'
-// Local device state (not part of AGENT_PERSONA_BACKUP_KEYS): whether the one-time
-// automatic local-memory scan has already run on this device.
+// Whether the one-time automatic local-memory scan has already run on this device.
 export const AGENT_MEMORIES_AUTO_SCAN_DONE_KEY = 'agent-memories-auto-scan-done'
 
 const SoulRecordSchema = z.object({
@@ -187,25 +186,6 @@ export async function captureSessionPromptContextSnapshot(
     scope,
     ...(scope === 'agent' ? { agentToolContractVersion: desktopCommandContract ? (2 as const) : (1 as const) } : {}),
   }
-}
-
-/** Serialize backup import (or similar bulk writes) against agent persona mutations. */
-export function withAgentPersonaLocks<T>(operation: () => Promise<T>): Promise<T> {
-  return withCopilotDefinitionsLock(() =>
-    withSoulLock(() =>
-      rendererMemoryService.withStorageLock(async ({ reload }) => {
-        const result = await operation().then(
-          (value) => ({ ok: true, value }) as const,
-          (error: unknown) => ({ ok: false, error }) as const
-        )
-        const refreshed = await Promise.allSettled([reloadCopilotDefinitions(), reload()])
-        if (!result.ok) throw result.error
-        const failure = refreshed.find((item) => item.status === 'rejected')
-        if (failure?.status === 'rejected') throw failure.reason
-        return result.value
-      })
-    )
-  )
 }
 
 /**

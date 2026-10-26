@@ -4,7 +4,7 @@ import { RowBackedSessionRepository } from '../../../../packages/chatbox-core/sr
 import { SessionRowWriteQueue } from '../../../../packages/chatbox-core/src/application/session/SessionRowWriteQueue'
 import { InMemorySessionRecordStore } from '../../../../packages/chatbox-core/src/testing/InMemorySessionRecordStore'
 import type { Message } from '../../../../packages/chatbox-core/src/types'
-import { DEFAULT_BACKUP_PAGE_LIMITS, type BackupRow } from '@chatbox/core/backup'
+import type { SessionStoredRow } from '@chatbox/core/ports'
 import type { SessionRowsDiff } from '../../../../packages/chatbox-core/src/ports'
 import { IndexedDBSessionRowStore } from '../SessionRowStorage'
 import { SESSION_ROW_DB_NAME, SESSION_ROW_MESSAGE_STORE } from '../session-row-idb-records'
@@ -22,7 +22,6 @@ async function setup(messages: Message[] = [message('user', 'user'), message('re
   stores.push(rows)
   const repository = new RowBackedSessionRepository({
     rows,
-    backup: rows,
     records: new InMemorySessionRecordStore(),
     writes: new SessionRowWriteQueue((_id, run) => run()),
   })
@@ -252,18 +251,22 @@ describe('IndexedDB local row mutation', () => {
   })
 })
 
-it('backs up authoritative relations and rebuilds the selected index on restore', async () => {
+it('transfers authoritative relations and rebuilds the selected index on publication', async () => {
   const { repository, rows } = await setup([message('user', 'user'), message('middle'), message('tail')])
   await repository.executeSessionCommand('s', {
     type: 'structure',
     operation: { action: 'message-remove', messageId: 'middle', replacementPivotId: 'hidden' },
   })
-  const backup: BackupRow[] = []
-  for await (const row of rows.iterateBackupRows('s', DEFAULT_BACKUP_PAGE_LIMITS)) backup.push(row)
-  const tail = backup.find((row) => row.kind === 'message' && row.message.messageId === 'tail')
+  const transferred: SessionStoredRow[] = []
+  for await (const row of rows.iterateRows({ sessionId: 's' })) transferred.push(row)
+  const tail = transferred.find((row) => row.kind === 'message' && row.message.messageId === 'tail')
   expect(tail?.kind === 'message' && tail.message.parentMessageId).toBe('user')
-  const candidate = await rows.beginBackupRestore('s')
-  for (const row of backup) await candidate.append(row)
+  const commit = (await rows.readCommit('s'))!
+  const candidate = await rows.stageRows({ ...commit, revision: commit.revision + 1 }, commit.revision)
+  for (const row of transferred) {
+    if (row.kind === 'thread') await candidate.appendThread(row.thread)
+    else await candidate.appendMessage(row.message)
+  }
   await candidate.publish()
   await candidate.dispose()
   await repository.executeSessionCommand('s', { type: 'append', messages: [message('after-restore', 'user')] })

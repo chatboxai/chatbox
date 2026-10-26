@@ -53,7 +53,7 @@ const electronHandler: ElectronIPC = {
     ipcRenderer.on('window:focused', callback)
     return () => ipcRenderer.off('window:focused', callback)
   },
-  onBackupCloseRequest: createListener('backup-operation:close-requested'),
+  onTaskCloseRequest: createListener('task-operation:close-requested'),
   onWindowShow: (callback: () => void) => {
     ipcRenderer.on('window-show', callback)
     return () => ipcRenderer.off('window-show', callback)

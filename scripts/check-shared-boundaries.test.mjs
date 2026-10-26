@@ -231,15 +231,6 @@ test('allows only the repository owner and named recovery paths to use Session-c
     {
       'src/renderer/adapters/CurrentSessionRepository.ts': writer,
       'src/renderer/stores/migration.ts': 'dataStore.setAll({ [StorageKeyGenerator.session(session.id)]: session })',
-      'src/renderer/packages/backup/import-backup.ts':
-        'options.storage.setItemNow(backupSessionStorageKey(session.id), session)',
-      'src/renderer/packages/backup/legacy-import.ts':
-        'for (const [key, value] of entries) options.storage.setItemNow(key, value)',
-      'packages/chatbox-core/src/backup/import-backup.ts':
-        'options.storage.setItemNow(backupSessionStorageKey(session.id), session)',
-      'packages/chatbox-core/src/backup/legacy-import.ts':
-        'for (const [key, value] of entries) options.storage.setItemNow(key, value)',
-      'src/renderer/pages/SettingDialog/AdvancedSettingTab.tsx': 'storage.setAll({ ...previousData, ...importData })',
     },
     (root) => {
       assert.deepEqual(checkArchitectureBoundaries(root), [])

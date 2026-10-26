@@ -1,13 +1,12 @@
 // @vitest-environment jsdom
 
-import type { BackupWarning } from '@chatbox/core/backup'
 import { MantineProvider } from '@mantine/core'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { createInstance } from 'i18next'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, expect, it, vi } from 'vitest'
 import zh from '../../../../packages/chatbox-i18n/src/locales/zh-Hans/translation.json'
-import { BackupWarnings } from './BackupWarnings'
+import { BackupWarnings, type BackupWarningPage } from './BackupWarnings'
 
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
@@ -19,83 +18,55 @@ Object.defineProperty(window, 'matchMedia', {
 })
 afterEach(cleanup)
 
-async function showWarnings(
-  warnings: BackupWarning[],
-  preservedSessions: { id: string; name: string; legacyTopology: string }[] = []
-) {
+async function showWarnings(overrides: Partial<BackupWarningPage> = {}) {
   const i18n = createInstance()
   await i18n.init({
     lng: 'zh-Hans',
     resources: { 'zh-Hans': { translation: zh } },
     interpolation: { escapeValue: false },
   })
-  render(
+  const props: BackupWarningPage = {
+    summaries: [{ id: 'resources', label: '30 个附件未包含在备份中' }],
+    items: [{ id: 'first', label: 'first.png', reason: '资源不存在' }],
+    expanded: true,
+    hasMore: true,
+    onExpandedChange: vi.fn(),
+    onLoadMore: vi.fn(),
+    ...overrides,
+  }
+  const view = (page: BackupWarningPage) => (
     <I18nextProvider i18n={i18n}>
       <MantineProvider>
-        <BackupWarnings warnings={warnings} preservedSessions={preservedSessions} />
+        <BackupWarnings {...page} />
       </MantineProvider>
     </I18nextProvider>
   )
-  fireEvent.click(screen.getByRole('button', { name: '查看详情' }))
+  const rendered = render(view(props))
+  return { props, replacePage: (next: Partial<BackupWarningPage>) => rendered.rerender(view({ ...props, ...next })) }
 }
 
-it('shows localized causes using stable reason codes independently of diagnostic wording', async () => {
-  await showWarnings([
-    {
-      code: 'session-read-failed',
-      itemType: 'session',
-      itemId: 'one',
-      reason: 'session-missing',
-      message: 'New wording',
-    },
-    {
-      code: 'session-read-failed',
-      itemType: 'session',
-      itemId: 'two',
-      reason: 'session-id-mismatch',
-      message: 'Other wording',
-    },
-    {
-      code: 'resource-read-failed',
-      itemType: 'resource',
-      itemId: 'image',
-      reason: 'resource-missing',
-      message: 'Not found',
-    },
-  ])
-  expect(screen.getAllByText('2 个对话未包含在备份中')).toHaveLength(2)
-  expect(screen.getByText('原因：在本地存储中找不到该对话的数据。')).toBeTruthy()
-  expect(screen.getByText('原因：对话 ID 与存储记录的 ID 不一致。')).toBeTruthy()
-  expect(screen.getByText('原因：在本地存储中找不到该附件或图片。')).toBeTruthy()
-  expect(screen.queryByText('New wording')).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: '收起详情' }))
-  expect(screen.queryByText('原因：在本地存储中找不到该对话的数据。')).toBeNull()
+it('requests more details without retaining the previous page', async () => {
+  const { props, replacePage } = await showWarnings()
+  expect(screen.getByText('30 个附件未包含在备份中')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: zh['Show more'] }))
+  expect(props.onLoadMore).toHaveBeenCalledOnce()
+  replacePage({ items: [{ id: 'second', label: 'second.png', reason: '不可读' }], hasMore: false })
+  expect(screen.queryByText('first.png')).toBeNull()
+  expect(screen.getByText('second.png')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: zh['Show more'] })).toBeNull()
 })
 
-it('shows unclassified diagnostics as text and keeps external-file explanations localized', async () => {
-  await showWarnings([
-    { code: 'session-read-failed', itemType: 'session', itemId: 'old', message: '<script>diagnostic</script>' },
-    { code: 'session-read-failed', itemType: 'session', itemId: 'empty', message: '  ' },
-    {
-      code: 'external-resource-skipped',
-      itemType: 'resource',
-      itemId: 'file.pdf',
-      message: 'External file was not included',
-    },
-  ])
+it('delegates expansion and hides unloaded details', async () => {
+  const { props, replacePage } = await showWarnings({ expanded: false, items: [] })
+  expect(screen.queryByText('first.png')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '查看详情' }))
+  expect(props.onExpandedChange).toHaveBeenCalledWith(true)
+  replacePage({ expanded: true, items: [{ id: 'one', label: 'one', reason: '资源不存在' }] })
+  expect(screen.getByText('原因：资源不存在')).toBeTruthy()
+})
+
+it('renders diagnostic text without executing markup', async () => {
+  await showWarnings({ items: [{ id: 'one', label: 'file', reason: '<script>diagnostic</script>' }] })
   expect(screen.getByText('原因：<script>diagnostic</script>')).toBeTruthy()
   expect(document.querySelector('script')).toBeNull()
-  expect(
-    screen.getByText(zh['The original external file is not managed by Chatbox and was not included.'])
-  ).toBeTruthy()
-  expect(screen.queryByText('External file was not included')).toBeNull()
-  expect(screen.getAllByText(/^原因：/)).toHaveLength(1)
-})
-
-it('distinguishes fully preserved legacy conversations from missing conversations', async () => {
-  await showWarnings([], [{ id: 'legacy', name: 'Legacy', legacyTopology: 'unreachable fork pivot contains messages' }])
-  expect(screen.getByText('1 个对话已按旧格式保留')).toBeTruthy()
-  expect(screen.getByText('该对话的分支关系不完整，消息和分支已按旧版 JSON 格式完整保留。')).toBeTruthy()
-  expect(screen.queryByText(/个对话未包含在备份中/)).toBeNull()
-  expect(screen.getByText('原因：unreachable fork pivot contains messages')).toBeTruthy()
 })

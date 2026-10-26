@@ -10,7 +10,6 @@ import {
 import { hasPendingSessionGeneration, withSessionGenerationLock } from '@chatbox/core/generation'
 import type { SessionLockState } from '@chatbox/core/session/action-gates'
 import { v4 as uuidv4 } from 'uuid'
-import { withSessionWorkAccess } from '@/adapters/session-work-lock'
 import { rendererApplication } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
 import { settingsService } from '@/settings-runtime'
@@ -116,11 +115,7 @@ export async function runCompactionWithUIState(
   request: CompactionRequest,
   options: CompactionRunOptions = {}
 ): Promise<CompactionServiceResult> {
-  return (
-    (await rendererApplication.backupOperations.runBackground(() =>
-      withSessionWorkAccess(() => compactWithUIState(sessionId, request, options))
-    )) ?? { status: 'skipped', reason: 'backup_busy' }
-  )
+  return compactWithUIState(sessionId, request, options)
 }
 
 /**

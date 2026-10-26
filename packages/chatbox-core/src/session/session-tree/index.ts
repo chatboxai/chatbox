@@ -28,4 +28,4 @@ export type {
 } from './types'
 export { type SessionTreeValidationResult, validateSessionTree } from './validate'
 export { type VerifySessionTreeRoundTripResult, verifySessionTreeRoundTrip } from './verify'
-export { deriveMessageFacts } from '../message-facts'
+export { addSummaryRow, deriveMessageFacts, emptyThreadSummary } from '../message-facts'

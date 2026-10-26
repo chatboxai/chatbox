@@ -1,6 +1,5 @@
 import type { SessionCopyRequest, SessionThreadCopyRequest } from '../../ports/session-row-repository'
-import { BackupOperationBusyError } from '../../backup/operation'
-import type { SessionHeaderRead, SessionRepositoryPort } from '../../ports'
+import { SessionStorageBusyError, type SessionHeaderRead, type SessionRepositoryPort } from '../../ports'
 import type { SessionCommand, SessionCommandDelta } from '../../ports/session-repository'
 import type { SessionMessageDerivedWriteResult } from '../../ports/session-message-source'
 import type { SessionTextTokenResult, SessionTextTokenWriteResult } from '../../ports/session-text-tokens'
@@ -34,7 +33,7 @@ export class SessionNotFoundError extends Error {
 
 /** Application-operation fences; the repository owns the storage transaction queue. */
 export class SessionWriteCoordinator {
-  private backupProtected = false
+  private exclusiveAccess = false
   private readonly tails = new Map<string, Promise<void>>()
   private readonly unavailable = new Set<string>()
   private readonly pendingRecoveryClear = new Set<string>()
@@ -186,7 +185,7 @@ export class SessionWriteCoordinator {
   }
 
   deleteMany(sessionIds: string[], operation: () => Promise<void>): Promise<void> {
-    if (this.backupProtected) return Promise.reject(new BackupOperationBusyError())
+    if (this.exclusiveAccess) return Promise.reject(new SessionStorageBusyError())
     const ids = [...new Set(sessionIds)]
     for (const id of ids) this.unavailable.add(id)
     const deletion = Promise.all(ids.map((id) => this.tails.get(id))).then(operation)
@@ -208,26 +207,19 @@ export class SessionWriteCoordinator {
     })
   }
 
-  /** Release a deletion fence after an explicit import has published its rows. */
-  forget(sessionId: string): void {
-    this.unavailable.delete(sessionId)
-    this.creationOrder.delete(sessionId)
-    this.pendingRecoveryClear.delete(sessionId)
-  }
-
-  async withBackupAccess<T>(action: () => Promise<T>): Promise<T> {
-    if (this.backupProtected) throw new BackupOperationBusyError()
-    this.backupProtected = true
+  async withExclusiveAccess<T>(action: () => Promise<T>): Promise<T> {
+    if (this.exclusiveAccess) throw new SessionStorageBusyError()
+    this.exclusiveAccess = true
     try {
       await Promise.all(this.tails.values())
       return await action()
     } finally {
-      this.backupProtected = false
+      this.exclusiveAccess = false
     }
   }
 
   private enqueue<T>(sessionId: string, operation: () => Promise<T>, creating = false): Promise<T> {
-    if (this.backupProtected) return Promise.reject(new BackupOperationBusyError())
+    if (this.exclusiveAccess) return Promise.reject(new SessionStorageBusyError())
     if (!creating && this.unavailable.has(sessionId)) return Promise.reject(new SessionNotFoundError(sessionId))
     const previous = this.tails.get(sessionId) ?? Promise.resolve()
     const result = previous.then(operation)

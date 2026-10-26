@@ -36,7 +36,7 @@ function harness(contextWindow = 102_400, language?: string, extra: Partial<MidR
   let prefixId = ''
   let compactions = 0
   let splitCount = 0
-  let fail: 'throw' | 'false' | 'boundary' | 'busy' | 'backup_busy' | 'stale_path' | undefined
+  let fail: 'throw' | 'false' | 'boundary' | 'busy' | 'stale_path' | undefined
   let declineSplit = false
   const controller = new MidRunCompactionController({
     budget: getCompactionBudget(contextWindow),
@@ -56,7 +56,7 @@ function harness(contextWindow = 102_400, language?: string, extra: Partial<MidR
     },
     compact: async (request) => {
       compactions += 1
-      if (fail === 'busy' || fail === 'backup_busy' || fail === 'stale_path') return { status: 'skipped', reason: fail }
+      if (fail === 'busy' || fail === 'stale_path') return { status: 'skipped', reason: fail }
       if (fail === 'throw') throw new Error('summary unavailable')
       if (fail === 'false')
         return { status: 'failed', failure: { code: 'summary_failed', message: 'summary unavailable' } }
@@ -114,7 +114,7 @@ describe('MidRunCompactionController', () => {
     assert.equal(h.compactions, 1)
   })
 
-  for (const reason of ['busy', 'backup_busy'] as const) {
+  for (const reason of ['busy'] as const) {
     it(`keeps later compaction available after ${reason}`, async () => {
       const h = harness(200)
       h.source[1] = { role: 'user', content: 'history '.repeat(1000) }

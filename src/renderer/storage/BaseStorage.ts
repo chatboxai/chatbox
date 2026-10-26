@@ -102,23 +102,12 @@ export default class BaseStorage {
     return platform.setAllStoreValues(data)
   }
 
-  // TODO: Blob 数据也应纳入导出/导入，至少包含：
-  // - `picture:*` 图片附件内容
-  // - `file:*` / `file:<name>-<size>-<mtime>` 文件解析内容与缓存文本
-  // - `link:*` 网页解析内容缓存
-  // - 与附件/链接相关的 `*_tokenMap` 统计键（用于恢复 token 预估与预览元数据）
-  public get copyItem() {
-    return platform.copyStoreValue?.bind(platform)
-  }
-  public get openBackupValue() {
-    return platform.openBackupValue?.bind(platform)
-  }
   public get removeItems() {
     return platform.delStoreValues?.bind(platform)
   }
 
-  public get blobStreams() {
-    return platform.backupBlobStreams
+  public get copyItem() {
+    return platform.copyStoreValue?.bind(platform)
   }
 
   public async setBlob(key: string, value: string) {

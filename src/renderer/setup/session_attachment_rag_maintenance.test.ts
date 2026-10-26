@@ -17,12 +17,10 @@ vi.mock('@/platform', () => ({
   },
 }))
 
-vi.mock('@/app/renderer-application', async () => {
-  const { BackupOperationCoordinator } = await import('@chatbox/core/backup')
+vi.mock('@/app/renderer-application', () => {
   return {
     sessionRepository: { collectSessionAttachmentOwnership: vi.fn() },
     rendererApplication: {
-      backupOperations: new BackupOperationCoordinator(),
       sessionQueryBridge: { getSessionOwnership: vi.fn(() => Promise.resolve(null)) },
       sessions: { listSessionsMetaPage: vi.fn(() => Promise.resolve({ items: [], nextCursor: null, total: 0 })) },
     },

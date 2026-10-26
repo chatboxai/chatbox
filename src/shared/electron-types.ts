@@ -5,7 +5,7 @@ export interface ElectronIPC {
   getPathForFile: (file: File) => string
   onSystemThemeChange: (callback: () => void) => () => void
   onWindowMaximizedChanged: (callback: (_: Electron.IpcRendererEvent, windowMaximized: boolean) => void) => () => void
-  onBackupCloseRequest: (callback: () => void) => () => void
+  onTaskCloseRequest: (callback: () => void) => () => void
   onWindowShow: (callback: () => void) => () => void
   onWindowFocused: (callback: () => void) => () => void
   onUpdateDownloaded: (callback: () => void) => () => void

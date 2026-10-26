@@ -246,6 +246,26 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
     return (result.values || []).map((row) => this.rowToRecord(row))
   }
 
+  async *iterateIds(): AsyncGenerator<string> {
+    await this.initialize()
+    let after: string | undefined
+    for (;;) {
+      const result = await this.database.query(
+        after === undefined
+          ? 'SELECT id FROM session_meta ORDER BY id LIMIT 128'
+          : 'SELECT id FROM session_meta WHERE id > ? ORDER BY id LIMIT 128',
+        after === undefined ? [] : [after]
+      )
+      const rows = result.values ?? []
+      if (!rows.length) return
+      for (const row of rows) {
+        if (typeof row.id !== 'string') throw new Error('Invalid stored session identity')
+        yield row.id
+      }
+      after = rows[rows.length - 1].id
+    }
+  }
+
   async getArchived(): Promise<SessionMetaRecord[]> {
     await this.initialize()
     const result = await this.database.query(

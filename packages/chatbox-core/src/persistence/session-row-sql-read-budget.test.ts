@@ -1,5 +1,5 @@
-import { readRowContextSource } from '../application/session/row-context'
 import { afterEach, describe, expect, it } from 'vitest'
+import { readRowContextSource } from '../application/session/row-context'
 import type { SessionRowSnapshot } from '../ports/session-row-store'
 import type { Session } from '../types/session'
 import { type NodeSessionRowSqlDatabase, openNodeSessionRowDatabase } from './node-sqlite.test-support'
@@ -91,7 +91,7 @@ function setup(onQuery?: (sql: string, params: SessionRowSqlBindValue[], rows: u
         responseBytes,
         contextLimit: kind === 'context' ? params[5] : undefined,
         keys,
-        ascii: sql.includes('instr(value, char(0))'),
+        ascii: sql.includes('instr(message_json, char(0))'),
         oversized: result.some(
           (row) =>
             typeof row === 'object' &&
@@ -122,12 +122,12 @@ describe('SQLite bridge read budgets', () => {
     expect(Object.keys(result?.textTokens?.sources ?? {})).toHaveLength(1000)
     const payload = calls.filter((call) => call.kind === 'payload')
     expect(payload.length).toBeGreaterThan(1)
-    for (const call of payload) expect(call.keys).toEqual(['i', 'c', 'v', 'x'])
+    for (const call of payload) expect(call.keys).toEqual(['i', 'v', 'x'])
   })
 
   it.each([-1, 768, 0.5, Number.POSITIVE_INFINITY, '0'])('rejects an invalid payload ordinal %s', async (ordinal) => {
     const { writer, reader } = setup((sql, _params, rows) => {
-      if (!sql.includes('FROM session_message_payload_chunks') || !rows.length) return
+      if (!sql.includes('FROM session_messages JOIN requested') || !rows.length) return
       const row = rows[0]
       if (typeof row === 'object' && row !== null && ('payload_oversized' in row || 'x' in row))
         Object.assign(row, { i: ordinal })
@@ -142,62 +142,12 @@ describe('SQLite bridge read budgets', () => {
     })
   })
 
-  it.each([-1, 0.5, Number.POSITIVE_INFINITY, 'invalid'])(
-    'rejects invalid payload chunk index %s before body transfer',
-    async (chunkIndex) => {
-      const { writer, reader, database, calls } = setup()
-      const snapshot = sessionSnapshot(3)
-      await writer.writeRows(snapshot)
-      const id = snapshot.rows.messages[0].messageId
-      await database.executeBatch([
-        {
-          sql: 'UPDATE session_message_payload_chunks SET chunk_index=? WHERE payload_id=(SELECT payload_id FROM session_messages WHERE message_id=?)',
-          params: [chunkIndex, id],
-        },
-      ])
-      await expect(reader.readMessages({ sessionId: snapshot.record.id, messageIds: [id] })).rejects.toMatchObject({
-        name: 'SessionRowStoreError',
-      })
-      const payload = calls.filter((call) => call.kind === 'payload')
-      expect(payload).toHaveLength(1)
-      expect(payload[0].oversized).toBe(true)
-      expect(payload[0].responseBytes).toBeLessThan(128)
-    }
-  )
-
-  it('reassembles split chunks for their own payload ordinal', async () => {
-    const { writer, reader, database } = setup()
-    const snapshot = sessionSnapshot(3)
-    await writer.writeRows(snapshot)
-    const id = snapshot.rows.messages[1].messageId
-    const [payload] = await database.query<{ payload_id: string; value: string }>(
-      'SELECT p.payload_id, p.value FROM session_message_payload_chunks p JOIN session_messages m USING(payload_id) WHERE m.message_id=?',
-      [id]
-    )
-    const middle = Math.floor(payload.value.length / 2)
-    await database.executeBatch([
-      {
-        sql: 'UPDATE session_message_payload_chunks SET value=? WHERE payload_id=?',
-        params: [payload.value.slice(0, middle), payload.payload_id],
-      },
-      {
-        sql: 'INSERT INTO session_message_payload_chunks(session_id,payload_id,chunk_index,value) VALUES(?,?,1,?)',
-        params: [snapshot.record.id, payload.payload_id, payload.value.slice(middle)],
-      },
-      { sql: 'UPDATE session_messages SET payload_chunk_count=2 WHERE message_id=?', params: [id] },
-    ])
-    const ids = [snapshot.rows.messages[2].messageId, id, snapshot.rows.messages[0].messageId]
-    const read = await reader.readMessages({ sessionId: snapshot.record.id, messageIds: ids })
-    expect(read?.messages).toEqual([snapshot.rows.messages[2], snapshot.rows.messages[1], snapshot.rows.messages[0]])
-    expect(Object.keys(read?.textTokens?.sources ?? {})).toHaveLength(3)
-  })
-
   it('rejects BLOB payload values with a body-free response', async () => {
     const { writer, reader, database, calls } = setup()
     const snapshot = sessionSnapshot(1)
     await writer.writeRows(snapshot)
     await database.executeBatch([
-      { sql: 'UPDATE session_message_payload_chunks SET value=CAST(? AS BLOB)', params: ['x'.repeat(100000)] },
+      { sql: 'UPDATE session_messages SET message_json=CAST(? AS BLOB)', params: ['x'.repeat(100000)] },
     ])
     await expect(
       reader.readMessages({ sessionId: snapshot.record.id, messageIds: [snapshot.rows.messages[0].messageId] })
@@ -235,10 +185,6 @@ describe('SQLite bridge read budgets', () => {
     ['seq', Number.POSITIVE_INFINITY],
     ['seq', Number.MAX_SAFE_INTEGER + 1],
     ['seq', 'invalid'],
-    ['payload_chunk_count', 0],
-    ['payload_chunk_count', 1.5],
-    ['payload_chunk_count', Number.POSITIVE_INFINITY],
-    ['payload_chunk_count', 'invalid'],
     ['payload_utf8_length', -1],
     ['payload_utf8_length', 0.5],
     ['payload_utf8_length', Number.POSITIVE_INFINITY],
@@ -384,70 +330,23 @@ describe('SQLite bridge read budgets', () => {
     }
   )
 
-  it.each(['body', 'extra', 'missing'])('rejects late invalid payload data after ASCII sampling: %s', async (kind) => {
-    const { database, writer, reader, calls } = setup()
+  it.each(['body', 'blob', 'empty'])('rejects late invalid payload data after ASCII sampling: %s', async (kind) => {
+    const { database, writer, reader } = setup()
     const snapshot = sessionSnapshot(1000)
     await writer.writeRows(snapshot)
     const messageId = snapshot.rows.messages[250].messageId
-    const selector = '(SELECT payload_id FROM session_messages WHERE message_id = ?)'
-    if (kind === 'body') {
-      await database.executeBatch([
-        {
-          sql: `UPDATE session_message_payload_chunks SET value = ? WHERE payload_id = ${selector}`,
-          params: ['\u0001'.repeat(100000), messageId],
-        },
-      ])
-    } else if (kind === 'extra') {
-      await database.executeBatch([
-        {
-          sql: 'INSERT INTO session_message_payload_chunks SELECT session_id, payload_id, 1, ? FROM session_messages WHERE message_id = ?',
-          params: ['\u0001'.repeat(100000), messageId],
-        },
-      ])
-    } else {
-      await database.executeBatch([
-        { sql: `DELETE FROM session_message_payload_chunks WHERE payload_id = ${selector}`, params: [messageId] },
-      ])
-    }
+    await database.executeBatch([
+      {
+        sql: `UPDATE session_messages SET message_json=${kind === 'blob' ? 'CAST(? AS BLOB)' : '?'} WHERE message_id=?`,
+        params: [kind === 'empty' ? '' : '\u0001'.repeat(100000), messageId],
+      },
+    ])
     await expect(
       reader.readMessages({
         sessionId: snapshot.record.id,
         messageIds: snapshot.rows.messages.map((row) => row.messageId),
       })
     ).rejects.toMatchObject({ name: 'SessionRowStoreError' })
-    const attempts = calls.filter((call) => call.ascii)
-    if (kind !== 'missing') {
-      expect(attempts).toHaveLength(1)
-      expect(attempts[0].oversized).toBe(true)
-      expect(calls.filter((call) => call.kind === 'payload').at(-1)?.ascii).toBe(false)
-    } else {
-      expect(attempts.length).toBeGreaterThan(0)
-      expect(attempts.every((call) => !call.oversized)).toBe(true)
-    }
-  })
-
-  it('rejects undeclared chunks before reading a large payload', async () => {
-    const { database, writer, reader, calls } = setup()
-    const snapshot = sessionSnapshot(1)
-    snapshot.rows.messages[0].message.contentParts = [{ type: 'text', text: 'x'.repeat(100000) }]
-    await writer.writeRows(snapshot)
-    await database.executeBatch([
-      {
-        sql: 'INSERT INTO session_message_payload_chunks SELECT session_id, payload_id, 1, ? FROM session_messages',
-        params: ['undeclared chunk'],
-      },
-    ])
-    const rejected = await reader
-      .readMessages({
-        sessionId: snapshot.record.id,
-        messageIds: [snapshot.rows.messages[0].messageId],
-      })
-      .then(
-        () => false,
-        () => true
-      )
-    expect(rejected).toBe(true)
-    expect(calls.every((call) => call.responseBytes < 10000)).toBe(true)
   })
 
   it('keeps large supplementary-character slices within the soft response budget', async () => {
@@ -538,7 +437,7 @@ describe('SQLite bridge read budgets', () => {
     await writer.writeRows(snapshot)
     await database.executeBatch([
       {
-        sql: 'UPDATE session_message_payload_chunks SET value = ? WHERE payload_id = (SELECT payload_id FROM session_messages WHERE message_id = ?)',
+        sql: 'UPDATE session_messages SET message_json = ? WHERE message_id = ?',
         params: ['\u0001'.repeat(100000), snapshot.rows.messages[0].messageId],
       },
     ])
@@ -568,31 +467,6 @@ describe('SQLite bridge read budgets', () => {
       cause: { message: 'Message payload ID exceeds the native request budget' },
     })
     expect(calls.some((call) => call.kind === 'payload')).toBe(false)
-  })
-
-  it.each([false, true])('rejects undeclared payload chunks (oversized: %s)', async (oversized) => {
-    const { database, writer, reader } = setup()
-    const snapshot = sessionSnapshot(2)
-    await writer.writeRows(snapshot)
-    await database.executeBatch([
-      {
-        sql: 'INSERT INTO session_message_payload_chunks (session_id, payload_id, chunk_index, value) SELECT session_id, payload_id, 20, ? FROM session_messages WHERE message_id = ?',
-        params: [oversized ? '\u0001'.repeat(100000) : '{}', snapshot.rows.messages[0].messageId],
-      },
-    ])
-    await expect(
-      reader.readMessages({
-        sessionId: snapshot.record.id,
-        messageIds: snapshot.rows.messages.map((row) => row.messageId),
-      })
-    ).rejects.toMatchObject({
-      name: 'SessionRowStoreError',
-      cause: {
-        message: oversized
-          ? 'Message payload exceeds the native response budget'
-          : expect.stringContaining('has 2 chunks, expected 1'),
-      },
-    })
   })
 
   it.each(['x'.repeat(budget), `branch\u0000${'\u0001'.repeat(100000)}`])(

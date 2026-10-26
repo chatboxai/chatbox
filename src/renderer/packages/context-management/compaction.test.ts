@@ -3,12 +3,8 @@ vi.mock('../token-estimation/policy', () => ({
 }))
 vi.mock('@/stores/session/agent-mode', () => ({ getSessionAgentModeEntry: () => ({ value: 'off' }) }))
 
-import {
-  hasPendingSessionGeneration,
-  waitForSessionGenerations,
-  withSessionGenerationLock,
-} from '@chatbox/core/generation'
 import { SessionEventBus, SessionService, SessionWriteCoordinator } from '@chatbox/core/application/session'
+import { hasPendingSessionGeneration, withSessionGenerationLock } from '@chatbox/core/generation'
 import { InMemorySessionRepository } from '@chatbox/core/testing'
 import { buildContext } from '@shared/context'
 import { estimateTokensForTokenizerType } from '@shared/token-estimation/tokenizer'
@@ -43,11 +39,9 @@ const {
   hasQueuedWorkMock: vi.fn(),
 }))
 
-vi.mock('@/app/renderer-application', async () => {
-  const { BackupOperationCoordinator } = await import('@chatbox/core/backup')
+vi.mock('@/app/renderer-application', () => {
   return {
     rendererApplication: {
-      backupOperations: new BackupOperationCoordinator(),
       sessions: {
         getSessionHeader: getSessionHeaderMock,
         getSessionContextSource: getSessionContextSourceMock,
@@ -73,7 +67,6 @@ vi.mock('@/stores/session/message-queue', () => ({
   hasQueuedWork: hasQueuedWorkMock,
 }))
 
-import { rendererApplication } from '@/app/renderer-application'
 import { recordRequestOverhead, requestManualCompaction, runCompactionWithUIState } from './compaction'
 let repository: InMemorySessionRepository
 let sessions: SessionService
@@ -124,7 +117,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  await waitForSessionGenerations()
+  await vi.waitFor(() => expect(hasPendingSessionGeneration('session-1')).toBe(false))
   sessions.dispose()
 })
 
@@ -194,14 +187,6 @@ describe('runCompactionWithUIState', () => {
     expect(resolveTokenEstimationPolicyMock).toHaveBeenCalledOnce()
     expect(generateSummaryWithStreamMock).not.toHaveBeenCalled()
     expect(commitSessionCompactionMock).not.toHaveBeenCalled()
-  })
-
-  it('does not admit compaction during backup', async () => {
-    await rendererApplication.backupOperations.run('export', async () => {
-      await runCompactionWithUIState('session-1', { kind: 'manual' })
-      expect(generateSummaryWithStreamMock).not.toHaveBeenCalled()
-      expect(commitSessionCompactionMock).not.toHaveBeenCalled()
-    })
   })
 
   it('forwards a one-time prompt to the summary generator', async () => {
@@ -390,19 +375,12 @@ describe('requestManualCompaction', () => {
     expect(hasPendingSessionGeneration('session-1')).toBe(false)
   })
 
-  it('reports failures after acceptance in the compaction status', async () => {
-    const background = vi
-      .spyOn(rendererApplication.backupOperations, 'runBackground')
-      .mockRejectedValueOnce(new Error('background unavailable'))
-    try {
-      await expect(requestManualCompaction('session-1', { force: true })).resolves.toBe('started')
-      await waitForSessionGenerations()
-      await vi.waitFor(() =>
-        expect(getCompactionUIState('session-1')).toMatchObject({ status: 'failed', error: 'background unavailable' })
-      )
-    } finally {
-      background.mockRestore()
-    }
+  it('reports context read failures after acceptance in the compaction status', async () => {
+    getSessionContextSourceMock.mockRejectedValueOnce(new Error('context unavailable'))
+    await expect(requestManualCompaction('session-1', { force: true })).resolves.toBe('started')
+    await vi.waitFor(() => expect(hasPendingSessionGeneration('session-1')).toBe(false))
+    expect(getCompactionUIState('session-1')).toMatchObject({ status: 'failed', error: 'context unavailable' })
+    expect(commitSessionCompactionMock).not.toHaveBeenCalled()
   })
 
   it.each([

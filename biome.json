@@ -39,6 +39,7 @@
     "includes": [
       "src/**",
       "packages/**",
+      "!packages/chatbox-core/src/testing/fixtures/published-backups/**",
       "test/integration/**/*.ts",
       "test/e2e/**/*.ts",
       "scripts/check-shared-boundaries.mjs",

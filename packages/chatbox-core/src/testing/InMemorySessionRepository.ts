@@ -26,7 +26,6 @@ export class InMemorySessionRepository implements SessionRepositoryPort {
   readonly recordStore = new InMemorySessionRecordStore()
   private readonly data = new RowBackedSessionRepository({
     rows: this.rowStore,
-    backup: this.rowStore,
     records: this.recordStore,
     writes: new SessionRowWriteQueue((_id, run) => run()),
   })

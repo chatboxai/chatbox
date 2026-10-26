@@ -1,13 +1,13 @@
-import { projectRowFixture } from '../ports/testing/session-row-fixtures'
-import { readRowContextSource } from '../application/session/row-context'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { readRowContextSource } from '../application/session/row-context'
 import {
-  SessionRowConflictError,
   type SessionRowCommit,
+  SessionRowConflictError,
   type SessionRowSnapshot,
   type SessionRows,
   type SessionRowsDiff,
 } from '../ports/session-row-store'
+import { projectRowFixture } from '../ports/testing/session-row-fixtures'
 import { createSessionRowStoreContract } from '../ports/testing/session-row-store-contract'
 import type { MessageRow, SessionRecordV2, ThreadRow } from '../session/session-tree/types'
 import { type NodeSessionRowSqlDatabase, openNodeSessionRowDatabase } from './node-sqlite.test-support'
@@ -88,6 +88,39 @@ describe('SqlSessionRowStore shared contract on real SQLite', () => {
   for (const contractCase of createSessionRowStoreContract(() => createStore().store)) {
     it(contractCase.name, contractCase.run)
   }
+})
+
+describe('SqlSessionRowStore initialization', () => {
+  it('creates complete message rows and preserves them when reopened', async () => {
+    const { database, store } = createStore()
+    const fixture = contextSnapshot({
+      id: 'initialization',
+      name: 'Initialization',
+      messages: [{ id: 'message', role: 'user', contentParts: [{ type: 'text', text: '正文😀\u0000' }] }],
+    })
+    await store.writeRows(fixture)
+    expect(
+      await database.query<{ name: string; type: string; notnull: number }>('PRAGMA table_info(session_messages)')
+    ).toContainEqual(expect.objectContaining({ name: 'message_json', type: 'TEXT', notnull: 1 }))
+    expect(await database.query('SELECT message_json FROM session_messages')).toEqual([
+      { message_json: JSON.stringify(fixture.rows.messages[0].message) },
+    ])
+
+    const reopened = new SqlSessionRowStore(database)
+    await reopened.initialize()
+    expect((await reopened.readSnapshot(fixture.record.id))?.rows).toEqual(fixture.rows)
+  })
+
+  it('shares initialization and retries a failed schema creation', async () => {
+    const { database, store } = createStore()
+    const execute = vi.spyOn(database, 'execute').mockRejectedValueOnce(new Error('disk unavailable'))
+    const first = store.initialize()
+    expect(store.initialize()).toBe(first)
+    await expect(first).rejects.toMatchObject({ name: 'SessionRowStoreError', operation: 'initialize' })
+    expect(execute).toHaveBeenCalledTimes(1)
+    await expect(store.initialize()).resolves.toBeUndefined()
+    expect(await store.hasRows('missing')).toBe(false)
+  })
 })
 
 describe('SqlSessionRowStore SQL shape', () => {
@@ -171,7 +204,7 @@ describe('SqlSessionRowStore SQL shape', () => {
       executeBatch: (statements, options) => database.executeBatch(statements, options),
       query: async <T>(sql: string, params: SessionRowSqlBindValue[] = []): Promise<T[]> => {
         const result = await database.query<T>(sql, params)
-        if (sql.includes('FROM session_message_payload_chunks')) {
+        if (sql.includes('FROM session_messages JOIN requested') || sql.startsWith('SELECT typeof(message_json)')) {
           payloadQueries += 1
           for (const row of result as Array<{ i: number; v: string }>) {
             bodyReads.add(payloadIds.find((entry) => entry.payload_id === params[row.i])!.message_id)
@@ -204,7 +237,7 @@ describe('SqlSessionRowStore SQL shape', () => {
         executeBatch: (statements, options) => database.executeBatch(statements, options),
         query: async <T>(sql: string, params: SessionRowSqlBindValue[] = []): Promise<T[]> => {
           const result = await database.query<T>(sql, params)
-          if (!mutated && sql.includes('FROM session_message_payload_chunks')) {
+          if (!mutated && sql.includes('FROM session_messages JOIN requested')) {
             mutated = true
             await writer.writeRows(
               { ...snapshot, record: { ...snapshot.record, name: 'new revision' }, revision: 2 },
@@ -327,7 +360,7 @@ describe('SqlSessionRowStore SQL shape', () => {
         const result = await database.query<T>(sql, params)
         expect(new TextEncoder().encode(JSON.stringify(result)).byteLength).toBeLessThan(512 * 1024)
         expect(sql).not.toMatch(/OFFSET \d/)
-        if (sql.includes('FROM session_message_payload_chunks')) {
+        if (sql.includes('FROM session_messages JOIN requested') || sql.startsWith('SELECT typeof(message_json)')) {
           for (const param of params)
             if (typeof param === 'string' && identities.has(param)) hydrated.add(identities.get(param)!)
           const escapedResponse = JSON.stringify({ values: result }).replace(
@@ -538,7 +571,7 @@ describe('SqlSessionRowStore SQL shape', () => {
     expect(withSnapshot?.sessionPromptContextSnapshot).toEqual(promptSnapshot)
   })
 
-  it('round-trips a multi-megabyte unicode message through payload chunks', async () => {
+  it('round-trips a multi-megabyte unicode message through one stored message', async () => {
     const { store } = createStore()
     const text = `${'中文😀\\'.repeat(256 * 1024)}tail`
     const row = messageRow('thread-active', 'huge', {
@@ -580,9 +613,9 @@ describe('SqlSessionRowStore SQL shape', () => {
           (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`
         )
         expect(new TextEncoder().encode(escaped).byteLength).toBeLessThan(384 * 1024)
-        if (sql.startsWith('WITH chunk AS')) {
+        if (sql.startsWith('SELECT typeof(message_json)')) {
           slices += 1
-          expect(params[3]).toBe(Math.floor((384 * 1024 - 1024) / 12))
+          expect(params[1]).toBe(Math.floor((384 * 1024 - 1024) / 12))
           expect(rows).toHaveLength(1)
           expect(rows[0]).not.toHaveProperty('payload_id')
         }
@@ -608,7 +641,7 @@ describe('SqlSessionRowStore SQL shape', () => {
       executeBatch: (statements, options) => database.executeBatch(statements, options),
       query: async <T>(sql: string, params: SessionRowSqlBindValue[] = []): Promise<T[]> => {
         const rows = await database.query<T>(sql, params)
-        if (!mutated && sql.startsWith('WITH chunk AS')) {
+        if (!mutated && sql.startsWith('SELECT typeof(message_json)')) {
           mutated = true
           await writer.applyDiff(
             {
@@ -789,7 +822,7 @@ describe('SqlSessionRowStore SQL shape', () => {
     expect(selected).toEqual(messages)
   })
 
-  it('reports a read failure as a store error when a payload chunk is corrupt', async () => {
+  it('reports a read failure as a store error when a stored message is corrupt', async () => {
     const { database, store } = createStore()
     await store.writeRows(
       snapshot(
@@ -803,7 +836,7 @@ describe('SqlSessionRowStore SQL shape', () => {
     )
     await database.executeBatch([
       {
-        sql: 'UPDATE session_message_payload_chunks SET value = ? WHERE payload_id = (SELECT payload_id FROM session_messages WHERE message_id = ?)',
+        sql: 'UPDATE session_messages SET message_json = ? WHERE message_id = ?',
         params: ['{broken', 'm1'],
       },
     ])
@@ -815,7 +848,7 @@ describe('SqlSessionRowStore SQL shape', () => {
     })
   })
 
-  it('retries when a concurrent publish replaces payload chunks during a read', async () => {
+  it('retries when a concurrent publish replaces complete messages during a read', async () => {
     const underlying = openNodeSessionRowDatabase()
     openDatabases.push(underlying)
     let advanceRevision: (() => Promise<unknown>) | null = null
@@ -823,7 +856,7 @@ describe('SqlSessionRowStore SQL shape', () => {
       execute: (sql) => underlying.execute(sql),
       executeBatch: (statements, options) => underlying.executeBatch(statements, options),
       query: async <T>(sql: string, params: SessionRowSqlBindValue[] = []): Promise<T[]> => {
-        if (advanceRevision && sql.includes('FROM session_message_payload_chunks')) {
+        if (advanceRevision && sql.includes('FROM session_messages JOIN requested')) {
           const advance = advanceRevision
           advanceRevision = null
           await advance()
@@ -873,8 +906,7 @@ describe('metadata-only payload reuse', () => {
     await store.writeRows(
       snapshot({ sessionId: 'session-1', threads: [threadRow('thread-active')], messages: [row] }, 1)
     )
-    const manifest = () =>
-      database.query('SELECT payload_id, payload_chunk_count, payload_utf8_length FROM session_messages')
+    const manifest = () => database.query('SELECT payload_id, message_json, payload_utf8_length FROM session_messages')
     const before = await manifest()
     database.reset()
     const diff: SessionRowsDiff = {

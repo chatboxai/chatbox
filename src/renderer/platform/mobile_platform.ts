@@ -1,4 +1,3 @@
-import { mobileBackupBlobs } from './mobile-backup-blobs'
 import { App } from '@capacitor/app'
 import { Browser } from '@capacitor/browser'
 import { Device } from '@capacitor/device'
@@ -29,8 +28,6 @@ export default class MobilePlatform extends MobileSQLiteStorage implements Platf
   public readonly isDesktopLike = false
 
   public exporter = new MobileExporter()
-  private backupBlobs = mobileBackupBlobs(localforage, this.backupResourceStorage)
-  public backupBlobStreams = this.backupBlobs.streams
 
   private navigationCallback: ((path: string) => void) | null = null
   private _imageGenerationStorage: ImageGenerationStorage | null = null
@@ -234,13 +231,13 @@ export default class MobilePlatform extends MobileSQLiteStorage implements Platf
   }
 
   public async getStoreBlob(key: string): Promise<string | null> {
-    return this.backupBlobs.get(key)
+    return localforage.getItem<string>(key)
   }
   public async setStoreBlob(key: string, value: string): Promise<void> {
-    await this.backupBlobs.set(key, value)
+    await localforage.setItem(key, value)
   }
   public async delStoreBlob(key: string) {
-    return this.backupBlobs.remove(key)
+    return localforage.removeItem(key)
   }
   public async listStoreBlobKeys(): Promise<string[]> {
     return localforage.keys()

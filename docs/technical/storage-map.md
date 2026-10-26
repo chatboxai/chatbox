@@ -1,6 +1,8 @@
 # App 存储地图
 
-> 核对基线：2026-09-08，`main` 的 `ef853b26d`。描述源码接入情况，不代表正式版发布或原位升级验收。
+> Last updated: 2026-10-20
+>
+> 描述当前开发代码的存储边界，不代表正式版发布或跨应用原位升级验收。
 
 Chatbox 使用多种本地存储。一份业务数据有自己的名字（key），平台决定它落在哪种介质；一个聊天又会拆成目录、会话记录、消息和附件。IndexedDB 是浏览器引擎管理的本地数据库，Electron 使用它并不意味着数据存到云端。
 
@@ -13,7 +15,7 @@ Chatbox 使用多种本地存储。一份业务数据有自己的名字（key）
 | 会话目录 | IndexedDB `chatbox-session-meta` | 同 Desktop | SQLite 会话目录库 | 同名 SQLite 库 |
 | 消息行 | IndexedDB `chatbox-messages` | 同 Desktop | SQLite 消息库 | 同名 SQLite 库 |
 | 图片生成记录 | IndexedDB `chatbox-image-generation` | 同 Desktop | SQLite 生图库 | 同名 SQLite 库 |
-| 图片、附件和解析内容 | `chatbox-blobs/` 文件 | 默认 localforage 实例 | WebView 默认 localforage 实例 | `chatbox-blobs-v1/` 文件 |
+| 图片、附件和解析内容 | `chatbox-blobs/` 文件 | 默认 localforage 实例 | 默认 localforage 实例 | `chatbox-blobs-v1/` 文件 |
 | 账号登录与轻量状态 | localStorage | localStorage | localStorage | AsyncStorage（宿主自己的状态集合） |
 | 本地知识库、附件检索 | 原生 SQLite 与向量索引 | 不使用桌面实现 | 不使用桌面实现 | 不使用桌面实现 |
 
@@ -61,7 +63,7 @@ Renderer 的下列 key 使用 localStorage：
 
 RN 使用带命名空间的 AsyncStorage，例如 `@chatbox/v1:auth-info:chatbox-ai-auth-info`、`@chatbox/v1:last-used-model:last-used-model`；不能将 renderer 的全部 localStorage key 直接套用于 RN。
 
-`StorageKey` 枚举不是当前存储的完整清单：`chat-sessions`、`chat-sessions-list` 属于历史会话组织结构；`authInfo` 不是当前账号 store 的实际 key；`chat-session-settings`、`picture-session-settings` 在备份兼容路径中仍有意义，当前单会话设置随会话保存。
+`StorageKey` 枚举不是当前存储的完整清单：`chat-sessions`、`chat-sessions-list` 属于历史会话组织结构；`authInfo` 不是当前账号 store 的实际 key；`chat-session-settings`、`picture-session-settings` 是历史设置 key，当前单会话设置随会话保存。
 
 
 ## 会话目录、记录与消息行
@@ -75,13 +77,17 @@ RN 使用带命名空间的 AsyncStorage，例如 `@chatbox/v1:auth-info:chatbox
 
 目录是展示侧栏所需的信息，不包含完整消息正文。生图记录保存任务与图片引用，图片内容走附件库。
 
-V1 将完整 Session JSON 保存在 `session:<id>`。rows 格式在该 key 保存瘦记录和读取投影，正文拆到消息行。消息以 `sessionId` / `messageId` 定位，`threadId` 表示线程，`parentMessageId` 表示父消息，`activeChildId` 表示当前选择的后续分支。线程保存当前叶子、压缩边界等。行库还保存提交版本和提交记录，避免并发写入覆盖。
+旧版完整 Session JSON 位于 `session:<id>`，由本地升级门禁读取。正常会话通过独立 header、线程和消息行访问；目录与 KV 中的会话记录服务于列表和恢复投影，消息库保存权威正文及关系。消息以 `sessionId` / `messageId` 定位，`threadId` 表示线程，`parentMessageId` 表示父消息，`activeChildId` 表示当前选中的后续分支；线程保存当前叶子和压缩边界。
 
-SQLite 另有 `session_message_payload_chunks`、revision head、staging 等内部表，负责分块与可靠提交；`session_text_tokens` 保存文本 token 派生数据。Capacitor 主 KV 的 `key_value_chunks` 与消息正文分块是两套机制。
+每条消息保存一个完整 `Message`：IndexedDB 的 `messages` 行持有完整对象，SQLite 的 `session_messages.message_json` 持有完整 JSON。正文不按大小切换持久化格式。分页在消息边界结束，超过页目标预算的单条消息单独处理；桥接请求可以切片传输同一行文本，但不会生成正常消息分片表。Capacitor 主 KV 的 `key_value_chunks` 属于通用 KV 存储，与消息行格式独立。
 
-行存储支持按需读取，但不保证所有操作只读少量消息：聊天首屏满足条件时读取最近 50 条；复杂会话回退完整读取；模型上下文沿父链读取；导出读取完整会话。详细条件与迁移协议见 [存储架构](./storage.md#会话行存储与读取范围)。
+revision head、staging 和提交记录负责冲突检测与原子发布；`session_text_tokens` 等索引保存派生数据。复制会话和历史线程迁出使用正常 `iterateRows` / `stageRows` 接口：源读取绑定 revision，目标候选隐藏写入，校验后以 CAS 原子发布。普通资源扫描通过行接口逐条收集引用，不构造完整会话正文。
 
-证据：[消息结构](../../packages/chatbox-core/src/session/session-tree/types.ts)、[SQLite schema](../../packages/chatbox-core/src/persistence/capacitor-compatible-schema.ts)、[IndexedDB 行库](../../src/renderer/storage/SessionRowStorage.ts)。
+本地升级入口将正式发布版本的完整 Session 转换为规范行，验证候选后原子发布。资源 GC 通过普通行接口扫描引用，遇到扫描失败或并发状态变化时保留资源。
+
+聊天窗口、导航、Token 和生成上下文使用各自的行查询。单会话文本/HTML/JSON 输出使用普通聊天导出接口；完整输出文件可能仍需内存缓冲。详细边界见 [存储架构](./storage.md#会话行存储与读取范围)。
+
+证据：[消息结构](../../packages/chatbox-core/src/session/session-tree/types.ts)、[SQLite schema](../../packages/chatbox-core/src/persistence/capacitor-compatible-schema.ts)、[IndexedDB 行库](../../src/renderer/storage/SessionRowStorage.ts)、[行传输接口](../../packages/chatbox-core/src/ports/session-row-transfer.ts)。
 
 ## 附件、知识库与文件
 
@@ -95,7 +101,9 @@ SQLite 另有 `session_message_payload_chunks`、revision head、staging 等内�
 | `link:<url>` | 网页解析内容 |
 | `*_tokenMap` / `*_parserType` | 相关 token 统计与解析信息，走 KV |
 
-Blob 是大内容接口，不保证值是 JavaScript Blob：当前可能保存文本或 data URL。Desktop 写 UTF-8 文件到 `<userData>/chatbox-blobs/<sanitized key>`；RN 使用 `Documents/chatbox-blobs-v1/objects/<hash前2位>/<sha256(key)>.blob`。
+Blob 是普通资源存储接口，不保证值是 JavaScript Blob：当前可能保存文本或 data URL。Desktop 写 UTF-8 文件到 `<userData>/chatbox-blobs/<sanitized key>`；RN 使用 `Documents/chatbox-blobs-v1/objects/<hash前2位>/<sha256(key)>.blob`，文件封装保存原 key、编码与字节数。
+
+Web 与 Capacitor 通过 localforage 读写资源字符串；RN Blob owner 读写 `CBLOB1` 文件。资源存储不依赖归档模块。`@chatbox/core/resources` 收集消息、header、设置和 Copilot 的受管资源引用；宿主 GC 还保护草稿、近期写入和生图记录，并在扫描不完整时放弃删除。
 
 | 桌面路径（相对 userData） | 业务 |
 |---|---|
@@ -117,8 +125,7 @@ Blob 是大内容接口，不保证值是 JavaScript Blob：当前可能保存�
 
 React Query、Jotai / Zustand 的内存值不是独立的最终持久化来源；只有明确接入存储的字段才会保留。草稿、翻译缓存、检索索引虽然都是辅助数据，也可能落盘。Renderer 还通过 `chatboxkeypair` localforage 实例记录 App Store 评分提示状态；通用 `chatboxcache` 是否持久化取决于运行时，有内存回退。
 
-配置自动备份只复制 `config.json`，不含完整聊天和附件。应用内便携备份按所选设置、密钥、会话、助手导出，完整会话在 `sessions/<id>/session.json`，引用资源按 manifest 收集；rows 会被还原为完整 Session。导出结果中的资源读取失败等 warning 仍需检查。
+配置自动备份只复制 `config.json`，不含完整聊天和附件。当前开发阶段的整包备份导入、导出入口显示暂不可用；设置页不能触发文件选择或归档任务。会话列表恢复、单会话聊天输出和平台诊断日志各有独立入口，RN 未接入日志输出的操作显示不可用。
 
-便携备份不是用户目录镜像：不直接打包知识库 / RAG 数据库、Skills 目录、工作模式产物和日志。迁移、恢复或清理前，应按目标业务确认所需数据，不能把“复制配置文件”“复制消息库”“应用备份”视为等价。
+数据库升级和会话列表恢复不是归档导入：前者转换当前磁盘记录，后者重建目录投影。复制配置文件、复制消息库也不能代替完整用户数据迁移。新的 V3 归档及 V1/V2 文件适配按 [备份功能边界](./data-backup.md) 所列阶段交付。
 
-证据：[备份结构](../../packages/chatbox-core/src/backup/archive-layout.ts)、[备份选择](../../packages/chatbox-core/src/backup/export-items.ts)、[导出实现](../../packages/chatbox-core/src/backup/export-backup.ts)、[辅助缓存](../../src/shared/utils/cache.ts)。

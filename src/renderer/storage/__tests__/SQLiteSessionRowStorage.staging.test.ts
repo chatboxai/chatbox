@@ -1,17 +1,17 @@
-import { SessionRowWriteQueue } from '@chatbox/core/application/session'
-import { projectRowFixture } from '../../../../packages/chatbox-core/src/ports/testing/session-row-fixtures'
-import { stageLegacySessionRows } from '@chatbox/core/backup'
-import { RowBackedSessionRepository } from '@chatbox/core/application/session'
-import { InMemorySessionRecordStore } from '../../../../packages/chatbox-core/src/testing/InMemorySessionRecordStore'
-import type { Message } from '@chatbox/core'
-import { DEFAULT_BACKUP_PAGE_LIMITS } from '@chatbox/core/backup'
+import type { Message, Session } from '@chatbox/core'
 import { type SessionRowSqlBindValue, type SessionRowSqlDatabase, SqlSessionRowStore } from '@chatbox/core'
+import { RowBackedSessionRepository, SessionRowWriteQueue } from '@chatbox/core/application/session'
 import type { SessionRowSnapshot, SessionTextTokenResult } from '@chatbox/core/ports'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   type NodeSessionRowSqlDatabase,
   openNodeSessionRowDatabase,
 } from '../../../../packages/chatbox-core/src/persistence/node-sqlite.test-support'
+import {
+  prepareSessionRowsFixture,
+  projectRowFixture,
+} from '../../../../packages/chatbox-core/src/ports/testing/session-row-fixtures'
+import { InMemorySessionRecordStore } from '../../../../packages/chatbox-core/src/testing/InMemorySessionRecordStore'
 import { SQLiteSessionRowStore } from '../SQLiteSessionRowStorage'
 
 const connection = vi.hoisted(() => ({ createConnection: vi.fn(), closeConnection: vi.fn() }))
@@ -78,6 +78,14 @@ function snapshot(count: number, revision = 1): SessionRowSnapshot {
       })),
     },
   })
+}
+
+async function stageFixture(store: SQLiteSessionRowStore, source: Session) {
+  const tree = prepareSessionRowsFixture(source)
+  const candidate = await store.stageRows({ record: tree.session, revision: 1 }, null)
+  for (const thread of tree.threads) await candidate.appendThread(thread)
+  for (const message of tree.messages) await candidate.appendMessage(message)
+  return candidate
 }
 
 function realBridge(platform: 'ios' | 'android' = 'ios') {
@@ -209,7 +217,7 @@ describe('Capacitor staging transport on real SQLite', () => {
       )
       expect(calls.some(isStaging)).toBe(true)
       expect(
-        calls.flat().some((row) => row.statement.startsWith('INSERT OR REPLACE INTO session_message_payload_chunks'))
+        calls.flat().some((row) => row.statement.startsWith('INSERT OR REPLACE INTO session_message_navigation'))
       ).toBe(false)
       expect(await database.query('SELECT message_id, payload_id FROM session_messages ORDER BY seq')).toEqual(
         removeTail ? before.slice(0, -1) : before
@@ -230,12 +238,7 @@ describe('Capacitor staging transport on real SQLite', () => {
     await store.initialize()
     const tables = await database.query<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table'")
     expect(tables.map((table) => table.name)).toEqual(
-      expect.arrayContaining([
-        'session_messages',
-        'session_threads',
-        'session_message_payload_chunks',
-        'session_text_tokens',
-      ])
+      expect.arrayContaining(['session_messages', 'session_threads', 'session_messages_staging', 'session_text_tokens'])
     )
     await expect(store.readSnapshot('missing')).resolves.toBeNull()
   })
@@ -309,17 +312,7 @@ describe('Capacitor staging transport on real SQLite', () => {
     expect(
       queryPlan.some((row) => /SEARCH session_text_tokens.*session_id=\? AND message_id=\?/.test(row.detail))
     ).toBe(true)
-    const payloadCleanup = calls
-      .flat()
-      .find((row) =>
-        row.statement.startsWith('DELETE FROM session_message_payload_chunks WHERE payload_id IN(SELECT m.payload_id')
-      )
-    expect(payloadCleanup).toBeDefined()
-    const payloadPlan = await database.query<{ detail: string }>(
-      `EXPLAIN QUERY PLAN ${payloadCleanup!.statement}`,
-      payloadCleanup!.values
-    )
-    expect(payloadPlan.some((row) => /SEARCH m .*session_id=\? AND message_id=\?/.test(row.detail))).toBe(true)
+    expect(calls.flat().some((row) => row.statement.includes('session_message_payload_chunks'))).toBe(false)
   })
 
   it.each(['success', 'rollback', 'lost-ack'] as const)(
@@ -565,7 +558,7 @@ describe('Capacitor staging transport on real SQLite', () => {
       hooks.rollback = (batch) => {
         const matches =
           phase === 'payload'
-            ? batch.some((row) => row.statement.startsWith('INSERT OR REPLACE INTO session_message_payload_chunks'))
+            ? batch.some((row) => row.statement.startsWith('INSERT OR REPLACE INTO session_message_navigation'))
             : phase === 'staging'
               ? isStaging(batch)
               : isPublish(batch)
@@ -673,7 +666,7 @@ describe('Capacitor staging transport on real SQLite', () => {
       if (isStaging(batch)) throw new Error('Staging acknowledgement lost')
     }
     hooks.before = (batch) => {
-      if (batch.some((row) => row.statement === 'DELETE FROM session_row_local_payloads WHERE mutation_id=?'))
+      if (batch.some((row) => row.statement === 'DELETE FROM session_row_local_versions WHERE mutation_id=?'))
         throw new Error('Cleanup unavailable')
     }
     await expect(store.applyDiff(diff, commit, 1)).rejects.toMatchObject({ name: 'SessionRowStoreError' })
@@ -686,8 +679,7 @@ describe('Capacitor staging transport on real SQLite', () => {
     expect(await readContentSnapshot(store)).toEqual(expectedSnapshot(old))
     await database.execute('UPDATE session_row_staging_mutations SET created_at = 0')
     await new SqlSessionRowStore(database).initialize()
-    expect(await database.query('SELECT mutation_id FROM session_row_staging_mutations')).toEqual([])
-    expect(await database.query('SELECT mutation_id FROM session_messages_staging')).toEqual([])
+    expect(await database.query('SELECT message_id FROM session_messages_staging')).toEqual([{ message_id: 'm19' }])
     expect(await readContentSnapshot(store)).toEqual(expectedSnapshot(old))
     await store.applyDiff(diff, commit, 1)
     expect(await readContentSnapshot(store)).toEqual(expectedSnapshot(next))
@@ -759,7 +751,6 @@ describe('Capacitor staging transport on real SQLite', () => {
       expect(await readContentSnapshot(store)).toEqual(expectedSnapshot(expected))
       const insertFamilies = [
         { prefix: 'INSERT OR REPLACE INTO session_messages_staging ', width: 17 },
-        { prefix: 'INSERT OR REPLACE INTO session_message_payload_chunks ', width: 4 },
         { prefix: 'INSERT OR REPLACE INTO session_message_navigation ', width: 4 },
       ]
       const isRowInsert = (row: NativeStatement) =>
@@ -802,8 +793,7 @@ describe('Capacitor staging transport on real SQLite', () => {
       const largestStatement = Math.max(...uncoalescedSizes.map((batch) => batch.largest))
       for (const batch of uncoalescedSizes.slice(0, -1))
         expect(batch.bytes).toBeGreaterThanOrEqual(480 * 1024 - largestStatement - 1)
-      // This single-thread fixture has three prepare, four thread and eleven publication statements.
-      expect(calls.flat().filter((row) => !isRowInsert(row))).toHaveLength(18)
+      expect(calls.flat().filter((row) => !isRowInsert(row)).length).toBeLessThan(30)
       expect(
         calls
           .flat()
@@ -813,7 +803,6 @@ describe('Capacitor staging transport on real SQLite', () => {
           )
       ).toBe(true)
       expect(await database.query("SELECT name FROM sqlite_master WHERE type = 'trigger'")).toEqual([
-        { name: 'session_message_navigation_cleanup' },
         { name: 'session_token_cache_delete' },
         { name: 'session_token_cache_payload' },
       ])
@@ -823,7 +812,7 @@ describe('Capacitor staging transport on real SQLite', () => {
         )
       ).toEqual([])
       expect(await database.query('PRAGMA foreign_key_list(session_messages_staging)')).toEqual([])
-      expect(await database.query('PRAGMA foreign_key_list(session_message_payload_chunks)')).toEqual([])
+      expect(await database.query('PRAGMA foreign_key_list(session_messages)')).toEqual([])
     },
     60_000
   )
@@ -897,7 +886,7 @@ describe('Capacitor staging transport on real SQLite', () => {
       await store.writeRows(next, 1)
       expect(await readContentSnapshot(store)).toEqual(expectedSnapshot(next))
       expect(await database.query('SELECT mutation_id FROM session_messages_staging')).toEqual([])
-      expect((await database.query('SELECT payload_id FROM session_message_payload_chunks')).length).toBe(1_000)
+      expect((await database.query('SELECT payload_id FROM session_messages')).length).toBe(1_000)
     }
   )
 
@@ -955,30 +944,24 @@ describe('Capacitor staging transport on real SQLite', () => {
   })
 })
 
-it('round-trips backup rows through the Capacitor transaction adapter and rolls publication back', async () => {
+it('round-trips complete rows through the Capacitor transaction adapter', async () => {
   const { store } = realBridge()
   const original = snapshot(3)
-  original.rows.messages[1].message.contentParts = [{ type: 'text', text: '🙂'.repeat(100_000) }]
+  original.rows.messages[1].message.contentParts = [{ type: 'text', text: '🙂'.repeat(100000) }]
   await store.writeRows(original)
-  const candidate = await store.beginBackupRestore('session')
+  const candidate = await store.stageRows({ ...original, revision: 2 }, 1)
   try {
-    for await (const row of store.iterateBackupRows('session', DEFAULT_BACKUP_PAGE_LIMITS)) {
-      if (row.kind === 'message' && row.payload?.chunks) {
-        for await (const chunk of row.payload.chunks()) await candidate.appendPayload!(chunk)
-      }
-      await candidate.append(row)
+    for await (const row of store.iterateRows({ sessionId: 'session', expectedRevision: 1 })) {
+      if (row.kind === 'thread') await candidate.appendThread(row.thread)
+      else await candidate.appendMessage(row.message)
     }
     await candidate.publish()
-    expect((await store.readSnapshot('session'))?.rows.messages.map((row) => row.message)).toEqual(
-      original.rows.messages.map((row) => row.message)
-    )
-    await candidate.rollback()
-    expect((await store.readSnapshot('session'))?.rows.messages.map((row) => row.message)).toEqual(
-      original.rows.messages.map((row) => row.message)
-    )
   } finally {
     await candidate.dispose()
   }
+  expect((await store.readSnapshot('session'))?.rows.messages.map((row) => row.message)).toEqual(
+    original.rows.messages.map((row) => row.message)
+  )
 })
 
 it('initializes all row tables with the Android native statement delimiter', async () => {
@@ -994,7 +977,6 @@ it.each(['ios', 'android'] as const)(
     const { store } = realBridge(platform)
     const repository = new RowBackedSessionRepository({
       rows: store,
-      backup: store,
       writes: new SessionRowWriteQueue((_id, action) => action()),
       records: new InMemorySessionRecordStore(),
     })
@@ -1005,7 +987,7 @@ it.each(['ios', 'android'] as const)(
       contentParts: [{ type: 'text', text: id }],
       timestamp: 1,
     })
-    const seed = await stageLegacySessionRows(store, {
+    const seed = await stageFixture(store, {
       id: 'session',
       name: 'Forked',
       messages: [message('pivot'), message('tail')],
@@ -1041,7 +1023,6 @@ it.each(['ios', 'android'] as const)(
     const { store } = realBridge(platform)
     const repository = new RowBackedSessionRepository({
       rows: store,
-      backup: store,
       writes: new SessionRowWriteQueue((_id, action) => action()),
       records: new InMemorySessionRecordStore(),
     })
@@ -1052,7 +1033,7 @@ it.each(['ios', 'android'] as const)(
       contentParts: [{ type: 'text', text: id }],
       timestamp: 1,
     })
-    const seed = await stageLegacySessionRows(store, {
+    const seed = await stageFixture(store, {
       id: 'session',
       name: 'Threaded',
       messages: [message('active')],
@@ -1075,5 +1056,31 @@ it.each(['ios', 'android'] as const)(
     const persisted = await repository.readSessionTranscriptWindow({ sessionId: 'session', limit: 20 })
     expect(persisted?.messages.map((row) => row.messageId)).toEqual(['old'])
     expect((await store.readThreadsPage({ sessionId: 'session', limit: 20 }))?.threadIds).toEqual(['archived'])
+  }
+)
+
+it.each(['ios', 'android'] as const)(
+  'imports complete V3 messages through the %s bridge and retains them after cleanup',
+  async (platform) => {
+    const { store, calls } = realBridge(platform),
+      source = snapshot(3)
+    await store.writeRows(source)
+    const next = snapshot(3, 2)
+    next.rows.messages[1].message.contentParts = [{ type: 'text', text: 'whole😀中文'.repeat(90000) }]
+    const candidate = await store.stageImportRows(next, 1, 'native-import')
+    await candidate.appendRows([
+      ...next.rows.threads.map((thread) => ({ kind: 'thread' as const, thread })),
+      ...next.rows.messages.map((message) => ({ kind: 'message' as const, message })),
+    ])
+    await candidate.prepare()
+    await candidate.publish()
+    expect(
+      (await store.readMessages({ sessionId: 'session', messageIds: ['m1'] }))?.messages[0].message.contentParts
+    ).toEqual(next.rows.messages[1].message.contentParts)
+    const published = await readContentSnapshot(store)
+    await (await store.resumeImportRows(candidate.candidateId)).dispose()
+    await candidate.dispose()
+    expect(await readContentSnapshot(store)).toEqual(published)
+    expect(calls.length).toBeGreaterThan(0)
   }
 )

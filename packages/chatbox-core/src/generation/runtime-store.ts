@@ -103,6 +103,12 @@ export class GenerationRuntimeStore {
     return [...(this.states.get(sessionId)?.values() ?? [])]
   }
 
+  getGeneratingSessionIds(): readonly string[] {
+    return [...this.states]
+      .filter(([, states]) => [...states.values()].some((state) => state.phase !== 'paused'))
+      .map(([id]) => id)
+  }
+
   getActiveMessageIds(sessionId: string): ReadonlySet<string> {
     return new Set(this.list(sessionId).map((runtime) => runtime.messageId))
   }

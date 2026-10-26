@@ -10,6 +10,7 @@ import type {
   ThreadRow,
 } from '../session/session-tree/types'
 import type { SessionTextTokenRead, SessionTextTokenStorePort } from './session-text-tokens'
+import type { SessionRowTransferPort } from './session-row-transfer'
 
 export interface SessionRows {
   sessionId: string
@@ -123,13 +124,22 @@ export class SessionRowConflictError extends Error {
   }
 }
 
+export class SessionStorageBusyError extends Error {
+  readonly name = 'SessionStorageBusyError'
+
+  constructor() {
+    super('Session storage is busy')
+  }
+}
+
 /**
  * Thread rows and message rows of a session. A published mutation must expose
  * either the complete old snapshot or the complete new snapshot; drivers may
  * use invisible staging transactions before one atomic publish transaction.
  */
 export interface SessionRowStorePort
-  extends SessionBranchStorePort,
+  extends SessionRowTransferPort,
+    SessionBranchStorePort,
     SessionTranscriptStorePort,
     SessionRowRelationsPort,
     SessionTokenCacheStorePort,

@@ -170,25 +170,25 @@ describe('row write coordinator', () => {
     expect(f.current().header.name).toBe('Recovered')
   })
 
-  test('backup drains accepted commands and blocks new writes and deletion', async () => {
+  test('exclusive operation drains accepted commands and blocks new writes and deletion', async () => {
     const f = fixture()
     let release = () => {}
     const barrier = new Promise<void>((resolve) => {
       release = resolve
     })
-    const accepted = f.writes.executeCommand('s', { type: 'header', updater: { name: 'Before backup' } })
-    const backup = f.writes.withBackupAccess(async () => {
-      expect(f.current().header.name).toBe('Before backup')
+    const accepted = f.writes.executeCommand('s', { type: 'header', updater: { name: 'Before exclusive operation' } })
+    const operation = f.writes.withExclusiveAccess(async () => {
+      expect(f.current().header.name).toBe('Before exclusive operation')
       await barrier
     })
     await expect(f.writes.executeCommand('s', { type: 'append', messages: [] })).rejects.toMatchObject({
-      name: 'BackupOperationBusyError',
+      name: 'SessionStorageBusyError',
     })
-    await expect(f.writes.delete('s', async () => {})).rejects.toMatchObject({ name: 'BackupOperationBusyError' })
+    await expect(f.writes.delete('s', async () => {})).rejects.toMatchObject({ name: 'SessionStorageBusyError' })
     await accepted
     release()
-    await backup
-    await f.writes.executeCommand('s', { type: 'header', updater: { name: 'After backup' } })
+    await operation
+    await f.writes.executeCommand('s', { type: 'header', updater: { name: 'After exclusive operation' } })
   })
 
   test.each(['archive', 'restore'] as const)(

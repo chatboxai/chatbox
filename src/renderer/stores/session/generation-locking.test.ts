@@ -1,5 +1,5 @@
-import { InMemorySessionRepository } from '@chatbox/core/testing'
 import { SessionEventBus, SessionService, SessionWriteCoordinator } from '@chatbox/core/application/session'
+import { InMemorySessionRepository } from '@chatbox/core/testing'
 import type { Message, Session } from '@shared/types'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -26,12 +26,10 @@ const {
 }))
 
 vi.mock('@/app/renderer-application', async () => {
-  const { BackupOperationCoordinator } = await import('@chatbox/core/backup')
   const { GenerationRuntimeStore } = await import('@chatbox/core/generation')
   const { createRowSessionFixtureReads } = await import('./testing/row-session-fixture')
   return {
     rendererApplication: {
-      backupOperations: new BackupOperationCoordinator(),
       sessions: { ...createRowSessionFixtureReads(getSessionMock), updateMessage: updateMessageMock },
       generationRuntime: new GenerationRuntimeStore(),
     },

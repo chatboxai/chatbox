@@ -1,8 +1,12 @@
-import { describe, expect, it, vi } from 'vitest'
-import { prepareLegacySessionRows } from '../../backup/legacy-row-import'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { prepareSessionRowsFixture } from '../../ports/testing/session-row-fixtures'
+import * as treeValidation from '../../session/session-tree/validate'
 import { InMemorySessionRepository } from '../../testing/InMemorySessionRepository'
 import type { Session } from '../../types'
-import { copyMessagePayload, copiedMessageId } from './session-thread-copy'
+import * as copyShape from './session-copy-shape'
+import { copiedMessageId } from './session-thread-copy'
+
+afterEach(() => vi.restoreAllMocks())
 
 const source = (): Session => ({
   id: 'source',
@@ -36,14 +40,57 @@ const source = (): Session => ({
 })
 const request = { sessionId: 'source', threadId: 'old', expectedRevision: 1, targetSessionId: 'copy', createdAt: 99 }
 
-describe('streamed thread copy', () => {
+describe('row-based thread copy', () => {
+  it('copies a complete session by identity mapping without revalidating its tree', async () => {
+    const repository = new InMemorySessionRepository()
+    await repository.seedSession(source())
+    const validate = vi.spyOn(treeValidation, 'validateSessionTree')
+    await repository.copySessionRows({ ...request, scope: { type: 'session' } })
+    expect(validate).not.toHaveBeenCalled()
+    expect(repository.inspectSession('copy')?.threads?.[0].name).toBe('Old thread')
+  })
+
+  it.each([false, true])(
+    'preserves the publication result when cleanup fails (publish failure: %s)',
+    async (failPublish) => {
+      const repository = new InMemorySessionRepository()
+      await repository.seedSession(source())
+      const stage = repository.rowStore.stageRows.bind(repository.rowStore)
+      const failure = new Error('publication failed')
+      vi.spyOn(repository.rowStore, 'stageRows').mockImplementation(async (...args) => {
+        const writer = await stage(...args)
+        return {
+          ...writer,
+          publish: failPublish
+            ? async () => {
+                throw failure
+              }
+            : writer.publish,
+          dispose: async () => {
+            throw new Error('cleanup failed')
+          },
+        }
+      })
+      if (failPublish) {
+        await expect(repository.copySessionThreadRows(request)).rejects.toBe(failure)
+        expect(await repository.getSessionHeader('copy')).toBeNull()
+      } else {
+        const result = await repository.copySessionThreadRows(request)
+        expect(result.revision).toBe(1)
+        expect((await repository.getSessionHeader('copy'))?.header.name).toBe('Old thread')
+      }
+    }
+  )
+
   it('copies only the selected thread with all its branches and fresh identities', async () => {
     const repository = new InMemorySessionRepository()
     const input = source()
     await repository.seedSession(input)
-    const read = vi.spyOn(repository.rowStore, 'iterateBackupRows')
+    const read = vi.spyOn(repository.rowStore, 'iterateRows')
+    const validate = vi.spyOn(treeValidation, 'validateSessionTree')
     const result = await repository.copySessionThreadRows(request)
-    expect(read).toHaveBeenCalledWith('source', expect.any(Object), undefined, 'old')
+    expect(validate).not.toHaveBeenCalled()
+    expect(read).toHaveBeenCalledWith({ sessionId: 'source', expectedRevision: 1, threadId: 'old' })
     expect(result.header).toMatchObject({ id: 'copy', name: 'Old thread', threadName: 'Old thread' })
     expect(result.diff.messages.upsert).toEqual([])
     expect(result.appendedMessageIds).toEqual([])
@@ -64,8 +111,8 @@ describe('streamed thread copy', () => {
   it('rejects a changed source before publishing any target', async () => {
     const repository = new InMemorySessionRepository()
     await repository.seedSession(source())
-    const iterate = repository.rowStore.iterateBackupRows.bind(repository.rowStore)
-    vi.spyOn(repository.rowStore, 'iterateBackupRows').mockImplementation(async function* (...args) {
+    const iterate = repository.rowStore.iterateRows.bind(repository.rowStore)
+    vi.spyOn(repository.rowStore, 'iterateRows').mockImplementation(async function* (...args) {
       yield* iterate(...args)
       await repository.executeSessionCommand('source', { type: 'header', updater: { name: 'New source' } })
     })
@@ -106,11 +153,16 @@ describe('streamed thread copy', () => {
       forkedFromSessionId: 'origin',
     })
     await repository.seedSession(input)
+    const validate = vi.spyOn(treeValidation, 'validateSessionTree')
     const result = await repository.copySessionRows({
       ...request,
       scope: { type: 'session' },
       appendForkMarkerId: 'new-marker',
     })
+    expect(validate).toHaveBeenCalledOnce()
+    const checked = validate.mock.calls[0][0]
+    expect(checked.threads.map((thread) => thread.threadId)).toEqual(['copy'])
+    expect(checked.messages.every((message) => message.threadId === 'copy' && !('message' in message))).toBe(true)
     expect(result.header.name).toBe('Source')
     const copy = repository.inspectSession('copy')!
     expect(copy.messages.map((message) => message.id)).toEqual(
@@ -125,6 +177,65 @@ describe('streamed thread copy', () => {
     expect(result.diff.threads.upsert).toHaveLength(1)
     expect(result.diff.threads.upsert[0].summary).toEqual((await repository.getSessionHeader('copy'))?.summary)
   })
+
+  it.each(['parent', 'summary', 'thread'] as const)(
+    'rejects a broken %s produced by a branch transformation before publication',
+    async (kind) => {
+      const repository = new InMemorySessionRepository()
+      await repository.seedSession(source())
+      const prepare = copyShape.prepareSessionCopyShape
+      vi.spyOn(copyShape, 'prepareSessionCopyShape').mockImplementation(async (...args) => {
+        const shape = await prepare(...args)
+        return {
+          ...shape,
+          thread:
+            kind === 'summary'
+              ? {
+                  ...shape.thread,
+                  compactionPoints: [
+                    { boundaryMessageId: 'missing', summaryMessageId: shape.marker.messageId, createdAt: 1 },
+                  ],
+                }
+              : shape.thread,
+          transform: (row) => {
+            const transformed = shape.transform(row)
+            if (!transformed || kind === 'summary') return transformed
+            return kind === 'parent'
+              ? { ...transformed, parentMessageId: 'missing' }
+              : { ...transformed, threadId: 'old' }
+          },
+        }
+      })
+      const stage = repository.rowStore.stageRows.bind(repository.rowStore)
+      const publish = vi.fn()
+      const dispose = vi.fn()
+      vi.spyOn(repository.rowStore, 'stageRows').mockImplementation(async (...args) => {
+        const writer = await stage(...args)
+        return {
+          ...writer,
+          publish: async () => {
+            publish()
+            await writer.publish()
+          },
+          dispose: async () => {
+            dispose()
+            await writer.dispose()
+          },
+        }
+      })
+      await expect(
+        repository.copySessionRows({
+          ...request,
+          scope: { type: 'session' },
+          appendForkMarkerId: 'new-marker',
+        })
+      ).rejects.toThrow(kind === 'thread' ? 'thread identity' : 'Invalid copied branch')
+      expect(publish).not.toHaveBeenCalled()
+      expect(dispose).toHaveBeenCalledOnce()
+      expect(await repository.getSessionHeader('copy')).toBeNull()
+      expect(await repository.rowStore.getRevision('source')).toBe(1)
+    }
+  )
 
   it('preserves the selected successor and drops branches owned by a replaced marker', async () => {
     const repository = new InMemorySessionRepository()
@@ -187,13 +298,13 @@ describe('streamed thread copy', () => {
   it('rejects a concurrent creator between the target check and candidate capture', async () => {
     const repository = new InMemorySessionRepository()
     await repository.seedSession(source())
-    const begin = repository.rowStore.beginBackupRestore.bind(repository.rowStore)
+    const begin = repository.rowStore.stageRows.bind(repository.rowStore)
     let release!: () => void
     const barrier = new Promise<void>((resolve) => {
       release = resolve
     })
     const entered = vi.fn()
-    vi.spyOn(repository.rowStore, 'beginBackupRestore').mockImplementation(async (...args) => {
+    vi.spyOn(repository.rowStore, 'stageRows').mockImplementation(async (...args) => {
       entered()
       await barrier
       return begin(...args)
@@ -201,7 +312,7 @@ describe('streamed thread copy', () => {
     const copy = repository.copySessionThreadRows(request)
     const rejected = expect(copy).rejects.toThrow('changed')
     await vi.waitFor(() => expect(entered).toHaveBeenCalledOnce())
-    const other = prepareLegacySessionRows({ id: 'copy', name: 'Concurrent creator', messages: [] })
+    const other = prepareSessionRowsFixture({ id: 'copy', name: 'Concurrent creator', messages: [] })
     await repository.rowStore.writeRows(
       {
         record: other.session,
@@ -229,7 +340,7 @@ describe('streamed thread copy', () => {
       vi.spyOn(repository.rowStore, 'getRevision').mockImplementation(async (id) => {
         if (id === 'copy' && !inserted) {
           inserted = true
-          const other = prepareLegacySessionRows({ id: 'copy', name: 'Concurrent creator', messages: [] })
+          const other = prepareSessionRowsFixture({ id: 'copy', name: 'Concurrent creator', messages: [] })
           await repository.rowStore.writeRows(
             {
               record: other.session,
@@ -267,7 +378,7 @@ describe('streamed thread copy', () => {
         page.rows[0].facts.seedAttachments = [{ name: 'x'.repeat(16 * 1024 * 1024), storageKey: 'key' }]
       return page
     })
-    const begin = vi.spyOn(repository.rowStore, 'beginBackupRestore')
+    const begin = vi.spyOn(repository.rowStore, 'stageRows')
     await expect(
       repository.copySessionRows({ ...request, scope: { type: 'session' }, appendForkMarkerId: 'new-marker' })
     ).rejects.toThrow('Copy relation index exceeds budget')
@@ -276,22 +387,19 @@ describe('streamed thread copy', () => {
     expect(await repository.rowStore.getRevision('source')).toBe(1)
   })
 
-  it('rewrites only the root id across UTF-8 and escaped-key chunk boundaries', async () => {
-    const raw =
-      '{"contentParts":[{"type":"text","text":"你好世界"}],"extra":{"id":"nested"},"\\u0069d":"source","role":"assistant"}'
-    const bytes = new TextEncoder().encode(raw)
-    async function* chunks() {
-      for (const byte of bytes) yield Uint8Array.of(byte)
-    }
-    const output: Uint8Array[] = []
-    for await (const block of copyMessagePayload(chunks(), 'new-id')) output.push(block)
-    const length = output.reduce((sum, block) => sum + block.length, 0)
-    const combined = new Uint8Array(length)
-    let offset = 0
-    for (const block of output) {
-      combined.set(block, offset)
-      offset += block.length
-    }
-    expect(JSON.parse(new TextDecoder().decode(combined))).toEqual({ ...JSON.parse(raw), id: 'new-id' })
+  it('copies complete Unicode messages while preserving nested identities', async () => {
+    const repository = new InMemorySessionRepository()
+    const text = '你好\n🙂'.repeat(100_000)
+    await repository.seedSession({
+      id: 'source',
+      name: 'Source',
+      messages: [{ id: 'message', role: 'assistant', contentParts: [{ type: 'text', text }] }],
+    })
+    await repository.copySessionRows({ ...request, scope: { type: 'session' } })
+    expect(repository.inspectSession('copy')?.messages[0]).toMatchObject({
+      id: copiedMessageId('copy', 'message'),
+      contentParts: [{ type: 'text', text }],
+    })
+    expect(repository.inspectSession('source')?.messages[0].id).toBe('message')
   })
 })

@@ -49,6 +49,22 @@ afterEach(() => {
 })
 
 describe('WebExporter.exportStreamingFile', () => {
+  it('does not offer a Blob download when cancelled after the final chunk', async () => {
+    setSaveFilePicker(undefined)
+    const controller = new AbortController()
+    await expect(
+      new WebExporter().exportStreamingFile(
+        'export.bin',
+        async function* () {
+          yield new Uint8Array([1])
+          controller.abort()
+        },
+        'application/octet-stream',
+        controller.signal
+      )
+    ).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
   it('returns a pending download instead of reporting a Blob download as saved', async () => {
     setSaveFilePicker(undefined)
 
@@ -76,7 +92,7 @@ describe('WebExporter.exportStreamingFile', () => {
 
     expect(showSaveFilePicker).toHaveBeenCalledWith({
       suggestedName: 'backup.zip',
-      types: [{ description: 'Chatbox backup', accept: { 'application/zip': ['.zip'] } }],
+      types: [{ description: 'File', accept: { 'application/zip': ['.zip'] } }],
     })
     expect(write).toHaveBeenCalledTimes(2)
     expect(close).toHaveBeenCalledOnce()
@@ -158,7 +174,7 @@ describe('WebExporter.exportStreamingFile', () => {
   })
 })
 
-it('refuses a sharded or oversized fallback before reading archive bytes', async () => {
+it('refuses required streaming or oversized fallback before reading file bytes', async () => {
   setSaveFilePicker(undefined)
   const source = vi.fn(chunks)
   const exporter = new WebExporter()

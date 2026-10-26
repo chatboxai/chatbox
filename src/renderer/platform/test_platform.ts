@@ -87,38 +87,26 @@ class TestExporter implements Exporter {
     this.exports.set(filename, url)
   }
 
-  async exportStreamingJson(
-    filename: string,
-    dataCallback: () => AsyncGenerator<string, void, unknown>
-  ): Promise<void> {
-    let content = ''
-    for await (const chunk of dataCallback()) {
-      content += chunk
-    }
-    this.exports.set(filename, content)
-  }
-
   async exportStreamingFile(
     filename: string,
     dataCallback: () => AsyncGenerator<Uint8Array, void, unknown>,
     _mimeType: string,
     signal?: AbortSignal
-  ): Promise<{ boundedMemory: boolean }> {
-    const chunks: Uint8Array[] = []
-    let total = 0
-    for await (const chunk of dataCallback()) {
-      if (signal?.aborted) throw signal.reason ?? new DOMException('Operation canceled', 'AbortError')
-      chunks.push(chunk)
-      total += chunk.length
+  ) {
+    const parts: Uint8Array[] = []
+    for await (const part of dataCallback()) {
+      signal?.throwIfAborted()
+      parts.push(part.slice())
     }
-    const output = new Uint8Array(total)
+    signal?.throwIfAborted()
+    const result = new Uint8Array(parts.reduce((size, part) => size + part.length, 0))
     let offset = 0
-    for (const chunk of chunks) {
-      output.set(chunk, offset)
-      offset += chunk.length
+    for (const part of parts) {
+      result.set(part, offset)
+      offset += part.length
     }
-    this.exports.set(filename, output)
-    return { boundedMemory: true }
+    this.exports.set(filename, result)
+    return { boundedMemory: false }
   }
 
   getExport(filename: string): any {

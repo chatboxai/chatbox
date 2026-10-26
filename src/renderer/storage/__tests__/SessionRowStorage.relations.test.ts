@@ -5,7 +5,7 @@ import {
   generatingRelationFixture,
 } from '../../../../packages/chatbox-core/src/ports/testing/session-row-relations-contract'
 import { IndexedDBSessionRowStore } from '../SessionRowStorage'
-import { SESSION_ROW_DB_NAME, SESSION_ROW_MESSAGE_STORE, SESSION_ROW_PAYLOAD_STORE } from '../session-row-idb-records'
+import { SESSION_ROW_DB_NAME, SESSION_ROW_MESSAGE_STORE } from '../session-row-idb-records'
 const stores: IndexedDBSessionRowStore[] = []
 afterEach(async () => {
   vi.restoreAllMocks()
@@ -41,9 +41,7 @@ it('reads generating identities through index keys and hydrates only metadata', 
   expect(page?.status === 'ready' && page.rows.length).toBe(200)
   expect(cursor).toHaveBeenCalledTimes(1)
   expect(
-    get.mock.instances.filter((item) =>
-      [SESSION_ROW_MESSAGE_STORE, SESSION_ROW_PAYLOAD_STORE].includes((item as IDBObjectStore).name)
-    )
+    get.mock.instances.filter((item) => [SESSION_ROW_MESSAGE_STORE].includes((item as IDBObjectStore).name))
   ).toHaveLength(0)
   expect(get.mock.instances.filter((item) => (item as IDBObjectStore).name === 'transcriptMessages')).toHaveLength(201)
 })

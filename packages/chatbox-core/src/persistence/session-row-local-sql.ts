@@ -1,18 +1,20 @@
-import { queryRowMetadata } from './session-row-metadata-sql'
-import type { SessionRowCommit, SessionRowsDiff, SessionRowMutationResult } from '../ports/session-row-store'
+import type { SessionRowCommit, SessionRowMutationResult, SessionRowsDiff } from '../ports/session-row-store'
 import type { ThreadRow } from '../session/session-tree/types'
 import { applyLocalRowMutation, type LocalRowMutationAccess, type ProjectedMessage } from './session-row-local-mutation'
+import { queryRowMetadata } from './session-row-metadata-sql'
 import { parseRowExtra, rowExtra } from './session-row-projection-sql'
 import {
   messageStatements,
-  threadStatement,
-  type SessionRowSqlDatabase,
   type SessionRowSqlBindValue,
+  type SessionRowSqlDatabase,
   type SessionRowSqlStatement,
+  threadStatement,
 } from './session-row-sql'
+import { stagedMetadataStatements } from './session-row-transfer-sql'
 
 const COLUMNS =
-  'session_id,message_id,thread_id,parent_message_id,active_child_id,seq,kind,status,created_at,updated_at,branch_id,payload_id,payload_chunk_count,payload_utf8_length,row_metadata_json,selected_depth'
+  'session_id,message_id,thread_id,parent_message_id,active_child_id,seq,kind,status,created_at,updated_at,branch_id,payload_id,payload_utf8_length,row_metadata_json,selected_depth'
+const FULL_COLUMNS = `${COLUMNS},message_json`
 const THREAD_COLUMNS =
   'session_id,thread_id,seq,name,created_at,root_message_id,active_leaf_message_id,compaction_points_json,session_prompt_context_snapshot_json,session_record_json,commit_revision,projection_json'
 interface Stored {
@@ -28,7 +30,6 @@ interface Stored {
   updated_at: number
   branch_id: string | null
   payload_id: string
-  payload_chunk_count: number
   payload_utf8_length: number
   row_metadata_json: string | null
   selected_depth: number | null
@@ -57,7 +58,7 @@ function row(record: Stored): ProjectedMessage {
 
 function* textSlices(value: string): Generator<string> {
   for (let offset = 0; offset < value.length; ) {
-    let end = Math.min(value.length, offset + 4096)
+    let end = Math.min(value.length, offset + 16384)
     if (end < value.length && value.charCodeAt(end - 1) >= 0xd800 && value.charCodeAt(end - 1) <= 0xdbff) end--
     yield value.slice(offset, end)
     offset = end
@@ -103,37 +104,43 @@ export async function applySqlLocalMutation(
     if (cache.size > 200) cache.delete(cache.keys().next().value!)
   }
   async function stage(params: SessionRowSqlBindValue[]) {
-    const metadata = params[14]
     const stored = Object.fromEntries(
       COLUMNS.split(',').map((name, index) => [name, params[index]])
     ) as unknown as Stored
     remember(currentCache, stored.message_id, stored)
-    const initial = [...params]
-    if (typeof metadata === 'string' && metadata.length > 4096) initial[14] = null
-    await run(
-      `INSERT OR REPLACE INTO session_messages_staging(mutation_id,${COLUMNS}) VALUES (${Array(17).fill('?').join(',')})`,
-      [mutationId, ...initial]
-    )
-    if (initial[14] !== metadata && typeof metadata === 'string') {
-      await run('INSERT OR REPLACE INTO session_row_local_metadata(mutation_id,message_id,value) VALUES (?,?,?)', [
-        mutationId,
-        stored.message_id,
-        '',
-      ])
-      for (const chunk of textSlices(metadata))
-        await run('UPDATE session_row_local_metadata SET value=value||? WHERE mutation_id=? AND message_id=?', [
-          chunk,
-          mutationId,
-          stored.message_id,
-        ])
+    const body = params.length === 16 ? params[15] : undefined
+    const initial = params.slice(0, 15)
+    const metadata = initial[13]
+    if (typeof metadata === 'string' && metadata.length > 4096) initial[13] = null
+    if (body === undefined) {
       await run(
-        'UPDATE session_messages_staging SET row_metadata_json=(SELECT value FROM session_row_local_metadata WHERE mutation_id=? AND message_id=?) WHERE mutation_id=? AND session_id=? AND message_id=?',
-        [mutationId, stored.message_id, mutationId, sessionId, stored.message_id]
+        `INSERT OR REPLACE INTO session_messages_staging(mutation_id,${FULL_COLUMNS}) VALUES (${Array(16).fill('?').join(',')},COALESCE((SELECT message_json FROM session_messages_staging WHERE mutation_id=? AND session_id=? AND message_id=?),(SELECT message_json FROM session_messages WHERE session_id=? AND message_id=? AND payload_id=?)))`,
+        [
+          mutationId,
+          ...initial,
+          mutationId,
+          sessionId,
+          stored.message_id,
+          sessionId,
+          stored.message_id,
+          stored.payload_id,
+        ]
       )
-      await run('DELETE FROM session_row_local_metadata WHERE mutation_id=? AND message_id=?', [
-        mutationId,
-        stored.message_id,
-      ])
+    } else {
+      await run(
+        `INSERT OR REPLACE INTO session_messages_staging(mutation_id,${FULL_COLUMNS}) VALUES (${Array(17).fill('?').join(',')})`,
+        [mutationId, ...initial, typeof body === 'string' && body.length <= 16384 ? body : '']
+      )
+      if (typeof body !== 'string') throw new Error('Message payload is not text')
+      for (const part of body.length <= 16384 ? [] : textSlices(body))
+        await run(
+          'UPDATE session_messages_staging SET message_json=message_json||? WHERE mutation_id=? AND session_id=? AND message_id=?',
+          [part, mutationId, sessionId, stored.message_id]
+        )
+    }
+    if (initial[13] !== metadata && typeof metadata === 'string') {
+      for (const statement of stagedMetadataStatements(mutationId, sessionId, stored.message_id, metadata))
+        await enqueue(statement)
     }
   }
   const live = `SELECT ${COLUMNS} FROM session_messages m WHERE m.session_id=? AND NOT EXISTS(SELECT 1 FROM session_messages_staging s WHERE s.mutation_id=? AND s.session_id=m.session_id AND s.message_id=m.message_id) AND NOT EXISTS(SELECT 1 FROM session_row_local_deletes d WHERE d.mutation_id=? AND d.session_id=m.session_id AND d.message_id=m.message_id)`
@@ -175,7 +182,6 @@ export async function applySqlLocalMutation(
       value.updatedAt,
       value.branchId,
       old.payload_id,
-      old.payload_chunk_count,
       old.payload_utf8_length,
       rowExtra(value),
       value.selectedDepth,
@@ -272,15 +278,12 @@ export async function applySqlLocalMutation(
         await putMetadata(value)
         return
       }
-      let registered = false
       for (const statement of messageStatements({ ...value, message: body }, value.selectedDepth ?? undefined)) {
-        if (!registered && statement.kind === 'insert-message-payload-chunk') {
-          await run('INSERT INTO session_row_local_payloads(mutation_id,payload_id) VALUES (?,?)', [
+        if (statement.kind === 'insert-message-navigation')
+          await run('INSERT INTO session_row_local_versions(mutation_id,payload_id) VALUES (?,?)', [
             mutationId,
-            statement.params[1],
+            statement.params[0],
           ])
-          registered = true
-        }
         if (statement.kind === 'upsert-message') await stage([...statement.params])
         else await enqueue(statement)
       }
@@ -337,12 +340,12 @@ export async function applySqlLocalMutation(
   }
   await run('INSERT INTO session_row_staging_mutations(mutation_id,created_at) VALUES (?,?)', [mutationId, Date.now()])
   const cleanup: SessionRowSqlStatement[] = [
+    { sql: 'DELETE FROM session_row_local_metadata WHERE mutation_id=?', params: [mutationId] },
     {
-      sql: 'DELETE FROM session_message_payload_chunks WHERE payload_id IN(SELECT payload_id FROM session_row_local_payloads WHERE mutation_id=?) AND NOT EXISTS(SELECT 1 FROM session_messages m WHERE m.payload_id=session_message_payload_chunks.payload_id) AND NOT EXISTS(SELECT 1 FROM session_messages_staging s WHERE s.mutation_id<>? AND s.payload_id=session_message_payload_chunks.payload_id)',
+      sql: 'DELETE FROM session_message_navigation WHERE payload_id IN(SELECT payload_id FROM session_row_local_versions WHERE mutation_id=?) AND NOT EXISTS(SELECT 1 FROM session_messages m WHERE m.payload_id=session_message_navigation.payload_id) AND NOT EXISTS(SELECT 1 FROM session_messages_staging s WHERE s.mutation_id<>? AND s.payload_id=session_message_navigation.payload_id)',
       params: [mutationId, mutationId],
     },
-    { sql: 'DELETE FROM session_row_local_metadata WHERE mutation_id=?', params: [mutationId] },
-    { sql: 'DELETE FROM session_row_local_payloads WHERE mutation_id=?', params: [mutationId] },
+    { sql: 'DELETE FROM session_row_local_versions WHERE mutation_id=?', params: [mutationId] },
     { sql: 'DELETE FROM session_row_local_deletes WHERE mutation_id=?', params: [mutationId] },
     { sql: 'DELETE FROM session_messages_staging WHERE mutation_id=?', params: [mutationId] },
     { sql: 'DELETE FROM session_threads_staging WHERE mutation_id=?', params: [mutationId] },
@@ -357,7 +360,7 @@ export async function applySqlLocalMutation(
         params: [sessionId, ...paramsBase, ...paramsBase],
       },
       {
-        sql: `DELETE FROM session_message_payload_chunks WHERE payload_id IN(SELECT m.payload_id FROM session_messages m WHERE m.session_id=? AND m.message_id IN(SELECT message_id FROM session_row_local_deletes WHERE mutation_id=? AND session_id=? UNION SELECT s.message_id FROM session_messages_staging s JOIN session_messages previous ON previous.session_id=s.session_id AND previous.message_id=s.message_id WHERE s.mutation_id=? AND s.session_id=? AND s.payload_id<>previous.payload_id)) AND NOT EXISTS(SELECT 1 FROM session_messages_staging other WHERE other.mutation_id<>? AND other.payload_id=session_message_payload_chunks.payload_id)`,
+        sql: `DELETE FROM session_message_navigation WHERE payload_id IN(SELECT m.payload_id FROM session_messages m WHERE m.session_id=? AND m.message_id IN(SELECT message_id FROM session_row_local_deletes WHERE mutation_id=? AND session_id=? UNION SELECT s.message_id FROM session_messages_staging s JOIN session_messages previous ON previous.session_id=s.session_id AND previous.message_id=s.message_id WHERE s.mutation_id=? AND s.session_id=? AND s.payload_id<>previous.payload_id)) AND NOT EXISTS(SELECT 1 FROM session_messages_staging other WHERE other.mutation_id<>? AND other.payload_id=session_message_navigation.payload_id)`,
         params: [sessionId, ...paramsBase, ...paramsBase, mutationId],
       },
       {
@@ -365,7 +368,7 @@ export async function applySqlLocalMutation(
         params: [sessionId, ...paramsBase],
       },
       {
-        sql: `INSERT OR REPLACE INTO session_messages(${COLUMNS}) SELECT ${COLUMNS} FROM session_messages_staging WHERE mutation_id=? AND session_id=?`,
+        sql: `INSERT OR REPLACE INTO session_messages(${FULL_COLUMNS}) SELECT ${FULL_COLUMNS} FROM session_messages_staging WHERE mutation_id=? AND session_id=?`,
         params: paramsBase,
       },
       {

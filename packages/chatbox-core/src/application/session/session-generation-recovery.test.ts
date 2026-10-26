@@ -20,30 +20,6 @@ function service(repo: InMemorySessionRepository, active = new Set<string>()) {
 }
 
 describe('row generation recovery', () => {
-  it('recovers the same identity again after deletion and a backup restore', async () => {
-    const repo = new InMemorySessionRepository()
-    const app = service(repo)
-    const seed = (timestamp: number) =>
-      repo.seedSession({
-        id: 's',
-        name: 'Restored',
-        messages: [message('a', 'assistant', { generating: true, timestamp })],
-      })
-    await seed(1)
-    await app.recoverInterruptedGenerations('s')
-    await app.deleteSession('s')
-    await seed(1)
-    app.writes.forget('s')
-    await app.recoverInterruptedGenerations('s')
-    expect((await repo.readSessionMessages({ sessionId: 's', messageIds: ['a'] }))?.messages[0].generating).toBe(false)
-    const importTime = Date.now() + 1000
-    await seed(importTime)
-    app.resetGenerationRecovery(importTime + 1)
-    await app.recoverInterruptedGenerations('s')
-    expect((await repo.readSessionMessages({ sessionId: 's', messageIds: ['a'] }))?.messages[0].generating).toBe(false)
-    app.dispose()
-  })
-
   it('recovers interrupted tools across threads without a full snapshot and retains paused and active streams', async () => {
     const repo = new InMemorySessionRepository()
     await repo.seedSession({

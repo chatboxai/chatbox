@@ -30,7 +30,7 @@ vi.mock('@/storage', () => ({
   StorageKey: { MyCopilots: 'myCopilots' },
 }))
 
-import { rendererMemoryService } from './memoryRuntime'
+import { addOrUpdateMyCopilot, rendererMemoryService, withCopilotDefinitionsLock } from './memoryRuntime'
 
 vi.spyOn(rendererMemoryService, 'copilotMemoryEpoch').mockImplementation(copilotMemoryEpoch)
 
@@ -44,9 +44,7 @@ import {
   getCopilotName,
   getPausedCallMemoryScope,
   myCopilotsAtom,
-  reloadCopilotState,
   removeMyCopilot,
-  withCopilotMemoryPreferencesLock,
 } from './copilotStore'
 
 const copilot = { id: 'cp1', name: 'Tutor', prompt: 'p' }
@@ -68,16 +66,28 @@ describe('copilot store', () => {
     copilotMemoryEpoch.mockClear().mockReturnValue(0)
   })
 
-  test('resolves directory names from current definitions and restored definitions', async () => {
+  test('resolves directory names after definition edits and deletion', async () => {
     await expect(getCopilotName('cp1')).resolves.toBe('Tutor')
     await expect(getCopilotName('missing')).resolves.toBeUndefined()
     await getDefaultStore().set(myCopilotsAtom, [{ ...copilot, name: 'Renamed tutor' }])
     await expect(getCopilotName('cp1')).resolves.toBe('Renamed tutor')
-    persisted.set('myCopilots', [{ ...copilot, name: 'Restored tutor' }])
-    await reloadCopilotState()
-    await expect(getCopilotName('cp1')).resolves.toBe('Restored tutor')
     await removeMyCopilot('cp1')
     await expect(getCopilotName('cp1')).resolves.toBeUndefined()
+  })
+
+  test('refreshes externally updated definitions before queued edits resume', async () => {
+    const replacing = withCopilotDefinitionsLock(async ({ reload }) => {
+      persisted.set('myCopilots', [{ ...copilot, name: 'Updated tutor' }])
+      await reload()
+      expect(setItemNow).not.toHaveBeenCalled()
+      expect(await getDefaultStore().get(myCopilotsAtom)).toEqual([{ ...copilot, name: 'Updated tutor' }])
+    })
+    const editing = addOrUpdateMyCopilot({ ...copilot, id: 'second' })
+    await Promise.all([replacing, editing])
+    expect(persisted.get('myCopilots')).toEqual([
+      expect.objectContaining({ id: 'second' }),
+      { ...copilot, name: 'Updated tutor' },
+    ])
   })
 
   test('sessions without a copilot stay on the global store', async () => {
@@ -171,97 +181,6 @@ describe('copilot store', () => {
       finishWrite()
       await update
     }
-  })
-
-  test('backup reloads ownership mirrors before queued toggles resume', async () => {
-    await enableCopilotMemory({ id: 'cp1', name: 'Tutor' })
-    let enter!: () => void
-    let finish!: () => void
-    const entered = new Promise<void>((resolve) => {
-      enter = resolve
-    })
-    const released = new Promise<void>((resolve) => {
-      finish = resolve
-    })
-    const importing = withCopilotMemoryPreferencesLock(async ({ reload }) => {
-      enter()
-      await released
-      persisted.set('copilot-memory-owners', [{ id: 'imported', name: 'Imported' }])
-      persisted.set('copilot-memory-state-tokens', [{ id: 'imported', token: 'restored-token' }])
-      await reload()
-    })
-    await entered
-    const toggle = enableCopilotMemory({ id: 'after-import', name: 'After' })
-    expect((await getDefaultStore().get(copilotMemoryOwnersAtom)).map((owner) => owner.id)).toEqual(['cp1'])
-    finish()
-    await Promise.all([importing, toggle])
-    expect((await getDefaultStore().get(copilotMemoryOwnersAtom)).map((owner) => owner.id)).toEqual([
-      'imported',
-      'after-import',
-    ])
-    await expect(getCopilotMemorySelection('imported')).resolves.toMatchObject({
-      memoryStateToken: 'restored-token',
-      scope: { type: 'copilot', copilotId: 'imported' },
-    })
-    await expect(getCopilotMemoryScope('cp1')).resolves.toEqual({ type: 'global' })
-  })
-
-  test('refreshes restored definitions and memory mirrors without rewriting the backup', async () => {
-    await enableCopilotMemory({ id: 'cp1', name: 'Tutor' })
-    const restoredCopilot = { id: 'imported', name: 'Imported', prompt: 'Restored prompt' }
-    const owners = [{ id: 'imported', name: 'Imported' }]
-    const tokens = [{ id: 'imported', token: 'restored-version', retirementToken: 'restored-library' }]
-    const memories = [{ id: 'global', content: 'Restored global memory', createdAt: 1 }]
-    const copilotMemories = { imported: [{ id: 'private', content: 'Restored private memory', createdAt: 2 }] }
-    persisted.set('myCopilots', [restoredCopilot])
-    persisted.set('copilot-memory-owners', owners)
-    persisted.set('copilot-memory-state-tokens', tokens)
-    persisted.set('agent-memories', memories)
-    persisted.set('copilot-memories', copilotMemories)
-    setItemNow.mockClear()
-
-    await reloadCopilotState()
-
-    expect(await getDefaultStore().get(myCopilotsAtom)).toEqual([restoredCopilot])
-    expect(await getDefaultStore().get(copilotMemoryOwnersAtom)).toEqual(owners)
-    expect(await getDefaultStore().get(copilotMemoryTokensAtom)).toEqual(tokens)
-    expect(rendererMemoryService.getSnapshot()).toMatchObject({ memories, copilotMemories, owners, tokens })
-    await expect(getCopilotMemorySelection('imported')).resolves.toMatchObject({
-      memoryStateToken: 'restored-version',
-      scope: { type: 'copilot', copilotId: 'imported', lifecycleToken: 'restored-library' },
-    })
-    await expect(getCopilotMemoryScope('cp1')).resolves.toEqual({ type: 'global' })
-    expect(setItemNow).not.toHaveBeenCalled()
-  })
-
-  test('finishes pending memory refreshes before reporting a definition reload failure', async () => {
-    const failure = new Error('Definition storage unavailable')
-    let finishMemoryRead: ((value: unknown) => void) | undefined
-    getItem.mockImplementation((key: string, initialValue: unknown) => {
-      if (key === 'myCopilots') return Promise.reject(failure)
-      return readPersisted(key, initialValue)
-    })
-    getItemRaw.mockImplementation((key: string) => {
-      if (key === 'agent-memories') {
-        return new Promise((resolve) => {
-          finishMemoryRead = resolve
-        })
-      }
-      return readRawPersisted(key)
-    })
-    let settled = false
-    const refresh = reloadCopilotState().catch((error: unknown) => {
-      settled = true
-      return error
-    })
-    await vi.waitFor(() => expect(finishMemoryRead).toBeDefined())
-    expect(settled).toBe(false)
-
-    finishMemoryRead?.([])
-    await expect(refresh).resolves.toBe(failure)
-    getItem.mockImplementation(readPersisted)
-    getItemRaw.mockImplementation(readRawPersisted)
-    await expect(reloadCopilotState()).resolves.toBeUndefined()
   })
 
   test('waits for persisted ownership before initializing an editable draft', async () => {

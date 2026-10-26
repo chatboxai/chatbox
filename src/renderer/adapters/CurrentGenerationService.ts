@@ -16,7 +16,6 @@ import {
   trackAgentModeSuggested,
   trackWorkModeSuggestionDecision,
 } from '@/analytics/agent-mode'
-import { guardBackupWrite } from '@/app/backup-operation-guard'
 import { rendererApplication } from '@/app/renderer-application'
 import { languageNameMap } from '@/i18n/locales'
 import { getLogger } from '@/lib/utils'
@@ -67,7 +66,6 @@ import { CurrentBlobStorage } from './CurrentBlobStorage'
 import { currentModelFactory } from './CurrentModelFactory'
 import { CurrentPlatformCapabilities } from './CurrentPlatformCapabilities'
 import { createModelDependencies } from './RendererModelDependencies'
-import { withSessionWorkAccess } from './session-work-lock'
 
 const log = getLogger('generation-service')
 const attachmentAdapter = new CurrentAttachmentAdapter()
@@ -389,13 +387,11 @@ const dependencies: GenerationServiceDependencies<ModelDependencies> = {
 const generationService = new GenerationService(dependencies)
 
 async function runGenerationWork(action: () => Promise<void>): Promise<void> {
-  if (!(await guardBackupWrite())) return
-  await withSessionWorkAccess(action)
+  await action()
 }
 
 export const currentGenerationService = {
-  orchestrate: (...args: Parameters<typeof generationService.orchestrate>) =>
-    withSessionWorkAccess(() => generationService.orchestrate(...args)),
+  orchestrate: (...args: Parameters<typeof generationService.orchestrate>) => generationService.orchestrate(...args),
   continuePausedToolCall: (...args: Parameters<typeof generationService.continuePausedToolCall>) =>
     runGenerationWork(() => generationService.continuePausedToolCall(...args)),
   disableToolCallLimitPauseAndContinue: (

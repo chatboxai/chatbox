@@ -94,8 +94,12 @@ describe('SQL source-bound numerical text results', () => {
     }
     await h.database.executeBatch([
       {
-        sql: 'INSERT INTO session_message_payload_chunks(session_id,payload_id,chunk_index,value) VALUES(?,?,?,?)',
-        params: ['s', staged.source.payloadId, 0, '{}'],
+        sql: 'INSERT INTO session_messages_staging SELECT ?,m.* FROM session_messages m WHERE message_id=?',
+        params: ['token-candidate', original.source.messageId],
+      },
+      {
+        sql: 'UPDATE session_messages_staging SET payload_id=? WHERE mutation_id=?',
+        params: [staged.source.payloadId, 'token-candidate'],
       },
     ])
     expect(await h.rows.acceptTextTokenResults([staged])).toEqual([])

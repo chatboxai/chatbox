@@ -26,7 +26,6 @@ import {
   settingsNavKeyForSection,
   useSettingsNavMeta,
 } from '@/components/settings/settingsNav'
-import { useBackupNavigationGuard } from '@/hooks/useBackupNavigationGuard'
 import { useProviders } from '@/hooks/useProviders'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { useSettingsStore } from '@/stores/settingsStore'
@@ -216,7 +215,6 @@ function SettingsSearchResults({
 }
 
 export function SettingsRoot() {
-  useBackupNavigationGuard()
   const { t } = useTranslation()
   const navigate = useNavigate()
   const pathname = useRouterState({ select: (s) => s.location.pathname })

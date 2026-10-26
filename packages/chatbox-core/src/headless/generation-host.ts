@@ -32,7 +32,6 @@ export async function generateTerminalSession(options: {
   const repository = new RowBackedSessionRepository({
     records: new InMemorySessionRecordStore(),
     rows,
-    backup: rows,
     writes: new SessionRowWriteQueue((_id, run) => run()),
   })
   await repository.createSessionRows(header, [

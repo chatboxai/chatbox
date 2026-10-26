@@ -1,5 +1,4 @@
 import type { SessionHeader } from '@chatbox/core/ports'
-import { guardBackupWrite } from '@/app/backup-operation-guard'
 import {
   getSessionActionGate,
   type SessionAction,
@@ -66,7 +65,6 @@ export async function guardSessionAction(
   context: SessionActionContext = {},
   preloadedSession?: SessionHeader | null
 ): Promise<boolean> {
-  if (!(await guardBackupWrite())) return false
   let session: SessionHeader | null
   let locks: SessionLockState | null
   try {

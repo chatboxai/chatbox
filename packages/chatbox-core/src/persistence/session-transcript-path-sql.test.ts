@@ -61,7 +61,6 @@ describe.each([true, false])('SQL transcript metadata batches (bounded bridge: %
     const repository = new RowBackedSessionRepository({
       records,
       rows: store,
-      backup: store,
       writes: new SessionRowWriteQueue((_id, run) => run()),
     })
     const costs: number[] = []

@@ -18,8 +18,6 @@ import {
   SELECTED_ROLE,
   SESSION_INDEX,
   SESSION_ROW_THREAD_STORE,
-  plainThreadRow,
-  type PersistedThreadRow,
 } from './session-row-idb-records'
 import {
   RELATION_CHILDREN,
@@ -29,7 +27,7 @@ import {
   putTranscriptThread,
   requestValue,
 } from './session-row-idb-transcript'
-import { deleteStoredMessage, messageMetadata, putStoredMessages } from './session-row-idb-payload'
+import { deleteStoredMessage, messageMetadata, putStoredMessages } from './session-row-idb-messages'
 
 type Metadata = ProjectedMessage & TranscriptMessageMetadata & { parentKey: string; branchKey: string }
 type StageRow = Partial<Metadata> & {
@@ -127,8 +125,7 @@ export async function applyIndexedDBLocalMutation(tx: IDBTransaction, diff: Sess
     oldMessage,
     message,
     oldThread: async (id) => {
-      const row = await requestValue<PersistedThreadRow | undefined>(threads.get([sessionId, id]))
-      return row ? plainThreadRow(row) : null
+      return (await requestValue<ThreadRow | undefined>(threads.get([sessionId, id]))) ?? null
     },
     children: (threadId, parentId, after, limit, old = false) => {
       const prefix = [sessionId, threadId, parentId ?? '']

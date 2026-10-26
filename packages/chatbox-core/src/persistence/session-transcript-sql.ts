@@ -1,12 +1,12 @@
-import { queryRowMetadata } from './session-row-metadata-sql'
-import { parseRowExtra } from './session-row-projection-sql'
-import { type SessionRowCommit } from '../ports/session-row-store'
+import type { SessionRowCommit } from '../ports/session-row-store'
 import type {
   SessionThreadRequest,
   SessionTranscriptRequest,
   SessionTranscriptThread,
 } from '../ports/session-transcript-source'
 import type { MessageRow, MessageRowMetadata, SessionRecordV2 } from '../session/session-tree/types'
+import { queryRowMetadata } from './session-row-metadata-sql'
+import { parseRowExtra } from './session-row-projection-sql'
 import type { SessionRowSqlDatabase } from './session-row-sql'
 import {
   assertTranscriptRevision,
@@ -28,9 +28,6 @@ CREATE TABLE IF NOT EXISTS session_message_navigation (
   eligible INTEGER NOT NULL,
   preview TEXT NOT NULL
 );
-CREATE TRIGGER IF NOT EXISTS session_message_navigation_cleanup
-AFTER DELETE ON session_message_payload_chunks WHEN OLD.chunk_index = 0
-BEGIN DELETE FROM session_message_navigation WHERE payload_id = OLD.payload_id; END;
 `
 const THREAD_NAME_SQL = 'CASE WHEN instr(name,char(0))>0 THEN json_quote(name) ELSE name END'
 const THREAD_COLUMNS = `projection_json, session_id, thread_id, seq, created_at, root_message_id, active_leaf_message_id,

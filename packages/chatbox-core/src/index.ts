@@ -143,7 +143,6 @@ export {
   CopilotService,
   type CopilotServiceOptions,
   type CopilotSnapshot,
-  type CopilotStorageScope,
   type CopilotUsageAction,
   FeaturedCopilotClient,
   type FeaturedCopilotClientOptions,

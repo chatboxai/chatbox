@@ -1,4 +1,3 @@
-import { BackupOperationBusyError } from '@chatbox/core/backup'
 import { Button, Group, Stack, Text, Textarea } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import { getDefaultCompactionPrompt } from '@shared/prompts'
@@ -62,11 +61,7 @@ function CompressionForm({ session, onClose }: Pick<CompressionModalProps, 'sess
       .catch((error: unknown) => {
         // A rejected request (another window holds the session work lock, or the
         // conversation read failed) must not leave the dialog looking accepted.
-        setFailure(
-          error instanceof BackupOperationBusyError
-            ? t('Wait for the import or export to finish')
-            : t('Compression could not start')
-        )
+        setFailure(t('Compression could not start'))
       })
       .finally(() => setSubmitting(false))
   }

@@ -66,6 +66,30 @@ describe('IndexedDBSessionMetaStorage', () => {
     storage = new TestSessionMetaStorage(`test-db-${++dbCounter}`)
   })
 
+  it('iterates all identities in bounded key-only pages including hidden and archived records', async () => {
+    const records = Array.from({ length: 257 }, (_, index) =>
+      makeRecord({
+        id: `session-${String(index).padStart(3, '0')}`,
+        hidden: index % 2 === 0,
+        ...(index % 3 === 0 ? { archivedAt: 1 } : {}),
+      })
+    )
+    await storage.createMany(records)
+    const values = vi.spyOn(IDBObjectStore.prototype, 'getAll')
+    const keys = vi.spyOn(IDBObjectStore.prototype, 'getAllKeys')
+    try {
+      const ids: string[] = []
+      for await (const id of storage.iterateIds!()) ids.push(id)
+      expect(ids).toEqual(records.map((record) => record.id))
+      expect(values).not.toHaveBeenCalled()
+      expect(keys.mock.calls.every(([, limit]) => limit === 128)).toBe(true)
+      expect(keys).toHaveBeenCalledTimes(4)
+    } finally {
+      values.mockRestore()
+      keys.mockRestore()
+    }
+  })
+
   it('create and getById', async () => {
     const record = makeRecord({ id: 'test-1', name: 'Hello' })
     await storage.create(record)

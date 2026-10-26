@@ -16,52 +16,6 @@ async function harness() {
 }
 
 describe('Copilot retirement', () => {
-  test('drains failed retirement snapshot reads before allowing an import to replace them', async () => {
-    const storage = new InMemoryKeyValueStorage()
-    const original = { saved: [{ id: 'old', content: 'Original memory', createdAt: 1 }] }
-    const restored = { saved: [{ id: 'restored', content: 'Restored memory', createdAt: 2 }] }
-    storage.values.set(COPILOT_MEMORIES_STORAGE_KEY, original)
-    const memory = new MemoryService({ storage })
-    let finishRead!: () => void
-    const readBlocked = new Promise<void>((resolve) => {
-      finishRead = resolve
-    })
-    const get = storage.get.bind(storage)
-    const readStarted = vi.fn()
-    let firstMemoriesRead = true
-    let firstOwnersRead = true
-    vi.spyOn(storage, 'get').mockImplementation(async (key) => {
-      if (key === COPILOT_MEMORIES_STORAGE_KEY && firstMemoriesRead) {
-        firstMemoriesRead = false
-        const value = await get(key)
-        readStarted()
-        await readBlocked
-        return value
-      }
-      if (key === COPILOT_MEMORY_OWNERS_STORAGE_KEY && firstOwnersRead) {
-        firstOwnersRead = false
-        throw new Error('Owner read failed')
-      }
-      return get(key)
-    })
-    const retiring = memory.retireCopilot('saved')
-    const failure = expect(retiring).rejects.toThrow('Owner read failed')
-    await vi.waitFor(() => expect(readStarted).toHaveBeenCalledOnce())
-    const importing = vi.fn()
-    const imported = memory.withStorageLock(async ({ reload }) => {
-      importing()
-      await storage.set(COPILOT_MEMORIES_STORAGE_KEY, restored)
-      await reload()
-    })
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
-    expect(importing).not.toHaveBeenCalled()
-    finishRead()
-    await failure
-    await imported
-    expect(memory.getSnapshot().copilotMemories).toEqual(restored)
-    expect(await storage.get(COPILOT_MEMORIES_STORAGE_KEY)).toEqual(restored)
-  })
-
   test.each([
     MY_COPILOTS_STORAGE_KEY,
     COPILOT_MEMORIES_STORAGE_KEY,

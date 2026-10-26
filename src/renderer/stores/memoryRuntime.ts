@@ -82,7 +82,7 @@ function createMirroredListAtom<T>(
   return { atom: listAtom, read, update, reload, peek: () => current }
 }
 
-/** Keep preference writes durable and ordered for the persona backup lock. */
+/** Keep preference writes durable and ordered. */
 function createMemoryPreferenceWriter<T>(write: (value: T[]) => Promise<void>): (value: T[]) => Promise<void> {
   let pending: Promise<void> = Promise.resolve()
   return (value) => {
@@ -119,6 +119,10 @@ export async function getCopilotName(copilotId: string): Promise<string | undefi
   return (await myCopilots.read()).find((copilot) => copilot.id === copilotId)?.name
 }
 
+export const reloadCopilotDefinitions = async (): Promise<void> => {
+  await myCopilots.reload()
+}
+
 export const myCopilotsAtom = myCopilots.atom
 export const copilotMemoryOwnersAtom = memoryOwners.atom
 export const copilotMemoryTokensAtom = memoryTokens.atom
@@ -146,11 +150,21 @@ export const rendererMemoryService = new MemoryService({
 
 let definitionMutation: Promise<unknown> = Promise.resolve()
 
-/** Order definition changes before memory operations and backup access. */
-export function withCopilotDefinitionsLock<T>(operation: () => Promise<T>): Promise<T> {
+export interface CopilotDefinitionStorageScope {
+  reload(): Promise<void>
+}
+
+/** Serialize definition mutations and memory retirement. */
+export function withCopilotDefinitionsLock<T>(
+  operation: (scope: CopilotDefinitionStorageScope) => Promise<T>
+): Promise<T> {
   const run = definitionMutation.then(async () => {
     await Promise.allSettled([myCopilots.read()])
-    return operation()
+    return operation({
+      reload: async () => {
+        await myCopilots.reload()
+      },
+    })
   })
   definitionMutation = run.catch(() => undefined)
   return run
@@ -182,9 +196,4 @@ export function removeMyCopilot(id: string): Promise<void> {
       }
     )
   })
-}
-
-/** Refresh definition mirrors while their mutation lock is held. */
-export function reloadCopilotDefinitions(): Promise<unknown> {
-  return myCopilots.reload()
 }

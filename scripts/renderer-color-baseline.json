@@ -45,7 +45,7 @@
   "src/renderer/components/ModelSelectorV2/DetailCard.tsx": 1,
   "src/renderer/components/ModelSelectorV2/index.tsx": 1,
   "src/renderer/components/settings/BackupConversationSelector.tsx": 2,
-  "src/renderer/components/settings/BackupWarnings.tsx": 2,
+  "src/renderer/components/settings/BackupWarnings.tsx": 1,
   "src/renderer/components/settings/mcp/ConfigModal.tsx": 2,
   "src/renderer/components/settings/skills/GitHubInstallModal.tsx": 2,
   "src/renderer/components/settings/skills/SkillsSection.tsx": 4,

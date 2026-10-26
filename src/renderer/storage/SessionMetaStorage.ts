@@ -264,6 +264,27 @@ export class IndexedDBSessionMetaStorage implements SessionMetaStorage {
     return records.sort((a, b) => b.sortOrder - a.sortOrder)
   }
 
+  async *iterateIds(): AsyncGenerator<string> {
+    await this.initialize()
+    let after: IDBValidKey | undefined
+    for (;;) {
+      const ids = await new Promise<IDBValidKey[]>((resolve, reject) => {
+        const tx = this.db!.transaction(STORE_NAME, 'readonly')
+        const request = tx
+          .objectStore(STORE_NAME)
+          .getAllKeys(after === undefined ? undefined : IDBKeyRange.lowerBound(after, true), 128)
+        tx.oncomplete = () => resolve(request.result)
+        tx.onabort = tx.onerror = () => reject(tx.error ?? new Error('Session identity iteration failed'))
+      })
+      if (!ids.length) return
+      for (const id of ids) {
+        if (typeof id !== 'string') throw new Error('Invalid stored session identity')
+        yield id
+      }
+      after = ids[ids.length - 1]
+    }
+  }
+
   async getArchived(): Promise<SessionMetaRecord[]> {
     await this.initialize()
     const records = await this.getAllRecords()

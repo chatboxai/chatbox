@@ -111,40 +111,6 @@ describe('AndroidFilterWriter', () => {
     expect(filesystemMock.deleteFile).toHaveBeenCalledWith({ path: preparedPath, directory: 'CACHE' })
   })
 
-  test('streams a large fallback to cache in bounded chunks', async () => {
-    const firstChunk = 'a'.repeat(1024 * 1024)
-    const finalChunk = 'tail'
-    const dataCallback = async function* () {
-      await Promise.resolve()
-      yield firstChunk
-      yield finalChunk
-    }
-
-    await new AndroidFilterWriter().exportStreamingFileWithSystemPicker('backup.json', dataCallback, 'application/json')
-
-    expect(filesystemMock.writeFile).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: firstChunk,
-        directory: 'CACHE',
-        encoding: 'utf8',
-        recursive: true,
-      })
-    )
-    const tempPath = filesystemMock.writeFile.mock.calls[0][0].path
-    expect(filesystemMock.appendFile).toHaveBeenCalledWith({
-      path: tempPath,
-      data: finalChunk,
-      directory: 'CACHE',
-      encoding: 'utf8',
-    })
-    expect(documentSaverMock.saveFile).toHaveBeenCalledWith({
-      sourceUri: 'cache://temporary-export',
-      suggestedName: 'backup.json',
-      mimeType: 'application/json',
-    })
-    expect(filesystemMock.deleteFile).toHaveBeenCalledWith({ path: tempPath, directory: 'CACHE' })
-  })
-
   test('streams binary fallback data through the native bridge without building one file buffer', async () => {
     const dataCallback = async function* () {
       await Promise.resolve()
@@ -210,7 +176,6 @@ describe('MobileExporter', () => {
 
     await expect(new MobileExporter().exportTextFile('export.txt', 'content')).resolves.toBeUndefined()
   })
-
   test('writes ZIP output in bounded binary chunks on Android', async () => {
     const first = new Uint8Array(1024 * 1024)
     const dataCallback = async function* () {

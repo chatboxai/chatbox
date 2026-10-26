@@ -1,4 +1,4 @@
-import { BackupOperationBusyError } from '@chatbox/core/backup'
+import { SessionStorageBusyError } from '@chatbox/core/ports'
 import type { SessionMigrationCandidate, SessionMigrationOutcome } from '@/adapters/CurrentSessionRepository'
 
 /** Delay before the first session of a run is touched, keeping startup clear. */
@@ -161,7 +161,7 @@ export function startSessionMigrationTrickle(options: SessionMigrationTrickleOpt
     try {
       pending = await repository.listSessionMigrationCandidates()
     } catch (error) {
-      if (error instanceof BackupOperationBusyError) {
+      if (error instanceof SessionStorageBusyError) {
         scheduleNext(delayMs, begin)
         return
       }
@@ -217,7 +217,7 @@ export function startSessionMigrationTrickle(options: SessionMigrationTrickleOpt
         log?.warn(`session row migration deferred recovery-protected session ${id}`)
       }
     } catch (error) {
-      if (error instanceof BackupOperationBusyError) {
+      if (error instanceof SessionStorageBusyError) {
         queue.unshift(candidate)
         scheduleNext(delayMs, tick)
         return

@@ -1,4 +1,3 @@
-import { BackupOperationBusyError } from '@chatbox/core/backup'
 import {
   areSessionsInSameListGroup,
   excludeCollapsedFolderSessions,
@@ -7,7 +6,6 @@ import {
 } from '@chatbox/core/utils/session-sort'
 import type { Message, SessionHeader } from '@shared/types'
 import { getDefaultStore } from 'jotai'
-import { guardBackupWrite } from '@/app/backup-operation-guard'
 import { rendererApplication } from '@/app/renderer-application'
 import platform from '@/platform'
 import { navigateToDynamicPath, router } from '@/router'
@@ -34,7 +32,6 @@ function abortGenerationsBeforeDeletion(sessionId: string): void {
 }
 
 export async function deleteSession(sessionId: string): Promise<void> {
-  if (!(await guardBackupWrite())) return
   abortGenerationsBeforeDeletion(sessionId)
   // Clear only after the deletion succeeded: queued messages are the sole copy
   // of the user's text, and a failed deletion leaves the session (and queue) alive.
@@ -48,7 +45,6 @@ export async function deleteSession(sessionId: string): Promise<void> {
 }
 
 export async function deleteSessions(sessionIds: string[]): Promise<void> {
-  if (!(await guardBackupWrite())) return
   for (const sessionId of sessionIds) {
     abortGenerationsBeforeDeletion(sessionId)
   }
@@ -65,7 +61,6 @@ export async function deleteSessions(sessionIds: string[]): Promise<void> {
 }
 
 export async function deleteAllArchivedSessions(): Promise<void> {
-  if (!(await guardBackupWrite())) return
   const archived = await rendererApplication.sessions.listArchivedSessionsMeta()
   const sessionIds = archived.map((session) => session.id)
   if (sessionIds.length === 0) {
@@ -82,7 +77,6 @@ export async function refreshSessionListCache(): Promise<void> {
  * Create a new session and switch to it
  */
 async function create(newSession: Omit<SessionHeader, 'id'> & { messages: readonly Message[] }) {
-  if (!(await guardBackupWrite())) throw new BackupOperationBusyError()
   const session = await rendererApplication.sessions.createSession(newSession)
   switchCurrentSession(session.id)
   return session
@@ -102,7 +96,6 @@ export function createEmpty(type: 'chat') {
  * Copy session and switch to it
  */
 export async function copyAndSwitchSession(sessionId: string) {
-  if (!(await guardBackupWrite())) return
   const source = await rendererApplication.sessions.getSessionHeader(sessionId)
   if (!source) throw new Error(`Session ${sessionId} not found`)
   const created = await rendererApplication.sessions.copySession({
@@ -133,7 +126,6 @@ export function switchCurrentSession(sessionId: string) {
  * dragging.
  */
 export async function reorderSessions(activeId: string, overId: string) {
-  if (!(await guardBackupWrite())) return
   if (activeId === overId) return
   const { sessionQueryBridge, sessions: sessionService } = rendererApplication
   const sessions = await sessionQueryBridge.listSessionsMeta()
@@ -249,7 +241,6 @@ async function archiveSessionList(keepNum: number) {
  * Clear conversation list by archiving entries, keeping only specified number of sessions (from top)
  */
 export async function clearConversationList(keepNum: number) {
-  if (!(await guardBackupWrite())) return
   await archiveSessionList(keepNum)
 }
 
@@ -257,7 +248,6 @@ export async function clearConversationList(keepNum: number) {
  * Clear all messages in a session, keeping only system prompt
  */
 export async function clear(sessionId: string) {
-  if (!(await guardBackupWrite())) return
   let cleanup: Promise<void> | undefined
   try {
     const result = await rendererApplication.sessions.executeStructureCommand(

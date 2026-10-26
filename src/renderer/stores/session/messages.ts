@@ -20,7 +20,6 @@ import { createMessage, type Message } from '@shared/types'
 import { countMessageWords } from '@shared/utils/message'
 import { normalizeErrorForSentry } from '@shared/utils/sentry_policy'
 import { createModel } from '@/adapters'
-import { guardBackupWrite } from '@/app/backup-operation-guard'
 import { rendererApplication, sessionRepository } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
 import { runCompactionWithUIState } from '@/packages/context-management'
@@ -292,7 +291,6 @@ export async function submitNewUserMessage(
   sessionId: string,
   params: { newUserMsg: Message; needGenerating: boolean; onUserMessageReady?: () => void }
 ) {
-  if (!(await guardBackupWrite())) return
   // The gate runs inside the session lock so it reads the freshest state:
   // lock-free alternative replies can start streaming between a pre-lock
   // check and lock acquisition.

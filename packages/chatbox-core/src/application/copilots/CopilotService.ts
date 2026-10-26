@@ -10,7 +10,7 @@ export interface CopilotSnapshot {
 }
 
 export interface CopilotStorageScope {
-  /** Refresh the service after an import while retaining the storage lock. */
+  /** Refresh while retaining the storage lock. */
   reload(): Promise<void>
 }
 
@@ -67,7 +67,7 @@ export function searchCopilots(copilots: readonly CopilotDetail[], search: strin
   )
 }
 
-/** Owns the existing myCopilots value and coordinates edits with backup storage access. */
+/** Owns saved Copilot definitions and serializes mutations and resource scans. */
 export class CopilotService {
   private snapshot: CopilotSnapshot = { copilots: [], isLoading: true, error: null }
   private records: CopilotDetail[] = []
@@ -148,10 +148,6 @@ export class CopilotService {
       if (!copilot) return
       await this.writeCopilot({ ...copilot, starred })
     })
-  }
-
-  async flush(): Promise<void> {
-    await this.queue
   }
 
   withStorageLock<T>(operation: (scope: CopilotStorageScope) => Promise<T>): Promise<T> {

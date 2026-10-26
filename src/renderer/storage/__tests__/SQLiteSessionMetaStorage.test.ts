@@ -45,6 +45,24 @@ describe('SQLiteSessionMetaStorage', () => {
     mockDatabase.query.mockResolvedValue({ values: [{ name: 'archived_at' }] })
   })
 
+  it('iterates identities using bounded keyset reads without loading metadata payloads', async () => {
+    const storage = new SQLiteSessionMetaStorage()
+    await storage.initialize()
+    const first = Array.from({ length: 128 }, (_, index) => ({ id: `id-${String(index).padStart(3, '0')}` }))
+    mockDatabase.query.mockReset()
+    mockDatabase.query
+      .mockResolvedValueOnce({ values: first })
+      .mockResolvedValueOnce({ values: [{ id: 'last' }] })
+      .mockResolvedValueOnce({ values: [] })
+    const ids: string[] = []
+    for await (const id of storage.iterateIds()) ids.push(id)
+    expect(ids).toEqual([...first.map((row) => row.id), 'last'])
+    expect(mockDatabase.query.mock.calls.every(([sql]) => /^SELECT id FROM session_meta .*LIMIT 128$/.test(sql))).toBe(
+      true
+    )
+    expect(mockDatabase.query.mock.calls.map(([, params]) => params)).toEqual([[], ['id-127'], ['last']])
+  })
+
   it('createMany delegates batch writes to the Capacitor SQLite transaction API', async () => {
     const storage = new SQLiteSessionMetaStorage()
     const records = [makeRecord({ id: 'a' }), makeRecord({ id: 'b', starred: true })]

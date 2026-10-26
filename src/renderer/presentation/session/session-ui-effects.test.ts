@@ -40,7 +40,6 @@ describe('session browser cleanup', () => {
     const repository = new RowBackedSessionRepository({
       records: new InMemorySessionRecordStore(),
       rows,
-      backup: rows,
       writes: new SessionRowWriteQueue((_id, action) => action()),
     })
     await repository.createSessionRows({ id: 'a', name: 'Untitled' }, [])

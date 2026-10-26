@@ -18,7 +18,6 @@ export function rowChatFixture(createId: () => string, initial?: Session) {
   const records = new InMemorySessionRecordStore()
   const repository = new RowBackedSessionRepository({
     rows,
-    backup: rows,
     records,
     writes: new SessionRowWriteQueue((_id, run) => run()),
   })

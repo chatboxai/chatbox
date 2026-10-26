@@ -92,7 +92,7 @@ CREATE TABLE IF NOT EXISTS session_messages (
   updated_at INTEGER NOT NULL,
   branch_id TEXT,
   payload_id TEXT NOT NULL,
-  payload_chunk_count INTEGER NOT NULL,
+  message_json TEXT NOT NULL,
   payload_utf8_length INTEGER NOT NULL,
   row_metadata_json TEXT,
   selected_depth INTEGER,
@@ -130,23 +130,12 @@ CREATE TABLE IF NOT EXISTS session_messages_staging (
   updated_at INTEGER NOT NULL,
   branch_id TEXT,
   payload_id TEXT NOT NULL,
-  payload_chunk_count INTEGER NOT NULL,
+  message_json TEXT NOT NULL,
   payload_utf8_length INTEGER NOT NULL,
   row_metadata_json TEXT,
   selected_depth INTEGER,
   PRIMARY KEY (mutation_id, session_id, message_id)
 );
-
-CREATE TABLE IF NOT EXISTS session_message_payload_chunks (
-  session_id TEXT NOT NULL,
-  payload_id TEXT NOT NULL,
-  chunk_index INTEGER NOT NULL,
-  value TEXT NOT NULL,
-  PRIMARY KEY (payload_id, chunk_index)
-);
-
-CREATE INDEX IF NOT EXISTS idx_session_message_payload_chunks_session
-ON session_message_payload_chunks(session_id);
 
 CREATE TABLE IF NOT EXISTS session_row_revision_guard (
   value INTEGER CONSTRAINT session_row_revision_conflict CHECK (value = 0)
@@ -181,30 +170,6 @@ ON session_messages(payload_id);
 CREATE INDEX IF NOT EXISTS idx_session_messages_staging_payload
 ON session_messages_staging(payload_id);
 
-INSERT OR IGNORE INTO session_row_heads (session_id, revision, mutation_id)
-SELECT session_id, commit_revision, 'schema-backfill'
-FROM session_threads
-WHERE seq = -1 AND commit_revision IS NOT NULL;
-
-DELETE FROM session_threads_staging
-WHERE mutation_id IN (
-  SELECT mutation_id FROM session_row_staging_mutations
-  WHERE created_at < CAST(strftime('%s', 'now') AS INTEGER) * 1000 - 3600000
-);
-DELETE FROM session_messages_staging
-WHERE mutation_id IN (
-  SELECT mutation_id FROM session_row_staging_mutations
-  WHERE created_at < CAST(strftime('%s', 'now') AS INTEGER) * 1000 - 3600000
-);
-DELETE FROM session_row_staging_mutations
-WHERE created_at < CAST(strftime('%s', 'now') AS INTEGER) * 1000 - 3600000;
-DELETE FROM session_message_payload_chunks
-WHERE NOT EXISTS (
-  SELECT 1 FROM session_messages WHERE session_messages.payload_id = session_message_payload_chunks.payload_id
-) AND NOT EXISTS (
-  SELECT 1 FROM session_messages_staging
-  WHERE session_messages_staging.payload_id = session_message_payload_chunks.payload_id
-);
 DELETE FROM session_row_delete_receipts
 WHERE deleted_at < CAST(strftime('%s', 'now') AS INTEGER) * 1000 - 604800000;
 `

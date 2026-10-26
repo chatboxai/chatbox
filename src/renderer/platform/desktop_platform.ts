@@ -22,12 +22,12 @@ import { IndexedDBSessionMetaStorage, type SessionMetaStorage } from '@/storage/
 import { IndexedDBSessionRowStore } from '@/storage/SessionRowStorage'
 import { rememberFileNativePath } from '@/utils/file-native-path'
 import { getOS } from '../packages/navigator'
-import DesktopExporter from './desktop_exporter'
-import { desktopBackupBlobs } from './desktop-backup-blobs'
 import { DesktopBuiltInBrowser } from './desktop-built-in-browser'
 import type { Exporter, Platform, PlatformType } from './interfaces'
 import DesktopKnowledgeBaseController from './knowledge-base/desktop-controller'
 import DesktopSessionAttachmentRagController from './session-attachment-rag/desktop-controller'
+import DesktopExporter from './desktop_exporter'
+import { desktopResourceFiles } from './desktop-resource-files'
 import { parseTextFileLocally } from './web_platform_utils'
 
 const log = getLogger('desktop-platform')
@@ -39,8 +39,8 @@ export default class DesktopPlatform implements Platform {
   public readonly isDesktopLike = true
 
   public exporter: Exporter
+  public resourceFiles: ReturnType<typeof desktopResourceFiles>
   public builtInBrowser?: DesktopBuiltInBrowser
-  public backupBlobStreams: ReturnType<typeof desktopBackupBlobs>
 
   private _kbController?: DesktopKnowledgeBaseController
   private _sessionAttachmentRagController?: DesktopSessionAttachmentRagController
@@ -52,8 +52,8 @@ export default class DesktopPlatform implements Platform {
   constructor(ipc: ElectronIPC) {
     this.ipc = ipc
     this.exporter = new DesktopExporter(ipc)
+    this.resourceFiles = desktopResourceFiles(ipc)
     this.builtInBrowser = new DesktopBuiltInBrowser(ipc)
-    this.backupBlobStreams = desktopBackupBlobs(ipc)
   }
 
   public getStorageType(): string {
@@ -560,16 +560,16 @@ export default class DesktopPlatform implements Platform {
     return this.ipc.invoke('window:unmaximize')
   }
 
-  public setBackupOperationActive(active: boolean): Promise<void> {
-    return this.ipc.invoke('backup-operation:set-active', active)
+  public setTaskCloseProtection(active: boolean): Promise<void> {
+    return this.ipc.invoke('task-operation:set-active', active)
   }
 
-  public onBackupCloseRequest(callback: () => void): () => void {
-    return this.ipc.onBackupCloseRequest(callback)
+  public onTaskCloseRequest(callback: () => void): () => void {
+    return this.ipc.onTaskCloseRequest(callback)
   }
 
-  public finishBackupClose(confirmed: boolean): Promise<void> {
-    return this.ipc.invoke('backup-operation:finish-close', confirmed)
+  public finishTaskClose(confirmed: boolean): Promise<void> {
+    return this.ipc.invoke('task-operation:finish-close', confirmed)
   }
 
   public closeWindow() {

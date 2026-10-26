@@ -1,80 +1,68 @@
-import {
-  readBranchPreviewFromMetadata,
-  validateBranchPreviewRequest,
-  assertBranchPreviewRevision,
-} from './session-branch-preview'
-import type { SessionBranchPreviewRequest } from '../ports/session-branch-source'
-import {
-  SESSION_TOKEN_PAGE_MESSAGES,
-  validateTokenCacheRequest,
-  validTokenCacheResult,
-  type SessionTokenCacheRequest,
-  type SessionTokenCacheResult,
-  type SessionTokenCachedValue,
-} from '../ports/session-token-cache'
 import { v4 as uuid } from 'uuid'
-import { createTextTokenSource, isValidTextTokenResult } from './session-text-token-sql'
-import type { SessionTextTokenSource, SessionTextTokenResult, SessionTextTokenRead } from '../ports/session-text-tokens'
-import { BackupRowProjectionBuilder } from '../backup/row-projection'
-import { BackupMessageValidator } from '../backup/payload'
-import { fitsInlineBackupJson, jsonUtf8Blocks } from '../backup/json-stream'
-import { throwIfAborted } from '../backup/abort'
-import {
-  backupPageLimits,
-  type BackupRow,
-  type BackupPageLimits,
-  type BackupSessionCandidate,
-  type BackupSessionStore,
-} from '../backup/session-port'
-import { compareBackupIds } from '../backup/sharded-format'
-import { readBranchMessagesPage, validateBranchMessagesRequest } from './session-branch-reader'
-import type { SessionBranchMessagesRequest } from '../ports/session-branch-source'
-import { deriveMessageFacts } from '../session/message-facts'
-import { applyMemoryRanges, projectMemoryRows } from './memory-session-row-mutations'
-import { readMetadataSelection, readRelationsPage, type SessionRelationReader } from './session-row-relations-read'
+import type { SessionBranchMessagesRequest, SessionBranchPreviewRequest } from '../ports/session-branch-source'
 import type {
   SessionMessageMetadataRequest,
   SessionMessageRelationsRequest,
   SessionThreadStateRequest,
 } from '../ports/session-row-relations'
-import type { MessageRowMetadata } from '../session/session-tree/types'
-import type { SessionNavigationRepairRequest } from '../ports/session-transcript-source'
-import { validateNavigationRepair } from './session-transcript-read'
-import type {
-  SessionThreadRequest,
-  SessionThreadRead,
-  SessionTranscriptRequest,
-  SessionTranscriptPage,
-  SessionNavigationPage,
-} from '../ports/session-transcript-source'
-import {
-  navigationProjection,
-  readTranscriptPage,
-  readNavigationPage,
-  transcriptOrder,
-  transcriptThread,
-  assertTranscriptRevision,
-  validateTranscriptRequest,
-  type SessionTranscriptReader,
-} from './session-transcript-read'
-import { assertSessionThreadPageRevision, validateSessionThreadPageRequest } from './session-thread-page'
 import {
   type GeneratingMessageRef,
   type SessionMessagesRequest,
   type SessionMessagesSnapshot,
-  SessionRowConflictError,
-  type SessionThreadPage,
-  type SessionThreadPageRequest,
   type SessionRowCommit,
+  SessionRowConflictError,
   type SessionRowMutationResult,
   type SessionRowSnapshot,
   SessionRowStoreError,
   type SessionRowStorePort,
   type SessionRows,
   type SessionRowsDiff,
+  type SessionThreadPage,
+  type SessionThreadPageRequest,
 } from '../ports/session-row-store'
-import type { MessageRow, MessageRowStatus, ThreadRow } from '../session/session-tree/types'
+import type { SessionRowIterationRequest, SessionRowWriter, SessionStoredRow } from '../ports/session-row-transfer'
+import type { SessionTextTokenRead, SessionTextTokenResult, SessionTextTokenSource } from '../ports/session-text-tokens'
+import {
+  SESSION_TOKEN_PAGE_MESSAGES,
+  type SessionTokenCachedValue,
+  type SessionTokenCacheRequest,
+  type SessionTokenCacheResult,
+  validateTokenCacheRequest,
+  validTokenCacheResult,
+} from '../ports/session-token-cache'
+import type {
+  SessionNavigationPage,
+  SessionNavigationRepairRequest,
+  SessionThreadRead,
+  SessionThreadRequest,
+  SessionTranscriptPage,
+  SessionTranscriptRequest,
+} from '../ports/session-transcript-source'
+import { deriveMessageFacts } from '../session/message-facts'
+import type { MessageRow, MessageRowMetadata, MessageRowStatus, ThreadRow } from '../session/session-tree/types'
+import { throwIfAborted } from '../utils/abort'
+import { applyMemoryRanges, projectMemoryRows } from './memory-session-row-mutations'
+import {
+  assertBranchPreviewRevision,
+  readBranchPreviewFromMetadata,
+  validateBranchPreviewRequest,
+} from './session-branch-preview'
+import { readBranchMessagesPage, validateBranchMessagesRequest } from './session-branch-reader'
 import { assertSessionReadRevision, validateSessionMessagesRequest } from './session-message-selection'
+import { readMetadataSelection, readRelationsPage, type SessionRelationReader } from './session-row-relations-read'
+import { createTextTokenSource, isValidTextTokenResult } from './session-text-token-sql'
+import { assertSessionThreadPageRevision, validateSessionThreadPageRequest } from './session-thread-page'
+import {
+  assertTranscriptRevision,
+  navigationProjection,
+  readNavigationPage,
+  readTranscriptPage,
+  type SessionTranscriptReader,
+  transcriptOrder,
+  transcriptThread,
+  validateNavigationRepair,
+  validateTranscriptRequest,
+} from './session-transcript-read'
 
 interface SessionRowState {
   threads: Map<string, ThreadRow>
@@ -153,7 +141,7 @@ function validateCommit(sessionId: string, threads: ThreadRow[], commit: Session
  * state before publishing it, so a rejected row leaves the store untouched the
  * way an aborted transaction would.
  */
-export class InMemorySessionRowStore implements SessionRowStorePort, BackupSessionStore {
+export class InMemorySessionRowStore implements SessionRowStorePort {
   private readonly tokenCache = new Map<string, { payloadId: string; value: SessionTokenCachedValue }>()
   private readonly payloadIds = new Map<string, Map<string, string>>()
   private readonly textTokenResults = new Map<string, SessionTextTokenResult['value']>()
@@ -552,171 +540,71 @@ export class InMemorySessionRowStore implements SessionRowStorePort, BackupSessi
     this.payloadIds.set(sessionId, ids)
   }
 
-  async *iterateBackupRows(
-    sessionId: string,
-    requested: BackupPageLimits,
-    signal?: AbortSignal,
-    threadId?: string
-  ): AsyncGenerator<BackupRow> {
-    const limits = backupPageLimits(requested)
+  async *iterateRows(request: SessionRowIterationRequest): AsyncGenerator<SessionStoredRow> {
+    const { sessionId, threadId, signal } = request
     const state = this.sessions.get(sessionId)
-    if (!state) throw new Error('Backup session is missing')
+    if (!state) throw new Error('Session is missing')
+    const revision = request.expectedRevision ?? state.revision
     const check = () => {
       throwIfAborted(signal)
       const actual = this.revisions.get(sessionId) ?? null
-      if (actual !== state.revision) throw new SessionRowConflictError(sessionId, state.revision, actual)
-    }
-    const bounded = (row: BackupRow) => {
-      if (!fitsInlineBackupJson(row, limits.maxRecordBytes)) throw new Error('Backup record requires payload blocks')
-      return row
+      if (actual !== revision) throw new SessionRowConflictError(sessionId, revision, actual)
     }
     check()
-    yield bounded({ kind: 'header', record: clone(state.record) })
-    const threads = [...state.threads.values()]
-      .filter((row) => !threadId || row.threadId === threadId)
-      .sort((a, b) => a.seq - b.seq || compareBackupIds(a.threadId, b.threadId))
-    if (threadId && !threads.length) throw new Error('Backup thread is missing')
+    const threads = [...state.threads.values()].sort((a, b) => transcriptOrder(a.seq) - transcriptOrder(b.seq))
+    if (threadId && !state.threads.has(threadId)) throw new Error('Thread is missing')
     for (const thread of threads) {
+      if (threadId && thread.threadId !== threadId) continue
       check()
-      yield bounded({ kind: 'thread', thread: clone(thread) })
+      yield { kind: 'thread', thread: clone(thread) }
     }
-    const messages = [...state.messages.values()]
-      .filter((row) => !threadId || row.threadId === threadId)
-      .sort(
-        (a, b) =>
-          compareBackupIds(a.threadId, b.threadId) || a.seq - b.seq || compareBackupIds(a.messageId, b.messageId)
-      )
-    for (const row of messages) {
+    for (const row of state.messages.values()) {
+      if (threadId && row.threadId !== threadId) continue
       check()
-      if (fitsInlineBackupJson({ kind: 'message', message: row }, limits.maxRecordBytes))
-        yield { kind: 'message', message: clone(row) }
-      else {
-        const validator = new BackupMessageValidator()
-        let size = 0
-        for (const bytes of jsonUtf8Blocks(row.message)) {
-          size += bytes.length
-          validator.write(bytes)
-        }
-        const projection = validator.finish()
-        yield {
-          kind: 'message',
-          message: { ...clone({ ...row, message: projection }) },
-          payload: {
-            size,
-            original: () => projection,
-            chunks: async function* () {
-              for (const bytes of jsonUtf8Blocks(row.message)) {
-                check()
-                yield bytes
-              }
-            },
-          },
-        }
-      }
+      yield { kind: 'message', message: clone(row) }
     }
     check()
   }
 
-  async beginBackupRestore(sessionId: string, expectedRevision?: number | null): Promise<BackupSessionCandidate> {
-    const previous = this.sessions.get(sessionId)
-    const previousPayloadIds = new Map(this.payloadIds.get(sessionId))
-    const previousTokens = new Map([...this.textTokenResults].filter(([key]) => JSON.parse(key)[0] === sessionId))
-    const expected = this.revisions.get(sessionId) ?? null
-    if (expectedRevision !== undefined && expectedRevision !== expected)
-      throw new SessionRowConflictError(sessionId, expectedRevision, expected)
-    const revision = (expected ?? 0) + 1
-    if (!Number.isSafeInteger(revision)) throw new Error('Session revision exhausted')
-    const projection = new BackupRowProjectionBuilder()
-    const bodies = new Map<string, MessageRow['message']>()
-    let payload: Uint8Array[] = []
-    let size = 0
-    let published = false,
-      disposed = false
-    const open = () => {
-      if (published || disposed) throw new Error('Backup candidate is closed')
+  async stageRows(commit: SessionRowCommit, expectedRevision: number | null): Promise<SessionRowWriter> {
+    if (
+      commit.record.rowFormatVersion !== 3 ||
+      !Number.isSafeInteger(commit.revision) ||
+      commit.revision !== (expectedRevision ?? 0) + 1
+    )
+      throw new Error('Invalid staged revision')
+    commit = clone(commit)
+    const sessionId = commit.record.id
+    const actual = this.revisions.get(sessionId) ?? null
+    if (actual !== expectedRevision) throw new SessionRowConflictError(sessionId, expectedRevision, actual)
+    const threads = new Map<string, ThreadRow>()
+    const messages = new Map<string, MessageRow>()
+    let closed = false
+    const assertOpen = () => {
+      if (closed) throw new Error('Session row writer is closed')
     }
     return {
-      appendPayload: async (bytes) => {
-        open()
-        if (!bytes.length || bytes.length > 128 * 1024) throw new Error('Backup payload block exceeds budget')
-        payload.push(bytes.slice())
-        size += bytes.length
+      appendThread: async (thread) => {
+        assertOpen()
+        if (thread.sessionId !== sessionId || threads.has(thread.threadId)) throw new Error('Invalid staged thread')
+        threads.set(thread.threadId, clone(thread))
       },
-      append: async (row) => {
-        open()
-        if (
-          (row.kind === 'header'
-            ? row.record.id
-            : row.kind === 'thread'
-              ? row.thread.sessionId
-              : row.message.sessionId) !== sessionId
-        )
-          throw new Error('Backup row belongs to another session')
-        if (row.kind === 'message') {
-          let message = row.message.message
-          if (row.payload) {
-            if (size !== row.payload.size) throw new Error('Backup payload is incomplete')
-            const bytes = new Uint8Array(size)
-            let offset = 0
-            const validator = new BackupMessageValidator()
-            for (const block of payload) {
-              bytes.set(block, offset)
-              offset += block.length
-              validator.write(block)
-            }
-            validator.finish()
-            message = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as MessageRow['message']
-            payload = []
-            size = 0
-          } else if (size) throw new Error('Backup payload has no owning message')
-          row = { ...row, message: { ...row.message, message } }
-          bodies.set(row.message.messageId, clone(message))
-        } else if (size) throw new Error('Backup payload has no owning message')
-        projection.append(row)
+      appendMessage: async (row) => {
+        assertOpen()
+        if (row.sessionId !== sessionId || row.messageId !== row.message.id || messages.has(row.messageId))
+          throw new Error('Invalid staged message')
+        messages.set(row.messageId, clone({ ...row, facts: deriveMessageFacts(row.message) }))
       },
-      publish: async (signal) => {
-        open()
-        throwIfAborted(signal)
-        if (size) throw new Error('Backup payload has no owning message')
-        const tree = projection.finish()
-        await this.writeRows(
-          {
-            record: tree.session,
-            revision,
-            rows: {
-              sessionId,
-              threads: tree.threads,
-              messages: tree.messages.map((row) => ({ ...row, message: bodies.get(row.messageId)! })),
-            },
-          },
-          expected
-        )
-        published = true
-      },
-      rollback: async () => {
-        if (!published) return
-        const actual = this.revisions.get(sessionId) ?? null
-        if (actual !== revision) throw new SessionRowConflictError(sessionId, revision, actual)
-        if (previous) {
-          this.navigation.set(
-            sessionId,
-            new Map([...previous.messages].map(([id, row]) => [id, navigationProjection(row.message)]))
-          )
-          this.publish(sessionId, previous)
-        } else {
-          await this.deleteRows(sessionId, revision)
-          if (expected === null) this.revisions.delete(sessionId)
-          else this.revisions.set(sessionId, expected)
-        }
-        this.replacePayloadIds(sessionId, previousPayloadIds)
-        for (const [key, value] of previousTokens) this.textTokenResults.set(key, value)
-        published = false
-        disposed = true
+      publish: async () => {
+        assertOpen()
+        const rows = { sessionId, threads: [...threads.values()], messages: [...messages.values()] }
+        await this.writeRows({ ...commit, rows }, expectedRevision)
+        closed = true
       },
       dispose: async () => {
-        disposed = true
-        bodies.clear()
-        payload = []
+        closed = true
+        threads.clear()
+        messages.clear()
       },
     }
   }

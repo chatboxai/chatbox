@@ -1,23 +1,10 @@
 import type { SessionRows } from '../ports/session-row-store'
 import type { MessageRowMetadata } from '../session/session-tree/types'
-import type { SessionRowSqlDatabase } from './session-row-sql'
 
-/** Physical row projections are additive; old records are upgraded by the row-format migration. */
-export async function initializeRowProjectionSchema(database: SessionRowSqlDatabase): Promise<void> {
-  for (const [table, columns] of [
-    ['session_threads', ['projection_json TEXT']],
-    ['session_threads_staging', ['projection_json TEXT']],
-    ['session_messages', ['row_metadata_json TEXT', 'selected_depth INTEGER']],
-    ['session_messages_staging', ['row_metadata_json TEXT', 'selected_depth INTEGER']],
-  ] as const) {
-    const existing = new Set((await database.query<{ name: string }>(`PRAGMA table_info(${table})`)).map((r) => r.name))
-    for (const column of columns) {
-      if (!existing.has(column.split(' ')[0])) await database.execute(`ALTER TABLE ${table} ADD COLUMN ${column};`)
-    }
-  }
-  await database.execute(`
+export const SESSION_ROW_PROJECTION_SCHEMA_SQL = `
     CREATE TABLE IF NOT EXISTS session_row_local_metadata(mutation_id TEXT NOT NULL,message_id TEXT NOT NULL,value TEXT NOT NULL,PRIMARY KEY(mutation_id,message_id));
-    CREATE TABLE IF NOT EXISTS session_row_local_payloads(mutation_id TEXT NOT NULL,payload_id TEXT NOT NULL,PRIMARY KEY(mutation_id,payload_id));
+    CREATE TABLE IF NOT EXISTS session_row_selected_paths(mutation_id TEXT NOT NULL,message_id TEXT NOT NULL,depth INTEGER NOT NULL,PRIMARY KEY(mutation_id,message_id));
+    CREATE TABLE IF NOT EXISTS session_row_local_versions(mutation_id TEXT NOT NULL,payload_id TEXT NOT NULL,PRIMARY KEY(mutation_id,payload_id));
     CREATE TABLE IF NOT EXISTS session_row_local_deletes (mutation_id TEXT NOT NULL,session_id TEXT NOT NULL,message_id TEXT NOT NULL,PRIMARY KEY(mutation_id,session_id,message_id));
     CREATE INDEX IF NOT EXISTS idx_session_messages_staging_local_children ON session_messages_staging(mutation_id,session_id,thread_id,parent_message_id,seq,message_id);
     CREATE INDEX IF NOT EXISTS idx_session_messages_staging_selected ON session_messages_staging(mutation_id,session_id,thread_id,selected_depth) WHERE selected_depth IS NOT NULL;
@@ -33,8 +20,7 @@ export async function initializeRowProjectionSchema(database: SessionRowSqlDatab
     CREATE INDEX IF NOT EXISTS idx_session_messages_children ON session_messages(session_id,thread_id,parent_message_id,seq,message_id);
     CREATE INDEX IF NOT EXISTS idx_session_messages_branch ON session_messages(session_id,thread_id,parent_message_id,branch_id,seq,message_id);
     CREATE INDEX IF NOT EXISTS idx_session_messages_selected ON session_messages(session_id,thread_id,selected_depth) WHERE selected_depth IS NOT NULL;
-  `)
-}
+`
 
 export function rowExtra(row: MessageRowMetadata): string | null {
   const { facts, selected, forkCreatedAt, pendingBranchId, pendingBranchSeq, forkPivotId, fork } = row
@@ -61,7 +47,9 @@ export function parseRowExtra(
 }
 
 /** Full replacement already owns these rows; this pass reads relationships and never touches payloads. */
-export function selectedDepths(rows: SessionRows): Map<string, number> {
+export function selectedDepths(
+  rows: Pick<SessionRows, 'threads'> & { messages: MessageRowMetadata[] }
+): Map<string, number> {
   const selected = new Map<string, number>()
   if (!rows.messages.some((row) => row.selected !== undefined)) return selected
   const byId = new Map(rows.messages.map((row) => [row.messageId, row]))
@@ -74,7 +62,6 @@ export function selectedDepths(rows: SessionRows): Map<string, number> {
       if (!row || row.threadId !== thread.threadId || row.parentMessageId !== parent || selected.has(id))
         throw new Error('Invalid selected row path')
       if (row.selected !== undefined) selected.set(id, depth)
-      // The full replacement validation also covers old rows whose projection is not yet published.
       if (depth++ > rows.messages.length) throw new Error('Cyclic selected row path')
       parent = id
       id = row.activeChildId

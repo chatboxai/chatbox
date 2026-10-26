@@ -219,6 +219,7 @@ For more information: [chatboxai.app](https://chatboxai.app/)
 ## FAQ
 
 -   [Frequently Asked Questions](./doc/FAQ.md)
+-   [Connect Baizhi Cloud Browser using custom HTTP MCP](./doc/mcp-baizhi-cloud-browser.md)
 
 ## How to Contribute
 

@@ -83,7 +83,6 @@ async function harness(status: 'settled' | 'generating' | 'paused' = 'settled') 
     },
     null
   )
-  await records.setRecord(tree.session)
   const search = new SessionSearchService(
     {
       listSessionsMetaPage: async () => ({ items: [], nextCursor: null, total: 0 }),

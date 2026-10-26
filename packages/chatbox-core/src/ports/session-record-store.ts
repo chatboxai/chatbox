@@ -1,15 +1,7 @@
-import type { SessionRecordV2 } from '../session/session-tree/types'
 import type { Session } from '../types/session'
 
-/**
- * A session record as it sits in storage: either a whole V1 `Session`, or the
- * row-backed record whose messages, threads and forks live in the row store.
- */
-export type StoredSessionRecord = Session | SessionRecordV2
-
-export function isRowsSessionRecord(record: StoredSessionRecord): record is SessionRecordV2 {
-  return (record as Partial<SessionRecordV2>).storageFormat === 'rows'
-}
+/** A session record as it sits in storage: a whole V1 `Session`. */
+export type StoredSessionRecord = Session
 
 /**
  * Whole-session records, addressed by session id: the input of row migration.

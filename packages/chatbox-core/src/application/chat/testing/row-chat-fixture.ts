@@ -37,7 +37,6 @@ export function rowChatFixture(createId: () => string, initial?: Session) {
       },
       previous
     )
-    await records.setRecord(tree.session)
   }
   function publish(sessionId: string) {
     const snapshot = rows.snapshot().find((entry) => entry.record.id === sessionId)

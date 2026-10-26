@@ -1,4 +1,4 @@
-import { isRowsSessionRecord, type SessionRecordStorePort } from '../../ports/session-record-store'
+import type { SessionRecordStorePort } from '../../ports/session-record-store'
 import { SessionRowConflictError, type SessionRowCommit, type SessionRowStorePort } from '../../ports/session-row-store'
 import { verifySessionTreeRoundTrip } from '../../session/session-tree/verify'
 import { convertLegacyTreeToRowFormat, legacyActiveThreadId } from './compatibility/row-format'
@@ -64,10 +64,6 @@ export class SessionRowMigration {
     if (!source) return null
     if (source.id !== sessionId) {
       throw new SessionMigrationError(sessionId, 'source', new Error('Record identity does not match'))
-    }
-
-    if (isRowsSessionRecord(source)) {
-      throw new SessionMigrationError(sessionId, 'source', new Error('Published session rows are missing'))
     }
 
     let verified: ReturnType<typeof verifySessionTreeRoundTrip>

@@ -195,7 +195,6 @@ describe('V3 candidate batch validation', () => {
     const original = fixture('A', 1)
     original.record.name = 'local'
     await f.rows.writeRows(original)
-    await f.options.records.setRecord(original.record)
     const broken = records(fixture('A', 1)).filter((row) => row.type !== 'thread')
     const result = await f.run({ A: broken, B: records(fixture('B', 1)) })
     expect(result.importReport).toMatchObject({ importedSessions: 1, importedMessages: 1, skippedRecords: 2 })
@@ -239,7 +238,6 @@ describe('V3 candidate batch validation', () => {
     const original = fixture('A', 1)
     original.record.name = 'local'
     await f.rows.writeRows(original)
-    await f.options.records.setRecord(original.record)
     const a = records(fixture('A', 1))
     const text = [...a, a[0]].map((row) => JSON.stringify(row)).join('\n') + '\n{malformed\n'
     let failure: unknown

@@ -200,7 +200,6 @@ function setup() {
   }
   const seed = async (snapshot: ReturnType<typeof fixture>) => {
     await rows.writeRows(snapshot)
-    await records.setRecord(snapshot.record)
     await metadata.create(createSessionMetaRecord(snapshot.record, 5, 123))
   }
   return { database, options, rows, storage, records, metadata, workspace, tables, resources, liveResources, seed }

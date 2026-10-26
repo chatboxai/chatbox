@@ -183,13 +183,4 @@ describe('row publication and migration', () => {
     await records.setRecord({ ...source, name: 'Updated original' })
     expect(await migration.ensureRows(source.id)).toMatchObject({ record: { name: 'Updated original' } })
   })
-
-  it('does not replace a published marker when its rows are missing', async () => {
-    const { records, rows, migration } = setup()
-    const marker = snapshot().record
-    await records.setRecord(marker)
-    await expect(migration.ensureRows(source.id)).rejects.toMatchObject({ stage: 'source' })
-    expect(await records.getRecord(source.id)).toEqual(marker)
-    expect(rows.writeRows).not.toHaveBeenCalled()
-  })
 })

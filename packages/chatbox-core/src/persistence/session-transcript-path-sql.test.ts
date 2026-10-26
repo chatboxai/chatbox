@@ -57,7 +57,6 @@ describe.each([true, false])('SQL transcript metadata batches (bounded bridge: %
   it('finds a seventh-page Search hit with constant per-page native roundtrips and bounded indexed paths', async () => {
     const { database, store, query, fixture } = await harness(bounded, chain(500))
     const records = new InMemorySessionRecordStore()
-    await records.setRecord(fixture.record)
     const repository = new RowBackedSessionRepository({
       records,
       rows: store,

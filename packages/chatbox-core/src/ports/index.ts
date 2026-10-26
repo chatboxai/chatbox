@@ -16,11 +16,7 @@ export type {
   SessionStructureResult,
   CurrentThreadIdentity,
 } from './session-structure-command'
-export {
-  isRowsSessionRecord,
-  type SessionRecordStorePort,
-  type StoredSessionRecord,
-} from './session-record-store'
+export type { SessionRecordStorePort, StoredSessionRecord } from './session-record-store'
 export {
   type SessionDataRepositoryPort,
   type SessionCommand,

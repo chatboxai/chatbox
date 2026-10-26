@@ -1,26 +1,33 @@
 import { buildCompactionHandoff, getCompactionHandoffMode } from '@shared/context/compaction-handoff'
+import type { TokenizerType } from '@shared/token-estimation/tokenizer'
 import { VIEW_IMAGE_FOLLOW_UP_LABEL_PREFIX } from '@shared/tools/view-image'
 import type { MessageContentParts } from '@shared/types'
 import type { ModelMessage } from 'ai'
+import { estimateTokensBySampling } from '../application/token-estimation/math'
 
-/** Fraction of the compaction threshold kept verbatim at the tail of a mid-run compact. */
-export const MID_RUN_COMPACTION_RETAIN_RATIO = 0.35
+/** Counts tokens in model-facing text with the request's tokenizer. */
+export type CountTextTokens = (text: string) => number
 
-const CHARS_PER_TOKEN = 4
 const PER_MESSAGE_OVERHEAD_TOKENS = 4
 /** Media parts are not counted as JSON/base64; providers tokenize them separately. */
-const MEDIA_PART_OVERHEAD_CHARS = 256
+const MEDIA_PART_TOKENS = 64
 
-export function retainTokensForThreshold(thresholdTokens: number): number {
-  return Math.max(1, Math.floor(thresholdTokens * MID_RUN_COMPACTION_RETAIN_RATIO))
+/**
+ * The token estimator's constant-cost count for the request's tokenizer, so a
+ * large or unbroken tool result never stalls a generation step.
+ */
+export function textTokenCounter(tokenizerType: TokenizerType): CountTextTokens {
+  return (text) => estimateTokensBySampling(text, tokenizerType)
 }
 
-function estimateSerializedChars(value: unknown): number {
-  if (typeof value === 'string') return value.length
+const countDefaultTokens = textTokenCounter('default')
+
+function serialize(value: unknown): string {
+  if (typeof value === 'string') return value
   try {
-    return JSON.stringify(value)?.length ?? 0
+    return JSON.stringify(value) ?? ''
   } catch {
-    return 0
+    return ''
   }
 }
 
@@ -29,11 +36,31 @@ function isMediaPart(part: unknown): boolean {
   return part.type === 'image' || part.type === 'file'
 }
 
-/** Only protocol media parts are exempt. JSON tool results remain chargeable text. */
-function estimateProtocolPartChars(part: unknown): number {
-  if (isMediaPart(part)) return MEDIA_PART_OVERHEAD_CHARS
-  if (!part || typeof part !== 'object' || !('type' in part)) return estimateSerializedChars(part)
-  if (part.type !== 'tool-result' || !('output' in part)) return estimateSerializedChars(part)
+const MEDIA_OUTPUT_TYPES = new Set([
+  'file',
+  'image-data',
+  'image-url',
+  'file-data',
+  'file-url',
+  'audio-data',
+  'video-data',
+  'video-url',
+])
+
+/**
+ * Collect the chargeable text of one protocol part and return its media count.
+ * Only protocol media parts are exempt. JSON tool results remain chargeable text.
+ */
+function collectProtocolPart(part: unknown, texts: string[]): number {
+  if (isMediaPart(part)) return 1
+  if (!part || typeof part !== 'object' || !('type' in part)) {
+    texts.push(serialize(part))
+    return 0
+  }
+  if (part.type !== 'tool-result' || !('output' in part)) {
+    texts.push(serialize(part))
+    return 0
+  }
 
   const output = part.output
   if (
@@ -44,46 +71,64 @@ function estimateProtocolPartChars(part: unknown): number {
     !('value' in output) ||
     !Array.isArray(output.value)
   ) {
-    return estimateSerializedChars(part)
+    texts.push(serialize(part))
+    return 0
   }
 
   // Do not stringify the outer tool-result before removing its media bytes.
   // Native Anthropic / Google / Responses results carry image files here, unlike
   // the top-level user image used by chat-completions protocols.
   const { output: _output, ...envelope } = part
-  return (
-    estimateSerializedChars(envelope) +
-    output.value.reduce((chars, item: unknown) => {
-      if (
-        item &&
-        typeof item === 'object' &&
-        'type' in item &&
-        typeof item.type === 'string' &&
-        ['file', 'image-data', 'image-url', 'file-data', 'file-url', 'audio-data', 'video-data', 'video-url'].includes(
-          item.type
-        )
-      ) {
-        return chars + MEDIA_PART_OVERHEAD_CHARS
+  texts.push(serialize(envelope))
+  let media = 0
+  for (const item of output.value as unknown[]) {
+    if (item && typeof item === 'object' && 'type' in item && typeof item.type === 'string') {
+      if (MEDIA_OUTPUT_TYPES.has(item.type)) {
+        media += 1
+        continue
       }
-      return chars + estimateSerializedChars(item)
-    }, 0)
-  )
+    }
+    texts.push(serialize(item))
+  }
+  return media
 }
 
-function estimateContentChars(content: ModelMessage['content']): number {
-  if (typeof content === 'string') return content.length
-  if (!Array.isArray(content)) return estimateSerializedChars(content)
-  return content.reduce((chars, part) => chars + estimateProtocolPartChars(part), 0)
+function countModelMessageTokens(message: ModelMessage, countText: CountTextTokens): number {
+  const texts: string[] = []
+  let media = 0
+  const { content } = message
+  if (typeof content === 'string') texts.push(content)
+  else if (!Array.isArray(content)) texts.push(serialize(content))
+  else for (const part of content) media += collectProtocolPart(part, texts)
+  return countText(texts.join('\n')) + media * MEDIA_PART_TOKENS + PER_MESSAGE_OVERHEAD_TOKENS
 }
 
-export function estimateModelMessageTokens(message: ModelMessage): number {
-  return Math.ceil(estimateContentChars(message.content) / CHARS_PER_TOKEN) + PER_MESSAGE_OVERHEAD_TOKENS
+/** Per-message counter that reuses counts for message objects already seen in earlier steps of a run. */
+export function createModelMessageTokenCounter(countText: CountTextTokens): (message: ModelMessage) => number {
+  const cache = new WeakMap<ModelMessage, number>()
+  return (message) => {
+    const cached = cache.get(message)
+    if (cached !== undefined) return cached
+    const tokens = countModelMessageTokens(message, countText)
+    cache.set(message, tokens)
+    return tokens
+  }
 }
 
-export function estimateModelMessagesTokens(messages: ModelMessage[]): number {
+export function estimateModelMessageTokens(
+  message: ModelMessage,
+  countText: CountTextTokens = countDefaultTokens
+): number {
+  return countModelMessageTokens(message, countText)
+}
+
+export function estimateModelMessagesTokens(
+  messages: ModelMessage[],
+  countMessage: (message: ModelMessage) => number = (message) => estimateModelMessageTokens(message)
+): number {
   let total = 0
   for (const message of messages) {
-    total += estimateModelMessageTokens(message)
+    total += countMessage(message)
   }
   return total
 }
@@ -122,7 +167,11 @@ function alignKeptStartToToolRound(messages: ModelMessage[], start: number): num
  * First index of the retained tail. Tool results and follow-up image messages stay
  * with their assistant call: a cut never starts on a `tool` or image-follow-up user.
  */
-export function findKeptModelMessageStartIndex(messages: ModelMessage[], keepRecentTokens: number): number {
+export function findKeptModelMessageStartIndex(
+  messages: ModelMessage[],
+  keepRecentTokens: number,
+  countMessage: (message: ModelMessage) => number = (message) => estimateModelMessageTokens(message)
+): number {
   if (messages.length === 0 || keepRecentTokens <= 0) {
     return messages.length
   }
@@ -130,7 +179,7 @@ export function findKeptModelMessageStartIndex(messages: ModelMessage[], keepRec
   let tokens = 0
   let start = 0
   for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const next = estimateModelMessageTokens(messages[index])
+    const next = countMessage(messages[index])
     if (tokens > 0 && tokens + next > keepRecentTokens) {
       start = index + 1
       break

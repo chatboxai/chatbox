@@ -1,4 +1,4 @@
-export { buildContext, injectAttachments, prepareContextMessages, selectContextMessages } from './builder'
+export { buildContext, injectAttachments, selectContextMessages } from './builder'
 export {
   buildCompactionHandoff,
   type CompactionHandoffMode,

@@ -1,7 +1,10 @@
 import { decodeSessionTree } from '../session/session-tree/decode'
+import type { AttachmentPolicy } from '@shared/context/attachments'
 import type { ChatStreamOptions, ModelInterface, ModelStreamPart } from '@shared/models/types'
-import type { Config, Message, Session, SessionSettings, Settings } from '@shared/types'
-import { jsonSchema, type ModelMessage, type ToolSet } from 'ai'
+import { sandboxAttachmentIdentity, sandboxAttachmentRelPath } from '@shared/sandbox/attachment-path'
+import type { Config, Message, MessageFile, Session, SessionSettings, Settings } from '@shared/types'
+import { uploadedFilePath } from '@shared/uploaded-file-tools'
+import { jsonSchema, type ModelMessage, type ToolSet, tool } from 'ai'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { InMemorySessionRepository } from '../testing/InMemorySessionRepository'
 import type { CompactionSessionPort } from '../application/context/CompactionService'
@@ -9,6 +12,7 @@ import { CompactionService } from '../application/context/CompactionService'
 import { createGenerationSegmentSplitWriter } from '../application/session/generation-segment-split'
 import { RowBackedSessionRepository } from '../application/session/RowBackedSessionRepository'
 import { StreamingWriteCoordinator } from '../application/session/streaming-write-coordinator'
+import type { CompactionBudget } from '../application/token-estimation/math'
 import { selectTokenEstimationContext } from '../application/token-estimation/TokenEstimationService'
 import { contextPathFacts } from '../session/context-path-facts'
 import { contextSession, contextSnapshot } from '../persistence/session-context-read.test-support'
@@ -24,9 +28,19 @@ import {
   type GenerationSessionPort,
   type GenerationSteeringPort,
 } from './GenerationService'
+import { createModelMessageTokenCounter, estimateModelMessagesTokens, textTokenCounter } from './mid-run-compaction'
+import { estimateToolDefinitionTokens } from './request-overhead'
 import { GenerationRuntimeStore } from './runtime-store'
 
 type ModelContext = { host: 'test' }
+
+const report: MessageFile = {
+  id: 'report',
+  name: 'report.csv',
+  fileType: 'text/csv',
+  storageKey: 'parsed-report',
+  lineCount: 1,
+}
 
 function targetMessage(): Message {
   return {
@@ -87,6 +101,10 @@ interface Harness {
   ): void
   setPrepareStep(prepareStep: ChatStreamOptions['prepareStep']): void
   setPreparedTools(tools: ToolSet): void
+  setPreparedCoreMessages(messages: ModelMessage[]): void
+  setPreparedAttachmentPolicy(policy: AttachmentPolicy | undefined): void
+  /** Replaces the prompt the preparation returns, as a host that refreshed attachment state would. */
+  setPreparedPromptMessages(update: ((messages: Message[]) => Message[]) | undefined): void
   setWebBrowsingResolver(resolver: GenerationHostPort['getWebBrowsing']): void
   setSteeredMessageIds(messageIds: string[]): void
   setTools(tools: ToolSet): void
@@ -116,6 +134,9 @@ function createHarness(): Harness {
   let chatStreamFactory = (_messages: ModelMessage[], _options: ChatStreamOptions) => streamFactory()
   let prepareStep: ChatStreamOptions['prepareStep']
   let preparedTools: ToolSet = {}
+  let preparedCoreMessages: ModelMessage[] = [{ role: 'user', content: 'Hello' }]
+  let preparedAttachmentPolicy: AttachmentPolicy | undefined
+  let updatePreparedPromptMessages: ((messages: Message[]) => Message[]) | undefined
   let pausedTools: ToolSet = {}
   const storedBlobs = new Map<string, string>()
   const storeBlob = vi.fn((storageKey: string, value: string) => {
@@ -336,12 +357,15 @@ function createHarness(): Harness {
         preparedTargetMessageIndexes.push(request.targetMessageIndex)
         preparedWebBrowsing.push(request.webBrowsing)
         return Promise.resolve({
-          promptMessages: request.messages.slice(0, request.targetMessageIndex),
-          coreMessages: [{ role: 'user', content: 'Hello' }],
+          promptMessages: (updatePreparedPromptMessages ?? ((messages) => messages))(
+            request.messages.slice(0, request.targetMessageIndex)
+          ),
+          coreMessages: preparedCoreMessages,
           tools: preparedTools,
           chatOptions: { signal: request.signal, prepareStep },
           infoParts: [],
           fallbackToolCallPart: undefined,
+          attachmentPolicy: preparedAttachmentPolicy,
         })
       },
     },
@@ -437,6 +461,15 @@ function createHarness(): Harness {
     setPreparedTools(tools) {
       preparedTools = tools
     },
+    setPreparedCoreMessages(messages) {
+      preparedCoreMessages = messages
+    },
+    setPreparedAttachmentPolicy(policy) {
+      preparedAttachmentPolicy = policy
+    },
+    setPreparedPromptMessages(update) {
+      updatePreparedPromptMessages = update
+    },
     setWebBrowsingResolver(resolver) {
       webBrowsingResolver = resolver
     },
@@ -484,6 +517,19 @@ async function boundedHarness() {
     .spyOn(repository.rowStore, 'readSnapshot')
     .mockRejectedValue(new Error('Complete reads are forbidden'))
   return { ...harness, rows: repository.rowStore, repository, readSnapshot }
+}
+
+/** A budget that compacts above `thresholdTokens` and keeps roughly a third of it verbatim. */
+function thresholdBudget(thresholdTokens: number): CompactionBudget {
+  return {
+    contextWindow: thresholdTokens * 4,
+    outputReserveTokens: 0,
+    usableTokens: thresholdTokens * 4,
+    thresholdTokens,
+    targetTokens: Math.floor(thresholdTokens * 0.35),
+    minGrowthTokens: 0,
+    summaryAllowanceTokens: 0,
+  }
 }
 
 describe('generation context sources', () => {
@@ -1377,6 +1423,115 @@ describe('GenerationService', () => {
     })
   })
 
+  describe('with system instructions beyond the session prompt', () => {
+    const sessionPrompt = 'You are helpful.'
+    const requestSystem: ModelMessage = {
+      role: 'system',
+      content: `${sessionPrompt}\n\n${'Follow the agent workflow rules. '.repeat(240)}`,
+    }
+    const tools = {
+      search: { description: 'search the web', inputSchema: jsonSchema({ type: 'object' }) },
+    } as unknown as ToolSet
+    const countText = textTokenCounter('default')
+    const countMessage = createModelMessageTokenCounter(countText)
+    const stepMessages: ModelMessage[] = [
+      requestSystem,
+      { role: 'user', content: 'task '.repeat(80) },
+      { role: 'assistant', content: [{ type: 'tool-call', toolCallId: 't1', toolName: 'search', input: { q: 1 } }] },
+      {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: 't1',
+            toolName: 'search',
+            output: { type: 'text', value: 'old '.repeat(80) },
+          },
+        ],
+      },
+      { role: 'assistant', content: [{ type: 'tool-call', toolCallId: 't2', toolName: 'search', input: { q: 2 } }] },
+      {
+        role: 'tool',
+        content: [
+          { type: 'tool-result', toolCallId: 't2', toolName: 'search', output: { type: 'text', value: 'recent' } },
+        ],
+      },
+    ]
+
+    beforeEach(() => {
+      harness.session.messages.unshift({
+        id: 'system-1',
+        role: 'system',
+        contentParts: [{ type: 'text', text: sessionPrompt }],
+      })
+      harness.setPreparedTools(tools)
+      harness.setPreparedCoreMessages([requestSystem, { role: 'user', content: 'Hello' }])
+    })
+
+    it('records tools and the extra instructions for the next pre-send decision', async () => {
+      const recordRequestOverhead = vi.fn()
+      harness.setCompaction({ getBudget: () => null, recordRequestOverhead, compact: vi.fn() })
+
+      await harness.service.orchestrate('session-1', targetMessage())
+
+      await vi.waitFor(() => expect(recordRequestOverhead).toHaveBeenCalledOnce())
+      const toolTokens = await estimateToolDefinitionTokens(tools, countText)
+      const extraSystemTokens = countMessage(requestSystem) - countText(sessionPrompt)
+      expect(extraSystemTokens).toBeGreaterThan(1_500)
+      expect(recordRequestOverhead).toHaveBeenCalledWith('session-1', { toolTokens, extraSystemTokens })
+    })
+
+    it.each([
+      ['stays below', -1, false],
+      ['exceeds', 1, true],
+    ])(
+      'compacts mid-run only when the request %s the threshold, counting the instructions once',
+      async (_label, margin, compacts) => {
+        const requestTokens =
+          estimateModelMessagesTokens(stepMessages, countMessage) +
+          (await estimateToolDefinitionTokens(tools, countText))
+        const compact = vi.fn<GenerationCompactionPort['compact']>().mockImplementation(async (_id, request) => ({
+          status: 'compacted',
+          revision: 1,
+          summaryMessageId: 'summary',
+          summary: 'Earlier work done.',
+          coverage: { ...request, boundaryMessageId: 'assistant-1' },
+        }))
+        harness.setCompaction({ getBudget: () => thresholdBudget(requestTokens - margin), compact })
+        harness.setChatStreamFactory((_messages, options) =>
+          (async function* streamOneToolStep() {
+            for (const toolCallId of ['t1', 't2']) {
+              yield { type: 'tool-call', toolCallId, toolName: 'search', input: {} } as ModelStreamPart<ToolSet>
+              yield {
+                type: 'tool-result',
+                toolCallId,
+                toolName: 'search',
+                output: { type: 'text', value: 'done' },
+              } as ModelStreamPart<ToolSet>
+            }
+            await options.prepareStep?.({
+              steps: [],
+              stepNumber: 1,
+              model: {},
+              messages: stepMessages,
+              initialMessages: stepMessages,
+              responseMessages: [],
+              instructions: undefined,
+              initialInstructions: undefined,
+              toolsContext: {},
+              runtimeContext: {},
+            } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0])
+            yield { type: 'finish', finishReason: 'stop' } as ModelStreamPart<ToolSet>
+          })()
+        )
+
+        await harness.service.orchestrate('session-1', targetMessage())
+
+        expect(compact).toHaveBeenCalledTimes(compacts ? 1 : 0)
+      }
+    )
+  })
+
   it('compacts between tool steps when the payload exceeds the threshold', async () => {
     const compact = vi.fn<GenerationCompactionPort['compact']>().mockImplementation(async (_id, request) => ({
       status: 'compacted',
@@ -1386,7 +1541,7 @@ describe('GenerationService', () => {
       coverage: { ...request, boundaryMessageId: 'assistant-1' },
     }))
     harness.setCompaction({
-      getThresholdTokens: () => 50,
+      getBudget: () => thresholdBudget(50),
       compact,
     })
     harness.setPreparedTools({
@@ -1544,7 +1699,7 @@ describe('GenerationService', () => {
         sessions: harness.compactionSessions,
         settings: { getSettings: () => harness.globalSettings },
         policy: {
-          shouldCompact: async () => true,
+          measure: async () => ({ tokens: 1, budget: { ...thresholdBudget(0), thresholdTokens: 0 } }),
           getCompactionContext: (session, settings, pending) =>
             selectTokenEstimationContext(
               { messages: session.candidateMessages, compactionPoints: session.compactionPoints },
@@ -1556,7 +1711,7 @@ describe('GenerationService', () => {
         createId: () => 'a-summary',
       })
       harness.setCompaction({
-        getThresholdTokens: () => 200,
+        getBudget: () => thresholdBudget(200),
         compact: (id, request, abortSignal) => service.run(id, request, { abortSignal }),
       })
       harness.setPreparedTools({ search: { inputSchema: jsonSchema({ type: 'object' }) } } as unknown as ToolSet)
@@ -1623,6 +1778,184 @@ describe('GenerationService', () => {
     }
   )
 
+  it('references a compacted retrieval file with the index state the running request was prepared with', async () => {
+    const indexed: MessageFile = {
+      ...report,
+      ragMode: 'session-retrieval',
+      sessionAttachmentId: 7,
+      sessionAttachmentIndexStatus: 'pending',
+    }
+    harness.session.messages[0] = { ...harness.session.messages[0], files: [indexed] }
+    harness.session.settings = harness.sessionSettings
+    harness.setPreparedAttachmentPolicy({ modelSupportToolUseForFile: true })
+    harness.setPreparedPromptMessages((messages) =>
+      messages.map((message) =>
+        message.files ? { ...message, files: [{ ...indexed, sessionAttachmentIndexStatus: 'ready' }] } : message
+      )
+    )
+    const service = new CompactionService({
+      sessions: harness.compactionSessions,
+      settings: { getSettings: () => harness.globalSettings },
+      policy: {
+        measure: async () => ({ tokens: 1, budget: { ...thresholdBudget(0), thresholdTokens: 0 } }),
+        getCompactionContext: (session, settings, pending) =>
+          selectTokenEstimationContext(
+            { messages: session.candidateMessages, compactionPoints: session.compactionPoints },
+            settings.maxContextMessageCount,
+            pending
+          ),
+      },
+      summaries: { generate: async () => ({ success: true, summary: 'Manual reviewed' }) },
+      createId: () => 'run-summary',
+    })
+    harness.setCompaction({
+      getBudget: () => thresholdBudget(200),
+      compact: (id, request, abortSignal) => service.run(id, request, { abortSignal }),
+    })
+    harness.setPreparedTools({ search: { inputSchema: jsonSchema({ type: 'object' }) } } as unknown as ToolSet)
+    const payload: ModelMessage[] = [
+      { role: 'user', content: `Hello ${'MANUAL '.repeat(100)}` },
+      { role: 'assistant', content: [{ type: 'tool-call', toolCallId: 'r-tool', toolName: 'search', input: {} }] },
+      {
+        role: 'tool',
+        content: [
+          { type: 'tool-result', toolCallId: 'r-tool', toolName: 'search', output: { type: 'text', value: 'recent' } },
+        ],
+      },
+    ]
+    let step: unknown
+    harness.setChatStreamFactory((_messages, options) =>
+      (async function* () {
+        yield { type: 'tool-call', toolCallId: 'r-tool', toolName: 'search', input: {} } as ModelStreamPart<ToolSet>
+        yield {
+          type: 'tool-result',
+          toolCallId: 'r-tool',
+          toolName: 'search',
+          output: { type: 'text', value: 'recent' },
+        } as ModelStreamPart<ToolSet>
+        step = await options.prepareStep?.({
+          steps: [],
+          stepNumber: 1,
+          model: {},
+          messages: payload,
+          initialMessages: payload,
+          responseMessages: [],
+          instructions: undefined,
+          initialInstructions: undefined,
+          toolsContext: {},
+          runtimeContext: {},
+        } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0])
+        yield { type: 'finish', finishReason: 'stop' } as ModelStreamPart<ToolSet>
+      })()
+    )
+
+    await harness.service.orchestrate('session-1', targetMessage())
+
+    const handoff = (step as { messages: Array<{ content: string }> }).messages[0].content
+    expect(handoff).toContain('Manual reviewed')
+    expect(handoff).toContain('<FILE_KEY>session-attachment:7</FILE_KEY>')
+    expect(handoff).toContain('<INDEX_STATUS>ready</INDEX_STATUS>')
+  })
+
+  it.each([
+    ['file tools', { modelSupportToolUseForFile: true }, `<FILE_PATH>${uploadedFilePath('parsed-report')}</FILE_PATH>`],
+    ['the sandbox', { sandboxMode: true }, sandboxAttachmentRelPath('report.csv', sandboxAttachmentIdentity(report))],
+    [
+      'workspace tools',
+      { workspacePath: (file: MessageFile) => `input/${file.name}` },
+      '<WORKSPACE_PATH>input/report.csv</WORKSPACE_PATH>',
+    ],
+    ['no file tool', undefined, 'cannot be reopened'],
+  ])('keeps the paths of compacted attachments in the running request with %s', async (_label, policy, path) => {
+    harness.session.messages[0] = { ...harness.session.messages[0], files: [report] }
+    harness.session.settings = harness.sessionSettings
+    harness.setPreparedAttachmentPolicy(policy)
+    const service = new CompactionService({
+      sessions: harness.compactionSessions,
+      settings: { getSettings: () => harness.globalSettings },
+      policy: {
+        measure: async () => ({ tokens: 1, budget: { ...thresholdBudget(0), thresholdTokens: 0 } }),
+        getCompactionContext: (session, settings, pending) =>
+          selectTokenEstimationContext(
+            { messages: session.candidateMessages, compactionPoints: session.compactionPoints },
+            settings.maxContextMessageCount,
+            pending
+          ),
+      },
+      summaries: { generate: async () => ({ success: true, summary: 'Report analysis so far' }) },
+      createId: () => 'run-summary',
+    })
+    harness.setCompaction({
+      getBudget: () => thresholdBudget(200),
+      compact: (id, request, abortSignal) => service.run(id, request, { abortSignal }),
+    })
+    harness.setPreparedTools({ search: { inputSchema: jsonSchema({ type: 'object' }) } } as unknown as ToolSet)
+    // The request's user turn carried the attachment, which the summary replaces.
+    const payload: ModelMessage[] = [
+      { role: 'user', content: `Hello ${'REPORT ROWS '.repeat(100)}` },
+      { role: 'assistant', content: [{ type: 'tool-call', toolCallId: 'r-tool', toolName: 'search', input: {} }] },
+      {
+        role: 'tool',
+        content: [
+          { type: 'tool-result', toolCallId: 'r-tool', toolName: 'search', output: { type: 'text', value: 'recent' } },
+        ],
+      },
+    ]
+    const steps: unknown[] = []
+    harness.setChatStreamFactory((_messages, options) =>
+      (async function* () {
+        yield { type: 'tool-call', toolCallId: 'r-tool', toolName: 'search', input: {} } as ModelStreamPart<ToolSet>
+        yield {
+          type: 'tool-result',
+          toolCallId: 'r-tool',
+          toolName: 'search',
+          output: { type: 'text', value: 'recent' },
+        } as ModelStreamPart<ToolSet>
+        for (const stepNumber of [1, 2])
+          steps.push(
+            await options.prepareStep?.({
+              steps: [],
+              stepNumber,
+              model: {},
+              messages: payload,
+              initialMessages: payload,
+              responseMessages: [],
+              instructions: undefined,
+              initialInstructions: undefined,
+              toolsContext: {},
+              runtimeContext: {},
+            } as unknown as Parameters<NonNullable<ChatStreamOptions['prepareStep']>>[0])
+          )
+        yield { type: 'finish', finishReason: 'stop' } as ModelStreamPart<ToolSet>
+      })()
+    )
+
+    await harness.service.orchestrate('session-1', targetMessage())
+
+    // The compacting step and every later step of the run.
+    expect(steps).toHaveLength(2)
+    for (const step of steps) {
+      expect(step).toEqual({
+        messages: [{ role: 'user', content: expect.stringContaining('Report analysis so far') }, ...payload.slice(1)],
+      })
+      const handoff = (step as { messages: Array<{ content: string }> }).messages[0].content
+      expect(handoff).toContain(path)
+      expect(handoff).toContain('report.csv')
+      expect(handoff).not.toContain('REPORT ROWS')
+      if (!policy) expect(handoff).not.toContain(uploadedFilePath('parsed-report'))
+    }
+    // The persisted summary carries them to the next request.
+    const summary = [
+      harness.session.messages,
+      ...Object.values(harness.session.messageForksHash ?? {}).flatMap((fork) =>
+        fork.lists.map((list) => list.messages)
+      ),
+    ]
+      .flat()
+      .find((message) => message.id === 'run-summary')
+    expect(summary).toMatchObject({ isSummary: true, compactedFiles: [report] })
+  })
+
   it('compacts through the steered user when the continuation keeps all its tool calls', async () => {
     harness.session.settings = harness.sessionSettings
     const steeredUser: Message = {
@@ -1649,7 +1982,7 @@ describe('GenerationService', () => {
       sessions: harness.compactionSessions,
       settings: { getSettings: () => harness.globalSettings },
       policy: {
-        shouldCompact: async () => true,
+        measure: async () => ({ tokens: 1, budget: { ...thresholdBudget(0), thresholdTokens: 0 } }),
         getCompactionContext: (session, settings, pending) =>
           selectTokenEstimationContext(
             { messages: session.candidateMessages, compactionPoints: session.compactionPoints },
@@ -1661,7 +1994,7 @@ describe('GenerationService', () => {
       createId: () => 'steer-summary',
     })
     harness.setCompaction({
-      getThresholdTokens: () => 200,
+      getBudget: () => thresholdBudget(200),
       compact: (id, request, abortSignal) => service.run(id, request, { abortSignal }),
     })
     harness.setPreparedTools({ search: { inputSchema: jsonSchema({ type: 'object' }) } } as unknown as ToolSet)
@@ -1743,7 +2076,7 @@ describe('GenerationService', () => {
   it('keeps the full payload when mid-run compaction throws', async () => {
     const compact = vi.fn().mockRejectedValue(new Error('compact failed'))
     harness.setCompaction({
-      getThresholdTokens: () => 50,
+      getBudget: () => thresholdBudget(50),
       compact,
     })
     harness.setPreparedTools({
@@ -1815,7 +2148,7 @@ describe('GenerationService', () => {
       coverage: { ...request, boundaryMessageId: 'assistant-1' },
     }))
     harness.setCompaction({
-      getThresholdTokens: () => 80,
+      getBudget: () => thresholdBudget(80),
       compact,
     })
     harness.setPreparedTools({
@@ -1905,7 +2238,7 @@ describe('GenerationService', () => {
       coverage: { ...request, boundaryMessageId: 'assistant-1' },
     }))
     harness.setCompaction({
-      getThresholdTokens: () => 50,
+      getBudget: () => thresholdBudget(50),
       compact,
     })
     harness.setPreparedTools({
@@ -2007,7 +2340,7 @@ describe('GenerationService', () => {
       coverage: { ...request, retainedToolCallId: 'wrong-round', boundaryMessageId: 'user-1' },
     }))
     harness.setCompaction({
-      getThresholdTokens: () => 50,
+      getBudget: () => thresholdBudget(50),
       compact,
     })
     harness.setPreparedTools({
@@ -2118,7 +2451,7 @@ describe('GenerationService', () => {
       })
     })
     harness.setCompaction({
-      getThresholdTokens: () => 50,
+      getBudget: () => thresholdBudget(50),
       compact,
     })
     harness.setPreparedTools({
@@ -2220,7 +2553,7 @@ describe('GenerationService', () => {
       coverage: { ...request, boundaryMessageId: 'assistant-1' },
     }))
     harness.setCompaction({
-      getThresholdTokens: () => 80,
+      getBudget: () => thresholdBudget(80),
       compact,
     })
     harness.setPreparedTools({
@@ -2318,7 +2651,7 @@ describe('GenerationService', () => {
       .fn<GenerationCompactionPort['compact']>()
       .mockResolvedValue({ status: 'failed', failure: { code: 'summary_failed', message: 'summary failed' } })
     harness.setCompaction({
-      getThresholdTokens: () => 50,
+      getBudget: () => thresholdBudget(50),
       compact,
     })
     harness.setPreparedTools({

@@ -33,7 +33,7 @@ allowedSharedImports.set('apps/mobile/src/screens/SessionScreen.tsx', new Set(['
 allowedSharedImports.set('apps/mobile/src/work-mode/MobileExecutionHost.tsx', new Set(['@shared/mobile-work/generated/worker-source']))
 allowedSharedImports.set('apps/mobile/src/work-mode/MobileExecutionService.ts', new Set(['@shared/mobile-work/MobileExecutionService']))
 allowedSharedImports.set('apps/mobile/src/application/createMobileGeneration.ts', new Set(['@shared/mobile-work/model-disclosure']))
-allowedSharedImports.set('apps/mobile/src/work-mode/MobileWorkMode.ts', new Set(['@shared/mobile-work/product-info-tools', '@shared/mobile-work/model-disclosure', '@shared/mobile-work/LocalWorkMode', '@shared/mobile-work/view-image', '@shared/tools/view-image']))
+allowedSharedImports.set('apps/mobile/src/work-mode/MobileWorkMode.ts', new Set(['@shared/mobile-work/product-info-tools', '@shared/mobile-work/model-disclosure', '@shared/mobile-work/LocalWorkMode', '@shared/mobile-work/view-image', '@shared/mobile-work/workspace-inputs', '@shared/tools/view-image']))
 allowedSharedImports.set('apps/mobile/src/work-mode/MobileWorkspace.ts', new Set(['@shared/mobile-work/workspace-lifecycle', '@shared/mobile-work/workspace-inputs','@shared/work-artifacts']))
 allowedSharedImports.set('apps/mobile/src/work-mode/WorkMessageArtifacts.tsx', new Set(['@shared/work-artifacts']))
 allowedSharedImports.set('apps/mobile/src/work-mode/abort.ts', new Set(['@shared/mobile-work/abort']))

@@ -30,8 +30,7 @@ describe('shared attachment costs', () => {
           throw Error('RAG must not read the full text')
         },
       },
-      false,
-      false
+      {}
     )
     expect(result.tokens).toBe(estimateTokensForTokenizerType(getMessageText(payload[0]), 'default'))
     expect(result.tokens).toBeLessThan(1000)
@@ -44,7 +43,11 @@ describe('shared attachment costs', () => {
       contentParts: [],
       files: [{ ...file, ragMode: 'session-retrieval' }],
     }
-    const payload = await injectAttachments([message], { read: async () => null }, true, true)
+    const payload = await injectAttachments(
+      [message],
+      { read: async () => null },
+      { modelSupportToolUseForFile: true, sandboxMode: true }
+    )
     expect(analyzeAttachmentTokens(message, 'default', { sandboxMode: true }).tokens).toBe(
       estimateTokensForTokenizerType(getMessageText(payload[0]), 'default')
     )

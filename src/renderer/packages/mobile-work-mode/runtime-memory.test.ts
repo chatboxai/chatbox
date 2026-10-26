@@ -3,6 +3,7 @@ import { createDefaultSettings } from '@chatbox/core/domain/settings'
 import type { GenerationPreparationRequest } from '@chatbox/core/generation'
 import { InMemoryKeyValueStorage } from '@chatbox/core/testing'
 import { WORK_INSTRUCTIONS } from '@shared/mobile-work/LocalWorkMode'
+import { workspaceInputPath } from '@shared/mobile-work/workspace-inputs'
 import type { ModelInterface } from '@shared/models/types'
 import type { Message } from '@shared/types'
 import type { ModelDependencies } from '@shared/types/adapters'
@@ -126,6 +127,34 @@ describe('Capacitor Work memory integration', () => {
       'Added during this session'
     )
     expect((await memory().listMemories()).map((entry) => entry.content)).toEqual(['Global secret preference'])
+  })
+
+  it('points compacted attachments at the workspace files the session seeds', async () => {
+    const report = { id: 'report', name: 'report.csv', fileType: 'text/csv', storageKey: 'parsed-report' }
+    const input = request()
+    input.messages = [
+      { id: 'user', role: 'user', contentParts: [{ type: 'text', text: 'Analyze' }], files: [report] },
+      { id: 'reply', role: 'assistant', contentParts: [{ type: 'text', text: 'Done' }] },
+      {
+        id: 'summary',
+        role: 'assistant',
+        isSummary: true,
+        contentParts: [{ type: 'text', text: 'Report analyzed' }],
+        compactedFiles: [report],
+      },
+      { id: 'next', role: 'user', contentParts: [{ type: 'text', text: 'Re-check column B' }] },
+      { id: 'answer', role: 'assistant', contentParts: [] },
+    ]
+    input.targetMessageIndex = 4
+    input.compactionPoints = [{ boundaryMessageId: 'reply', summaryMessageId: 'summary', createdAt: 1 }]
+
+    const prepared = await prepare(input)
+
+    expect(state.seed).toHaveBeenCalledWith('session', expect.arrayContaining([input.messages[2]]), expect.anything())
+    expect(JSON.stringify(prepared.promptMessages)).toContain(
+      `<WORKSPACE_PATH>${workspaceInputPath(report)}</WORKSPACE_PATH>`
+    )
+    expect(prepared.attachmentPolicy?.workspacePath).toBe(workspaceInputPath)
   })
 
   it('honors global memory disable and reloads the frozen slice when the setting changes', async () => {

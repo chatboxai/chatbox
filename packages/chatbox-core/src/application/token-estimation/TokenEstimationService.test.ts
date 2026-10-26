@@ -15,7 +15,7 @@ import {
   TokenEstimationService,
   selectTokenEstimationContext,
   resolveModelContextWindow,
-  getCompactionThresholdTokens,
+  getCompactionBudgetForModel,
   FALLBACK_CONTEXT_WINDOW_TOKENS,
 } from './TokenEstimationService'
 const message = (id: string, text = 'batch content'): Message => ({
@@ -493,7 +493,7 @@ describe('row token estimation', () => {
   it('keeps an unknown visual limit unknown while compaction receives the 128k fallback', () => {
     const model = { provider: 'custom-provider', modelId: 'unknown-private-model' }
     expect(resolveModelContextWindow(model)).toBeNull()
-    expect(getCompactionThresholdTokens({ model, compactionThreshold: 0.6 })).toBe(
+    expect(getCompactionBudgetForModel({ model, compactionThreshold: 0.6 })?.thresholdTokens).toBe(
       Math.floor((FALLBACK_CONTEXT_WINDOW_TOKENS - 32_000) * 0.6)
     )
   })

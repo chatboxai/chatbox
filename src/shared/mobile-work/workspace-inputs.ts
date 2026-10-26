@@ -14,11 +14,23 @@ export class WorkspaceAttachmentCapacityError extends Error {
   }
 }
 
+type WorkspaceAttachment = { id?: string; name: string; storageKey?: string; rawStorageKey?: string }
+
 export type AttachmentMessage = {
-  files?: ReadonlyArray<{ id?: string; name: string; storageKey?: string; rawStorageKey?: string }>
+  files?: ReadonlyArray<WorkspaceAttachment>
+  /** A compaction summary's references to covered files, which stay readable in the workspace. */
+  compactedFiles?: ReadonlyArray<WorkspaceAttachment>
   contentParts: readonly Message['contentParts'][number][]
 }
 export type AttachmentMessages = Iterable<AttachmentMessage> | AsyncIterable<AttachmentMessage>
+
+/** The workspace path an uploaded file is copied to, or undefined for a file without stored content. */
+export function workspaceInputPath(attachment: WorkspaceAttachment): string | undefined {
+  const key = attachment.rawStorageKey ?? attachment.storageKey
+  if (!key) return undefined
+  const name = attachment.name.replace(/[\\/:%\u0000-\u001f]/g, '_').slice(-100) || 'attachment'
+  return `input/${sessionDirectoryName(attachment.id ?? key).slice(0, 80)}-${name}`
+}
 
 /** Collect all new attachments before writes so an oversized batch leaves the workspace intact. */
 export async function collectWorkspaceInputs(
@@ -41,11 +53,10 @@ export async function collectWorkspaceInputs(
     pending[path] = { base64 }
   }
   for await (const message of messages) {
-    for (const attachment of message.files ?? []) {
+    for (const attachment of [...(message.files ?? []), ...(message.compactedFiles ?? [])]) {
       const key = attachment.rawStorageKey ?? attachment.storageKey
-      if (!key) continue
-      const name = attachment.name.replace(/[\\/:%\u0000-\u001f]/g, '_').slice(-100) || 'attachment'
-      const path = `input/${sessionDirectoryName(attachment.id ?? key).slice(0, 80)}-${name}`
+      const path = workspaceInputPath(attachment)
+      if (!key || !path) continue
       if (path in existing || path in pending) continue
       const value = await blobs.get(key)
       if (value === null) continue

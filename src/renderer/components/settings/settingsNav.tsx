@@ -1,3 +1,4 @@
+import { DEFAULT_COMPACTION_THRESHOLD } from '@chatbox/core/application/token-estimation/math'
 import { TestId } from '@shared/automation/testids'
 import { Theme } from '@shared/types'
 import { MAX_TOOL_CALLS_BEFORE_CONFIRMATION } from '@shared/utils/tool-call-limit-pause'
@@ -215,7 +216,10 @@ export function useSettingsNavMeta(): Partial<Record<SettingsPageKey, string>> {
   return {
     provider: providers.length > 0 ? String(t('{{count}} configured', { count: providers.length })) : undefined,
     'default-models': defaultChatModelId,
-    context: (autoCompaction ?? true) ? `${Math.round((compactionThreshold ?? 0.6) * 100)}%` : String(t('Off')),
+    context:
+      (autoCompaction ?? true)
+        ? `${Math.round((compactionThreshold ?? DEFAULT_COMPACTION_THRESHOLD) * 100)}%`
+        : String(t('Off')),
     appearance: String(
       theme === Theme.Dark ? t('Dark Mode') : theme === Theme.Light ? t('Light Mode') : t('Follow System')
     ),

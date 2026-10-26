@@ -303,11 +303,12 @@ function formatUserExecOutput(output: unknown): string {
   return sections.join('\n\n')
 }
 
+/** Indexed files of the request, including those a compaction summary references. */
 function getSessionAttachmentRagIds(messages: Message[]): number[] {
   return Array.from(
     new Set(
       messages.flatMap((message) =>
-        (message.files ?? [])
+        [...(message.files ?? []), ...(message.compactedFiles ?? [])]
           .filter(
             (file) =>
               file.ragMode === 'session-retrieval' &&

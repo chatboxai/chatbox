@@ -4,12 +4,12 @@ import type { ModelMessage } from 'ai'
 import { describe, expect, it } from 'vitest'
 import {
   collectToolCallIds,
+  createModelMessageTokenCounter,
   estimateModelMessagesTokens,
   estimateModelMessageTokens,
   findKeptContentPartStartIndex,
   findKeptModelMessageStartIndex,
   resolveKeptModelMessageStartIndex,
-  retainTokensForThreshold,
   rewriteModelMessagesWithSummary,
 } from './mid-run-compaction'
 
@@ -39,8 +39,22 @@ function toolResult(id: string, size: number): ModelMessage {
 }
 
 describe('mid-run compaction helpers', () => {
-  it('sizes the retained tail as a fraction of the compaction threshold', () => {
-    expect(retainTokensForThreshold(100_000)).toBe(35_000)
+  it('counts text with the tokenizer, so CJK is not undercounted as four characters per token', () => {
+    const chinese = estimateModelMessageTokens(user('保留编号的前导零'.repeat(100)))
+    expect(chinese).toBeGreaterThan(600)
+    expect(estimateModelMessageTokens(user('a'.repeat(400)))).toBeLessThan(150)
+  })
+
+  it('reuses a message count across steps and counts with the supplied tokenizer', () => {
+    let calls = 0
+    const count = createModelMessageTokenCounter((text) => {
+      calls += 1
+      return text.length
+    })
+    const message = user('hello')
+    expect(count(message)).toBe(5 + 4)
+    expect(count(message)).toBe(9)
+    expect(calls).toBe(1)
   })
 
   it('keeps the newest tool round and never starts the tail on a tool message', () => {

@@ -438,6 +438,49 @@ describe('buildContext', () => {
         text: buildCompactionHandoff('Test message', 'reference').text,
       })
     })
+
+    it('references compacted attachments in the handoff and keeps the next user turn intact', async () => {
+      const oldFile = { id: 'old', name: 'old.txt', fileType: 'text/plain', storageKey: 'old-key', lineCount: 1 }
+      const newFile = { id: 'new', name: 'new.txt', fileType: 'text/plain', storageKey: 'new-key', lineCount: 1 }
+      const messages: Message[] = [
+        createMessage({ id: '1', role: 'user', files: [oldFile] }),
+        createMessage({ id: '2', role: 'assistant' }),
+        createMessage({
+          id: 'summary',
+          role: 'assistant',
+          isSummary: true,
+          contentParts: [{ type: 'text', text: 'Summary' }],
+          compactedFiles: [oldFile],
+        }),
+        createMessage({
+          id: '3',
+          role: 'user',
+          contentParts: [{ type: 'text', text: 'Compare it with the new file' }],
+          files: [newFile],
+        }),
+      ]
+
+      const result = await buildContext(messages, {
+        attachmentResolver: createMockResolver(
+          new Map([
+            ['old-key', 'OLD BODY'],
+            ['new-key', 'NEW BODY'],
+          ])
+        ),
+        compactionPoints: [{ boundaryMessageId: '2', summaryMessageId: 'summary', createdAt: 1 }],
+      })
+
+      expect(result.map((m) => m.id)).toEqual(['3'])
+      // Tool builders read the summary's references from the user turn it merged into.
+      expect(result[0]).toMatchObject({ files: [newFile], compactedFiles: [oldFile] })
+      const [handoff, turn] = result[0].contentParts.map((part) => (part.type === 'text' ? part.text : ''))
+      expect(handoff.startsWith(buildCompactionHandoff('Summary', 'reference').text)).toBe(true)
+      expect(handoff).toContain('<FILE_NAME>old.txt</FILE_NAME>')
+      expect(handoff).not.toContain('OLD BODY')
+      expect(turn).toContain('Compare it with the new file')
+      expect(turn).toContain(`<FILE_PATH>${uploadedFilePath('new-key')}</FILE_PATH>`)
+      expect(turn).toContain('NEW BODY')
+    })
   })
 
   describe('attachment injection', () => {

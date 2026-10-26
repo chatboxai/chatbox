@@ -131,7 +131,9 @@ export {
   findLastCompactionBoundaryMessage,
   type GenerationCompactionRequest,
   generateCompactionSummaryWithModel,
+  getRequestOverheadBeyond,
   isAutoCompactionEnabled,
+  type RequestOverheadTokens,
 } from './application/context'
 export {
   COPILOT_PREFERENCES_STORAGE_KEY,
@@ -180,11 +182,12 @@ export {
 } from './application/session'
 export { type SettingsListener, SettingsService, type SettingsServiceOptions } from './application/settings'
 export {
+  type CompactionBudget,
   DEFAULT_COMPACTION_THRESHOLD,
   estimateDraftTokensImmediately,
   FALLBACK_CONTEXT_WINDOW_TOKENS,
-  getCompactionThresholdTokens,
-  getRawTailTokenBudget,
+  getCompactionBudget,
+  getCompactionBudgetForModel,
   LONG_DRAFT_TOKENIZATION_THRESHOLD,
   OUTPUT_RESERVE_TOKENS,
   type PortableTokenEstimationResult,

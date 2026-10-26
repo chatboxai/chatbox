@@ -1,7 +1,12 @@
 import { buildContext } from '@shared/context'
 import type { MessageFile, Session } from '@shared/types'
 import { describe, expect, it } from 'vitest'
-import { rehydrateSessionAttachmentsAsInline } from './resources'
+import {
+  collectSessionResourceReferences,
+  prepareMessageForBackup,
+  rehydrateSessionAttachmentsAsInline,
+  restoreSessionResourceKeys,
+} from './resources'
 
 function retrievalFile(id: string): MessageFile {
   return {
@@ -121,5 +126,48 @@ describe('rehydrateSessionAttachmentsAsInline', () => {
     })
     expect(JSON.stringify(context)).toContain('indexed attachment body')
     expect(JSON.stringify(context)).toContain('existing inline body')
+  })
+})
+
+describe('compaction summary attachments', () => {
+  const summary = {
+    id: 'summary',
+    role: 'assistant' as const,
+    isSummary: true,
+    contentParts: [{ type: 'text' as const, text: 'Summary' }],
+    compactedFiles: [retrievalFile('covered')],
+    compactedLinks: [{ id: 'link', url: 'https://example.com', title: 'Example', storageKey: 'link:covered' }],
+  }
+
+  it('leaves local paths and index state out of the backup', () => {
+    const [file] = prepareMessageForBackup(summary).compactedFiles ?? []
+    expect(file.localPath).toBeUndefined()
+    expect(file.sessionAttachmentId).toBeUndefined()
+  })
+
+  it('backs up the resources a summary references after its covered messages are gone', () => {
+    const session: Session = { id: 'session', name: 'Session', messages: [summary] }
+    const { references, warnings } = collectSessionResourceReferences(session)
+    expect(references.map((reference) => reference.storageKey)).toEqual(
+      expect.arrayContaining(['file:covered', 'file:covered:raw', 'link:covered'])
+    )
+    expect(warnings).toEqual([])
+  })
+
+  it('follows restored resource keys and drops references to resources the backup lacks', () => {
+    const session: Session = { id: 'session', name: 'Session', messages: [summary] }
+    const restored = restoreSessionResourceKeys(
+      session,
+      new Map([
+        ['file:covered', 'file:restored'],
+        ['link:covered', 'link:restored'],
+      ])
+    ).messages[0]
+
+    // Only covered messages rebuild their retrieval index; the summary keeps a plain file reference.
+    expect(restored.compactedFiles?.[0]).toMatchObject({ storageKey: 'file:restored', ragMode: 'inline' })
+    expect(restored.compactedFiles?.[0].rawStorageKey).toBeUndefined()
+    expect(restored.compactedFiles?.[0].sessionAttachmentId).toBeUndefined()
+    expect(restored.compactedLinks?.[0].storageKey).toBe('link:restored')
   })
 })

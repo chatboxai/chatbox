@@ -3,7 +3,9 @@ import {
   type CompactionRunOptions,
   CompactionService,
   type CompactionServiceResult,
+  getRequestOverheadBeyond,
   isAutoCompactionEnabled,
+  type RequestOverheadTokens,
 } from '@chatbox/core/application/context'
 import { hasPendingSessionGeneration, withSessionGenerationLock } from '@chatbox/core/generation'
 import type { SessionLockState } from '@chatbox/core/session/action-gates'
@@ -20,8 +22,8 @@ import { getSessionSettings } from '@/stores/session/session-settings'
 import { rendererTokenEstimation } from '../token-estimation/row-history-service'
 import { resolveTokenEstimationPolicy } from '../token-estimation/policy'
 import { getCompactionContext } from './compaction-context'
-import { checkOverflow } from './compaction-detector'
-import { getConfiguredContextWindow } from './context-pressure'
+import { resolveCompactionBudget } from './compaction-detector'
+import { getConfiguredContextWindow, getEffectiveMaxOutputTokens } from './context-pressure'
 import { generateSummaryWithStream } from './summary-generator'
 const log = getLogger('compaction')
 
@@ -35,10 +37,10 @@ const compactionService = new CompactionService({
   },
   settings: settingsService,
   policy: {
-    async shouldCompact({ sessionId, header: session, sessionSettings, globalSettings, pendingMessage }) {
+    async measure({ sessionId, header: session, sessionSettings, globalSettings, pendingMessage, requestOverhead }) {
       const providerId = session.settings?.provider ?? globalSettings.defaultChatModel?.provider
       const modelId = session.settings?.modelId ?? globalSettings.defaultChatModel?.model
-      if (!modelId) return false
+      if (!modelId) return null
 
       try {
         const model = providerId ? { provider: providerId, modelId } : undefined
@@ -55,17 +57,17 @@ const compactionService = new CompactionService({
           sandboxMode: policy.sandboxMode,
           language: globalSettings.language,
         })
-        const contextTokens = estimate.totalTokens
-
-        return checkOverflow({
-          tokens: contextTokens,
+        const budget = resolveCompactionBudget(
           modelId,
-          settings: { compactionThreshold: globalSettings.compactionThreshold },
-          contextWindow: getConfiguredContextWindow(globalSettings, providerId, modelId),
-        }).isOverflow
+          { compactionThreshold: globalSettings.compactionThreshold },
+          getConfiguredContextWindow(globalSettings, providerId, modelId),
+          getEffectiveMaxOutputTokens(globalSettings, providerId, modelId, sessionSettings.maxTokens)
+        )
+        // The estimate counts the history only; tools and every extra instruction sit outside it.
+        return budget ? { tokens: estimate.totalTokens + getRequestOverheadBeyond(requestOverhead), budget } : null
       } catch (error) {
         log.warn('Failed to estimate automatic compaction input', { sessionId, error })
-        return false
+        return null
       }
     },
     getCompactionContext(session, sessionSettings, pendingMessage) {
@@ -103,6 +105,10 @@ export function isCompactionInProgress(sessionId: string): boolean {
 
 export function needsCompaction(sessionId: string): Promise<boolean> {
   return compactionService.needsCompaction(sessionId)
+}
+
+export function recordRequestOverhead(sessionId: string, overhead: RequestOverheadTokens): void {
+  compactionService.recordRequestOverhead(sessionId, overhead)
 }
 
 export async function runCompactionWithUIState(

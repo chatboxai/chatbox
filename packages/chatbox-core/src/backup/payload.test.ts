@@ -35,6 +35,21 @@ describe('complex backup messages', () => {
     expect(validator.finishFacts()).toEqual(deriveMessageFacts(message))
   })
 
+  it('keeps the attachments a large compaction summary references in its streamed facts', () => {
+    const message: Message = {
+      id: 'summary',
+      role: 'assistant',
+      isSummary: true,
+      contentParts: [{ type: 'text', text: 'summary '.repeat(30000) }],
+      compactedFiles: [{ id: 'report', name: 'report.csv', fileType: 'text/csv', storageKey: 'parsed-report' }],
+    }
+    const validator = new BackupMessageValidator()
+    for (const block of serializeBackupPayload(message).blocks) validator.write(block)
+    const facts = validator.finishFacts()
+    expect(facts).toEqual(deriveMessageFacts(message))
+    expect(facts.fileResourceKeys).toEqual(['parsed-report'])
+  })
+
   it('validates many text parts without accumulating their prefixes', () => {
     const message: Message = {
       id: 'many-parts',

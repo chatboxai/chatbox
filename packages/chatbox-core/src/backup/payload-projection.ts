@@ -16,7 +16,14 @@ type Container = Record<string, unknown> | unknown[]
 const STRUCTURE_BYTES = 128 * 1024
 // Leave room for the surrounding message row in a 128 KiB archive record.
 const RESOURCE_INDEX_BYTES = 96 * 1024
-const ARRAY_SCHEMAS = { contentParts: MessageContentPartSchema, files: MessageFileSchema, links: MessageLinkSchema }
+const ARRAY_SCHEMAS = {
+  contentParts: MessageContentPartSchema,
+  files: MessageFileSchema,
+  links: MessageLinkSchema,
+  compactedFiles: MessageFileSchema,
+  compactedLinks: MessageLinkSchema,
+}
+const RESOURCE_ARRAYS = new Set(['files', 'links', 'compactedFiles', 'compactedLinks', 'pictures', 'contentParts'])
 const PART_KEYS = new Set(MessageContentPartSchema.options.flatMap((schema) => Object.keys(schema.shape)))
 const LEGACY_KEYS = new Set(['content', 'pictures', 'webBrowsing'])
 // Row encoding and presentation metadata also read these fields from legacy payloads.
@@ -26,6 +33,8 @@ const MESSAGE_KEYS = new Set([
   'contentParts',
   'files',
   'links',
+  'compactedFiles',
+  'compactedLinks',
   'timestamp',
   'updatedAt',
   'generating',
@@ -43,7 +52,7 @@ const encoder = new TextEncoder()
 export function isBackupResourcePath(path: JsonPath): boolean {
   const [root, index, key, nested] = path
   if (typeof index !== 'number') return false
-  if (path.length === 3 && ['files', 'links', 'pictures', 'contentParts'].includes(String(root)))
+  if (path.length === 3 && RESOURCE_ARRAYS.has(String(root)))
     return ['storageKey', 'rawStorageKey', 'resultStorageKey', 'resultImageStorageKey'].includes(String(key))
   if (root !== 'contentParts' || key !== 'result') return false
   return path.length === 4 && nested === 'image_storage_key'

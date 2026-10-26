@@ -1,3 +1,4 @@
+import type { CompactedAttachments } from '@shared/context/attachments'
 import type { Message } from '../../types'
 
 /** A tool boundary in the active generation, independent of the selected UI branch. */
@@ -33,7 +34,15 @@ export interface CompactionFailure {
 }
 
 export type CompactionServiceResult =
-  | { status: 'compacted'; summaryMessageId: string; summary: string; coverage: CompactionCoverage; revision: number }
+  | {
+      status: 'compacted'
+      summaryMessageId: string
+      summary: string
+      /** Attachments of the covered messages, which the summary carries as references. */
+      attachments?: CompactedAttachments
+      coverage: CompactionCoverage
+      revision: number
+    }
   | { status: 'skipped'; reason: 'not_needed' | 'no_model' | 'busy' | 'backup_busy' | 'stale_path' }
   | { status: 'cancelled' }
   | { status: 'failed'; failure: CompactionFailure }

@@ -2,11 +2,11 @@ import type { Settings } from '@shared/types'
 import { getModelContextWindowSync } from '../model-registry'
 
 import {
+  type CompactionBudget,
   OUTPUT_RESERVE_TOKENS,
   DEFAULT_COMPACTION_THRESHOLD,
   FALLBACK_CONTEXT_WINDOW_TOKENS,
-  getCompactionThresholdForContextWindow,
-  getAvailableCompactionWindowTokens,
+  getCompactionBudget,
 } from '@chatbox/core/application/token-estimation/math'
 
 export interface OverflowCheckOptions {
@@ -19,6 +19,8 @@ export interface OverflowCheckOptions {
    * Use this when provider returns a specific contextWindow for the model.
    */
   contextWindow?: number
+  /** The reply limit the request runs with; sizes the output reservation. */
+  maxOutputTokens?: number
 }
 
 export interface OverflowCheckResult {
@@ -30,7 +32,7 @@ export interface OverflowCheckResult {
 
 /**
  * Checks if context tokens exceed compaction threshold.
- * Formula: isOverflow = tokens > (contextWindow - OUTPUT_RESERVE) * threshold
+ * Formula: isOverflow = tokens > (contextWindow - outputReserve) * threshold
  * Unknown models use the fallback context window.
  */
 export function checkOverflow(options: OverflowCheckOptions): OverflowCheckResult {
@@ -40,15 +42,17 @@ export function checkOverflow(options: OverflowCheckOptions): OverflowCheckResul
     return { isOverflow: false, contextWindow: null, thresholdTokens: null, currentTokens: tokens }
   }
 
-  // Use provided contextWindow (from provider settings) if available, otherwise fall back to
-  // model registry, then to a conservative assumed window for unknown models.
   const contextWindow = providedContextWindow ?? getModelContextWindowSync(modelId) ?? FALLBACK_CONTEXT_WINDOW_TOKENS
+  const budget = getCompactionBudget(contextWindow, {
+    compactionThreshold: settings?.compactionThreshold,
+    maxOutputTokens: options.maxOutputTokens,
+  })
 
-  if (getAvailableCompactionWindowTokens(contextWindow) <= 0) {
+  if (!budget) {
     return { isOverflow: false, contextWindow, thresholdTokens: null, currentTokens: tokens }
   }
 
-  const thresholdTokens = getCompactionThresholdForContextWindow(contextWindow, settings?.compactionThreshold)
+  const { thresholdTokens } = budget
 
   return {
     isOverflow: tokens > thresholdTokens,
@@ -62,16 +66,23 @@ export function isOverflow(options: OverflowCheckOptions): boolean {
   return checkOverflow(options).isOverflow
 }
 
+export function resolveCompactionBudget(
+  modelId: string,
+  settings?: Partial<Pick<Settings, 'compactionThreshold'>>,
+  providedContextWindow?: number,
+  maxOutputTokens?: number
+): CompactionBudget | null {
+  const contextWindow = providedContextWindow ?? getModelContextWindowSync(modelId) ?? FALLBACK_CONTEXT_WINDOW_TOKENS
+  return getCompactionBudget(contextWindow, { compactionThreshold: settings?.compactionThreshold, maxOutputTokens })
+}
+
 export function getCompactionThresholdTokens(
   modelId: string,
   settings?: Partial<Pick<Settings, 'compactionThreshold'>>,
-  providedContextWindow?: number
+  providedContextWindow?: number,
+  maxOutputTokens?: number
 ): number | null {
-  const contextWindow = providedContextWindow ?? getModelContextWindowSync(modelId) ?? FALLBACK_CONTEXT_WINDOW_TOKENS
-
-  if (getAvailableCompactionWindowTokens(contextWindow) <= 0) return null
-
-  return getCompactionThresholdForContextWindow(contextWindow, settings?.compactionThreshold)
+  return resolveCompactionBudget(modelId, settings, providedContextWindow, maxOutputTokens)?.thresholdTokens ?? null
 }
 
 export { OUTPUT_RESERVE_TOKENS, DEFAULT_COMPACTION_THRESHOLD, FALLBACK_CONTEXT_WINDOW_TOKENS }

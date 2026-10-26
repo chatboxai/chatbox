@@ -597,7 +597,7 @@ export const SettingsSchema = GlobalSessionSettingsSchema.extend({
   autoGenerateTitle: z.boolean().default(true),
 
   autoCompaction: z.boolean().default(true),
-  compactionThreshold: z.number().min(0.4).max(0.9).default(0.6),
+  compactionThreshold: z.number().min(0.4).max(0.9).default(0.75),
   compactionPrompt: z.string().optional(),
 
   // Global default for the tool-call-limit confirmation. Individual sessions

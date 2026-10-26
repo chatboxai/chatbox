@@ -221,6 +221,7 @@ vi.mock('@/packages/model-calls/toolsets/session-attachment-rag', () => ({
   getToolSet: getSessionAttachmentRagToolSetMock,
 }))
 
+import { buildContext } from '@shared/context'
 import type { ModelInterface } from '@shared/models/types'
 import type { SandboxProvider } from '@shared/sandbox-provider'
 import type { Message } from '@shared/types'
@@ -1563,6 +1564,60 @@ describe('session attachment RAG tools', () => {
     expect(getSessionAttachmentRagToolSetMock).toHaveBeenCalledWith([42])
     expect(result.instructions).toContain('session attachment rag toolset')
     expect(result.tools.query_session_attachment).toBeDefined()
+  })
+
+  describe('after compaction covers the retrieval upload', () => {
+    function compactedSession(): Message[] {
+      const upload = retrievalMessage()
+      return [
+        upload,
+        { id: 'a1', role: 'assistant', contentParts: [{ type: 'text', text: 'It covers setup.' }] },
+        {
+          id: 'summary',
+          role: 'assistant',
+          isSummary: true,
+          contentParts: [{ type: 'text', text: 'The user uploaded a manual.' }],
+          compactedFiles: upload.files,
+        },
+        { id: 'u2', role: 'user', contentParts: [{ type: 'text', text: 'What about chapter 3?' }] },
+      ]
+    }
+    const compactionPoints = [{ boundaryMessageId: 'a1', summaryMessageId: 'summary', createdAt: 1 }]
+    const promptText = (messages: Message[]) => JSON.stringify(messages.map((message) => message.contentParts))
+
+    test('registers the retrieval tools for the file the summary references', async () => {
+      const prompt = await buildContext(compactedSession(), {
+        attachmentResolver: { read: async () => null },
+        compactionPoints,
+        modelSupportToolUseForFile: true,
+      })
+      const result = await buildToolsForSession(createMockModel(), {
+        webBrowsing: false,
+        messages: prompt,
+        agentMode: 'off',
+      })
+
+      expect(prompt.map((message) => message.id)).toEqual(['u2'])
+      expect(promptText(prompt)).toContain('session-attachment:42')
+      expect(getSessionAttachmentRagToolSetMock).toHaveBeenCalledWith([42])
+      expect(result.tools.query_session_attachment).toBeDefined()
+    })
+
+    test('names the file without retrieval guidance when the request has no retrieval tools', async () => {
+      const prompt = await buildContext(compactedSession(), {
+        attachmentResolver: { read: async () => null },
+        compactionPoints,
+      })
+      const model = createMockModel({ isSupportToolUse: vi.fn().mockReturnValue(false) })
+      const result = await buildToolsForSession(model, { webBrowsing: false, messages: prompt, agentMode: 'off' })
+
+      const text = promptText(prompt)
+      expect(text).toContain('manual.md')
+      expect(text).toContain('cannot be reopened')
+      expect(text).not.toContain('session-attachment:42')
+      expect(text).not.toContain('RETRIEVAL_MODE')
+      expect(result.tools.query_session_attachment).toBeUndefined()
+    })
   })
 
   test('does not add retrieval tools when the model cannot use tools', async () => {

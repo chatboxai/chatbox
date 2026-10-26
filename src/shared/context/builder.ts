@@ -4,7 +4,7 @@ import { injectAttachments } from './attachments'
 import { findLatestApplicableCompactionPoint } from './compaction-points'
 import { isContextEligibleMessage } from './message-eligibility'
 import { projectContextMessagesForModel } from './model-projection'
-import type { ContextBuilderOptions, ContextPreparationOptions, ContextSelectionOptions } from './types'
+import type { ContextBuilderOptions, ContextSelectionOptions } from './types'
 
 export { injectAttachments } from './attachments'
 
@@ -13,14 +13,14 @@ export { injectAttachments } from './attachments'
  * Pure function - does not mutate inputs, no side effects.
  */
 export async function buildContext(messages: Message[], options: ContextBuilderOptions): Promise<Message[]> {
-  const { attachmentResolver, modelSupportToolUseForFile = false, sandboxMode = false } = options
-  const contextMessages = prepareContextMessages(messages, options)
-  return await injectAttachments(contextMessages, attachmentResolver, modelSupportToolUseForFile, sandboxMode)
-}
-
-/** The model-facing send window, before attachment injection. */
-export function prepareContextMessages(messages: Message[], options: ContextPreparationOptions): Message[] {
-  return projectContextMessagesForModel(selectContextMessages(messages, options), { language: options.language })
+  const { attachmentResolver, modelSupportToolUseForFile = false, sandboxMode = false, workspacePath } = options
+  // Each message receives its own attachments before a summary handoff merges into the user turn after it.
+  const selection = await injectAttachments(selectContextMessages(messages, options), attachmentResolver, {
+    modelSupportToolUseForFile,
+    sandboxMode,
+    workspacePath,
+  })
+  return projectContextMessagesForModel(selection, { language: options.language })
 }
 
 /**

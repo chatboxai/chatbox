@@ -20,6 +20,8 @@ export type AttachmentContentMode = 'full' | 'preview'
 export interface AttachmentPolicy {
   modelSupportToolUseForFile?: boolean
   sandboxMode?: boolean
+  /** Where the host's workspace tools find an uploaded file; references to compacted files point there. */
+  workspacePath?: (file: MessageFile) => string | undefined
 }
 export type AttachmentPlanEntry =
   | { kind: 'text'; text: string }
@@ -38,11 +40,77 @@ export function getAttachmentContentMode(
   return modelSupportToolUseForFile && (lineCount ?? 0) > MAX_INLINE_FILE_LINES ? 'preview' : 'full'
 }
 
-/** The attachment payload shape shared by request construction and token estimation. */
+/** Attachments a compaction summary stands in for. */
+export type CompactedAttachments = Pick<Message, 'compactedFiles' | 'compactedLinks'>
+
+function fileIdentity(file: MessageFile): string {
+  if (file.sessionAttachmentId !== undefined) return `session-attachment:${file.sessionAttachmentId}`
+  if (file.storageKey) return file.storageKey
+  return file.localPath ? `local:${file.localPath}` : `id:${file.id}`
+}
+
+/**
+ * The attachments of messages a compaction covers, including those an earlier
+ * summary among them already carried. The latest metadata of each attachment wins.
+ */
+export function collectCompactedAttachments(messages: readonly Message[]): CompactedAttachments {
+  const files = new Map<string, MessageFile>()
+  const links = new Map<string, MessageLink>()
+  for (const message of messages) {
+    for (const file of (message.isSummary ? message.compactedFiles : message.files) ?? [])
+      files.set(fileIdentity(file), file)
+    for (const link of (message.isSummary ? message.compactedLinks : message.links) ?? [])
+      links.set(link.storageKey ?? link.url, link)
+  }
+  return {
+    ...(files.size > 0 ? { compactedFiles: [...files.values()] } : {}),
+    ...(links.size > 0 ? { compactedLinks: [...links.values()] } : {}),
+  }
+}
+
+/**
+ * Compacted attachments with the state the request holds for the same files.
+ * A host can refresh that state (for example retrieval index status) after it was stored.
+ */
+export function withRequestAttachmentState(
+  attachments: CompactedAttachments,
+  requestMessages: readonly Message[]
+): CompactedAttachments {
+  if (!attachments.compactedFiles) return attachments
+  const current = new Map<string, MessageFile>()
+  for (const message of requestMessages)
+    for (const file of [...(message.files ?? []), ...(message.compactedFiles ?? [])])
+      current.set(fileIdentity(file), file)
+  return {
+    ...attachments,
+    compactedFiles: attachments.compactedFiles.map((file) => current.get(fileIdentity(file)) ?? file),
+  }
+}
+
+/** Reference blocks for a summary's carried attachments, as {@link injectAttachments} appends them. */
+export function describeCompactedAttachments(attachments: CompactedAttachments, policy: AttachmentPolicy = {}): string {
+  return planMessageAttachments(
+    { id: '', role: 'assistant', contentParts: [], isSummary: true, ...attachments },
+    policy
+  )
+    .map((entry) => (entry.kind === 'text' ? entry.text : ''))
+    .join('')
+}
+
+/**
+ * The attachment payload shape shared by request construction and token estimation.
+ * A compaction summary carries its covered attachments as references: their
+ * paths stay reachable while their content stays out of the request.
+ */
 export function planMessageAttachments(message: Message, policy: AttachmentPolicy = {}): AttachmentPlanEntry[] {
   const plan: AttachmentPlanEntry[] = []
+  const reference = message.isSummary === true
+  const files = reference ? message.compactedFiles : message.files
+  const links = reference ? message.compactedLinks : message.links
   let index = 1
-  for (const file of message.files ?? []) {
+  for (const file of files ?? []) {
+    // Retrieval tools are registered with the file tools; without them a compacted retrieval file is a plain reference.
+    const retrieval = file.ragMode === 'session-retrieval' && (!reference || policy.modelSupportToolUseForFile === true)
     if (policy.sandboxMode) {
       const isText = isTextFilePath(file.name)
       const sandboxPath = sandboxAttachmentRelPath(file.name, sandboxAttachmentIdentity(file))
@@ -62,16 +130,15 @@ export function planMessageAttachments(message: Message, policy: AttachmentPolic
             !isText && file.storageKey && file.parserType !== 'sandbox-raw'
               ? sandboxAttachmentParsedRelPath(sandboxPath)
               : undefined,
-          retrieval:
-            file.ragMode === 'session-retrieval'
-              ? {
-                  status: file.sessionAttachmentIndexStatus ?? file.sessionAttachmentStatus ?? 'pending',
-                  blockedReason: file.sessionAttachmentBlockedReason,
-                }
-              : undefined,
+          retrieval: retrieval
+            ? {
+                status: file.sessionAttachmentIndexStatus ?? file.sessionAttachmentStatus ?? 'pending',
+                blockedReason: file.sessionAttachmentBlockedReason,
+              }
+            : undefined,
         }),
       })
-    } else if (file.ragMode === 'session-retrieval') {
+    } else if (retrieval) {
       plan.push({
         kind: 'text',
         text: buildRetrievalAttachment({
@@ -85,30 +152,60 @@ export function planMessageAttachments(message: Message, policy: AttachmentPolic
         }),
       })
     } else if (file.storageKey) {
-      plan.push({
-        kind: 'content',
-        attachment: file,
-        attachmentType: 'file',
-        index: index++,
-        contentMode: getAttachmentContentMode(file.lineCount, policy.modelSupportToolUseForFile),
-      })
+      const workspacePath = reference ? policy.workspacePath?.(file) : undefined
+      plan.push(
+        reference
+          ? {
+              kind: 'text',
+              text: buildAttachmentReference({
+                index: index++,
+                name: file.name,
+                location: workspacePath
+                  ? { tag: 'WORKSPACE_PATH', path: workspacePath }
+                  : uploadedFileLocation(file.storageKey, policy),
+              }),
+            }
+          : {
+              kind: 'content',
+              attachment: file,
+              attachmentType: 'file',
+              index: index++,
+              contentMode: getAttachmentContentMode(file.lineCount, policy.modelSupportToolUseForFile),
+            }
+      )
     } else if (file.localPath && policy.modelSupportToolUseForFile) {
+      const params = { index: index++, name: file.name, key: `local:${file.localPath}` }
       plan.push({
         kind: 'text',
-        text: buildToolOnlyAttachment({ index: index++, name: file.name, key: `local:${file.localPath}` }),
+        text: reference
+          ? buildAttachmentReference({ ...params, location: uploadedFileLocation(params.key, policy) })
+          : buildToolOnlyAttachment(params),
       })
+    } else if (reference) {
+      plan.push({ kind: 'text', text: buildAttachmentReference({ index: index++, name: file.name }) })
     }
   }
   if (!policy.sandboxMode)
-    for (const link of message.links ?? []) {
-      if (link.storageKey)
-        plan.push({
-          kind: 'content',
-          attachment: link,
-          attachmentType: 'link',
-          index: index++,
-          contentMode: getAttachmentContentMode(link.lineCount, policy.modelSupportToolUseForFile),
-        })
+    for (const link of links ?? []) {
+      if (!link.storageKey) continue
+      plan.push(
+        reference
+          ? {
+              kind: 'text',
+              text: buildAttachmentReference({
+                index: index++,
+                name: link.title,
+                location: uploadedFileLocation(link.storageKey, policy),
+              }),
+            }
+          : {
+              kind: 'content',
+              attachment: link,
+              attachmentType: 'link',
+              index: index++,
+              contentMode: getAttachmentContentMode(link.lineCount, policy.modelSupportToolUseForFile),
+            }
+      )
     }
   return plan
 }
@@ -116,11 +213,10 @@ export function planMessageAttachments(message: Message, policy: AttachmentPolic
 export async function injectAttachments(
   messages: Message[],
   resolver: AttachmentResolver,
-  modelSupportToolUseForFile: boolean,
-  sandboxMode: boolean,
+  policy: AttachmentPolicy,
   onMissingAttachment?: (storageKey: string) => void
 ): Promise<Message[]> {
-  const plans = messages.map((message) => planMessageAttachments(message, { modelSupportToolUseForFile, sandboxMode }))
+  const plans = messages.map((message) => planMessageAttachments(message, policy))
   const keys = [
     ...new Set(
       plans.flatMap((plan) =>
@@ -154,7 +250,7 @@ export async function injectAttachments(
                 : (entry.attachment as MessageLink).title,
             key: entry.attachment.storageKey ?? '',
             content,
-            modelSupportToolUseForFile,
+            modelSupportToolUseForFile: policy.modelSupportToolUseForFile === true,
           })
         )
       },
@@ -306,6 +402,45 @@ function buildToolOnlyAttachment(params: { index: number; name: string; key: str
   text += '<FILE_CONTENT>\n'
   text += '</FILE_CONTENT>\n'
   text += `<TRUNCATED>Content preview unavailable. ${uploadedFileToolHint(key)}</TRUNCATED>\n`
+  text += '</ATTACHMENT_FILE>\n'
+  return text
+}
+
+/** Where the request's tools can open an uploaded file, if any can. */
+interface AttachmentLocation {
+  tag: 'FILE_PATH' | 'WORKSPACE_PATH'
+  path: string
+  hint?: string
+}
+
+function uploadedFileLocation(key: string, policy: AttachmentPolicy): AttachmentLocation | undefined {
+  return policy.modelSupportToolUseForFile
+    ? { tag: 'FILE_PATH', path: uploadedFilePath(key), hint: uploadedFileToolHint(key) }
+    : undefined
+}
+
+/**
+ * An attachment of compacted history without its content. It names a path
+ * only where the request has a tool that opens it.
+ */
+function buildAttachmentReference(params: { index: number; name: string; location?: AttachmentLocation }): string {
+  const { index, name, location } = params
+  let text = '\n\n<ATTACHMENT_FILE>\n'
+  text += `<FILE_INDEX>${index}</FILE_INDEX>\n`
+  text += `<FILE_NAME>${escapeXmlText(name)}</FILE_NAME>\n`
+  if (location) text += `<${location.tag}>${escapeXmlText(location.path)}</${location.tag}>\n`
+  text += '<FILE_CONTENT>\n'
+  text += '</FILE_CONTENT>\n'
+  text += [
+    '<SYSTEM_REMINDER>',
+    'This file was attached earlier in the conversation; its content is not included here.',
+    !location
+      ? ' It cannot be reopened in this conversation: rely on the summary, or ask the user to attach it again if its exact content is needed.'
+      : location.tag === 'WORKSPACE_PATH'
+        ? ' It is available in the workspace at WORKSPACE_PATH; use that path exactly.'
+        : ` ${location.hint}`,
+    '</SYSTEM_REMINDER>\n',
+  ].join('')
   text += '</ATTACHMENT_FILE>\n'
   return text
 }

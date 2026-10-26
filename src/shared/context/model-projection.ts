@@ -80,8 +80,12 @@ export function projectContextMessagesForModel(
       .join('\n')
     const { text } = buildCompactionHandoff(summary, mode, language)
     if (next?.role === 'user') {
-      // One user turn: the summary leads the user message that follows it.
-      messages.push(withModelContent(next, 'user', [{ type: 'text', text }, ...next.contentParts]))
+      // One user turn: the summary leads the user message that follows it, with the attachments it references.
+      messages.push({
+        ...withModelContent(next, 'user', [{ type: 'text', text }, ...next.contentParts]),
+        ...(message.compactedFiles ? { compactedFiles: message.compactedFiles } : {}),
+        ...(message.compactedLinks ? { compactedLinks: message.compactedLinks } : {}),
+      })
       index += 1
     } else {
       messages.push(withModelContent(message, 'user', [{ type: 'text', text }]))

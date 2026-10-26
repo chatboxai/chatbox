@@ -18,6 +18,8 @@ import type {
 } from '../../ports/session-token-source'
 import type { SessionHeader, Message } from '../../types'
 import type { SessionRecordV2, ThreadRow } from '../../session/session-tree/types'
+import { SeedAttachmentCollector } from '../../session/context-path-facts'
+
 export function contextHeader(record: SessionRecordV2, activeThread: ThreadRow): SessionHeader {
   const {
     storageFormat: _storage,
@@ -110,6 +112,7 @@ export async function readRowContextPlan(rows: SessionRowStorePort, request: Ses
     sandboxSeedAttachments: [],
     fileResourceKeys: [],
   }
+  const seeds = new SeedAttachmentCollector(beforeTarget.sandboxSeedAttachments)
   for (const row of before) {
     if (row.facts.role === 'user') {
       beforeTarget.userMessageCount++
@@ -117,7 +120,7 @@ export async function readRowContextPlan(rows: SessionRowStorePort, request: Ses
     }
     beforeTarget.hasAssistantMessage ||= row.facts.role === 'assistant'
     beforeTarget.hasLegacyCommandHistory ||= row.facts.hasLegacyCommand
-    beforeTarget.sandboxSeedAttachments.push(...(row.facts.seedAttachments ?? []))
+    seeds.add(row.facts.seedAttachments ?? [])
     beforeTarget.fileResourceKeys.push(...(row.facts.fileResourceKeys ?? []))
   }
   const candidate = request.targetMessageId && !request.includeTarget ? before : path

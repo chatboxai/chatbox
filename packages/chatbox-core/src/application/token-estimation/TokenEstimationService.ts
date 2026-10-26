@@ -25,17 +25,22 @@ import type {
 import type { Message, CompactionPoint, Settings } from '../../types'
 
 import {
+  type CompactionBudget,
   estimateDraftTokensImmediately,
   FALLBACK_CONTEXT_WINDOW_TOKENS,
-  getCompactionThresholdForContextWindow,
+  getCompactionBudget,
   LONG_DRAFT_TOKENIZATION_THRESHOLD,
 } from './math'
 export {
+  type CompactionBudget,
   DEFAULT_COMPACTION_THRESHOLD,
   estimateDraftTokensImmediately,
   FALLBACK_CONTEXT_WINDOW_TOKENS,
+  getCompactionBudget,
+  getRetainedTailTokens,
   LONG_DRAFT_TOKENIZATION_THRESHOLD,
   OUTPUT_RESERVE_TOKENS,
+  shouldCompactAtTokens,
 } from './math'
 
 export interface TokenEstimationModel {
@@ -198,12 +203,16 @@ export function resolveModelContextWindow(model: TokenEstimationModel | undefine
   return getUnambiguousRegistryModelContextWindow(model.modelId) ?? null
 }
 
-export function getCompactionThresholdTokens(options: {
+export function getCompactionBudgetForModel(options: {
   model: TokenEstimationModel
   compactionThreshold?: Settings['compactionThreshold']
-}): number {
+  maxOutputTokens?: number
+}): CompactionBudget | null {
   const contextWindow = resolveModelContextWindow(options.model) ?? FALLBACK_CONTEXT_WINDOW_TOKENS
-  return getCompactionThresholdForContextWindow(contextWindow, options.compactionThreshold)
+  return getCompactionBudget(contextWindow, {
+    compactionThreshold: options.compactionThreshold,
+    maxOutputTokens: options.maxOutputTokens,
+  })
 }
 
 function assertEstimationActive(signal?: AbortSignal): void {
@@ -473,8 +482,10 @@ export class TokenEstimationService {
     const hydrated = await injectAttachments(
       messages,
       { read: (key) => this.blobs.get(key) },
-      request.modelSupportToolUseForFile === true,
-      request.sandboxMode === true,
+      {
+        modelSupportToolUseForFile: request.modelSupportToolUseForFile === true,
+        sandboxMode: request.sandboxMode === true,
+      },
       () => {
         missing = true
       }

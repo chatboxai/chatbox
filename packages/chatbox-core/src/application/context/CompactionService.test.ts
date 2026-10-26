@@ -1,4 +1,6 @@
-import { buildCompactionHandoff, selectContextMessages } from '@shared/context'
+import { buildCompactionHandoff, buildContext, selectContextMessages } from '@shared/context'
+import { sandboxAttachmentIdentity, sandboxAttachmentRelPath } from '@shared/sandbox/attachment-path'
+import { uploadedFilePath, uploadedFileToolHint } from '@shared/uploaded-file-tools'
 import type { SessionContextSource } from '../../ports/session-context-source'
 import { InMemorySessionRecordStore } from '../../testing/InMemorySessionRecordStore'
 import { InMemorySessionRowStore } from '../../testing/InMemorySessionRowStore'
@@ -10,9 +12,19 @@ import { convertLegacyTreeToRowFormat } from '../session/compatibility/row-forma
 
 import { describe, expect, test, vi } from 'vitest'
 import type { LoggerPort } from '../../ports'
-import type { Message, Session, SessionSettings, Settings } from '../../types'
+import type { Message, MessageFile, Session, SessionSettings, Settings } from '../../types'
+import { getCompactionBudget } from '../token-estimation/math'
 import { selectTokenEstimationContext } from '../token-estimation/TokenEstimationService'
-import { CompactionService, type CompactionSummaryPort } from './CompactionService'
+import {
+  type CompactionPolicyPort,
+  CompactionService,
+  type CompactionSummaryPort,
+  getRequestOverheadBeyond,
+} from './CompactionService'
+
+/** A 16K window: 4K reply reservation, 12K usable, compaction above 9.2K. */
+const budget = getCompactionBudget(16_384)!
+const overThreshold = { tokens: budget.thresholdTokens + 1, budget }
 function message(id: string, role: Message['role']): Message {
   return { id, role, contentParts: [{ type: 'text', text: id }] }
 }
@@ -55,7 +67,7 @@ function createHarness(
   const getCompactionContext = vi.fn(
     (current: SessionContextSource, _settings: SessionSettings, _pendingMessage?: Message) => current.candidateMessages
   )
-  const shouldCompact = vi.fn(() => Promise.resolve(true))
+  const measure = vi.fn<CompactionPolicyPort['measure']>(() => Promise.resolve(overThreshold))
   const generate = vi.fn<CompactionSummaryPort['generate']>(async (input) => {
     input.onStreamUpdate?.('streaming summary')
     return { success: true, summary: 'Final summary' }
@@ -112,7 +124,7 @@ function createHarness(
     },
     settings: { getSettings: () => globalSettings },
     policy: {
-      shouldCompact,
+      measure,
       getCompactionContext,
     },
     summaries: { generate },
@@ -124,7 +136,7 @@ function createHarness(
     service,
     getSession,
     getCompactionContext,
-    shouldCompact,
+    measure,
     generate,
     get session() {
       return session
@@ -301,7 +313,7 @@ describe('CompactionService', () => {
 
     await harness.service.run('session-1', { kind: 'automatic', pendingMessage })
 
-    expect(harness.shouldCompact).toHaveBeenCalledWith(expect.objectContaining({ pendingMessage }))
+    expect(harness.measure).toHaveBeenCalledWith(expect.objectContaining({ pendingMessage }))
     expect(harness.getCompactionContext).toHaveBeenCalledWith(expect.any(Object), expect.any(Object), pendingMessage)
     expect(harness.generate.mock.calls[0]?.[0]).toMatchObject({
       messages: expect.not.arrayContaining([pendingMessage]),
@@ -400,7 +412,7 @@ describe('CompactionService', () => {
     const harness = createHarness({ autoCompaction: false })
 
     await expect(harness.service.needsCompaction('session-1')).resolves.toBe(false)
-    expect(harness.shouldCompact).not.toHaveBeenCalled()
+    expect(harness.measure).not.toHaveBeenCalled()
   })
 
   test('returns a structured failure and leaves message rows unchanged when summary generation fails', async () => {
@@ -441,28 +453,29 @@ describe('CompactionService', () => {
 test('decides automatic compaction once before starting feedback and reads fresh planning rows', async () => {
   const harness = createHarness()
   const onStart = vi.fn(() => {
-    expect(harness.shouldCompact).toHaveBeenCalledOnce()
+    expect(harness.measure).toHaveBeenCalledOnce()
     expect(harness.service.isInProgress('session-1')).toBe(true)
     expect(harness.generate).not.toHaveBeenCalled()
   })
   const result = await harness.service.run('session-1', { kind: 'automatic' }, { onStart })
   expect(result.status).toBe('compacted')
   expect(onStart).toHaveBeenCalledOnce()
-  expect(harness.getSession).toHaveBeenCalledTimes(2)
+  // Decision, planning, then the size the compaction left.
+  expect(harness.getSession).toHaveBeenCalledTimes(3)
 })
 
 test('does not start feedback when automatic compaction is unnecessary or cancelled during estimation', async () => {
   const harness = createHarness()
   const onStart = vi.fn()
-  harness.shouldCompact.mockResolvedValueOnce(false)
+  harness.measure.mockResolvedValueOnce({ tokens: budget.thresholdTokens, budget })
   await expect(harness.service.run('session-1', { kind: 'automatic' }, { onStart })).resolves.toEqual({
     status: 'skipped',
     reason: 'not_needed',
   })
   const controller = new AbortController()
-  harness.shouldCompact.mockImplementationOnce(async () => {
+  harness.measure.mockImplementationOnce(async () => {
     controller.abort()
-    return true
+    return overThreshold
   })
   await expect(
     harness.service.run('session-1', { kind: 'automatic' }, { onStart, abortSignal: controller.signal })
@@ -510,4 +523,189 @@ test('cancellation from start feedback does not generate a summary or retain own
   expect(result).toEqual({ status: 'cancelled' })
   expect(harness.generate).not.toHaveBeenCalled()
   expect(harness.service.isInProgress('session-1')).toBe(false)
+})
+
+test('measures the request overhead recorded from the last request', async () => {
+  const harness = createHarness()
+  harness.service.recordRequestOverhead('session-1', { toolTokens: 1_234.4, extraSystemTokens: 300 })
+
+  await harness.service.needsCompaction('session-1')
+
+  expect(harness.measure).toHaveBeenCalledWith(
+    expect.objectContaining({ requestOverhead: { toolTokens: 1_235, extraSystemTokens: 300 } })
+  )
+})
+
+test('subtracts only the instructions a host estimate already counted from the request overhead', () => {
+  const overhead = { toolTokens: 500, extraSystemTokens: 2_000 }
+  const memory = 'Remember the user prefers metric units. '.repeat(100)
+  const memoryTokens = Math.ceil(memory.length / 4)
+
+  expect(getRequestOverheadBeyond(overhead)).toBe(2_500)
+  expect(getRequestOverheadBeyond(overhead, memory)).toBe(2_500 - memoryTokens)
+  expect(getRequestOverheadBeyond(overhead, memory.repeat(10))).toBe(500)
+})
+
+test('waits for meaningful growth after a compaction that could not get below the threshold', async () => {
+  const harness = createHarness()
+  await expect(harness.service.run('session-1', { kind: 'automatic' })).resolves.toMatchObject({ status: 'compacted' })
+  // The post-commit measurement recorded the compacted size: still above the threshold.
+  expect(harness.measure).toHaveBeenLastCalledWith(expect.objectContaining({ pendingMessage: undefined }))
+
+  harness.measure.mockResolvedValueOnce({ tokens: overThreshold.tokens + budget.minGrowthTokens - 1, budget })
+  await expect(harness.service.needsCompaction('session-1')).resolves.toBe(false)
+
+  harness.measure.mockResolvedValueOnce({ tokens: overThreshold.tokens + budget.minGrowthTokens, budget })
+  await expect(harness.service.needsCompaction('session-1')).resolves.toBe(true)
+
+  // A request that no longer fits the usable window compacts regardless.
+  harness.measure.mockResolvedValueOnce({ tokens: budget.usableTokens + 1, budget })
+  await expect(harness.service.needsCompaction('session-1')).resolves.toBe(true)
+})
+
+test('drops the growth baseline when the active path no longer ends past that compaction', async () => {
+  const harness = createHarness()
+  await harness.service.run('session-1', { kind: 'manual' })
+  harness.measure.mockResolvedValueOnce({ tokens: overThreshold.tokens + 1, budget })
+  await expect(harness.service.needsCompaction('session-1')).resolves.toBe(false)
+
+  // Switching to another branch or thread leaves the compacted summary off the active path.
+  Object.assign(harness.session, {
+    messages: [message('system', 'system'), message('other-user', 'user'), message('other-assistant', 'assistant')],
+    compactionPoints: undefined,
+  })
+  harness.measure.mockResolvedValueOnce({ tokens: overThreshold.tokens + 1, budget })
+  await expect(harness.service.needsCompaction('session-1')).resolves.toBe(true)
+})
+
+test('drops the growth baseline when the model window changes', async () => {
+  const harness = createHarness()
+  await harness.service.run('session-1', { kind: 'manual' })
+  const smaller = getCompactionBudget(8_192)!
+  harness.measure.mockResolvedValueOnce({ tokens: smaller.thresholdTokens + 1, budget: smaller })
+  await expect(harness.service.needsCompaction('session-1')).resolves.toBe(true)
+})
+
+test('does not carry a conversation compaction size across a generation compaction', async () => {
+  const harness = createHarness()
+  await harness.service.run('session-1', { kind: 'manual' })
+  harness.measure.mockResolvedValueOnce({ tokens: overThreshold.tokens + 1, budget })
+  await expect(harness.service.needsCompaction('session-1')).resolves.toBe(false)
+
+  Object.assign(harness.session.messages[2], {
+    generating: true,
+    contentParts: [{ type: 'tool-call', state: 'call', toolCallId: 'current-tool', toolName: 'search', args: {} }],
+  })
+  await expect(
+    harness.service.run('session-1', {
+      kind: 'generation',
+      targetMessageId: 'assistant',
+      retainedToolCallId: 'current-tool',
+    })
+  ).resolves.toMatchObject({ status: 'compacted' })
+
+  harness.measure.mockResolvedValueOnce({ tokens: overThreshold.tokens + 1, budget })
+  await expect(harness.service.needsCompaction('session-1')).resolves.toBe(true)
+})
+
+describe('attachments of compacted history', () => {
+  const report: MessageFile = {
+    id: 'report',
+    name: 'report.csv',
+    fileType: 'text/csv',
+    storageKey: 'parsed-report',
+    lineCount: 1,
+  }
+  const notes: MessageFile = {
+    id: 'notes',
+    name: 'notes.txt',
+    fileType: 'text/plain',
+    storageKey: 'parsed-notes',
+    lineCount: 1,
+  }
+  const contents: Record<string, string> = { 'parsed-report': 'REPORT ROWS', 'parsed-notes': 'NOTES BODY' }
+  const attachmentResolver = { read: async (key: string) => contents[key] ?? null }
+  const requestText = (messages: Message[]) =>
+    messages
+      .flatMap((entry) => entry.contentParts.flatMap((part) => (part.type === 'text' ? [part.text] : [])))
+      .join('\n')
+
+  async function compactTwice() {
+    const harness = createHarness({
+      messages: [
+        message('system', 'system'),
+        { ...message('user-1', 'user'), files: [report] },
+        message('assistant-1', 'assistant'),
+        { ...message('user-2', 'user'), files: [notes] },
+        message('assistant-2', 'assistant'),
+      ],
+    })
+    await expect(harness.service.run('session-1', { kind: 'manual' })).resolves.toMatchObject({
+      status: 'compacted',
+      attachments: { compactedFiles: [report, notes] },
+    })
+    harness.session.messages.push(message('user-3', 'user'), message('assistant-3', 'assistant'))
+    // The second summary covers the first one, whose attachments it carries forward.
+    await expect(harness.service.run('session-1', { kind: 'manual' })).resolves.toMatchObject({ status: 'compacted' })
+    return harness.session
+  }
+
+  const workspacePath = (file: MessageFile) => `input/${file.id}-${file.name}`
+
+  test.each([
+    [
+      'file tools',
+      { modelSupportToolUseForFile: true },
+      [uploadedFileToolHint('parsed-report'), uploadedFileToolHint('parsed-notes')],
+    ],
+    [
+      'the sandbox',
+      { sandboxMode: true },
+      [
+        sandboxAttachmentRelPath('report.csv', sandboxAttachmentIdentity(report)),
+        sandboxAttachmentRelPath('notes.txt', sandboxAttachmentIdentity(notes)),
+      ],
+    ],
+    [
+      'workspace tools',
+      { workspacePath },
+      [
+        `<WORKSPACE_PATH>${workspacePath(report)}</WORKSPACE_PATH>`,
+        `<WORKSPACE_PATH>${workspacePath(notes)}</WORKSPACE_PATH>`,
+      ],
+    ],
+  ])('keeps their paths in the next request with %s', async (_label, policy, paths) => {
+    const session = await compactTwice()
+    const summary = session.messages.find((entry) => entry.id === session.compactionPoints?.at(-1)?.summaryMessageId)
+    expect(summary).toMatchObject({ compactedFiles: [report, notes] })
+
+    const request = await buildContext([...session.messages, message('next-user', 'user')], {
+      compactionPoints: session.compactionPoints,
+      attachmentResolver,
+      ...policy,
+    })
+
+    const text = requestText(request)
+    for (const path of paths) expect(text).toContain(path)
+    expect(text).toContain('report.csv')
+    expect(text).not.toContain('REPORT ROWS')
+    expect(request.at(-1)).toMatchObject({ role: 'user' })
+    expect(text).toContain('next-user')
+  })
+
+  test('names files without a path when no tool of the request can open them', async () => {
+    const session = await compactTwice()
+
+    const request = await buildContext([...session.messages, message('next-user', 'user')], {
+      compactionPoints: session.compactionPoints,
+      attachmentResolver,
+    })
+
+    const text = requestText(request)
+    expect(text).toContain('<FILE_NAME>report.csv</FILE_NAME>')
+    expect(text).toContain('<FILE_NAME>notes.txt</FILE_NAME>')
+    expect(text).toContain('cannot be reopened')
+    expect(text).not.toContain(uploadedFilePath('parsed-report'))
+    expect(text).not.toContain('REPORT ROWS')
+  })
 })

@@ -1,3 +1,4 @@
+import { DEFAULT_COMPACTION_THRESHOLD } from '@chatbox/core/application/token-estimation/math'
 import { Button, Collapse, Flex, Slider, Text, Textarea } from '@mantine/core'
 import { getDefaultCompactionPrompt } from '@shared/prompts'
 import { IconChevronDown } from '@tabler/icons-react'
@@ -19,7 +20,7 @@ export function RouteComponent() {
   const { setSettings, ...settings } = useSettingsStore((state) => state)
   const [promptOpen, setPromptOpen] = useState(settings.compactionPrompt !== undefined)
   const autoCompaction = settings.autoCompaction ?? true
-  const threshold = settings.compactionThreshold ?? 0.6
+  const threshold = settings.compactionThreshold ?? DEFAULT_COMPACTION_THRESHOLD
 
   const strategyHint = useMemo(() => {
     if (threshold <= 0.5) {

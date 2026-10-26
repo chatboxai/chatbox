@@ -1,4 +1,5 @@
 import { buildContext, flattenToolCallPartsToText } from '@shared/context'
+import type { AttachmentPolicy } from '@shared/context/attachments'
 import type { Message, MessageContentParts } from '@shared/types'
 import type { MemoryToolContext } from '@shared/types/agent-persona'
 import { resolveReasoningReplayPolicy } from '@shared/utils/reasoning-control'
@@ -15,6 +16,8 @@ export interface BasicGenerationToolPreparation {
 }
 
 export interface BasicGenerationPreparationOptions<TContext> {
+  /** How the host's tools reach uploaded files. Omission means inline content only. */
+  attachmentPolicy?: Pick<AttachmentPolicy, 'workspacePath'>
   prepareTools?(
     request: GenerationPreparationRequest<TContext>,
     promptMessages: Message[]
@@ -60,11 +63,16 @@ export class BasicGenerationPreparation<TContext> implements GenerationPreparati
   constructor(private readonly options: BasicGenerationPreparationOptions<TContext> = {}) {}
 
   async prepare(request: GenerationPreparationRequest<TContext>) {
+    const attachmentPolicy: AttachmentPolicy = {
+      ...this.options.attachmentPolicy,
+      modelSupportToolUseForFile: false,
+      sandboxMode: false,
+    }
     let promptMessages = await buildContext(request.messages.slice(0, request.targetMessageIndex), {
       attachmentResolver: request.attachments,
       compactionPoints: request.compactionPoints,
       maxContextMessageCount: request.settings.maxContextMessageCount,
-      modelSupportToolUseForFile: false,
+      ...attachmentPolicy,
       language: request.globalSettings.language,
     })
     const tools = (await this.options.prepareTools?.(request, promptMessages)) ?? { tools: {} }
@@ -110,6 +118,7 @@ export class BasicGenerationPreparation<TContext> implements GenerationPreparati
       },
       infoParts: tools.infoParts ?? [],
       fallbackToolCallPart: tools.fallbackToolCallPart,
+      attachmentPolicy,
     }
   }
 }

@@ -1,3 +1,4 @@
+import { collectCompactedAttachments } from '@shared/context/attachments'
 import { projectContextMessagesForModel } from '@shared/context/model-projection'
 import { flattenToolCallPartsToText } from '@shared/context/tool-flatten'
 import type { LoggerPort, SettingsRepositoryPort } from '../../ports'
@@ -5,6 +6,9 @@ import type { Message, SessionHeader, SessionSettings, Settings } from '../../ty
 import type { SessionHeaderRead } from '../../ports/session-row-repository'
 import type { SessionContextRepositoryPort, SessionContextSource } from '../../ports/session-context-source'
 import type { SessionCompactionOperation } from '../../ports/session-structure-command'
+import { getTokenizerType } from '@shared/token-estimation/tokenizer'
+import { type CompactionBudget, estimateTokensBySampling, shouldCompactAtTokens } from '../token-estimation/math'
+import type { TokenEstimationModel } from '../token-estimation/TokenEstimationService'
 import { createCompactionPlan } from './compaction-plan'
 import type {
   CompactionFailureCode,
@@ -22,14 +26,47 @@ export interface CompactionSessionPort extends SessionContextRepositoryPort {
   ): Promise<{ applied: boolean; revision: number }>
 }
 
+/** What the last request sent outside the conversation history. */
+export interface RequestOverheadTokens {
+  /** Tool definitions, which no message carries. */
+  toolTokens: number
+  /**
+   * System instructions beyond the session's own system messages: agent
+   * instructions, memory, knowledge base.
+   */
+  extraSystemTokens: number
+}
+
+/**
+ * Overhead a pre-send estimate adds to its history count. An estimate that
+ * already counted some host instructions passes them so they are not counted twice.
+ */
+export function getRequestOverheadBeyond(
+  overhead: RequestOverheadTokens,
+  countedInstructions = '',
+  model?: TokenEstimationModel
+): number {
+  const counted = countedInstructions ? estimateTokensBySampling(countedInstructions, getTokenizerType(model)) : 0
+  return overhead.toolTokens + Math.max(0, overhead.extraSystemTokens - counted)
+}
+
+export interface CompactionPressure {
+  /** Estimated request size: context, pending input and request overhead. */
+  tokens: number
+  budget: CompactionBudget
+}
+
 export interface CompactionPolicyPort {
-  shouldCompact(input: {
+  /** Null when the session has no measurable request or model window. */
+  measure(input: {
     sessionId: string
     header: SessionHeader
     sessionSettings: SessionSettings
     globalSettings: Settings
     pendingMessage?: Message
-  }): Promise<boolean>
+    /** Request tokens outside the conversation (tool definitions, extra instructions) seen on the last request. */
+    requestOverhead: RequestOverheadTokens
+  }): Promise<CompactionPressure | null>
   /**
    * The host's send-context selection, including its message-count limit.
    * The summary covers this window through its latest eligible message;
@@ -71,9 +108,31 @@ export function isAutoCompactionEnabled(sessionSettings?: SessionSettings, globa
   return globalSettings?.autoCompaction ?? true
 }
 
+/** Per-session request facts are kept for recently active sessions only. */
+const SESSION_FACT_LIMIT = 256
+
+const NO_REQUEST_OVERHEAD: RequestOverheadTokens = { toolTokens: 0, extraSystemTokens: 0 }
+
+/** The context a compaction left: valid only while the active path still ends past that summary. */
+interface CompactedSize {
+  tokens: number
+  threadId: string
+  summaryMessageId: string | undefined
+  usableTokens: number
+}
+
+function remember<T>(map: Map<string, T>, sessionId: string, value: T): void {
+  map.delete(sessionId)
+  map.set(sessionId, value)
+  while (map.size > SESSION_FACT_LIMIT) map.delete(map.keys().next().value!)
+}
+
 export class CompactionService {
   private readonly ongoing = new Set<string>()
   private readonly now: () => number
+  private readonly requestOverhead = new Map<string, RequestOverheadTokens>()
+  /** Request size a conversation compaction left; the next automatic one waits for growth past it. */
+  private readonly compactedSizes = new Map<string, CompactedSize>()
 
   constructor(private readonly options: CompactionServiceOptions) {
     this.now = options.now ?? Date.now
@@ -81,6 +140,19 @@ export class CompactionService {
 
   isInProgress(sessionId: string): boolean {
     return this.ongoing.has(sessionId)
+  }
+
+  /**
+   * Record what the last request sent outside the conversation history, so the
+   * next pre-send check measures the request the model will actually receive.
+   */
+  recordRequestOverhead(sessionId: string, overhead: RequestOverheadTokens): void {
+    const valid = (tokens: number) => Number.isFinite(tokens) && tokens >= 0
+    if (!valid(overhead.toolTokens) || !valid(overhead.extraSystemTokens)) return
+    remember(this.requestOverhead, sessionId, {
+      toolTokens: Math.ceil(overhead.toolTokens),
+      extraSystemTokens: Math.ceil(overhead.extraSystemTokens),
+    })
   }
 
   async needsCompaction(sessionId: string, pendingMessage?: Message): Promise<boolean> {
@@ -91,17 +163,64 @@ export class CompactionService {
     const globalSettings = this.options.settings.getSettings()
     if (!isAutoCompactionEnabled(session.settings, globalSettings)) return false
 
+    const pressure = await this.measure(sessionId, session, globalSettings, pendingMessage)
+    if (!pressure) return false
+    // Another thread or fork, or a different model window, starts without the earlier baseline.
+    const compacted = this.compactedSizes.get(sessionId)
+    const baseline =
+      compacted &&
+      compacted.threadId === read.activeThreadId &&
+      compacted.summaryMessageId === read.summary.lastSummaryMessageId &&
+      compacted.usableTokens === pressure.budget.usableTokens
+        ? compacted.tokens
+        : undefined
+    return shouldCompactAtTokens(pressure.budget, pressure.tokens, baseline)
+  }
+
+  private async measure(
+    sessionId: string,
+    session: SessionHeader,
+    globalSettings: Settings,
+    pendingMessage?: Message
+  ): Promise<CompactionPressure | null> {
     const modelId = session.settings?.modelId ?? globalSettings.defaultChatModel?.model
-    if (!modelId) return false
+    if (!modelId) return null
 
     const sessionSettings = await this.options.sessions.getSessionSettings(sessionId, session)
-    return this.options.policy.shouldCompact({
+    return this.options.policy.measure({
       sessionId,
       header: session,
       sessionSettings,
       globalSettings,
       pendingMessage,
+      requestOverhead: this.requestOverhead.get(sessionId) ?? NO_REQUEST_OVERHEAD,
     })
+  }
+
+  /** Remember the size a conversation compaction left, for the next automatic decision. */
+  private async recordCompactedSize(sessionId: string, request: CompactionRequest): Promise<void> {
+    this.compactedSizes.delete(sessionId)
+    // A generation compaction measures the live request itself; the next turn starts fresh.
+    if (request.kind === 'generation') return
+    try {
+      const read = await this.options.sessions.getSessionHeader(sessionId)
+      if (!read) return
+      const pressure = await this.measure(sessionId, read.header, this.options.settings.getSettings())
+      if (pressure) {
+        remember(this.compactedSizes, sessionId, {
+          tokens: pressure.tokens,
+          threadId: read.activeThreadId,
+          summaryMessageId: read.summary.lastSummaryMessageId,
+          usableTokens: pressure.budget.usableTokens,
+        })
+      }
+    } catch (error) {
+      try {
+        await this.options.logger?.log('warn', 'Failed to measure the compacted conversation', { sessionId, error })
+      } catch {
+        // Diagnostics must never change the successful compaction outcome.
+      }
+    }
   }
 
   async run(
@@ -168,12 +287,14 @@ export class CompactionService {
         )
       }
 
+      const attachments = collectCompactedAttachments(plan.messages)
       const summaryMessage: Message = {
         id: this.options.createId(),
         role: 'assistant',
         contentParts: [{ type: 'text', text: summaryResult.summary }],
         timestamp: this.now(),
         isSummary: true,
+        ...attachments,
       }
 
       let committedRevision: number
@@ -199,10 +320,13 @@ export class CompactionService {
         return this.failure('update_failed', error instanceof Error ? error.message : String(error), error)
       }
 
+      await this.recordCompactedSize(sessionId, request)
+
       return {
         status: 'compacted',
         summaryMessageId: summaryMessage.id,
         summary: summaryResult.summary,
+        attachments,
         coverage: plan.coverage,
         revision: committedRevision,
       }

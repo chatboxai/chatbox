@@ -4,6 +4,7 @@ import type {
   CopilotDetail,
   Message,
   MessageFile,
+  MessageLink,
   Session,
   SessionHeader,
   SessionMetaRecord,
@@ -22,6 +23,15 @@ export interface ResourceReference {
 
 type LegacyMessage = Message & { pictures?: Array<{ storageKey?: string; url?: string; loading?: boolean }> }
 
+/** A message's files, including those a compaction summary references. */
+function messageFiles(message: Message): MessageFile[] {
+  return [...(message.files ?? []), ...(message.compactedFiles ?? [])]
+}
+
+function messageLinks(message: Message): MessageLink[] {
+  return [...(message.links ?? []), ...(message.compactedLinks ?? [])]
+}
+
 function addReference(references: ResourceReference[], reference: ResourceReference | undefined) {
   if (reference?.storageKey) references.push(reference)
 }
@@ -38,7 +48,7 @@ export function collectMessageReferences(
       picture.storageKey ? { storageKey: picture.storageKey, kind: 'image', sessionId } : undefined
     )
   }
-  for (const file of message.files ?? []) {
+  for (const file of messageFiles(message)) {
     addReference(
       references,
       file.storageKey
@@ -64,7 +74,8 @@ export function collectMessageReferences(
         : undefined
     )
     const parsedTextIsCompleteAttachment = isTextFilePath(file.name) && Boolean(file.storageKey)
-    if (file.localPath && !file.rawStorageKey && !parsedTextIsCompleteAttachment) {
+    // A summary's reference repeats a file its covered message already reported.
+    if (file.localPath && !file.rawStorageKey && !parsedTextIsCompleteAttachment && message.files?.includes(file)) {
       warnings.push({
         code: 'external-resource-skipped',
         itemType: 'resource',
@@ -73,7 +84,7 @@ export function collectMessageReferences(
       })
     }
   }
-  for (const link of message.links ?? []) {
+  for (const link of messageLinks(message)) {
     addReference(
       references,
       link.storageKey
@@ -198,7 +209,7 @@ function resetRagState(file: MessageFile) {
 
 export function prepareMessageForBackup(message: Message): Message {
   const prepared = JSON.parse(JSON.stringify(message)) as Message
-  for (const file of prepared.files ?? []) {
+  for (const file of messageFiles(prepared)) {
     delete file.localPath
     resetRagState(file)
   }
@@ -232,7 +243,7 @@ function restoreMessageResourceKeys(message: Message, resourceKeyMap: ReadonlyMa
       return fallback.url ? [fallback] : []
     })
   }
-  for (const file of message.files ?? []) {
+  for (const file of messageFiles(message)) {
     if (file.storageKey !== undefined) {
       const restoredStorageKey = restoreResourceKey(file.storageKey, resourceKeyMap)
       if (restoredStorageKey === undefined) delete file.storageKey
@@ -245,7 +256,9 @@ function restoreMessageResourceKeys(message: Message, resourceKeyMap: ReadonlyMa
     }
     resetRagState(file)
   }
-  for (const link of message.links ?? []) {
+  // Retrieval indexes are rebuilt for the covered messages' files only; a summary references its copies as plain files.
+  for (const file of message.compactedFiles ?? []) if (file.ragMode === 'session-retrieval') file.ragMode = 'inline'
+  for (const link of messageLinks(message)) {
     if (link.storageKey === undefined) continue
     const restoredStorageKey = restoreResourceKey(link.storageKey, resourceKeyMap)
     if (restoredStorageKey === undefined) delete link.storageKey

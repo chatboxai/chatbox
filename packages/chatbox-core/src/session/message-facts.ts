@@ -8,6 +8,9 @@ import type { Message } from '../types/session'
 import type { MessageRowMetadata, SessionMessageFacts, SessionThreadSummary } from './session-tree/types'
 
 export function deriveMessageFacts(message: Message): SessionMessageFacts {
+  // A compaction summary keeps the files it references readable, seeded and owned.
+  const files = [...(message.files ?? []), ...(message.compactedFiles ?? [])]
+  const links = [...(message.links ?? []), ...(message.compactedLinks ?? [])]
   return {
     autoTitleEligible: isMessageEligibleForAutoTitle(message),
     role: message.role,
@@ -33,7 +36,7 @@ export function deriveMessageFacts(message: Message): SessionMessageFacts {
     hasError: Boolean(message.error || message.errorCode),
     finishReason: message.finishReason,
     timestamp: message.timestamp,
-    seedAttachments: message.files?.map(toSandboxSeedAttachment),
+    seedAttachments: message.files || message.compactedFiles ? files.map(toSandboxSeedAttachment) : undefined,
     imageStorageKeys: [
       ...new Set(
         message.contentParts.flatMap((part) => (part.type === 'image' && part.storageKey ? [part.storageKey] : []))
@@ -41,17 +44,15 @@ export function deriveMessageFacts(message: Message): SessionMessageFacts {
     ],
     attachmentOwnershipIds: [
       ...new Set(
-        (message.files ?? []).flatMap((file) =>
-          typeof file.sessionAttachmentId === 'number' ? [file.sessionAttachmentId] : []
-        )
+        files.flatMap((file) => (typeof file.sessionAttachmentId === 'number' ? [file.sessionAttachmentId] : []))
       ),
     ],
     fileResourceKeys: [
       ...new Set([
-        ...(message.files ?? [])
+        ...files
           .filter((file) => file.ragMode !== 'session-retrieval')
           .flatMap((file) => (file.storageKey ? [file.storageKey] : file.localPath ? [`local:${file.localPath}`] : [])),
-        ...(message.links ?? []).flatMap((link) => (link.storageKey ? [link.storageKey] : [])),
+        ...links.flatMap((link) => (link.storageKey ? [link.storageKey] : [])),
         ...message.contentParts.flatMap((part) =>
           part.type === 'tool-call' && part.resultStorageKey ? [part.resultStorageKey] : []
         ),

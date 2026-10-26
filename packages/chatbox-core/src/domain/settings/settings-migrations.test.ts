@@ -67,6 +67,24 @@ describe('settings migrations', () => {
     expect(migrated.extension.documentParser).toEqual({ type: 'chatbox-ai' })
   })
 
+  test('moves the version 7 default compaction threshold to the current default and keeps chosen values', () => {
+    const defaults = createDefaultSettings()
+    expect(
+      migrateSettings({ ...defaults, compactionThreshold: 0.6 }, 7, { isDesktopLike: true }).compactionThreshold
+    ).toBe(defaults.compactionThreshold)
+    expect(
+      migrateSettings({ ...defaults, compactionThreshold: 0.6000000000000001 }, 7, { isDesktopLike: true })
+        .compactionThreshold
+    ).toBe(defaults.compactionThreshold)
+    for (const chosen of [0.4, 0.5, 0.85, 0.9]) {
+      expect(
+        migrateSettings({ ...defaults, compactionThreshold: chosen }, 7, { isDesktopLike: true }).compactionThreshold
+      ).toBe(chosen)
+    }
+    const { compactionThreshold: _omitted, ...withoutThreshold } = defaults
+    expect(migrateSettings(withoutThreshold, 7, { isDesktopLike: true }).compactionThreshold).toBe(0.75)
+  })
+
   test('uses the desktop parser default when an older snapshot has no parser', () => {
     const migrated = migrateSettings(createDefaultSettings(), 4, {
       isDesktopLike: true,

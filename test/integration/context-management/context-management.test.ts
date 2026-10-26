@@ -18,6 +18,11 @@ import type {
   Session,
   SessionThread,
 } from '../../../src/shared/types/session'
+
+/** Usable window when the reply limit is unknown: the reservation is capped at a quarter of the window. */
+function usableWindow(contextWindow: number): number {
+  return contextWindow - Math.min(OUTPUT_RESERVE_TOKENS, Math.floor(contextWindow * 0.25))
+}
 import type { SessionSettings, Settings } from '../../../src/shared/types/settings'
 
 vi.mock('../../../src/renderer/packages/model-registry', () => ({
@@ -386,15 +391,15 @@ describe('Context Management Integration Tests', () => {
   describe('Compaction Trigger Detection (Overflow)', () => {
     it('should detect overflow when tokens exceed threshold', () => {
       // gpt-4o has 128k context
-      // Available = 128000 - 32000 = 96000
-      // Threshold at 0.6 = 57600
-      const highTokens = 60_000 // Above threshold
+      // Usable = 128000 - 32000 = 96000
+      // Threshold at 0.75 = 72000
+      const highTokens = 80_000 // Above threshold
 
       const result = checkOverflow({ tokens: highTokens, modelId: 'gpt-4o' })
 
       expect(result.isOverflow).toBe(true)
       expect(result.contextWindow).toBe(128_000)
-      expect(result.thresholdTokens).toBe(Math.floor(96_000 * DEFAULT_COMPACTION_THRESHOLD))
+      expect(result.thresholdTokens).toBe(Math.floor(usableWindow(128_000) * DEFAULT_COMPACTION_THRESHOLD))
     })
 
     it('should not detect overflow when tokens are below threshold', () => {
@@ -406,7 +411,7 @@ describe('Context Management Integration Tests', () => {
     })
 
     it('should assume a fallback window for unknown models', () => {
-      // Fallback window 128k: threshold = (128k − 32k) × 0.6 = 57.6k
+      // Fallback window 128k: threshold = (128k − 32k) × 0.75 = 72k
       const result = checkOverflow({ tokens: 100_000, modelId: 'unknown-model' })
 
       expect(result.isOverflow).toBe(true)
@@ -415,7 +420,7 @@ describe('Context Management Integration Tests', () => {
 
     it('should use custom compactionThreshold from settings', () => {
       // With 0.9 threshold: 96000 * 0.9 = 86400
-      const tokens = 70_000 // Would overflow at 0.6, but not at 0.9
+      const tokens = 80_000 // Would overflow at 0.75, but not at 0.9
 
       const resultDefault = checkOverflow({ tokens, modelId: 'gpt-4o' })
       const resultHigh = checkOverflow({
@@ -430,29 +435,29 @@ describe('Context Management Integration Tests', () => {
 
     it('should handle models with different context windows', () => {
       // Claude 3.5 has 200k context
-      // Available = 200000 - 32000 = 168000
-      // Threshold at 0.6 = 100800
+      // Usable = 200000 - 32000 = 168000
+      // Threshold at 0.75 = 126000
       const result = checkOverflow({ tokens: 90_000, modelId: 'claude-3-5-sonnet-20241022' })
 
-      expect(result.isOverflow).toBe(false) // 90000 < 100800
+      expect(result.isOverflow).toBe(false) // 90000 < 126000
       expect(result.contextWindow).toBe(200_000)
     })
 
     it('should handle models with small context windows', () => {
       // small-context-model has 48k
-      // With fallback: Available = max(48000 - 32000, 48000 * 0.5) = max(16000, 24000) = 24000
-      // Threshold at 0.6 = 14400
+      // The reply reservation is capped at a quarter: Usable = 48000 - 12000 = 36000
+      // Threshold at 0.75 = 27000
       const contextWindow = 48_000
-      const availableWindow = Math.max(contextWindow - OUTPUT_RESERVE_TOKENS, Math.floor(contextWindow * 0.5))
+      const availableWindow = usableWindow(contextWindow)
       const result = checkOverflow({ tokens: 10_000, modelId: 'small-context-model' })
 
-      expect(result.isOverflow).toBe(false) // 10000 < 14400
+      expect(result.isOverflow).toBe(false) // 10000 < 27000
       expect(result.thresholdTokens).toBe(Math.floor(availableWindow * DEFAULT_COMPACTION_THRESHOLD))
     })
 
     it('should correctly compute threshold at boundary', () => {
-      // gpt-4o: threshold = 57600
-      const threshold = Math.floor((128_000 - OUTPUT_RESERVE_TOKENS) * DEFAULT_COMPACTION_THRESHOLD)
+      // gpt-4o: threshold = 72000
+      const threshold = Math.floor(usableWindow(128_000) * DEFAULT_COMPACTION_THRESHOLD)
 
       const atThreshold = checkOverflow({ tokens: threshold, modelId: 'gpt-4o' })
       const aboveThreshold = checkOverflow({ tokens: threshold + 1, modelId: 'gpt-4o' })

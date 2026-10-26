@@ -2,7 +2,10 @@ import deepmerge from 'deepmerge'
 import { createDefaultSettings, getDefaultDocumentParser, type SettingsHostDefaults } from './settings-defaults'
 import { type Settings, SettingsSchema } from './settings-schema'
 
-export const SETTINGS_PERSIST_VERSION = 7
+export const SETTINGS_PERSIST_VERSION = 8
+
+/** Compaction threshold persisted as the default by settings versions up to 7. */
+const VERSION_7_DEFAULT_COMPACTION_THRESHOLD = 0.6
 
 export interface PersistedSettingsEnvelope {
   settings: unknown
@@ -78,6 +81,17 @@ export function migrateSettings(persisted: unknown, version: number, host: Setti
     if (Array.isArray(mcp?.enabledBuiltinServers)) {
       mcp.enabledBuiltinServers = mcp.enabledBuiltinServers.filter((id) => id !== 'edgeone-pages')
     }
+  }
+
+  // Version 8 sizes the reply reservation from the reply limit, so a stored
+  // default would trigger at a different share of small windows. Only the
+  // persisted default moves; a value the user chose keeps its setting.
+  if (
+    shouldRunMigration(7) &&
+    typeof settings.compactionThreshold === 'number' &&
+    Math.abs(settings.compactionThreshold - VERSION_7_DEFAULT_COMPACTION_THRESHOLD) < 1e-9
+  ) {
+    settings.compactionThreshold = createDefaultSettings().compactionThreshold
   }
 
   const extension = settings.extension as { documentParser?: { type?: string } } | undefined

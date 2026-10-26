@@ -1,3 +1,4 @@
+import { type AttachmentPolicy, withRequestAttachmentState } from '@shared/context/attachments'
 import type { ChatStreamOptions, ModelInterface, ModelStreamPart } from '@shared/models/types'
 import type {
   AgentModeLockReason,
@@ -15,11 +16,13 @@ import type {
 import { createMessage } from '@shared/types'
 import type { MemoryToolContext } from '@shared/types/agent-persona'
 import { resolveCommandApprovalMode } from '@shared/types/command-execution'
+import { getTokenizerType } from '@shared/token-estimation/tokenizer'
 import { getMessageText } from '@shared/utils/message'
 import { resolveReasoningProviderOptions } from '@shared/utils/reasoning-control'
 import { MAX_TOOL_CALLS_BEFORE_CONFIRMATION, shouldPauseOnToolCallLimit } from '@shared/utils/tool-call-limit-pause'
 import type { ModelMessage, ToolSet } from 'ai'
-import { isAutoCompactionEnabled } from '../application/context'
+import { isAutoCompactionEnabled, type RequestOverheadTokens } from '../application/context'
+import type { CompactionBudget } from '../application/token-estimation/math'
 import type { CompactionServiceResult, GenerationCompactionRequest } from '../application/context/compaction-types'
 import type { GenerationSegmentSplitWriter } from '../application/session/generation-segment-split'
 import { APPROVAL_RESPONSE_TIMEOUT_MS, type ApprovalDenyReason, type ApprovalPauseReason } from '../message-approval'
@@ -72,6 +75,8 @@ import {
   withToolCallLimitPause,
 } from './generation-flow'
 import { MidRunCompactionController } from './MidRunCompactionController'
+import { createModelMessageTokenCounter, textTokenCounter } from './mid-run-compaction'
+import { estimateRequestOverheadTokens } from './request-overhead'
 import type { GenerationRuntimeStore } from './runtime-store'
 import { createInitialState, processStreamChunk } from './stream-chunk-processor'
 
@@ -229,6 +234,8 @@ export interface PreparedGeneration {
   infoParts: MessageContentParts
   fallbackToolCallPart: MessageContentParts[number] | undefined
   systemPrompt?: string
+  /** How the request presented attachments. Omission means inline content without file tools. */
+  attachmentPolicy?: AttachmentPolicy
 }
 
 export interface GenerationPreparationPort<TContext> {
@@ -273,7 +280,10 @@ export interface GenerationSteeringPort {
 }
 
 export interface GenerationCompactionPort {
-  getThresholdTokens(sessionSettings: SessionSettings, globalSettings: Settings): number | null
+  /** Null disables mid-run compaction for the run. */
+  getBudget(sessionSettings: SessionSettings, globalSettings: Settings): CompactionBudget | null
+  /** Request tokens outside the conversation history, measured on this run's request. */
+  recordRequestOverhead?(sessionId: string, overhead: RequestOverheadTokens): void
   compact(
     sessionId: string,
     request: GenerationCompactionRequest,
@@ -810,13 +820,42 @@ export class GenerationService<TContext> {
       }
 
       const compaction = this.dependencies.compaction
+      const countText = textTokenCounter(
+        getTokenizerType(
+          settings.provider && settings.modelId ? { provider: settings.provider, modelId: settings.modelId } : undefined
+        )
+      )
+      const countMessageTokens = createModelMessageTokenCounter(countText)
+      const historyMessages = messages.slice(0, promptTargetMessageIndex)
+      let requestOverhead: Promise<RequestOverheadTokens> | undefined
+      const readRequestOverhead = () => {
+        requestOverhead ??= estimateRequestOverheadTokens({
+          tools: prepared.tools,
+          requestMessages: prepared.coreMessages,
+          historyMessages,
+          countText,
+          countMessage: countMessageTokens,
+        })
+        return requestOverhead
+      }
+      if (compaction?.recordRequestOverhead) {
+        void readRequestOverhead()
+          .then((overhead) => compaction.recordRequestOverhead?.(sessionId, overhead))
+          .catch((error: unknown) => {
+            this.dependencies.logger.log('warn', 'Failed to measure request overhead', { error })
+          })
+      }
       const midRunCompaction = compaction
         ? new MidRunCompactionController({
-            thresholdTokens:
+            budget:
               Object.keys(prepared.tools).length > 0 && isAutoCompactionEnabled(settings, globalSettings)
-                ? compaction.getThresholdTokens(settings, globalSettings)
+                ? compaction.getBudget(settings, globalSettings)
                 : null,
+            countMessageTokens,
+            // Step messages already carry the full system instructions; only tool definitions sit outside them.
+            getRequestOverheadTokens: () => readRequestOverhead().then((overhead) => overhead.toolTokens),
             language: globalSettings.language,
+            attachmentPolicy: prepared.attachmentPolicy,
             signal: controller.signal,
             getContentParts: () => [...infoParts, ...processorState.contentParts],
             splitPrefix: (prefix, tail) => splitGeneratingSegment(targetMessage.id, 'compacted', prefix, tail),
@@ -828,12 +867,19 @@ export class GenerationService<TContext> {
                 onlyIfGenerating: true,
               })
               if (controller.signal.aborted) return { status: 'cancelled' }
-              return compaction.compact(sessionId, request, controller.signal)
+              const result = await compaction.compact(sessionId, request, controller.signal)
+              // Stored attachment state can lag what this request was prepared with.
+              return result.status === 'compacted' && result.attachments
+                ? { ...result, attachments: withRequestAttachmentState(result.attachments, prepared.promptMessages) }
+                : result
             },
             onFailure: (error) => {
               this.dependencies.logger.log('error', 'Mid-run compaction failed; keeping the last valid context', {
                 error,
               })
+            },
+            onInsufficientHeadroom: (info) => {
+              this.dependencies.logger.log('warn', 'Mid-run compaction left the request above its threshold', info)
             },
           })
         : undefined

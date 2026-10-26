@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest'
 import { InMemoryBlobStorage } from '@chatbox/core/testing'
-import { collectWorkspaceInputs, type AttachmentMessage } from './workspace-inputs'
+import { describeCompactedAttachments } from '../context/attachments'
+import { collectWorkspaceInputs, type AttachmentMessage, workspaceInputPath } from './workspace-inputs'
 
 it('preflights streamed attachment facts and new-message images without conversation text', async () => {
   const blobs = new InMemoryBlobStorage()
@@ -23,4 +24,28 @@ it('does not return a partial workspace when the metadata source fails at comple
   await expect(collectWorkspaceInputs({}, references(), new InMemoryBlobStorage(), async () => 'hash')).rejects.toThrow(
     'Session changed'
   )
+})
+
+it('seeds the files a compaction summary references at the path its reference names', async () => {
+  const blobs = new InMemoryBlobStorage()
+  await blobs.set('raw-report', 'data:text/csv;base64,YQ==')
+  const report = {
+    id: 'report',
+    name: 'report.csv',
+    fileType: 'text/csv',
+    storageKey: 'parsed',
+    rawStorageKey: 'raw-report',
+  }
+
+  const seeded = await collectWorkspaceInputs(
+    {},
+    [{ compactedFiles: [report], contentParts: [] }],
+    blobs,
+    async () => ''
+  )
+  const reference = describeCompactedAttachments({ compactedFiles: [report] }, { workspacePath: workspaceInputPath })
+
+  const path = workspaceInputPath(report)
+  expect(Object.keys(seeded)).toEqual([path])
+  expect(reference).toContain(`<WORKSPACE_PATH>${path}</WORKSPACE_PATH>`)
 })

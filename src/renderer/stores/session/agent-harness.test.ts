@@ -138,7 +138,12 @@ import {
   getCopilotMemorySelection,
   removeMyCopilot,
 } from '@/stores/copilotStore'
-import { computeEffectiveAgentMode, prepareAgentGenerationHarness } from './agent-harness'
+import platform from '@/platform'
+import {
+  computeEffectiveAgentMode,
+  prepareAgentGenerationHarness,
+  refreshSessionAttachmentStatuses,
+} from './agent-harness'
 import * as toolsBuilder from './tools-builder'
 
 function createMockModel(overrides?: Partial<ModelInterface>): ModelInterface {
@@ -226,6 +231,37 @@ describe('computeEffectiveAgentMode', () => {
   test('treats auto and off as off when supported (auto only triggers the suggestion)', () => {
     expect(computeEffectiveAgentMode('auto', true)).toBe('off')
     expect(computeEffectiveAgentMode('off', true)).toBe('off')
+  })
+})
+
+describe('refreshSessionAttachmentStatuses', () => {
+  test('refreshes the index state of retrieval files a compaction summary references', async () => {
+    const file = {
+      id: 'pdf',
+      name: 'large.pdf',
+      fileType: 'application/pdf',
+      storageKey: 'parsed-pdf',
+      ragMode: 'session-retrieval' as const,
+      sessionAttachmentId: 7,
+      sessionAttachmentIndexStatus: 'pending' as const,
+      sessionAttachmentStatus: 'pending' as const,
+    }
+    const getAttachments = vi.fn(async () => [{ id: 7, availability: 'allowed', indexStatus: 'ready', chunkCount: 4 }])
+    Object.assign(platform, { isDesktopLike: true, getSessionAttachmentRagController: () => ({ getAttachments }) })
+    try {
+      const [summary] = await refreshSessionAttachmentStatuses([
+        { id: 'summary', role: 'assistant', isSummary: true, contentParts: [], compactedFiles: [file] },
+      ])
+
+      expect(getAttachments).toHaveBeenCalledWith([7])
+      expect(summary.compactedFiles?.[0]).toMatchObject({
+        sessionAttachmentIndexStatus: 'ready',
+        sessionAttachmentStatus: 'ready',
+        sessionAttachmentChunkCount: 4,
+      })
+    } finally {
+      Object.assign(platform, { isDesktopLike: undefined, getSessionAttachmentRagController: undefined })
+    }
   })
 })
 

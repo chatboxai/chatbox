@@ -3,7 +3,8 @@ import { buildCompactionHandoff } from '@shared/context/compaction-handoff'
 import type { MessageContentParts } from '@shared/types'
 import type { ModelMessage } from 'ai'
 import { describe, it } from 'vitest'
-import { MidRunCompactionController } from './MidRunCompactionController'
+import { getCompactionBudget } from '../application/token-estimation/math'
+import { MidRunCompactionController, type MidRunCompactionOptions } from './MidRunCompactionController'
 import { collectToolCallIds, estimateModelMessagesTokens } from './mid-run-compaction'
 
 function round(id: string, chars = 20_000): ModelMessage[] {
@@ -23,7 +24,8 @@ function round(id: string, chars = 20_000): ModelMessage[] {
   ]
 }
 
-function harness(threshold = 57_600, language?: string) {
+/** A 100K window: 25.6K reply reservation, 76.8K usable, compaction above 57.6K. */
+function harness(contextWindow = 102_400, language?: string, extra: Partial<MidRunCompactionOptions> = {}) {
   const abort = new AbortController()
   const source: ModelMessage[] = [
     { role: 'system', content: 'system' },
@@ -37,7 +39,8 @@ function harness(threshold = 57_600, language?: string) {
   let fail: 'throw' | 'false' | 'boundary' | 'busy' | 'backup_busy' | 'stale_path' | undefined
   let declineSplit = false
   const controller = new MidRunCompactionController({
-    thresholdTokens: threshold,
+    budget: getCompactionBudget(contextWindow),
+    ...extra,
     language,
     signal: abort.signal,
     getTargetMessageId: () => currentId,
@@ -228,7 +231,7 @@ describe('MidRunCompactionController', () => {
     assert.equal(await h.controller.prepareStep(h.source, 0), h.source)
     assert.equal(h.compactions, 0)
     const disabled = new MidRunCompactionController({
-      thresholdTokens: null,
+      budget: null,
       signal: h.abort.signal,
       getTargetMessageId: () => 'assistant',
       getContentParts: () => [],
@@ -240,5 +243,53 @@ describe('MidRunCompactionController', () => {
       },
     })
     assert.equal(await disabled.prepareStep(h.source, 1), h.source)
+  })
+
+  it('waits for growth when fixed content keeps a compacted request above the threshold', async () => {
+    const headroom: Array<{ tokens: number; thresholdTokens: number }> = []
+    // 16K window: 12,288 usable, threshold 9,216, 1,843 growth between compactions.
+    const h = harness(16_384, undefined, { onInsufficientHeadroom: (info) => headroom.push(info) })
+    h.source[0] = { role: 'system', content: 'x'.repeat(37_000) }
+    for (let step = 1; step <= 20; step += 1) {
+      h.append(`t${step}`, 2_000)
+      const effective = await h.controller.prepareStep(h.source, step)
+      assert.ok(collectToolCallIds(effective).has(`t${step}`), 'the newest result must survive')
+    }
+    assert.ok(headroom.length > 0 && headroom.every((info) => info.tokens > info.thresholdTokens))
+    // Each round adds ~500 tokens, so a compaction waits about four rounds instead of running every step.
+    assert.ok(h.compactions >= 3 && h.compactions <= 6, `compacted ${h.compactions} times in 20 steps`)
+  })
+
+  it('counts request overhead such as tool definitions toward the threshold', async () => {
+    const withoutOverhead = harness(16_384)
+    const withOverhead = harness(16_384, undefined, { getRequestOverheadTokens: async () => 6_000 })
+    for (const h of [withoutOverhead, withOverhead]) {
+      for (let step = 1; step <= 6; step += 1) h.append(`t${step}`, 2_000)
+      await h.controller.prepareStep(h.source, 6)
+    }
+    assert.equal(withoutOverhead.compactions, 0)
+    assert.equal(withOverhead.compactions, 1)
+  })
+
+  it('retains more of the recent run when a compaction has room below its target', async () => {
+    const h = harness(16_384)
+    for (let step = 1; step <= 20; step += 1) h.append(`t${step}`, 2_000)
+    const effective = await h.controller.prepareStep(h.source, 20)
+    assert.equal(h.compactions, 1)
+    // Target 6,144 less the 1,228 summary allowance leaves room for nine ~510-token rounds.
+    assert.ok(collectToolCallIds(effective).size >= 8, `kept ${collectToolCallIds(effective).size} rounds`)
+    assert.ok(estimateModelMessagesTokens(effective) <= getCompactionBudget(16_384)!.targetTokens)
+  })
+
+  it('leaves the request below a low threshold instead of compacting to half the usable window', async () => {
+    const headroom: Array<{ tokens: number; thresholdTokens: number }> = []
+    const budget = getCompactionBudget(16_384, { compactionThreshold: 0.4 })!
+    const h = harness(16_384, undefined, { budget, onInsufficientHeadroom: (info) => headroom.push(info) })
+    for (let step = 1; step <= 12; step += 1) h.append(`t${step}`, 2_000)
+    const effective = await h.controller.prepareStep(h.source, 12)
+    assert.equal(h.compactions, 1)
+    // Half the usable window (6,144) would sit above the 4,915 trigger; the target follows the threshold down.
+    assert.ok(estimateModelMessagesTokens(effective) <= (budget.thresholdTokens * 2) / 3)
+    assert.deepEqual(headroom, [])
   })
 })

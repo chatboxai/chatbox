@@ -2,6 +2,7 @@ import { createMemoryToolContext, type MemoryToolContext } from '@chatbox/core/a
 import type { SessionContextBeforeTarget, SessionHeader } from '@chatbox/core/ports'
 import { buildAgentPersonaPrompt, buildMemoriesSection } from '@shared/agent-persona/prompt'
 import { buildContext, flattenToolCallPartsToText } from '@shared/context'
+import type { AttachmentPolicy } from '@shared/context/attachments'
 import type { AttachmentResolver } from '@shared/context/types'
 import { ChatboxAIAPIError, OCRError } from '@shared/models/errors'
 import type { ChatStreamOptions, ModelInterface } from '@shared/models/types'
@@ -17,6 +18,7 @@ import type {
   KnowledgeBase,
   Message,
   MessageContentParts,
+  MessageFile,
   SessionPromptContextSnapshot,
   SessionSettings,
   Settings,
@@ -110,6 +112,7 @@ export interface PreparedAgentGenerationHarness {
   infoParts: MessageContentParts
   fallbackToolCallPart: MessageContentParts[number] | undefined
   systemPrompt: string | undefined
+  attachmentPolicy: AttachmentPolicy
   sandboxProvider: SandboxProvider | null
   debug: {
     effectiveAgentMode: 'on' | 'off'
@@ -132,7 +135,7 @@ export async function refreshSessionAttachmentStatuses(messages: Message[]): Pro
   const ids = Array.from(
     new Set(
       messages.flatMap((message) =>
-        (message.files ?? [])
+        [...(message.files ?? []), ...(message.compactedFiles ?? [])]
           .filter((file) => file.sessionAttachmentId)
           .map((file) => file.sessionAttachmentId as number)
       )
@@ -157,32 +160,35 @@ export async function refreshSessionAttachmentStatuses(messages: Message[]): Pro
   const embeddedChunksMap = new Map(attachments.map((attachment) => [attachment.id, attachment.embeddedChunks]))
   const indexingStageMap = new Map(attachments.map((attachment) => [attachment.id, attachment.indexingStage]))
 
-  return messages.map((message) => {
-    if (!message.files?.length) {
-      return message
+  const refresh = (file: MessageFile): MessageFile => {
+    if (!file.sessionAttachmentId) {
+      return file
     }
+    return {
+      ...file,
+      sessionAttachmentAvailability:
+        availabilityMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentAvailability,
+      sessionAttachmentIndexStatus: indexStatusMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentIndexStatus,
+      sessionAttachmentStatus: indexStatusMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentStatus,
+      sessionAttachmentChunkCount: chunkCountMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentChunkCount,
+      sessionAttachmentTotalChunks: totalChunksMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentTotalChunks,
+      sessionAttachmentEmbeddedChunks:
+        embeddedChunksMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentEmbeddedChunks,
+      sessionAttachmentIndexingStage:
+        indexingStageMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentIndexingStage,
+    }
+  }
 
-    const files = message.files.map((file) => {
-      if (!file.sessionAttachmentId) {
-        return file
-      }
-      return {
-        ...file,
-        sessionAttachmentAvailability:
-          availabilityMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentAvailability,
-        sessionAttachmentIndexStatus: indexStatusMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentIndexStatus,
-        sessionAttachmentStatus: indexStatusMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentStatus,
-        sessionAttachmentChunkCount: chunkCountMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentChunkCount,
-        sessionAttachmentTotalChunks: totalChunksMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentTotalChunks,
-        sessionAttachmentEmbeddedChunks:
-          embeddedChunksMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentEmbeddedChunks,
-        sessionAttachmentIndexingStage:
-          indexingStageMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentIndexingStage,
-      }
-    })
-
-    return { ...message, files }
-  })
+  // A summary references covered retrieval files with the same live index state.
+  return messages.map((message) =>
+    message.files?.length || message.compactedFiles?.length
+      ? {
+          ...message,
+          ...(message.files ? { files: message.files.map(refresh) } : {}),
+          ...(message.compactedFiles ? { compactedFiles: message.compactedFiles.map(refresh) } : {}),
+        }
+      : message
+  )
 }
 
 export async function prepareAgentGenerationHarness(
@@ -264,12 +270,15 @@ export async function prepareAgentGenerationHarness(
     // the model restarts the task from scratch.
     message.id === resumedMessage?.id && message.generating ? { ...message, generating: false } : message
   )
+  const attachmentPolicy = {
+    modelSupportToolUseForFile: model.isSupportToolUse('read-file'),
+    sandboxMode: canExecuteCode,
+  }
   let promptMsgs = await buildContext(messagesForPrompt, {
     attachmentResolver,
     compactionPoints,
-    modelSupportToolUseForFile: model.isSupportToolUse('read-file'),
+    ...attachmentPolicy,
     maxContextMessageCount: settings.maxContextMessageCount,
-    sandboxMode: canExecuteCode,
     language: globalSettings.language,
   })
 
@@ -528,6 +537,7 @@ export async function prepareAgentGenerationHarness(
     infoParts,
     fallbackToolCallPart,
     systemPrompt,
+    attachmentPolicy,
     sandboxProvider,
     debug: {
       effectiveAgentMode,

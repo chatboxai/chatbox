@@ -74,7 +74,7 @@ vi.mock('@/stores/session/message-queue', () => ({
 }))
 
 import { rendererApplication } from '@/app/renderer-application'
-import { requestManualCompaction, runCompactionWithUIState } from './compaction'
+import { recordRequestOverhead, requestManualCompaction, runCompactionWithUIState } from './compaction'
 let repository: InMemorySessionRepository
 let sessions: SessionService
 
@@ -129,7 +129,7 @@ afterEach(async () => {
 })
 
 describe('runCompactionWithUIState', () => {
-  it('estimates once and reads a separate row context for accepted automatic compaction', async () => {
+  it('decides with one estimate, plans from a separate row context, then measures the compacted size', async () => {
     const estimate = estimateMock.mockResolvedValueOnce({ totalTokens: 1_000_000 })
     getSessionSettingsMock.mockResolvedValue({ maxContextMessageCount: 20 })
     generateSummaryWithStreamMock.mockResolvedValueOnce({ success: true, summary: 'Summary' })
@@ -140,8 +140,9 @@ describe('runCompactionWithUIState', () => {
     try {
       const result = await runCompactionWithUIState('session-1', { kind: 'automatic' })
       expect(result.status).toBe('compacted')
-      expect(estimate).toHaveBeenCalledOnce()
-      expect(getSessionHeaderMock).toHaveBeenCalledTimes(2)
+      expect(estimate).toHaveBeenCalledTimes(2)
+      expect(estimate.mock.calls[1][0]).toMatchObject({ constructedMessage: undefined })
+      expect(getSessionHeaderMock).toHaveBeenCalledTimes(3)
       expect(getSessionContextSourceMock).toHaveBeenCalledOnce()
       expect(getSessionContextSourceMock).toHaveBeenCalledWith({
         sessionId: 'session-1',
@@ -154,6 +155,22 @@ describe('runCompactionWithUIState', () => {
     } finally {
       unsubscribe()
     }
+  })
+
+  it('adds the recorded tools and extra instructions to the history estimate', async () => {
+    // Unknown model: 128K fallback window, 96K usable, compaction above 72K.
+    estimateMock.mockResolvedValueOnce({ totalTokens: 70_000 })
+    await expect(runCompactionWithUIState('session-1', { kind: 'automatic' })).resolves.toEqual({
+      status: 'skipped',
+      reason: 'not_needed',
+    })
+
+    recordRequestOverhead('session-1', { toolTokens: 2_000, extraSystemTokens: 3_000 })
+    estimateMock.mockResolvedValueOnce({ totalTokens: 70_000 })
+    generateSummaryWithStreamMock.mockResolvedValueOnce({ success: true, summary: 'Summary' })
+    await expect(runCompactionWithUIState('session-1', { kind: 'automatic' })).resolves.toMatchObject({
+      status: 'compacted',
+    })
   })
 
   it('keeps completed feedback when a subsequent automatic run needs no compaction', async () => {

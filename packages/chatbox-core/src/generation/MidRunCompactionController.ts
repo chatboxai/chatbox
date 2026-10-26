@@ -1,22 +1,34 @@
+import { type AttachmentPolicy, describeCompactedAttachments } from '@shared/context/attachments'
 import type { MessageContentParts } from '@shared/types'
 import type { ModelMessage } from 'ai'
 import type { CompactionServiceResult, GenerationCompactionRequest } from '../application/context/compaction-types'
 import {
+  type CompactionBudget,
+  getRetainedTailTokens,
+  shouldCompactAtTokens,
+} from '../application/token-estimation/math'
+import {
   collectToolCallIds,
+  estimateModelMessageTokens,
   estimateModelMessagesTokens,
   findKeptContentPartStartIndex,
   findKeptModelMessageStartIndex,
   firstToolCallIdInMessages,
   resolveKeptModelMessageStartIndex,
-  retainTokensForThreshold,
   rewriteModelMessagesWithSummary,
 } from './mid-run-compaction'
 
 export interface MidRunCompactionOptions {
   /** Null disables this run's automatic compaction. */
-  thresholdTokens: number | null
+  budget: CompactionBudget | null
+  /** Counts one request message with the request's tokenizer. */
+  countMessageTokens?(message: ModelMessage): number
+  /** Request tokens sent outside the messages, such as tool definitions. Read once per run. */
+  getRequestOverheadTokens?(): Promise<number>
   /** App language code for the summary handoff wording. */
   language?: string
+  /** How the request presents attachments; the summary references covered ones the same way. */
+  attachmentPolicy?: AttachmentPolicy
   signal: AbortSignal
   getContentParts(): MessageContentParts
   /** True only when both the prefix and continuation are durable. */
@@ -24,6 +36,8 @@ export interface MidRunCompactionOptions {
   getTargetMessageId(): string
   compact(request: GenerationCompactionRequest): Promise<CompactionServiceResult>
   onFailure?(error: unknown): void
+  /** A compaction left the request above the threshold: fixed content dominates the window. */
+  onInsufficientHeadroom?(info: { tokens: number; thresholdTokens: number }): void
 }
 
 type Rewrite = { summary: string; keepToolCallId: string }
@@ -36,8 +50,19 @@ type Rewrite = { summary: string; keepToolCallId: string }
 export class MidRunCompactionController {
   private rewrite: Rewrite | undefined
   private failed = false
+  /** Request size the last compaction left; the next one waits for growth past it. */
+  private compactedTokens: number | undefined
+  private requestOverhead: Promise<number> | undefined
+  private readonly countMessage: (message: ModelMessage) => number
 
-  constructor(private readonly options: MidRunCompactionOptions) {}
+  constructor(private readonly options: MidRunCompactionOptions) {
+    this.countMessage = options.countMessageTokens ?? ((message) => estimateModelMessageTokens(message))
+  }
+
+  private readRequestOverhead(): Promise<number> {
+    this.requestOverhead ??= (this.options.getRequestOverheadTokens?.() ?? Promise.resolve(0)).catch(() => 0)
+    return this.requestOverhead
+  }
 
   async prepareStep(source: ModelMessage[], stepNumber: number): Promise<ModelMessage[]> {
     let effective = source
@@ -53,21 +78,26 @@ export class MidRunCompactionController {
       effective = rewriteModelMessagesWithSummary(source, this.rewrite.summary, previousStart, this.options.language)
     }
 
-    const { thresholdTokens, signal } = this.options
-    if (
-      this.failed ||
-      signal.aborted ||
-      stepNumber <= 0 ||
-      thresholdTokens === null ||
-      thresholdTokens <= 0 ||
-      estimateModelMessagesTokens(effective) <= thresholdTokens
-    )
-      return effective
+    const { budget, signal } = this.options
+    if (this.failed || signal.aborted || stepNumber <= 0 || !budget) return effective
+    const overhead = await this.readRequestOverhead()
+    const tokens = estimateModelMessagesTokens(effective, this.countMessage) + overhead
+    if (signal.aborted || !shouldCompactAtTokens(budget, tokens, this.compactedTokens)) return effective
 
     // Plan against the EFFECTIVE window, then resolve the stable boundary in
     // the SDK's original transcript. This also prevents a later compact from
     // moving the retained boundary backwards into an already-summarized prefix.
-    const effectiveStart = findKeptModelMessageStartIndex(effective, retainTokensForThreshold(thresholdTokens))
+    const fixedTokens =
+      overhead +
+      estimateModelMessagesTokens(
+        effective.filter((message) => message.role === 'system'),
+        this.countMessage
+      )
+    const effectiveStart = findKeptModelMessageStartIndex(
+      effective,
+      getRetainedTailTokens(budget, fixedTokens),
+      this.countMessage
+    )
     if (effectiveStart <= 0) return effective
     const keepToolCallId = firstToolCallIdInMessages(effective.slice(effectiveStart))
     if (!keepToolCallId) return effective
@@ -113,8 +143,19 @@ export class MidRunCompactionController {
         this.failed = true
         return effective
       }
-      this.rewrite = { summary: result.summary, keepToolCallId }
-      return rewriteModelMessagesWithSummary(source, result.summary, keepStart, this.options.language)
+      // Covered attachments leave the request with their messages; the summary keeps their paths.
+      const summary =
+        result.summary + describeCompactedAttachments(result.attachments ?? {}, this.options.attachmentPolicy)
+      this.rewrite = { summary, keepToolCallId }
+      const rewritten = rewriteModelMessagesWithSummary(source, summary, keepStart, this.options.language)
+      this.compactedTokens = estimateModelMessagesTokens(rewritten, this.countMessage) + overhead
+      if (this.compactedTokens > budget.thresholdTokens) {
+        this.options.onInsufficientHeadroom?.({
+          tokens: this.compactedTokens,
+          thresholdTokens: budget.thresholdTokens,
+        })
+      }
+      return rewritten
     } catch (error) {
       // Keep the LAST successful rewrite when a later compact fails; falling
       // back to the raw SDK transcript would resurrect every discarded prefix.

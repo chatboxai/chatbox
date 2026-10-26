@@ -3,7 +3,7 @@
  * Platform abstraction for attachment handling
  */
 
-import type { CompactionPoint } from '../types'
+import type { CompactionPoint, MessageFile } from '../types'
 
 /**
  * Platform abstraction for reading attachments
@@ -56,4 +56,10 @@ export interface ContextBuilderOptions extends ContextPreparationOptions {
    * Default: false
    */
   sandboxMode?: boolean
+
+  /**
+   * Where the host's workspace tools find an uploaded file. A compaction
+   * summary points its references to covered files there.
+   */
+  workspacePath?: (file: MessageFile) => string | undefined
 }

@@ -7,6 +7,7 @@ import { throwIfWorkAborted } from '@shared/mobile-work/abort'
 import { LocalWorkMode, WORK_INSTRUCTIONS } from '@shared/mobile-work/LocalWorkMode'
 import { workModelDisclosure } from '@shared/mobile-work/model-disclosure'
 import { buildLocalViewImage } from '@shared/mobile-work/view-image'
+import { workspaceInputPath } from '@shared/mobile-work/workspace-inputs'
 import type { ModelInterface } from '@shared/models/types'
 import { supportsToolResultImages } from '@shared/tools/view-image'
 import type { ModelDependencies } from '@shared/types/adapters'
@@ -106,6 +107,7 @@ export async function prepareCapacitorWorkMode(
     { ...web.tools, ...images?.tools, ...memory.tools, ...mcp.tools }
   )
   const prepared = await new BasicGenerationPreparation<ModelDependencies>({
+    attachmentPolicy: { workspacePath: workspaceInputPath },
     prepareTools: async () => ({
       ...memory,
       tools,

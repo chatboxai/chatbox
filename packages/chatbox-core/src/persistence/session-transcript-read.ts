@@ -1,10 +1,6 @@
 import { DEFAULT_TRANSCRIPT_PAGE_BYTES } from '../ports/session-transcript-source'
 import { SessionRowConflictError, type SessionRowCommit } from '../ports/session-row-store'
 import type {
-  SessionNavigationRepairRequest,
-  SessionMessageNavigationProjection,
-  SessionNavigationEntry,
-  SessionNavigationPage,
   SessionTranscriptCursor,
   SessionTranscriptPage,
   SessionTranscriptRequest,
@@ -17,7 +13,6 @@ export interface TranscriptMessageMetadata extends MessageRowMetadata {
 
   payloadBytes: number
   selectedDepth?: number
-  navigation?: SessionMessageNavigationProjection
 }
 
 /** All calls belong to one transaction or are fenced by the enclosing reader's revision. */
@@ -53,25 +48,6 @@ export function transcriptThread(thread: ThreadRow): SessionTranscriptThread {
   }
 }
 
-export function navigationProjection(message: MessageRow['message']): SessionMessageNavigationProjection {
-  const chunks: string[] = []
-  let remaining = 300
-  for (const part of message.contentParts ?? []) {
-    if (remaining <= 0) break
-    const text = part.type === 'text' ? part.text : part.type === 'image' ? '[image]' : ''
-    if (!text) continue
-    const separator = chunks.length ? '\n' : ''
-    const chunk = (separator + text).slice(0, remaining)
-    chunks.push(chunk)
-    remaining -= chunk.length
-  }
-  return {
-    role: message.role,
-    eligible: !message.isSummary && !message.backgroundTask,
-    preview: chunks.join('').trim(),
-  }
-}
-
 export { DEFAULT_TRANSCRIPT_PAGE_BYTES } from '../ports/session-transcript-source'
 
 export function validateTranscriptRequest(request: SessionTranscriptRequest): void {
@@ -88,7 +64,7 @@ export function validateTranscriptRequest(request: SessionTranscriptRequest): vo
       cursor.sessionId !== request.sessionId ||
       cursor.limit !== limit ||
       cursor.maxBytes !== (request.maxBytes ?? DEFAULT_TRANSCRIPT_PAGE_BYTES) ||
-      (cursor.scope !== 'transcript' && cursor.scope !== 'navigation') ||
+      cursor.scope !== 'transcript' ||
       !cursor.threadId ||
       !Number.isSafeInteger(cursor.threadSeq) ||
       cursor.threadSeq < -1 ||
@@ -158,15 +134,12 @@ async function selectPage(
   request: SessionTranscriptRequest,
   commit: SessionRowCommit,
   reader: SessionTranscriptReader,
-  scope: 'transcript' | 'navigation',
   previousBytes?: number
 ): Promise<SelectedPage> {
   validateTranscriptRequest(request)
   assertTranscriptRevision(request, commit.revision)
-  if (request.cursor && request.cursor.scope !== scope)
-    throw new Error('Transcript cursor belongs to another projection')
   const origin = request.origin ?? 'tail'
-  if (typeof origin === 'object' && origin.align === 'center') return selectCenteredPage(request, commit, reader, scope)
+  if (typeof origin === 'object' && origin.align === 'center') return selectCenteredPage(request, commit, reader)
   const direction =
     request.cursor?.direction ??
     (origin === 'tail' || (typeof origin === 'object' && 'edge' in origin && origin.edge === 'tail')
@@ -220,7 +193,7 @@ async function selectPage(
       bufferedIndex = 0
     }
     let row: TranscriptMessageMetadata
-    if (scope === 'transcript' && reader.messagePath) {
+    if (reader.messagePath) {
       if (bufferedIndex === buffered.length) {
         buffered = await reader.messagePath(thread.threadId, nextId, direction, {
           limit: request.limit - selected.length + Number(skip),
@@ -243,10 +216,7 @@ async function selectPage(
       (row.activeChildId === null) !== (row.messageId === thread.activeLeafMessageId)
     )
       throw new Error('Transcript thread boundaries are inconsistent')
-    const bytes =
-      scope === 'transcript'
-        ? row.payloadBytes
-        : new TextEncoder().encode(JSON.stringify(row.navigation ?? null)).length
+    const bytes = row.payloadBytes
     if (!Number.isSafeInteger(bytes) || bytes < 0) throw new Error('Invalid transcript payload size')
     if (
       !skip &&
@@ -277,7 +247,7 @@ async function selectPage(
       direction: side,
       limit: request.limit,
       maxBytes,
-      scope,
+      scope: 'transcript',
     }
   }
   if (origin === 'tail' && !request.cursor) {
@@ -298,13 +268,12 @@ async function selectPage(
 async function selectCenteredPage(
   request: SessionTranscriptRequest,
   commit: SessionRowCommit,
-  reader: SessionTranscriptReader,
-  scope: 'transcript' | 'navigation'
+  reader: SessionTranscriptReader
 ): Promise<SelectedPage> {
   const origin = request.origin
   if (typeof origin !== 'object') throw new Error('A centered transcript page requires a target')
   const { align: _align, ...target } = origin
-  const page = await selectPage({ ...request, origin: target, limit: 1 }, commit, reader, scope)
+  const page = await selectPage({ ...request, origin: target, limit: 1 }, commit, reader)
   const threads = new Map(page.threads.map((thread) => [thread.threadId, thread]))
   const maxBytes = request.maxBytes ?? DEFAULT_TRANSCRIPT_PAGE_BYTES
   const extend = async (direction: 'before' | 'after', limit: number) => {
@@ -314,7 +283,6 @@ async function selectCenteredPage(
       { ...request, origin: undefined, cursor: { ...cursor, limit }, limit },
       commit,
       reader,
-      scope,
       page.payloadBytes
     )
     if (!adjacent.rows.length) return
@@ -348,7 +316,7 @@ export async function readTranscriptPage(
   commit: SessionRowCommit,
   reader: SessionTranscriptReader
 ): Promise<SessionTranscriptPage> {
-  const page = await selectPage(request, commit, reader, 'transcript')
+  const page = await selectPage(request, commit, reader)
   const messages = await reader.payloads(page.rows.map((row) => row.messageId))
   if (
     messages.length !== page.rows.length ||
@@ -357,54 +325,4 @@ export async function readTranscriptPage(
     throw new Error('Transcript payload selection is incomplete')
   const { rows: _rows, ...metadata } = page
   return { ...commit, ...metadata, messages, forks: page.rows.flatMap((row) => (row.fork ? [row.fork] : [])) }
-}
-
-export async function readNavigationPage(
-  request: SessionTranscriptRequest,
-  commit: SessionRowCommit,
-  reader: SessionTranscriptReader
-): Promise<SessionNavigationPage> {
-  const page = await selectPage(request, commit, reader, 'navigation')
-  const entries: SessionNavigationEntry[] = []
-  const needsProjection: string[] = []
-  let pending: SessionNavigationEntry | undefined
-  let leadingAssistant: SessionNavigationPage['leadingAssistant']
-  let leading = true
-  for (const row of page.rows) {
-    if (pending?.threadId !== row.threadId) pending = undefined
-    const projection = row.navigation
-    if (!projection) {
-      needsProjection.push(row.messageId)
-      pending = undefined
-      leading = false
-      continue
-    }
-    if (!projection.eligible) continue
-    if (projection.role === 'user') {
-      leading = false
-      pending = { threadId: row.threadId, messageId: row.messageId, preview: projection.preview }
-      entries.push(pending)
-    } else if (projection.role === 'assistant' && leading && !leadingAssistant) {
-      leadingAssistant = { threadId: row.threadId, messageId: row.messageId, preview: projection.preview }
-    } else if (projection.role === 'assistant' && pending) {
-      pending.assistantMessageId = row.messageId
-      pending.assistantPreview = projection.preview
-      pending = undefined
-    }
-  }
-  if (pending && page.rows.at(-1)?.threadId === pending.threadId && page.rows.at(-1)?.activeChildId !== null)
-    pending.assistantPending = true
-  const { rows: _rows, payloadBytes: _bytes, ...metadata } = page
-  return { ...commit, ...metadata, entries, needsProjection, ...(leadingAssistant ? { leadingAssistant } : {}) }
-}
-
-export function validateNavigationRepair(request: SessionNavigationRepairRequest): void {
-  if (
-    !request.sessionId ||
-    !Number.isSafeInteger(request.expectedRevision) ||
-    request.expectedRevision < 1 ||
-    request.messageIds.length > 200 ||
-    request.messageIds.some((id) => typeof id !== 'string' || !id)
-  )
-    throw new Error('Invalid navigation projection batch')
 }

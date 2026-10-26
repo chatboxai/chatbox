@@ -23,11 +23,7 @@ import type {
 import type { SessionContextRequest } from '../../ports/session-context-source'
 import type { SessionMessageDerivedWriteResult } from '../../ports/session-message-source'
 import type { SessionMessagesRequest, SessionThreadPageRequest } from '../../ports/session-row-store'
-import type {
-  SessionTranscriptRequest,
-  SessionThreadRequest,
-  SessionNavigationRepairRequest,
-} from '../../ports/session-transcript-source'
+import type { SessionTranscriptRequest, SessionThreadRequest } from '../../ports/session-transcript-source'
 import type { SessionTextTokenResult, SessionTextTokenWriteResult } from '../../ports/session-text-tokens'
 import type {
   Message,
@@ -217,16 +213,6 @@ export class SessionService {
     this.disposed = true
     this.resetGenerationRecovery()
     this.unsubscribeRecoveryEvents()
-  }
-
-  async readSessionNavigationPage(request: SessionTranscriptRequest) {
-    await this.initialize()
-    return this.repository.readSessionNavigationPage(request)
-  }
-
-  async repairSessionNavigationProjections(request: SessionNavigationRepairRequest) {
-    await this.initialize()
-    return this.repository.repairSessionNavigationProjections(request)
   }
 
   async readSessionThread(request: SessionThreadRequest) {

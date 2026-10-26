@@ -31,8 +31,6 @@ import {
   validTokenCacheResult,
 } from '../ports/session-token-cache'
 import type {
-  SessionNavigationPage,
-  SessionNavigationRepairRequest,
   SessionThreadRead,
   SessionThreadRequest,
   SessionTranscriptPage,
@@ -54,13 +52,10 @@ import { createTextTokenSource, isValidTextTokenResult } from './session-text-to
 import { assertSessionThreadPageRevision, validateSessionThreadPageRequest } from './session-thread-page'
 import {
   assertTranscriptRevision,
-  navigationProjection,
-  readNavigationPage,
   readTranscriptPage,
   type SessionTranscriptReader,
   transcriptOrder,
   transcriptThread,
-  validateNavigationRepair,
   validateTranscriptRequest,
 } from './session-transcript-read'
 
@@ -152,18 +147,12 @@ export class InMemorySessionRowStore implements SessionRowStorePort {
   private readonly sessions = new Map<string, SessionRowState>()
   private readonly revisions = new Map<string, number>()
   private readonly payloadBytes = new Map<string, Map<string, number>>()
-  private readonly navigation = new Map<string, Map<string, ReturnType<typeof navigationProjection>>>()
   private readonly orderedThreads = new Map<string, ThreadRow[]>()
   initializeCount = 0
 
   initialize(): Promise<void> {
     this.initializeCount += 1
     return Promise.resolve()
-  }
-
-  async repairNavigationProjections(request: SessionNavigationRepairRequest): Promise<void> {
-    validateNavigationRepair(request)
-    assertSessionReadRevision(request, this.revisions.get(request.sessionId) ?? null)
   }
 
   private relationReader(sessionId: string, state: SessionRowState): SessionRelationReader {
@@ -304,7 +293,6 @@ export class InMemorySessionRowStore implements SessionRowStorePort {
 
   private transcriptReader(sessionId: string, state: SessionRowState): SessionTranscriptReader {
     const ordered = this.orderedThreads.get(sessionId) ?? []
-    const previews = this.navigation.get(sessionId)
     const sizes = this.payloadBytes.get(sessionId)
     return {
       thread: async (id) => {
@@ -331,7 +319,7 @@ export class InMemorySessionRowStore implements SessionRowStorePort {
         const row = state.messages.get(id)
         if (!row) return null
         const { message, ...metadata } = row
-        return { ...metadata, payloadBytes: sizes?.get(id) ?? 0, navigation: previews?.get(id) }
+        return { ...metadata, payloadBytes: sizes?.get(id) ?? 0 }
       },
       payloads: async (ids) =>
         ids.map((id) => {
@@ -371,15 +359,6 @@ export class InMemorySessionRowStore implements SessionRowStorePort {
     assertTranscriptRevision(request, this.revisions.get(request.sessionId) ?? null)
     return state
       ? clone(await readTranscriptPage(request, state, this.transcriptReader(request.sessionId, state)))
-      : null
-  }
-
-  async readNavigationPage(request: SessionTranscriptRequest): Promise<SessionNavigationPage | null> {
-    validateTranscriptRequest(request)
-    const state = this.sessions.get(request.sessionId)
-    assertTranscriptRevision(request, this.revisions.get(request.sessionId) ?? null)
-    return state
-      ? clone(await readNavigationPage(request, state, this.transcriptReader(request.sessionId, state)))
       : null
   }
 
@@ -626,10 +605,6 @@ export class InMemorySessionRowStore implements SessionRowStorePort {
     } catch (error) {
       return Promise.reject(new SessionRowStoreError('write-rows', error, rows.sessionId))
     }
-    this.navigation.set(
-      rows.sessionId,
-      new Map(rows.messages.map((row) => [row.messageId, navigationProjection(row.message)]))
-    )
     this.replacePayloadIds(
       rows.sessionId,
       new Map(rows.messages.map((row) => [row.messageId, `${rows.sessionId}:${row.messageId}:${uuid()}`]))
@@ -711,10 +686,6 @@ export class InMemorySessionRowStore implements SessionRowStorePort {
         return Promise.reject(new SessionRowStoreError('apply-diff', error, diff.sessionId))
       }
     }
-    const previews = new Map(this.navigation.get(diff.sessionId))
-    for (const row of diff.messages.upsert) previews.set(row.messageId, navigationProjection(row.message))
-    for (const id of diff.messages.delete) previews.delete(id)
-    this.navigation.set(diff.sessionId, previews)
     const payloads = new Map(this.payloadIds.get(diff.sessionId))
     for (const row of diff.messages.upsert) payloads.set(row.messageId, `${diff.sessionId}:${row.messageId}:${uuid()}`)
     for (const id of payloads.keys()) if (!next.messages.has(id)) payloads.delete(id)
@@ -767,7 +738,6 @@ export class InMemorySessionRowStore implements SessionRowStorePort {
     this.childrenIndex.delete(sessionId)
     this.threadSummaryIndex.delete(sessionId)
     this.orderedThreads.delete(sessionId)
-    this.navigation.delete(sessionId)
     this.payloadBytes.delete(sessionId)
     if (actualRevision !== null) this.revisions.set(sessionId, actualRevision + 1)
     return Promise.resolve()
@@ -804,7 +774,6 @@ export class InMemorySessionRowStore implements SessionRowStorePort {
     this.childrenIndex.clear()
     this.threadSummaryIndex.clear()
     this.orderedThreads.clear()
-    this.navigation.clear()
     this.payloadBytes.clear()
     this.revisions.clear()
   }
@@ -826,7 +795,6 @@ export class InMemorySessionRowStore implements SessionRowStorePort {
     if (state.threads.size === 0 && state.messages.size === 0) {
       this.sessions.delete(sessionId)
       this.payloadBytes.delete(sessionId)
-      this.navigation.delete(sessionId)
       this.statusIndex.delete(sessionId)
       this.pausedIndex.delete(sessionId)
       this.childrenIndex.delete(sessionId)

@@ -18,15 +18,12 @@ import type {
   SessionThreadStateRequest,
   SessionThreadPageRequest,
 } from '@chatbox/core/ports'
-import type { SessionNavigationRepairRequest } from '@chatbox/core/ports'
 import {
   createTranscriptStores,
-  repairIndexedDBNavigation,
   putTranscriptThread,
   readIndexedDBCommit,
   readIndexedDBThread,
   readIndexedDBTranscript,
-  readIndexedDBNavigation,
   readIndexedDBBranch,
   TRANSCRIPT_THREADS,
   TRANSCRIPT_MESSAGES,
@@ -36,7 +33,6 @@ import type {
   SessionThreadRead,
   SessionTranscriptRequest,
   SessionTranscriptPage,
-  SessionNavigationPage,
 } from '@chatbox/core/ports'
 import { createRowTransferStore, iterateIndexedDBRows, stageIndexedDBRows } from './session-row-idb-transfer'
 import type { SessionRowIterationRequest } from '@chatbox/core/ports'
@@ -302,10 +298,6 @@ export class IndexedDBSessionRowStore implements SessionRowStorePort {
     return resumeIndexedDBImportRows(await this.ensureDatabase('write-rows'), candidateId)
   }
 
-  async repairNavigationProjections(request: SessionNavigationRepairRequest): Promise<void> {
-    return repairIndexedDBNavigation(await this.ensureDatabase('read-navigation', request.sessionId), request)
-  }
-
   async readMessageMetadata(request: SessionMessageMetadataRequest) {
     return readIndexedDBMetadata(await this.ensureDatabase('read-message-metadata', request.sessionId), request)
   }
@@ -337,10 +329,6 @@ export class IndexedDBSessionRowStore implements SessionRowStorePort {
 
   async readBranchMessagesPage(request: SessionBranchMessagesRequest) {
     return readIndexedDBBranch(await this.ensureDatabase('read-transcript', request.sessionId), request)
-  }
-
-  async readNavigationPage(request: SessionTranscriptRequest): Promise<SessionNavigationPage | null> {
-    return readIndexedDBNavigation(await this.ensureDatabase('read-navigation', request.sessionId), request)
   }
 
   async readSnapshot(sessionId: string): Promise<SessionRowSnapshot | null> {

@@ -216,9 +216,6 @@ describe('Capacitor staging transport on real SQLite', () => {
         1
       )
       expect(calls.some(isStaging)).toBe(true)
-      expect(
-        calls.flat().some((row) => row.statement.startsWith('INSERT OR REPLACE INTO session_message_navigation'))
-      ).toBe(false)
       expect(await database.query('SELECT message_id, payload_id FROM session_messages ORDER BY seq')).toEqual(
         removeTail ? before.slice(0, -1) : before
       )
@@ -479,13 +476,8 @@ describe('Capacitor staging transport on real SQLite', () => {
       )
       expect(stagedCount).toBe(selected.length)
       // Count actual SQLite row changes, including payload replacement and cleanup.
-      // Each selected row also creates and deletes a payload ownership record.
       // The bound depends on the selected 500 rows, not the conversation size.
-      const projectionChanges = selected.length * 2 // Replacement preview and old payload's preview cleanup.
-      expect(changes.reduce((sum, value) => sum + value, 0) - projectionChanges).toBeLessThanOrEqual(
-        selected.length * 7 + 20
-      )
-      expect(await database.query('SELECT COUNT(*) AS count FROM session_message_navigation')).toEqual([{ count }])
+      expect(changes.reduce((sum, value) => sum + value, 0)).toBeLessThanOrEqual(selected.length * 7 + 20)
       expect(calls.flat().some((row) => row.statement === 'DELETE FROM session_messages WHERE session_id = ?')).toBe(
         false
       )
@@ -548,7 +540,7 @@ describe('Capacitor staging transport on real SQLite', () => {
     )
   })
 
-  it.each(['payload', 'staging', 'publish'] as const)(
+  it.each(['staging', 'publish'] as const)(
     'rolls back a selected-message %s failure and retries atomically',
     async (phase) => {
       const { store, hooks, database } = realBridge()
@@ -556,12 +548,7 @@ describe('Capacitor staging transport on real SQLite', () => {
       await store.writeRows(projectRowFixture(old), null)
       let failed = false
       hooks.rollback = (batch) => {
-        const matches =
-          phase === 'payload'
-            ? batch.some((row) => row.statement.startsWith('INSERT OR REPLACE INTO session_message_navigation'))
-            : phase === 'staging'
-              ? isStaging(batch)
-              : isPublish(batch)
+        const matches = phase === 'staging' ? isStaging(batch) : isPublish(batch)
         if (failed || !matches) return false
         failed = true
         return true
@@ -666,7 +653,7 @@ describe('Capacitor staging transport on real SQLite', () => {
       if (isStaging(batch)) throw new Error('Staging acknowledgement lost')
     }
     hooks.before = (batch) => {
-      if (batch.some((row) => row.statement === 'DELETE FROM session_row_local_versions WHERE mutation_id=?'))
+      if (batch.some((row) => row.statement === 'DELETE FROM session_messages_staging WHERE mutation_id=?'))
         throw new Error('Cleanup unavailable')
     }
     await expect(store.applyDiff(diff, commit, 1)).rejects.toMatchObject({ name: 'SessionRowStoreError' })
@@ -749,10 +736,7 @@ describe('Capacitor staging transport on real SQLite', () => {
       const expected = snapshot(count)
       await store.writeRows(expected, null)
       expect(await readContentSnapshot(store)).toEqual(expectedSnapshot(expected))
-      const insertFamilies = [
-        { prefix: 'INSERT OR REPLACE INTO session_messages_staging ', width: 17 },
-        { prefix: 'INSERT OR REPLACE INTO session_message_navigation ', width: 4 },
-      ]
+      const insertFamilies = [{ prefix: 'INSERT OR REPLACE INTO session_messages_staging ', width: 17 }]
       const isRowInsert = (row: NativeStatement) =>
         insertFamilies.some(({ prefix }) => row.statement.startsWith(prefix))
       const rowBatches = calls.filter((batch) => batch.some(isRowInsert))

@@ -67,8 +67,8 @@ afterEach(() => {
 
 test.each([
   ['mobile', 20],
-  ['desktop', 50],
-  ['web', 50],
+  ['desktop', 100],
+  ['web', 100],
 ])('opens one %s page and waits for its host layout', async (platform, size) => {
   state.type = platform
   const view = renderHook(() => useSessionTranscript('s'))

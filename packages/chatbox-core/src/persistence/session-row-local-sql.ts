@@ -279,11 +279,6 @@ export async function applySqlLocalMutation(
         return
       }
       for (const statement of messageStatements({ ...value, message: body }, value.selectedDepth ?? undefined)) {
-        if (statement.kind === 'insert-message-navigation')
-          await run('INSERT INTO session_row_local_versions(mutation_id,payload_id) VALUES (?,?)', [
-            mutationId,
-            statement.params[0],
-          ])
         if (statement.kind === 'upsert-message') await stage([...statement.params])
         else await enqueue(statement)
       }
@@ -341,11 +336,6 @@ export async function applySqlLocalMutation(
   await run('INSERT INTO session_row_staging_mutations(mutation_id,created_at) VALUES (?,?)', [mutationId, Date.now()])
   const cleanup: SessionRowSqlStatement[] = [
     { sql: 'DELETE FROM session_row_local_metadata WHERE mutation_id=?', params: [mutationId] },
-    {
-      sql: 'DELETE FROM session_message_navigation WHERE payload_id IN(SELECT payload_id FROM session_row_local_versions WHERE mutation_id=?) AND NOT EXISTS(SELECT 1 FROM session_messages m WHERE m.payload_id=session_message_navigation.payload_id) AND NOT EXISTS(SELECT 1 FROM session_messages_staging s WHERE s.mutation_id<>? AND s.payload_id=session_message_navigation.payload_id)',
-      params: [mutationId, mutationId],
-    },
-    { sql: 'DELETE FROM session_row_local_versions WHERE mutation_id=?', params: [mutationId] },
     { sql: 'DELETE FROM session_row_local_deletes WHERE mutation_id=?', params: [mutationId] },
     { sql: 'DELETE FROM session_messages_staging WHERE mutation_id=?', params: [mutationId] },
     { sql: 'DELETE FROM session_threads_staging WHERE mutation_id=?', params: [mutationId] },
@@ -358,10 +348,6 @@ export async function applySqlLocalMutation(
       {
         sql: `DELETE FROM session_text_tokens WHERE session_id=? AND message_id IN(SELECT message_id FROM session_row_local_deletes WHERE mutation_id=? AND session_id=? UNION SELECT s.message_id FROM session_messages_staging s JOIN session_messages m ON m.session_id=s.session_id AND m.message_id=s.message_id WHERE s.mutation_id=? AND s.session_id=? AND s.payload_id<>m.payload_id)`,
         params: [sessionId, ...paramsBase, ...paramsBase],
-      },
-      {
-        sql: `DELETE FROM session_message_navigation WHERE payload_id IN(SELECT m.payload_id FROM session_messages m WHERE m.session_id=? AND m.message_id IN(SELECT message_id FROM session_row_local_deletes WHERE mutation_id=? AND session_id=? UNION SELECT s.message_id FROM session_messages_staging s JOIN session_messages previous ON previous.session_id=s.session_id AND previous.message_id=s.message_id WHERE s.mutation_id=? AND s.session_id=? AND s.payload_id<>previous.payload_id)) AND NOT EXISTS(SELECT 1 FROM session_messages_staging other WHERE other.mutation_id<>? AND other.payload_id=session_message_navigation.payload_id)`,
-        params: [sessionId, ...paramsBase, ...paramsBase, mutationId],
       },
       {
         sql: 'DELETE FROM session_messages WHERE session_id=? AND message_id IN(SELECT message_id FROM session_row_local_deletes WHERE mutation_id=? AND session_id=?)',

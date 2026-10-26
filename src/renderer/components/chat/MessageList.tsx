@@ -2,7 +2,7 @@ import type { SessionHeaderRead } from '@chatbox/core/ports'
 import { getSessionActionGate } from '@chatbox/core/session/action-gates'
 import { isActionAvailableInMode, resolveSessionMode, type SessionMode } from '@chatbox/core/session/mode-policy'
 import type { PromptCacheDeleteTarget } from '@chatbox/core/session/prompt-cache-policy'
-import { useSessionNavigation, type SessionTranscriptViewportAnchor } from '@chatbox/react/query'
+import type { SessionTranscriptViewportAnchor } from '@chatbox/react/query'
 import NiceModal from '@ebay/nice-modal-react'
 import { Button, Flex, Loader, Stack, Transition } from '@mantine/core'
 import { useThrottledCallback } from '@mantine/hooks'
@@ -56,6 +56,7 @@ import ForkMarkerMessage from './ForkMarkerMessage'
 import Message from './Message'
 import MessageMinimapRail from './MessageMinimapRail'
 import MessageNavigation, { ScrollToBottomButton } from './MessageNavigation'
+import { areMinimapAnchorsEqual, buildMessageMinimapAnchors } from './message-navigation-utils'
 import { buildTranscriptRenderItems } from './message-render-items'
 import SummaryMessage from './SummaryMessage'
 import { createSmoothFollowOutputController, isLayoutClampedScroll } from './smooth-follow-output'
@@ -869,8 +870,8 @@ const MessageList = forwardRef<
           {(transcript.isLoadingOlder || transcript.isLoadingNewer) && (
             <Loader className="absolute top-2 left-1/2" size="xs" />
           )}
-          {!isSmallScreen && (
-            <TranscriptMinimap sessionId={session.id} enabled={transcript.firstWindowReady} onJump={navigate} />
+          {!isSmallScreen && transcript.firstWindowReady && (
+            <TranscriptMinimap key={session.id} transcript={transcript} onNavigate={navigate} />
           )}
           {activity === 'generating' && (!atBottom || transcript.hasNewer) && (
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2">
@@ -912,42 +913,31 @@ export default memo(MessageList)
 
 const TranscriptMinimap = memo(
   ({
-    sessionId,
-    enabled,
-    onJump,
+    transcript,
+    onNavigate,
   }: {
-    sessionId: string
-    enabled: boolean
-    onJump(origin: { messageId: string }): void
+    transcript: Transcript
+    onNavigate(origin: 'head' | 'tail' | { messageId: string }): void
   }) => {
-    const navigation = useSessionNavigation({
-      sessionId,
-      enabled,
-      source: rendererApplication.sessions,
-      bridge: rendererApplication.sessionQueryBridge,
-    })
-    const anchors = useMemo(
-      () =>
-        navigation.entries.map((entry, itemIndex) => ({
-          messageId: entry.messageId,
-          itemIndex,
-          text: entry.preview,
-          assistantText: entry.assistantPreview,
-        })),
-      [navigation.entries]
-    )
+    const previous = useRef<ReturnType<typeof buildMessageMinimapAnchors>>([])
+    const anchors = useMemo(() => {
+      const next = buildMessageMinimapAnchors(transcript.rows)
+      if (areMinimapAnchorsEqual(previous.current, next)) return previous.current
+      previous.current = next
+      return next
+    }, [transcript.rows])
     return (
       <MessageMinimapRail
         anchors={anchors}
-        onJump={(anchor) => onJump({ messageId: anchor.messageId })}
-        hasOlder={navigation.hasOlder}
-        hasNewer={navigation.hasNewer}
-        onLoadOlder={navigation.loadOlder}
-        onLoadNewer={navigation.loadNewer}
-        onEdge={navigation.navigate}
-        loading={navigation.isFetching}
-        error={navigation.error}
-        onRetry={navigation.retry}
+        onJump={(anchor) => onNavigate({ messageId: anchor.messageId })}
+        hasOlder={transcript.hasOlder}
+        hasNewer={transcript.hasNewer}
+        onLoadOlder={() => void transcript.controller.loadOlder()}
+        onLoadNewer={() => void transcript.controller.loadNewer()}
+        onEdge={onNavigate}
+        loading={!!transcript.operation && transcript.operation.phase !== 'error'}
+        error={transcript.error}
+        onRetry={() => void transcript.retry()}
       />
     )
   }

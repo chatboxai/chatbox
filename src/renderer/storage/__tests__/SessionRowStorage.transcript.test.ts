@@ -16,13 +16,12 @@ beforeEach(() => {
 })
 afterEach(() => vi.restoreAllMocks())
 
-it('uses only thin stores for commit, navigation, and target ancestry', async () => {
+it('reads commit metadata and only the requested transcript bodies', async () => {
   const store = new IndexedDBSessionRowStore()
   await store.writeRows(transcriptFixture())
   const get = vi.spyOn(IDBObjectStore.prototype, 'get')
   const full = vi.spyOn(store, 'readSnapshot')
   await store.readCommit('transcript')
-  await store.readNavigationPage({ sessionId: 'transcript', origin: 'head', limit: 3 })
   expect(
     get.mock.instances.filter((instance) => (instance as IDBObjectStore).name === SESSION_ROW_MESSAGE_STORE)
   ).toHaveLength(0)
@@ -37,39 +36,6 @@ it('uses only thin stores for commit, navigation, and target ancestry', async ()
     ['transcript', 'recent-2'],
     ['transcript', 'recent-3'],
   ])
-  store.close()
-})
-
-it('repairs missing navigation projections without changing the commit', async () => {
-  const store = new IndexedDBSessionRowStore()
-  await store.writeRows(transcriptFixture())
-  expect(
-    (await store.readTranscriptWindow({ sessionId: 'transcript', origin: 'tail', limit: 2 }))?.messages.map(
-      (row) => row.messageId
-    )
-  ).toEqual(['active-1', 'active-2'])
-  const db = await new Promise<IDBDatabase>((resolve) => {
-    const request = indexedDB.open(SESSION_ROW_DB_NAME)
-    request.onsuccess = () => resolve(request.result)
-  })
-  await new Promise<void>((resolve) => {
-    const tx = db.transaction(TRANSCRIPT_MESSAGES, 'readwrite')
-    const request = tx.objectStore(TRANSCRIPT_MESSAGES).get(['transcript', 'old-0'])
-    request.onsuccess = () => {
-      const { navigation: _navigation, ...row } = request.result
-      tx.objectStore(TRANSCRIPT_MESSAGES).put(row)
-    }
-    tx.oncomplete = () => resolve()
-  })
-  expect(
-    (await store.readNavigationPage({ sessionId: 'transcript', origin: 'head', limit: 1 }))?.needsProjection
-  ).toEqual(['old-0'])
-  await store.repairNavigationProjections({ sessionId: 'transcript', messageIds: ['old-0'], expectedRevision: 1 })
-  expect(
-    (await store.readNavigationPage({ sessionId: 'transcript', origin: 'head', limit: 1 }))?.needsProjection
-  ).toEqual([])
-  expect((await store.readCommit('transcript'))?.revision).toBe(1)
-  db.close()
   store.close()
 })
 
@@ -96,7 +62,7 @@ it('rejects malformed revision-head identities and revisions', async () => {
   store.close()
 })
 
-it('preserves complete Unicode bodies and their byte counts when repairing navigation', async () => {
+it('preserves complete Unicode bodies and their byte counts in transcript pages', async () => {
   const store = new IndexedDBSessionRowStore()
   const fixture = transcriptFixture()
   const message = fixture.rows.messages[0].message
@@ -110,9 +76,6 @@ it('preserves complete Unicode bodies and their byte counts when repairing navig
   const page = await store.readTranscriptWindow({ sessionId: 'transcript', origin: 'head', limit: 1 })
   expect(page?.payloadBytes).toBe(payloadBytes)
   expect(page?.messages[0].message).toEqual(message)
-  expect(
-    (await store.readNavigationPage({ sessionId: 'transcript', origin: 'head', limit: 1 }))?.entries[0].preview
-  ).toBe(text.slice(0, 300))
 
   const db = await new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(SESSION_ROW_DB_NAME)
@@ -127,26 +90,14 @@ it('preserves complete Unicode bodies and their byte counts when repairing navig
     tx.onabort = tx.onerror = () => reject(tx.error)
   })
   expect(storedRow).toEqual({ ...fixture.rows.messages[0], selectedDepth: 0 })
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(TRANSCRIPT_MESSAGES, 'readwrite')
+  const storedMetadata = await new Promise<unknown>((resolve, reject) => {
+    const tx = db.transaction(TRANSCRIPT_MESSAGES, 'readonly')
     const request = tx.objectStore(TRANSCRIPT_MESSAGES).get(['transcript', message.id])
-    request.onsuccess = () => {
-      const { navigation: _navigation, ...metadata } = request.result
-      tx.objectStore(TRANSCRIPT_MESSAGES).put(metadata)
-    }
-    tx.oncomplete = () => resolve()
+    tx.oncomplete = () => resolve(request.result)
     tx.onabort = tx.onerror = () => reject(tx.error)
   })
-  expect(
-    (await store.readNavigationPage({ sessionId: 'transcript', origin: 'head', limit: 1 }))?.needsProjection
-  ).toEqual([message.id])
-  await store.repairNavigationProjections({ sessionId: 'transcript', messageIds: [message.id], expectedRevision: 1 })
-  const repairedNavigation = await store.readNavigationPage({ sessionId: 'transcript', origin: 'head', limit: 1 })
-  expect(repairedNavigation?.needsProjection).toEqual([])
-  expect(repairedNavigation?.entries[0].preview).toBe(text.slice(0, 300))
-  const repairedPage = await store.readTranscriptWindow({ sessionId: 'transcript', origin: 'head', limit: 1 })
-  expect(repairedPage?.payloadBytes).toBe(payloadBytes)
-  expect(repairedPage?.messages[0].message).toEqual(message)
+  expect(storedMetadata).toHaveProperty('payloadBytes', payloadBytes)
+  expect(storedMetadata).not.toHaveProperty('navigation')
   expect((await store.readCommit('transcript'))?.revision).toBe(1)
   db.close()
   store.close()

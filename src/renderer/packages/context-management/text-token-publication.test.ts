@@ -44,8 +44,6 @@ async function setup() {
       readSessionMessages: point,
       readSessionThread: repo.readSessionThread.bind(repo),
       readSessionTranscriptWindow: repo.readSessionTranscriptWindow.bind(repo),
-      readSessionNavigationPage: repo.readSessionNavigationPage.bind(repo),
-      repairSessionNavigationProjections: repo.repairSessionNavigationProjections.bind(repo),
       readSessionThreadSummariesPage: repo.readSessionThreadSummariesPage.bind(repo),
       readSessionForkOptionsPage: repo.readSessionForkOptionsPage.bind(repo),
       listSessionsMetaPage: async () => ({ items: [], total: 0, nextCursor: null }),

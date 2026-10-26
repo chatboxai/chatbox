@@ -518,7 +518,6 @@ describe('SQLiteSessionRowStore', () => {
       'DELETE FROM session_threads WHERE session_id = ?',
       'DELETE FROM session_messages WHERE session_id = ?',
       expect.stringContaining('DELETE FROM session_text_tokens'),
-      expect.stringContaining('DELETE FROM session_message_navigation'),
       expect.stringContaining('INSERT OR REPLACE INTO session_row_delete_receipts'),
     ])
   })

@@ -4,7 +4,6 @@ import type { MessageRowMetadata } from '../session/session-tree/types'
 export const SESSION_ROW_PROJECTION_SCHEMA_SQL = `
     CREATE TABLE IF NOT EXISTS session_row_local_metadata(mutation_id TEXT NOT NULL,message_id TEXT NOT NULL,value TEXT NOT NULL,PRIMARY KEY(mutation_id,message_id));
     CREATE TABLE IF NOT EXISTS session_row_selected_paths(mutation_id TEXT NOT NULL,message_id TEXT NOT NULL,depth INTEGER NOT NULL,PRIMARY KEY(mutation_id,message_id));
-    CREATE TABLE IF NOT EXISTS session_row_local_versions(mutation_id TEXT NOT NULL,payload_id TEXT NOT NULL,PRIMARY KEY(mutation_id,payload_id));
     CREATE TABLE IF NOT EXISTS session_row_local_deletes (mutation_id TEXT NOT NULL,session_id TEXT NOT NULL,message_id TEXT NOT NULL,PRIMARY KEY(mutation_id,session_id,message_id));
     CREATE INDEX IF NOT EXISTS idx_session_messages_staging_local_children ON session_messages_staging(mutation_id,session_id,thread_id,parent_message_id,seq,message_id);
     CREATE INDEX IF NOT EXISTS idx_session_messages_staging_selected ON session_messages_staging(mutation_id,session_id,thread_id,selected_depth) WHERE selected_depth IS NOT NULL;

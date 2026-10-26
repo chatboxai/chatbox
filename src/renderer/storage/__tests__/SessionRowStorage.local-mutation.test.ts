@@ -113,7 +113,6 @@ describe('IndexedDB local row mutation', () => {
       const physicalFields = [
         'message',
         'selectedDepth',
-        'navigation',
         'payloadBytes',
         'tokenPayloadId',
         'parentKey',

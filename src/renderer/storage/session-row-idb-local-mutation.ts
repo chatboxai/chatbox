@@ -1,7 +1,6 @@
 import { v4 as uuid } from 'uuid'
 import {
   applyLocalRowMutation,
-  navigationProjection,
   type LocalRowMutationAccess,
   type ProjectedMessage,
   type TranscriptMessageMetadata,
@@ -207,7 +206,6 @@ export async function applyIndexedDBLocalMutation(tx: IDBTransaction, diff: Sess
         ...(body
           ? {
               tokenPayloadId: uuid(),
-              navigation: navigationProjection(body),
               payloadBytes: new TextEncoder().encode(JSON.stringify(body)).length,
             }
           : {}),

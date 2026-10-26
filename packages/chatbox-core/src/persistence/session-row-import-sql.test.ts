@@ -164,7 +164,7 @@ describe('durable SQL row imports', () => {
     await second.dispose()
     expect(await store.hasRows('s')).toBe(true)
   })
-  it('collects deferred import navigation once and protects live rows and other candidates', async () => {
+  it('disposes one import while protecting published rows and other candidates', async () => {
     const { db, store } = setup()
     await store.writeRows(fixture('old'))
     const next = { ...fixture('new'), revision: 2 }
@@ -177,36 +177,20 @@ describe('durable SQL row imports', () => {
     const ordinary = await store.stageRows({ ...fixture('copy'), revision: 3 }, 2)
     for (const thread of fixture('copy').rows.threads) await ordinary.appendThread(thread)
     for (const message of fixture('copy').rows.messages) await ordinary.appendMessage(message)
-    const protectedPayloads = await db.query<{ payload_id: string }>(
-      'SELECT payload_id FROM session_messages UNION SELECT payload_id FROM session_messages_staging ORDER BY payload_id'
-    )
-    const navigation = () => db.query('SELECT payload_id FROM session_message_navigation ORDER BY payload_id')
-    expect((await navigation()).length).toBeGreaterThan(protectedPayloads.length)
-    db.reset()
-    await writer.dispose({ deferNavigationCleanup: true })
-    expect(db.executed.some((sql) => sql.startsWith('DELETE FROM session_message_navigation'))).toBe(false)
-    expect((await navigation()).length).toBeGreaterThan(protectedPayloads.length)
-    await store.collectImportGarbage()
-    expect(await navigation()).toEqual(protectedPayloads)
-    await store.collectImportGarbage()
-    expect(await navigation()).toEqual(protectedPayloads)
+    const staged = () => db.query('SELECT payload_id FROM session_messages_staging ORDER BY payload_id')
+    const protectedRows = await staged()
+    expect(protectedRows).toHaveLength(4)
+    await writer.dispose()
+    await writer.dispose()
+    expect(await staged()).toEqual(protectedRows)
     await pending.dispose()
-    expect(await navigation()).toHaveLength(4)
+    expect(await staged()).toHaveLength(2)
     await ordinary.dispose()
-    expect(await navigation()).toEqual(await db.query('SELECT payload_id FROM session_messages ORDER BY payload_id'))
+    expect(await staged()).toEqual([])
+    expect(await db.query('SELECT * FROM session_row_imports')).toEqual([])
     expect(await store.readMessages({ sessionId: 's', messageIds: ['a'] })).toMatchObject({
       messages: [{ message: { contentParts: [{ text: 'new' }] } }],
     })
-  })
-  it('keeps immediate navigation cleanup for ordinary row writers', async () => {
-    const { db, store } = setup(),
-      source = fixture()
-    const writer = await store.stageRows(source, null)
-    for (const thread of source.rows.threads) await writer.appendThread(thread)
-    for (const message of source.rows.messages) await writer.appendMessage(message)
-    expect(await db.query('SELECT payload_id FROM session_message_navigation')).toHaveLength(2)
-    await writer.dispose()
-    expect(await db.query('SELECT payload_id FROM session_message_navigation')).toEqual([])
   })
   it.each(
     ['detached-cycle', 'missing-parent', 'duplicate-sibling', 'compaction', 'empty-slot'].flatMap((kind) =>

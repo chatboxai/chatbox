@@ -89,7 +89,6 @@ export type SessionRowStoreOperation =
   | 'read-commit'
   | 'read-thread'
   | 'read-transcript'
-  | 'read-navigation'
   | 'read-thread-page'
   | 'read-messages'
   | 'write-rows'

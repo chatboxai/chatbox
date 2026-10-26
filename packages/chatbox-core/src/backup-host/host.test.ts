@@ -212,7 +212,7 @@ async function resource(target: ReturnType<typeof createBackupImportTarget>, key
 }
 
 describe('incremental backup host import', () => {
-  it.each(['complete', 'cancel'])('collects navigation once after all candidates (%s)', async (outcome) => {
+  it.each(['complete', 'cancel'])('cleans import candidates and preserves published sessions (%s)', async (outcome) => {
     const f = setup(),
       target = createBackupImportTarget(f.options)
     const controller = new AbortController()
@@ -223,39 +223,32 @@ describe('incremental backup host import', () => {
       controller.abort()
       await expect(target.prepare()).rejects.toThrow()
     }
-    f.database.reset()
     await cleanupBackupImport(f.options)
-    expect(f.database.executed.filter((sql) => sql.startsWith('DELETE FROM session_message_navigation'))).toHaveLength(
-      1
-    )
     expect(await f.rows.listSessionIds()).toEqual(outcome === 'complete' ? ['A', 'B', 'C'] : ['A', 'B'])
     expect(await f.database.query('SELECT * FROM session_row_imports')).toEqual([])
-    expect(await f.database.query('SELECT payload_id FROM session_message_navigation')).toHaveLength(
-      outcome === 'complete' ? 6 : 4
-    )
+    expect(await f.database.query('SELECT * FROM session_messages_staging')).toEqual([])
+    expect(await f.database.query('SELECT * FROM session_threads_staging')).toEqual([])
     expect(f.tables.size).toBe(0)
   })
 
-  it('retries failed final navigation cleanup after candidate controls have been removed', async () => {
+  it('retries resource cleanup after candidate controls have been removed', async () => {
     const f = setup(),
       target = createBackupImportTarget(f.options)
     await f.seed(fixture('A', 'old'))
     await target.begin(manifest)
     await target.appendRecords(backupRecords(fixture('A', 'new')))
     await target.prepare()
-    const collect = vi.spyOn(f.rows, 'collectImportGarbage').mockRejectedValueOnce(new Error('cleanup unavailable'))
+    const cleanup = vi.spyOn(f.resources, 'cleanup').mockRejectedValueOnce(new Error('cleanup unavailable'))
     await expect(cleanupBackupImport(f.options)).rejects.toThrow('cleanup unavailable')
     expect(f.tables.get('import-candidates')?.size).toBe(1)
     expect(await f.database.query('SELECT * FROM session_row_imports')).toEqual([])
-    expect(await f.database.query('SELECT payload_id FROM session_message_navigation')).toHaveLength(4)
     await cleanupBackupImport(f.options)
-    expect(collect).toHaveBeenCalledTimes(2)
-    expect(await f.database.query('SELECT payload_id FROM session_message_navigation')).toHaveLength(2)
+    expect(cleanup).toHaveBeenCalledTimes(2)
     expect((await f.rows.readCommit('A'))?.record.name).toBe('new')
     expect(f.tables.size).toBe(0)
   })
 
-  it('defers cleanup for unusable sessions and retains the existing session', async () => {
+  it('disposes unusable imports and retains the existing session', async () => {
     const f = setup(),
       target = createBackupImportTarget(f.options)
     await f.seed(fixture('A', 'old'))
@@ -263,29 +256,12 @@ describe('incremental backup host import', () => {
     for (const row of broken.rows.messages) row.parentMessageId = 'absent'
     await target.begin(manifest)
     await target.appendRecords(backupRecords(broken))
-    f.database.reset()
     await target.prepare()
     expect(target.getSummary().importedSessions).toBe(0)
-    expect(f.database.executed.some((sql) => sql.startsWith('DELETE FROM session_message_navigation'))).toBe(false)
+    expect(await f.database.query('SELECT * FROM session_row_imports')).toEqual([])
+    expect(await f.database.query('SELECT * FROM session_messages_staging')).toEqual([])
     await cleanupBackupImport(f.options)
-    expect(f.database.executed.filter((sql) => sql.startsWith('DELETE FROM session_message_navigation'))).toHaveLength(
-      1
-    )
     expect((await f.rows.readCommit('A'))?.record.name).toBe('old')
-  })
-
-  it('uses immediate candidate cleanup when the storage has no final collection hook', async () => {
-    const f = setup(),
-      target = createBackupImportTarget(f.options)
-    Object.defineProperty(f.rows, 'collectImportGarbage', { value: undefined })
-    await target.begin(manifest)
-    await target.appendRecords(backupRecords(fixture()))
-    f.database.reset()
-    await cleanupBackupImport(f.options)
-    expect(f.database.executed.filter((sql) => sql.startsWith('DELETE FROM session_message_navigation'))).toHaveLength(
-      1
-    )
-    expect(await f.database.query('SELECT payload_id FROM session_message_navigation')).toEqual([])
   })
 
   it('forwards converted fork projections only for their active conversation', async () => {

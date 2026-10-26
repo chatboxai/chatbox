@@ -10,24 +10,14 @@ import { parseRowExtra } from './session-row-projection-sql'
 import type { SessionRowSqlDatabase } from './session-row-sql'
 import {
   assertTranscriptRevision,
-  readNavigationPage,
   readTranscriptPage,
   type SessionTranscriptReader,
   type TranscriptMessageMetadata,
 } from './session-transcript-read'
 
-export const INSERT_MESSAGE_NAVIGATION_SQL =
-  'INSERT OR REPLACE INTO session_message_navigation (payload_id, role, eligible, preview) VALUES (?, ?, ?, ?)'
-
 export const SESSION_TRANSCRIPT_SCHEMA_SQL = `
 CREATE INDEX IF NOT EXISTS idx_session_threads_transcript ON session_threads(session_id, seq, thread_id);
 CREATE INDEX IF NOT EXISTS idx_session_threads_nonempty ON session_threads(session_id, seq, thread_id) WHERE root_message_id IS NOT NULL;
-CREATE TABLE IF NOT EXISTS session_message_navigation (
-  payload_id TEXT PRIMARY KEY NOT NULL,
-  role TEXT NOT NULL,
-  eligible INTEGER NOT NULL,
-  preview TEXT NOT NULL
-);
 `
 const THREAD_NAME_SQL = 'CASE WHEN instr(name,char(0))>0 THEN json_quote(name) ELSE name END'
 const THREAD_COLUMNS = `projection_json, session_id, thread_id, seq, created_at, root_message_id, active_leaf_message_id,
@@ -59,9 +49,6 @@ interface MessageRecord {
   updated_at: number
   branch_id: string | null
   payload_utf8_length: number
-  role: MessageRow['message']['role'] | null
-  eligible: number | null
-  preview: string | null
 }
 
 const MESSAGE_COLUMNS = [
@@ -79,13 +66,8 @@ const MESSAGE_COLUMNS = [
   'updated_at',
   'branch_id',
   'payload_utf8_length',
-  'role',
-  'eligible',
-  'preview',
 ] as const
-const MESSAGE_SELECTION = MESSAGE_COLUMNS.map(
-  (column) => `${['role', 'eligible', 'preview'].includes(column) ? 'n' : 'm'}.${column}`
-).join(', ')
+const MESSAGE_SELECTION = MESSAGE_COLUMNS.map((column) => `m.${column}`).join(', ')
 function transcriptMetadata(row: MessageRecord): TranscriptMessageMetadata {
   const metadata: TranscriptMessageMetadata = {
     sessionId: row.session_id,
@@ -103,8 +85,6 @@ function transcriptMetadata(row: MessageRecord): TranscriptMessageMetadata {
     ...parseRowExtra(row.row_metadata_json),
     ...(row.selected_depth !== null ? { selectedDepth: Number(row.selected_depth) } : {}),
   }
-  if (row.role !== null && row.eligible !== null && row.preview !== null)
-    metadata.navigation = { role: row.role, eligible: Boolean(row.eligible), preview: row.preview }
   return metadata
 }
 
@@ -236,7 +216,7 @@ export function sqlTranscriptReader(
     message: async (messageId) => {
       const [row] = await queryRowMetadata<MessageRecord>(
         database,
-        `SELECT ${MESSAGE_SELECTION} FROM session_messages m LEFT JOIN session_message_navigation n ON n.payload_id = m.payload_id WHERE m.session_id = ? AND m.message_id = ?`,
+        `SELECT ${MESSAGE_SELECTION} FROM session_messages m WHERE m.session_id = ? AND m.message_id = ?`,
         [sessionId, messageId],
         MESSAGE_COLUMNS,
         bounded
@@ -265,7 +245,7 @@ export function sqlTranscriptReader(
         ) SELECT ${MESSAGE_SELECTION}
           FROM transcript_path p CROSS JOIN session_messages m
             ON m.session_id=? AND m.thread_id=? AND m.message_id=p.message_id
-          LEFT JOIN session_message_navigation n ON n.payload_id=m.payload_id ORDER BY p.depth`,
+          ORDER BY p.depth`,
         [
           Number(budget.skipFirst),
           Number(budget.skipFirst),
@@ -326,4 +306,4 @@ export async function readSqlTranscriptThread(
   const thread = await reader.thread(request.threadId ?? commit.record.activeThreadId)
   return thread ? { ...commit, thread } : null
 }
-export { readTranscriptPage, readNavigationPage }
+export { readTranscriptPage }

@@ -209,10 +209,6 @@ export async function createSqlRowWriter(
     })),
     { sql: 'DELETE FROM session_row_selected_paths WHERE mutation_id=?', params: [mutation] },
     { sql: 'DELETE FROM session_row_staging_mutations WHERE mutation_id=?', params: [mutation] },
-    {
-      sql: 'DELETE FROM session_message_navigation WHERE NOT EXISTS(SELECT 1 FROM session_messages m WHERE m.payload_id=session_message_navigation.payload_id) AND NOT EXISTS(SELECT 1 FROM session_messages_staging s WHERE s.payload_id=session_message_navigation.payload_id)',
-      params: [],
-    },
   ]
   await database.executeBatch([
     {

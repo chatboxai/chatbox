@@ -27,11 +27,7 @@ import {
   type SessionTokenCacheResult,
   validateTokenCacheRequest,
 } from '../ports/session-token-cache'
-import type {
-  SessionNavigationRepairRequest,
-  SessionThreadRequest,
-  SessionTranscriptRequest,
-} from '../ports/session-transcript-source'
+import type { SessionThreadRequest, SessionTranscriptRequest } from '../ports/session-transcript-source'
 import type {
   MessageRow,
   MessageRowKind,
@@ -67,10 +63,8 @@ import {
 } from './session-text-token-sql'
 import { assertSessionThreadPageRevision, validateSessionThreadPageRequest } from './session-thread-page'
 import { acceptSqlTokenCache, readSqlTokenCache, SESSION_TOKEN_CACHE_SQL } from './session-token-cache-sql'
-import { navigationProjection, validateNavigationRepair, validateTranscriptRequest } from './session-transcript-read'
+import { validateTranscriptRequest } from './session-transcript-read'
 import {
-  INSERT_MESSAGE_NAVIGATION_SQL,
-  readNavigationPage,
   readSqlTranscriptThread,
   readTranscriptPage,
   SESSION_TRANSCRIPT_SCHEMA_SQL,
@@ -90,8 +84,6 @@ export interface SessionRowSqlStatement {
     | 'advance-session-revision'
     | 'upsert-thread'
     | 'upsert-message'
-    | 'insert-message-navigation'
-    | 'delete-orphan-message-navigation'
     | 'delete-stale-text-tokens'
 }
 
@@ -310,9 +302,6 @@ const SELECT_SESSION_REVISION_SQL =
 const SELECT_MESSAGE_PAYLOAD_SLICE_SQL = `SELECT typeof(message_json) AS value_type,
   length(message_json) AS value_length, substr(message_json, ?, ?) AS value
   FROM session_messages WHERE payload_id = ? LIMIT 1`
-const DELETE_ORPHAN_MESSAGE_NAVIGATION_SQL =
-  'DELETE FROM session_message_navigation WHERE NOT EXISTS (SELECT 1 FROM session_messages WHERE session_messages.payload_id = session_message_navigation.payload_id) AND NOT EXISTS (SELECT 1 FROM session_messages_staging WHERE session_messages_staging.payload_id = session_message_navigation.payload_id)'
-
 const PAYLOAD_READ_RESPONSE_BUDGET = 384 * 1024
 const PAYLOAD_READ_REQUEST_BUDGET = 384 * 1024
 const PAYLOAD_READ_BATCH_MESSAGES = 768
@@ -529,12 +518,6 @@ export function* messageStatements(message: MessageRow, selectedDepth?: number):
   const serialized = serializeJson(payload, `message ${message.messageId}`)
   const payloadId = createPayloadId(message)
   const utf8Length = textEncoder.encode(serialized).byteLength
-  const projection = navigationProjection(payload)
-  yield {
-    kind: 'insert-message-navigation',
-    sql: INSERT_MESSAGE_NAVIGATION_SQL,
-    params: [payloadId, projection.role, Number(projection.eligible), projection.preview],
-  }
   yield {
     kind: 'upsert-message',
     sql: UPSERT_MESSAGE_SQL,
@@ -851,53 +834,6 @@ export class SqlSessionRowStore implements SessionRowStorePort {
     )
   }
 
-  async readNavigationPage(request: SessionTranscriptRequest) {
-    validateTranscriptRequest(request)
-    return this.run('read-navigation', request.sessionId, () =>
-      withSqlTranscriptCommit(
-        this.database,
-        request,
-        () => this.readRevision(request.sessionId),
-        (commit) => readNavigationPage(request, commit, this.transcriptReader(request.sessionId)),
-        this.boundedReads
-      )
-    )
-  }
-
-  async repairNavigationProjections(request: SessionNavigationRepairRequest): Promise<void> {
-    validateNavigationRepair(request)
-    await this.run('read-navigation', request.sessionId, () =>
-      withSqlTranscriptCommit(
-        this.database,
-        request,
-        () => this.readRevision(request.sessionId),
-        async () => {
-          const records = await this.readMessageRecordsByIds(request.sessionId, request.messageIds)
-          const statements: SessionRowSqlStatement[] = []
-          for (const record of records) {
-            const [row] = await this.readMessageRows([record], null)
-            const projection = navigationProjection(row.message)
-            statements.push({
-              kind: 'insert-message-navigation',
-              sql: 'INSERT OR REPLACE INTO session_message_navigation (payload_id,role,eligible,preview) SELECT ?,?,?,? WHERE EXISTS (SELECT 1 FROM session_messages WHERE session_id = ? AND message_id = ? AND payload_id = ?)',
-              params: [
-                record.payload_id,
-                projection.role,
-                Number(projection.eligible),
-                projection.preview,
-                request.sessionId,
-                row.messageId,
-                record.payload_id,
-              ],
-            })
-          }
-          await this.database.executeBatch(statements)
-        },
-        this.boundedReads
-      )
-    )
-  }
-
   async stageRows(commit: SessionRowCommit, expectedRevision: number | null) {
     await this.initialize()
     return createSqlRowWriter(this.database, commit, expectedRevision, this.createRowId)
@@ -912,11 +848,6 @@ export class SqlSessionRowStore implements SessionRowStorePort {
   async resumeImportRows(candidateId: string) {
     await this.initialize()
     return resumeSqlImportWriter(this.database, candidateId)
-  }
-
-  async collectImportGarbage(): Promise<void> {
-    await this.initialize()
-    await this.database.executeBatch([{ sql: DELETE_ORPHAN_MESSAGE_NAVIGATION_SQL, params: [] }])
   }
 
   async *iterateRows(request: SessionRowIterationRequest): AsyncGenerator<SessionStoredRow> {
@@ -1260,7 +1191,6 @@ export class SqlSessionRowStore implements SessionRowStorePort {
           { kind: 'delete-session-threads', sql: DELETE_SESSION_THREADS_SQL, params: [sessionId] },
           { kind: 'delete-session-messages', sql: DELETE_SESSION_MESSAGES_SQL, params: [sessionId] },
           textTokenCleanupStatement(sessionId),
-          { kind: 'delete-orphan-message-navigation', sql: DELETE_ORPHAN_MESSAGE_NAVIGATION_SQL, params: [] },
         ],
         { sessionId, mode: 'delete', expectedRevision }
       )
@@ -1312,11 +1242,6 @@ export class SqlSessionRowStore implements SessionRowStorePort {
       for (const message of rows.messages) {
         validateMessageRow(message, rows.sessionId)
         yield* messageStatements(message, depths.get(message.messageId))
-      }
-      yield {
-        kind: 'delete-orphan-message-navigation',
-        sql: DELETE_ORPHAN_MESSAGE_NAVIGATION_SQL,
-        params: [],
       }
       yield textTokenCleanupStatement(rows.sessionId)
     } catch (error) {

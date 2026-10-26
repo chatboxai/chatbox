@@ -1,10 +1,7 @@
 import { v4 as uuid } from 'uuid'
 import {
-  navigationProjection,
   readBranchMessagesPage,
   validateBranchMessagesRequest,
-  validateNavigationRepair,
-  readNavigationPage,
   readTranscriptPage,
   transcriptOrder,
   transcriptThread,
@@ -14,10 +11,7 @@ import {
   type SessionTranscriptReader,
 } from '@chatbox/core/persistence'
 import type {
-  SessionMessageNavigationProjection,
   SessionBranchMessagesRequest,
-  SessionNavigationPage,
-  SessionNavigationRepairRequest,
   SessionRowCommit,
   SessionThreadRead,
   SessionThreadRequest,
@@ -69,12 +63,7 @@ export function putTranscriptThread(tx: IDBTransaction, row: ThreadRow): void {
   } satisfies StoredTranscriptThread)
 }
 
-export function putTranscriptMessage(
-  tx: IDBTransaction,
-  row: StoredMessageRow,
-  projection?: SessionMessageNavigationProjection,
-  payloadBytes?: number
-): void {
+export function putTranscriptMessage(tx: IDBTransaction, row: StoredMessageRow, payloadBytes?: number): void {
   const { message, ...metadata } = row
   tx.objectStore(TRANSCRIPT_MESSAGES).put({
     ...metadata,
@@ -85,7 +74,6 @@ export function putTranscriptMessage(
     namingRole: row.facts?.autoTitleEligible ? row.facts.role : '',
     conversationKey: Number(row.kind !== 'summary' && row.facts?.role !== 'system' && !row.facts?.isForkMarker),
     payloadBytes: payloadBytes ?? new TextEncoder().encode(JSON.stringify(message)).length,
-    ...(projection ? { navigation: projection } : message ? { navigation: navigationProjection(message) } : {}),
   })
 }
 
@@ -255,36 +243,6 @@ export function readIndexedDBTranscript(
     assertTranscriptRevision(request, commit?.revision ?? (await readRevision(tx, request.sessionId)))
     return commit ? readTranscriptPage(request, commit, reader(tx, request.sessionId)) : null
   })
-}
-
-export function readIndexedDBNavigation(
-  db: IDBDatabase,
-  request: SessionTranscriptRequest
-): Promise<SessionNavigationPage | null> {
-  validateTranscriptRequest(request)
-  return readTranscriptTransaction(db, async (tx) => {
-    const commit = await readTranscriptCommit(tx, request.sessionId)
-    assertTranscriptRevision(request, commit?.revision ?? (await readRevision(tx, request.sessionId)))
-    return commit ? readNavigationPage(request, commit, reader(tx, request.sessionId)) : null
-  })
-}
-
-export function repairIndexedDBNavigation(db: IDBDatabase, request: SessionNavigationRepairRequest): Promise<void> {
-  validateNavigationRepair(request)
-  return readTranscriptTransaction(
-    db,
-    async (tx) => {
-      assertTranscriptRevision(request, await readRevision(tx, request.sessionId))
-      const source = reader(tx, request.sessionId)
-      for (const id of new Set(request.messageIds)) {
-        const metadata = await source.message(id)
-        if (!metadata || metadata.navigation) continue
-        const [row] = await source.payloads([id])
-        tx.objectStore(TRANSCRIPT_MESSAGES).put({ ...metadata, navigation: navigationProjection(row.message) })
-      }
-    },
-    'readwrite'
-  )
 }
 
 export function readIndexedDBBranch(db: IDBDatabase, request: SessionBranchMessagesRequest) {

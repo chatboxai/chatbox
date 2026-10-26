@@ -24,7 +24,6 @@ const DEFAULT_VIEWPORT_HEIGHT = 360
 
 export type MessageMinimapAnchor = {
   messageId: string
-  itemIndex: number
   text: string
   assistantText?: string
 }
@@ -105,6 +104,7 @@ const MessageMinimapRail = ({
   const contentHeight = anchors.length * ITEM_HEIGHT
   const previousAnchors = useRef(anchors)
   const edgeIntent = useRef<'head' | 'tail' | null>(null)
+  const wasLoading = useRef(!!loading)
   const paginationFocus = useRef<{ messageId: string; delta: number } | null>(null)
 
   const [pointerContentY, setPointerContentY] = useState<number | null>(null)
@@ -240,14 +240,28 @@ const MessageMinimapRail = ({
   useLayoutEffect(() => {
     const previous = previousAnchors.current
     previousAnchors.current = anchors
-    if (previous === anchors || !scrollAreaRef.current) return
+    const finishedLoading = wasLoading.current && !loading
+    wasLoading.current = !!loading
+    if (previous === anchors || !scrollAreaRef.current) {
+      if (finishedLoading) edgeIntent.current = null
+      return
+    }
+    if (
+      previous.length === anchors.length &&
+      previous.every((anchor, index) => anchor.messageId === anchors[index].messageId)
+    ) {
+      setHoveredAnchor((hovered) => (hovered ? { ...hovered, anchor: anchors[hovered.index] } : null))
+      if (finishedLoading) edgeIntent.current = null
+      return
+    }
     const area = scrollAreaRef.current
     const oldIndex = Math.min(previous.length - 1, Math.max(0, Math.floor(area.scrollTop / ITEM_HEIGHT)))
     const anchorId = previous[oldIndex]?.messageId
     const nextIndex = anchors.findIndex((anchor) => anchor.messageId === anchorId)
-    if (edgeIntent.current) {
-      area.scrollTop = edgeIntent.current === 'head' ? 0 : area.scrollHeight
-      if (!loading) edgeIntent.current = null
+    const edge = edgeIntent.current
+    if (edge) {
+      area.scrollTop = edge === 'head' ? 0 : area.scrollHeight
+      edgeIntent.current = null
     } else if (nextIndex >= 0) {
       area.scrollTop += (nextIndex - oldIndex) * ITEM_HEIGHT
     }
@@ -256,11 +270,15 @@ const MessageMinimapRail = ({
     setPointerContentY(null)
     const pending = paginationFocus.current
     const currentFocusId = pending?.messageId ?? previous[keyboardAnchorIndex]?.messageId
-    const focusIndex = anchors.findIndex((anchor) => anchor.messageId === currentFocusId)
+    const focusIndex = edge
+      ? edge === 'head'
+        ? 0
+        : anchors.length - 1
+      : anchors.findIndex((anchor) => anchor.messageId === currentFocusId)
     if (focusIndex >= 0) {
-      const desired = Math.max(0, Math.min(anchors.length - 1, focusIndex + (pending?.delta ?? 0)))
+      const desired = Math.max(0, Math.min(anchors.length - 1, focusIndex + (edge ? 0 : (pending?.delta ?? 0))))
       setKeyboardAnchorIndex(desired)
-      if (pending) {
+      if (pending || edge) {
         pendingFocusIndexRef.current = desired
         area.scrollTop = desired * ITEM_HEIGHT
         setScrollTop(area.scrollTop)

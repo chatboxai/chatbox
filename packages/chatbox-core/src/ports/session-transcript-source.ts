@@ -32,7 +32,7 @@ export interface SessionTranscriptCursor {
   direction: 'before' | 'after'
   limit: number
   maxBytes: number
-  scope: 'transcript' | 'navigation'
+  scope: 'transcript'
 }
 
 export interface SessionTranscriptRequest {
@@ -72,45 +72,8 @@ export interface SessionThreadRead extends SessionRowCommit {
   thread: SessionTranscriptThread
 }
 
-/** Rebuildable bounded text derived when the payload is written. */
-export interface SessionMessageNavigationProjection {
-  role: MessageRow['message']['role']
-  eligible: boolean
-  preview: string
-}
-
-export interface SessionNavigationEntry extends SessionTranscriptAnchor {
-  messageId: string
-  preview: string
-  assistantMessageId?: string
-  assistantPreview?: string
-  /** The next selected messages are outside this navigation page. */
-  assistantPending?: boolean
-}
-
-export interface SessionNavigationPage extends SessionRowCommit {
-  entries: SessionNavigationEntry[]
-  /** First eligible assistant before a page's first user; links an adjacent page's pending user. */
-  leadingAssistant?: { threadId: string; messageId: string; preview: string }
-  threads: SessionTranscriptThread[]
-  anchor: SessionTranscriptAnchor
-  older: SessionTranscriptCursor | null
-  newer: SessionTranscriptCursor | null
-  /** Selected payloads needing a separate, source-bound projection repair. */
-  needsProjection: string[]
-}
-
-export interface SessionNavigationRepairRequest {
-  sessionId: string
-  messageIds: string[]
-  expectedRevision: number
-}
-
 export interface SessionTranscriptStorePort {
-  repairNavigationProjections(request: SessionNavigationRepairRequest): Promise<void>
   readCommit(sessionId: string): Promise<SessionRowCommit | null>
   readThread(request: SessionThreadRequest): Promise<SessionThreadRead | null>
   readTranscriptWindow(request: SessionTranscriptRequest): Promise<SessionTranscriptPage | null>
-  /** Reads bounded metadata/projections only; never hydrates message payloads. */
-  readNavigationPage(request: SessionTranscriptRequest): Promise<SessionNavigationPage | null>
 }

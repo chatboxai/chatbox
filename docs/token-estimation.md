@@ -1,6 +1,6 @@
 # Token 估算数据流
 
-历史估算由 `TokenEstimationService` 从独立行接口读取，`useRowTokenHistory` 管理订阅与任务生命周期。Renderer 和 RN 使用同一选择语义；正文窗口、minimap 与估算各自持有数据。估算用于输入提示和压缩阈值，不等同于供应商账单。
+历史估算由 `TokenEstimationService` 从独立行接口读取，`useRowTokenHistory` 管理订阅与任务生命周期。Renderer 和 RN 使用同一选择语义；minimap 使用正文窗口的消息；估算独立持有数据。估算用于输入提示和压缩阈值，不等同于供应商账单。
 
 ## 首窗与任务
 

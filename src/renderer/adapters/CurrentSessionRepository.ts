@@ -405,18 +405,6 @@ export class CurrentSessionRepository implements SessionRepositoryPort {
     return this.withForegroundSessionWork(() => this.getData().readSessionBranchMessagesPage(...args))
   }
 
-  readSessionNavigationPage(
-    ...args: Parameters<SessionRepositoryPort['readSessionNavigationPage']>
-  ): ReturnType<SessionRepositoryPort['readSessionNavigationPage']> {
-    return this.withForegroundSessionWork(() => this.getData().readSessionNavigationPage(...args))
-  }
-
-  repairSessionNavigationProjections(
-    ...args: Parameters<SessionRepositoryPort['repairSessionNavigationProjections']>
-  ): ReturnType<SessionRepositoryPort['repairSessionNavigationProjections']> {
-    return this.getData().repairSessionNavigationProjections(...args)
-  }
-
   readSessionThread(
     ...args: Parameters<SessionRepositoryPort['readSessionThread']>
   ): ReturnType<SessionRepositoryPort['readSessionThread']> {

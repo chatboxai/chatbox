@@ -18,8 +18,6 @@ import type { SessionCommand, SessionCommandDelta } from './session-repository'
 import type { SessionThreadPageRequest, SessionThreadPageCursor } from './session-row-store'
 import type { SessionTextTokenRepositoryPort } from './session-text-tokens'
 import type {
-  SessionNavigationPage,
-  SessionNavigationRepairRequest,
   SessionThreadRead,
   SessionThreadRequest,
   SessionTranscriptPage,
@@ -147,8 +145,6 @@ export interface SessionRowRepositoryPort
   readSessionBranchPreview(request: SessionBranchPreviewRequest): Promise<SessionBranchPreview | null>
   readSessionBranchMessagesPage(request: SessionBranchMessagesRequest): Promise<SessionBranchMessagesPage | null>
   readSessionTranscriptWindow(request: SessionTranscriptRequest): Promise<SessionTranscriptPage | null>
-  readSessionNavigationPage(request: SessionTranscriptRequest): Promise<SessionNavigationPage | null>
-  repairSessionNavigationProjections(request: SessionNavigationRepairRequest): Promise<void>
   readSessionThread(request: SessionThreadRequest): Promise<SessionThreadRead | null>
   readSessionThreadSummariesPage(request: SessionThreadPageRequest): Promise<SessionThreadSummariesPage | null>
   readSessionForkOptionsPage(request: SessionForkOptionsRequest): Promise<SessionForkOptionsPage | null>

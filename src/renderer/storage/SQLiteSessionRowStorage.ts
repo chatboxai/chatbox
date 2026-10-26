@@ -7,11 +7,7 @@ import {
   type SessionRowSqlStatement,
   SqlSessionRowStore,
 } from '@chatbox/core'
-import {
-  INSERT_MESSAGE_NAVIGATION_SQL,
-  stagedMetadataStatements,
-  textTokenCleanupStatement,
-} from '@chatbox/core/persistence'
+import { stagedMetadataStatements, textTokenCleanupStatement } from '@chatbox/core/persistence'
 import type {
   GeneratingMessageRef,
   SessionBranchMessagesRequest,
@@ -20,8 +16,6 @@ import type {
   SessionMessageRelationsRequest,
   SessionMessagesRequest,
   SessionMessagesSnapshot,
-  SessionNavigationPage,
-  SessionNavigationRepairRequest,
   SessionRowCommit,
   SessionRowIterationRequest,
   SessionRowSnapshot,
@@ -137,16 +131,11 @@ function coalesceStagingInserts(batch: NativeStatement[]): NativeStatement[] {
     }
     groups.clear()
   }
-  // These tables have no foreign keys or INSERT triggers. Only reorder their
-  // inserts inside one native transaction, retaining each table's row order.
+  // Message staging has no foreign keys or INSERT triggers. Coalesce its inserts
+  // inside one native transaction while retaining row order.
   // Updates, deletes, thread writes and every transaction boundary are barriers.
   for (const statement of batch) {
-    const width =
-      statement.statement === INSERT_STAGED_MESSAGE_SQL
-        ? 17
-        : statement.statement === INSERT_MESSAGE_NAVIGATION_SQL
-          ? 4
-          : 0
+    const width = statement.statement === INSERT_STAGED_MESSAGE_SQL ? 17 : 0
     if (width === 0 || statement.values.length !== width) {
       flush()
       result.push(statement)
@@ -258,10 +247,6 @@ class CapacitorSessionRowSqlDatabase implements SessionRowSqlDatabase {
       { sql: 'DELETE FROM session_row_local_metadata WHERE mutation_id=?', params: [mutationId] },
       { sql: 'DELETE FROM session_threads_staging WHERE mutation_id = ?', params: [mutationId] },
       { sql: 'DELETE FROM session_messages_staging WHERE mutation_id = ?', params: [mutationId] },
-      {
-        sql: 'DELETE FROM session_message_navigation WHERE NOT EXISTS (SELECT 1 FROM session_messages WHERE session_messages.payload_id = session_message_navigation.payload_id) AND NOT EXISTS (SELECT 1 FROM session_messages_staging WHERE session_messages_staging.payload_id = session_message_navigation.payload_id)',
-        params: [],
-      },
       { sql: 'DELETE FROM session_row_staging_mutations WHERE mutation_id = ?', params: [mutationId] },
     ]
 
@@ -414,10 +399,6 @@ class CapacitorSessionRowSqlDatabase implements SessionRowSqlDatabase {
           if (largeMetadata) yield* stagedMetadataStatements(mutationId, String(params[0]), String(params[1]), metadata)
           break
         }
-        case 'insert-message-navigation':
-          yield statement
-          break
-        case 'delete-orphan-message-navigation':
         case 'delete-stale-text-tokens':
           break
         default:
@@ -472,9 +453,6 @@ export class SQLiteSessionRowStore implements SessionRowStorePort {
     return this.store.readSnapshot(sessionId)
   }
 
-  repairNavigationProjections(request: SessionNavigationRepairRequest): Promise<void> {
-    return this.store.repairNavigationProjections(request)
-  }
   readMessageMetadata(request: SessionMessageMetadataRequest) {
     return this.store.readMessageMetadata(request)
   }
@@ -502,10 +480,6 @@ export class SQLiteSessionRowStore implements SessionRowStorePort {
   readTranscriptWindow(request: SessionTranscriptRequest): Promise<SessionTranscriptPage | null> {
     return this.store.readTranscriptWindow(request)
   }
-  readNavigationPage(request: SessionTranscriptRequest): Promise<SessionNavigationPage | null> {
-    return this.store.readNavigationPage(request)
-  }
-
   readThreadsPage(request: SessionThreadPageRequest): Promise<SessionThreadPage | null> {
     return this.store.readThreadsPage(request)
   }
@@ -555,10 +529,6 @@ export class SQLiteSessionRowStore implements SessionRowStorePort {
 
   resumeImportRows(candidateId: string) {
     return this.store.resumeImportRows(candidateId)
-  }
-
-  collectImportGarbage(): Promise<void> {
-    return this.store.collectImportGarbage()
   }
 
   listSessionIds(): Promise<string[]> {

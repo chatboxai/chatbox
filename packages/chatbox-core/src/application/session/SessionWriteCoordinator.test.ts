@@ -33,8 +33,6 @@ function fixture() {
     projectSessionMetadata: (id, project) => owner.run(id, project),
     repairSessionRecordProjection: async () => {},
     readSessionTranscriptWindow: unavailable,
-    readSessionNavigationPage: unavailable,
-    repairSessionNavigationProjections: unavailable,
     readSessionThread: unavailable,
     readSessionThreadSummariesPage: unavailable,
     readSessionForkOptionsPage: unavailable,

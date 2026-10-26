@@ -21,7 +21,6 @@ afterEach(() => {
 function createAnchors(count: number): MessageMinimapAnchor[] {
   return Array.from({ length: count }, (_, index) => ({
     messageId: `message-${index + 1}`,
-    itemIndex: index,
     text: `Message ${index + 1}`,
   }))
 }
@@ -122,6 +121,58 @@ describe('getMinimapRenderRange', () => {
     expect(scroller.tabIndex).toBe(-1)
     expect(scroller.hasAttribute('aria-label')).toBe(false)
     expect(screen.getAllByRole('button')).toHaveLength(3)
+  })
+
+  test('keeps keyboard edge focus when navigation replaces the loaded window', async () => {
+    const onEdge = vi.fn()
+    const view = render(createElement(MessageMinimapRail, { anchors: createAnchors(3), hasOlder: true, onEdge }))
+    const first = screen.getByRole('button', { name: 'Jump to message 1' })
+    first.focus()
+    fireEvent.keyDown(first, { key: 'Home' })
+    expect(onEdge).toHaveBeenCalledWith('head')
+    const older = createAnchors(3).map((anchor) => ({
+      ...anchor,
+      messageId: `older-${anchor.messageId}`,
+      text: 'Earlier',
+    }))
+    view.rerender(createElement(MessageMinimapRail, { anchors: older, hasNewer: true, onEdge }))
+    await waitFor(() => expect(document.activeElement?.getAttribute('title')).toBe('Earlier'))
+    fireEvent.keyDown(document.activeElement!, { key: 'End' })
+    expect(onEdge).toHaveBeenLastCalledWith('tail')
+    view.rerender(createElement(MessageMinimapRail, { anchors: createAnchors(3), onEdge }))
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Jump to message 3' })))
+  })
+
+  test('releases edge focus after the shared body layout completes', async () => {
+    const onEdge = vi.fn()
+    const view = render(createElement(MessageMinimapRail, { anchors: createAnchors(3), hasOlder: true, onEdge }))
+    const first = screen.getByRole('button', { name: 'Jump to message 1' })
+    first.focus()
+    fireEvent.keyDown(first, { key: 'Home' })
+    const older = createAnchors(3).map((anchor) => ({ ...anchor, messageId: `older-${anchor.messageId}` }))
+    view.rerender(createElement(MessageMinimapRail, { anchors: older, loading: true, onEdge }))
+    view.rerender(createElement(MessageMinimapRail, { anchors: older, loading: false, onEdge }))
+    const outside = document.createElement('button')
+    document.body.append(outside)
+    try {
+      outside.focus()
+      const updated = older.map((anchor) => ({ ...anchor, assistantText: 'Updated reply' }))
+      view.rerender(createElement(MessageMinimapRail, { anchors: updated, onEdge }))
+      expect(document.activeElement).toBe(outside)
+    } finally {
+      outside.remove()
+    }
+  })
+
+  test('keeps a focused preview visible as its loaded reply streams', () => {
+    const anchors = createAnchors(3)
+    const view = render(createElement(MessageMinimapRail, { anchors }))
+    fireEvent.focus(screen.getByRole('button', { name: 'Jump to message 1' }))
+    const updated = anchors.map((anchor, index) =>
+      index === 0 ? { ...anchor, assistantText: 'Streaming reply' } : anchor
+    )
+    view.rerender(createElement(MessageMinimapRail, { anchors: updated }))
+    expect(screen.getByText('Streaming reply')).toBeTruthy()
   })
 
   test('moves keyboard focus to anchors outside the rendered window', async () => {

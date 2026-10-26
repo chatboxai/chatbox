@@ -59,30 +59,6 @@ describe('SQL transcript query boundaries', () => {
     expect(sql).not.toMatch(/WITH RECURSIVE|session_message_payload_chunks/)
     expect(query.mock.calls.filter(([statement]) => statement.includes('FROM session_messages'))).toHaveLength(1)
   })
-
-  it('reports absent projections without payload reads and repairs only requested source identities', async () => {
-    const { database, store } = createStore()
-    await store.writeRows(transcriptFixture())
-    await database.execute('DELETE FROM session_message_navigation')
-    const query = vi.spyOn(database, 'query')
-    const page = await store.readNavigationPage({ sessionId: 'transcript', origin: 'head', limit: 2 })
-    expect(page?.needsProjection).toEqual(['old-0', 'old-1'])
-    expect(query.mock.calls.map((call) => call[0]).join('\n')).not.toContain('session_message_payload_chunks')
-    await store.repairNavigationProjections({
-      sessionId: 'transcript',
-      messageIds: ['old-0', 'old-1'],
-      expectedRevision: 1,
-    })
-    const payloadReads = query.mock.calls.filter(([sql]) => sql.startsWith('WITH requested(payload_id, request_index)'))
-    expect(payloadReads).toHaveLength(2)
-    expect(payloadReads.every(([, params]) => params?.length === 1)).toBe(true)
-    expect((await store.readCommit('transcript'))?.revision).toBe(1)
-    query.mockClear()
-    const repaired = await store.readNavigationPage({ sessionId: 'transcript', origin: 'head', limit: 3 })
-    expect(repaired?.needsProjection).toEqual(['old-2'])
-    expect(repaired?.entries[0].assistantPreview).toBe('old-1')
-    expect(query.mock.calls.map((call) => call[0]).join('\n')).not.toContain('session_message_payload_chunks')
-  })
 })
 
 it('rejects malformed commit identity and nonpositive revisions without reading payloads', async () => {

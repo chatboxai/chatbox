@@ -30,9 +30,8 @@ async function cleanupCandidates(options: BackupHostOptions): Promise<void> {
       if (error instanceof Error && error.message === 'Import candidate is missing') continue
       throw error
     }
-    await candidate.dispose({ deferNavigationCleanup: !!options.rows.collectImportGarbage })
+    await candidate.dispose()
   }
-  await options.rows.collectImportGarbage?.()
   await options.resources.cleanup(options.jobId)
 }
 
@@ -128,7 +127,7 @@ export function createBackupImportTarget(options: BackupHostOptions): BackupImpo
         sessionId: active.commit.record.id,
         message: 'The conversation was skipped because none of its messages could be restored.',
       })
-      await active.dispose({ deferNavigationCleanup: !!rows.collectImportGarbage })
+      await active.dispose()
     } else {
       throwIfAborted(signal)
       await active.publish()

@@ -106,14 +106,14 @@ it('persists invisible import rows and keeps committed rows after reopening and 
   await recovery.dispose()
   expect(await recovered.readSnapshot(old.record.id)).toEqual(published)
 })
-it.each([false, true])('retains published rows during candidate cleanup (deferred=%s)', async (deferred) => {
+it('retains published rows during candidate cleanup', async () => {
   const rows = store(),
     source = fixture(),
     writer = await rows.stageImportRows(source, null, 'job')
   await append(writer, source)
   await writer.prepare()
   await writer.publish()
-  await writer.dispose({ deferNavigationCleanup: deferred })
+  await writer.dispose()
   expect(await rows.hasRows(source.record.id)).toBe(true)
 })
 it.each(

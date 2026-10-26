@@ -176,7 +176,7 @@ function coalesceCandidateInserts(statements: SessionRowSqlStatement[]): Session
   }
   for (const statement of statements) {
     if (
-      /^INSERT(?: OR REPLACE)? INTO (?:session_(?:messages|threads)_staging|session_message_navigation)\s*\(.+\) VALUES \([?, ]+\)$/.test(
+      /^INSERT(?: OR REPLACE)? INTO session_(?:messages|threads)_staging\s*\(.+\) VALUES \([?, ]+\)$/.test(
         statement.sql
       )
     ) {
@@ -581,19 +581,11 @@ export async function resumeSqlImportWriter(
         }
         index = undefined
       }),
-    dispose: (options) =>
+    dispose: () =>
       enqueue(async () => {
         await db.executeBatch([
           ...candidateRows(),
           { sql: 'DELETE FROM session_row_imports WHERE candidate_id=?', params: [id] },
-          ...(options?.deferNavigationCleanup
-            ? []
-            : [
-                {
-                  sql: 'DELETE FROM session_message_navigation WHERE NOT EXISTS(SELECT 1 FROM session_messages m WHERE m.payload_id=session_message_navigation.payload_id) AND NOT EXISTS(SELECT 1 FROM session_messages_staging m WHERE m.payload_id=session_message_navigation.payload_id)',
-                  params: [],
-                },
-              ]),
         ])
         index = undefined
       }),

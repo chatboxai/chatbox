@@ -8,6 +8,7 @@ import { createRef, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { TranscriptNavigation } from '@/stores/uiStore'
 import MessageList, { type MessageListRef } from './MessageList'
+import type { MessageMinimapRailProps } from './MessageMinimapRail'
 
 const h = vi.hoisted(() => ({
   read: vi.fn(),
@@ -37,7 +38,7 @@ const h = vi.hoisted(() => ({
   atBottom: null as ((value: boolean) => void) | null,
   acknowledgeMeasurements: true,
   starts: [] as Array<() => void>,
-  minimapEnabled: [] as boolean[],
+  minimapProps: null as MessageMinimapRailProps | null,
   bodyModes: [] as Array<{ id: string; readOnly: boolean | undefined }>,
 }))
 vi.mock('@/app/renderer-application', () => ({
@@ -49,21 +50,6 @@ vi.mock('@/app/renderer-application', () => ({
         threads: Array.from({ length: h.threadCount }, (_, index) => ({ threadId: `thread-${index}` })),
       }),
     },
-  },
-}))
-vi.mock('@chatbox/react/query', async (original) => ({
-  ...(await original<typeof import('@chatbox/react/query')>()),
-  useSessionNavigation: ({ enabled }: { enabled: boolean }) => {
-    h.minimapEnabled.push(enabled)
-    return {
-      entries: [],
-      hasOlder: false,
-      hasNewer: false,
-      loadOlder: vi.fn(),
-      loadNewer: vi.fn(),
-      navigate: vi.fn(),
-      retry: vi.fn(),
-    }
   },
 }))
 vi.mock('@/hooks/useSessionLockState', () => ({
@@ -136,11 +122,14 @@ vi.mock('./SummaryMessage', () => ({ default: ({ msg }: { msg: Body }) => <div>{
 vi.mock('./ForkMarkerMessage', () => ({ default: () => null }))
 vi.mock('./ForkGroup', () => ({ default: ({ msgId }: { msgId: string }) => <div data-testid={`fork-${msgId}`} /> }))
 vi.mock('./MessageMinimapRail', () => ({
-  default: ({ onJump }: { onJump(anchor: { messageId: string }): void }) => (
-    <button data-testid="minimap" onClick={() => onJump({ messageId: 'm25' })}>
-      Jump to message
-    </button>
-  ),
+  default: (props: MessageMinimapRailProps) => {
+    h.minimapProps = props
+    return (
+      <button data-testid="minimap" onClick={() => props.anchors[0] && props.onJump?.(props.anchors[0])}>
+        Jump to message
+      </button>
+    )
+  },
 }))
 vi.mock('./MessageNavigation', () => ({
   default: ({
@@ -247,9 +236,9 @@ const header: SessionHeaderRead = {
   control: { generatingAssistantCount: 0 },
   summary: {
     hasAutoTitleContent: false,
-    messageCount: 120,
-    userMessageCount: 60,
-    assistantMessageCount: 60,
+    messageCount: 220,
+    userMessageCount: 110,
+    assistantMessageCount: 110,
     fileMessageCount: 0,
     generatingMessageCount: 0,
     pausedMessageCount: 0,
@@ -272,11 +261,11 @@ function page(request: SessionTranscriptRequest): SessionTranscriptPage {
       ? 0
       : target !== undefined
         ? typeof request.origin === 'object' && request.origin.align === 'center'
-          ? Math.max(0, Math.min(120 - size, target - Math.floor((size - 1) / 2)))
+          ? Math.max(0, Math.min(220 - size, target - Math.floor((size - 1) / 2)))
           : target
-        : 120 - size
+        : 220 - size
   const end =
-    request.cursor?.direction === 'before' ? Number(request.cursor.messageId?.slice(1)) : Math.min(first + size, 120)
+    request.cursor?.direction === 'before' ? Number(request.cursor.messageId?.slice(1)) : Math.min(first + size, 220)
   const messages = Array.from({ length: end - first }, (_, index) => {
     const seq = first + index
     return {
@@ -285,7 +274,7 @@ function page(request: SessionTranscriptRequest): SessionTranscriptPage {
       messageId: `m${seq}`,
       seq,
       parentMessageId: seq ? `m${seq - 1}` : null,
-      activeChildId: seq < 119 ? `m${seq + 1}` : null,
+      activeChildId: seq < 219 ? `m${seq + 1}` : null,
       kind: 'message' as const,
       status: 'settled' as const,
       createdAt: 1,
@@ -316,14 +305,14 @@ function page(request: SessionTranscriptRequest): SessionTranscriptPage {
         name: 'Current',
         createdAt: 1,
         rootMessageId: 'm0',
-        activeLeafMessageId: 'm119',
+        activeLeafMessageId: 'm219',
       },
     ],
     messages,
     payloadBytes: 100,
     anchor: { threadId: 't', messageId: target === undefined ? (messages[0]?.messageId ?? null) : `m${target}` },
     older: first ? cursor(`m${first}`, 'before') : null,
-    newer: end < 120 ? cursor(`m${end - 1}`, 'after') : null,
+    newer: end < 220 ? cursor(`m${end - 1}`, 'after') : null,
   }
 }
 const source = {
@@ -379,7 +368,7 @@ beforeEach(() => {
   h.atBottom = null
   h.acknowledgeMeasurements = true
   h.starts.length = 0
-  h.minimapEnabled.length = 0
+  h.minimapProps = null
   h.bodyModes.length = 0
   h.scrollTo.mockReset().mockImplementation(({ top }: { top: number }) => {
     if (h.currentScroller) h.currentScroller.scrollTop = top
@@ -504,8 +493,8 @@ describe('row transcript host', () => {
     expect(view.getByTestId('virtuoso').style.scrollbarGutter).toBe(smallScreen ? 'auto' : 'stable both-edges')
     expect(view.getByTestId('virtuoso').classList.contains('scrollbar-custom')).toBe(true)
     fireEvent.click(view.getByTestId(smallScreen ? 'mobile-tail' : 'desktop-navigation'))
-    await waitFor(() => expect(h.controller?.getSnapshot().rows.at(-1)?.messageId).toBe('m119'))
-    expect(h.read.mock.calls.at(-1)?.[0]).toMatchObject({ origin: 'tail', limit: 50 })
+    await waitFor(() => expect(h.controller?.getSnapshot().rows.at(-1)?.messageId).toBe('m219'))
+    expect(h.read.mock.calls.at(-1)?.[0]).toMatchObject({ origin: 'tail', limit: 100 })
   })
   test.each([false, true])('shows the generating return-to-tail control on smallScreen=%s', async (smallScreen) => {
     h.smallScreen = smallScreen
@@ -515,7 +504,7 @@ describe('row transcript host', () => {
     expect(view.queryByTestId('desktop-navigation') !== null).toBe(!smallScreen)
     expect(view.queryByTestId('mobile-tail')).toBeNull()
     fireEvent.click(view.getByRole('button', { name: 'Generating...' }))
-    await waitFor(() => expect(h.controller?.getSnapshot().rows.at(-1)?.messageId).toBe('m119'))
+    await waitFor(() => expect(h.controller?.getSnapshot().rows.at(-1)?.messageId).toBe('m219'))
     act(() => h.atBottom?.(true))
     expect(view.queryByRole('button', { name: 'Generating...' })).toBeNull()
   })
@@ -538,13 +527,13 @@ describe('row transcript host', () => {
       fireEvent.click(view.getByRole('button', { name: label }))
       await waitFor(() => expect(h.controller?.getSnapshot().operation).toBeNull())
       if (label === 'Return to the top')
-        expect(h.read.mock.calls.at(-1)?.[0]).toMatchObject({ origin: 'head', limit: 50 })
+        expect(h.read.mock.calls.at(-1)?.[0]).toMatchObject({ origin: 'head', limit: 100 })
       else expect(h.read).toHaveBeenCalledTimes(1)
     }
   )
   test.each([
-    { label: 'Previous message', index: 22 },
-    { label: 'Next message', index: 26 },
+    { label: 'Previous message', index: 47 },
+    { label: 'Next message', index: 51 },
   ])('smoothly scrolls to the loaded $label without a navigation transaction', async ({ label, index }) => {
     const view = render(<Host search="m60" />)
     await waitFor(() => expect(h.firstReady).toBe(true))
@@ -552,7 +541,7 @@ describe('row transcript host', () => {
     scrollGeometry(viewport, 800)
     viewport.getBoundingClientRect = () => ({ top: 40, bottom: 640, height: 600 }) as DOMRect
     h.rowTop = 40
-    for (let seq = 36; seq < 86; seq++) h.rowOffsets.set(`m${seq}`, (seq - 60) * 100)
+    for (let seq = 11; seq < 111; seq++) h.rowOffsets.set(`m${seq}`, (seq - 60) * 100)
     h.scrollIntoView.mockClear()
     h.scrollTo.mockClear()
     h.scrollToIndex.mockClear()
@@ -566,14 +555,14 @@ describe('row transcript host', () => {
   })
 
   test.each([
-    { label: 'Previous message', target: 'm58', index: 22 },
-    { label: 'Next message', target: 'm62', index: 26 },
+    { label: 'Previous message', target: 'm58', index: 47 },
+    { label: 'Next message', target: 'm62', index: 51 },
   ])('scrolls to the loaded $label when its target is not mounted', async ({ label, target, index }) => {
     h.unmountedItems.add(target)
     const view = render(<Host search="m60" />)
     await waitFor(() => expect(h.firstReady).toBe(true))
     h.rowTop = 0
-    for (let seq = 36; seq < 86; seq++) h.rowOffsets.set(`m${seq}`, (seq - 60) * 100)
+    for (let seq = 11; seq < 111; seq++) h.rowOffsets.set(`m${seq}`, (seq - 60) * 100)
     expect(h.controller?.getSnapshot().rows.some((row) => row.messageId === target)).toBe(true)
     expect(view.container.querySelector(`[data-transcript-message="${target}"]`)).toBeNull()
     h.scrollIntoView.mockClear()
@@ -589,13 +578,13 @@ describe('row transcript host', () => {
   })
 
   test.each([
-    { label: 'Previous message', current: 36 },
-    { label: 'Next message', current: 84 },
+    { label: 'Previous message', current: 12 },
+    { label: 'Next message', current: 110 },
   ])('does nothing when the $label is outside the loaded rows', async ({ label, current }) => {
     const view = render(<Host search="m60" />)
     await waitFor(() => expect(h.firstReady).toBe(true))
     h.rowTop = 0
-    for (let seq = 36; seq < 86; seq++) h.rowOffsets.set(`m${seq}`, (seq - current) * 100)
+    for (let seq = 11; seq < 111; seq++) h.rowOffsets.set(`m${seq}`, (seq - current) * 100)
     h.scrollIntoView.mockClear()
     h.scrollTo.mockClear()
     fireEvent.click(view.getByRole('button', { name: label }))
@@ -610,10 +599,10 @@ describe('row transcript host', () => {
     await waitFor(() => expect(h.firstReady).toBe(true))
     scrollGeometry(view.getByTestId('virtuoso'), 800)
     h.rowTop = -10
-    for (let seq = 36; seq < 86; seq++) h.rowOffsets.set(`m${seq}`, (seq - 60) * 100)
+    for (let seq = 11; seq < 111; seq++) h.rowOffsets.set(`m${seq}`, (seq - 60) * 100)
     h.scrollToIndex.mockClear()
     fireEvent.click(view.getByRole('button', { name: 'Previous message' }))
-    expect(h.scrollToIndex).toHaveBeenCalledExactlyOnceWith({ index: 24, align: 'start', behavior: 'smooth' })
+    expect(h.scrollToIndex).toHaveBeenCalledExactlyOnceWith({ index: 49, align: 'start', behavior: 'smooth' })
     expect(h.read).toHaveBeenCalledTimes(1)
   })
 
@@ -627,10 +616,10 @@ describe('row transcript host', () => {
     expect(h.controller?.getSnapshot().operation?.phase).toBe('error')
     scrollGeometry(view.getByTestId('virtuoso'), 800)
     h.rowTop = 0
-    for (let seq = 36; seq < 86; seq++) h.rowOffsets.set(`m${seq}`, (seq - 60) * 100)
+    for (let seq = 11; seq < 111; seq++) h.rowOffsets.set(`m${seq}`, (seq - 60) * 100)
     h.scrollToIndex.mockClear()
     fireEvent.click(view.getByRole('button', { name: 'Previous message' }))
-    expect(h.scrollToIndex).toHaveBeenCalledExactlyOnceWith({ index: 22, align: 'start', behavior: 'smooth' })
+    expect(h.scrollToIndex).toHaveBeenCalledExactlyOnceWith({ index: 47, align: 'start', behavior: 'smooth' })
     expect(h.read).toHaveBeenCalledTimes(2)
   })
 
@@ -641,10 +630,10 @@ describe('row transcript host', () => {
     scrollGeometry(viewport, 800)
     fireEvent.wheel(viewport, { deltaY: -80 })
     h.rowTop = 0
-    for (let seq = 36; seq < 86; seq++) h.rowOffsets.set(`m${seq}`, (seq - 38) * 100)
+    for (let seq = 11; seq < 111; seq++) h.rowOffsets.set(`m${seq}`, (seq - 14) * 100)
     h.scrollToIndex.mockClear()
     fireEvent.click(view.getByRole('button', { name: 'Previous message' }))
-    expect(h.scrollToIndex).toHaveBeenCalledExactlyOnceWith({ index: 0, align: 'start', behavior: 'smooth' })
+    expect(h.scrollToIndex).toHaveBeenCalledExactlyOnceWith({ index: 1, align: 'start', behavior: 'smooth' })
     viewport.scrollTop = 0
     fireEvent.scroll(viewport)
     act(() => h.starts.at(-1)?.())
@@ -657,13 +646,13 @@ describe('row transcript host', () => {
   test('preserves user and final-turn spacing', async () => {
     h.read.mockImplementation(async (request: SessionTranscriptRequest) => {
       const result = page(request)
-      result.threads[0].summary = { ...header.summary, lastUserMessageId: 'm118' }
+      result.threads[0].summary = { ...header.summary, lastUserMessageId: 'm218' }
       return result
     })
     const view = render(<Host />)
     await waitFor(() => expect(h.firstReady).toBe(true))
-    const user = view.container.querySelector<HTMLElement>('[data-transcript-message="m118"]')!
-    const assistant = view.container.querySelector<HTMLElement>('[data-transcript-message="m119"]')!
+    const user = view.container.querySelector<HTMLElement>('[data-transcript-message="m218"]')!
+    const assistant = view.container.querySelector<HTMLElement>('[data-transcript-message="m219"]')!
     expect(user.style.paddingTop).toBe('calc(0.25rem * var(--mantine-scale))')
     expect(assistant.style.paddingTop).toBe('0rem')
     expect(user.parentElement?.classList.contains('pt-5')).toBe(true)
@@ -688,18 +677,24 @@ describe('row transcript host', () => {
     expect(view.getByText(new Date(1_700_000_000_000).toLocaleString())).toBeTruthy()
     expect(h.read).toHaveBeenCalledTimes(1)
   })
-  test('renders one tail page with bounded indices and gates independent navigation on layout', async () => {
+  test('renders the minimap from the loaded tail page after layout', async () => {
     const view = render(<Host />)
     await waitFor(() => expect(h.firstReady).toBe(true))
     expect(h.read).toHaveBeenCalledTimes(1)
-    expect(h.read.mock.calls[0][0]).toMatchObject({ origin: 'tail', limit: 50 })
+    expect(h.read.mock.calls[0][0]).toMatchObject({ origin: 'tail', limit: 100 })
+    expect(h.controller!.getSnapshot().rows).toHaveLength(100)
+    expect(h.minimapProps!.anchors).toHaveLength(50)
     expect(view.getByTestId('virtuoso').dataset.firstIndex).toBe('0')
     expect(getComputedStyle(view.getByTestId('virtuoso')).visibility).toBe('visible')
-    expect(view.queryByTestId('message-m69')).toBeNull()
-    expect(view.getByTestId('message-m70')).toBeTruthy()
+    expect(view.queryByTestId('message-m119')).toBeNull()
+    expect(view.getByTestId('message-m120')).toBeTruthy()
     expect(view.queryByText('Current')).toBeNull()
-    expect(h.minimapEnabled[0]).toBe(false)
-    expect(h.minimapEnabled.at(-1)).toBe(true)
+    expect(h.minimapProps!.anchors.map((anchor) => anchor.messageId)).toEqual(
+      h
+        .controller!.getSnapshot()
+        .rows.filter((row) => row.message.role === 'user')
+        .map((row) => row.messageId)
+    )
   })
   test.each([
     { role: 'user' as const, hideSystem: false },
@@ -783,7 +778,7 @@ describe('row transcript host', () => {
     await waitFor(() => expect(h.scrollIntoView).toHaveBeenCalled())
     await act(async () => new Promise((resolve) => setTimeout(resolve, 25)))
     expect(h.firstReady).toBe(false)
-    expect(h.minimapEnabled.at(-1)).toBe(false)
+    expect(view.queryByTestId('minimap')).toBeNull()
     expect(getComputedStyle(view.getByTestId('virtuoso')).visibility).toBe('hidden')
     expect(view.container.querySelector('.mantine-Loader-root')).toBeNull()
     h.tailMounted = true
@@ -808,7 +803,7 @@ describe('row transcript host', () => {
         await vi.advanceTimersByTimeAsync(5100)
       })
       expect(h.firstReady).toBe(false)
-      expect(h.minimapEnabled.at(-1)).toBe(false)
+      expect(view.queryByTestId('minimap')).toBeNull()
       expect(view.getByText('Try Again')).toBeTruthy()
       expect(view.container.querySelector('.mantine-Loader-root')).toBeNull()
     } finally {
@@ -823,7 +818,7 @@ describe('row transcript host', () => {
     view.getByTestId('virtuoso').scrollTop = 0
     fireEvent.wheel(view.container.querySelector('[data-session-view]')!, { deltaY: -40 })
     await waitFor(() => expect(h.read).toHaveBeenCalledTimes(2))
-    expect(h.read.mock.calls[1][0].cursor).toMatchObject({ direction: 'before', messageId: 'm70' })
+    expect(h.read.mock.calls[1][0].cursor).toMatchObject({ direction: 'before', messageId: 'm120' })
     await waitFor(() =>
       expect(view.container.querySelector('[data-session-view]')?.getAttribute('aria-busy')).toBe('false')
     )
@@ -844,7 +839,7 @@ describe('row transcript host', () => {
       await waitFor(() => expect(h.read).toHaveBeenCalledTimes(before + 1))
       expect(h.read.mock.calls.at(-1)![0].cursor).toMatchObject({
         direction: direction === 'older' ? 'before' : 'after',
-        messageId: direction === 'older' ? 'm70' : 'm49',
+        messageId: direction === 'older' ? 'm120' : 'm99',
       })
       await waitFor(() => expect(h.controller!.getSnapshot().operation).toBeNull())
       expect(h.read).toHaveBeenCalledTimes(before + 1)
@@ -881,9 +876,9 @@ describe('row transcript host', () => {
             previousRevision: 1,
             revision: 2,
             sharedPrefixEnd: { threadId: 't', messageId: null },
-            origin: { messageId: 'm70' },
+            origin: { messageId: 'm120' },
           })
-        else await controller[kind]({ messageId: 'm70' })
+        else await controller[kind]({ messageId: 'm120' })
       })
       await waitFor(() => expect(controller.getSnapshot().operation).toBeNull())
       const before = h.read.mock.calls.length
@@ -911,7 +906,7 @@ describe('row transcript host', () => {
     )
     let pending!: Promise<boolean>
     act(() => {
-      pending = controller.open({ messageId: 'm70' })
+      pending = controller.open({ messageId: 'm120' })
       const viewport = view.getByTestId('virtuoso')
       scrollGeometry(viewport, 400)
       if (input === 'wheel') fireEvent.wheel(viewport, { deltaY: -40 })
@@ -932,7 +927,7 @@ describe('row transcript host', () => {
     viewport.scrollTop = 0
     fireEvent.scroll(viewport)
     await waitFor(() => expect(h.read).toHaveBeenCalledTimes(before + 1))
-    expect(h.read.mock.calls.at(-1)![0].cursor).toMatchObject({ direction: 'before', messageId: 'm46' })
+    expect(h.read.mock.calls.at(-1)![0].cursor).toMatchObject({ direction: 'before', messageId: 'm71' })
   })
 
   test('requires a new touch start after an explicit window operation', async () => {
@@ -941,7 +936,7 @@ describe('row transcript host', () => {
     const viewport = view.getByTestId('virtuoso')
     fireEvent.touchStart(viewport, { touches: [{ clientY: 200 }] })
     await act(async () => {
-      await h.controller!.open({ messageId: 'm70' })
+      await h.controller!.open({ messageId: 'm120' })
     })
     await waitFor(() => expect(h.controller!.getSnapshot().operation).toBeNull())
     const before = h.read.mock.calls.length
@@ -963,7 +958,7 @@ describe('row transcript host', () => {
     scrollGeometry(old, 400)
     pointerEvent(old, 'pointerdown')
     await act(async () => {
-      await h.controller!.navigate({ messageId: 'm70' })
+      await h.controller!.navigate({ messageId: 'm120' })
     })
     await waitFor(() => expect(h.controller!.getSnapshot().operation).toBeNull())
     const before = h.read.mock.calls.length
@@ -980,7 +975,7 @@ describe('row transcript host', () => {
   test.each(['older', 'newer'] as const)(
     'requires fresh touch movement after completing an ordinary %s page',
     async (direction) => {
-      const view = render(<Host search={direction === 'newer' ? 'm0' : 'm100'} />)
+      const view = render(<Host search={direction === 'newer' ? 'm0' : 'm200'} />)
       await waitFor(() => expect(h.firstReady).toBe(true))
       const controller = h.controller!
       let finish!: (value: SessionTranscriptPage) => void
@@ -1013,7 +1008,7 @@ describe('row transcript host', () => {
       expect(h.read).toHaveBeenCalledTimes(before + 1)
       expect(h.read.mock.calls.at(-1)![0].cursor).toMatchObject({
         direction: direction === 'older' ? 'before' : 'after',
-        messageId: direction === 'older' ? 'm20' : 'm99',
+        messageId: direction === 'older' ? 'm20' : 'm199',
       })
     }
   )
@@ -1021,7 +1016,7 @@ describe('row transcript host', () => {
   test.each(['wheel', 'scrollbar'] as const)(
     'accepts fresh %s input after consuming completed touch pagination',
     async (input) => {
-      const view = render(<Host search="m100" />)
+      const view = render(<Host search="m200" />)
       await waitFor(() => expect(h.firstReady).toBe(true))
       const viewport = view.getByTestId('virtuoso')
       let finish!: (value: SessionTranscriptPage) => void
@@ -1059,7 +1054,7 @@ describe('row transcript host', () => {
   test.each(['older', 'newer'] as const)(
     'keeps the fresh touch move that yields an ordinary %s layout',
     async (direction) => {
-      const view = render(<Host search={direction === 'newer' ? 'm0' : 'm100'} />)
+      const view = render(<Host search={direction === 'newer' ? 'm0' : 'm200'} />)
       await waitFor(() => expect(h.firstReady).toBe(true))
       vi.stubGlobal(
         'requestAnimationFrame',
@@ -1079,7 +1074,7 @@ describe('row transcript host', () => {
       expect(h.read).toHaveBeenCalledTimes(3)
       expect(h.read.mock.calls.at(-1)![0].cursor).toMatchObject({
         direction: direction === 'older' ? 'before' : 'after',
-        messageId: direction === 'older' ? 'm20' : 'm99',
+        messageId: direction === 'older' ? 'm20' : 'm199',
       })
       fireEvent.touchEnd(viewport)
     }
@@ -1126,7 +1121,7 @@ describe('row transcript host', () => {
     scroller.scrollTop = 100
     fireEvent.scroll(scroller)
     await waitFor(() => expect(h.read).toHaveBeenCalledTimes(2))
-    expect(h.read.mock.calls[1][0].cursor).toMatchObject({ direction: 'before', messageId: 'm70' })
+    expect(h.read.mock.calls[1][0].cursor).toMatchObject({ direction: 'before', messageId: 'm120' })
     pointerEvent(document, 'pointerup')
     await waitFor(() =>
       expect(view.container.querySelector('[data-session-view]')?.getAttribute('aria-busy')).toBe('false')
@@ -1237,7 +1232,7 @@ describe('row transcript host', () => {
     h.tailMounted = false
     view.rerender(<Host />)
     await act(async () => {
-      await h.controller!.navigate({ messageId: 'm119' })
+      await h.controller!.navigate({ messageId: 'm219' })
     })
     expect(h.scrollIntoView).toHaveBeenCalled()
     const layout = h.controller!.getSnapshot().layout
@@ -1256,7 +1251,7 @@ describe('row transcript host', () => {
     scroller.scrollTop = 1300
     fireEvent.scroll(scroller)
     await waitFor(() => expect(h.read).toHaveBeenCalledTimes(2))
-    expect(h.read.mock.calls[1][0].cursor).toMatchObject({ direction: 'after', messageId: 'm49' })
+    expect(h.read.mock.calls[1][0].cursor).toMatchObject({ direction: 'after', messageId: 'm99' })
     pointerEvent(document, 'pointercancel')
   })
   test('search centers one page on the target and aligns that message, including a loaded result', async () => {
@@ -1265,7 +1260,7 @@ describe('row transcript host', () => {
     await waitFor(() => expect(h.firstReady).toBe(true))
     expect(h.read.mock.calls[0][0].origin).toEqual({ messageId: 'm73', align: 'center' })
     expect(h.controller!.getSnapshot().rows.map((row) => row.messageId)).toEqual(
-      Array.from({ length: 50 }, (_, index) => `m${49 + index}`)
+      Array.from({ length: 100 }, (_, index) => `m${24 + index}`)
     )
     const target = view.container.querySelector<HTMLElement>('[data-transcript-message="m73"]')!
     expect(target.getBoundingClientRect().top).toBe(0)
@@ -1277,24 +1272,42 @@ describe('row transcript host', () => {
     })
     await waitFor(() => expect(h.controller!.getSnapshot().operation).toBeNull())
     expect(h.read.mock.calls.at(-1)?.[0].origin).toEqual({ messageId: 'm75', align: 'center' })
-    expect(h.controller!.getSnapshot().rows[0].messageId).toBe('m51')
+    expect(h.controller!.getSnapshot().rows[0].messageId).toBe('m26')
     expect(
       view.container.querySelector<HTMLElement>('[data-transcript-message="m75"]')!.getBoundingClientRect().top
     ).toBe(0)
   })
-  test('minimap loads a centered body page and aligns its selected message', async () => {
+  test('minimap aligns a loaded message without reading another body page', async () => {
     const view = render(<Host />)
     await waitFor(() => expect(h.firstReady).toBe(true))
-    h.rowOffsets.set('m25', 300)
+    h.rowOffsets.set('m120', 300)
     fireEvent.click(view.getByTestId('minimap'))
     await waitFor(() => expect(h.controller!.getSnapshot().operation).toBeNull())
-    expect(h.read.mock.calls.at(-1)?.[0].origin).toEqual({ messageId: 'm25', align: 'center' })
-    expect(h.controller!.getSnapshot().rows[0].messageId).toBe('m1')
-    expect(h.controller!.getSnapshot().rows).toHaveLength(50)
+    expect(h.read).toHaveBeenCalledTimes(1)
+    expect(h.controller!.getSnapshot().rows[0].messageId).toBe('m120')
     expect(
-      view.container.querySelector<HTMLElement>('[data-transcript-message="m25"]')!.getBoundingClientRect().top
+      view.container.querySelector<HTMLElement>('[data-transcript-message="m120"]')!.getBoundingClientRect().top
     ).toBe(0)
-    expect(h.scrollBy).toHaveBeenCalledWith({ top: 880, behavior: 'auto' })
+  })
+  test('minimap pagination and edge jumps share the body window', async () => {
+    render(<Host />)
+    await waitFor(() => expect(h.firstReady).toBe(true))
+    act(() => h.minimapProps!.onLoadOlder?.())
+    await waitFor(() => expect(h.controller!.getSnapshot().operation).toBeNull())
+    expect(h.read).toHaveBeenCalledTimes(2)
+    expect(h.read.mock.calls[1][0]).toMatchObject({ limit: 100, cursor: { direction: 'before', messageId: 'm120' } })
+    expect(h.controller!.getSnapshot().rows).toHaveLength(200)
+    expect(h.controller!.getSnapshot().rows[0].messageId).toBe('m20')
+    expect(h.minimapProps!.anchors[0].messageId).toBe('m20')
+    expect(h.minimapProps!.anchors).toHaveLength(100)
+    act(() => {
+      h.minimapProps!.onEdge?.('head')
+    })
+    await waitFor(() => expect(h.controller!.getSnapshot().operation).toBeNull())
+    expect(h.read.mock.calls.at(-1)![0]).toMatchObject({ origin: 'head', limit: 100 })
+    expect(h.controller!.getSnapshot().rows).toHaveLength(100)
+    expect(h.minimapProps!.anchors[0].messageId).toBe('m0')
+    expect(h.minimapProps!.anchors).toHaveLength(50)
   })
   test('keeps view-thread navigation separate from edge jumps and cleans up its owner', async () => {
     const listRef = createRef<MessageListRef>()

@@ -42,11 +42,7 @@ import type { CurrentThreadIdentity } from '../../ports/session-structure-comman
 import type { SessionTextTokenResult, SessionTextTokenWriteResult } from '../../ports/session-text-tokens'
 import type { SessionTokenCacheResult } from '../../ports/session-token-cache'
 import type { SessionTokenPageRequest, SessionTokenPlanRequest } from '../../ports/session-token-source'
-import type {
-  SessionNavigationRepairRequest,
-  SessionThreadRequest,
-  SessionTranscriptRequest,
-} from '../../ports/session-transcript-source'
+import type { SessionThreadRequest, SessionTranscriptRequest } from '../../ports/session-transcript-source'
 import { iterateRowResourceReferences } from '../../resources/row-resources'
 import { addSummaryRow, deriveMessageFacts, emptyThreadSummary } from '../../session/message-facts'
 import type { MessageRow, SessionRecordV2, SessionRowRecord, ThreadRow } from '../../session/session-tree/types'
@@ -377,16 +373,6 @@ export class RowBackedSessionRepository implements SessionRowRepositoryPort {
       pausedMessageIds,
       latestMessageHasWebSearchSignInError: latest?.facts.webSearchSignInError ?? false,
     }
-  }
-
-  async readSessionNavigationPage(request: SessionTranscriptRequest) {
-    if (!(await this.ensureRows(request.sessionId))) return null
-    return this.rows.readNavigationPage(request)
-  }
-
-  async repairSessionNavigationProjections(request: SessionNavigationRepairRequest): Promise<void> {
-    if (!(await this.ensureRows(request.sessionId))) return
-    await this.writes.run(request.sessionId, () => this.rows.repairNavigationProjections(request))
   }
 
   async readSessionThread(request: SessionThreadRequest) {

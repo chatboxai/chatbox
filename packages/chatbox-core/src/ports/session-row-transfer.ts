@@ -51,8 +51,6 @@ export interface SessionRowImportWriter extends SessionRowWriter {
     onIssue?: SessionRowImportIssueHandler,
     forks?: ReadonlyMap<string, NonNullable<MessageRow['fork']>>
   ): Promise<SessionRowImportPreparation | void>
-  /** Removes candidate rows; deferred navigation cleanup requires collectImportGarbage afterward. */
-  dispose(options?: { deferNavigationCleanup?: boolean }): Promise<void>
 }
 
 export interface SessionRowTransferPort {
@@ -66,6 +64,4 @@ export interface SessionRowTransferPort {
     jobId: string
   ): Promise<SessionRowImportWriter>
   resumeImportRows?(candidateId: string): Promise<SessionRowImportWriter>
-  /** Collects unreferenced navigation payloads after all import candidates have been disposed. */
-  collectImportGarbage?(): Promise<void>
 }

@@ -47,8 +47,6 @@ export class InMemorySessionRepository implements SessionRepositoryPort {
   readonly readSessionSearchWindow = this.data.readSessionSearchWindow.bind(this.data)
   readonly readSessionSearchCandidates = this.data.readSessionSearchCandidates.bind(this.data)
   readonly readSessionTranscriptWindow = this.data.readSessionTranscriptWindow.bind(this.data)
-  readonly readSessionNavigationPage = this.data.readSessionNavigationPage.bind(this.data)
-  readonly repairSessionNavigationProjections = this.data.repairSessionNavigationProjections.bind(this.data)
   readonly readSessionThread = this.data.readSessionThread.bind(this.data)
   readonly readSessionThreadSummariesPage = this.data.readSessionThreadSummariesPage.bind(this.data)
   readonly readSessionForkOptionsPage = this.data.readSessionForkOptionsPage.bind(this.data)

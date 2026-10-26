@@ -62,7 +62,6 @@ export function deleteStoredMessage(tx: IDBTransaction, sessionId: string, messa
 /** Physical index fields are not part of a logical message row. */
 export function messageMetadata(
   value: MessageRowMetadata & {
-    navigation?: unknown
     tokenPayloadId?: string
     payloadBytes?: number
     selectedDepth?: number | null
@@ -74,7 +73,6 @@ export function messageMetadata(
   }
 ): MessageRowMetadata {
   const {
-    navigation: _navigation,
     tokenPayloadId: _tokenPayloadId,
     payloadBytes: _bytes,
     selectedDepth: _depth,

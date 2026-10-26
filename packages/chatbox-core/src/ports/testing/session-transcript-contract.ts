@@ -382,7 +382,6 @@ export function createSessionTranscriptContract(
           store.readTranscriptWindow({ sessionId: 'transcript', origin: { messageId: 'inactive' }, limit: 3 })
         )
         await rejects(() => store.readTranscriptWindow({ sessionId: 'transcript', cursor: page!.older!, limit: 2 }))
-        await rejects(() => store.readNavigationPage({ sessionId: 'transcript', cursor: page!.older!, limit: 3 }))
         await store.applyDiff(
           { sessionId: 'transcript', threads: { upsert: [], delete: [] }, messages: { upsert: [], delete: [] } },
           { ...transcriptFixture(), revision: 2 },
@@ -461,28 +460,6 @@ export function createSessionTranscriptContract(
         await rejects(() =>
           store.readTranscriptWindow({ sessionId: 'transcript', cursor: page!.newer!, limit: 4, maxBytes: 2 })
         )
-      },
-    },
-    {
-      name: 'navigation projection pages pair visible messages and retain cross-page assistant continuation',
-      run: async () => {
-        const store = await factory()
-        await store.writeRows(transcriptFixture())
-        const page = await store.readNavigationPage({ sessionId: 'transcript', origin: 'head', limit: 3 })
-        equal(
-          page?.entries.map((row) => [row.messageId, row.assistantMessageId]),
-          [
-            ['old-0', 'old-1'],
-            ['old-2', undefined],
-          ]
-        )
-        equal(page?.needsProjection, [])
-        const split = await store.readNavigationPage({ sessionId: 'transcript', origin: 'head', limit: 1 })
-        equal(split?.entries[0].assistantPending, true)
-        const next = await store.readNavigationPage({ sessionId: 'transcript', cursor: split!.newer!, limit: 1 })
-        equal(next?.leadingAssistant, { threadId: 'old', messageId: 'old-1', preview: 'old-1' })
-        equal(next?.entries, [])
-        equal(Boolean(next?.newer), true)
       },
     },
   ]

@@ -4,7 +4,7 @@ import { isActionAvailableInMode, resolveSessionMode, type SessionMode } from '@
 import type { PromptCacheDeleteTarget } from '@chatbox/core/session/prompt-cache-policy'
 import type { SessionTranscriptViewportAnchor } from '@chatbox/react/query'
 import NiceModal from '@ebay/nice-modal-react'
-import { Button, Flex, Loader, Stack, Transition } from '@mantine/core'
+import { Button, Flex, Loader, Stack, Text, Transition } from '@mantine/core'
 import { useThrottledCallback } from '@mantine/hooks'
 import { TestId } from '@shared/automation/testids'
 import type { Message as SessionMessage, SessionThreadBrief } from '@shared/types'
@@ -50,7 +50,8 @@ import { uiStore, useUIStore } from '@/stores/uiStore'
 import { notifySessionLockBlocked } from '@/utils/session-lock-copy'
 import ActionMenu from '../ActionMenu'
 import { ErrorBoundary } from '../common/ErrorBoundary'
-import { ErrorNotice, ErrorNoticeAction, ErrorNoticeActions, ErrorNoticeDetails } from '../common/ErrorNotice'
+import { ErrorNotice } from '../common/ErrorNotice'
+import errorNoticeClasses from '../common/ErrorNotice.module.css'
 import { ScalableIcon } from '../common/ScalableIcon'
 import Loading from '../icons/Loading'
 import { BlockCodeCollapsedStateProvider } from '../Markdown'
@@ -701,23 +702,24 @@ const MessageList = forwardRef<
         ? transcript.operation.kind
         : 'navigate'
   const transcriptErrorNotice = transcript.error && transcriptErrorAt && (
-    <ErrorNotice
-      icon="error"
-      title={
+    <ErrorNotice icon="error">
+      <Text fw={600} fz={14} lh="20px" c="chatbox-primary">
         {
-          open: t('This conversation could not be loaded'),
-          older: t('Earlier messages could not be loaded'),
-          newer: t('Later messages could not be loaded'),
-          navigate: t('Some messages could not be loaded'),
-        }[transcriptErrorAt]
-      }
-    >
-      <ErrorNoticeDetails text={transcript.error.message} />
-      <ErrorNoticeActions>
-        <ErrorNoticeAction icon={IconReload} onClick={() => void transcript.retry()}>
-          {t('Try Again')}
-        </ErrorNoticeAction>
-      </ErrorNoticeActions>
+          {
+            open: t('This conversation could not be loaded'),
+            older: t('Earlier messages could not be loaded'),
+            newer: t('Later messages could not be loaded'),
+            navigate: t('Some messages could not be loaded'),
+          }[transcriptErrorAt]
+        }
+      </Text>
+      <div className={errorNoticeClasses.details}>
+        <div className={errorNoticeClasses.detailText}>{transcript.error.message}</div>
+      </div>
+      <button type="button" className={errorNoticeClasses.retry} onClick={() => void transcript.retry()}>
+        {t('Try Again')}
+        <IconReload size={14} />
+      </button>
     </ErrorNotice>
   )
   return (

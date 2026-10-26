@@ -3,7 +3,7 @@ import { readRowContextSource } from '../application/session/row-context'
 import { SessionRowConflictError, type SessionRowSnapshot } from '../ports/session-row-store'
 import type { SessionStoredRow } from '../ports/session-row-transfer'
 import type { SessionTextTokenResult } from '../ports/session-text-tokens'
-import { projectRowFixture } from '../ports/testing/session-row-fixtures'
+import { projectRowFixture as projectFactsFixture, storageRowFixture } from '../ports/testing/session-row-fixtures'
 import { iterateRowResourceReferences } from '../resources/row-resources'
 import { type NodeSessionRowSqlDatabase, openNodeSessionRowDatabase } from './node-sqlite.test-support'
 import { type SessionRowSqlBindValue, type SessionRowSqlReadOptions, SqlSessionRowStore } from './session-row-sql'
@@ -27,7 +27,7 @@ function fixture(count = 3, text = '正文😀', wideIds = false): SessionRowSna
         {
           sessionId,
           threadId,
-          seq: -1,
+          threadOrder: -1,
           name: '线程\u0000😀'.repeat(10000),
           createdAt: 1,
           rootMessageId: ids[0] ?? null,
@@ -37,7 +37,7 @@ function fixture(count = 3, text = '正文😀', wideIds = false): SessionRowSna
         {
           sessionId,
           threadId: 'archived',
-          seq: 0,
+          threadOrder: 0,
           name: 'History',
           createdAt: 1,
           rootMessageId: null,
@@ -49,7 +49,7 @@ function fixture(count = 3, text = '正文😀', wideIds = false): SessionRowSna
         sessionId,
         threadId,
         messageId,
-        seq: index,
+        siblingOrder: index,
         parentMessageId: ids[index - 1] ?? null,
         activeChildId: ids[index + 1] ?? null,
         kind: 'message',
@@ -281,7 +281,7 @@ describe('structured native SQL read policy', () => {
   it.each([
     "UPDATE session_messages SET parent_message_id=CAST('bad' AS BLOB)",
     'UPDATE session_messages SET payload_utf8_length=-1',
-    'UPDATE session_messages SET seq=0.5',
+    'UPDATE session_messages SET siblingOrder=0.5',
     "UPDATE session_threads SET compaction_points_json='{'",
   ])('rejects invalid context metadata: %s', async (sql) => {
     const { writer, reader, database } = setup()
@@ -308,7 +308,7 @@ describe('structured native SQL read policy', () => {
     change = () =>
       database.executeBatch([
         { sql: 'UPDATE session_row_heads SET revision=2', params: [] },
-        { sql: 'UPDATE session_threads SET commit_revision=2 WHERE seq=-1', params: [] },
+        { sql: 'UPDATE session_threads SET commit_revision=2 WHERE threadOrder=-1', params: [] },
       ])
     await expect(
       reader.readTranscriptWindow({ sessionId: snapshot.record.id, limit: 1, cursor: first.older })
@@ -323,3 +323,7 @@ describe('structured native SQL read policy', () => {
     ).rejects.toBeInstanceOf(SessionRowConflictError)
   })
 })
+
+function projectRowFixture(...args: Parameters<typeof projectFactsFixture>) {
+  return storageRowFixture(projectFactsFixture(...args))
+}

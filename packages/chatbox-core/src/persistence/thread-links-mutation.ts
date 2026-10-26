@@ -1,10 +1,10 @@
 import type { Message } from '../types/session'
 import type { SessionRowCommit, SessionRowsDiff, SessionRowMutationResult } from '../ports/session-row-store'
-import type { SessionKnownMessageMetadata } from '../ports/session-row-relations'
+import type { ThreadLinks, ThreadLink } from '../session/thread-links'
 import type { MessageRowMetadata, ThreadRow, SessionThreadSummary } from '../session/session-tree/types'
 import { addSummaryRow, deriveMessageFacts, emptyThreadSummary } from '../session/message-facts'
 
-export type ProjectedMessage = SessionKnownMessageMetadata & { selectedDepth: number | null }
+export type ProjectedMessage = ThreadLink
 export interface LocalRowMutationAccess {
   oldMessage(id: string): Promise<ProjectedMessage | null>
   message(id: string): Promise<ProjectedMessage | null>
@@ -12,28 +12,17 @@ export interface LocalRowMutationAccess {
   children(
     threadId: string,
     parentId: string | null,
-    after: { seq: number; messageId: string } | undefined,
+    after: { siblingOrder: number; messageId: string } | undefined,
     limit: number,
     old?: boolean
   ): Promise<ProjectedMessage[]>
-  selected(
-    threadId: string,
-    options: {
-      afterDepth?: number
-      beforeDepth?: number
-      reverse?: boolean
-      role?: string
-      conversation?: true
-      namingRole?: 'user' | 'assistant'
-      kind?: string
-      limit: number
-      old?: boolean
-    }
-  ): Promise<ProjectedMessage[]>
+  yieldTask?(): Promise<void>
+  oldLinks(threadId: string): Promise<ThreadLinks>
+  links(threadId: string): Promise<ThreadLinks>
   childStats(
     threadId: string,
     parentId: string,
-    boundary: { seq: number; messageId: string } | null
+    boundary: { siblingOrder: number; messageId: string } | null
   ): Promise<{ count: number; before: number }>
   put(row: ProjectedMessage, message?: Message): Promise<void>
   remove(messageId: string): Promise<void>
@@ -44,35 +33,16 @@ interface ThreadState {
   thread: ThreadRow
   summary: SessionThreadSummary
   generatingAssistantCount: number
-  start?: number
-  endpoints?: boolean
+  old: ThreadRow | null
+  cleared?: boolean
+  changes: Map<string, { before: ThreadLink | null; after: ThreadLink | null }>
 }
 function number(value: number) {
   if (!Number.isSafeInteger(value) || value < 0) throw new Error('Invalid row order')
   return value
 }
-function contribution(row: ProjectedMessage) {
-  return addSummaryRow(emptyThreadSummary(), row)
-}
-const COUNTS = [
-  'messageCount',
-  'userMessageCount',
-  'assistantMessageCount',
-  'fileMessageCount',
-  'generatingMessageCount',
-  'pausedMessageCount',
-  'webSearchSignInErrorCount',
-  'legacyCommandMessageCount',
-  'steeredMessageCount',
-] as const
-function accumulate(summary: SessionThreadSummary, row: ProjectedMessage, sign: 1 | -1) {
-  const delta = contribution(row)
-  for (const key of COUNTS) summary[key] += sign * delta[key]
-}
-const generating = (row: ProjectedMessage) => Number(row.status === 'generating' && row.facts.role === 'assistant')
-
 /** The access layer stages metadata in bounded batches; only affected thread summaries remain resident. */
-export async function applyLocalRowMutation(
+export async function applyThreadLinksMutation(
   access: LocalRowMutationAccess,
   diff: SessionRowsDiff,
   commit: SessionRowCommit
@@ -96,53 +66,32 @@ export async function applyLocalRowMutation(
     if (old && (!old.summary || !old.control)) throw new Error('Thread projection is unavailable')
     const next = {
       thread,
+      old,
+      changes: new Map(),
       summary: { ...(old?.summary ?? emptyThreadSummary()) },
       generatingAssistantCount: old?.control?.generatingAssistantCount ?? 0,
     } satisfies ThreadState
     states.set(id, next)
     return next
   }
-  async function start(threadId: string, depth: number) {
-    const target = await state(threadId)
-    target.start = Math.min(target.start ?? Infinity, number(depth))
-  }
   async function put(row: ProjectedMessage, body?: Message) {
     if (row.sessionId !== diff.sessionId) throw new Error('Mutation row belongs to another session')
-    number(row.seq)
+    number(row.siblingOrder)
     const previous = await access.message(row.messageId)
+    if (previous && previous.threadId !== row.threadId) throw new Error('Messages cannot move between threads')
     const target = await state(row.threadId)
-    if (previous) {
-      if (previous.threadId !== row.threadId) throw new Error('Messages cannot move between threads')
-      if (previous.selected) accumulate(target.summary, previous, -1)
-      target.generatingAssistantCount -= generating(previous)
-    }
-    if (
-      (previous?.selected || row.selectedDepth !== null) &&
-      (previous?.selectedDepth !== row.selectedDepth ||
-        previous?.facts.role !== row.facts.role ||
-        previous?.kind !== row.kind ||
-        previous?.facts.isForkMarker !== row.facts.isForkMarker ||
-        previous?.facts.autoTitleEligible !== row.facts.autoTitleEligible)
-    )
-      target.endpoints = true
-    row = { ...row, selected: row.selectedDepth !== null }
-    if (row.selected) accumulate(target.summary, row, 1)
-    target.generatingAssistantCount += generating(row)
+    target.changes.set(row.messageId, {
+      before: target.changes.get(row.messageId)?.before ?? (await access.oldMessage(row.messageId)),
+      after: row,
+    })
     await access.put(row, body)
-    if (publishedIds.has(row.messageId)) {
-      const { selectedDepth, ...metadata } = row
-      publishedMetadata.set(row.messageId, metadata)
-    }
+    if (publishedIds.has(row.messageId)) publishedMetadata.set(row.messageId, row)
   }
   async function remove(id: string) {
     const row = await access.message(id)
     if (!row) return
     const target = await state(row.threadId)
-    if (row.selected) {
-      accumulate(target.summary, row, -1)
-      target.endpoints = true
-    }
-    target.generatingAssistantCount -= generating(row)
+    target.changes.set(id, { before: target.changes.get(id)?.before ?? (await access.oldMessage(id)), after: null })
     await access.remove(id)
     publishedMetadata.delete(id)
   }
@@ -164,10 +113,12 @@ export async function applyLocalRowMutation(
       point.threadId,
       point.messageId,
       selected
-        ? { seq: selected.seq, messageId: selected.messageId }
-        : { seq: number(point.pendingBranchSeq!), messageId: point.pendingBranchId! }
+        ? { siblingOrder: selected.siblingOrder, messageId: selected.messageId }
+        : { siblingOrder: number(point.pendingBranchOrder!), messageId: point.pendingBranchId! }
     )
-    const pendingBefore = Boolean(selected && point.pendingBranchId && point.pendingBranchSeq! < selected.seq)
+    const pendingBefore = Boolean(
+      selected && point.pendingBranchId && point.pendingBranchOrder! < selected.siblingOrder
+    )
     publishedIds.add(pivot.messageId)
     await put({
       ...pivot,
@@ -181,101 +132,40 @@ export async function applyLocalRowMutation(
     })
   }
   await state(commit.record.activeThreadId)
-  for (const thread of diff.threads.upsert) {
-    const old = await access.oldThread(thread.threadId)
-    await state(thread.threadId)
-    if (!old || old.rootMessageId !== thread.rootMessageId) await start(thread.threadId, 0)
-  }
-  const points = [...(diff.messageMetadataUpsert ?? []), ...diff.messages.upsert]
-  for (const row of points) {
+  for (const thread of diff.threads.upsert) await state(thread.threadId)
+  for (const row of [...(diff.messageMetadataUpsert ?? []), ...diff.messages.upsert]) {
     const old = await access.oldMessage(row.messageId)
     await state(row.threadId)
-    if (old?.selected && (old.parentMessageId !== row.parentMessageId || old.activeChildId !== row.activeChildId))
-      await start(row.threadId, old.selectedDepth! + Number(old.parentMessageId === row.parentMessageId))
-    if (
-      (old?.forkPivotId || row.forkPivotId) &&
-      (!old ||
-        old.forkPivotId !== row.forkPivotId ||
-        old.activeChildId !== row.activeChildId ||
-        old.pendingBranchId !== row.pendingBranchId ||
-        old.pendingBranchSeq !== row.pendingBranchSeq)
-    )
-      forks.add(row.messageId)
-    if (!old || old.parentMessageId !== row.parentMessageId || old.seq !== row.seq || old.branchId !== row.branchId) {
-      if (old?.parentMessageId) forks.add(old.parentMessageId)
-      if (row.parentMessageId) forks.add(row.parentMessageId)
-    }
+    if (old?.forkPivotId || row.forkPivotId) forks.add(row.messageId)
+    if (old?.parentMessageId) forks.add(old.parentMessageId)
+    if (row.parentMessageId) forks.add(row.parentMessageId)
   }
   for (const id of diff.messages.delete) {
     const row = await access.oldMessage(id)
-    if (row?.selected) await start(row.threadId, row.selectedDepth!)
     if (row?.parentMessageId) forks.add(row.parentMessageId)
   }
-  for (const range of diff.deleteSubtrees ?? []) {
-    const row = await requireRow(range.rootMessageId, range.threadId, true)
-    if (row.selected) await start(row.threadId, row.selectedDepth!)
-    if (row.parentMessageId) forks.add(row.parentMessageId)
-  }
-  for (const range of diff.expandForks ?? []) {
-    const row = await requireRow(range.branchPointId, range.threadId, true)
-    if (row.selected) await start(row.threadId, row.selectedDepth! + 1)
-  }
-  for (const range of diff.reparentChildren ?? []) {
-    const row = await requireRow(range.parentMessageId, range.threadId, true)
-    if (row.selected) await start(row.threadId, row.selectedDepth!)
-    forks.add(range.newParentMessageId)
-  }
-  for (const insertion of diff.insertParents ?? []) {
-    const row = await requireRow(insertion.parentMessageId, insertion.threadId, true)
-    if (row.selected) await start(row.threadId, row.selectedDepth! + 1)
-    forks.add(insertion.newParentMessageId)
-  }
-  for (const replacement of diff.replaceMessagePivots ?? []) {
-    const row = await requireRow(replacement.messageId, replacement.threadId, true)
-    if (row.selected) await start(row.threadId, row.selectedDepth!)
-  }
+  for (const move of diff.reparentChildren ?? []) forks.add(move.newParentMessageId)
+  for (const insertion of diff.insertParents ?? []) forks.add(insertion.newParentMessageId)
   if (diff.deleteSessionMessages) {
     await access.clearMessages()
-    for (const target of states.values()) {
-      target.summary = emptyThreadSummary()
-      target.generatingAssistantCount = 0
-      target.start = 0
-    }
-  } else {
+    for (const target of states.values()) target.cleared = true
+  } else
     for (const id of diff.deleteThreadMessages ?? []) {
       await access.clearMessages(id)
-      if (!deletedThreads.has(id)) {
-        const target = await state(id)
-        target.summary = emptyThreadSummary()
-        target.generatingAssistantCount = 0
-        target.start = 0
-      }
+      if (!deletedThreads.has(id)) (await state(id)).cleared = true
     }
-    for (const [id, target] of states) {
-      if (target.start === undefined || deletedThreads.has(id) || diff.deleteThreadMessages?.includes(id)) continue
-      let after = target.start - 1
-      for (;;) {
-        const rows = await access.selected(id, { afterDepth: after, limit: 50, old: true })
-        if (!rows.length) break
-        for (const row of rows) {
-          after = row.selectedDepth!
-          await put({ ...row, selected: false, selectedDepth: null })
-        }
-      }
-    }
-  }
   for (const shift of diff.siblingShifts ?? []) {
-    if (!Number.isSafeInteger(shift.delta) || !Number.isSafeInteger(shift.afterSeq))
+    if (!Number.isSafeInteger(shift.delta) || !Number.isSafeInteger(shift.afterSiblingOrder))
       throw new Error('Invalid sibling shift')
-    let boundary: { seq: number; messageId: string } | undefined
+    let boundary: { siblingOrder: number; messageId: string } | undefined
     for (;;) {
       const rows = await access.children(shift.threadId, shift.parentMessageId, boundary, 50, true)
       if (!rows.length) break
       for (const old of rows) {
-        boundary = { seq: old.seq, messageId: old.messageId }
-        if (old.seq > shift.afterSeq) {
+        boundary = { siblingOrder: old.siblingOrder, messageId: old.messageId }
+        if (old.siblingOrder > shift.afterSiblingOrder) {
           const row = await requireRow(old.messageId)
-          await put({ ...row, seq: number(old.seq + shift.delta) })
+          await put({ ...row, siblingOrder: number(old.siblingOrder + shift.delta) })
         }
       }
     }
@@ -285,20 +175,20 @@ export async function applyLocalRowMutation(
     if (
       pivot.parentMessageId !== move.newParentMessageId ||
       !diff.messages.delete.includes(pivot.messageId) ||
-      !Number.isSafeInteger(move.seqOffset)
+      !Number.isSafeInteger(move.siblingOrderOffset)
     )
       throw new Error('Invalid pivot collapse')
-    let boundary: { seq: number; messageId: string } | undefined
+    let boundary: { siblingOrder: number; messageId: string } | undefined
     for (;;) {
       const rows = await access.children(move.threadId, move.parentMessageId, boundary, 50, true)
       if (!rows.length) break
       for (const old of rows) {
-        boundary = { seq: old.seq, messageId: old.messageId }
+        boundary = { siblingOrder: old.siblingOrder, messageId: old.messageId }
         const row = await requireRow(old.messageId)
         await put({
           ...row,
           parentMessageId: move.newParentMessageId,
-          seq: number(old.seq + move.seqOffset),
+          siblingOrder: number(old.siblingOrder + move.siblingOrderOffset),
           ...(move.branchId !== undefined ? { branchId: move.branchId } : {}),
         })
       }
@@ -314,12 +204,12 @@ export async function applyLocalRowMutation(
       next.parentMessageId !== parent.messageId
     )
       throw new Error('Invalid inserted parent')
-    let boundary: { seq: number; messageId: string } | undefined
+    let boundary: { siblingOrder: number; messageId: string } | undefined
     for (;;) {
       const rows = await access.children(parent.threadId, parent.messageId, boundary, 50, true)
       if (!rows.length) break
       for (const old of rows) {
-        boundary = { seq: old.seq, messageId: old.messageId }
+        boundary = { siblingOrder: old.siblingOrder, messageId: old.messageId }
         const row = await requireRow(old.messageId)
         await put({ ...row, parentMessageId: next.messageId })
       }
@@ -334,16 +224,16 @@ export async function applyLocalRowMutation(
       !diff.messages.delete.includes(pivot.messageId) ||
       next.threadId !== pivot.threadId ||
       next.parentMessageId !== pivot.parentMessageId ||
-      next.seq !== pivot.seq ||
+      next.siblingOrder !== pivot.siblingOrder ||
       next.branchId !== pivot.branchId
     )
       throw new Error('Invalid replacement pivot')
-    let boundary: { seq: number; messageId: string } | undefined
+    let boundary: { siblingOrder: number; messageId: string } | undefined
     for (;;) {
       const rows = await access.children(pivot.threadId, pivot.messageId, boundary, 50, true)
       if (!rows.length) break
       for (const old of rows) {
-        boundary = { seq: old.seq, messageId: old.messageId }
+        boundary = { siblingOrder: old.siblingOrder, messageId: old.messageId }
         await put({ ...(await requireRow(old.messageId)), parentMessageId: next.messageId })
       }
     }
@@ -357,9 +247,9 @@ export async function applyLocalRowMutation(
         ...(await requireRow(head.messageId)),
         parentMessageId: tail.messageId,
         branchId: nested ? tail.pendingBranchId! : null,
-        seq: nested ? number(tail.pendingBranchSeq!) : 0,
+        siblingOrder: nested ? number(tail.pendingBranchOrder!) : 0,
       })
-      await put({ ...tail, activeChildId: head.messageId, pendingBranchId: undefined, pendingBranchSeq: undefined })
+      await put({ ...tail, activeChildId: head.messageId, pendingBranchId: undefined, pendingBranchOrder: undefined })
       if (nested) await refreshFork(tail.messageId)
       let leaf = await requireRow(head.messageId)
       while (leaf.activeChildId !== null) {
@@ -370,19 +260,19 @@ export async function applyLocalRowMutation(
       tail = leaf
     }
     if (point.activeChildId) await appendBranch(await requireRow(point.activeChildId, point.threadId, true))
-    let boundary: { seq: number; messageId: string } | undefined
+    let boundary: { siblingOrder: number; messageId: string } | undefined
     for (;;) {
       const rows = await access.children(point.threadId, point.messageId, boundary, 50, true)
       if (!rows.length) break
       for (const row of rows) {
-        boundary = { seq: row.seq, messageId: row.messageId }
+        boundary = { siblingOrder: row.siblingOrder, messageId: row.messageId }
         if (row.messageId !== point.activeChildId) await appendBranch(row)
       }
     }
     await put({
       ...(await requireRow(point.messageId)),
       pendingBranchId: undefined,
-      pendingBranchSeq: undefined,
+      pendingBranchOrder: undefined,
       forkPivotId: undefined,
     })
   }
@@ -403,7 +293,7 @@ export async function applyLocalRowMutation(
       const [sibling] = await access.children(
         range.threadId,
         current.parentMessageId,
-        { seq: current.seq, messageId: current.messageId },
+        { siblingOrder: current.siblingOrder, messageId: current.messageId },
         1,
         true
       )
@@ -418,72 +308,107 @@ export async function applyLocalRowMutation(
   }
   for (const row of diff.messageMetadataUpsert ?? []) {
     const old = await requireRow(row.messageId)
-    await put({ ...row, facts: old.facts, selected: old.selected, selectedDepth: old.selectedDepth })
+    await put({ ...row, facts: old.facts })
   }
   for (const row of diff.messages.upsert) {
-    const old = await access.message(row.messageId)
     const { message, ...metadata } = row
     await put(
       {
         ...metadata,
         facts: deriveMessageFacts(message),
-        selected: old?.selected ?? false,
-        selectedDepth: old?.selectedDepth ?? null,
       },
       message
     )
   }
   for (const id of diff.messages.delete) await remove(id)
-  for (const [id, target] of states) {
-    if (deletedThreads.has(id) || (diff.deleteArchivedThreads && id !== commit.record.activeThreadId)) continue
-    if (target.start !== undefined) {
-      const [prefix] = await access.selected(id, { beforeDepth: target.start, reverse: true, limit: 1 })
-      let parent = prefix?.messageId ?? null
-      let cursor = prefix ? prefix.activeChildId : target.thread.rootMessageId
-      let depth = target.start
-      while (cursor !== null) {
-        const row = await requireRow(cursor, id)
-        if (row.parentMessageId !== parent) throw new Error('Invalid selected path')
-        await put({ ...row, selected: true, selectedDepth: number(depth++) })
-        parent = cursor
-        cursor = row.activeChildId
+  for (const id of forks) await refreshFork(id)
+  async function summarizeIncrementally(
+    id: string,
+    target: ThreadState
+  ): Promise<Pick<ThreadRow, 'summary' | 'control' | 'activeLeafMessageId'> | null> {
+    if (target.cleared) return null
+    const previous = target.old
+    const appended = new Set(
+      [...target.changes].filter(([, change]) => !change.before && change.after).map(([id]) => id)
+    )
+    if (
+      target.thread.rootMessageId !== (previous?.rootMessageId ?? null) &&
+      !(
+        (previous?.rootMessageId ?? null) === null &&
+        target.thread.rootMessageId &&
+        appended.has(target.thread.rootMessageId)
+      )
+    )
+      return null
+    const oldLeaf = previous?.activeLeafMessageId ?? null
+    for (const { before, after } of target.changes.values()) {
+      if (!after) return null
+      if (!before) continue
+      if (
+        before.parentMessageId !== after.parentMessageId ||
+        before.kind !== after.kind ||
+        before.facts.role !== after.facts.role ||
+        before.facts.autoTitleEligible !== after.facts.autoTitleEligible ||
+        before.facts.isForkMarker !== after.facts.isForkMarker
+      )
+        return null
+      if (
+        before.activeChildId !== after.activeChildId &&
+        !(
+          before.messageId === oldLeaf &&
+          before.activeChildId === null &&
+          after.activeChildId &&
+          appended.has(after.activeChildId)
+        )
+      )
+        return null
+    }
+    const summary = { ...target.summary }
+    let generatingAssistantCount = target.generatingAssistantCount
+    const oldGraph = target.changes.size ? await access.oldLinks(id) : null
+    const counts = [
+      'messageCount',
+      'userMessageCount',
+      'assistantMessageCount',
+      'fileMessageCount',
+      'generatingMessageCount',
+      'pausedMessageCount',
+      'webSearchSignInErrorCount',
+      'legacyCommandMessageCount',
+      'steeredMessageCount',
+    ] as const
+    for (const { before, after } of target.changes.values()) {
+      if (before)
+        generatingAssistantCount -= Number(before.status === 'generating' && before.facts.role === 'assistant')
+      if (after) generatingAssistantCount += Number(after.status === 'generating' && after.facts.role === 'assistant')
+      if (before && oldGraph!.isOnPath(before.messageId, previous?.rootMessageId ?? null)) {
+        const oldFacts = addSummaryRow(emptyThreadSummary(), before),
+          newFacts = addSummaryRow(emptyThreadSummary(), after!)
+        for (const key of counts) summary[key] += newFacts[key] - oldFacts[key]
       }
     }
-    let activeLeafMessageId = target.thread.activeLeafMessageId
-    if (target.start !== undefined || target.endpoints) {
-      const [last, user, nonSummary, summary, system, conversation, namingUser, namingAssistant] = await Promise.all([
-        access.selected(id, { reverse: true, limit: 1 }),
-        access.selected(id, { reverse: true, role: 'user', limit: 1 }),
-        access.selected(id, { reverse: true, kind: 'message', limit: 1 }),
-        access.selected(id, { reverse: true, kind: 'summary', limit: 1 }),
-        access.selected(id, { role: 'system', limit: 1 }),
-        access.selected(id, { conversation: true, reverse: true, limit: 1 }),
-        access.selected(id, { namingRole: 'user', limit: 1 }),
-        access.selected(id, { namingRole: 'assistant', reverse: true, limit: 1 }),
-      ])
-      target.summary.firstNamingUserMessageId = namingUser[0]?.messageId
-      target.summary.lastNamingAssistantMessageId = namingAssistant[0]?.messageId
-      target.summary.hasAutoTitleContent = Boolean(
-        namingUser[0] && namingAssistant[0] && namingUser[0].selectedDepth! < namingAssistant[0].selectedDepth!
-      )
-      target.summary.lastConversationMessageId = conversation[0]?.messageId
-      target.summary.lastUserMessageId = user[0]?.messageId
-      target.summary.lastNonSummaryMessageId = nonSummary[0]?.messageId
-      target.summary.lastSummaryMessageId = summary[0]?.messageId
-      target.summary.firstSystemMessageId = system[0]?.messageId
-      activeLeafMessageId = last[0]?.messageId ?? null
+    let parent = oldLeaf
+    let cursor = oldLeaf ? (target.changes.get(oldLeaf)?.after?.activeChildId ?? null) : target.thread.rootMessageId
+    const seen = new Set<string>()
+    while (cursor !== null) {
+      if (!appended.has(cursor) || seen.has(cursor)) return null
+      seen.add(cursor)
+      const row = await access.message(cursor)
+      if (!row || row.parentMessageId !== parent) return null
+      Object.assign(summary, addSummaryRow(summary, row))
+      parent = cursor
+      cursor = row.activeChildId
     }
-    for (const key of COUNTS) number(target.summary[key])
-    number(target.generatingAssistantCount)
-    target.thread = {
-      ...target.thread,
-      activeLeafMessageId,
-      summary: target.summary,
-      control: { generatingAssistantCount: target.generatingAssistantCount },
-    }
+    return { summary, control: { generatingAssistantCount }, activeLeafMessageId: parent }
+  }
+  for (const [id, target] of states) {
+    if (deletedThreads.has(id) || (diff.deleteArchivedThreads && id !== commit.record.activeThreadId)) continue
+    const incremental = await summarizeIncrementally(id, target)
+    const summary =
+      incremental ?? (await (await access.links(id)).summarize(target.thread.rootMessageId, access.yieldTask))
+    target.thread = { ...target.thread, ...summary }
     await access.putThread(target.thread)
   }
-  for (const id of forks) await refreshFork(id)
   return {
     ...commit,
     messageMetadata: [...publishedMetadata.values()],

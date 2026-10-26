@@ -45,10 +45,10 @@ const encoder = new TextEncoder()
 let mutationSequence = 0
 
 const THREAD_COLUMNS =
-  'session_id, thread_id, seq, name, created_at, root_message_id, active_leaf_message_id, compaction_points_json, session_prompt_context_snapshot_json, session_record_json, commit_revision, projection_json'
+  'session_id, thread_id, threadOrder, name, created_at, root_message_id, active_leaf_message_id, compaction_points_json, session_prompt_context_snapshot_json, session_record_json, commit_revision, projection_json'
 const MESSAGE_COLUMNS =
-  'session_id, message_id, thread_id, parent_message_id, active_child_id, seq, kind, status, created_at, updated_at, branch_id, payload_id, payload_utf8_length, row_metadata_json, selected_depth, message_json'
-const INSERT_STAGED_MESSAGE_SQL = `INSERT OR REPLACE INTO session_messages_staging (mutation_id, ${MESSAGE_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  'session_id, message_id, thread_id, parent_message_id, active_child_id, siblingOrder, kind, status, created_at, updated_at, branch_id, payload_id, payload_utf8_length, row_metadata_json, message_json'
+const INSERT_STAGED_MESSAGE_SQL = `INSERT OR REPLACE INTO session_messages_staging (mutation_id, ${MESSAGE_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 interface NativeStatement {
   statement: string
   values: SessionRowSqlBindValue[]
@@ -135,7 +135,7 @@ function coalesceStagingInserts(batch: NativeStatement[]): NativeStatement[] {
   // inside one native transaction while retaining row order.
   // Updates, deletes, thread writes and every transaction boundary are barriers.
   for (const statement of batch) {
-    const width = statement.statement === INSERT_STAGED_MESSAGE_SQL ? 17 : 0
+    const width = statement.statement === INSERT_STAGED_MESSAGE_SQL ? MESSAGE_COLUMNS.split(',').length + 1 : 0
     if (width === 0 || statement.values.length !== width) {
       flush()
       result.push(statement)
@@ -385,7 +385,7 @@ class CapacitorSessionRowSqlDatabase implements SessionRowSqlDatabase {
         }
         case 'upsert-message': {
           const appends: SessionRowSqlStatement[] = []
-          const params = stageJsonColumns(statement.params, [{ index: 15, column: 'message_json' }], (column, part) =>
+          const params = stageJsonColumns(statement.params, [{ index: 14, column: 'message_json' }], (column, part) =>
             appends.push({
               sql: `UPDATE session_messages_staging SET ${column}=${column}||? WHERE mutation_id=? AND session_id=? AND message_id=?`,
               params: [part, mutationId, statement.params[0], statement.params[1]],

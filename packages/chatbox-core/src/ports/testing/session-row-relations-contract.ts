@@ -8,11 +8,11 @@ export function relationFixture() {
   for (const row of fixture.rows.messages) {
     row.facts = deriveMessageFacts(row.message)
     row.selected = row.messageId !== 'inactive'
-    row.seq = row.messageId === 'inactive' ? 1 : 0
+    row.siblingOrder = row.messageId === 'inactive' ? 1 : 0
   }
   fixture.rows.messages[0].forkCreatedAt = 42
   fixture.rows.messages[0].pendingBranchId = 'empty-fork'
-  fixture.rows.messages[0].pendingBranchSeq = 2
+  fixture.rows.messages[0].pendingBranchOrder = 2
   for (const thread of fixture.rows.threads) {
     thread.summary = emptyThreadSummary()
     thread.control = { generatingAssistantCount: 0 }
@@ -37,7 +37,7 @@ export function generatingRelationFixture() {
       messageId,
       status: 'generating',
       selected: false,
-      seq: index + 3,
+      siblingOrder: index + 3,
       branchId: `branch-${index}`,
       message,
       facts: deriveMessageFacts(message),
@@ -180,7 +180,7 @@ export function createSessionRowRelationsContract(
         )
         const reverse = await store.readMessageRelationsPage({
           ...request,
-          selector: { ...request.selector, reverse: true, boundary: { seq: 1, messageId: 'inactive' } },
+          selector: { ...request.selector, reverse: true, boundary: { siblingOrder: 1, messageId: 'inactive' } },
         })
         if (reverse?.status !== 'ready') throw new Error('Expected reverse page')
         equal(

@@ -23,7 +23,7 @@ function threadRow(sessionId: string, threadId: string, overrides: Partial<Threa
   return {
     sessionId,
     threadId,
-    seq: -1,
+    threadOrder: -1,
     name: threadId,
     createdAt: 1_000,
     rootMessageId: null,
@@ -45,7 +45,7 @@ function messageRow(
     messageId,
     parentMessageId: null,
     activeChildId: null,
-    seq: 0,
+    siblingOrder: 0,
     kind: 'message',
     status: 'settled',
     createdAt: 1_000,
@@ -80,14 +80,14 @@ function rowCommit(sessionId: string, revision: number, activeThreadId = 'thread
 function rowSnapshot(rows: SessionRows, revision: number): SessionRowSnapshot {
   return projectRowFixture({
     rows,
-    ...rowCommit(rows.sessionId, revision, rows.threads.find((thread) => thread.seq === -1)?.threadId),
+    ...rowCommit(rows.sessionId, revision, rows.threads.find((thread) => thread.threadOrder === -1)?.threadId),
   })
 }
 
 function windowSnapshot(): SessionRowSnapshot {
   const messages = Array.from({ length: 5 }, (_, index) =>
     messageRow('session-window', 'thread-active', `m${index}`, {
-      seq: index * 2,
+      siblingOrder: index * 2,
       parentMessageId: index === 0 ? null : `m${index - 1}`,
       activeChildId: index === 4 ? null : `m${index + 1}`,
       kind: index === 2 ? 'summary' : 'message',
@@ -95,7 +95,7 @@ function windowSnapshot(): SessionRowSnapshot {
   )
   messages.push(
     messageRow('session-window', 'thread-active', 'inactive', {
-      seq: 7,
+      siblingOrder: 7,
       parentMessageId: 'm1',
       branchId: 'fork-inactive',
     })
@@ -107,7 +107,7 @@ function windowSnapshot(): SessionRowSnapshot {
       threads: [
         threadRow('session-window', 'thread-active', { rootMessageId: 'm0', activeLeafMessageId: 'm4' }),
         threadRow('session-window', 'thread-archived', {
-          seq: 0,
+          threadOrder: 0,
           rootMessageId: 'archived',
           activeLeafMessageId: 'archived',
         }),
@@ -315,11 +315,11 @@ export function createSessionRowStoreContract(
           sessionId: 'session-1',
           threads: [
             threadRow('session-1', 'thread-active', { rootMessageId: 'm1', activeLeafMessageId: 'm2' }),
-            threadRow('session-1', 'thread-old', { seq: 0, createdAt: 500 }),
+            threadRow('session-1', 'thread-old', { threadOrder: 0, createdAt: 500 }),
           ],
           messages: [
             messageRow('session-1', 'thread-active', 'm1', { activeChildId: 'm2' }),
-            messageRow('session-1', 'thread-active', 'm2', { parentMessageId: 'm1', seq: 1 }),
+            messageRow('session-1', 'thread-active', 'm2', { parentMessageId: 'm1', siblingOrder: 1 }),
           ],
         }
 
@@ -338,10 +338,13 @@ export function createSessionRowStoreContract(
           rowSnapshot(
             {
               sessionId: 'session-1',
-              threads: [threadRow('session-1', 'thread-active'), threadRow('session-1', 'thread-old', { seq: 0 })],
+              threads: [
+                threadRow('session-1', 'thread-active'),
+                threadRow('session-1', 'thread-old', { threadOrder: 0 }),
+              ],
               messages: [
                 messageRow('session-1', 'thread-active', 'm1'),
-                messageRow('session-1', 'thread-old', 'm2', { seq: 1 }),
+                messageRow('session-1', 'thread-old', 'm2', { siblingOrder: 1 }),
               ],
             },
             1
@@ -403,7 +406,7 @@ export function createSessionRowStoreContract(
               threads: [threadRow('session-1', 'thread-active')],
               messages: [
                 messageRow('session-1', 'thread-active', 'm1', { activeChildId: 'm2' }),
-                messageRow('session-1', 'thread-active', 'm2', { parentMessageId: 'm1', seq: 1 }),
+                messageRow('session-1', 'thread-active', 'm2', { parentMessageId: 'm1', siblingOrder: 1 }),
               ],
             },
             1
@@ -423,7 +426,7 @@ export function createSessionRowStoreContract(
           activeLeafMessageId: 'm3',
         })
         const updatedRoot = messageRow('session-1', 'thread-active', 'm1', { activeChildId: 'm3' })
-        const insertedRow = messageRow('session-1', 'thread-active', 'm3', { parentMessageId: 'm1', seq: 2 })
+        const insertedRow = messageRow('session-1', 'thread-active', 'm3', { parentMessageId: 'm1', siblingOrder: 2 })
         await store.applyDiff(
           {
             sessionId: 'session-1',
@@ -461,10 +464,10 @@ export function createSessionRowStoreContract(
             store.applyDiff(
               {
                 sessionId: 'session-1',
-                threads: { upsert: [threadRow('session-1', 'thread-added', { seq: 0 })], delete: [] },
+                threads: { upsert: [threadRow('session-1', 'thread-added', { threadOrder: 0 })], delete: [] },
                 messages: {
                   upsert: [
-                    messageRow('session-1', 'thread-active', 'm2', { seq: 1 }),
+                    messageRow('session-1', 'thread-active', 'm2', { siblingOrder: 1 }),
                     messageRow('session-1', 'thread-active', ''),
                   ],
                   delete: ['m1'],
@@ -491,7 +494,7 @@ export function createSessionRowStoreContract(
         const first = messageRow('session-1', 'thread-active', 'm1')
         await store.writeRows(rowSnapshot({ sessionId: 'session-1', threads: [thread], messages: [first] }, 1))
 
-        const inserted = messageRow('session-1', 'thread-active', 'm2', { parentMessageId: 'm1', seq: 1 })
+        const inserted = messageRow('session-1', 'thread-active', 'm2', { parentMessageId: 'm1', siblingOrder: 1 })
         await store.applyDiff(
           { ...emptyDiff('session-1'), messages: { upsert: [inserted], delete: [] } },
           rowCommit('session-1', 2),
@@ -584,7 +587,7 @@ export function createSessionRowStoreContract(
               threads: [threadRow('session-1', 'thread-active')],
               messages: [
                 messageRow('session-1', 'thread-active', 'm1'),
-                messageRow('session-1', 'thread-active', 'm2', { seq: 1, status: 'generating' }),
+                messageRow('session-1', 'thread-active', 'm2', { siblingOrder: 1, status: 'generating' }),
               ],
             },
             1

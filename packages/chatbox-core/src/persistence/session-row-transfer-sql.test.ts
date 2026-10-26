@@ -1,6 +1,7 @@
+import { storageRowFixture } from '../ports/testing/session-row-fixtures'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { type NodeSessionRowSqlDatabase, openNodeSessionRowDatabase } from './node-sqlite.test-support'
-import { contextSnapshot } from './session-context-read.test-support'
+import { contextSnapshot as contextFactsSnapshot } from './session-context-read.test-support'
 import { SqlSessionRowStore } from './session-row-sql'
 
 const databases: NodeSessionRowSqlDatabase[] = []
@@ -41,10 +42,9 @@ describe('SQL row transfer', () => {
     const rows = []
     for await (const row of store.iterateRows({ sessionId: 's', expectedRevision: 1 })) rows.push(row)
     expect(rows.filter((row) => row.kind === 'message').map((row) => row.message)).toEqual(next.rows.messages)
-    expect(await database.query('SELECT selected_depth FROM session_messages ORDER BY selected_depth')).toEqual([
-      { selected_depth: 0 },
-      { selected_depth: 1 },
-    ])
+    expect(
+      (await database.query<{ name: string }>('PRAGMA table_info(session_messages)')).map((row) => row.name)
+    ).not.toContain('selected_depth')
     expect(await database.query('SELECT COUNT(*) AS n FROM session_messages_staging')).toEqual([{ n: 0 }])
   })
 
@@ -107,7 +107,7 @@ describe('SQL row transfer', () => {
       await writer.dispose()
       expect((await store.readSnapshot('s'))?.rows).toEqual(old.rows)
       expect(await database.query('SELECT COUNT(*) AS n FROM session_messages_staging')).toEqual([{ n: 0 }])
-      expect(await database.query('SELECT COUNT(*) AS n FROM session_row_selected_paths')).toEqual([{ n: 0 }])
+      expect(await database.query("SELECT name FROM sqlite_master WHERE name='session_row_selected_paths'")).toEqual([])
     }
   )
 
@@ -156,3 +156,7 @@ describe('SQL row transfer', () => {
     await expect(other.next()).rejects.toMatchObject({ name: 'SessionRowConflictError' })
   })
 })
+
+function contextSnapshot(...args: Parameters<typeof contextFactsSnapshot>) {
+  return storageRowFixture(contextFactsSnapshot(...args))
+}

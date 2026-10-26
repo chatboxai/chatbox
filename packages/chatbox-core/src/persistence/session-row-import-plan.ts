@@ -5,7 +5,7 @@ import type { MessageRow, MessageRowMetadata, ThreadRow } from '../session/sessi
 
 export interface SessionImportMessage {
   value: MessageRowMetadata
-  selectedDepth: number | null
+  pathDepth: number | null
 }
 export interface SessionImportIndex {
   threads: Map<string, ThreadRow>
@@ -52,7 +52,9 @@ export function prepareImportIndex(
     else children.set(key, [entry])
   }
   for (const siblings of children.values())
-    siblings.sort((a, b) => a.value.seq - b.value.seq || compareIds(a.value.messageId, b.value.messageId))
+    siblings.sort(
+      (a, b) => a.value.siblingOrder - b.value.siblingOrder || compareIds(a.value.messageId, b.value.messageId)
+    )
   const getChildren = (threadId: string, parent: string | null) => children.get(childrenKey(threadId, parent)) ?? []
   let canReuseForks = forks !== undefined
   const report = (
@@ -68,7 +70,7 @@ export function prepareImportIndex(
   let active = threads.get(commit.record.activeThreadId)
   if (!active) {
     active = [...threads.values()].sort(
-      (a, b) => (options.sqlite ? a.seq - b.seq : 0) || compareIds(a.threadId, b.threadId)
+      (a, b) => (options.sqlite ? a.threadOrder - b.threadOrder : 0) || compareIds(a.threadId, b.threadId)
     )[0]
     if (active) commit.record.activeThreadId = active.threadId
     else {
@@ -77,7 +79,7 @@ export function prepareImportIndex(
       active = {
         sessionId,
         threadId: commit.record.activeThreadId,
-        seq: -1,
+        threadOrder: -1,
         name: null,
         createdAt: 0,
         rootMessageId: null,
@@ -93,16 +95,17 @@ export function prepareImportIndex(
   const threadOrder = new Set<number>()
   let reorder = false
   for (const thread of orderedThreads) {
-    if ((thread.threadId === activeId) !== (thread.seq === -1) || threadOrder.has(thread.seq)) reorder = true
-    threadOrder.add(thread.seq)
+    if ((thread.threadId === activeId) !== (thread.threadOrder === -1) || threadOrder.has(thread.threadOrder))
+      reorder = true
+    threadOrder.add(thread.threadOrder)
   }
   let sequence = 0
   for (const thread of orderedThreads) {
     if (reorder) {
-      const seq = thread.threadId === activeId ? -1 : sequence++
-      if (seq !== thread.seq) {
-        thread.seq = seq
-        if (seq !== -1 && thread.name === null) thread.name = ''
+      const siblingOrder = thread.threadId === activeId ? -1 : sequence++
+      if (siblingOrder !== thread.threadOrder) {
+        thread.threadOrder = siblingOrder
+        if (siblingOrder !== -1 && thread.name === null) thread.name = ''
         report('thread', thread.threadId, 'thread-order')
       }
     }
@@ -168,15 +171,20 @@ export function prepareImportIndex(
   for (const entry of orderedMessages) {
     if (!messages.has(entry.value.messageId)) continue
     const siblings = getChildren(entry.value.threadId, entry.value.messageId)
-    if (!siblings.some((child, position) => position > 0 && child.value.seq === siblings[position - 1].value.seq))
+    if (
+      !siblings.some(
+        (child, position) => position > 0 && child.value.siblingOrder === siblings[position - 1].value.siblingOrder
+      )
+    )
       continue
     const counts = new Map<number, number>()
     if (options.sqlite)
-      for (const child of siblings) counts.set(child.value.seq, (counts.get(child.value.seq) ?? 0) + 1)
-    for (const [seq, child] of siblings.entries()) {
-      if (options.sqlite ? counts.get(child.value.seq)! > 1 : child.value.seq !== seq)
+      for (const child of siblings)
+        counts.set(child.value.siblingOrder, (counts.get(child.value.siblingOrder) ?? 0) + 1)
+    for (const [siblingOrder, child] of siblings.entries()) {
+      if (options.sqlite ? counts.get(child.value.siblingOrder)! > 1 : child.value.siblingOrder !== siblingOrder)
         report('message', child.value.messageId, 'sibling-order')
-      child.value.seq = seq
+      child.value.siblingOrder = siblingOrder
     }
   }
   for (const entry of orderedMessages) {
@@ -189,20 +197,20 @@ export function prepareImportIndex(
         report('message', row.messageId, 'selected-child')
       }
     }
-    if (row.pendingBranchId !== undefined || row.pendingBranchSeq !== undefined) {
+    if (row.pendingBranchId !== undefined || row.pendingBranchOrder !== undefined) {
       const collision = getChildren(row.threadId, row.messageId).some(
-        (child) => child.value.seq === row.pendingBranchSeq
+        (child) => child.value.siblingOrder === row.pendingBranchOrder
       )
       if (
         !row.pendingBranchId ||
         row.activeChildId !== null ||
-        row.pendingBranchSeq === undefined ||
-        !Number.isSafeInteger(row.pendingBranchSeq) ||
-        row.pendingBranchSeq < 0 ||
+        row.pendingBranchOrder === undefined ||
+        !Number.isSafeInteger(row.pendingBranchOrder) ||
+        row.pendingBranchOrder < 0 ||
         collision
       ) {
         delete row.pendingBranchId
-        delete row.pendingBranchSeq
+        delete row.pendingBranchOrder
         report('message', row.messageId, 'pending-branch')
       }
     }
@@ -248,13 +256,13 @@ export function prepareImportIndex(
       const branchId = selected?.branchId ?? row.pendingBranchId
       if (!pivot || !branchId || (options.sqlite && pivot.value.fork)) continue
       const siblings = getChildren(row.threadId, row.messageId)
-      const boundary = selected?.seq ?? row.pendingBranchSeq!
+      const boundary = selected?.siblingOrder ?? row.pendingBranchOrder!
       pivot.value.fork = {
         pivotId: pivot.value.messageId,
         branchPointId: row.messageId,
         selectedBranchId: branchId,
         count: siblings.length + Number(Boolean(row.pendingBranchId)),
-        position: siblings.filter((child) => child.value.seq < boundary).length,
+        position: siblings.filter((child) => child.value.siblingOrder < boundary).length,
       }
     }
   }
@@ -272,7 +280,7 @@ export function prepareImportIndex(
         depth > originalMessages
       )
         throw new Error('Prepared selected path is inconsistent')
-      message.selectedDepth = depth++
+      message.pathDepth = depth++
       message.value.selected = true
       if (!message.value.facts) throw new Error('Imported message facts are missing')
       summary = addSummaryRow(summary, { ...message.value, facts: message.value.facts })

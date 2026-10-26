@@ -7,7 +7,7 @@ export type SessionTranscriptThread = Pick<
   ThreadRow,
   | 'sessionId'
   | 'threadId'
-  | 'seq'
+  | 'threadOrder'
   | 'name'
   | 'createdAt'
   | 'rootMessageId'
@@ -26,7 +26,7 @@ export interface SessionTranscriptCursor {
   sessionId: string
   revision: number
   threadId: string
-  threadSeq: number
+  threadOrder: number
   /** Null anchors an explicitly selected empty thread. */
   messageId: string | null
   direction: 'before' | 'after'
@@ -73,6 +73,7 @@ export interface SessionThreadRead extends SessionRowCommit {
 }
 
 export interface SessionTranscriptStorePort {
+  prefetchThreadLinks?(request: SessionThreadRequest & { signal?: AbortSignal }): Promise<void>
   readCommit(sessionId: string): Promise<SessionRowCommit | null>
   readThread(request: SessionThreadRequest): Promise<SessionThreadRead | null>
   readTranscriptWindow(request: SessionTranscriptRequest): Promise<SessionTranscriptPage | null>

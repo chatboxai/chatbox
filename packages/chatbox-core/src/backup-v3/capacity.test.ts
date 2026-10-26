@@ -95,7 +95,7 @@ it.runIf(process.env.CHATBOX_V3_CAPACITY === '1')(
               thread: {
                 sessionId: 's',
                 threadId: 't',
-                seq: -1,
+                threadOrder: -1,
                 name: null,
                 rootMessageId: 'm0',
                 createdAt: 0,
@@ -111,7 +111,7 @@ it.runIf(process.env.CHATBOX_V3_CAPACITY === '1')(
                   messageId: `m${index}`,
                   parentMessageId: index === 0 ? null : `m${index - 1}`,
                   activeChildId: index + 1 < messageCount ? `m${index + 1}` : null,
-                  seq: 0,
+                  siblingOrder: 0,
                   branchId: null,
                   kind: 'message',
                   createdAt: 0,

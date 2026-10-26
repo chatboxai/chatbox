@@ -31,9 +31,12 @@ function legacyMessage(message: Message): Message & { pictures?: LegacyPicture[]
 
 function planSession(session: BackupSession, threads: Map<string, BackupThread>, rows: Map<string, Row>) {
   const active = threads.get(session.activeThreadId)
-  if (!active || active.seq !== -1) throw new Error('The active conversation thread is invalid')
-  const history = [...threads.values()].filter((thread) => thread !== active).sort((a, b) => a.seq - b.seq)
-  if (history.some((thread) => thread.seq < 0 || thread.name === null)) throw new Error('An archived thread is invalid')
+  if (!active || active.threadOrder !== -1) throw new Error('The active conversation thread is invalid')
+  const history = [...threads.values()]
+    .filter((thread) => thread !== active)
+    .sort((a, b) => a.threadOrder - b.threadOrder)
+  if (history.some((thread) => thread.threadOrder < 0 || thread.name === null))
+    throw new Error('An archived thread is invalid')
   const children = new Map<string, Row[]>()
   for (const row of rows.values()) {
     if (!threads.has(row.threadId)) throw new Error('A message references a missing thread')
@@ -45,7 +48,9 @@ function planSession(session: BackupSession, threads: Map<string, BackupThread>,
     children.set(parent.messageId, siblings)
   }
   for (const siblings of children.values()) {
-    siblings.sort((a, b) => a.seq - b.seq || (a.messageId < b.messageId ? -1 : a.messageId > b.messageId ? 1 : 0))
+    siblings.sort(
+      (a, b) => a.siblingOrder - b.siblingOrder || (a.messageId < b.messageId ? -1 : a.messageId > b.messageId ? 1 : 0)
+    )
   }
   const paths = new Map<string, Path>()
   const pending: Path[] = []
@@ -103,7 +108,9 @@ function planSession(session: BackupSession, threads: Map<string, BackupThread>,
       }
       if (row.activeChildId === null) {
         const next =
-          row.pendingBranchSeq === undefined ? -1 : siblings.findIndex((child) => child.seq > row.pendingBranchSeq!)
+          row.pendingBranchOrder === undefined
+            ? -1
+            : siblings.findIndex((child) => child.siblingOrder > row.pendingBranchOrder!)
         fork.position = next < 0 ? fork.lists.length : next
         fork.lists.splice(fork.position, 0, {
           id: row.pendingBranchId ?? `fork_list_empty_${pivot.messageId}`,

@@ -62,7 +62,7 @@ describe('IndexedDB compact branch preview', () => {
       ).toHaveLength(0)
       expect(
         all.mock.instances.filter((store) =>
-          [SESSION_ROW_MESSAGE_STORE, 'transcriptMessages'].includes((store as IDBObjectStore).name)
+          [SESSION_ROW_MESSAGE_STORE, 'messageTree'].includes((store as IDBObjectStore).name)
         )
       ).toHaveLength(0)
     }
@@ -71,12 +71,12 @@ describe('IndexedDB compact branch preview', () => {
   it('keeps one consistent revision while a concurrent branch change waits for the read transaction', async () => {
     const store = createStore()
     await store.writeRows(branchPreviewFixture([previewMessage('user', 'user'), previewMessage('reply', 'assistant')]))
-    const originalGet = IDBObjectStore.prototype.get
+    const originalGet = IDBIndex.prototype.get
     let changedWrite: Promise<unknown> | undefined
     let queued = false
-    vi.spyOn(IDBObjectStore.prototype, 'get').mockImplementation(function (this: IDBObjectStore, key) {
+    vi.spyOn(IDBIndex.prototype, 'get').mockImplementation(function (this: IDBIndex, key) {
       const request = originalGet.call(this, key)
-      if (!queued && this.name === 'transcriptMessages') {
+      if (!queued && this.name === 'byMessage') {
         queued = true
         const changed = branchPreviewFixture([
           previewMessage('user', 'user'),

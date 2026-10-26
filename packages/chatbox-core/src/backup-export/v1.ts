@@ -34,8 +34,8 @@ function conversationMessage(message: Message): Message {
 }
 
 function conversationThread(thread: BackupThread): BackupThread {
-  const { sessionId, threadId, seq, name, createdAt, rootMessageId, compactionPoints } = thread
-  return { sessionId, threadId, seq, name, createdAt, rootMessageId, compactionPoints }
+  const { sessionId, threadId, threadOrder, name, createdAt, rootMessageId, compactionPoints } = thread
+  return { sessionId, threadId, threadOrder, name, createdAt, rootMessageId, compactionPoints }
 }
 
 /** Emits the released V1 key/value JSON contract from conversation rows. */
@@ -204,12 +204,13 @@ export async function* exportBackupV1Stream(
     const errors = cleanup.filter((entry) => entry.status === 'rejected').map((entry) => entry.reason)
     if (errors.length) {
       if (result) result.cleanupPending = true
-      // biome-ignore lint/correctness/noUnsafeFinally: Preserve the original failure together with cleanup errors.
-      else
+      else {
+        // biome-ignore lint/correctness/noUnsafeFinally: Preserve the original failure together with cleanup errors.
         throw new AggregateError(
           [...(failure === undefined ? [] : [failure]), ...errors],
           'Backup export failed and temporary cleanup is incomplete'
         )
+      }
     }
   }
 }

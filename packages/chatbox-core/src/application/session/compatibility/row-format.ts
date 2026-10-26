@@ -107,11 +107,11 @@ export function convertRowMetadataToFormat(
       for (const child of siblings) {
         const position = fork.lists.findIndex((list) => list.id === child.branchId)
         if (position < 0) throw new Error(`Branch identity is missing for ${child.messageId}`)
-        child.seq = position
+        child.siblingOrder = position
       }
-      row.pendingBranchSeq = fork.position
+      row.pendingBranchOrder = fork.position
     } else {
-      row.pendingBranchSeq ??= siblings.reduce((maximum, child) => Math.max(maximum, child.seq), -1) + 1
+      row.pendingBranchOrder ??= siblings.reduce((maximum, child) => Math.max(maximum, child.siblingOrder), -1) + 1
     }
   }
   for (const point of messages) {
@@ -127,10 +127,20 @@ export function convertRowMetadataToFormat(
     const selected = branches.find((child) => child.messageId === point.activeChildId)
     const selectedBranchId = selected?.branchId ?? point.pendingBranchId
     if (!selectedBranchId) throw new Error(`Missing selected branch identity for ${point.messageId}`)
-    const ordered = branches.map((child) => ({ id: child.branchId!, seq: child.seq, messageId: child.messageId }))
+    const ordered = branches.map((child) => ({
+      id: child.branchId!,
+      siblingOrder: child.siblingOrder,
+      messageId: child.messageId,
+    }))
     if (point.pendingBranchId)
-      ordered.push({ id: point.pendingBranchId, seq: point.pendingBranchSeq!, messageId: point.pendingBranchId })
-    ordered.sort((a, b) => a.seq - b.seq || (a.messageId < b.messageId ? -1 : a.messageId > b.messageId ? 1 : 0))
+      ordered.push({
+        id: point.pendingBranchId,
+        siblingOrder: point.pendingBranchOrder!,
+        messageId: point.pendingBranchId,
+      })
+    ordered.sort(
+      (a, b) => a.siblingOrder - b.siblingOrder || (a.messageId < b.messageId ? -1 : a.messageId > b.messageId ? 1 : 0)
+    )
     pivot.fork = {
       pivotId: pivot.messageId,
       branchPointId: point.messageId,

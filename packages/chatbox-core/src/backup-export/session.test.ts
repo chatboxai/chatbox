@@ -57,6 +57,7 @@ class Workspace implements BackupWorkspace {
   async get(): Promise<string | null> {
     throw new Error('No workspace index is needed')
   }
+  // biome-ignore lint/correctness/useYield: Iteration in this fixture fails before producing an entry.
   async *entries(): AsyncIterable<{ key: string; value: string }> {
     throw new Error('No workspace index is needed')
   }
@@ -285,7 +286,7 @@ describe('streaming V2 conversation export', () => {
       thread: {
         sessionId: 'deep',
         threadId: 'thread',
-        seq: -1,
+        threadOrder: -1,
         name: null,
         createdAt: 1,
         rootMessageId: 'p0',
@@ -293,14 +294,20 @@ describe('streaming V2 conversation export', () => {
       },
     })
     const count = 3_000
-    const append = (id: string, parent: string | null, child: string | null, seq: number, branchId: string | null) => {
+    const append = (
+      id: string,
+      parent: string | null,
+      child: string | null,
+      siblingOrder: number,
+      branchId: string | null
+    ) => {
       const row: BackupMessage = {
         sessionId: 'deep',
         threadId: 'thread',
         messageId: id,
         parentMessageId: parent,
         activeChildId: child,
-        seq,
+        siblingOrder,
         branchId,
         kind: 'message',
         createdAt: 1,

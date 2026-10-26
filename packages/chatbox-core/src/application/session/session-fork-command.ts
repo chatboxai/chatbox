@@ -7,7 +7,7 @@ import {
   assertStructureGuard,
   emptyStructurePlan,
   markBranchNavigation,
-  nextChildSeq,
+  nextSiblingOrder,
   putMetadata,
   readBranchPoint,
   readChildren,
@@ -40,7 +40,7 @@ function validateEditedTarget(
 async function adjacentBranch(
   reader: StructureCommandReader,
   point: SessionKnownMessageMetadata,
-  current: { seq: number; messageId: string },
+  current: { siblingOrder: number; messageId: string },
   reverse: boolean
 ): Promise<SessionKnownMessageMetadata | undefined> {
   return (
@@ -111,7 +111,7 @@ export async function planForkStructure(
       forkPivotId: collapse ? undefined : pivot.messageId,
       activeChildId: target?.messageId ?? null,
       pendingBranchId: undefined,
-      pendingBranchSeq: undefined,
+      pendingBranchOrder: undefined,
     })
     if (collapse) {
       putMetadata(plan, {
@@ -137,7 +137,7 @@ export async function planForkStructure(
       target = await adjacentBranch(
         reader,
         point,
-        selected ?? { seq: point.pendingBranchSeq!, messageId: '' },
+        selected ?? { siblingOrder: point.pendingBranchOrder!, messageId: '' },
         operation.target === 'prev'
       )
     }
@@ -148,7 +148,7 @@ export async function planForkStructure(
 
   if (operation.action === 'fork-delete') {
     if (!hasFork) return plan
-    const boundary = selected ?? { seq: point.pendingBranchSeq!, messageId: '' }
+    const boundary = selected ?? { siblingOrder: point.pendingBranchOrder!, messageId: '' }
     const next =
       (await readChildren(reader, point, 1, { boundary }))[0] ??
       (await readChildren(reader, point, 1, { boundary, reverse: true }))[0]
@@ -172,7 +172,7 @@ export async function planForkStructure(
             forkPivotId: undefined,
             activeChildId: selected?.messageId ?? children[0]?.messageId ?? null,
             pendingBranchId: undefined,
-            pendingBranchSeq: undefined,
+            pendingBranchOrder: undefined,
           }
         : {}),
     })
@@ -181,7 +181,7 @@ export async function planForkStructure(
         ...point,
         forkPivotId: undefined,
         pendingBranchId: undefined,
-        pendingBranchSeq: undefined,
+        pendingBranchOrder: undefined,
         activeChildId: selected?.messageId ?? children[0]?.messageId ?? null,
       })
     markBranchNavigation(plan, point, selected?.messageId ?? children[0]?.messageId ?? null)
@@ -192,7 +192,7 @@ export async function planForkStructure(
     return plan
   const inserted = replacement ? [replacement, ...(operation.append ?? [])] : (operation.append ?? [])
   await assertNewMessages(reader, inserted)
-  const seq = await nextChildSeq(reader, point)
+  const siblingOrder = await nextSiblingOrder(reader, point)
   const branchId = `fork_list_${operation.identity.newListId}`
   putMetadata(plan, { ...selected, branchId: selected.branchId ?? `fork_list_${operation.identity.storedListId}` })
   putMetadata(plan, { ...pivot, forkCreatedAt: pivot.forkCreatedAt ?? operation.identity.createdAt })
@@ -201,10 +201,10 @@ export async function planForkStructure(
     forkPivotId: pivot.messageId,
     activeChildId: null,
     pendingBranchId: branchId,
-    pendingBranchSeq: seq,
+    pendingBranchOrder: siblingOrder,
   }
   putMetadata(plan, updatedPoint)
-  appendNewChain(plan, updatedPoint, inserted, seq, branchId)
+  appendNewChain(plan, updatedPoint, inserted, siblingOrder, branchId)
   markBranchNavigation(plan, point, inserted[0]?.id ?? null, 'create')
   return plan
 }

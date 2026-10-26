@@ -7,7 +7,9 @@ function rank(value: number): number {
   return value
 }
 function sorted(rows: Iterable<MessageRow>) {
-  return [...rows].sort((a, b) => a.seq - b.seq || (a.messageId < b.messageId ? -1 : a.messageId > b.messageId ? 1 : 0))
+  return [...rows].sort(
+    (a, b) => a.siblingOrder - b.siblingOrder || (a.messageId < b.messageId ? -1 : a.messageId > b.messageId ? 1 : 0)
+  )
 }
 
 /** Reference implementation applies ranges to the old committed relationships before explicit point writes. */
@@ -35,11 +37,12 @@ export function applyMemoryRanges(
   const change = (row: MessageRow, patch: Partial<MessageRow>) =>
     messages.set(row.messageId, { ...(messages.get(row.messageId) ?? row), ...patch })
   for (const shift of diff.siblingShifts ?? []) {
-    if (!Number.isSafeInteger(shift.delta) || !Number.isSafeInteger(shift.afterSeq))
+    if (!Number.isSafeInteger(shift.delta) || !Number.isSafeInteger(shift.afterSiblingOrder))
       throw new Error('Invalid sibling shift')
     if (shift.parentMessageId !== null) requireRow(shift.parentMessageId, shift.threadId)
     for (const row of children(shift.threadId, shift.parentMessageId))
-      if (row.seq > shift.afterSeq) change(row, { seq: rank(row.seq + shift.delta) })
+      if (row.siblingOrder > shift.afterSiblingOrder)
+        change(row, { siblingOrder: rank(row.siblingOrder + shift.delta) })
   }
   for (const move of diff.reparentChildren ?? []) {
     const pivot = requireRow(move.parentMessageId, move.threadId)
@@ -47,13 +50,13 @@ export function applyMemoryRanges(
     if (
       pivot.parentMessageId !== move.newParentMessageId ||
       !diff.messages.delete.includes(pivot.messageId) ||
-      !Number.isSafeInteger(move.seqOffset)
+      !Number.isSafeInteger(move.siblingOrderOffset)
     )
       throw new Error('Invalid pivot collapse')
     for (const row of children(move.threadId, move.parentMessageId))
       change(row, {
         parentMessageId: move.newParentMessageId,
-        seq: rank(row.seq + move.seqOffset),
+        siblingOrder: rank(row.siblingOrder + move.siblingOrderOffset),
         ...(move.branchId !== undefined ? { branchId: move.branchId } : {}),
       })
   }
@@ -78,7 +81,7 @@ export function applyMemoryRanges(
       !diff.messages.delete.includes(pivot.messageId) ||
       next.threadId !== pivot.threadId ||
       next.parentMessageId !== pivot.parentMessageId ||
-      next.seq !== pivot.seq ||
+      next.siblingOrder !== pivot.siblingOrder ||
       next.branchId !== pivot.branchId
     )
       throw new Error('Invalid replacement pivot')
@@ -97,9 +100,9 @@ export function applyMemoryRanges(
       change(head, {
         parentMessageId: tail.messageId,
         branchId: nested ? tail.pendingBranchId! : null,
-        seq: nested ? rank(tail.pendingBranchSeq!) : 0,
+        siblingOrder: nested ? rank(tail.pendingBranchOrder!) : 0,
       })
-      change(tail, { activeChildId: head.messageId, pendingBranchId: undefined, pendingBranchSeq: undefined })
+      change(tail, { activeChildId: head.messageId, pendingBranchId: undefined, pendingBranchOrder: undefined })
       let leaf = head
       const seen = new Set<string>()
       while (leaf.activeChildId !== null) {
@@ -111,7 +114,7 @@ export function applyMemoryRanges(
       }
       tail = leaf
     }
-    change(point, { pendingBranchId: undefined, pendingBranchSeq: undefined, forkPivotId: undefined })
+    change(point, { pendingBranchId: undefined, pendingBranchOrder: undefined, forkPivotId: undefined })
   }
   for (const range of diff.deleteSubtrees ?? []) {
     requireRow(range.rootMessageId, range.threadId)
@@ -172,11 +175,15 @@ export function projectMemoryRows(messages: Map<string, MessageRow>, threads: Ma
     const branches = sorted(children.get(point.messageId) ?? []).map((row) => ({
       id: row.messageId,
       branchId: row.branchId,
-      seq: row.seq,
+      siblingOrder: row.siblingOrder,
     }))
     if (point.pendingBranchId)
-      branches.push({ id: point.pendingBranchId, branchId: point.pendingBranchId, seq: point.pendingBranchSeq! })
-    branches.sort((a, b) => a.seq - b.seq || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+      branches.push({
+        id: point.pendingBranchId,
+        branchId: point.pendingBranchId,
+        siblingOrder: point.pendingBranchOrder!,
+      })
+    branches.sort((a, b) => a.siblingOrder - b.siblingOrder || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     const position = branches.findIndex((branch) => branch.id === (point.activeChildId ?? point.pendingBranchId))
     const selected = branches[position]
     if (!selected?.branchId) throw new Error('Missing selected fork identity')

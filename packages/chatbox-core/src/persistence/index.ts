@@ -18,8 +18,6 @@ export {
   type SessionGraphCodecOptions,
 } from './session-graph'
 export * from './session-message-selection'
-export { applyLocalRowMutation, type LocalRowMutationAccess, type ProjectedMessage } from './session-row-local-mutation'
-export { selectedDepths } from './session-row-projection-sql'
 
 export {
   readMetadataSelection,
@@ -43,3 +41,7 @@ export * from './session-thread-page'
 export * from './session-transcript-read'
 export { SESSION_TRANSCRIPT_SCHEMA_SQL } from './session-transcript-sql'
 export { prepareImportIndex, type SessionImportIndex } from './session-row-import-plan'
+export { ThreadLinks, ThreadLinksBuilder, compareSiblingOrder, type ThreadLink } from '../session/thread-links'
+export { ThreadLinksCache } from './thread-links-cache'
+export { prepareThreadLinksWriteSet, type ThreadLinksSource } from './thread-links-write-set'
+export { threadLinksRelationReader } from './thread-links-relation-reader'

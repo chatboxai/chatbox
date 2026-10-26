@@ -1,6 +1,7 @@
+import { treeMessageRequest, decodeTreeMetadata, MESSAGE_TREE } from './session-row-idb-tree'
 import type { MessageRow } from '@chatbox/core/session/session-tree'
 import type { MessageRowMetadata } from '@chatbox/core/session/session-tree'
-import { putTranscriptMessage, TRANSCRIPT_MESSAGES } from './session-row-idb-transcript'
+import { putTranscriptMessage } from './session-row-idb-transcript'
 import { SESSION_ROW_MESSAGE_STORE, SESSION_ROW_TOKEN_CACHE_STORE } from './session-row-idb-records'
 
 export type StoredMessageRow = MessageRow
@@ -15,14 +16,14 @@ export function readStoredMessage(
     fail(new Error('Message body is missing or has an inconsistent identity'))
     return
   }
-  const request = tx.objectStore(TRANSCRIPT_MESSAGES).get([row.sessionId, row.messageId])
+  const request = treeMessageRequest(tx, row.sessionId, row.messageId)
   request.onerror = () => fail(request.error)
   request.onsuccess = () => {
-    if (!request.result && row.selected !== undefined) {
+    if (!request.result) {
       fail(new Error('Message metadata is missing'))
       return
     }
-    done({ ...messageMetadata(row), ...(request.result ? messageMetadata(request.result) : {}), message: row.message })
+    done({ ...messageMetadata(decodeTreeMetadata(request.result)), message: row.message })
   }
 }
 
@@ -41,7 +42,7 @@ export function putStoredMessages(
       const row = item.value
       if (!row.message || row.message.id !== row.messageId) throw new Error('Message body identity is inconsistent')
       if (publishMetadata) putTranscriptMessage(tx, row)
-      const request = tx.objectStore(SESSION_ROW_MESSAGE_STORE).put(row)
+      const request = tx.objectStore(SESSION_ROW_MESSAGE_STORE).put({ ...messageMetadata(row), message: row.message })
       request.onsuccess = next
       request.onerror = () => fail(request.error)
     } catch (error) {
@@ -53,7 +54,10 @@ export function putStoredMessages(
 
 export function deleteStoredMessage(tx: IDBTransaction, sessionId: string, messageId: string): void {
   tx.objectStore(SESSION_ROW_MESSAGE_STORE).delete([sessionId, messageId])
-  tx.objectStore(TRANSCRIPT_MESSAGES).delete([sessionId, messageId])
+  const request = treeMessageRequest(tx, sessionId, messageId)
+  request.onsuccess = () => {
+    if (request.result) tx.objectStore(MESSAGE_TREE).delete([sessionId, request.result.threadId, messageId])
+  }
   tx.objectStore(SESSION_ROW_TOKEN_CACHE_STORE).delete(
     IDBKeyRange.bound([sessionId, messageId], [sessionId, messageId, []])
   )
@@ -61,27 +65,8 @@ export function deleteStoredMessage(tx: IDBTransaction, sessionId: string, messa
 
 /** Physical index fields are not part of a logical message row. */
 export function messageMetadata(
-  value: MessageRowMetadata & {
-    tokenPayloadId?: string
-    payloadBytes?: number
-    selectedDepth?: number | null
-    parentKey?: string
-    branchKey?: string
-    pausedKey?: number
-    conversationKey?: number
-    namingRole?: string
-  }
+  value: MessageRowMetadata & { tokenPayloadId?: string; payloadBytes?: number }
 ): MessageRowMetadata {
-  const {
-    tokenPayloadId: _tokenPayloadId,
-    payloadBytes: _bytes,
-    selectedDepth: _depth,
-    parentKey: _parent,
-    branchKey: _branch,
-    pausedKey: _paused,
-    conversationKey: _conversation,
-    namingRole: _naming,
-    ...metadata
-  } = value
+  const { tokenPayloadId: _tokenPayloadId, selected: _selected, payloadBytes: _bytes, ...metadata } = value
   return metadata
 }

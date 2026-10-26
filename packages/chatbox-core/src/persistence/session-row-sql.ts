@@ -1,3 +1,4 @@
+import { ThreadLinksCache } from './thread-links-cache'
 import type { SessionBranchMessagesRequest, SessionBranchPreviewRequest } from '../ports/session-branch-source'
 import type {
   SessionMessageMetadataRequest,
@@ -45,14 +46,9 @@ import { readBranchMessagesPage, validateBranchMessagesRequest } from './session
 import { assertSessionReadRevision, validateSessionMessagesRequest } from './session-message-selection'
 import { applySqlLocalMutation } from './session-row-local-sql'
 import { queryRowMetadata, sqlMetadataStringBytes } from './session-row-metadata-sql'
-import {
-  parseRowExtra,
-  rowExtra,
-  selectedDepths,
-  SESSION_ROW_PROJECTION_SCHEMA_SQL,
-} from './session-row-projection-sql'
+import { parseRowExtra, rowExtra, SESSION_ROW_PROJECTION_SCHEMA_SQL } from './session-row-projection-sql'
 import { readMetadataSelection, readRelationsPage } from './session-row-relations-read'
-import { sqlRelationReader } from './session-row-relations-sql'
+import { sqlRelationReader, loadSqlThreadLinks } from './session-row-relations-sql'
 import { createSqlRowWriter } from './session-row-transfer-sql'
 import { createSqlImportWriter, resumeSqlImportWriter } from './session-row-import-sql'
 import {
@@ -112,7 +108,7 @@ export interface SessionRowSqlReadOptions {
 interface ThreadRecord {
   session_id: string
   thread_id: string
-  seq: number
+  threadOrder: number
   name: string | null
   created_at: number
   root_message_id: string | null
@@ -128,7 +124,7 @@ interface ThreadMetadataRecord {
   projection_json: string | null
   session_id: string
   thread_id: string
-  seq: number
+  threadOrder: number
   name_length: number | null
   created_at: number
   root_message_id: string | null
@@ -155,12 +151,11 @@ interface MessagePayloadRecord {
 
 interface ContextMessageRecord extends MessagePayloadRecord {
   parent_message_id: string | null
-  seq: number
+  siblingOrder: number
 }
 
 interface MessageRecord extends ContextMessageRecord {
   row_metadata_json: string | null
-  selected_depth: number | null
   session_id: string
   thread_id: string
   active_child_id: string | null
@@ -192,11 +187,11 @@ interface SessionIdRecord {
 }
 
 const THREAD_COLUMNS =
-  'session_id, thread_id, seq, name, created_at, root_message_id, active_leaf_message_id, compaction_points_json, session_prompt_context_snapshot_json, session_record_json, commit_revision, projection_json'
+  'session_id, thread_id, threadOrder, name, created_at, root_message_id, active_leaf_message_id, compaction_points_json, session_prompt_context_snapshot_json, session_record_json, commit_revision, projection_json'
 const MESSAGE_COLUMNS =
-  'session_id, message_id, thread_id, parent_message_id, active_child_id, seq, kind, status, created_at, updated_at, branch_id, payload_id, payload_utf8_length, row_metadata_json, selected_depth'
+  'session_id, message_id, thread_id, parent_message_id, active_child_id, siblingOrder, kind, status, created_at, updated_at, branch_id, payload_id, payload_utf8_length, row_metadata_json'
 const UPSERT_THREAD_SQL = `INSERT OR REPLACE INTO session_threads (${THREAD_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-const UPSERT_MESSAGE_SQL = `INSERT OR REPLACE INTO session_messages (${MESSAGE_COLUMNS}, message_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+const UPSERT_MESSAGE_SQL = `INSERT OR REPLACE INTO session_messages (${MESSAGE_COLUMNS}, message_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 const DELETE_SESSION_THREADS_SQL = 'DELETE FROM session_threads WHERE session_id = ?'
 const DELETE_SESSION_MESSAGES_SQL = 'DELETE FROM session_messages WHERE session_id = ?'
 const GUARD_REVISION_EXHAUSTION_SQL =
@@ -208,7 +203,7 @@ const ADVANCE_SESSION_REVISION_SQL =
 const THREAD_INLINE_TEXT_BYTES = 512
 function threadMetadataColumns(bounded = true): string {
   return (
-    'session_id, thread_id, seq, length(name) AS name_length, created_at, root_message_id, active_leaf_message_id, length(compaction_points_json) AS compaction_points_json_length, length(session_prompt_context_snapshot_json) AS session_prompt_context_snapshot_json_length, length(session_record_json) AS session_record_json_length, commit_revision, projection_json, ' +
+    'session_id, thread_id, threadOrder, length(name) AS name_length, created_at, root_message_id, active_leaf_message_id, length(compaction_points_json) AS compaction_points_json_length, length(session_prompt_context_snapshot_json) AS session_prompt_context_snapshot_json_length, length(session_record_json) AS session_record_json_length, commit_revision, projection_json, ' +
     ['name', 'compaction_points_json', 'session_prompt_context_snapshot_json', 'session_record_json']
       .map((column) =>
         bounded
@@ -220,22 +215,22 @@ function threadMetadataColumns(bounded = true): string {
   )
 }
 const THREAD_METADATA_COLUMNS = threadMetadataColumns()
-const SELECT_THREADS_PAGE_SQL = `SELECT ${THREAD_METADATA_COLUMNS} FROM session_threads WHERE session_id = ? ORDER BY seq, thread_id LIMIT ? OFFSET ?`
-const SELECT_WINDOW_THREADS_SQL = `SELECT ${THREAD_METADATA_COLUMNS} FROM session_threads WHERE session_id = ? AND (seq = -1 OR thread_id = ?)`
-const SELECT_NATIVE_THREADS_PAGE_SQL = `SELECT ${threadMetadataColumns(false)} FROM session_threads WHERE session_id = ? ORDER BY seq, thread_id LIMIT ? OFFSET ?`
-const SELECT_NATIVE_WINDOW_THREADS_SQL = `SELECT ${threadMetadataColumns(false)} FROM session_threads WHERE session_id = ? AND (seq = -1 OR thread_id = ?)`
+const SELECT_THREADS_PAGE_SQL = `SELECT ${THREAD_METADATA_COLUMNS} FROM session_threads WHERE session_id = ? ORDER BY threadOrder, thread_id LIMIT ? OFFSET ?`
+const SELECT_WINDOW_THREADS_SQL = `SELECT ${THREAD_METADATA_COLUMNS} FROM session_threads WHERE session_id = ? AND (threadOrder = -1 OR thread_id = ?)`
+const SELECT_NATIVE_THREADS_PAGE_SQL = `SELECT ${threadMetadataColumns(false)} FROM session_threads WHERE session_id = ? ORDER BY threadOrder, thread_id LIMIT ? OFFSET ?`
+const SELECT_NATIVE_WINDOW_THREADS_SQL = `SELECT ${threadMetadataColumns(false)} FROM session_threads WHERE session_id = ? AND (threadOrder = -1 OR thread_id = ?)`
 function sqlJsonStringBytes(column: string): string {
   // GLOB stops at NUL; checking it separately keeps suffixes in the escaped path.
   return `(CASE WHEN instr(${column}, char(0)) = 0 AND ${column} NOT GLOB '*[^A-Za-z0-9._:-]*'
     THEN COALESCE(length(CAST(${column} AS BLOB)), 0)
     ELSE 6 * COALESCE(length(CAST(${column} AS BLOB)), 0) END)`
 }
-const SEARCH_THREAD_ORDER = 'CASE WHEN seq = -1 THEN 0 ELSE 1 END, seq DESC, thread_id DESC'
+const SEARCH_THREAD_ORDER = 'CASE WHEN threadOrder = -1 THEN 0 ELSE 1 END, threadOrder DESC, thread_id DESC'
 const SELECT_SEARCH_THREADS_PAGE_SQL = `WITH page AS (
-  SELECT thread_id, seq FROM session_threads WHERE session_id = ?
+  SELECT thread_id, threadOrder FROM session_threads WHERE session_id = ?
   ORDER BY ${SEARCH_THREAD_ORDER} LIMIT ? OFFSET ?
 ), sized AS (
-  SELECT thread_id, seq, COUNT(*) OVER () AS page_count,
+  SELECT thread_id, threadOrder, COUNT(*) OVER () AS page_count,
     ROW_NUMBER() OVER (ORDER BY ${SEARCH_THREAD_ORDER}) AS row_number,
     SUM(128 + ${sqlJsonStringBytes('thread_id')}) OVER (ORDER BY ${SEARCH_THREAD_ORDER}) AS response_bytes
   FROM page
@@ -244,7 +239,7 @@ SELECT CASE WHEN response_bytes <= ? THEN thread_id END AS thread_id, page_count
   (response_bytes > ?) AS oversized FROM sized
 WHERE response_bytes <= ? OR row_number = 1 ORDER BY ${SEARCH_THREAD_ORDER}`
 const SELECT_NATIVE_SEARCH_THREADS_PAGE_SQL = `SELECT thread_id, COUNT(*) OVER () AS page_count, 0 AS oversized FROM (
-  SELECT thread_id, seq FROM session_threads WHERE session_id = ?
+  SELECT thread_id, threadOrder FROM session_threads WHERE session_id = ?
   ORDER BY ${SEARCH_THREAD_ORDER} LIMIT ? OFFSET ?
 ) ORDER BY ${SEARCH_THREAD_ORDER}`
 
@@ -272,24 +267,24 @@ const MESSAGE_RECORD_ESTIMATED_JSON_BYTES = messageRecordEstimatedJsonBytes()
 function selectMessagePageSql(hasCursor: boolean, bounded = true, threadOnly = false): string {
   if (!bounded) {
     return `SELECT ${MESSAGE_COLUMNS} FROM session_messages
-      WHERE session_id = ?${threadOnly ? ' AND thread_id = ?' : ''}${hasCursor ? ' AND (thread_id, seq, message_id) > (?, ?, ?)' : ''}
-      ORDER BY thread_id, seq, message_id LIMIT ?`
+      WHERE session_id = ?${threadOnly ? ' AND thread_id = ?' : ''}${hasCursor ? ' AND (thread_id, siblingOrder, message_id) > (?, ?, ?)' : ''}
+      ORDER BY thread_id, siblingOrder, message_id LIMIT ?`
   }
   return `WITH page AS (
     SELECT ${MESSAGE_COLUMNS}
     FROM session_messages
-    WHERE session_id = ?${threadOnly ? ' AND thread_id = ?' : ''}${hasCursor ? ' AND (thread_id, seq, message_id) > (?, ?, ?)' : ''}
-    ORDER BY thread_id, seq, message_id
+    WHERE session_id = ?${threadOnly ? ' AND thread_id = ?' : ''}${hasCursor ? ' AND (thread_id, siblingOrder, message_id) > (?, ?, ?)' : ''}
+    ORDER BY thread_id, siblingOrder, message_id
     LIMIT ?
   ), sized AS (
     SELECT ${MESSAGE_COLUMNS},
-      ROW_NUMBER() OVER (ORDER BY thread_id, seq, message_id) AS row_number,
-      SUM(${MESSAGE_RECORD_ESTIMATED_JSON_BYTES}) OVER (ORDER BY thread_id, seq, message_id) AS response_bytes
+      ROW_NUMBER() OVER (ORDER BY thread_id, siblingOrder, message_id) AS row_number,
+      SUM(${MESSAGE_RECORD_ESTIMATED_JSON_BYTES}) OVER (ORDER BY thread_id, siblingOrder, message_id) AS response_bytes
     FROM page
   )
   SELECT ${MESSAGE_COLUMNS} FROM sized
   WHERE response_bytes <= ? OR row_number = 1
-  ORDER BY thread_id, seq, message_id`
+  ORDER BY thread_id, siblingOrder, message_id`
 }
 const SELECT_SESSION_PRESENCE_SQL =
   'SELECT session_id FROM session_threads WHERE session_id = ? UNION SELECT session_id FROM session_messages WHERE session_id = ? LIMIT 1'
@@ -452,7 +447,7 @@ export function validateThreadRow(thread: ThreadRow, sessionId: string): void {
   if (thread.sessionId !== sessionId) {
     throw new Error(`thread ${thread.threadId} belongs to session ${thread.sessionId}`)
   }
-  if (thread.seq !== -1 && thread.name === null) {
+  if (thread.threadOrder !== -1 && thread.name === null) {
     throw new Error(`archived thread ${thread.threadId} is missing a name`)
   }
 }
@@ -483,14 +478,14 @@ export function validateMessageRow(message: MessageRowMetadata, sessionId: strin
 }
 
 export function threadStatement(thread: ThreadRow, commit?: SessionRowCommit): SessionRowSqlStatement {
-  const activeCommit = thread.seq === -1 ? commit : undefined
+  const activeCommit = thread.threadOrder === -1 ? commit : undefined
   return {
     kind: 'upsert-thread',
     sql: UPSERT_THREAD_SQL,
     params: [
       thread.sessionId,
       thread.threadId,
-      thread.seq,
+      thread.threadOrder,
       thread.name,
       thread.createdAt,
       thread.rootMessageId,
@@ -513,7 +508,7 @@ function createPayloadId(message: MessageRow): string {
   return `${message.sessionId}:${message.messageId}:${nonce}`
 }
 
-export function* messageStatements(message: MessageRow, selectedDepth?: number): Generator<SessionRowSqlStatement> {
+export function* messageStatements(message: MessageRow): Generator<SessionRowSqlStatement> {
   const payload = { ...message.message }
   const serialized = serializeJson(payload, `message ${message.messageId}`)
   const payloadId = createPayloadId(message)
@@ -527,7 +522,7 @@ export function* messageStatements(message: MessageRow, selectedDepth?: number):
       message.threadId,
       message.parentMessageId,
       message.activeChildId,
-      message.seq,
+      message.siblingOrder,
       message.kind,
       message.status,
       message.createdAt,
@@ -536,7 +531,6 @@ export function* messageStatements(message: MessageRow, selectedDepth?: number):
       payloadId,
       utf8Length,
       rowExtra(message),
-      selectedDepth ?? null,
       serialized,
     ],
   }
@@ -546,7 +540,7 @@ function toThreadRow(record: ThreadRecord): ThreadRow {
   const thread: ThreadRow = {
     sessionId: record.session_id,
     threadId: record.thread_id,
-    seq: Number(record.seq),
+    threadOrder: Number(record.threadOrder),
     name: record.name,
     createdAt: Number(record.created_at),
     rootMessageId: record.root_message_id ?? null,
@@ -567,10 +561,10 @@ function toThreadRow(record: ThreadRecord): ThreadRow {
 
 function readCommitMetadata(
   sessionId: string,
-  records: Pick<ThreadRecord, 'seq' | 'thread_id' | 'session_record_json' | 'commit_revision'>[],
+  records: Pick<ThreadRecord, 'threadOrder' | 'thread_id' | 'session_record_json' | 'commit_revision'>[],
   revision: number | null
 ): SessionRowCommit {
-  const activeRows = records.filter((record) => Number(record.seq) === -1)
+  const activeRows = records.filter((record) => Number(record.threadOrder) === -1)
   if (activeRows.length !== 1) {
     throw new Error(`session ${sessionId} must have exactly one active thread row`)
   }
@@ -593,7 +587,7 @@ function validateCommit(sessionId: string, threads: ThreadRow[], commit: Session
   if (!Number.isSafeInteger(commit.revision) || commit.revision <= 0) {
     throw new Error(`session ${sessionId} has an invalid commit revision`)
   }
-  const activeRows = threads.filter((thread) => thread.seq === -1)
+  const activeRows = threads.filter((thread) => thread.threadOrder === -1)
   if (
     activeRows.length !== 1 ||
     commit.record.id !== sessionId ||
@@ -614,7 +608,7 @@ function toMessageMetadata(record: MessageRecord): MessageRowMetadata {
     messageId: record.message_id,
     parentMessageId: record.parent_message_id ?? null,
     activeChildId: record.active_child_id ?? null,
-    seq: Number(record.seq),
+    siblingOrder: Number(record.siblingOrder),
     kind: record.kind as MessageRowKind,
     status: record.status as MessageRowStatus,
     createdAt: Number(record.created_at),
@@ -632,6 +626,7 @@ function toMessageMetadata(record: MessageRecord): MessageRowMetadata {
  * Bridge-backed drivers prepare invisible staging rows in bounded transactions.
  */
 export class SqlSessionRowStore implements SessionRowStorePort {
+  private readonly linksCache = new ThreadLinksCache()
   private initializePromise: Promise<void> | null = null
   private readonly boundedReads: boolean
 
@@ -704,10 +699,50 @@ export class SqlSessionRowStore implements SessionRowStorePort {
         { sessionId: request.sessionId, expectedRevision: request.expectedRevision },
         () => this.readRevision(request.sessionId),
         (commit) =>
-          readRelationsPage(request, commit, sqlRelationReader(this.database, request.sessionId, this.boundedReads)),
+          readRelationsPage(
+            request,
+            commit,
+            sqlRelationReader(this.database, request.sessionId, this.boundedReads, (threadId) =>
+              this.linksCache.get(request.sessionId, threadId, commit.revision, () =>
+                loadSqlThreadLinks(this.database, request.sessionId, threadId, this.boundedReads)
+              )
+            )
+          ),
         this.boundedReads
       )
     )
+  }
+
+  async prefetchThreadLinks(request: SessionThreadRequest & { signal?: AbortSignal }): Promise<void> {
+    await this.initialize()
+    const state = await this.readThread(request)
+    if (!state) return
+    await this.linksCache.get(request.sessionId, state.thread.threadId, state.revision, async () => {
+      request.signal?.throwIfAborted()
+      const yieldTask = async () => {
+        request.signal?.throwIfAborted()
+        assertSessionReadRevision(
+          { sessionId: request.sessionId, expectedRevision: state.revision },
+          await this.readRevision(request.sessionId)
+        )
+        await new Promise<void>((resolve) => setTimeout(resolve, 0))
+        request.signal?.throwIfAborted()
+      }
+      const rows = await loadSqlThreadLinks(
+        this.database,
+        request.sessionId,
+        state.thread.threadId,
+        this.boundedReads,
+        yieldTask
+      )
+      await rows.preparePath(state.thread.rootMessageId, yieldTask)
+      assertSessionReadRevision(
+        { sessionId: request.sessionId, expectedRevision: state.revision },
+        await this.readRevision(request.sessionId)
+      )
+      request.signal?.throwIfAborted()
+      return rows
+    })
   }
 
   async readThreadState(request: SessionThreadStateRequest) {
@@ -836,18 +871,39 @@ export class SqlSessionRowStore implements SessionRowStorePort {
 
   async stageRows(commit: SessionRowCommit, expectedRevision: number | null) {
     await this.initialize()
-    return createSqlRowWriter(this.database, commit, expectedRevision, this.createRowId)
+    const writer = await createSqlRowWriter(this.database, commit, expectedRevision, this.createRowId)
+    return {
+      ...writer,
+      publish: async () => {
+        await writer.publish()
+        this.linksCache.invalidate(commit.record.id)
+      },
+    }
   }
 
   async stageImportRows(commit: SessionRowCommit, expectedRevision: number | null, jobId: string) {
     const captured = { record: structuredClone(commit.record), revision: commit.revision }
     await this.initialize()
-    return createSqlImportWriter(this.database, captured, expectedRevision, jobId)
+    const writer = await createSqlImportWriter(this.database, captured, expectedRevision, jobId)
+    return {
+      ...writer,
+      publish: async () => {
+        await writer.publish()
+        this.linksCache.invalidate(captured.record.id)
+      },
+    }
   }
 
   async resumeImportRows(candidateId: string) {
     await this.initialize()
-    return resumeSqlImportWriter(this.database, candidateId)
+    const writer = await resumeSqlImportWriter(this.database, candidateId)
+    return {
+      ...writer,
+      publish: async () => {
+        await writer.publish()
+        this.linksCache.clear()
+      },
+    }
   }
 
   async *iterateRows(request: SessionRowIterationRequest): AsyncGenerator<SessionStoredRow> {
@@ -884,7 +940,7 @@ export class SqlSessionRowStore implements SessionRowStorePort {
       await check()
       const params: SessionRowSqlBindValue[] = [sessionId]
       if (threadId !== undefined) params.push(threadId)
-      if (cursor) params.push(cursor.thread_id, cursor.seq, cursor.message_id)
+      if (cursor) params.push(cursor.thread_id, cursor.siblingOrder, cursor.message_id)
       params.push(MESSAGE_PAGE_MAX_ROWS)
       if (this.boundedReads) params.push(MESSAGE_PAGE_RESPONSE_BUDGET)
       const page = await this.database.query<MessageRecord>(
@@ -1156,7 +1212,8 @@ export class SqlSessionRowStore implements SessionRowStorePort {
               if (result?.status === 'projection-unavailable') throw new Error('Thread projection is unavailable')
               return result?.thread ?? null
             },
-            this.boundedReads
+            this.boundedReads,
+            this.linksCache
           )
         } catch (error) {
           assertSessionReadRevision(
@@ -1238,10 +1295,9 @@ export class SqlSessionRowStore implements SessionRowStorePort {
         validateThreadRow(thread, rows.sessionId)
         yield threadStatement(thread, commit)
       }
-      const depths = selectedDepths(rows)
       for (const message of rows.messages) {
         validateMessageRow(message, rows.sessionId)
-        yield* messageStatements(message, depths.get(message.messageId))
+        yield* messageStatements(message)
       }
       yield textTokenCleanupStatement(rows.sessionId)
     } catch (error) {
@@ -1256,7 +1312,10 @@ export class SqlSessionRowStore implements SessionRowStorePort {
   ): Promise<T> {
     await this.initialize()
     try {
-      return await task()
+      const result = await task()
+      if (sessionId && (operation === 'write-rows' || operation === 'delete-rows'))
+        this.linksCache.invalidate(sessionId)
+      return result
     } catch (error) {
       if (error instanceof SessionRowConflictError) throw error
       throw new SessionRowStoreError(operation, error, sessionId)
@@ -1284,7 +1343,7 @@ export class SqlSessionRowStore implements SessionRowStorePort {
     let cursor: MessageRecord | undefined
     for (;;) {
       const params: SessionRowSqlBindValue[] = [sessionId]
-      if (cursor) params.push(cursor.thread_id, cursor.seq, cursor.message_id)
+      if (cursor) params.push(cursor.thread_id, cursor.siblingOrder, cursor.message_id)
       params.push(MESSAGE_PAGE_MAX_ROWS)
       if (this.boundedReads) params.push(MESSAGE_PAGE_RESPONSE_BUDGET)
       const page = await this.database.query<MessageRecord>(
@@ -1369,7 +1428,7 @@ export class SqlSessionRowStore implements SessionRowStorePort {
       hydrated.push({
         session_id: record.session_id,
         thread_id: record.thread_id,
-        seq: record.seq,
+        threadOrder: record.threadOrder,
         name,
         created_at: record.created_at,
         root_message_id: record.root_message_id,

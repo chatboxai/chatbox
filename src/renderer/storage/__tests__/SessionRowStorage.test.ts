@@ -1,4 +1,7 @@
-import { projectRowFixture } from '../../../../packages/chatbox-core/src/ports/testing/session-row-fixtures'
+import {
+  projectRowFixture,
+  storageRowFixture,
+} from '../../../../packages/chatbox-core/src/ports/testing/session-row-fixtures'
 import { readRowContextSource } from '../../../../packages/chatbox-core/src/application/session/row-context'
 import 'fake-indexeddb/auto'
 import type { SessionRowCommit, SessionRowSnapshot, SessionRows } from '@chatbox/core/ports'
@@ -16,7 +19,7 @@ function threadRow(sessionId: string, threadId: string, overrides: Partial<Threa
   return {
     sessionId,
     threadId,
-    seq: -1,
+    threadOrder: -1,
     name: threadId,
     createdAt: 1_000,
     rootMessageId: null,
@@ -38,7 +41,7 @@ function messageRow(
     messageId,
     parentMessageId: null,
     activeChildId: null,
-    seq: 0,
+    siblingOrder: 0,
     kind: 'message',
     status: 'settled',
     createdAt: 1_000,
@@ -65,9 +68,9 @@ function commit(sessionId: string, revision: number, activeThreadId: string): Se
 }
 
 function snapshot(rows: SessionRows, revision: number): SessionRowSnapshot {
-  const activeThreadId = rows.threads.find((thread) => thread.seq === -1)?.threadId ?? rows.threads[0]?.threadId
+  const activeThreadId = rows.threads.find((thread) => thread.threadOrder === -1)?.threadId ?? rows.threads[0]?.threadId
   if (!activeThreadId) throw new Error(`no active thread for ${rows.sessionId}`)
-  return projectRowFixture({ rows, ...commit(rows.sessionId, revision, activeThreadId) })
+  return storageRowFixture(projectRowFixture({ rows, ...commit(rows.sessionId, revision, activeThreadId) }))
 }
 
 /** A row carrying a function, which structured clone rejects inside `put`. */
@@ -123,7 +126,7 @@ describe('IndexedDBSessionRowStore', () => {
     const store = new IndexedDBSessionRowStore()
     const messages = Array.from({ length: 100 }, (_, index) =>
       messageRow('session-1', 'thread-active', `m${index}`, {
-        seq: index,
+        siblingOrder: index,
         parentMessageId: index === 0 ? null : `m${index - 1}`,
         activeChildId: index === 99 ? null : `m${index + 1}`,
       })
@@ -169,10 +172,10 @@ describe('IndexedDBSessionRowStore', () => {
         snapshot(
           {
             sessionId: 'session-1',
-            threads: [threadRow('session-1', 'thread-next', { seq: 0 })],
+            threads: [threadRow('session-1', 'thread-next', { threadOrder: 0 })],
             messages: [
               messageRow('session-1', 'thread-next', 'm2'),
-              unclonableRow(messageRow('session-1', 'thread-next', 'm3', { seq: 1 })),
+              unclonableRow(messageRow('session-1', 'thread-next', 'm3', { siblingOrder: 1 })),
             ],
           },
           2
@@ -194,7 +197,7 @@ describe('IndexedDBSessionRowStore', () => {
           threads: [threadRow('session-2', 'thread-b')],
           messages: [
             messageRow('session-2', 'thread-b', 'm4', { status: 'generating' }),
-            messageRow('session-2', 'thread-b', 'm1', { seq: 1 }),
+            messageRow('session-2', 'thread-b', 'm1', { siblingOrder: 1 }),
           ],
         },
         1
@@ -204,11 +207,11 @@ describe('IndexedDBSessionRowStore', () => {
       snapshot(
         {
           sessionId: 'session-1',
-          threads: [threadRow('session-1', 'thread-a'), threadRow('session-1', 'thread-b', { seq: 0 })],
+          threads: [threadRow('session-1', 'thread-a'), threadRow('session-1', 'thread-b', { threadOrder: 0 })],
           messages: [
             messageRow('session-1', 'thread-b', 'm3', { status: 'generating' }),
-            messageRow('session-1', 'thread-a', 'm2', { seq: 1, status: 'generating' }),
-            messageRow('session-1', 'thread-a', 'm1', { seq: 2 }),
+            messageRow('session-1', 'thread-a', 'm2', { siblingOrder: 1, status: 'generating' }),
+            messageRow('session-1', 'thread-a', 'm1', { siblingOrder: 2 }),
           ],
         },
         1

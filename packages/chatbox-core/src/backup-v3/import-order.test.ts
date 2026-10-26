@@ -180,14 +180,14 @@ describe('V3 candidate batch validation', () => {
     const input = records(fixture('A', 1))
     const thread = input[1]
     if (thread.type !== 'thread') throw new Error('fixture')
-    input.push({ type: 'thread', thread: { ...thread.thread, name: 'replacement', seq: 0 } })
+    input.push({ type: 'thread', thread: { ...thread.thread, name: 'replacement', threadOrder: 0 } })
     const result = await f.run({ A: input })
     expect(result.importReport).toMatchObject({ importedMessages: 1, skippedRecords: 1, issueCount: 1 })
     expect(result.importReport?.issues[0].code).toBe('duplicate-row')
     const stored = []
     for await (const row of f.rows.iterateRows({ sessionId: 'A' })) if (row.kind === 'thread') stored.push(row.thread)
     expect(stored).toHaveLength(1)
-    expect(stored[0]).toMatchObject({ name: thread.thread.name, seq: thread.thread.seq })
+    expect(stored[0]).toMatchObject({ name: thread.thread.name, threadOrder: thread.thread.threadOrder })
   })
 
   it('reports a missing thread once and preserves a local conversation when all input messages are unusable', async () => {
@@ -278,5 +278,28 @@ describe('V3 candidate batch validation', () => {
             : message
       await expect(order.accept(invalid)).rejects.toThrow()
     }
+  )
+})
+
+it('restores edges and endpoints when V3 message IDs arrive independently of tree order across batches', async () => {
+  const f = setup(),
+    source = fixture('A', 257),
+    input = records(source)
+  const messages = input.filter((row) => row.type === 'message').reverse()
+  const result = await f.run({ A: [...input.filter((row) => row.type !== 'message'), ...messages] })
+  expect(result.importReport).toMatchObject({ importedSessions: 1, importedMessages: 257, issueCount: 0 })
+  const thread = await f.rows.readThreadState({
+    sessionId: 'A',
+    threadId: source.rows.threads[0].threadId,
+    expectedRevision: (await f.rows.readCommit('A'))!.revision,
+  })
+  expect(thread?.status === 'ready' && thread.thread).toMatchObject({
+    rootMessageId: 'A-0',
+    activeLeafMessageId: 'A-256',
+    summary: { messageCount: 257 },
+  })
+  const page = await f.rows.readTranscriptWindow({ sessionId: 'A', origin: 'tail', limit: 50 })
+  expect(page?.messages.map((row) => row.messageId)).toEqual(
+    Array.from({ length: 50 }, (_, index) => `A-${207 + index}`)
   )
 })

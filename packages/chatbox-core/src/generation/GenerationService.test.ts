@@ -744,7 +744,7 @@ describe('generation context sources', () => {
   it('follows stable links when sibling labels are sparse', async () => {
     const harness = await boundedHarness()
     const snapshot = harness.rows.snapshot()[0]
-    const messages = snapshot.rows.messages.map((row) => ({ ...row, seq: row.seq * 2 }))
+    const messages = snapshot.rows.messages.map((row) => ({ ...row, siblingOrder: row.siblingOrder * 2 }))
     await harness.rows.writeRows({ ...snapshot, revision: 2, rows: { ...snapshot.rows, messages } }, 1)
     await harness.service.orchestrate('session-1', targetMessage())
     expect(harness.steeringRegister.mock.calls[0][1]).toEqual(

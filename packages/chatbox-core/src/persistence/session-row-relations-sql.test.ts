@@ -24,7 +24,7 @@ for (const [name, factory] of [
   describe(`${name} row relations`, () => {
     for (const test of createSessionRowRelationsContract(factory)) it(test.name, test.run)
   })
-it('locates a target via its stored membership and reads no payload for row relations', async () => {
+it('locates a target via derived membership and reads no payload for row relations', async () => {
   const { database, store } = createStore()
   await store.writeRows(relationFixture())
   const query = vi.spyOn(database, 'query')
@@ -53,7 +53,7 @@ it('locates a target via its stored membership and reads no payload for row rela
   expect(memberships).toHaveLength(1)
   const membership = memberships[0]
   expect(membership.call[1]).toEqual(['transcript', 'recent-2'])
-  const paths = calls.filter(({ call: [sql] }) => sql.includes('WITH RECURSIVE'))
+  const paths = calls.filter(({ call: [sql] }) => sql.includes('WITH RECURSIVE transcript_path('))
   expect(paths).toHaveLength(1)
   const path = paths[0]
   expect(path.call[0]).toContain('WITH RECURSIVE transcript_path(')
@@ -85,15 +85,15 @@ it.each(['bounded', 'none'] as const)(
       parentMessageId: index ? `path-${index - 1}` : null,
       activeChildId: index === 299 ? null : `path-${index + 1}`,
       pendingBranchId: undefined,
-      pendingBranchSeq: undefined,
+      pendingBranchOrder: undefined,
       forkCreatedAt: undefined,
-      seq: 0,
+      siblingOrder: 0,
       message: { id: `path-${index}`, role: 'user' as const, contentParts: [] },
     }))
     fixture.rows.threads = [
       {
         ...fixture.rows.threads.find((thread) => thread.threadId === 'old')!,
-        seq: -1,
+        threadOrder: -1,
         rootMessageId: 'path-0',
         activeLeafMessageId: 'path-299',
       },
@@ -125,12 +125,12 @@ it.each(['bounded', 'none'] as const)(
     databases.push(database)
     const store = new SqlSessionRowStore(database, undefined, { readByteBudget })
     const fixture = relationFixture()
-    const archived = fixture.rows.threads.find((thread) => thread.seq !== -1)!
+    const archived = fixture.rows.threads.find((thread) => thread.threadOrder !== -1)!
     fixture.rows.threads.push(
       ...Array.from({ length: 100 }, (_, index) => ({
         ...archived,
         threadId: `empty-${index}`,
-        seq: index + 100,
+        threadOrder: index + 100,
         rootMessageId: null,
         activeLeafMessageId: null,
       }))
@@ -145,7 +145,7 @@ it.each(['bounded', 'none'] as const)(
     expect(result?.messages.map((row) => row.messageId)).toEqual(['recent-2', 'old-0'])
     const threadQueries = query.mock.calls.map(([sql]) => sql).filter((sql) => sql.includes('FROM session_threads'))
     expect(threadQueries).toHaveLength(1)
-    expect(threadQueries[0]).toContain('seq = -1 LIMIT 2')
+    expect(threadQueries[0]).toContain('threadOrder = -1 LIMIT 2')
     expect(threadQueries[0]).not.toContain('compaction_points')
   }
 )
@@ -221,3 +221,51 @@ it.each(['bounded', 'none'] as const)(
     expect(plan.some((step) => /SCAN (m|session_messages)\b/.test(step.detail))).toBe(false)
   }
 )
+
+it('invalidates warmed links after replacement and derives the next local write from new edges', async () => {
+  const { database, store } = createStore()
+  const snapshot = relationFixture()
+  await store.writeRows(snapshot)
+  await store.prefetchThreadLinks({ sessionId: 'transcript', threadId: 'old', expectedRevision: 1 })
+  snapshot.revision = 2
+  snapshot.rows.messages.find((row) => row.messageId === 'old-0')!.activeChildId = 'inactive'
+  snapshot.rows.threads.find((row) => row.threadId === 'old')!.activeLeafMessageId = 'inactive'
+  await new SqlSessionRowStore(database, undefined, { readByteBudget: 'none' }).writeRows(snapshot, 1)
+  await store.applyDiff(
+    {
+      sessionId: 'transcript',
+      threads: { upsert: [], delete: [] },
+      messages: { upsert: [], delete: [] },
+      messageMetadataUpsert: [{ ...snapshot.rows.messages.find((row) => row.messageId === 'old-0')!, updatedAt: 1234 }],
+    },
+    { record: snapshot.record, revision: 3 },
+    2
+  )
+  const thread = await store.readThreadState({ sessionId: 'transcript', threadId: 'old', expectedRevision: 3 })
+  expect(thread?.status === 'ready' && thread.thread.activeLeafMessageId).toBe('inactive')
+})
+
+it('derives membership for path, children and status pages in one SQL question', async () => {
+  const { database, store } = createStore()
+  const snapshot = relationFixture()
+  snapshot.rows.messages.find((row) => row.messageId === 'old-1')!.status = 'generating'
+  await store.writeRows(snapshot)
+  for (const selector of [
+    { kind: 'selected-path' as const, messageId: 'old-0' },
+    { kind: 'children' as const, parentMessageId: 'old-0' },
+    { kind: 'status' as const, status: 'generating' as const },
+  ]) {
+    const query = vi.spyOn(database, 'query')
+    const page = await store.readMessageRelationsPage({
+      sessionId: 'transcript',
+      threadId: 'old',
+      expectedRevision: 1,
+      selector,
+      limit: 200,
+    })
+    expect(page?.status).toBe('ready')
+    if (page?.status === 'ready') for (const row of page.rows) expect(row.selected).toBe(row.messageId !== 'inactive')
+    expect(query.mock.calls.filter(([sql]) => sql.includes('relation_page'))).toHaveLength(1)
+    query.mockRestore()
+  }
+})

@@ -16,9 +16,9 @@ import { textTokenCleanupStatement } from './session-text-token-sql'
 
 export const transferColumns = {
   threads:
-    'session_id,thread_id,seq,name,created_at,root_message_id,active_leaf_message_id,compaction_points_json,session_prompt_context_snapshot_json,session_record_json,commit_revision,projection_json',
+    'session_id,thread_id,threadOrder,name,created_at,root_message_id,active_leaf_message_id,compaction_points_json,session_prompt_context_snapshot_json,session_record_json,commit_revision,projection_json',
   messages:
-    'session_id,message_id,thread_id,parent_message_id,active_child_id,seq,kind,status,created_at,updated_at,branch_id,payload_id,payload_utf8_length,row_metadata_json,selected_depth,message_json',
+    'session_id,message_id,thread_id,parent_message_id,active_child_id,siblingOrder,kind,status,created_at,updated_at,branch_id,payload_id,payload_utf8_length,row_metadata_json,message_json',
 }
 const columns = transferColumns
 const encoder = new TextEncoder()
@@ -80,7 +80,7 @@ export function* stageSqlRow(
   }
 }
 
-/** Derives selected-path indexes for rows supplied by the copy operation. */
+/** Validate staged edges with a bounded recursive question; no path projection is written. */
 export async function projectSelectedPaths(
   database: SessionRowSqlDatabase,
   mutation: string,
@@ -88,71 +88,37 @@ export async function projectSelectedPaths(
   messageCount: number,
   deriveLeaf = false
 ): Promise<void> {
-  const sessionId = commit.record.id
-  const args = [mutation, sessionId]
-  const threads = 'session_threads_staging'
-  const messages = 'session_messages_staging'
+  const args = [mutation, commit.record.id]
+  const threads = 'session_threads_staging',
+    messages = 'session_messages_staging'
   const active = await database.query<{ thread_id: string }>(
-    `SELECT thread_id FROM ${threads} WHERE mutation_id=? AND session_id=? AND seq=-1 LIMIT 2`,
+    `SELECT thread_id FROM ${threads} WHERE mutation_id=? AND session_id=? AND threadOrder=-1 LIMIT 2`,
     args
   )
   if (active.length !== 1 || active[0].thread_id !== commit.record.activeThreadId)
     throw new Error('Invalid candidate thread identity')
-  await database.executeBatch([
-    {
-      // The row limit bounds recursive evaluation; the path primary key rejects repeated visits.
-      sql: `WITH RECURSIVE path(message_id,thread_id,depth) AS (
-      SELECT m.message_id,m.thread_id,0 FROM ${threads} t JOIN ${messages} m
-        ON m.mutation_id=t.mutation_id AND m.session_id=t.session_id AND m.message_id=t.root_message_id
-      WHERE t.mutation_id=? AND t.session_id=?
-      UNION ALL
-      SELECT c.message_id,c.thread_id,path.depth+1 FROM path
-        CROSS JOIN ${messages} p ON p.mutation_id=? AND p.session_id=? AND p.message_id=path.message_id
-        CROSS JOIN ${messages} c ON c.mutation_id=p.mutation_id AND c.session_id=p.session_id AND c.message_id=p.active_child_id
-      LIMIT ?
-    ) INSERT INTO session_row_selected_paths(mutation_id,message_id,depth)
-      SELECT ?,message_id,depth FROM path`,
-      params: [...args, ...args, messageCount + 1, mutation],
-    },
-  ])
+  const roots = await database.query(
+    `SELECT 1 FROM ${threads} t LEFT JOIN ${messages} m ON m.mutation_id=t.mutation_id AND m.session_id=t.session_id AND m.message_id=t.root_message_id WHERE t.mutation_id=? AND t.session_id=? AND ((t.root_message_id IS NULL AND t.active_leaf_message_id IS NOT NULL) OR (t.root_message_id IS NOT NULL AND (m.message_id IS NULL OR m.thread_id<>t.thread_id OR m.parent_message_id IS NOT NULL))) LIMIT 1`,
+    args
+  )
+  if (roots.length) throw new Error('Invalid selected row root')
+  const path = `WITH RECURSIVE path(message_id,thread_id,expected_parent,depth) AS (
+    SELECT t.root_message_id,t.thread_id,NULL,0 FROM ${threads} t WHERE t.mutation_id=? AND t.session_id=? AND t.root_message_id IS NOT NULL
+    UNION ALL SELECT m.active_child_id,p.thread_id,m.message_id,p.depth+1 FROM path p JOIN ${messages} m ON m.mutation_id=? AND m.session_id=? AND m.message_id=p.message_id WHERE m.active_child_id IS NOT NULL LIMIT ?
+  )`
+  const pathArgs = [...args, ...args, messageCount + 1]
+  const invalid = await database.query(
+    `${path} SELECT 1 FROM path p LEFT JOIN ${messages} m ON m.mutation_id=? AND m.session_id=? AND m.message_id=p.message_id JOIN ${threads} t ON t.mutation_id=? AND t.session_id=? AND t.thread_id=p.thread_id WHERE m.message_id IS NULL OR m.thread_id<>p.thread_id OR m.parent_message_id IS NOT p.expected_parent ${deriveLeaf ? '' : 'OR (m.active_child_id IS NULL AND t.active_leaf_message_id IS NOT m.message_id)'} LIMIT 1`,
+    [...pathArgs, ...args, ...args]
+  )
+  if (invalid.length) throw new Error('Invalid selected row path')
   if (deriveLeaf)
     await database.executeBatch([
       {
-        sql: `UPDATE ${threads} SET active_leaf_message_id=(SELECT m.message_id FROM ${messages} m JOIN session_row_selected_paths p ON p.mutation_id=m.mutation_id AND p.message_id=m.message_id WHERE m.mutation_id=${threads}.mutation_id AND m.session_id=${threads}.session_id AND m.thread_id=${threads}.thread_id ORDER BY p.depth DESC LIMIT 1) WHERE mutation_id=? AND session_id=?`,
-        params: args,
+        sql: `${path} UPDATE ${threads} SET active_leaf_message_id=(SELECT m.message_id FROM path p JOIN ${messages} m ON m.mutation_id=? AND m.session_id=? AND m.message_id=p.message_id WHERE p.thread_id=${threads}.thread_id AND m.active_child_id IS NULL LIMIT 1) WHERE mutation_id=? AND session_id=?`,
+        params: [...pathArgs, ...args, ...args],
       },
     ])
-  const invalidRoot = await database.query(
-    `SELECT 1 FROM ${threads} t LEFT JOIN ${messages} m
-       ON m.mutation_id=t.mutation_id AND m.session_id=t.session_id AND m.message_id=t.root_message_id
-     LEFT JOIN session_row_selected_paths p ON p.mutation_id=t.mutation_id AND p.message_id=t.root_message_id
-     WHERE t.mutation_id=? AND t.session_id=? AND
-       ((t.root_message_id IS NULL AND t.active_leaf_message_id IS NOT NULL)
-        OR (t.root_message_id IS NOT NULL AND
-          (p.message_id IS NULL OR m.thread_id<>t.thread_id OR m.parent_message_id IS NOT NULL))) LIMIT 1`,
-    args
-  )
-  const invalidPath = await database.query(
-    `SELECT 1 FROM session_row_selected_paths p
-      JOIN ${messages} m ON m.mutation_id=p.mutation_id AND m.message_id=p.message_id
-      LEFT JOIN ${threads} t ON t.mutation_id=m.mutation_id AND t.session_id=m.session_id AND t.thread_id=m.thread_id
-      LEFT JOIN ${messages} c ON c.mutation_id=m.mutation_id AND c.session_id=m.session_id AND c.message_id=m.active_child_id
-     WHERE p.mutation_id=? AND m.session_id=? AND
-       (t.thread_id IS NULL
-        OR (m.active_child_id IS NOT NULL AND
-          (c.message_id IS NULL OR c.thread_id<>m.thread_id OR c.parent_message_id IS NOT m.message_id))
-        OR (m.active_child_id IS NULL AND t.active_leaf_message_id IS NOT m.message_id)) LIMIT 1`,
-    args
-  )
-  if (invalidRoot.length || invalidPath.length) throw new Error('Invalid selected row path')
-  await database.executeBatch([
-    {
-      sql: `UPDATE ${messages} SET selected_depth=(SELECT depth FROM session_row_selected_paths p WHERE p.mutation_id=${messages}.mutation_id AND p.message_id=${messages}.message_id),
-      row_metadata_json=json_set(row_metadata_json,'$.selected',json(CASE WHEN EXISTS(SELECT 1 FROM session_row_selected_paths p WHERE p.mutation_id=${messages}.mutation_id AND p.message_id=${messages}.message_id) THEN 'true' ELSE 'false' END))
-      WHERE mutation_id=? AND session_id=?`,
-      params: args,
-    },
-  ])
 }
 
 export async function createSqlRowWriter(
@@ -207,7 +173,6 @@ export async function createSqlRowWriter(
       sql: `DELETE FROM session_${table}_staging WHERE mutation_id=?`,
       params: [mutation],
     })),
-    { sql: 'DELETE FROM session_row_selected_paths WHERE mutation_id=?', params: [mutation] },
     { sql: 'DELETE FROM session_row_staging_mutations WHERE mutation_id=?', params: [mutation] },
   ]
   await database.executeBatch([
@@ -225,7 +190,11 @@ export async function createSqlRowWriter(
     async appendMessage(message: MessageRow) {
       check()
       validateMessageRow(message, sessionId)
-      if (message.message.id !== message.messageId || !Number.isSafeInteger(message.seq) || message.seq < 0)
+      if (
+        message.message.id !== message.messageId ||
+        !Number.isSafeInteger(message.siblingOrder) ||
+        message.siblingOrder < 0
+      )
         throw new Error('Invalid candidate message identity or ordering')
       const statements = function* () {
         for (const statement of messageStatements({ ...message, facts: deriveMessageFacts(message.message) })) {

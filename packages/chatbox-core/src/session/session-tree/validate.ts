@@ -16,7 +16,7 @@ export function validateSessionTree(tree: {
     return { ok: false, reason: 'Unsupported session row format version' }
   }
   const threadsById = new Map<string, ThreadRow>()
-  const threadSeqs = new Set<number>()
+  const threadOrders = new Set<number>()
   for (const thread of tree.threads) {
     if (thread.sessionId !== tree.session.id) {
       return { ok: false, reason: `thread ${thread.threadId} belongs to session ${thread.sessionId}` }
@@ -24,19 +24,22 @@ export function validateSessionTree(tree: {
     if (threadsById.has(thread.threadId)) {
       return { ok: false, reason: `duplicate thread row ${thread.threadId}` }
     }
-    if (threadSeqs.has(thread.seq)) {
-      return { ok: false, reason: `thread ${thread.threadId} reuses seq ${thread.seq}` }
+    if (threadOrders.has(thread.threadOrder)) {
+      return { ok: false, reason: `thread ${thread.threadId} reuses siblingOrder ${thread.threadOrder}` }
     }
     threadsById.set(thread.threadId, thread)
-    threadSeqs.add(thread.seq)
+    threadOrders.add(thread.threadOrder)
   }
 
   const activeThread = threadsById.get(tree.session.activeThreadId)
   if (!activeThread) {
     return { ok: false, reason: `active thread ${tree.session.activeThreadId} has no thread row` }
   }
-  if (activeThread.seq !== -1) {
-    return { ok: false, reason: `active thread ${activeThread.threadId} has seq ${activeThread.seq}, expected -1` }
+  if (activeThread.threadOrder !== -1) {
+    return {
+      ok: false,
+      reason: `active thread ${activeThread.threadId} has siblingOrder ${activeThread.threadOrder}, expected -1`,
+    }
   }
   for (const thread of tree.threads) {
     if (thread !== activeThread && thread.name === null) {
@@ -47,7 +50,7 @@ export function validateSessionTree(tree: {
   const rowsById = new Map<string, MessageRowMetadata>()
   const threadMessageIds = new Map<string, Set<string>>()
   for (const row of tree.messages) {
-    if (!Number.isSafeInteger(row.seq) || row.seq < 0) {
+    if (!Number.isSafeInteger(row.siblingOrder) || row.siblingOrder < 0) {
       return { ok: false, reason: `message ${row.messageId} has an invalid ordering label` }
     }
     if (row.sessionId !== tree.session.id) {
@@ -115,10 +118,10 @@ export function validateSessionTree(tree: {
         reason: `message ${row.messageId} has parent ${parent.messageId} in thread ${parent.threadId}`,
       }
     }
-    if (tree.session.rowFormatVersion !== 3 && row.seq <= parent.seq) {
+    if (tree.session.rowFormatVersion !== 3 && row.siblingOrder <= parent.siblingOrder) {
       return {
         ok: false,
-        reason: `message ${row.messageId} has seq ${row.seq}, which does not follow its parent seq ${parent.seq}`,
+        reason: `message ${row.messageId} has siblingOrder ${row.siblingOrder}, which does not follow its parent siblingOrder ${parent.siblingOrder}`,
       }
     }
     const key = childKey(row.threadId, row.parentMessageId)
@@ -133,17 +136,17 @@ export function validateSessionTree(tree: {
   for (const row of tree.messages) {
     if (tree.session.rowFormatVersion === 3) {
       const siblings = childrenByParent.get(childKey(row.threadId, row.messageId)) ?? []
-      if (new Set(siblings.map((child) => child.seq)).size !== siblings.length) {
+      if (new Set(siblings.map((child) => child.siblingOrder)).size !== siblings.length) {
         return { ok: false, reason: `message ${row.messageId} has duplicate sibling labels` }
       }
-      if (row.pendingBranchId !== undefined || row.pendingBranchSeq !== undefined) {
+      if (row.pendingBranchId !== undefined || row.pendingBranchOrder !== undefined) {
         if (
           !row.pendingBranchId ||
           row.activeChildId !== null ||
-          !Number.isSafeInteger(row.pendingBranchSeq) ||
-          row.pendingBranchSeq === undefined ||
-          row.pendingBranchSeq < 0 ||
-          siblings.some((child) => child.seq === row.pendingBranchSeq)
+          !Number.isSafeInteger(row.pendingBranchOrder) ||
+          row.pendingBranchOrder === undefined ||
+          row.pendingBranchOrder < 0 ||
+          siblings.some((child) => child.siblingOrder === row.pendingBranchOrder)
         ) {
           return { ok: false, reason: `message ${row.messageId} has an invalid empty branch slot` }
         }

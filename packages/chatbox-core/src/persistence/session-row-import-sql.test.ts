@@ -45,7 +45,7 @@ function forkFixture(summaryPoint = false, empty = false, sessionId = 's', prefi
   const alternative = {
     ...selected,
     messageId: alternativeId,
-    seq: selected.seq + 1,
+    siblingOrder: selected.siblingOrder + 1,
     branchId: 'second-branch',
     message: { ...selected.message, id: alternativeId },
   }
@@ -53,7 +53,7 @@ function forkFixture(summaryPoint = false, empty = false, sessionId = 's', prefi
   point.activeChildId = empty ? null : alternativeId
   if (empty) {
     point.pendingBranchId = 'empty-branch'
-    point.pendingBranchSeq = selected.seq + 2
+    point.pendingBranchOrder = selected.siblingOrder + 2
   }
   const fork = {
     pivotId,
@@ -204,7 +204,7 @@ describe('durable SQL row imports', () => {
       source.rows.threads[0].compactionPoints = [{ boundaryMessageId: 'a', summaryMessageId: 'missing', createdAt: 1 }]
     if (kind === 'empty-slot') {
       source.rows.messages[1].pendingBranchId = 'empty'
-      source.rows.messages[1].pendingBranchSeq = -1
+      source.rows.messages[1].pendingBranchOrder = -1
     }
     if (kind === 'duplicate-sibling')
       source.rows.messages.push({
@@ -241,7 +241,8 @@ describe('durable SQL row imports', () => {
     if (kind === 'detached-cycle') expect(issues.filter((issue) => issue.action === 'skipped')).toHaveLength(2)
     if (kind === 'duplicate-sibling')
       expect(
-        new Set(restored?.rows.messages.filter((row) => row.parentMessageId === 'a').map((row) => row.seq)).size
+        new Set(restored?.rows.messages.filter((row) => row.parentMessageId === 'a').map((row) => row.siblingOrder))
+          .size
       ).toBe(2)
     await writer.dispose()
   })
@@ -281,7 +282,14 @@ it.each([
   await writer.publish()
   const result = await store.readMessages({ sessionId: 's', messageIds: [pivotId, replyId, alternativeId] })
   expect(result?.messages[0].fork).toEqual(fork)
-  expect(result?.messages.map((row) => row.selected)).toEqual(empty ? [true, false, false] : [true, false, true])
+  expect(
+    await membership(
+      store,
+      's',
+      result!.messages.map((row) => row.messageId),
+      result!.revision!
+    )
+  ).toEqual(empty ? [true, false, false] : [true, false, true])
 })
 
 it('derives the complete selected path and summary for a large branchless candidate', async () => {
@@ -317,7 +325,12 @@ it('keeps fork counts and selected branches independent across threads', async (
   const { store } = setup(),
     first = forkFixture(),
     second = forkFixture(true, true, 's', 'history-')
-  first.source.rows.threads.push({ ...second.source.rows.threads[0], threadId: 'history', seq: 0, name: 'History' })
+  first.source.rows.threads.push({
+    ...second.source.rows.threads[0],
+    threadId: 'history',
+    threadOrder: 0,
+    name: 'History',
+  })
   first.source.rows.messages.push(...second.source.rows.messages.map((row) => ({ ...row, threadId: 'history' })))
   const writer = await store.stageImportRows(first.source, null, 'two-threads')
   await append(writer, first.source)
@@ -418,7 +431,7 @@ it.each([false, true])('projects many fork points with bounded work (converted=%
       messageId,
       activeChildId: null,
       branchId: `other-${i}`,
-      seq: reply.seq + 1,
+      siblingOrder: reply.siblingOrder + 1,
       message: { ...reply.message, id: messageId },
     })
     forks.set(point.messageId, {
@@ -574,18 +587,18 @@ it('keeps usable branches, normalizes conflicting sibling order and removes orph
   const activeThreadId = source.record.activeThreadId
   source.record.activeThreadId = 'missing-active'
   const base = source.rows.messages[1]
-  const make = (messageId: string, parentMessageId: string, seq: number, threadId = base.threadId) => ({
+  const make = (messageId: string, parentMessageId: string, siblingOrder: number, threadId = base.threadId) => ({
     ...base,
     messageId,
     parentMessageId,
     activeChildId: null,
-    seq,
+    siblingOrder,
     threadId,
     message: { ...base.message, id: messageId },
   })
   source.rows.messages.push(
-    make('c', 'a', base.seq),
-    make('d', 'a', base.seq + 1),
+    make('c', 'a', base.siblingOrder),
+    make('d', 'a', base.siblingOrder + 1),
     make('orphan', 'absent', 0),
     make('descendant', 'orphan', 0),
     make('missing-thread', 'a', 0, 'absent-thread')
@@ -602,7 +615,7 @@ it('keeps usable branches, normalizes conflicting sibling order and removes orph
   expect(
     restored?.rows.messages
       .filter((row) => row.parentMessageId === 'a')
-      .map((row) => row.seq)
+      .map((row) => row.siblingOrder)
       .sort()
   ).toEqual([0, 1, 2])
   expect(restored?.rows.messages.find((row) => row.messageId === 'a')?.message).toEqual(source.rows.messages[0].message)
@@ -615,7 +628,7 @@ it('does not prune a healthy thread referenced by a broken cross-thread parent',
   source.rows.threads.push({
     ...source.rows.threads[0],
     threadId: 'broken-thread',
-    seq: 0,
+    threadOrder: 0,
     name: 'Broken',
     rootMessageId: '0broken',
   })
@@ -750,7 +763,14 @@ it('refreshes candidate metadata when another writer appends or prepares it', as
   expect(await second.prepare()).toMatchObject({ messageCount: 2, skipSession: false })
   await first.publish()
   const restored = await store.readSnapshot('s')
-  expect(restored?.rows.messages.map((row) => row.selected)).toEqual([true, true])
+  expect(
+    await membership(
+      store,
+      's',
+      restored!.rows.messages.map((row) => row.messageId),
+      restored!.revision
+    )
+  ).toEqual([true, true])
   expect(restored?.rows.threads[0].summary?.messageCount).toBe(2)
 })
 
@@ -784,12 +804,19 @@ it('publishes repaired rows across metadata pages after resuming the candidate',
   const restored = await store.readSnapshot('many')
   const actual = new Map(restored?.rows.messages.map((row) => [row.messageId, row]))
   expect(actual.size).toBe(257)
+  expect(
+    await membership(
+      store,
+      'many',
+      source.rows.messages.map((row) => row.messageId),
+      restored!.revision
+    )
+  ).toEqual(Array(257).fill(true))
   for (const row of source.rows.messages) {
     expect(actual.get(row.messageId)).toMatchObject({
       message: row.message,
       parentMessageId: row.parentMessageId,
       activeChildId: row.activeChildId,
-      selected: true,
     })
   }
   expect(restored?.rows.threads[0]).toMatchObject({
@@ -839,7 +866,8 @@ it.each([false, true].flatMap((allInvalid) => [false, true].map((resume) => ({ a
       await retry.publish()
       const restored = await store.readSnapshot('s')
       expect(restored?.rows.messages.map((row) => row.messageId)).toEqual(['a'])
-      expect(restored?.rows.messages[0]).toMatchObject({ activeChildId: null, selected: true })
+      expect(restored?.rows.messages[0]).toMatchObject({ activeChildId: null })
+      expect(await membership(store, 's', ['a'], restored!.revision)).toEqual([true])
       expect(restored?.rows.threads[0]).toMatchObject({ activeLeafMessageId: 'a', summary: { messageCount: 1 } })
     }
     await retry.dispose()
@@ -950,3 +978,22 @@ it('imports a large conversation header within native statement and batch budget
     }
   }
 })
+
+async function membership(
+  store: SqlSessionRowStore,
+  sessionId: string,
+  ids: string[],
+  expectedRevision: number
+): Promise<boolean[]> {
+  const selected: boolean[] = []
+  for (let offset = 0; offset < ids.length; offset += 200) {
+    const read = await store.readMessageMetadata({
+      sessionId,
+      messageIds: ids.slice(offset, offset + 200),
+      expectedRevision,
+    })
+    if (read?.status !== 'ready') throw new Error('Membership read is unavailable')
+    selected.push(...read.rows.map((row) => row.selected))
+  }
+  return selected
+}

@@ -7,7 +7,7 @@ import type { SessionRowStoreContractCase, SessionRowStoreContractFactory } from
 export function transcriptFixture(emptyActive = false): SessionRowSnapshot {
   const threads: ThreadRow[] = []
   const messages: MessageRow[] = []
-  for (const [threadId, seq, count] of [
+  for (const [threadId, siblingOrder, count] of [
     ['old', 0, 3],
     ['empty', 1, 0],
     ['recent', 2, 4],
@@ -16,9 +16,9 @@ export function transcriptFixture(emptyActive = false): SessionRowSnapshot {
     threads.push({
       sessionId: 'transcript',
       threadId,
-      seq,
+      threadOrder: siblingOrder,
       name: threadId,
-      createdAt: seq + 10,
+      createdAt: siblingOrder + 10,
       rootMessageId: count ? `${threadId}-0` : null,
       activeLeafMessageId: count ? `${threadId}-${count - 1}` : null,
       compactionPoints: [],
@@ -29,7 +29,7 @@ export function transcriptFixture(emptyActive = false): SessionRowSnapshot {
         sessionId: 'transcript',
         threadId,
         messageId,
-        seq: index * 2,
+        siblingOrder: index * 2,
         parentMessageId: index ? `${threadId}-${index - 1}` : null,
         activeChildId: index + 1 < count ? `${threadId}-${index + 1}` : null,
         kind: 'message',
@@ -48,7 +48,7 @@ export function transcriptFixture(emptyActive = false): SessionRowSnapshot {
   messages.push({
     ...messages[1],
     messageId: 'inactive',
-    seq: 7,
+    siblingOrder: 7,
     activeChildId: null,
     branchId: 'other',
     message: { id: 'inactive', role: 'assistant', contentParts: [] },
@@ -95,7 +95,7 @@ export function createSessionTranscriptContract(
               sessionId: 'transcript',
               threadId: thread.threadId,
               messageId,
-              seq: index,
+              siblingOrder: index,
               parentMessageId: index ? `${thread.threadId}-${index - 1}` : null,
               activeChildId: index < 59 ? `${thread.threadId}-${index + 1}` : null,
               kind: 'message',
@@ -143,7 +143,7 @@ export function createSessionTranscriptContract(
         fixture.rows.messages = Array.from({ length: 1000 }, (_, index) => ({
           ...template,
           messageId: `m${index + 1}`,
-          seq: index,
+          siblingOrder: index,
           parentMessageId: index ? `m${index}` : null,
           activeChildId: index < 999 ? `m${index + 2}` : null,
           message: { id: `m${index + 1}`, role: 'user' as const, contentParts: [] },

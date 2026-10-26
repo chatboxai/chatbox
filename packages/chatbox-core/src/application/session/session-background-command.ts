@@ -4,7 +4,7 @@ import {
   appendNewChain,
   assertNewMessages,
   emptyStructurePlan,
-  nextChildSeq,
+  nextSiblingOrder,
   readMetadata,
   type StructureCommandReader,
 } from './session-structure-plan'
@@ -55,7 +55,7 @@ export async function planBackgroundFollowUp(
     plan,
     tail.messageId === row.messageId ? updated : tail,
     [operation.userMessage, operation.assistantMessage],
-    tail.pendingBranchSeq ?? (await nextChildSeq(reader, tail)),
+    tail.pendingBranchOrder ?? (await nextSiblingOrder(reader, tail)),
     tail.pendingBranchId ?? null
   )
   plan.result.applied = true

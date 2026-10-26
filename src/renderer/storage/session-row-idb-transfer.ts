@@ -1,3 +1,4 @@
+import { MESSAGE_TREE } from './session-row-idb-tree'
 import {
   type SessionRowCommit,
   SessionRowConflictError,
@@ -9,10 +10,9 @@ import type { MessageRow, ThreadRow } from '@chatbox/core/session/session-tree'
 import { deriveMessageFacts } from '@chatbox/core/session/session-tree'
 import { throwIfAborted } from '@chatbox/core/utils/abort'
 import { v4 as uuid } from 'uuid'
-import { readStoredMessage } from './session-row-idb-messages'
+import { readStoredMessage, messageMetadata } from './session-row-idb-messages'
 import {
   isRevisionHeadRow,
-  MESSAGE_ORDER_INDEX,
   SESSION_ROW_MESSAGE_STORE as MESSAGES,
   REVISION_HEAD_THREAD_ID,
   type RevisionHeadRow,
@@ -23,12 +23,7 @@ import {
   storedRevision,
   SESSION_ROW_THREAD_STORE as THREADS,
 } from './session-row-idb-records'
-import {
-  putTranscriptMessage,
-  putTranscriptThread,
-  TRANSCRIPT_MESSAGES,
-  TRANSCRIPT_THREADS,
-} from './session-row-idb-transcript'
+import { putTranscriptMessage, putTranscriptThread, TRANSCRIPT_THREADS } from './session-row-idb-transcript'
 
 interface StageThread {
   stageId: string
@@ -41,7 +36,7 @@ interface StageMessage {
   kind: 'message'
   id: string
   value: MessageRow
-  selectedDepth?: number
+  pathDepth?: number
 }
 type StageRow = StageThread | StageMessage
 const sessionRange = (id: string) => IDBKeyRange.bound([id], [id, []])
@@ -119,10 +114,10 @@ export async function* iterateIndexedDBRows(
       const result = await transaction(db, 'readonly', async (tx) => {
         assertRevision(sessionId, expected, (await head(tx, sessionId))?.commitRevision ?? null)
         const isMessage = kind === 'message'
-        const source = tx.objectStore(isMessage ? TRANSCRIPT_MESSAGES : THREADS)
+        const source = tx.objectStore(isMessage ? MESSAGE_TREE : THREADS)
         const prefix = isMessage && threadId !== undefined ? [sessionId, threadId] : [sessionId]
         const range = IDBKeyRange.bound(after ?? prefix, [...prefix, []], after !== undefined)
-        const request = (isMessage ? source.index(MESSAGE_ORDER_INDEX) : source).openCursor(range)
+        const request = source.openCursor(range)
         const rows: SessionStoredRow[] = []
         let key: IDBValidKey | undefined
         let bytes = 0
@@ -133,7 +128,9 @@ export async function* iterateIndexedDBRows(
             if (!isRevisionHeadRow(row) && (threadId === undefined || row.threadId === threadId))
               rows.push({ kind: 'thread', thread: row })
           } else {
-            const stored: MessageRow | undefined = await requestValue(tx.objectStore(MESSAGES).get(cursor.primaryKey))
+            const stored: MessageRow | undefined = await requestValue(
+              tx.objectStore(MESSAGES).get([sessionId, (cursor.value as { messageId: string }).messageId])
+            )
             if (!stored) throw new Error('Message body is missing during row iteration')
             const message = await new Promise<MessageRow>((resolve, reject) =>
               readStoredMessage(tx, stored, resolve, reject)
@@ -159,11 +156,6 @@ export async function* iterateIndexedDBRows(
     throwIfAborted(signal)
     assertRevision(sessionId, expected, (await head(tx, sessionId))?.commitRevision ?? null)
   })
-}
-
-export function createRowTransferStore(db: IDBDatabase): void {
-  if (!db.objectStoreNames.contains(ROW_TRANSFER_STAGE))
-    db.createObjectStore(ROW_TRANSFER_STAGE, { keyPath: ['stageId', 'kind', 'id'] })
 }
 
 function visitStage(tx: IDBTransaction, id: string, visit: (row: StageRow) => void | Promise<void>): Promise<void> {
@@ -261,7 +253,7 @@ export async function stageIndexedDBRows(
               await visitStage(tx, stageId, async (entry) => {
                 if (entry.kind !== 'thread') return
                 const thread = entry.value
-                if (thread.seq === -1) {
+                if (thread.threadOrder === -1) {
                   activeThreads++
                   if (thread.threadId !== commit.record.activeThreadId)
                     throw new Error('Active copied thread is missing')
@@ -279,7 +271,7 @@ export async function stageIndexedDBRows(
                   )
                     throw new Error('Invalid selected row path')
                   message.value.selected = true
-                  message.selectedDepth = depth++
+                  message.pathDepth = depth++
                   await requestValue(stage.put(message))
                   parent = next
                   next = message.value.activeChildId
@@ -287,25 +279,15 @@ export async function stageIndexedDBRows(
                 if (parent !== thread.activeLeafMessageId) throw new Error('Invalid selected row leaf')
               })
               if (activeThreads !== 1) throw new Error('Active copied thread is missing')
-              for (const store of [
-                THREADS,
-                MESSAGES,
-                TRANSCRIPT_THREADS,
-                TRANSCRIPT_MESSAGES,
-                SESSION_ROW_TOKEN_CACHE_STORE,
-              ])
+              for (const store of [THREADS, MESSAGES, TRANSCRIPT_THREADS, MESSAGE_TREE, SESSION_ROW_TOKEN_CACHE_STORE])
                 await requestValue(tx.objectStore(store).delete(sessionRange(sessionId)))
               await visitStage(tx, stageId, (entry) => {
                 if (entry.kind === 'thread') {
                   tx.objectStore(THREADS).put(entry.value)
                   putTranscriptThread(tx, entry.value)
                 } else {
-                  const row = {
-                    ...entry.value,
-                    selected: entry.value.selected ?? false,
-                    selectedDepth: entry.selectedDepth ?? null,
-                  }
-                  tx.objectStore(MESSAGES).put(row)
+                  const row = entry.value
+                  tx.objectStore(MESSAGES).put({ ...messageMetadata(row), message: row.message })
                   putTranscriptMessage(tx, row)
                 }
               })

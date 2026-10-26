@@ -66,20 +66,20 @@ describe('validateSessionTree', () => {
     ).toBe('active thread thread-missing has no thread row')
   })
 
-  test('rejects an active thread that is not marked with seq -1', () => {
+  test('rejects an active thread that is not marked with siblingOrder -1', () => {
     expect(
       reasonFor((tree) => {
-        tree.threads[0].seq = 2
+        tree.threads[0].threadOrder = 2
       })
-    ).toBe('active thread thread-active has seq 2, expected -1')
+    ).toBe('active thread thread-active has siblingOrder 2, expected -1')
   })
 
-  test('rejects threads that reuse a seq', () => {
+  test('rejects threads that reuse a siblingOrder', () => {
     expect(
       reasonFor((tree) => {
-        tree.threads[1].seq = -1
+        tree.threads[1].threadOrder = -1
       })
-    ).toBe('thread thread-old reuses seq -1')
+    ).toBe('thread thread-old reuses siblingOrder -1')
   })
 
   test('rejects duplicate message rows', () => {
@@ -126,7 +126,7 @@ describe('validateSessionTree', () => {
           messageId: 'leaf-x',
           parentMessageId: 'a1',
           activeChildId: null,
-          seq: 99,
+          siblingOrder: 99,
         }
         rowOf(tree, 'u1').parentMessageId = 'a1'
         tree.messages.unshift(leaf)
@@ -134,12 +134,12 @@ describe('validateSessionTree', () => {
     ).toBe('message leaf-x sits on a parent cycle')
   })
 
-  test('rejects a child whose seq does not follow its parent', () => {
+  test('rejects a child whose siblingOrder does not follow its parent', () => {
     expect(
       reasonFor((tree) => {
-        rowOf(tree, 's1').seq = 0
+        rowOf(tree, 's1').siblingOrder = 0
       })
-    ).toBe('message s1 has seq 0, which does not follow its parent seq 0')
+    ).toBe('message s1 has siblingOrder 0, which does not follow its parent siblingOrder 0')
   })
 
   test('rejects an active child that is not a child', () => {
@@ -158,7 +158,7 @@ describe('validateSessionTree', () => {
           messageId: 'second-root',
           parentMessageId: null,
           activeChildId: null,
-          seq: 99,
+          siblingOrder: 99,
         })
       })
     ).toBe('thread thread-active has 2 roots, expected 1')

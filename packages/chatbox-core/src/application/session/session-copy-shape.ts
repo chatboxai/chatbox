@@ -67,7 +67,7 @@ export async function prepareSessionCopyShape(
     if (point.forkPivotId !== marker.messageId) continue
     clearedPoints.add(point.messageId)
     if (point.activeChildId) neutralBranches.add(point.activeChildId)
-    let boundary: { seq: number; messageId: string } | undefined
+    let boundary: { siblingOrder: number; messageId: string } | undefined
     for (;;) {
       const children = await reader.relations(
         sourceThread.threadId,
@@ -93,7 +93,7 @@ export async function prepareSessionCopyShape(
       }
       if (children.length < 200) break
       const tail = children.at(-1)!
-      boundary = { seq: tail.seq, messageId: tail.messageId }
+      boundary = { siblingOrder: tail.siblingOrder, messageId: tail.messageId }
     }
   }
   const resolveChild = (id: string | null): string | null => {
@@ -109,10 +109,10 @@ export async function prepareSessionCopyShape(
   if (last) {
     const skipped = last.activeChildId ? markers.get(last.activeChildId) : undefined
     if (skipped) {
-      appendSeq = skipped.seq
+      appendSeq = skipped.siblingOrder
       appendBranch = skipped.branchId
     } else if (last.pendingBranchId && !clearedPoints.has(last.messageId)) {
-      appendSeq = last.pendingBranchSeq!
+      appendSeq = last.pendingBranchOrder!
       appendBranch = last.pendingBranchId
     }
   }
@@ -156,10 +156,10 @@ export async function prepareSessionCopyShape(
       ...row,
       parentMessageId: parent,
       activeChildId: row.messageId === last?.messageId ? markerId : resolveChild(row.activeChildId),
-      ...(inherited ? { seq: inherited.seq, branchId: inherited.branchId } : {}),
+      ...(inherited ? { siblingOrder: inherited.siblingOrder, branchId: inherited.branchId } : {}),
       ...(neutralBranches.has(row.messageId) ? { branchId: null } : {}),
       ...(row.messageId === last?.messageId || clearedPoints.has(row.messageId)
-        ? { pendingBranchId: undefined, pendingBranchSeq: undefined }
+        ? { pendingBranchId: undefined, pendingBranchOrder: undefined }
         : {}),
       ...(row.forkPivotId && excluded.has(row.forkPivotId) ? { forkPivotId: undefined } : {}),
       ...(row.fork && excluded.has(row.fork.pivotId) ? { fork: undefined } : {}),

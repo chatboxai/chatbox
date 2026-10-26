@@ -83,7 +83,7 @@ describe('buildMessageMinimapAnchors', () => {
     messageId: id,
     parentMessageId: null,
     activeChildId: null,
-    seq: 0,
+    siblingOrder: 0,
     kind: 'message',
     status: 'settled',
     createdAt: 1,

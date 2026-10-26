@@ -56,11 +56,29 @@ Token 使用独立选择计划、缓存和分批任务，首窗可交互之后�
 - 单会话输出、复制、搜索和资源扫描消费行或轻量分页，不构造完整 Session/SessionTree。附件归属不确定时保留资源，避免误删。
 - Header、正文窗口、Token 和会话列表分别管理生命周期和缓存；minimap 跟随正文窗口；删除及重新创建同 ID 必须清除旧任务和写入栅栏。
 
-### 已发布行格式的升级边界
+### 发布兼容性与存储结构
 
-`v1.24.0-native-ios.1`、`.2`、`.3` 标签源码中的 `SessionRecordV2` 使用 `storageFormat: 'rows'`，没有 `rowFormatVersion` 或 `rowAuthority`。这些标签定义数据兼容性边界，不代表已经核验所有 TestFlight 或正式商店用户的安装版本。
+正式版本兼容边界为 `v1.23.5`。旧整会话 JSON 通过兼容转换生成行候选并原子发布；备份 V1/V2 仍经过共享转换。已存在有效行提交时，`session:<id>` 旧记录保持不变；删除会话先删除旧记录，再删除行数据。行格式使用 `rowFormatVersion: 3` 与 `rowAuthority: 1`，显式未知版本报错并保留原数据。
 
-`SessionRowMigration.ensureRows()` 对缺少版本字段的行记录，通过外层 `storageFormat: 'rows'` 标记确认其已发布状态；已有 `rowAuthority: 1` 的记录直接确认。两种情况都以现有行数据为权威，通过 `upgradePublished()` 转为 `rowFormatVersion: 3`、`rowAuthority: 1`。显式声明未知版本的记录报错并保留原数据。格式 3 的后续打开只检查提交元信息，不重复读取全部正文或重写会话。
+IndexedDB 的 `chatbox-messages` 使用两层消息存储：`messages` 保存完整正文，`messageTree` 保存关系及紧凑 facts，主键为 `[sessionId, threadId, messageId]`，`byMessage` 唯一索引为 `[sessionId, messageId]`。树和 facts 以 `messageTree` 为权威；正文记录中的结构副本不能用于恢复树。路径成员资格和深度在读取时计算。消息兄弟顺序使用 `siblingOrder`，线程顺序使用 `threadOrder`，SQL 与备份 V3 使用相同名称。
+
+数据库先不指定版本打开并验证形状；缺少最终布局时，在观测版本加一的单次升级事务内补齐缺失的表和索引，不复制或改写已有数据。失败整体回滚，遇到同名但形状错误的表或索引报错。新数据库直接创建最终布局；旧磁盘的 `messageMutationStage` 保留但不参与读写，新数据库不创建它。逻辑行版本、IDB 版本与会话 revision 相互独立。
+
+共享 `ThreadLinks` 计算路径、成员资格、兄弟顺序、计数和端点。每次操作共享一个线程图，缓存最多保留四个线程。正文翻页仍按边读取有限窗口。首窗完成布局后，以 2,000 行分批预取元数据，批间让出事件循环，每批增量建图并验证 revision；最终路径准备也分批进行。冷操作显示加载状态。SQL 关系分页结合有界查询与共享线程图；搜索命中按线程分组使用 CTE，避免逐命中查询。
+
+操作在私有写集中准备变更，持久化 CAS 成功后才推进缓存；失败不发布写集。遇到外部 revision、重导入、删除或替换会话时丢弃缓存。预取跨批读到不同 revision 时丢弃结果，后续读取按当前 revision 重载。
+
+```mermaid
+stateDiagram-v2
+    [*] --> Cold
+    Cold --> Loading: 首窗布局后预取或冷操作
+    Loading --> Ready: 批次与最终 revision 一致
+    Loading --> Cold: 取消、失败或 revision 改变
+    Ready --> Preparing: 本地操作私有写集
+    Preparing --> Ready: CAS 成功后发布图与 revision
+    Preparing --> Ready: 写入失败，保留已提交图
+    Ready --> Cold: 外部 revision 或替换/删除
+```
 
 每个旧会话首次升级会全量读取其 thread 和消息行，在内存中转换并生成派生投影，然后按原 revision 做一次 CAS 原子行重写；外层 `session:<id>` 旧记录保持原样，供降级后的 v1.23 读取；新版附件清理不保护只被旧记录引用的附件。这次读写和临时内存随会话总数据量增长，涉及全部分支，不受正文窗口或 Token 分页大小限制；还需要候选数据及存储事务的临时空间。它可能增加大历史会话首次打开的耗时，不能用升级后的分页读取性能代表迁移成本。转换失败不发布候选；原子提交失败保留旧行。
 

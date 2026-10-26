@@ -28,7 +28,7 @@ function page(request: SessionTranscriptRequest): SessionTranscriptPage {
     messageId: first,
     parentMessageId: null,
     activeChildId: null,
-    seq: 0,
+    siblingOrder: 0,
     kind: 'message' as const,
     status: 'settled' as const,
     createdAt: 1,
@@ -43,7 +43,7 @@ function page(request: SessionTranscriptRequest): SessionTranscriptPage {
       {
         sessionId: 's',
         threadId: 't',
-        seq: -1,
+        threadOrder: -1,
         name: 'Current',
         createdAt: 1,
         rootMessageId: first,

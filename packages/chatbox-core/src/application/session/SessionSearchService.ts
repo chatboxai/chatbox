@@ -130,8 +130,8 @@ export class SessionSearchService {
               }
             }
             if (full() || !window.older) break
-            const { threadId, threadSeq, messageId, direction } = window.older
-            const cursorKey = JSON.stringify([threadId, threadSeq, messageId, direction])
+            const { threadId, threadOrder, messageId, direction } = window.older
+            const cursorKey = JSON.stringify([threadId, threadOrder, messageId, direction])
             if (cursorKey === previousCursor) throw new Error('Message search cursor did not advance')
             previousCursor = cursorKey
             request = { sessionId, cursor: window.older, signal: options.signal }

@@ -38,7 +38,8 @@ export function putMetadata(plan: StructurePlan, row: MessageRowMetadata): void 
     Object.assign(payload, row)
     return
   }
-  const rows = (plan.diff.messageMetadataUpsert ??= [])
+  plan.diff.messageMetadataUpsert ??= []
+  const rows = plan.diff.messageMetadataUpsert
   const index = rows.findIndex((candidate) => candidate.messageId === row.messageId)
   if (index < 0) rows.push(row)
   else rows[index] = row
@@ -102,11 +103,11 @@ export async function readChildren(
   return reader.relations(point.threadId, { kind: 'children', parentMessageId: point.messageId, ...options }, limit)
 }
 
-export async function nextChildSeq(reader: StructureCommandReader, point: MessageRowMetadata): Promise<number> {
+export async function nextSiblingOrder(reader: StructureCommandReader, point: MessageRowMetadata): Promise<number> {
   const last = (await readChildren(reader, point, 1, { reverse: true }))[0]
-  const seq = Math.max(last?.seq ?? -1, point.pendingBranchSeq ?? -1) + 1
-  if (!Number.isSafeInteger(seq)) throw new Error('Sibling order exhausted')
-  return seq
+  const siblingOrder = Math.max(last?.siblingOrder ?? -1, point.pendingBranchOrder ?? -1) + 1
+  if (!Number.isSafeInteger(siblingOrder)) throw new Error('Sibling order exhausted')
+  return siblingOrder
 }
 
 export function newMessageRow(
@@ -114,10 +115,11 @@ export function newMessageRow(
   threadId: string,
   message: Message,
   parentMessageId: string | null,
-  seq: number,
+  siblingOrder: number,
   branchId: string | null = null
 ): MessageRow {
-  if (!message.id || !Number.isSafeInteger(seq) || seq < 0) throw new Error('Invalid new message identity or order')
+  if (!message.id || !Number.isSafeInteger(siblingOrder) || siblingOrder < 0)
+    throw new Error('Invalid new message identity or order')
   const createdAt = message.timestamp ?? 0
   return {
     sessionId,
@@ -125,7 +127,7 @@ export function newMessageRow(
     messageId: message.id,
     parentMessageId,
     activeChildId: null,
-    seq,
+    siblingOrder,
     branchId,
     kind: message.isSummary ? 'summary' : 'message',
     status: message.generating ? 'generating' : 'settled',
@@ -149,7 +151,7 @@ export function appendNewChain(
   firstSeq: number,
   branchId: string | null
 ): void {
-  let previous: MessageRowMetadata = { ...parent, pendingBranchId: undefined, pendingBranchSeq: undefined }
+  let previous: MessageRowMetadata = { ...parent, pendingBranchId: undefined, pendingBranchOrder: undefined }
   for (const [index, message] of messages.entries()) {
     const row = newMessageRow(
       plan.record.id,

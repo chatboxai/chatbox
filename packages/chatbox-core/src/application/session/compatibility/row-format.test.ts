@@ -53,7 +53,7 @@ describe('row format conversion boundary', () => {
         .map((row) => row.messageId)
         .sort()
     ).toEqual(['active', 'historical-user', 'summary', 'user'])
-    expect(tree.threads.find((thread) => thread.seq === -1)?.summary).toMatchObject({
+    expect(tree.threads.find((thread) => thread.threadOrder === -1)?.summary).toMatchObject({
       messageCount: 3,
       userMessageCount: 1,
       assistantMessageCount: 2,
@@ -69,7 +69,7 @@ describe('row format conversion boundary', () => {
     const ranks = new Map<string | null, number>()
     for (const row of tree.messages) {
       const rank = ranks.get(row.parentMessageId) ?? 0
-      row.seq = rank
+      row.siblingOrder = rank
       ranks.set(row.parentMessageId, rank + 1)
     }
     expect(validateSessionTree(tree)).toEqual({ ok: true })
@@ -100,7 +100,7 @@ describe('row format conversion boundary', () => {
       messageId: 'other',
       message: message('other'),
       branchId: 'other-branch',
-      seq: 2,
+      siblingOrder: 2,
     })
     const lists = [
       { id: 'saved', messages: [message('alternative')] },

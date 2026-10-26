@@ -53,7 +53,7 @@ const threadSchema = z
   .object({
     sessionId: id,
     threadId: id,
-    seq: z.number().int().safe().min(-1),
+    threadOrder: z.number().int().safe().min(-1),
     name: z.string().nullable(),
     createdAt: z.number().finite(),
     rootMessageId: id.nullable(),
@@ -68,7 +68,7 @@ const messageSchema = z
     messageId: id,
     parentMessageId: id.nullable(),
     activeChildId: id.nullable(),
-    seq: integer,
+    siblingOrder: integer,
     kind: z.enum(['message', 'summary']),
     createdAt: z.number().finite(),
     updatedAt: z.number().finite(),
@@ -76,7 +76,7 @@ const messageSchema = z
     forkCreatedAt: z.number().finite().optional(),
     forkPivotId: id.optional(),
     pendingBranchId: id.optional(),
-    pendingBranchSeq: integer.optional(),
+    pendingBranchOrder: integer.optional(),
     message: MessageSchema,
   })
   .strict()
@@ -243,9 +243,26 @@ export function toBackupSession(record: SessionRecordV2): BackupSession {
   }
 }
 export function toBackupThread(row: ThreadRow): BackupThread {
-  const { sessionId, threadId, seq, name, createdAt, rootMessageId, compactionPoints, sessionPromptContextSnapshot } =
-    row
-  return { sessionId, threadId, seq, name, createdAt, rootMessageId, compactionPoints, sessionPromptContextSnapshot }
+  const {
+    sessionId,
+    threadId,
+    threadOrder,
+    name,
+    createdAt,
+    rootMessageId,
+    compactionPoints,
+    sessionPromptContextSnapshot,
+  } = row
+  return {
+    sessionId,
+    threadId,
+    threadOrder,
+    name,
+    createdAt,
+    rootMessageId,
+    compactionPoints,
+    sessionPromptContextSnapshot,
+  }
 }
 export function toBackupMessage(row: MessageRow): BackupMessage {
   const {
@@ -254,7 +271,7 @@ export function toBackupMessage(row: MessageRow): BackupMessage {
     messageId,
     parentMessageId,
     activeChildId,
-    seq,
+    siblingOrder,
     kind,
     createdAt,
     updatedAt,
@@ -262,7 +279,7 @@ export function toBackupMessage(row: MessageRow): BackupMessage {
     forkCreatedAt,
     forkPivotId,
     pendingBranchId,
-    pendingBranchSeq,
+    pendingBranchOrder,
   } = row
   const {
     tokenCountMap: _tokens,
@@ -276,7 +293,7 @@ export function toBackupMessage(row: MessageRow): BackupMessage {
     messageId,
     parentMessageId,
     activeChildId,
-    seq,
+    siblingOrder,
     kind,
     createdAt,
     updatedAt,
@@ -284,7 +301,7 @@ export function toBackupMessage(row: MessageRow): BackupMessage {
     forkCreatedAt,
     forkPivotId,
     pendingBranchId,
-    pendingBranchSeq,
+    pendingBranchOrder,
     message,
   }
 }

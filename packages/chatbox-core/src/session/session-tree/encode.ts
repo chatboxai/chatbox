@@ -63,7 +63,7 @@ function encodeThreadMessages(
 ): EncodedThreadMessages {
   const rows: MessageRow[] = []
   const rowsById = new Map<string, MessageRow>()
-  let seq = 0
+  let siblingOrder = 0
 
   const createRow = (message: Message, parentMessageId: string | null, branchId: string | null): MessageRow => {
     const createdAt = message.timestamp ?? LEGACY_MESSAGE_TIMESTAMP
@@ -73,7 +73,7 @@ function encodeThreadMessages(
       messageId: message.id,
       parentMessageId,
       activeChildId: null,
-      seq,
+      siblingOrder,
       kind: message.isSummary ? 'summary' : 'message',
       status: messageRowStatus(message),
       createdAt,
@@ -81,7 +81,7 @@ function encodeThreadMessages(
       branchId,
       message,
     }
-    seq += 1
+    siblingOrder += 1
     rows.push(row)
     rowsById.set(message.id, row)
     return row
@@ -162,7 +162,7 @@ export function encodeSessionTree(session: Session, options: EncodeSessionTreeOp
   threads.push({
     sessionId: normalized.id,
     threadId: options.activeThreadId,
-    seq: -1,
+    threadOrder: -1,
     name: normalized.threadName ?? null,
     createdAt: active.rows[0]?.createdAt ?? options.now,
     rootMessageId: active.rootMessageId,
@@ -176,7 +176,7 @@ export function encodeSessionTree(session: Session, options: EncodeSessionTreeOp
     threads.push({
       sessionId: normalized.id,
       threadId: thread.id,
-      seq: index,
+      threadOrder: index,
       name: thread.name,
       createdAt: thread.createdAt,
       rootMessageId: encoded.rootMessageId,

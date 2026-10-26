@@ -52,7 +52,7 @@ export async function readRowSearchWindow(
       expectedRevision: current.revision,
     })
     throwIfAborted(signal)
-    if (!state || state.status !== 'ready' || state.thread.seq !== cursor.threadSeq) throw changed()
+    if (!state || state.status !== 'ready' || state.thread.threadOrder !== cursor.threadOrder) throw changed()
     if (cursor.messageId === null) {
       if (state.thread.rootMessageId !== null) throw changed()
     } else {

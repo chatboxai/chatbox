@@ -362,6 +362,10 @@ export class RowBackedSessionRepository implements SessionRowRepositoryPort {
     }
   }
 
+  async prefetchSessionThreadLinks(request: SessionThreadRequest & { signal?: AbortSignal }): Promise<void> {
+    if (await this.ensureRows(request.sessionId)) await this.rows.prefetchThreadLinks?.(request)
+  }
+
   async readSessionThread(request: SessionThreadRequest) {
     if (!(await this.ensureRows(request.sessionId))) return null
     return this.rows.readThread(request)
@@ -599,7 +603,7 @@ export class RowBackedSessionRepository implements SessionRowRepositoryPort {
         current && shape ? shape.thread : row,
         record.id,
         mapThreadId(row.threadId),
-        current ? -1 : row.seq
+        current ? -1 : row.threadOrder
       )
       return current ? { ...thread, createdAt: request.createdAt, sessionPromptContextSnapshot: undefined } : thread
     }
@@ -665,7 +669,7 @@ export class RowBackedSessionRepository implements SessionRowRepositoryPort {
       const thread: ThreadRow = {
         sessionId: header.id,
         threadId: header.id,
-        seq: -1,
+        threadOrder: -1,
         name: threadName ?? null,
         createdAt: messages[0]?.timestamp ?? 0,
         rootMessageId: rows[0]?.messageId ?? null,
@@ -807,7 +811,7 @@ export class RowBackedSessionRepository implements SessionRowRepositoryPort {
         const tail =
           command.type === 'append' ? await readMetadata(reader, reader.activeThread.activeLeafMessageId) : undefined
         const last =
-          tail && tail.pendingBranchSeq === undefined
+          tail && tail.pendingBranchOrder === undefined
             ? (
                 await reader.relations(
                   tail.threadId,
@@ -822,7 +826,7 @@ export class RowBackedSessionRepository implements SessionRowRepositoryPort {
             revision: commit.revision,
             thread: reader.activeThread,
             tail,
-            nextChildSeq: (last?.seq ?? -1) + 1,
+            nextSiblingOrder: (last?.siblingOrder ?? -1) + 1,
           },
           command,
           selected
@@ -1004,7 +1008,7 @@ export class RowBackedSessionRepository implements SessionRowRepositoryPort {
     if (!pivot || pivot.forkCreatedAt === undefined) return null
     const point = await readBranchPoint(reader, pivot)
     const selected = await readMetadata(reader, point.activeChildId)
-    let boundary: { seq: number; messageId: string } | undefined
+    let boundary: { siblingOrder: number; messageId: string } | undefined
     if (request.cursor) {
       const previous = (
         await reader.relations(
@@ -1014,11 +1018,14 @@ export class RowBackedSessionRepository implements SessionRowRepositoryPort {
         )
       )[0]
       if (
-        previous?.seq !== request.cursor.afterSeq &&
-        !(point.pendingBranchId === request.cursor.afterBranchId && point.pendingBranchSeq === request.cursor.afterSeq)
+        previous?.siblingOrder !== request.cursor.afterSiblingOrder &&
+        !(
+          point.pendingBranchId === request.cursor.afterBranchId &&
+          point.pendingBranchOrder === request.cursor.afterSiblingOrder
+        )
       )
         throw new Error('Fork cursor target is missing')
-      boundary = { seq: request.cursor.afterSeq, messageId: previous?.messageId ?? '' }
+      boundary = { siblingOrder: request.cursor.afterSiblingOrder, messageId: previous?.messageId ?? '' }
     }
     const page = await this.rows.readMessageRelationsPage({
       sessionId: request.sessionId,
@@ -1033,23 +1040,23 @@ export class RowBackedSessionRepository implements SessionRowRepositoryPort {
       return {
         branchId: row.branchId,
         firstMessageId: row.messageId,
-        seq: row.seq,
+        siblingOrder: row.siblingOrder,
         selected: point.activeChildId === row.messageId,
       }
     })
     if (
       point.pendingBranchId &&
-      point.pendingBranchSeq !== undefined &&
-      (!boundary || point.pendingBranchSeq > boundary.seq) &&
-      (!page.nextCursor || point.pendingBranchSeq < (page.rows.at(-1)?.seq ?? Infinity))
+      point.pendingBranchOrder !== undefined &&
+      (!boundary || point.pendingBranchOrder > boundary.siblingOrder) &&
+      (!page.nextCursor || point.pendingBranchOrder < (page.rows.at(-1)?.siblingOrder ?? Infinity))
     )
       branches.push({
         branchId: point.pendingBranchId,
         firstMessageId: null,
-        seq: point.pendingBranchSeq,
+        siblingOrder: point.pendingBranchOrder,
         selected: true,
       })
-    branches.sort((a, b) => a.seq - b.seq || a.branchId.localeCompare(b.branchId))
+    branches.sort((a, b) => a.siblingOrder - b.siblingOrder || a.branchId.localeCompare(b.branchId))
     const hasMore = branches.length > request.limit || Boolean(page.nextCursor)
     const visible = branches.slice(0, request.limit)
     const last = visible.at(-1)
@@ -1064,7 +1071,12 @@ export class RowBackedSessionRepository implements SessionRowRepositoryPort {
       branches: visible,
       nextCursor:
         hasMore && last
-          ? { revision: commit.revision, pivotId: pivot.messageId, afterSeq: last.seq, afterBranchId: last.branchId }
+          ? {
+              revision: commit.revision,
+              pivotId: pivot.messageId,
+              afterSiblingOrder: last.siblingOrder,
+              afterBranchId: last.branchId,
+            }
           : null,
     }
   }

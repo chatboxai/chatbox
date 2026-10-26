@@ -39,7 +39,7 @@ const cursorSchema = z.object({
   sessionId: z.string(),
   revision: z.number().int().nonnegative(),
   threadId: z.string(),
-  threadSeq: z.number().int(),
+  threadOrder: z.number().int(),
   messageId: z.string().nullable(),
   direction: z.enum(['before', 'after']),
   limit: z.number().int().min(1).max(50),

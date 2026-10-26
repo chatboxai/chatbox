@@ -47,7 +47,7 @@ function fixture(
         thread: {
           sessionId: request.sessionId,
           threadId: 'thread',
-          seq: -1,
+          threadOrder: -1,
           name: 'Active',
           createdAt: 1,
           compactionPoints,

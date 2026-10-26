@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto'
 import { SessionRowConflictError, type SessionRowSnapshot } from '@chatbox/core/ports'
-import { prepareSessionRowsFixture } from '@chatbox/core/ports/testing/session-row-fixtures'
+import { prepareSessionRowsFixture, storageRowFixture } from '@chatbox/core/ports/testing/session-row-fixtures'
 import { IDBFactory } from 'fake-indexeddb'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { IndexedDBSessionRowStore } from '../SessionRowStorage'
@@ -31,11 +31,11 @@ function fixture(text = '中文🦋'.repeat(80_000)): SessionRowSnapshot {
       { id: 'b', role: 'assistant', contentParts: [{ type: 'text', text: 'second' }] },
     ],
   })
-  return {
+  return storageRowFixture({
     record: tree.session,
     revision: 1,
     rows: { sessionId: tree.session.id, threads: tree.threads, messages: tree.messages },
-  }
+  })
 }
 
 async function rawRead<Value>(name: string, read: (store: IDBObjectStore) => IDBRequest<Value>): Promise<Value> {
@@ -111,45 +111,49 @@ it('rejects candidate commits that do not declare the current row format', async
   expect(await rows.readCommit(source.record.id)).toBeNull()
 })
 
-it.each(['missing', 'stale'] as const)(
-  'rebuilds facts and selected paths when staged projections are %s',
-  async (mode) => {
-    const rows = store()
-    const source = fixture('derived projections')
-    const inactive = {
-      ...source.rows.messages[1],
-      messageId: 'inactive',
-      seq: source.rows.messages[1].seq + 1,
-      branchId: 'inactive-branch',
-      message: { ...source.rows.messages[1].message, id: 'inactive' },
-    }
-    const input = [...source.rows.messages, inactive]
-    const candidate = await rows.stageRows({ record: source.record, revision: 1 }, null)
-    for (const thread of source.rows.threads) await candidate.appendThread(thread)
-    for (const row of input)
-      await candidate.appendMessage({
-        ...row,
-        facts: { ...row.facts!, role: 'system' },
-        selected: mode === 'missing' ? undefined : row.messageId === 'inactive',
-      })
-    await candidate.publish()
-    await candidate.dispose()
-    const stored = await rows.readMessages({ sessionId: source.record.id, messageIds: ['a', 'b', 'inactive'] })
-    expect(stored?.messages.map((row) => [row.messageId, row.facts?.role, row.selected])).toEqual([
-      ['a', 'user', true],
-      ['b', 'assistant', true],
-      ['inactive', 'assistant', false],
-    ])
-    const projections = await rawRead('transcriptMessages', (table) =>
-      table.getAll(IDBKeyRange.bound([source.record.id], [source.record.id, []]))
-    )
-    expect(projections.map((row) => [row.messageId, row.selectedDepth])).toEqual([
-      ['a', 0],
-      ['b', 1],
-      ['inactive', null],
-    ])
+it.each(['missing', 'stale'] as const)('derives facts and membership when staged projections are %s', async (mode) => {
+  const rows = store()
+  const source = fixture('derived projections')
+  const inactive = {
+    ...source.rows.messages[1],
+    messageId: 'inactive',
+    siblingOrder: source.rows.messages[1].siblingOrder + 1,
+    branchId: 'inactive-branch',
+    message: { ...source.rows.messages[1].message, id: 'inactive' },
   }
-)
+  const input = [...source.rows.messages, inactive]
+  const candidate = await rows.stageRows({ record: source.record, revision: 1 }, null)
+  for (const thread of source.rows.threads) await candidate.appendThread(thread)
+  for (const row of input)
+    await candidate.appendMessage({
+      ...row,
+      facts: { ...row.facts!, role: 'system' },
+      selected: mode === 'missing' ? undefined : row.messageId === 'inactive',
+    })
+  await candidate.publish()
+  await candidate.dispose()
+  const stored = await rows.readMessages({ sessionId: source.record.id, messageIds: ['a', 'b', 'inactive'] })
+  expect(stored?.messages.map((row) => [row.messageId, row.facts?.role])).toEqual([
+    ['a', 'user'],
+    ['b', 'assistant'],
+    ['inactive', 'assistant'],
+  ])
+  const membership = await rows.readMessageMetadata({
+    sessionId: source.record.id,
+    messageIds: ['a', 'b', 'inactive'],
+    expectedRevision: 1,
+  })
+  expect(membership?.status === 'ready' && membership.rows.map((row) => [row.messageId, row.selected])).toEqual([
+    ['a', true],
+    ['b', true],
+    ['inactive', false],
+  ])
+  const projections = await rawRead('messageTree', (table) =>
+    table.getAll(IDBKeyRange.bound([source.record.id], [source.record.id, []]))
+  )
+  expect(projections).toHaveLength(3)
+  expect(projections.every((row) => !('selectedDepth' in row) && !('selected' in row))).toBe(true)
+})
 
 it('captures commit and queued append values before the caller can mutate their objects', async () => {
   const rows = store()

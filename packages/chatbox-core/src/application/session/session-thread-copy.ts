@@ -14,7 +14,12 @@ export const copiedMessageId = (sessionId: string, messageId: string): string =>
 export const copiedBranchId = (sessionId: string, branchId: string): string =>
   uuidv5(`${sessionId}\u0000branch\u0000${branchId}`, uuidv5.URL)
 
-export function copyThreadMetadata(thread: ThreadRow, sessionId: string, threadId = sessionId, seq = -1): ThreadRow {
+export function copyThreadMetadata(
+  thread: ThreadRow,
+  sessionId: string,
+  threadId = sessionId,
+  threadOrder = -1
+): ThreadRow {
   const id = (value: string | null) => (value === null ? null : copiedMessageId(sessionId, value))
   const summary = thread.summary && { ...thread.summary }
   if (summary) {
@@ -27,7 +32,7 @@ export function copyThreadMetadata(thread: ThreadRow, sessionId: string, threadI
     ...thread,
     sessionId,
     threadId,
-    seq,
+    threadOrder,
     rootMessageId: id(thread.rootMessageId),
     activeLeafMessageId: id(thread.activeLeafMessageId),
     compactionPoints: thread.compactionPoints.map((point) => ({

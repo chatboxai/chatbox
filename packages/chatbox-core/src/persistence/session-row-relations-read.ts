@@ -26,6 +26,7 @@ export interface SessionRelationReader {
     threadId: string,
     options: { afterDepth?: number; limit: number; paused: true }
   ): Promise<Array<{ row: MessageRowMetadata; depth: number }>>
+  messages?(ids: readonly string[]): Promise<MessageRowMetadata[]>
   message(id: string): Promise<MessageRowMetadata | null>
   children(
     threadId: string,
@@ -34,21 +35,27 @@ export interface SessionRelationReader {
   ): Promise<MessageRowMetadata[]>
 }
 
-export function requireKnownMetadata(row: MessageRowMetadata): row is SessionKnownMessageMetadata {
+export function requireMessageFacts(
+  row: MessageRowMetadata
+): row is MessageRowMetadata & { facts: NonNullable<MessageRowMetadata['facts']> } {
   const required = [row.sessionId, row.threadId, row.messageId]
   const optional = [row.parentMessageId, row.activeChildId, row.branchId]
   if (
     required.some((id) => typeof id !== 'string' || id.length === 0) ||
     optional.some((id) => id !== null && (typeof id !== 'string' || id.length === 0)) ||
-    !Number.isSafeInteger(row.seq) ||
-    row.seq < 0 ||
+    !Number.isSafeInteger(row.siblingOrder) ||
+    row.siblingOrder < 0 ||
     !Number.isFinite(row.createdAt) ||
     !Number.isFinite(row.updatedAt) ||
     !['message', 'summary'].includes(row.kind) ||
     !['settled', 'generating'].includes(row.status)
   )
     throw new Error('Invalid message relationship metadata')
-  return row.facts !== undefined && typeof row.selected === 'boolean'
+  return row.facts !== undefined
+}
+
+export function requireKnownMetadata(row: MessageRowMetadata): row is SessionKnownMessageMetadata {
+  return requireMessageFacts(row) && typeof row.selected === 'boolean'
 }
 
 export async function readMetadataSelection(
@@ -58,11 +65,16 @@ export async function readMetadataSelection(
 ): Promise<SessionMessageMetadataRead> {
   if (!request.sessionId || request.messageIds.length > 200 || request.messageIds.some((id) => !id))
     throw new Error('Metadata selection requires at most 200 message identities')
+  if (commit.record.rowFormatVersion !== 3)
+    return { ...commit, status: 'projection-unavailable', messageIds: [...new Set(request.messageIds)], threadIds: [] }
   const rows: SessionKnownMessageMetadata[] = []
   const missingMessageIds: string[] = []
   const unavailable: string[] = []
+  const batch = reader.messages
+    ? new Map((await reader.messages(request.messageIds)).map((row) => [row.messageId, row]))
+    : null
   for (const id of new Set(request.messageIds)) {
-    const row = await reader.message(id)
+    const row = batch ? batch.get(id) : await reader.message(id)
     if (!row) missingMessageIds.push(id)
     else if (!requireKnownMetadata(row)) unavailable.push(id)
     else rows.push(row)
@@ -75,7 +87,7 @@ export async function readMetadataSelection(
 interface Position {
   id: string
   phase: 'emit' | 'ascend'
-  seq?: number
+  siblingOrder?: number
 }
 function selectorKey(selector: SessionMessageRelationsSelector): string {
   switch (selector.kind) {
@@ -182,10 +194,10 @@ export async function readRelationsPage(
     }
     if (found.length > limit) next = { id: rows.at(-1)!.messageId, phase: 'emit' }
   } else if (selector.kind === 'selected-facts') {
-    if (previous && (!Number.isSafeInteger(previous.seq) || previous.seq! < 0))
+    if (previous && (!Number.isSafeInteger(previous.siblingOrder) || previous.siblingOrder! < 0))
       throw new Error('Invalid selected facts cursor')
     const found = await reader.selectedFacts(request.threadId, {
-      afterDepth: previous?.seq,
+      afterDepth: previous?.siblingOrder,
       limit: limit + 1,
       paused: true,
     })
@@ -194,11 +206,14 @@ export async function readRelationsPage(
         return { ...commit, status: 'projection-unavailable', messageIds: [row.messageId], threadIds: [] }
       rows.push(row)
     }
-    if (found.length > limit) next = { id: rows.at(-1)!.messageId, phase: 'emit', seq: found[limit - 1].depth }
+    if (found.length > limit) next = { id: rows.at(-1)!.messageId, phase: 'emit', siblingOrder: found[limit - 1].depth }
   } else if (selector.kind === 'children') {
     const found = await reader.children(
       request.threadId,
-      { ...selector, ...(previous ? { boundary: { seq: previous.seq!, messageId: previous.id } } : {}) },
+      {
+        ...selector,
+        ...(previous ? { boundary: { siblingOrder: previous.siblingOrder!, messageId: previous.id } } : {}),
+      },
       limit + 1
     )
     for (const row of found.slice(0, limit)) {
@@ -206,7 +221,8 @@ export async function readRelationsPage(
         return { ...commit, status: 'projection-unavailable', messageIds: [row.messageId], threadIds: [] }
       rows.push(row)
     }
-    if (found.length > limit) next = { id: rows.at(-1)!.messageId, phase: 'emit', seq: rows.at(-1)!.seq }
+    if (found.length > limit)
+      next = { id: rows.at(-1)!.messageId, phase: 'emit', siblingOrder: rows.at(-1)!.siblingOrder }
   } else {
     let position: Position | null = previous ?? {
       id: selector.rootMessageId,
@@ -233,7 +249,7 @@ export async function readRelationsPage(
           {
             kind: 'children',
             parentMessageId: row.parentMessageId,
-            boundary: { seq: row.seq, messageId: row.messageId },
+            boundary: { siblingOrder: row.siblingOrder, messageId: row.messageId },
           },
           1
         )

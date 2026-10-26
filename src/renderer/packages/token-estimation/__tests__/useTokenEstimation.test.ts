@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
     thread: {
       sessionId: request.sessionId,
       threadId: 't',
-      seq: -1,
+      threadOrder: -1,
       createdAt: 1,
       rootMessageId: 'history',
       activeLeafMessageId: 'history',

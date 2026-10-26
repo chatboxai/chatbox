@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { projectRowFixture } from '../ports/testing/session-row-fixtures'
+import { projectRowFixture as projectFactsFixture, storageRowFixture } from '../ports/testing/session-row-fixtures'
 import type { SessionRows } from '../ports/session-row-store'
 import type { MessageRow } from '../session/session-tree/types'
 import { type NodeSessionRowSqlDatabase, openNodeSessionRowDatabase } from './node-sqlite.test-support'
@@ -8,12 +8,12 @@ import { type SessionRowSqlBindValue, SqlSessionRowStore } from './session-row-s
 const databases: NodeSessionRowSqlDatabase[] = []
 const encoder = new TextEncoder()
 
-function message(messageId: string, seq: number, overrides: Partial<MessageRow> = {}): MessageRow {
+function message(messageId: string, siblingOrder: number, overrides: Partial<MessageRow> = {}): MessageRow {
   return {
     sessionId: 'session',
     threadId: 'thread',
     messageId,
-    seq,
+    siblingOrder,
     parentMessageId: null,
     activeChildId: null,
     branchId: null,
@@ -34,7 +34,7 @@ function snapshot(messages: MessageRow[], revision = 1) {
       {
         sessionId: 'session',
         threadId: 'thread',
-        seq: -1,
+        threadOrder: -1,
         name: null,
         createdAt: 1,
         rootMessageId: null,
@@ -254,3 +254,7 @@ describe('SqlSessionRowStore bounded by-ID metadata reads', () => {
     else await expect(read).resolves.toBeNull()
   })
 })
+
+function projectRowFixture(...args: Parameters<typeof projectFactsFixture>) {
+  return storageRowFixture(projectFactsFixture(...args))
+}

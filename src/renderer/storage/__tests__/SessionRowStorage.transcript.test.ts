@@ -1,3 +1,4 @@
+import { MESSAGE_TREE } from '../session-row-idb-tree'
 import 'fake-indexeddb/auto'
 import { IDBFactory, IDBObjectStore, IDBIndex } from 'fake-indexeddb'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -8,7 +9,6 @@ import {
   SESSION_ROW_MESSAGE_STORE,
   SESSION_ROW_THREAD_STORE,
 } from '../SessionRowStorage'
-import { TRANSCRIPT_MESSAGES } from '../session-row-idb-transcript'
 import { revisionHead } from '../session-row-idb-records'
 
 beforeEach(() => {
@@ -89,10 +89,16 @@ it('preserves complete Unicode bodies and their byte counts in transcript pages'
     tx.oncomplete = () => resolve(request.result)
     tx.onabort = tx.onerror = () => reject(tx.error)
   })
-  expect(storedRow).toEqual({ ...fixture.rows.messages[0], selectedDepth: 0 })
+  expect(storedRow).toMatchObject({
+    message: fixture.rows.messages[0].message,
+    messageId: message.id,
+    siblingOrder: fixture.rows.messages[0].siblingOrder,
+  })
+  expect(storedRow).not.toHaveProperty('selectedDepth')
+  expect(storedRow).not.toHaveProperty('selected')
   const storedMetadata = await new Promise<unknown>((resolve, reject) => {
-    const tx = db.transaction(TRANSCRIPT_MESSAGES, 'readonly')
-    const request = tx.objectStore(TRANSCRIPT_MESSAGES).get(['transcript', message.id])
+    const tx = db.transaction(MESSAGE_TREE, 'readonly')
+    const request = tx.objectStore(MESSAGE_TREE).index('byMessage').get(['transcript', message.id])
     tx.oncomplete = () => resolve(request.result)
     tx.onabort = tx.onerror = () => reject(tx.error)
   })
@@ -106,12 +112,12 @@ it('preserves complete Unicode bodies and their byte counts in transcript pages'
 it('reads selected bodies using only the revision head and requested message ids', async () => {
   const store = new IndexedDBSessionRowStore()
   const fixture = transcriptFixture()
-  const archived = fixture.rows.threads.find((thread) => thread.seq !== -1)!
+  const archived = fixture.rows.threads.find((thread) => thread.threadOrder !== -1)!
   fixture.rows.threads.push(
     ...Array.from({ length: 100 }, (_, index) => ({
       ...archived,
       threadId: `empty-${index}`,
-      seq: index + 100,
+      threadOrder: index + 100,
       rootMessageId: null,
       activeLeafMessageId: null,
     }))

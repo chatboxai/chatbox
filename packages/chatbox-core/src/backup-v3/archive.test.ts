@@ -96,7 +96,7 @@ function fixture(sessionId = 'A', resourceId = 'resource:共享'): BackupBusines
       thread: {
         sessionId,
         threadId: `${sessionId}-t`,
-        seq: -1,
+        threadOrder: -1,
         name: null,
         rootMessageId: `${sessionId}-m`,
         createdAt: 1,
@@ -111,7 +111,7 @@ function fixture(sessionId = 'A', resourceId = 'resource:共享'): BackupBusines
         messageId: `${sessionId}-m`,
         parentMessageId: null,
         activeChildId: null,
-        seq: 0,
+        siblingOrder: 0,
         kind: 'message',
         branchId: null,
         createdAt: 1,
@@ -776,7 +776,10 @@ describe('V3 row archive', () => {
       entries['sessions/A.jsonl'] = encoder.encode(`${text}${last}\n${last}\n${last}\n`)
     })
     let time = 0
-    const clock = vi.spyOn(Date, 'now').mockImplementation(() => (time += 101))
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => {
+      time += 101
+      return time
+    })
     const scannedMessages: number[] = []
     try {
       await importBackupV3({

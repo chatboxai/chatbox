@@ -89,7 +89,9 @@ export function buildTranscriptRenderItems(
   threads: readonly SessionTranscriptThread[]
 ): MessageRenderItem[] {
   const result: MessageRenderItem[] = []
-  const ordered = [...threads].sort((a, b) => (a.seq < 0 ? Infinity : a.seq) - (b.seq < 0 ? Infinity : b.seq))
+  const ordered = [...threads].sort(
+    (a, b) => (a.threadOrder < 0 ? Infinity : a.threadOrder) - (b.threadOrder < 0 ? Infinity : b.threadOrder)
+  )
   for (const thread of ordered) {
     const messages = rows.filter((row) => row.threadId === thread.threadId).map((row) => row.message)
     if (!messages.length && thread.rootMessageId === null) {

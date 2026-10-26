@@ -461,14 +461,14 @@ function SeedSampleSession() {
   })
   for (const message of sampleSession.messages)
     queryClient.setQueryData(QueryKeys.ChatSessionMessage(header.id, message.id), { header, revision: 1, message })
-  for (const [seq, thread] of (sampleSession.threads ?? []).entries())
+  for (const [threadOrder, thread] of (sampleSession.threads ?? []).entries())
     queryClient.setQueryData(QueryKeys.ChatSessionThread(header.id, thread.id), {
       record: { ...header, activeThreadId: header.id, storageFormat: 'rows' },
       revision: 1,
       thread: {
         sessionId: header.id,
         threadId: thread.id,
-        seq,
+        threadOrder,
         name: thread.name,
         createdAt: thread.createdAt,
         rootMessageId: thread.messages[0]?.id ?? null,

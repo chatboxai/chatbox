@@ -1,3 +1,7 @@
+import { messageMetadata } from './session-row-idb-messages'
+import { loadTreeLinks } from './session-row-idb-links'
+import { threadLinksRelationReader, ThreadLinks } from '@chatbox/core/persistence'
+import { MESSAGE_TREE, readTreeMessage, decodeTreeMetadata, type StoredTreeMetadata } from './session-row-idb-tree'
 import {
   readMetadataSelection,
   readRelationsPage,
@@ -17,135 +21,26 @@ import {
 } from '@chatbox/core/ports'
 import type { MessageRowMetadata, ThreadRow } from '@chatbox/core/session/session-tree'
 import {
-  TRANSCRIPT_MESSAGES,
   TRANSCRIPT_THREADS,
-  RELATION_CHILDREN,
-  RELATION_BRANCH,
   THREAD_SUMMARY_ORDER,
   requestValue,
   readTranscriptTransaction,
   readTranscriptCommit,
   plainTranscriptThread,
 } from './session-row-idb-transcript'
-import {
-  SESSION_ROW_THREAD_STORE,
-  SESSION_ROW_MESSAGE_STORE,
-  STATUS_INDEX,
-  SELECTED_PAUSED,
-} from './session-row-idb-records'
+import { SESSION_ROW_THREAD_STORE, SESSION_ROW_MESSAGE_STORE, STATUS_INDEX } from './session-row-idb-records'
 
-export function idbRelationReader(tx: IDBTransaction, sessionId: string): SessionRelationReader {
-  const store = tx.objectStore(TRANSCRIPT_MESSAGES)
-  return {
-    path: async (threadId, messageId, direction, limit) => {
-      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 201) throw new Error('Invalid relation path limit')
-      const result: MessageRowMetadata[] = []
-      let id: string | null = messageId
-      while (id !== null && result.length < limit) {
-        const row: MessageRowMetadata | undefined = await requestValue(store.get([sessionId, id]))
-        if (!row) {
-          if (result.length) throw new Error('Missing message relationship')
-          break
-        }
-        if (row.threadId !== threadId) throw new Error('Relation crosses a thread boundary')
-        result.push(row)
-        id = direction === 'ancestors' ? row.parentMessageId : row.activeChildId
-      }
-      return result
+export function idbRelationReader(tx: IDBTransaction, sessionId: string, revision: number): SessionRelationReader {
+  return threadLinksRelationReader({
+    message: async (id) => {
+      const stored = await readTreeMessage(tx, sessionId, id)
+      return stored && { ...messageMetadata(stored), facts: stored.facts }
     },
-    message: async (id) => (await requestValue<MessageRowMetadata | undefined>(store.get([sessionId, id]))) ?? null,
-    status: async (threadId, options) => {
-      const prefix = [options.status, sessionId, threadId]
-      const range = IDBKeyRange.bound(
-        options.afterId === undefined ? prefix : [...prefix, options.afterId],
-        [...prefix, []],
-        options.afterId !== undefined
-      )
-      const ids: string[] = []
-      await new Promise<void>((resolve, reject) => {
-        const request = tx.objectStore(SESSION_ROW_MESSAGE_STORE).index(STATUS_INDEX).openKeyCursor(range)
-        request.onerror = () => reject(request.error)
-        request.onsuccess = () => {
-          const cursor = request.result
-          if (!cursor) {
-            resolve()
-            return
-          }
-          const key = cursor.key
-          if (!Array.isArray(key) || typeof key[3] !== 'string') {
-            reject(new Error('Invalid message status index'))
-            return
-          }
-          ids.push(key[3])
-          if (ids.length === options.limit) resolve()
-          else cursor.continue()
-        }
-      })
-      const rows = await Promise.all(
-        ids.map((id) => requestValue<MessageRowMetadata | undefined>(store.get([sessionId, id])))
-      )
-      return rows.map((row) => {
-        if (!row) throw new Error('Message status metadata is missing')
-        return row
-      })
-    },
-    selectedFacts: async (threadId, options) => {
-      const prefix = [sessionId, threadId, 1]
-      const range = IDBKeyRange.bound(
-        options.afterDepth === undefined ? prefix : [...prefix, options.afterDepth, []],
-        [...prefix, []],
-        options.afterDepth !== undefined
-      )
-      const result: Array<{ row: MessageRowMetadata; depth: number }> = []
-      await new Promise<void>((resolve, reject) => {
-        const request = store.index(SELECTED_PAUSED).openCursor(range)
-        request.onerror = () => reject(request.error)
-        request.onsuccess = () => {
-          const cursor = request.result
-          if (!cursor || result.length === options.limit) {
-            resolve()
-            return
-          }
-          const row = cursor.value as MessageRowMetadata & { selectedDepth: number }
-          if (!Number.isSafeInteger(row.selectedDepth) || row.selectedDepth < 0) {
-            reject(new Error('Invalid selected fact depth'))
-            return
-          }
-          result.push({ row, depth: row.selectedDepth })
-          cursor.continue()
-        }
-      })
-      return result
-    },
-    children: async (threadId, selector, limit) => {
-      const prefix = [
-        sessionId,
-        threadId,
-        selector.parentMessageId ?? '',
-        ...(selector.branchId !== undefined ? [selector.branchId] : []),
-      ]
-      const boundary = selector.boundary ? [...prefix, selector.boundary.seq, selector.boundary.messageId] : null
-      const range = selector.reverse
-        ? IDBKeyRange.bound(prefix, boundary ?? [...prefix, []], false, boundary !== null)
-        : IDBKeyRange.bound(boundary ?? prefix, [...prefix, []], boundary !== null, false)
-      const result: MessageRowMetadata[] = []
-      await new Promise<void>((resolve, reject) => {
-        const request = store
-          .index(selector.branchId !== undefined ? RELATION_BRANCH : RELATION_CHILDREN)
-          .openCursor(range, selector.reverse ? 'prev' : 'next')
-        request.onerror = () => reject(request.error)
-        request.onsuccess = () => {
-          if (!request.result || result.length === limit) {
-            resolve()
-            return
-          }
-          result.push(request.result.value as MessageRowMetadata)
-          request.result.continue()
-        }
-      })
-      return result
-    },
-  }
+    thread: async (id) =>
+      (await requestValue<ThreadRow | undefined>(tx.objectStore(SESSION_ROW_THREAD_STORE).get([sessionId, id]))) ??
+      null,
+    loadThreadLinks: (id) => loadTreeLinks(tx, sessionId, id, revision),
+  })
 }
 
 async function withCommit<T>(
@@ -162,12 +57,12 @@ async function withCommit<T>(
 }
 export function readIndexedDBMetadata(db: IDBDatabase, request: SessionMessageMetadataRequest) {
   return withCommit(db, request, (tx, commit) =>
-    readMetadataSelection(request, commit, idbRelationReader(tx, request.sessionId))
+    readMetadataSelection(request, commit, idbRelationReader(tx, request.sessionId, commit.revision))
   )
 }
 export function readIndexedDBRelations(db: IDBDatabase, request: SessionMessageRelationsRequest) {
   return withCommit(db, request, (tx, commit) =>
-    readRelationsPage(request, commit, idbRelationReader(tx, request.sessionId))
+    readRelationsPage(request, commit, idbRelationReader(tx, request.sessionId, commit.revision))
   )
 }
 export function readIndexedDBThreadState(db: IDBDatabase, request: SessionThreadStateRequest) {
@@ -239,6 +134,6 @@ export function readIndexedDBThreadSummaries(db: IDBDatabase, request: SessionTh
 export function readIndexedDBBranchPreview(db: IDBDatabase, request: SessionBranchPreviewRequest) {
   validateBranchPreviewRequest(request)
   return withCommit(db, request, (tx, commit) =>
-    readBranchPreviewFromMetadata(request, commit, idbRelationReader(tx, request.sessionId).message)
+    readBranchPreviewFromMetadata(request, commit, (id) => readTreeMessage(tx, request.sessionId, id))
   )
 }

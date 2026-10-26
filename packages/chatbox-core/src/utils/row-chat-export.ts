@@ -58,18 +58,20 @@ export class SessionChatExport {
   }
 
   async *threads(includeArchived: boolean): AsyncGenerator<ThreadRow> {
-    const identities: Array<{ threadId: string; seq: number }> = []
+    const identities: Array<{ threadId: string; threadOrder: number }> = []
     if (includeArchived) {
       let cursor: SessionThreadPageCursor | undefined
       do {
         const page = await this.rows.readThreadSummariesPage({ sessionId: this.header.id, limit: 100, cursor })
         if (page?.revision !== this.revision)
           throw new SessionRowConflictError(this.header.id, this.revision, page?.revision ?? null)
-        identities.push(...page.threads.map(({ threadId, seq }) => ({ threadId, seq })))
+        identities.push(...page.threads.map(({ threadId, threadOrder }) => ({ threadId, threadOrder })))
         cursor = page.nextCursor ?? undefined
       } while (cursor)
-      identities.sort((a, b) => (a.seq < 0 ? Infinity : a.seq) - (b.seq < 0 ? Infinity : b.seq))
-    } else identities.push({ threadId: this.activeThreadId, seq: -1 })
+      identities.sort(
+        (a, b) => (a.threadOrder < 0 ? Infinity : a.threadOrder) - (b.threadOrder < 0 ? Infinity : b.threadOrder)
+      )
+    } else identities.push({ threadId: this.activeThreadId, threadOrder: -1 })
     for (const { threadId } of identities) {
       const read = await this.rows.readThreadState({
         sessionId: this.header.id,

@@ -13,7 +13,7 @@ const record: SessionRowRecord = {
 const thread: ThreadRow = {
   sessionId: 's',
   threadId: 'active',
-  seq: -1,
+  threadOrder: -1,
   name: null,
   createdAt: 1,
   rootMessageId: 'm1',
@@ -32,7 +32,7 @@ const row = (id: string, threadId = 'active'): MessageRow => ({
   messageId: id,
   parentMessageId: null,
   activeChildId: null,
-  seq: 500,
+  siblingOrder: 500,
   kind: 'message',
   status: 'settled',
   createdAt: 1,
@@ -91,48 +91,48 @@ describe('row command plans', () => {
   it('uses sibling order and changes only the append anchor plus new rows', () => {
     const tail = metadata(row('m1'))
     const result = planSessionCommand(
-      { ...scope, tail, nextChildSeq: 3 },
+      { ...scope, tail, nextSiblingOrder: 3 },
       { type: 'append', messages: [message('m2'), message('m3')] }
     )
     expect(
-      result.diff.messages.upsert.map(({ messageId, parentMessageId, activeChildId, seq }) => ({
+      result.diff.messages.upsert.map(({ messageId, parentMessageId, activeChildId, siblingOrder }) => ({
         messageId,
         parentMessageId,
         activeChildId,
-        seq,
+        siblingOrder,
       }))
     ).toEqual([
-      { messageId: 'm2', parentMessageId: 'm1', activeChildId: 'm3', seq: 3 },
-      { messageId: 'm3', parentMessageId: 'm2', activeChildId: null, seq: 0 },
+      { messageId: 'm2', parentMessageId: 'm1', activeChildId: 'm3', siblingOrder: 3 },
+      { messageId: 'm3', parentMessageId: 'm2', activeChildId: null, siblingOrder: 0 },
     ])
     expect(result.diff.messageMetadataUpsert).toEqual([
-      { ...tail, activeChildId: 'm2', pendingBranchId: undefined, pendingBranchSeq: undefined },
+      { ...tail, activeChildId: 'm2', pendingBranchId: undefined, pendingBranchOrder: undefined },
     ])
     expect(result.diff.threads.upsert[0].activeLeafMessageId).toBe('m3')
     expect(result.appendedMessageIds).toEqual(['m2', 'm3'])
   })
 
   it('continues an empty selected branch at its reserved sibling position', () => {
-    const tail = { ...metadata(row('m1')), pendingBranchId: 'new-branch', pendingBranchSeq: 2, forkCreatedAt: 10 }
+    const tail = { ...metadata(row('m1')), pendingBranchId: 'new-branch', pendingBranchOrder: 2, forkCreatedAt: 10 }
     const result = planSessionCommand({ ...scope, tail }, { type: 'append', messages: [message('m2')] })
-    expect(result.diff.messages.upsert[0]).toMatchObject({ branchId: 'new-branch', seq: 2 })
+    expect(result.diff.messages.upsert[0]).toMatchObject({ branchId: 'new-branch', siblingOrder: 2 })
     expect(result.diff.messageMetadataUpsert?.[0]).toMatchObject({
       forkCreatedAt: 10,
       pendingBranchId: undefined,
-      pendingBranchSeq: undefined,
+      pendingBranchOrder: undefined,
     })
   })
 
   it('creates the first path in an empty thread', () => {
     const empty = { ...thread, rootMessageId: null, activeLeafMessageId: null }
     const result = planSessionCommand({ ...scope, thread: empty }, { type: 'append', messages: [message('first')] })
-    expect(result.diff.messages.upsert[0]).toMatchObject({ parentMessageId: null, seq: 0 })
+    expect(result.diff.messages.upsert[0]).toMatchObject({ parentMessageId: null, siblingOrder: 0 })
     expect(result.diff.threads.upsert[0]).toMatchObject({ rootMessageId: 'first', activeLeafMessageId: 'first' })
   })
 
   it('keeps an already committed append idempotent and rejects a conflicting identity', () => {
     const existing = row('m1')
-    const input = { ...scope, tail: metadata(existing), nextChildSeq: 0 }
+    const input = { ...scope, tail: metadata(existing), nextSiblingOrder: 0 }
     const result = planSessionCommand(input, { type: 'append', messages: [existing.message] }, [existing])
     expect(result.diff.messages.upsert).toEqual([])
     expect(result.diff.threads.upsert).toEqual([])
@@ -144,7 +144,7 @@ describe('row command plans', () => {
   it('rejects stale append anchors and identity changes', () => {
     expect(() =>
       planSessionCommand(
-        { ...scope, tail: metadata(row('other')), nextChildSeq: 0 },
+        { ...scope, tail: metadata(row('other')), nextSiblingOrder: 0 },
         { type: 'append', messages: [message('new')] }
       )
     ).toThrow('anchor changed')

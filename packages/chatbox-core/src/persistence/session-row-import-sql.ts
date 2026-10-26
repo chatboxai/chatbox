@@ -62,8 +62,8 @@ function readCandidate(candidate: Candidate): { commit: SessionRowCommit; state:
   }
   return { commit, state: importState ?? { version: 0 } }
 }
-function messageMeta(row: MessageRowMetadata, selectedDepth: number | null = null) {
-  return { value: row, selectedDepth }
+function messageMeta(row: MessageRowMetadata, pathDepth: number | null = null) {
+  return { value: row, pathDepth }
 }
 
 async function readIndex(
@@ -77,7 +77,7 @@ async function readIndex(
   for (;;) {
     const rows = await queryRowMetadata<{ message_id: string; row_metadata_json: string }>(
       db,
-      `SELECT thread_id AS message_id,json_object('seq',seq,'name',name,'createdAt',created_at,
+      `SELECT thread_id AS message_id,json_object('threadOrder',threadOrder,'name',name,'createdAt',created_at,
         'rootMessageId',root_message_id,'activeLeafMessageId',active_leaf_message_id,
         'compactionPoints',json(compaction_points_json),
         'sessionPromptContextSnapshot',json(session_prompt_context_snapshot_json)) AS row_metadata_json
@@ -101,26 +101,24 @@ async function readIndex(
       'thread_id',
       'parent_message_id',
       'active_child_id',
-      'seq',
+      'siblingOrder',
       'kind',
       'created_at',
       'updated_at',
       'branch_id',
       'row_metadata_json',
-      'selected_depth',
     ]
     const rows = await queryRowMetadata<{
       message_id: string
       thread_id: string
       parent_message_id: string | null
       active_child_id: string | null
-      seq: number
+      siblingOrder: number
       kind: MessageRow['kind']
       created_at: number
       updated_at: number
       branch_id: string | null
       row_metadata_json: string | null
-      selected_depth: number | null
     }>(
       db,
       `SELECT ${columns.join(',')} FROM session_messages_staging WHERE mutation_id=? AND session_id=? AND message_id>? ORDER BY message_id LIMIT 128`,
@@ -131,23 +129,20 @@ async function readIndex(
     for (const row of rows)
       index.messages.set(
         row.message_id,
-        messageMeta(
-          {
-            sessionId,
-            messageId: row.message_id,
-            threadId: row.thread_id,
-            parentMessageId: row.parent_message_id,
-            activeChildId: row.active_child_id,
-            seq: row.seq,
-            kind: row.kind,
-            status: 'settled',
-            createdAt: row.created_at,
-            updatedAt: row.updated_at,
-            branchId: row.branch_id,
-            ...parseRowExtra(row.row_metadata_json),
-          },
-          row.selected_depth
-        )
+        messageMeta({
+          sessionId,
+          messageId: row.message_id,
+          threadId: row.thread_id,
+          parentMessageId: row.parent_message_id,
+          activeChildId: row.active_child_id,
+          siblingOrder: row.siblingOrder,
+          kind: row.kind,
+          status: 'settled',
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+          branchId: row.branch_id,
+          ...parseRowExtra(row.row_metadata_json),
+        })
       )
     if (rows.length < 128) break
     after = rows[rows.length - 1].message_id
@@ -337,13 +332,14 @@ export async function resumeSqlImportWriter(
           try {
             if (row.kind === 'thread') {
               validateThreadRow(row.thread, sessionId)
-              if (!Number.isSafeInteger(row.thread.seq) || row.thread.seq < -1) throw new Error('Invalid thread order')
+              if (!Number.isSafeInteger(row.thread.threadOrder) || row.thread.threadOrder < -1)
+                throw new Error('Invalid thread order')
             } else {
               validateMessageRow(row.message, sessionId)
               if (
                 row.message.message.id !== row.message.messageId ||
-                !Number.isSafeInteger(row.message.seq) ||
-                row.message.seq < 0
+                !Number.isSafeInteger(row.message.siblingOrder) ||
+                row.message.siblingOrder < 0
               )
                 throw new Error('Invalid message identity or order')
             }
@@ -426,14 +422,14 @@ export async function resumeSqlImportWriter(
         const before = new Map(
           [...current.messages].map(([messageId, entry]) => [
             messageId,
-            JSON.stringify([entry.value.seq, entry.value.activeChildId, entry.selectedDepth, rowExtra(entry.value)]),
+            JSON.stringify([entry.value.siblingOrder, entry.value.activeChildId, rowExtra(entry.value)]),
           ])
         )
         const oldThreads = new Set(current.threads.keys())
         for (const entry of current.messages.values()) {
           entry.value.selected = false
           entry.value.fork = undefined
-          entry.selectedDepth = null
+          entry.pathDepth = null
         }
         const prepared = prepareImportIndex(
           current,
@@ -482,7 +478,7 @@ export async function resumeSqlImportWriter(
           }
           const statement = threadStatement(thread, commit)
           const columns = [
-            'seq',
+            'threadOrder',
             'name',
             'root_message_id',
             'active_leaf_message_id',
@@ -508,7 +504,7 @@ export async function resumeSqlImportWriter(
         let updates: SessionRowSqlBindValue[][] = [],
           updateBytes = 0
         const makeUpdate = (rows: SessionRowSqlBindValue[][]): SessionRowSqlStatement => ({
-          sql: `WITH updates(message_id,seq,active_child_id,selected_depth,row_metadata_json) AS (VALUES ${rows.map(() => '(?,?,?,?,?)').join(',')}) UPDATE session_messages_staging SET (seq,active_child_id,selected_depth,row_metadata_json)=(SELECT seq,active_child_id,selected_depth,row_metadata_json FROM updates WHERE updates.message_id=session_messages_staging.message_id) WHERE mutation_id=? AND session_id=? AND message_id IN(SELECT message_id FROM updates)`,
+          sql: `WITH updates(message_id,siblingOrder,active_child_id,row_metadata_json) AS (VALUES ${rows.map(() => '(?,?,?,?)').join(',')}) UPDATE session_messages_staging SET (siblingOrder,active_child_id,row_metadata_json)=(SELECT siblingOrder,active_child_id,row_metadata_json FROM updates WHERE updates.message_id=session_messages_staging.message_id) WHERE mutation_id=? AND session_id=? AND message_id IN(SELECT message_id FROM updates)`,
           params: [...rows.flat(), id, sessionId],
         })
         const flushUpdates = async () => {
@@ -521,19 +517,16 @@ export async function resumeSqlImportWriter(
         const updateEnvelope = sizeOf(makeUpdate([]))
         for (const [messageId, entry] of current.messages) {
           const extra = rowExtra(entry.value)
-          if (
-            before.get(messageId) ===
-            JSON.stringify([entry.value.seq, entry.value.activeChildId, entry.selectedDepth, extra])
-          )
+          if (before.get(messageId) === JSON.stringify([entry.value.siblingOrder, entry.value.activeChildId, extra]))
             continue
-          const values = [messageId, entry.value.seq, entry.value.activeChildId, entry.selectedDepth, extra]
+          const values = [messageId, entry.value.siblingOrder, entry.value.activeChildId, extra]
           const limit = batchLimit - sizeOf(controlStatement()) - 1024
           const rowBytes = sizeOf(values) + 16
           if (updateEnvelope + rowBytes > limit) {
             await flushUpdates()
             await writer.append({
-              sql: 'UPDATE session_messages_staging SET seq=?,active_child_id=?,selected_depth=? WHERE mutation_id=? AND session_id=? AND message_id=?',
-              params: [entry.value.seq, entry.value.activeChildId, entry.selectedDepth, id, sessionId, messageId],
+              sql: 'UPDATE session_messages_staging SET siblingOrder=?,active_child_id=? WHERE mutation_id=? AND session_id=? AND message_id=?',
+              params: [entry.value.siblingOrder, entry.value.activeChildId, id, sessionId, messageId],
             })
             await updateText('messages', messageId, 'row_metadata_json', extra!)
           } else {

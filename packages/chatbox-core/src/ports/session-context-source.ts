@@ -41,7 +41,7 @@ export interface SessionContextBeforeTarget {
 /** Validated causal identity and complete content for reading, not a writable row. */
 export type SessionContextMessage = Pick<
   MessageRow,
-  'sessionId' | 'threadId' | 'messageId' | 'parentMessageId' | 'seq' | 'message'
+  'sessionId' | 'threadId' | 'messageId' | 'parentMessageId' | 'siblingOrder' | 'message'
 >
 
 export interface SessionContextRows extends SessionRowCommit {

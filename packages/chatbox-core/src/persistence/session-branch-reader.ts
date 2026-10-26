@@ -52,8 +52,8 @@ export async function readBranchMessagesPage(
       row.sessionId !== request.sessionId ||
       row.threadId !== thread.threadId ||
       row.messageId !== id ||
-      !Number.isSafeInteger(row.seq) ||
-      row.seq < 0 ||
+      !Number.isSafeInteger(row.siblingOrder) ||
+      row.siblingOrder < 0 ||
       !Number.isSafeInteger(row.payloadBytes) ||
       row.payloadBytes < 0
     )

@@ -66,7 +66,7 @@ export const CAPACITOR_MESSAGE_ROWS_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS session_threads (
   session_id TEXT NOT NULL,
   thread_id TEXT NOT NULL,
-  seq INTEGER NOT NULL,
+  threadOrder INTEGER NOT NULL,
   name TEXT,
   created_at INTEGER NOT NULL,
   root_message_id TEXT,
@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS session_messages (
   thread_id TEXT NOT NULL,
   parent_message_id TEXT,
   active_child_id TEXT,
-  seq INTEGER NOT NULL,
+  siblingOrder INTEGER NOT NULL,
   kind TEXT NOT NULL,
   status TEXT NOT NULL,
   created_at INTEGER NOT NULL,
@@ -95,7 +95,6 @@ CREATE TABLE IF NOT EXISTS session_messages (
   message_json TEXT NOT NULL,
   payload_utf8_length INTEGER NOT NULL,
   row_metadata_json TEXT,
-  selected_depth INTEGER,
   PRIMARY KEY (session_id, message_id)
 );
 
@@ -103,7 +102,7 @@ CREATE TABLE IF NOT EXISTS session_threads_staging (
   mutation_id TEXT NOT NULL,
   session_id TEXT NOT NULL,
   thread_id TEXT NOT NULL,
-  seq INTEGER NOT NULL,
+  threadOrder INTEGER NOT NULL,
   name TEXT,
   created_at INTEGER NOT NULL,
   root_message_id TEXT,
@@ -123,7 +122,7 @@ CREATE TABLE IF NOT EXISTS session_messages_staging (
   thread_id TEXT NOT NULL,
   parent_message_id TEXT,
   active_child_id TEXT,
-  seq INTEGER NOT NULL,
+  siblingOrder INTEGER NOT NULL,
   kind TEXT NOT NULL,
   status TEXT NOT NULL,
   created_at INTEGER NOT NULL,
@@ -133,7 +132,6 @@ CREATE TABLE IF NOT EXISTS session_messages_staging (
   message_json TEXT NOT NULL,
   payload_utf8_length INTEGER NOT NULL,
   row_metadata_json TEXT,
-  selected_depth INTEGER,
   PRIMARY KEY (mutation_id, session_id, message_id)
 );
 
@@ -158,8 +156,8 @@ CREATE TABLE IF NOT EXISTS session_row_delete_receipts (
   deleted_at INTEGER NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_session_messages_thread_seq
-ON session_messages(session_id, thread_id, seq);
+CREATE INDEX IF NOT EXISTS idx_session_messages_thread_sibling_order
+ON session_messages(session_id, thread_id, siblingOrder);
 
 CREATE INDEX IF NOT EXISTS idx_session_messages_status
 ON session_messages(status, session_id, thread_id, message_id);

@@ -28,10 +28,10 @@ const row = (
   id: string,
   parent: string | null,
   child: string | null,
-  seq = 0,
+  siblingOrder = 0,
   extra: Partial<MessageRow> = {}
 ): MessageRow => ({
-  ...newMessageRow('s', 'active', message(id), parent, seq),
+  ...newMessageRow('s', 'active', message(id), parent, siblingOrder),
   activeChildId: child,
   selected: true,
   ...extra,
@@ -59,7 +59,7 @@ function fixture(
   const active: ThreadRow = {
     sessionId: 's',
     threadId: 'active',
-    seq: -1,
+    threadOrder: -1,
     name: null,
     rootMessageId:
       metadata.find((value) => value.threadId === 'active' && value.parentMessageId === null)?.messageId ?? null,
@@ -82,7 +82,7 @@ function fixture(
     metadata: vi.fn(async (ids: readonly string[]) => metadata.filter((value) => ids.includes(value.messageId))),
     messages: vi.fn(async (ids: readonly string[]) => rows.filter((value) => ids.includes(value.messageId))),
     thread: async (id) => threads.find((value) => value.threadId === id) ?? null,
-    latestArchivedThread: async () => additional.toSorted((a, b) => b.seq - a.seq)[0] ?? null,
+    latestArchivedThread: async () => additional.toSorted((a, b) => b.threadOrder - a.threadOrder)[0] ?? null,
     relations: vi.fn(async (threadId: string, selector: SessionMessageRelationsSelector, limit: number) => {
       if (selector.kind !== 'children') throw new Error('Unexpected path traversal')
       let candidates = metadata
@@ -92,12 +92,12 @@ function fixture(
             value.parentMessageId === selector.parentMessageId &&
             (!selector.branchId || value.branchId === selector.branchId)
         )
-        .sort((a, b) => a.seq - b.seq || a.messageId.localeCompare(b.messageId))
+        .sort((a, b) => a.siblingOrder - b.siblingOrder || a.messageId.localeCompare(b.messageId))
       if (selector.boundary) {
         const boundary = selector.boundary
         candidates = candidates.filter(
           (value) =>
-            (value.seq - boundary.seq || value.messageId.localeCompare(boundary.messageId)) *
+            (value.siblingOrder - boundary.siblingOrder || value.messageId.localeCompare(boundary.messageId)) *
               (selector.reverse ? -1 : 1) >
             0
         )
@@ -112,7 +112,7 @@ function forkRows(empty = false): MessageRow[] {
   return [
     row('pivot', null, empty ? null : 'current', 800, {
       forkCreatedAt: 10,
-      ...(empty ? { pendingBranchId: 'empty', pendingBranchSeq: 2 } : {}),
+      ...(empty ? { pendingBranchId: 'empty', pendingBranchOrder: 2 } : {}),
     }),
     row('first', 'pivot', 'first-tail', 1, { branchId: 'b-first', selected: false }),
     row('first-tail', 'first', null, 0, { selected: false }),
@@ -127,7 +127,7 @@ describe('removing empty branch messages', () => {
       message: message('pivot', 'user'),
       forkCreatedAt: 10,
       forkPivotId: 'pivot',
-      ...(pending ? { pendingBranchId: 'empty', pendingBranchSeq: 2 } : {}),
+      ...(pending ? { pendingBranchId: 'empty', pendingBranchOrder: 2 } : {}),
     })
   it.each([false, true])('collapses an inactive last placeholder, selected empty=%s', async (empty) => {
     const reader = fixture([
@@ -181,7 +181,7 @@ describe('local fork commands', () => {
     expect(plan.diff.messages.upsert[0]).toMatchObject({
       messageId: 'reply',
       parentMessageId: 'pivot',
-      seq: 4,
+      siblingOrder: 4,
       branchId: 'fork_list_new',
     })
     expect(plan.diff.messageMetadataUpsert?.find((value) => value.messageId === 'pivot')).toMatchObject({
@@ -204,7 +204,7 @@ describe('local fork commands', () => {
     expect(plan.diff.messageMetadataUpsert?.find((value) => value.messageId === 'pivot')).toMatchObject({
       activeChildId: null,
       pendingBranchId: 'fork_list_new',
-      pendingBranchSeq: 4,
+      pendingBranchOrder: 4,
     })
     expect(plan.result.navigation).toMatchObject({ mode: 'create', firstMessageId: null })
   })
@@ -218,7 +218,7 @@ describe('local fork commands', () => {
     expect(plan.diff.messageMetadataUpsert?.find((value) => value.messageId === 'pivot')).toMatchObject({
       activeChildId: expected,
       pendingBranchId: undefined,
-      pendingBranchSeq: undefined,
+      pendingBranchOrder: undefined,
     })
     expect(reader.messages).not.toHaveBeenCalled()
   })
@@ -312,12 +312,12 @@ describe('local message and thread commands', () => {
     expect(plan.diff.messages.upsert[0]).toMatchObject({
       parentMessageId: 'pivot',
       activeChildId: 'current',
-      seq: 3,
+      siblingOrder: 3,
       branchId: 'b-current',
     })
     expect(plan.diff.messageMetadataUpsert?.find((value) => value.messageId === 'current')).toMatchObject({
       parentMessageId: 'inserted',
-      seq: 0,
+      siblingOrder: 0,
       branchId: null,
     })
     expect(reader.messages).not.toHaveBeenCalled()
@@ -345,7 +345,7 @@ describe('local message and thread commands', () => {
   it('promotes fork children using only sibling shifts at the containing parent', async () => {
     const rows = forkRows()
     rows[0].parentMessageId = 'parent'
-    rows[0].seq = 5
+    rows[0].siblingOrder = 5
     rows.unshift(row('parent', null, 'pivot', 900))
     const plan = await planMessageStructure(fixture(rows), {
       action: 'message-remove',
@@ -353,9 +353,11 @@ describe('local message and thread commands', () => {
       replacementPivotId: 'hidden',
     })
     expect(plan.diff.reparentChildren).toEqual([
-      { threadId: 'active', parentMessageId: 'pivot', newParentMessageId: 'parent', seqOffset: 5 },
+      { threadId: 'active', parentMessageId: 'pivot', newParentMessageId: 'parent', siblingOrderOffset: 5 },
     ])
-    expect(plan.diff.siblingShifts).toEqual([{ threadId: 'active', parentMessageId: 'parent', afterSeq: 5, delta: 3 }])
+    expect(plan.diff.siblingShifts).toEqual([
+      { threadId: 'active', parentMessageId: 'parent', afterSiblingOrder: 5, delta: 3 },
+    ])
     expect(plan.diff.messages.upsert).toEqual([])
   })
 
@@ -363,7 +365,7 @@ describe('local message and thread commands', () => {
     const archived = {
       ...fixture([]).activeThread,
       threadId: 'history',
-      seq: 2,
+      threadOrder: 2,
       name: 'History',
       rootMessageId: 'old',
       activeLeafMessageId: 'old',
@@ -387,7 +389,7 @@ describe('local message and thread commands', () => {
     const history = {
       ...fixture([]).activeThread,
       threadId: 'history',
-      seq: 8,
+      threadOrder: 8,
       name: 'History',
       rootMessageId: 'old',
       activeLeafMessageId: 'old',
@@ -400,9 +402,9 @@ describe('local message and thread commands', () => {
       now: 10,
     })
     expect(plan.record.activeThreadId).toBe('history')
-    expect(plan.diff.threads.upsert.map(({ threadId, seq }) => ({ threadId, seq }))).toEqual([
-      { threadId: 'active', seq: 9 },
-      { threadId: 'history', seq: -1 },
+    expect(plan.diff.threads.upsert.map(({ threadId, threadOrder }) => ({ threadId, threadOrder }))).toEqual([
+      { threadId: 'active', threadOrder: 9 },
+      { threadId: 'history', threadOrder: -1 },
     ])
     expect(plan.diff.messages).toEqual({ upsert: [], delete: [] })
     expect(reader.messages).not.toHaveBeenCalled()
@@ -426,7 +428,7 @@ describe('local message and thread commands', () => {
       messageId: 'new-system',
       message: { contentParts: message('system').contentParts },
     })
-    expect(plan.diff.threads.upsert.find((value) => value.threadId === 'active')).toMatchObject({ seq: 0 })
+    expect(plan.diff.threads.upsert.find((value) => value.threadId === 'active')).toMatchObject({ threadOrder: 0 })
     expect(reader.messages).toHaveBeenCalledExactlyOnceWith(['system'])
   })
 
@@ -476,7 +478,11 @@ describe('local message and thread commands', () => {
       parentMessageId: null,
       activeChildId: 'user',
     })
-    expect(plan.diff.messageMetadataUpsert?.[0]).toMatchObject({ messageId: 'user', parentMessageId: 'system', seq: 0 })
+    expect(plan.diff.messageMetadataUpsert?.[0]).toMatchObject({
+      messageId: 'user',
+      parentMessageId: 'system',
+      siblingOrder: 0,
+    })
     expect(plan.diff.threads.upsert[0].rootMessageId).toBe('system')
     expect(reader.messages).not.toHaveBeenCalled()
   })
@@ -502,7 +508,7 @@ describe('local message and thread commands', () => {
     const history = {
       ...fixture([]).activeThread,
       threadId: 'history',
-      seq: 8,
+      threadOrder: 8,
       name: 'History',
       rootMessageId: 'old',
       activeLeafMessageId: 'old',

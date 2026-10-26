@@ -91,7 +91,7 @@ it('persists invisible import rows and keeps committed rows after reopening and 
   await resumed.publish()
   const result = await reopened.readMessages({ sessionId: old.record.id, messageIds: ['a', 'b'] })
   expect(result?.messages[0].message.contentParts).toEqual(next.rows.messages[0].message.contentParts)
-  expect(result?.messages.map((row) => row.selected)).toEqual([true, true])
+  expect(await membership(reopened, old.record.id, ['a', 'b'], 2)).toEqual([true, true])
   const threadState = await reopened.readThreadState({
     sessionId: old.record.id,
     threadId: old.record.activeThreadId,
@@ -160,7 +160,7 @@ it.each(
   if (kind === 'cycle') expect(issues.filter((issue) => issue.action === 'skipped')).toHaveLength(2)
   if (kind === 'duplicate-sibling')
     expect(
-      new Set(restored?.rows.messages.filter((row) => row.parentMessageId === 'a').map((row) => row.seq)).size
+      new Set(restored?.rows.messages.filter((row) => row.parentMessageId === 'a').map((row) => row.siblingOrder)).size
     ).toBe(2)
   await publishing.dispose()
 })
@@ -180,7 +180,7 @@ it.each([
   const other = {
     ...selected,
     messageId: 'other',
-    seq: selected.seq + 1,
+    siblingOrder: selected.siblingOrder + 1,
     branchId: 'alternative',
     message: { ...selected.message, id: 'other' },
   }
@@ -188,7 +188,7 @@ it.each([
   if (empty) {
     point.activeChildId = null
     point.pendingBranchId = 'empty'
-    point.pendingBranchSeq = selected.seq + 2
+    point.pendingBranchOrder = selected.siblingOrder + 2
   } else point.activeChildId = 'other'
   const expected = {
     pivotId: 'a',
@@ -206,7 +206,9 @@ it.each([
   await writer.publish()
   const result = await rows.readMessages({ sessionId: source.record.id, messageIds: ['a', 'b', 'other'] })
   expect(result?.messages[0].fork).toEqual(expected)
-  expect(result?.messages.map((row) => row.selected)).toEqual(empty ? [true, false, false] : [true, false, true])
+  expect(await membership(rows, source.record.id, ['a', 'b', 'other'], source.revision)).toEqual(
+    empty ? [true, false, false] : [true, false, true]
+  )
 })
 
 it.each(['append-skip', 'repair', 'resume'])('rebuilds fork projections after %s', async (change) => {
@@ -246,7 +248,8 @@ it('accepts an empty converted fork map while deriving the selected path and sum
   expect(consume).toHaveBeenCalledOnce()
   await writer.publish()
   const result = await rows.readSnapshot(source.record.id)
-  expect(result?.rows.messages.every((row) => row.selected && !row.fork)).toBe(true)
+  expect(result?.rows.messages.every((row) => !row.fork)).toBe(true)
+  expect(await membership(rows, source.record.id, ['a', 'b'], source.revision)).toEqual([true, true])
   expect(result?.rows.threads[0].summary?.messageCount).toBe(2)
 })
 
@@ -318,18 +321,18 @@ it('keeps usable branches, normalizes conflicting sibling order and removes orph
   const activeThreadId = source.record.activeThreadId
   source.record.activeThreadId = 'missing-active'
   const base = source.rows.messages[1]
-  const make = (messageId: string, parentMessageId: string, seq: number, threadId = base.threadId) => ({
+  const make = (messageId: string, parentMessageId: string, siblingOrder: number, threadId = base.threadId) => ({
     ...base,
     messageId,
     parentMessageId,
     activeChildId: null,
-    seq,
+    siblingOrder,
     threadId,
     message: { ...base.message, id: messageId },
   })
   source.rows.messages.push(
-    make('c', 'a', base.seq),
-    make('d', 'a', base.seq + 1),
+    make('c', 'a', base.siblingOrder),
+    make('d', 'a', base.siblingOrder + 1),
     make('orphan', 'absent', 0),
     make('descendant', 'orphan', 0),
     make('missing-thread', 'a', 0, 'absent-thread')
@@ -346,7 +349,7 @@ it('keeps usable branches, normalizes conflicting sibling order and removes orph
   expect(
     restored?.rows.messages
       .filter((row) => row.parentMessageId === 'a')
-      .map((row) => row.seq)
+      .map((row) => row.siblingOrder)
       .sort()
   ).toEqual([0, 1, 2])
   expect(restored?.rows.messages.find((row) => row.messageId === 'a')?.message).toEqual(source.rows.messages[0].message)
@@ -359,7 +362,7 @@ it('does not prune a healthy thread referenced by a broken cross-thread parent',
   source.rows.threads.push({
     ...source.rows.threads[0],
     threadId: 'broken-thread',
-    seq: 0,
+    threadOrder: 0,
     name: 'Broken',
     rootMessageId: '0broken',
   })
@@ -467,7 +470,7 @@ it('refreshes candidate metadata when another writer appends or prepares it', as
   expect(issues).toEqual([expect.objectContaining({ id: 'a', reason: 'duplicate-row' })])
   expect(await second.prepare()).toMatchObject({ messageCount: 2 })
   await first.publish()
-  expect((await rows.readSnapshot(source.record.id))?.rows.messages.map((row) => row.selected)).toEqual([true, true])
+  expect(await membership(rows, source.record.id, ['a', 'b'], source.revision)).toEqual([true, true])
 })
 
 it('publishes every valid row across multiple pages with out-of-order ids', async () => {
@@ -514,7 +517,6 @@ it('publishes every valid row across multiple pages with out-of-order ids', asyn
       message: expected.message,
       parentMessageId: expected.parentMessageId,
       activeChildId: expected.activeChildId,
-      selected: true,
     })
   }
   expect(restored?.rows.threads[0]).toMatchObject({
@@ -538,3 +540,17 @@ it('rejects a stale import without replacing a newer live revision', async () =>
   await writer.dispose()
   expect(await rows.readSnapshot(source.record.id)).toEqual(before)
 })
+
+async function membership(store: IndexedDBSessionRowStore, sessionId: string, ids: string[], expectedRevision: number) {
+  const selected: boolean[] = []
+  for (let offset = 0; offset < ids.length; offset += 200) {
+    const read = await store.readMessageMetadata({
+      sessionId,
+      messageIds: ids.slice(offset, offset + 200),
+      expectedRevision,
+    })
+    if (read?.status !== 'ready') throw new Error('Membership read is unavailable')
+    selected.push(...read.rows.map((row) => row.selected))
+  }
+  return selected
+}

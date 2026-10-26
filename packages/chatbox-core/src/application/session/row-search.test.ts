@@ -98,7 +98,7 @@ describe('serialized search batches', () => {
     const cursor = first?.page?.older
     if (!cursor) throw new Error('Expected cursor')
     await expect(
-      repository.readSessionSearchWindow({ sessionId: 'a', cursor: { ...cursor, threadSeq: 999 } })
+      repository.readSessionSearchWindow({ sessionId: 'a', cursor: { ...cursor, threadOrder: 999 } })
     ).rejects.toBeInstanceOf(SessionRowConflictError)
     await expect(
       repository.readSessionSearchWindow({ sessionId: 'a', cursor: { ...cursor, sessionId: 'b' } })

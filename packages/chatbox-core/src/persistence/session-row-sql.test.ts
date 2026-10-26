@@ -31,7 +31,7 @@ function threadRow(threadId: string, overrides: Partial<ThreadRow> = {}): Thread
   return {
     sessionId: 'session-1',
     threadId,
-    seq: -1,
+    threadOrder: -1,
     name: threadId,
     createdAt: 1_000,
     rootMessageId: null,
@@ -48,7 +48,7 @@ function messageRow(threadId: string, messageId: string, overrides: Partial<Mess
     messageId,
     parentMessageId: null,
     activeChildId: null,
-    seq: 0,
+    siblingOrder: 0,
     kind: 'message',
     status: 'settled',
     createdAt: 1_000,
@@ -75,9 +75,11 @@ function commit(revision: number, record?: SessionRecordV2): SessionRowCommit {
 }
 
 function snapshot(rows: SessionRows, revision: number, record?: SessionRecordV2): SessionRowSnapshot {
-  const activeThreadId = rows.threads.find((thread) => thread.seq === -1)?.threadId
+  const activeThreadId = rows.threads.find((thread) => thread.threadOrder === -1)?.threadId
   const nextRecord = record ?? { ...commit(revision).record, activeThreadId: activeThreadId ?? 'thread-active' }
-  return projectRowFixture({ rows, ...commit(revision, nextRecord) })
+  const projected = projectRowFixture({ rows, ...commit(revision, nextRecord) })
+  for (const row of projected.rows.messages) delete row.selected
+  return projected
 }
 
 afterEach(() => {
@@ -98,6 +100,7 @@ describe('SqlSessionRowStore initialization', () => {
       name: 'Initialization',
       messages: [{ id: 'message', role: 'user', contentParts: [{ type: 'text', text: '正文😀\u0000' }] }],
     })
+    for (const row of fixture.rows.messages) delete row.selected
     await store.writeRows(fixture)
     expect(
       await database.query<{ name: string; type: string; notnull: number }>('PRAGMA table_info(session_messages)')
@@ -128,7 +131,7 @@ describe('SqlSessionRowStore SQL shape', () => {
     const { database, store } = createStore()
     const messages = Array.from({ length: 120 }, (_, index) =>
       messageRow('thread-active', `m${index}`, {
-        seq: index,
+        siblingOrder: index,
         parentMessageId: index === 0 ? null : `m${index - 1}`,
         activeChildId: index === 119 ? null : `m${index + 1}`,
       })
@@ -275,7 +278,7 @@ describe('SqlSessionRowStore SQL shape', () => {
       threads: [threadRow('thread-active', { rootMessageId: 'm1', activeLeafMessageId: 'm2' })],
       messages: [
         messageRow('thread-active', 'm1', { activeChildId: 'm2' }),
-        messageRow('thread-active', 'm2', { seq: 1, parentMessageId: 'm1' }),
+        messageRow('thread-active', 'm2', { siblingOrder: 1, parentMessageId: 'm1' }),
       ],
     }
     await writer.writeRows(snapshot(rows, 1))
@@ -332,7 +335,7 @@ describe('SqlSessionRowStore SQL shape', () => {
     const id = (index: number) => `${String(index).padStart(4, '0')}${'\u0001'.repeat(1000)}`
     const messages = Array.from({ length: 50 }, (_, index) =>
       messageRow('thread-active', id(index), {
-        seq: index,
+        siblingOrder: index,
         parentMessageId: index === 0 ? null : id(index - 1),
         activeChildId: index === 49 ? null : id(index + 1),
         message: { id: id(index), role: 'user', contentParts: [{ type: 'text', text: '中文😀'.repeat(35_000) }] },
@@ -395,7 +398,7 @@ describe('SqlSessionRowStore SQL shape', () => {
           threads: [threadRow('thread-active')],
           messages: [
             messageRow('thread-active', 'm1'),
-            messageRow('thread-active', 'm2', { seq: 1, status: 'generating' }),
+            messageRow('thread-active', 'm2', { siblingOrder: 1, status: 'generating' }),
           ],
         },
         1
@@ -431,7 +434,7 @@ describe('SqlSessionRowStore SQL shape', () => {
           upsert: [threadRow('thread-active', { name: 'Renamed', rootMessageId: 'm2', activeLeafMessageId: 'm2' })],
           delete: [],
         },
-        messages: { upsert: [messageRow('thread-active', 'm2', { seq: 1 })], delete: ['m1'] },
+        messages: { upsert: [messageRow('thread-active', 'm2', { siblingOrder: 1 })], delete: ['m1'] },
       },
       commit(2),
       1
@@ -522,10 +525,10 @@ describe('SqlSessionRowStore SQL shape', () => {
       snapshot(
         {
           sessionId: 'session-1',
-          threads: [threadRow('thread-a'), threadRow('thread-b', { seq: 0 })],
+          threads: [threadRow('thread-a'), threadRow('thread-b', { threadOrder: 0 })],
           messages: [
-            messageRow('thread-b', 'b2', { seq: 1 }),
-            messageRow('thread-a', 'a2', { seq: 1 }),
+            messageRow('thread-b', 'b2', { siblingOrder: 1 }),
+            messageRow('thread-a', 'a2', { siblingOrder: 1 }),
             messageRow('thread-b', 'b1'),
             messageRow('thread-a', 'a1'),
           ],
@@ -555,7 +558,7 @@ describe('SqlSessionRowStore SQL shape', () => {
           sessionId: 'session-1',
           threads: [
             threadRow('thread-plain'),
-            threadRow('thread-snapshot', { seq: 0, sessionPromptContextSnapshot: promptSnapshot }),
+            threadRow('thread-snapshot', { threadOrder: 0, sessionPromptContextSnapshot: promptSnapshot }),
           ],
           messages: [],
         },
@@ -735,7 +738,7 @@ describe('SqlSessionRowStore SQL shape', () => {
     }
     const store = new SqlSessionRowStore(database)
     const messages = Array.from({ length: 10_000 }, (_, index) =>
-      messageRow('thread-active', `message-${index.toString().padStart(5, '0')}`, { seq: index })
+      messageRow('thread-active', `message-${index.toString().padStart(5, '0')}`, { siblingOrder: index })
     )
     await store.writeRows(snapshot({ sessionId: 'session-1', threads: [threadRow('thread-active')], messages }, 1))
 
@@ -749,14 +752,14 @@ describe('SqlSessionRowStore SQL shape', () => {
     const { store } = createStore()
     const messages = ['thread-a', 'thread-b'].flatMap((threadId) =>
       Array.from({ length: 900 }, (_, index) =>
-        messageRow(threadId, `${threadId}-${String(index).padStart(4, '0')}`, { seq: Math.floor(index / 450) })
+        messageRow(threadId, `${threadId}-${String(index).padStart(4, '0')}`, { siblingOrder: Math.floor(index / 450) })
       )
     )
     await store.writeRows(
       snapshot(
         {
           sessionId: 'session-1',
-          threads: [threadRow('thread-a'), threadRow('thread-b', { seq: 0 })],
+          threads: [threadRow('thread-a'), threadRow('thread-b', { threadOrder: 0 })],
           messages: [...messages].reverse(),
         },
         1
@@ -769,7 +772,7 @@ describe('SqlSessionRowStore SQL shape', () => {
   it('bounds full snapshot metadata responses with escaped structural ids', async () => {
     const { database } = createStore()
     const messages = Array.from({ length: 100 }, (_, index) =>
-      messageRow('thread-active', `${String(index).padStart(4, '0')}${'\u0001'.repeat(1000)}`, { seq: index })
+      messageRow('thread-active', `${String(index).padStart(4, '0')}${'\u0001'.repeat(1000)}`, { siblingOrder: index })
     )
     const store = new SqlSessionRowStore({
       execute: (sql) => database.execute(sql),
@@ -789,7 +792,7 @@ describe('SqlSessionRowStore SQL shape', () => {
     const ids = Array.from({ length: 120 }, (_, index) => `${String(index).padStart(4, '0')}${'\u0001'.repeat(1000)}`)
     const messages = ids.map((id, index) =>
       messageRow('thread-active', id, {
-        seq: index,
+        siblingOrder: index,
         parentMessageId: ids[index - 1] ?? null,
         activeChildId: ids[index + 1] ?? null,
       })
@@ -913,12 +916,12 @@ describe('metadata-only payload reuse', () => {
       sessionId: 'session-1',
       threads: { upsert: [], delete: [] },
       messages: { upsert: [], delete: [] },
-      messageMetadataUpsert: [(({ message: _message, ...metadata }) => ({ ...metadata, seq: 42 }))(row)],
+      messageMetadataUpsert: [(({ message: _message, ...metadata }) => ({ ...metadata, siblingOrder: 42 }))(row)],
     }
     await store.applyDiff(diff, commit(2), 1)
     expect(database.executed.some((sql) => sql.startsWith('INSERT INTO session_message_payload_chunks'))).toBe(false)
     expect(await manifest()).toEqual(before)
-    expect((await store.readSnapshot('session-1'))?.rows.messages[0]).toEqual({ ...row, seq: 42 })
+    expect((await store.readSnapshot('session-1'))?.rows.messages[0]).toEqual({ ...row, siblingOrder: 42 })
     await expect(store.applyDiff(diff, commit(3), 1)).rejects.toThrow('revision conflict')
     expect(await manifest()).toEqual(before)
     await store.applyDiff(
@@ -978,7 +981,7 @@ describe('SqlSessionRowStore search thread paging', () => {
     const { database, store } = createStore()
     const archived = Array.from({ length: 45 }, (_, index) =>
       threadRow(`history-${index}`, {
-        seq: index,
+        threadOrder: index,
         compactionPoints: [{ summaryMessageId: 's'.repeat(80_000), boundaryMessageId: 'b', createdAt: 1 }],
       })
     )
@@ -1013,7 +1016,11 @@ describe('SqlSessionRowStore search thread paging', () => {
   it('rejects stale history enumeration and first-message reads after a commit', async () => {
     const { store } = createStore()
     const initial = snapshot(
-      { sessionId: 'session-1', threads: [threadRow('thread-active'), threadRow('old', { seq: 0 })], messages: [] },
+      {
+        sessionId: 'session-1',
+        threads: [threadRow('thread-active'), threadRow('old', { threadOrder: 0 })],
+        messages: [],
+      },
       1
     )
     await store.writeRows(initial)
@@ -1036,7 +1043,7 @@ describe('SqlSessionRowStore search thread paging', () => {
   it('caps escaped thread identity response bytes and resumes at the actual page boundary', async () => {
     const { database, store } = createStore()
     const archived = Array.from({ length: 100 }, (_, index) =>
-      threadRow(`history-${index}-${'\\'.repeat(960)}`, { seq: index })
+      threadRow(`history-${index}-${'\\'.repeat(960)}`, { threadOrder: index })
     )
     await store.writeRows(
       snapshot({ sessionId: 'session-1', threads: [threadRow('thread-active'), ...archived], messages: [] }, 1)

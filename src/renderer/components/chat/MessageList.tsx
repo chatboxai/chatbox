@@ -621,7 +621,8 @@ const MessageList = forwardRef<
             thread={{
               id: row.threadId,
               name: thread?.name ?? session.name,
-              createdAtLabel: thread && thread.seq >= 0 ? new Date(thread.createdAt).toLocaleString() : undefined,
+              createdAtLabel:
+                thread && thread.threadOrder >= 0 ? new Date(thread.createdAt).toLocaleString() : undefined,
             }}
           />
         )}
@@ -881,7 +882,7 @@ const MessageList = forwardRef<
                         id: item.thread.threadId,
                         name: item.thread.name ?? session.name,
                         createdAtLabel:
-                          item.thread.seq >= 0 ? new Date(item.thread.createdAt).toLocaleString() : undefined,
+                          item.thread.threadOrder >= 0 ? new Date(item.thread.createdAt).toLocaleString() : undefined,
                       }}
                     />
                   )}

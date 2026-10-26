@@ -16,17 +16,17 @@ import {
 } from './session-transcript-read'
 
 export const SESSION_TRANSCRIPT_SCHEMA_SQL = `
-CREATE INDEX IF NOT EXISTS idx_session_threads_transcript ON session_threads(session_id, seq, thread_id);
-CREATE INDEX IF NOT EXISTS idx_session_threads_nonempty ON session_threads(session_id, seq, thread_id) WHERE root_message_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_session_threads_transcript ON session_threads(session_id, threadOrder, thread_id);
+CREATE INDEX IF NOT EXISTS idx_session_threads_nonempty ON session_threads(session_id, threadOrder, thread_id) WHERE root_message_id IS NOT NULL;
 `
 const THREAD_NAME_SQL = 'CASE WHEN instr(name,char(0))>0 THEN json_quote(name) ELSE name END'
-const THREAD_COLUMNS = `projection_json, session_id, thread_id, seq, created_at, root_message_id, active_leaf_message_id,
+const THREAD_COLUMNS = `projection_json, session_id, thread_id, threadOrder, created_at, root_message_id, active_leaf_message_id,
   instr(name,char(0))>0 AS name_encoded, length(${THREAD_NAME_SQL}) AS name_length, substr(${THREAD_NAME_SQL}, 1, 4096) AS name_inline`
 interface ThreadRecord {
   projection_json: string | null
   session_id: string
   thread_id: string
-  seq: number
+  threadOrder: number
   created_at: number
   root_message_id: string | null
   active_leaf_message_id: string | null
@@ -36,13 +36,12 @@ interface ThreadRecord {
 }
 interface MessageRecord {
   row_metadata_json: string | null
-  selected_depth: number | null
   session_id: string
   thread_id: string
   message_id: string
   parent_message_id: string | null
   active_child_id: string | null
-  seq: number
+  siblingOrder: number
   kind: MessageRowMetadata['kind']
   status: MessageRowMetadata['status']
   created_at: number
@@ -53,13 +52,12 @@ interface MessageRecord {
 
 const MESSAGE_COLUMNS = [
   'row_metadata_json',
-  'selected_depth',
   'session_id',
   'thread_id',
   'message_id',
   'parent_message_id',
   'active_child_id',
-  'seq',
+  'siblingOrder',
   'kind',
   'status',
   'created_at',
@@ -75,7 +73,7 @@ function transcriptMetadata(row: MessageRecord): TranscriptMessageMetadata {
     messageId: row.message_id,
     parentMessageId: row.parent_message_id,
     activeChildId: row.active_child_id,
-    seq: Number(row.seq),
+    siblingOrder: Number(row.siblingOrder),
     kind: row.kind,
     status: row.status,
     createdAt: Number(row.created_at),
@@ -83,7 +81,6 @@ function transcriptMetadata(row: MessageRecord): TranscriptMessageMetadata {
     branchId: row.branch_id,
     payloadBytes: Number(row.payload_utf8_length),
     ...parseRowExtra(row.row_metadata_json),
-    ...(row.selected_depth !== null ? { selectedDepth: Number(row.selected_depth) } : {}),
   }
   return metadata
 }
@@ -102,7 +99,7 @@ export async function readSqlTranscriptCommit(
     value: string | null
   }>(
     `SELECT thread_id, commit_revision, ${bounded ? 'length(session_record_json) AS size, substr(session_record_json, 1, 4096) AS value' : 'NULL AS size, session_record_json AS value'}
-      FROM session_threads WHERE session_id = ? AND seq = -1 LIMIT 2`,
+      FROM session_threads WHERE session_id = ? AND threadOrder = -1 LIMIT 2`,
     [sessionId]
   )
   if (rows.length === 0) return null
@@ -168,7 +165,7 @@ export function sqlTranscriptReader(
           ...(row.projection_json ? JSON.parse(row.projection_json) : {}),
           sessionId: row.session_id,
           threadId: row.thread_id,
-          seq: Number(row.seq),
+          threadOrder: Number(row.threadOrder),
           createdAt: Number(row.created_at),
           rootMessageId: row.root_message_id,
           activeLeafMessageId: row.active_leaf_message_id,
@@ -183,7 +180,7 @@ export function sqlTranscriptReader(
     convert(
       (
         await database.query<ThreadRecord>(
-          `SELECT ${columns} FROM session_threads WHERE session_id = ? AND seq = -1 AND root_message_id IS NOT NULL LIMIT 1`,
+          `SELECT ${columns} FROM session_threads WHERE session_id = ? AND threadOrder = -1 AND root_message_id IS NOT NULL LIMIT 1`,
           [sessionId]
         )
       )[0]
@@ -199,19 +196,29 @@ export function sqlTranscriptReader(
         )[0]
       ),
     adjacent: async (thread, direction) => {
-      if (direction === 'after' && thread?.seq === -1) return null
+      if (direction === 'after' && thread?.threadOrder === -1) return null
       if (direction === 'before' && !thread) {
         const row = await active()
         if (row) return row
       }
       const after = direction === 'after'
-      const hasBoundary = thread !== null && thread.seq !== -1
+      const hasBoundary = thread !== null && thread.threadOrder !== -1
       const rows = await database.query<ThreadRecord>(
-        `SELECT ${columns} FROM session_threads WHERE session_id = ? AND root_message_id IS NOT NULL AND seq >= 0
-        ${hasBoundary ? `AND seq ${after ? '>' : '<'} ?` : ''} ORDER BY seq ${after ? 'ASC' : 'DESC'}, thread_id ${after ? 'ASC' : 'DESC'} LIMIT 1`,
-        hasBoundary ? [sessionId, thread.seq] : [sessionId]
+        `SELECT ${columns} FROM session_threads WHERE session_id = ? AND root_message_id IS NOT NULL AND threadOrder >= 0
+        ${hasBoundary ? `AND threadOrder ${after ? '>' : '<'} ?` : ''} ORDER BY threadOrder ${after ? 'ASC' : 'DESC'}, thread_id ${after ? 'ASC' : 'DESC'} LIMIT 1`,
+        hasBoundary ? [sessionId, thread.threadOrder] : [sessionId]
       )
       return (await convert(rows[0])) ?? (after ? active() : null)
+    },
+    isOnPath: async (row) => {
+      const [result] = await database.query<{ on_path: number }>(
+        `WITH RECURSIVE ancestors(message_id,parent_id) AS (
+        SELECT message_id,parent_message_id FROM session_messages WHERE session_id=? AND thread_id=? AND message_id=?
+        UNION SELECT p.message_id,p.parent_message_id FROM ancestors a JOIN session_messages p ON p.session_id=? AND p.thread_id=? AND p.message_id=a.parent_id AND p.active_child_id=a.message_id
+      ) SELECT EXISTS(SELECT 1 FROM ancestors a JOIN session_threads t ON t.session_id=? AND t.thread_id=? AND t.root_message_id=a.message_id WHERE a.parent_id IS NULL) AS on_path`,
+        [sessionId, row.threadId, row.messageId, sessionId, row.threadId, sessionId, row.threadId]
+      )
+      return result?.on_path === 1
     },
     message: async (messageId) => {
       const [row] = await queryRowMetadata<MessageRecord>(

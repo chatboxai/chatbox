@@ -47,7 +47,7 @@ function forkFixture(extraBranches = 0) {
       ...inactive,
       messageId: id,
       branchId: id,
-      seq: index + 3,
+      siblingOrder: index + 3,
       message: { ...inactive.message, id },
     })
   }
@@ -193,7 +193,7 @@ for (const [name, factory] of [
         const point = published.find((row) => row.messageId === (summaryPoint ? 'summary' : 'user'))!
         expect(point.activeChildId).toBe('alternative-reply')
         expect(point.pendingBranchId).toBeUndefined()
-        expect(point.pendingBranchSeq).toBeUndefined()
+        expect(point.pendingBranchOrder).toBeUndefined()
         expect(published.every((row) => !('message' in row) && !('selectedDepth' in row))).toBe(true)
         expect(bodies).not.toHaveBeenCalled()
         expect(query?.mock.calls.some(([sql]) => sql.includes('session_message_payload_chunks')) ?? false).toBe(false)
@@ -298,7 +298,9 @@ for (const [name, factory] of [
         messageIds: ['old-1', 'inactive'],
         expectedRevision: 2,
       })
-      expect(rows?.status === 'ready' && rows.rows.map((row) => [row.parentMessageId, row.seq, row.selected])).toEqual([
+      expect(
+        rows?.status === 'ready' && rows.rows.map((row) => [row.parentMessageId, row.siblingOrder, row.selected])
+      ).toEqual([
         ['summary', 0, true],
         ['summary', 1, false],
       ])
@@ -324,7 +326,7 @@ for (const [name, factory] of [
         messageId: 'next',
         parentMessageId: tail.messageId,
         activeChildId: null,
-        seq: 0,
+        siblingOrder: 0,
         status: 'generating',
         message: { id: 'next', role: 'assistant', contentParts: [] },
       }
@@ -356,7 +358,12 @@ for (const [name, factory] of [
         {
           ...emptyDiff(),
           messageMetadataUpsert: [
-            { ...metadata(point), activeChildId: 'inactive', pendingBranchId: undefined, pendingBranchSeq: undefined },
+            {
+              ...metadata(point),
+              activeChildId: 'inactive',
+              pendingBranchId: undefined,
+              pendingBranchOrder: undefined,
+            },
           ],
         },
         commit,
@@ -403,7 +410,9 @@ for (const [name, factory] of [
           ...emptyDiff(),
           messageMetadataUpsert: [{ ...metadata(point), activeChildId: 'old-2' }],
           messages: { upsert: [], delete: ['old-1'] },
-          reparentChildren: [{ threadId: 'old', parentMessageId: 'old-1', newParentMessageId: 'old-0', seqOffset: 0 }],
+          reparentChildren: [
+            { threadId: 'old', parentMessageId: 'old-1', newParentMessageId: 'old-0', siblingOrderOffset: 0 },
+          ],
         },
         commit,
         1
@@ -507,11 +516,11 @@ it('slices large row metadata for bounded reads and staged metadata edits', asyn
   expect(result?.status === 'ready' && result.rows[0].facts.seedAttachments).toEqual(point.facts!.seedAttachments)
   expect(Math.max(...reads)).toBeLessThan(64 * 1024)
 })
-it('restores row projections and selected depth through a staged SQL row candidate', async () => {
+it('restores row facts and derives membership through a staged SQL row candidate', async () => {
   const { store, database } = sqlStore()
   const fixture = relationFixture()
   delete fixture.rows.messages[0].pendingBranchId
-  delete fixture.rows.messages[0].pendingBranchSeq
+  delete fixture.rows.messages[0].pendingBranchOrder
   fixture.rows.messages.find((row) => row.messageId === 'old-1')!.branchId = 'original'
   const candidate = await store.stageRows(fixture, null)
   for (const thread of fixture.rows.threads) await candidate.appendThread(thread)
@@ -520,13 +529,19 @@ it('restores row projections and selected depth through a staged SQL row candida
   const result = await store.readThreadState({ sessionId: 'transcript', threadId: 'old', expectedRevision: 1 })
   expect(result?.status === 'ready' && result.thread.summary.messageCount).toBe(3)
   expect(
-    (
-      await database.query<{ depth: number }>(
-        'SELECT selected_depth AS depth FROM session_messages WHERE message_id=?',
-        ['old-2']
-      )
-    )[0].depth
-  ).toBe(2)
+    (await database.query<{ name: string }>('PRAGMA table_info(session_messages)')).map((row) => row.name)
+  ).not.toContain('selected_depth')
+  const membership = await store.readMessageMetadata({
+    sessionId: 'transcript',
+    messageIds: ['old-2', 'inactive'],
+    expectedRevision: 1,
+  })
+  expect(membership?.status === 'ready' && membership.rows.find((row) => row.messageId === 'old-2')?.selected).toBe(
+    true
+  )
+  expect(membership?.status === 'ready' && membership.rows.find((row) => row.messageId === 'inactive')?.selected).toBe(
+    false
+  )
   await candidate.dispose()
 })
 
@@ -565,5 +580,11 @@ it.each([0, 512])('keeps body checkpoint I/O local with %i additional fork sibli
     { record: fixture.record, revision: revision + 1 },
     revision
   )
-  expect(query.mock.calls.some(([sql]) => sql.includes('COUNT(*) AS count,COALESCE(SUM'))).toBe(true)
+  expect(query.mock.calls.some(([sql]) => sql.includes('COUNT(*) AS count,COALESCE(SUM'))).toBe(false)
+  const state = await store.readThreadState({
+    sessionId: 'transcript',
+    threadId: 'old',
+    expectedRevision: revision + 1,
+  })
+  expect(state?.status === 'ready' && state.thread.summary.messageCount).toBe(2)
 })

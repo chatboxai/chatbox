@@ -98,7 +98,7 @@ vi.mock('./Message', () => ({
 import ForkGroup from './ForkGroup'
 
 type Fork = React.ComponentProps<typeof ForkGroup>['fork']
-type Branch = { branchId: string; firstMessageId: string | null; seq: number; selected: boolean }
+type Branch = { branchId: string; firstMessageId: string | null; siblingOrder: number; selected: boolean }
 type Preview = {
   sessionId: string
   revision: number
@@ -116,8 +116,8 @@ const defaultFork: Fork = {
   count: 2,
   position: 0,
 }
-const current: Branch = { branchId: 'current', firstMessageId: null, seq: 0, selected: true }
-const saved: Branch = { branchId: 'saved', firstMessageId: 'saved-first', seq: 7, selected: false }
+const current: Branch = { branchId: 'current', firstMessageId: null, siblingOrder: 0, selected: true }
+const saved: Branch = { branchId: 'saved', firstMessageId: 'saved-first', siblingOrder: 7, selected: false }
 const generationLocks: Partial<SessionLockState> = { generatingReplyCount: 2, anyReplyGenerating: true }
 const messages = new Map<string, Message>()
 const previews = new Map<string, Preview>()
@@ -245,8 +245,8 @@ describe('row branch previews', () => {
       branches: [
         current,
         saved,
-        { branchId: 'empty', firstMessageId: null, seq: 12, selected: false },
-        { branchId: 'newest', firstMessageId: 'newest-first', seq: 25, selected: false },
+        { branchId: 'empty', firstMessageId: null, siblingOrder: 12, selected: false },
+        { branchId: 'newest', firstMessageId: 'newest-first', siblingOrder: 25, selected: false },
       ],
     })
     renderGroup({ fork: { ...defaultFork, count: 4 } })
@@ -277,7 +277,7 @@ describe('row branch previews', () => {
       ...Array.from({ length: 19 }, (_, index) => ({
         branchId: `empty-${index}`,
         firstMessageId: null,
-        seq: index + 1,
+        siblingOrder: index + 1,
         selected: false,
       })),
     ]
@@ -294,7 +294,7 @@ describe('row branch previews', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Expand view' }))
     await vi.waitFor(() => expect(fetchNextPage).toHaveBeenCalled())
     mocks.options.mockReturnValue({
-      branches: [...firstPage, { branchId: 'last', firstMessageId: 'last-first', seq: 100, selected: false }],
+      branches: [...firstPage, { branchId: 'last', firstMessageId: 'last-first', siblingOrder: 100, selected: false }],
       hasNextPage: false,
       isFetchingNextPage: false,
       fetchNextPage,
@@ -378,7 +378,11 @@ describe('row branch previews', () => {
     const view = renderGroup()
     registerPreview('added-first', 'added-first')
     mocks.options.mockReturnValue({
-      branches: [current, saved, { branchId: 'added', firstMessageId: 'added-first', seq: 50, selected: false }],
+      branches: [
+        current,
+        saved,
+        { branchId: 'added', firstMessageId: 'added-first', siblingOrder: 50, selected: false },
+      ],
     })
     view.update({ fork: { ...defaultFork, count: 3 } })
     await screen.findByTestId('message-added-first')
@@ -461,9 +465,13 @@ describe('row branch previews', () => {
     const live = [{ messageId: 'saved-first', threadId: 't', branchId: 'saved', forkPivotId: 'pivot' }]
     renderGroup({ locks: generationLocks, live })
     await screen.findByTestId('message-saved-first')
-    fireEvent.click(screen.getByTestId(TestId.message.forkNext))
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(TestId.message.forkNext))
+    })
     expect(mocks.switchFork).toHaveBeenCalledWith('s', 'pivot', 'next')
-    fireEvent.click(screen.getByRole('button', { name: 'Switch to this branch' }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Switch to this branch' }))
+    })
     expect(mocks.switchForkTo).toHaveBeenCalledWith('s', 'pivot', 'saved')
     expect((screen.getByRole('button', { name: 'delete' }) as HTMLButtonElement).disabled).toBe(true)
   })
@@ -497,4 +505,25 @@ describe('row branch previews', () => {
     fireEvent.click(screen.getByRole('button', { name: 'delete' }))
     expect(mocks.deleteFork).toHaveBeenCalledWith('s', 'pivot')
   })
+})
+
+test('shows progress during a cold branch switch and retains navigation after a failed write', async () => {
+  let reject!: (error: Error) => void
+  mocks.switchFork.mockReturnValueOnce(
+    new Promise<void>((_resolve, fail) => {
+      reject = fail
+    })
+  )
+  renderGroup()
+  const button = screen.getByTestId(TestId.message.forkNext) as HTMLButtonElement
+  fireEvent.click(button)
+  expect(button.getAttribute('aria-busy')).toBe('true')
+  expect(button.disabled).toBe(true)
+  await act(async () => {
+    reject(new Error('Storage is unavailable'))
+  })
+  expect(button.disabled).toBe(false)
+  expect(button.getAttribute('aria-busy')).toBeNull()
+  expect(screen.getByRole('alert').textContent).toBe('Storage is unavailable')
+  expect(screen.getByTestId(TestId.message.forkCounter).textContent).toBe('1 / 2')
 })

@@ -1,3 +1,5 @@
+import { MESSAGE_TREE } from './session-row-idb-tree'
+import { readTreeMessage, encodeTreeMetadata } from './session-row-idb-tree'
 import { v4 as uuid } from 'uuid'
 import {
   SessionRowConflictError,
@@ -10,7 +12,7 @@ import {
   type SessionTokenCachedValue,
 } from '@chatbox/core/ports'
 import type { TranscriptMessageMetadata } from '@chatbox/core/persistence'
-import { TRANSCRIPT_MESSAGES, readTranscriptCommit } from './session-row-idb-transcript'
+import { readTranscriptCommit } from './session-row-idb-transcript'
 import { SESSION_ROW_THREAD_STORE, SESSION_ROW_TOKEN_CACHE_STORE } from './session-row-idb-records'
 
 interface StoredTokenValue {
@@ -26,7 +28,7 @@ const get = <T>(request: IDBRequest<T>): Promise<T> =>
     request.onerror = () => reject(request.error)
   })
 async function transaction<T>(db: IDBDatabase, action: (tx: IDBTransaction) => Promise<T>): Promise<T> {
-  const tx = db.transaction([SESSION_ROW_THREAD_STORE, TRANSCRIPT_MESSAGES, SESSION_ROW_TOKEN_CACHE_STORE], 'readwrite')
+  const tx = db.transaction([SESSION_ROW_THREAD_STORE, MESSAGE_TREE, SESSION_ROW_TOKEN_CACHE_STORE], 'readwrite')
   const done = new Promise<void>((resolve, reject) => {
     tx.oncomplete = () => resolve()
     tx.onabort = tx.onerror = () => reject(tx.error ?? new Error('Token cache transaction aborted'))
@@ -49,15 +51,15 @@ export async function readIndexedDBTokenCache(db: IDBDatabase, request: SessionT
     const commit = await readTranscriptCommit(tx, request.sessionId)
     if (commit?.revision !== request.expectedRevision)
       throw new SessionRowConflictError(request.sessionId, request.expectedRevision, commit?.revision ?? null)
-    const metadata = tx.objectStore(TRANSCRIPT_MESSAGES)
+    const metadata = tx.objectStore(MESSAGE_TREE)
     const cache = tx.objectStore(SESSION_ROW_TOKEN_CACHE_STORE)
     const entries: SessionTokenCacheEntry[] = []
     for (const messageId of new Set(request.messageIds)) {
-      const row = await get<TranscriptMessageMetadata | undefined>(metadata.get([request.sessionId, messageId]))
+      const row = await readTreeMessage(tx, request.sessionId, messageId)
       if (!row) continue
       if (!row.tokenPayloadId) {
         row.tokenPayloadId = uuid()
-        await get(metadata.put(row))
+        await get(metadata.put(encodeTreeMetadata(row)))
       }
       const cached = await get<StoredTokenValue | undefined>(
         cache.get([request.sessionId, messageId, request.cacheKey])
@@ -85,9 +87,7 @@ export async function acceptIndexedDBTokenCache(
     for (const result of results) {
       if (!validTokenCacheResult(result)) continue
       const { identity, cacheKey, value } = result
-      const row = await get<TranscriptMessageMetadata | undefined>(
-        tx.objectStore(TRANSCRIPT_MESSAGES).get([identity.sessionId, identity.messageId])
-      )
+      const row = await readTreeMessage(tx, identity.sessionId, identity.messageId)
       if (row?.tokenPayloadId !== identity.payloadId) continue
       const prior = await get<StoredTokenValue | undefined>(
         cache.get([identity.sessionId, identity.messageId, cacheKey])

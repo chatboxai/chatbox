@@ -60,8 +60,8 @@ export interface MessageRow {
    * Leaves are null.
    */
   activeChildId: string | null
-  /** Sibling order in row format 3. Legacy rows use a thread-wide DFS label. */
-  seq: number
+  /** Order among children of the same parent; gaps are allowed. */
+  siblingOrder: number
   kind: MessageRowKind
   status: MessageRowStatus
   createdAt: number
@@ -81,8 +81,8 @@ export interface MessageRow {
   }
   /** Identity and sibling position of an empty selected branch, stored at its connection point. */
   pendingBranchId?: string
-  pendingBranchSeq?: number
-  /** Missing projection means unknown, never unselected. */
+  pendingBranchOrder?: number
+  /** Derived relation-read answer; storage authority is the parent/active-child tree. */
   selected?: boolean
   facts?: SessionMessageFacts
   /** Whole message, parts inlined; the structural fields above are not repeated inside it. */
@@ -95,7 +95,7 @@ export interface ThreadRow {
   sessionId: string
   threadId: string
   /** Position in `session.threads` for archived threads; -1 for the active thread. */
-  seq: number
+  threadOrder: number
   /** null is reserved for an active V1 session whose threadName was absent. */
   name: string | null
   createdAt: number

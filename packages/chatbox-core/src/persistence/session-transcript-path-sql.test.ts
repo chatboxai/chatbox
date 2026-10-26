@@ -27,7 +27,7 @@ function chain(count = 5): SessionRowSnapshot {
   fixture.rows.messages = ids(count).map((messageId, index) => ({
     ...template,
     messageId,
-    seq: index * 3,
+    siblingOrder: index * 3,
     parentMessageId: index ? `m${index - 1}` : null,
     activeChildId: index < count - 1 ? `m${index + 1}` : null,
     message: {
@@ -108,7 +108,7 @@ describe.each([true, false])('SQL transcript metadata batches (bounded bridge: %
       'SELECT payload_utf8_length AS size FROM session_messages WHERE message_id=?',
       [edge]
     )
-    await database.execute("UPDATE session_messages SET seq=-1 WHERE message_id='m2'")
+    await database.execute("UPDATE session_messages SET siblingOrder=-1 WHERE message_id='m2'")
     query.mockClear()
     const page = await store.readTranscriptWindow({ sessionId: 'transcript', origin, limit: 5, maxBytes: length.size })
     expect(page?.messages.map((row) => row.messageId)).toEqual([edge])
@@ -123,9 +123,9 @@ describe.each([true, false])('SQL transcript metadata batches (bounded bridge: %
   it('keeps a spent byte budget across a thread boundary and a cursor skip', async () => {
     const { database, store, query } = await harness(bounded, transcriptFixture())
     const [total] = await database.query<{ size: number }>(
-      "SELECT SUM(payload_utf8_length) AS size FROM session_messages WHERE thread_id='old' AND selected_depth IS NOT NULL"
+      "SELECT SUM(payload_utf8_length) AS size FROM session_messages WHERE thread_id='old' AND message_id IN ('old-0','old-1','old-2')"
     )
-    await database.execute("UPDATE session_messages SET seq=-1 WHERE message_id='recent-1'")
+    await database.execute("UPDATE session_messages SET siblingOrder=-1 WHERE message_id='recent-1'")
     query.mockClear()
     const head = await store.readTranscriptWindow({
       sessionId: 'transcript',
@@ -213,7 +213,7 @@ describe.each([true, false])('SQL transcript metadata batches (bounded bridge: %
         if (!changed && (phase === 'path' ? pathQuery(sql) : bodyQuery(sql))) {
           changed = true
           await database.execute(
-            "UPDATE session_row_heads SET revision=2 WHERE session_id='transcript'; UPDATE session_threads SET commit_revision=2 WHERE session_id='transcript' AND seq=-1"
+            "UPDATE session_row_heads SET revision=2 WHERE session_id='transcript'; UPDATE session_threads SET commit_revision=2 WHERE session_id='transcript' AND siblingOrder=-1"
           )
         }
         return result

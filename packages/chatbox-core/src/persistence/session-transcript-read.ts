@@ -12,7 +12,6 @@ export interface TranscriptMessageMetadata extends MessageRowMetadata {
   tokenPayloadId?: string
 
   payloadBytes: number
-  selectedDepth?: number
 }
 
 /** All calls belong to one transaction or are fenced by the enclosing reader's revision. */
@@ -23,6 +22,7 @@ export interface SessionTranscriptReader {
     direction: 'before' | 'after'
   ): Promise<SessionTranscriptThread | null>
   message(messageId: string): Promise<TranscriptMessageMetadata | null>
+  isOnPath?(row: TranscriptMessageMetadata): Promise<boolean>
   /** Metadata-only prefetch for one thread, including at most one byte-budget lookahead. */
   messagePath?(
     threadId: string,
@@ -34,11 +34,11 @@ export interface SessionTranscriptReader {
 }
 
 export function transcriptThread(thread: ThreadRow): SessionTranscriptThread {
-  const { sessionId, threadId, seq, name, createdAt, rootMessageId, activeLeafMessageId } = thread
+  const { sessionId, threadId, threadOrder, name, createdAt, rootMessageId, activeLeafMessageId } = thread
   return {
     sessionId,
     threadId,
-    seq,
+    threadOrder,
     name,
     createdAt,
     rootMessageId,
@@ -66,8 +66,8 @@ export function validateTranscriptRequest(request: SessionTranscriptRequest): vo
       cursor.maxBytes !== (request.maxBytes ?? DEFAULT_TRANSCRIPT_PAGE_BYTES) ||
       cursor.scope !== 'transcript' ||
       !cursor.threadId ||
-      !Number.isSafeInteger(cursor.threadSeq) ||
-      cursor.threadSeq < -1 ||
+      !Number.isSafeInteger(cursor.threadOrder) ||
+      cursor.threadOrder < -1 ||
       !Number.isSafeInteger(cursor.revision) ||
       cursor.revision < 1 ||
       (cursor.direction !== 'before' && cursor.direction !== 'after') ||
@@ -109,14 +109,18 @@ async function requireMessage(
     row.sessionId !== thread.sessionId ||
     row.threadId !== thread.threadId ||
     row.messageId !== id ||
-    !Number.isSafeInteger(row.seq) ||
-    row.seq < 0
+    !Number.isSafeInteger(row.siblingOrder) ||
+    row.siblingOrder < 0
   )
     throw new Error(`Invalid transcript message ${id}`)
   return row
 }
 
-function verifyTarget(row: TranscriptMessageMetadata) {
+async function verifyTarget(row: TranscriptMessageMetadata, reader: SessionTranscriptReader) {
+  if (reader.isOnPath) {
+    if (!(await reader.isOnPath(row))) throw new Error('Transcript target is outside the selected path')
+    return
+  }
   if (row.selected === false) throw new Error('Transcript target is outside the selected path')
   if (row.selected !== true) throw new Error('Transcript selected-path projection is unavailable')
 }
@@ -150,7 +154,8 @@ async function selectPage(
   let skip = false
   if (request.cursor) {
     thread = await reader.thread(request.cursor.threadId)
-    if (!thread || thread.seq !== request.cursor.threadSeq) throw new Error('Transcript cursor thread changed')
+    if (!thread || thread.threadOrder !== request.cursor.threadOrder)
+      throw new Error('Transcript cursor thread changed')
     nextId = request.cursor.messageId
     skip = nextId !== null
     if (nextId === null && thread.rootMessageId !== null) throw new Error('Transcript empty-thread cursor is invalid')
@@ -159,7 +164,7 @@ async function selectPage(
     if (!row) throw new Error('Transcript target was not found')
     thread = await reader.thread(row.threadId)
     if (!thread) throw new Error('Transcript target thread was not found')
-    verifyTarget(row)
+    await verifyTarget(row, reader)
     nextId = row.messageId
   } else if (typeof origin === 'object') {
     thread = await reader.thread(origin.threadId)
@@ -242,7 +247,7 @@ async function selectPage(
       sessionId: request.sessionId,
       revision: commit.revision,
       threadId: edgeThread.threadId,
-      threadSeq: edgeThread.seq,
+      threadOrder: edgeThread.threadOrder,
       messageId: row?.messageId ?? null,
       direction: side,
       limit: request.limit,
@@ -257,7 +262,7 @@ async function selectPage(
   return {
     rows,
     payloadBytes,
-    threads: [...threads.values()].sort((a, b) => transcriptOrder(a.seq) - transcriptOrder(b.seq)),
+    threads: [...threads.values()].sort((a, b) => transcriptOrder(a.threadOrder) - transcriptOrder(b.threadOrder)),
     anchor,
     older: await makeCursor('before'),
     newer: await makeCursor('after'),
@@ -301,14 +306,14 @@ async function selectCenteredPage(
     cursor ? { ...cursor, limit: request.limit } : null
   return {
     ...page,
-    threads: [...threads.values()].sort((a, b) => transcriptOrder(a.seq) - transcriptOrder(b.seq)),
+    threads: [...threads.values()].sort((a, b) => transcriptOrder(a.threadOrder) - transcriptOrder(b.threadOrder)),
     older: cursorForRequest(page.older),
     newer: cursorForRequest(page.newer),
   }
 }
 
-export function transcriptOrder(seq: number): number {
-  return seq === -1 ? Number.MAX_SAFE_INTEGER : seq
+export function transcriptOrder(threadOrder: number): number {
+  return threadOrder === -1 ? Number.MAX_SAFE_INTEGER : threadOrder
 }
 
 export async function readTranscriptPage(
@@ -324,5 +329,10 @@ export async function readTranscriptPage(
   )
     throw new Error('Transcript payload selection is incomplete')
   const { rows: _rows, ...metadata } = page
-  return { ...commit, ...metadata, messages, forks: page.rows.flatMap((row) => (row.fork ? [row.fork] : [])) }
+  return {
+    ...commit,
+    ...metadata,
+    messages: messages.map(({ selected, ...row }) => row),
+    forks: page.rows.flatMap((row) => (row.fork ? [row.fork] : [])),
+  }
 }

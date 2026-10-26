@@ -1,9 +1,10 @@
+import { storageRowFixture } from '../ports/testing/session-row-fixtures'
 import { afterEach, describe, expect, it } from 'vitest'
 import { readRowContextSource } from '../application/session/row-context'
 import type { SessionRowSnapshot } from '../ports/session-row-store'
 import type { Session } from '../types/session'
 import { type NodeSessionRowSqlDatabase, openNodeSessionRowDatabase } from './node-sqlite.test-support'
-import { contextSnapshot } from './session-context-read.test-support'
+import { contextSnapshot as contextFactsSnapshot } from './session-context-read.test-support'
 import { type SessionRowSqlBindValue, SqlSessionRowStore } from './session-row-sql'
 
 const databases: NodeSessionRowSqlDatabase[] = []
@@ -173,18 +174,18 @@ describe('SQLite bridge read budgets', () => {
   it('reads context with the highest safe sequence values', async () => {
     const { writer, reader } = setup()
     const snapshot = sessionSnapshot(4)
-    for (const row of snapshot.rows.messages) row.seq += Number.MAX_SAFE_INTEGER - 3
+    for (const row of snapshot.rows.messages) row.siblingOrder += Number.MAX_SAFE_INTEGER - 3
     await writer.writeRows(snapshot)
     const context = await readRowContextSource(reader, { sessionId: snapshot.record.id })
     expect(context?.candidateMessages).toEqual(snapshot.rows.messages.map((row) => row.message))
   })
 
   it.each([
-    ['seq', 1.5],
-    ['seq', -1],
-    ['seq', Number.POSITIVE_INFINITY],
-    ['seq', Number.MAX_SAFE_INTEGER + 1],
-    ['seq', 'invalid'],
+    ['siblingOrder', 1.5],
+    ['siblingOrder', -1],
+    ['siblingOrder', Number.POSITIVE_INFINITY],
+    ['siblingOrder', Number.MAX_SAFE_INTEGER + 1],
+    ['siblingOrder', 'invalid'],
     ['payload_utf8_length', -1],
     ['payload_utf8_length', 0.5],
     ['payload_utf8_length', Number.POSITIVE_INFINITY],
@@ -504,3 +505,7 @@ describe('SQLite bridge read budgets', () => {
     expect(changed).toBe(true)
   })
 })
+
+function contextSnapshot(...args: Parameters<typeof contextFactsSnapshot>) {
+  return storageRowFixture(contextFactsSnapshot(...args))
+}

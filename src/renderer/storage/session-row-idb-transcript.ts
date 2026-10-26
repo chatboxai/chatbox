@@ -1,3 +1,6 @@
+import { deriveMessageFacts } from '@chatbox/core/session/session-tree'
+import { loadTreeLinks } from './session-row-idb-links'
+import { MESSAGE_TREE, encodeTreeMetadata, readTreeMessage, type TreeMetadata } from './session-row-idb-tree'
 import { v4 as uuid } from 'uuid'
 import {
   readBranchMessagesPage,
@@ -24,14 +27,6 @@ import type { MessageRow, ThreadRow } from '@chatbox/core/session/session-tree'
 import { readStoredMessage, type StoredMessageRow } from './session-row-idb-messages'
 import {
   REVISION_HEAD_THREAD_ID,
-  MESSAGE_STAGE,
-  MESSAGE_ORDER_INDEX,
-  OLD_PARENT_ORDER,
-  SELECTED_ROLE,
-  SELECTED_KIND,
-  SELECTED_PAUSED,
-  SELECTED_CONVERSATION,
-  SELECTED_NAMING,
   ROW_STORES,
   SESSION_ROW_MESSAGE_STORE,
   SESSION_ROW_THREAD_STORE,
@@ -41,10 +36,6 @@ import {
 } from './session-row-idb-records'
 
 export const TRANSCRIPT_THREADS = 'transcriptThreads'
-export const TRANSCRIPT_MESSAGES = 'transcriptMessages'
-export const RELATION_CHILDREN = 'byParentOrder'
-export const RELATION_BRANCH = 'byParentBranchOrder'
-export const SELECTED_ORDER = 'bySelectedOrder'
 export const THREAD_SUMMARY_ORDER = 'bySummaryOrder'
 const NONEMPTY_ORDER = 'bySessionNonemptyOrder'
 interface StoredTranscriptThread extends SessionTranscriptThread {
@@ -58,66 +49,21 @@ export function putTranscriptThread(tx: IDBTransaction, row: ThreadRow): void {
   tx.objectStore(TRANSCRIPT_THREADS).put({
     ...transcriptThread(row),
     nonempty: Number(row.rootMessageId !== null),
-    order: transcriptOrder(row.seq),
-    searchOrder: row.seq === -1 ? -Number.MAX_SAFE_INTEGER : -row.seq,
+    order: transcriptOrder(row.threadOrder),
+    searchOrder: row.threadOrder === -1 ? -Number.MAX_SAFE_INTEGER : -row.threadOrder,
   } satisfies StoredTranscriptThread)
 }
 
 export function putTranscriptMessage(tx: IDBTransaction, row: StoredMessageRow, payloadBytes?: number): void {
   const { message, ...metadata } = row
-  tx.objectStore(TRANSCRIPT_MESSAGES).put({
-    ...metadata,
-    tokenPayloadId: uuid(),
-    parentKey: row.parentMessageId ?? '',
-    branchKey: row.branchId ?? '',
-    pausedKey: Number(row.facts?.paused ?? false),
-    namingRole: row.facts?.autoTitleEligible ? row.facts.role : '',
-    conversationKey: Number(row.kind !== 'summary' && row.facts?.role !== 'system' && !row.facts?.isForkMarker),
-    payloadBytes: payloadBytes ?? new TextEncoder().encode(JSON.stringify(message)).length,
-  })
-}
-
-export function createTranscriptStores(db: IDBDatabase, tx: IDBTransaction): void {
-  if (!db.objectStoreNames.contains(TRANSCRIPT_THREADS)) {
-    const threads = db.createObjectStore(TRANSCRIPT_THREADS, { keyPath: ['sessionId', 'threadId'] })
-    threads.createIndex(SESSION_INDEX, 'sessionId')
-    threads.createIndex(THREAD_SUMMARY_ORDER, ['sessionId', 'searchOrder', 'threadId'])
-    threads.createIndex(NONEMPTY_ORDER, ['sessionId', 'nonempty', 'order', 'threadId'])
-  }
-  if (!db.objectStoreNames.contains(TRANSCRIPT_MESSAGES)) {
-    const messages = db.createObjectStore(TRANSCRIPT_MESSAGES, { keyPath: ['sessionId', 'messageId'] })
-    messages.createIndex(SESSION_INDEX, 'sessionId')
-    messages.createIndex(MESSAGE_ORDER_INDEX, ['sessionId', 'threadId', 'seq', 'messageId'])
-    messages.createIndex(RELATION_CHILDREN, ['sessionId', 'threadId', 'parentKey', 'seq', 'messageId'])
-    messages.createIndex(RELATION_BRANCH, ['sessionId', 'threadId', 'parentKey', 'branchKey', 'seq', 'messageId'])
-    messages.createIndex(SELECTED_ORDER, ['sessionId', 'threadId', 'selectedDepth', 'messageId'])
-  }
-  if (!db.objectStoreNames.contains(MESSAGE_STAGE)) {
-    const stage = db.createObjectStore(MESSAGE_STAGE, { keyPath: ['sessionId', 'messageId'] })
-    stage.createIndex(SESSION_INDEX, 'sessionId')
-    stage.createIndex(RELATION_CHILDREN, ['sessionId', 'threadId', 'parentKey', 'seq', 'messageId'])
-    stage.createIndex(SELECTED_ORDER, ['sessionId', 'threadId', 'selectedDepth', 'messageId'])
-    stage.createIndex(OLD_PARENT_ORDER, ['sessionId', 'oldThreadId', 'oldParentKey', 'oldSeq', 'messageId'])
-  }
-  for (const name of [TRANSCRIPT_MESSAGES, MESSAGE_STAGE]) {
-    const store = tx.objectStore(name)
-    if (!store.indexNames.contains(SELECTED_NAMING))
-      store.createIndex(SELECTED_NAMING, ['sessionId', 'threadId', 'namingRole', 'selectedDepth', 'messageId'])
-    if (!store.indexNames.contains(SELECTED_ROLE))
-      store.createIndex(SELECTED_ROLE, ['sessionId', 'threadId', 'facts.role', 'selectedDepth', 'messageId'])
-    if (!store.indexNames.contains(SELECTED_PAUSED))
-      store.createIndex(SELECTED_PAUSED, ['sessionId', 'threadId', 'pausedKey', 'selectedDepth', 'messageId'])
-    if (!store.indexNames.contains(SELECTED_CONVERSATION))
-      store.createIndex(SELECTED_CONVERSATION, [
-        'sessionId',
-        'threadId',
-        'conversationKey',
-        'selectedDepth',
-        'messageId',
-      ])
-    if (!store.indexNames.contains(SELECTED_KIND))
-      store.createIndex(SELECTED_KIND, ['sessionId', 'threadId', 'kind', 'selectedDepth', 'messageId'])
-  }
+  tx.objectStore(MESSAGE_TREE).put(
+    encodeTreeMetadata({
+      ...metadata,
+      facts: metadata.facts ?? deriveMessageFacts(message),
+      tokenPayloadId: uuid(),
+      payloadBytes: payloadBytes ?? new TextEncoder().encode(JSON.stringify(message)).length,
+    })
+  )
 }
 
 export function requestValue<T>(request: IDBRequest): Promise<T> {
@@ -166,7 +112,7 @@ function reader(tx: IDBTransaction, sessionId: string): SessionTranscriptReader 
     adjacent: async (thread, direction) => {
       const lower = [sessionId, 1]
       const upper = [sessionId, 1, []]
-      const key = thread ? [sessionId, 1, transcriptOrder(thread.seq), thread.threadId] : null
+      const key = thread ? [sessionId, 1, transcriptOrder(thread.threadOrder), thread.threadId] : null
       const range =
         direction === 'after'
           ? IDBKeyRange.bound(key ?? lower, upper, key !== null, false)
@@ -176,21 +122,26 @@ function reader(tx: IDBTransaction, sessionId: string): SessionTranscriptReader 
       )
       return plainTranscriptThread(cursor?.value as StoredTranscriptThread | undefined)
     },
-    message: async (id) =>
-      (await requestValue<TranscriptMessageMetadata | undefined>(
-        tx.objectStore(TRANSCRIPT_MESSAGES).get([sessionId, id])
-      )) ?? null,
-    payloads: async (ids) => {
-      const result: MessageRow[] = []
-      for (const id of ids) {
-        const row = await requestValue<StoredMessageRow | undefined>(
-          tx.objectStore(SESSION_ROW_MESSAGE_STORE).get([sessionId, id])
-        )
-        if (!row) throw new Error('Transcript payload is missing')
-        result.push(await new Promise<MessageRow>((resolve, reject) => readStoredMessage(tx, row, resolve, reject)))
-      }
-      return result
+    isOnPath: async (row) => {
+      const revision = await readRevision(tx, sessionId)
+      const graph = await loadTreeLinks(tx, sessionId, row.threadId, revision ?? 0)
+      const thread = await requestValue<ThreadRow | undefined>(
+        tx.objectStore(SESSION_ROW_THREAD_STORE).get([sessionId, row.threadId])
+      )
+      return Boolean(thread && graph.isOnPath(row.messageId, thread.rootMessageId))
     },
+    message: async (id) => await readTreeMessage(tx, sessionId, id),
+    // Queue every read at once; awaiting each request serially costs a task hop per message.
+    payloads: (ids) =>
+      Promise.all(
+        ids.map(async (id) => {
+          const row = await requestValue<StoredMessageRow | undefined>(
+            tx.objectStore(SESSION_ROW_MESSAGE_STORE).get([sessionId, id])
+          )
+          if (!row) throw new Error('Transcript payload is missing')
+          return new Promise<MessageRow>((resolve, reject) => readStoredMessage(tx, row, resolve, reject))
+        })
+      ),
   }
 }
 

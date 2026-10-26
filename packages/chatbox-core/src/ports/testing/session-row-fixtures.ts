@@ -53,3 +53,9 @@ export function prepareSessionRowsFixture(source: Session) {
   if (!verified.ok) throw new Error(verified.reason)
   return convertLegacyTreeToRowFormat(verified.tree, verified.session.messageForksHash)
 }
+
+/** Canonical stored rows carry facts and edges; membership belongs to the relation read API. */
+export function storageRowFixture<T extends SessionRowSnapshot>(snapshot: T): T {
+  for (const row of snapshot.rows.messages) delete row.selected
+  return snapshot
+}

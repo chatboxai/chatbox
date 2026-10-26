@@ -153,6 +153,11 @@ export class SessionService {
     return this.repository.readSessionSearchCandidates(request)
   }
 
+  async prefetchSessionThreadLinks(request: SessionThreadRequest & { signal?: AbortSignal }): Promise<void> {
+    await this.initialize()
+    await this.repository.prefetchSessionThreadLinks?.(request)
+  }
+
   async readSessionTranscriptWindow(request: SessionTranscriptRequest) {
     await this.initialize()
     const page = await this.repository.readSessionTranscriptWindow(request)

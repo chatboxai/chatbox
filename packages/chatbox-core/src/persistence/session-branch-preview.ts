@@ -1,7 +1,7 @@
 import type { SessionBranchPreview, SessionBranchPreviewRequest } from '../ports/session-branch-source'
 import { SessionRowConflictError, type SessionRowCommit } from '../ports/session-row-store'
 import type { MessageRowMetadata } from '../session/session-tree/types'
-import { requireKnownMetadata } from './session-row-relations-read'
+import { requireMessageFacts } from './session-row-relations-read'
 
 export function validateBranchPreviewRequest(request: SessionBranchPreviewRequest): void {
   if (
@@ -51,7 +51,7 @@ export async function readBranchPreviewFromMetadata(
     if (row.threadId !== threadId) throw new Error('Relation crosses a thread boundary')
     if (previousId !== undefined && row.parentMessageId !== previousId)
       throw new Error('Broken selected message relationship')
-    if (!requireKnownMetadata(row)) throw new Error('Branch preview metadata is unavailable')
+    if (!requireMessageFacts(row)) throw new Error('Branch preview metadata is unavailable')
     if (candidates.has(id)) revealedMessageIds.push(id)
     const visible = row.kind !== 'summary' && !row.facts.isForkMarker
     if (!headMessageId) {

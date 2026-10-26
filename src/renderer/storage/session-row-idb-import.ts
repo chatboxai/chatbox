@@ -1,3 +1,5 @@
+import { MESSAGE_TREE } from './session-row-idb-tree'
+import { messageMetadata } from './session-row-idb-messages'
 import {
   type SessionRowCommit,
   SessionRowConflictError,
@@ -22,12 +24,7 @@ import {
   revisionHead,
   storedRevision,
 } from './session-row-idb-records'
-import {
-  putTranscriptMessage,
-  putTranscriptThread,
-  TRANSCRIPT_MESSAGES,
-  TRANSCRIPT_THREADS,
-} from './session-row-idb-transcript'
+import { putTranscriptMessage, putTranscriptThread, TRANSCRIPT_THREADS } from './session-row-idb-transcript'
 
 type Phase = 'collecting' | 'ready' | 'published'
 interface Control {
@@ -42,7 +39,7 @@ interface Control {
 }
 interface Meta {
   value: MessageRowMetadata
-  selectedDepth: number | null
+  pathDepth: number | null
 }
 interface ImportIndex {
   version: number
@@ -66,7 +63,7 @@ const PAGE_SIZE = 128
 const allRange = (id: string) => IDBKeyRange.bound([id], [id, []])
 const kindRange = (id: string, kind: string) => IDBKeyRange.bound([id, kind], [id, kind, []])
 const sessionRange = (id: string) => IDBKeyRange.bound([id], [id, []])
-const visibleStores = [THREADS, MESSAGES, TRANSCRIPT_THREADS, TRANSCRIPT_MESSAGES, SESSION_ROW_TOKEN_CACHE_STORE]
+const visibleStores = [THREADS, MESSAGES, TRANSCRIPT_THREADS, MESSAGE_TREE, SESSION_ROW_TOKEN_CACHE_STORE]
 const head = (tx: IDBTransaction, sessionId: string) =>
   requestValue<RevisionHeadRow | undefined>(tx.objectStore(THREADS).get([sessionId, REVISION_HEAD_THREAD_ID]))
 
@@ -88,7 +85,7 @@ async function visitBatches<Entry extends { id: string }>(
 
 function messageMeta(row: MessageRow): Meta {
   const { message: _body, ...value } = row
-  return { value, selectedDepth: null }
+  return { value, pathDepth: null }
 }
 function emptyIndex(version: number): ImportIndex {
   return { version, threads: new Map(), messages: new Map() }
@@ -214,16 +211,16 @@ export async function resumeIndexedDBImportRows(
                 validateThreadRow(row.thread, sessionId)
                 if (
                   row.thread.threadId === REVISION_HEAD_THREAD_ID ||
-                  !Number.isSafeInteger(row.thread.seq) ||
-                  row.thread.seq < -1
+                  !Number.isSafeInteger(row.thread.threadOrder) ||
+                  row.thread.threadOrder < -1
                 )
                   throw new Error('Invalid thread identity or order')
               } else {
                 validateMessageRow(row.message, sessionId)
                 if (
                   row.message.message.id !== row.message.messageId ||
-                  !Number.isSafeInteger(row.message.seq) ||
-                  row.message.seq < 0
+                  !Number.isSafeInteger(row.message.siblingOrder) ||
+                  row.message.siblingOrder < 0
                 )
                   throw new Error('Invalid message identity or order')
               }
@@ -314,8 +311,8 @@ export async function resumeIndexedDBImportRows(
               for (const entry of entries) {
                 const meta = current.messages.get(entry.id)
                 if (!meta) continue
-                const message = { ...meta.value, message: entry.value.message, selectedDepth: meta.selectedDepth }
-                tx.objectStore(MESSAGES).put(message)
+                const message = { ...meta.value, message: entry.value.message }
+                tx.objectStore(MESSAGES).put({ ...messageMetadata(message), message: message.message })
                 putTranscriptMessage(tx, message)
               }
             })

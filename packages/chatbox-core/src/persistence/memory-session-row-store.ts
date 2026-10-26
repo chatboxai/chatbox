@@ -119,7 +119,7 @@ function buildState(threads: ThreadRow[], messages: MessageRow[], sessionId: str
 }
 
 function validateCommit(sessionId: string, threads: ThreadRow[], commit: SessionRowCommit): void {
-  const active = threads.filter((thread) => thread.seq === -1)
+  const active = threads.filter((thread) => thread.threadOrder === -1)
   if (
     !Number.isSafeInteger(commit.revision) ||
     commit.revision <= 0 ||
@@ -210,8 +210,8 @@ export class InMemorySessionRowStore implements SessionRowStorePort {
           const row = values[mid]
           if (
             !boundary ||
-            row.seq < boundary.seq ||
-            (row.seq === boundary.seq &&
+            row.siblingOrder < boundary.siblingOrder ||
+            (row.siblingOrder === boundary.siblingOrder &&
               (row.messageId < boundary.messageId || (!selector.reverse && row.messageId === boundary.messageId)))
           )
             low = mid + 1
@@ -300,14 +300,14 @@ export class InMemorySessionRowStore implements SessionRowStorePort {
         return row ? transcriptThread(row) : null
       },
       adjacent: async (thread, direction) => {
-        const order = thread ? transcriptOrder(thread.seq) : direction === 'after' ? -1 : Infinity
+        const order = thread ? transcriptOrder(thread.threadOrder) : direction === 'after' ? -1 : Infinity
         let low = 0
         let high = ordered.length
         while (low < high) {
           const mid = (low + high) >>> 1
           if (
-            transcriptOrder(ordered[mid].seq) < order ||
-            (direction === 'after' && transcriptOrder(ordered[mid].seq) === order)
+            transcriptOrder(ordered[mid].threadOrder) < order ||
+            (direction === 'after' && transcriptOrder(ordered[mid].threadOrder) === order)
           )
             low = mid + 1
           else high = mid
@@ -385,11 +385,11 @@ export class InMemorySessionRowStore implements SessionRowStorePort {
       assertSessionThreadPageRevision(request, this.revisions.get(request.sessionId) ?? null)
       if (!state) return null
       const threads = [...state.threads.values()].sort((left, right) =>
-        left.seq === -1
+        left.threadOrder === -1
           ? -1
-          : right.seq === -1
+          : right.threadOrder === -1
             ? 1
-            : right.seq - left.seq || right.threadId.localeCompare(left.threadId)
+            : right.threadOrder - left.threadOrder || right.threadId.localeCompare(left.threadId)
       )
       const offset = request.cursor?.offset ?? 0
       const threadIds = threads.slice(offset, offset + request.limit).map((thread) => thread.threadId)
@@ -530,7 +530,9 @@ export class InMemorySessionRowStore implements SessionRowStorePort {
       if (actual !== revision) throw new SessionRowConflictError(sessionId, revision, actual)
     }
     check()
-    const threads = [...state.threads.values()].sort((a, b) => transcriptOrder(a.seq) - transcriptOrder(b.seq))
+    const threads = [...state.threads.values()].sort(
+      (a, b) => transcriptOrder(a.threadOrder) - transcriptOrder(b.threadOrder)
+    )
     if (threadId && !state.threads.has(threadId)) throw new Error('Thread is missing')
     for (const thread of threads) {
       if (threadId && thread.threadId !== threadId) continue
@@ -601,7 +603,7 @@ export class InMemorySessionRowStore implements SessionRowStorePort {
     try {
       validateCommit(rows.sessionId, rows.threads, { record, revision })
       next = buildState(rows.threads, rows.messages, rows.sessionId)
-      if (record.rowFormatVersion === 3) projectMemoryRows(next.messages, next.threads)
+      projectMemoryRows(next.messages, next.threads)
     } catch (error) {
       return Promise.reject(new SessionRowStoreError('write-rows', error, rows.sessionId))
     }
@@ -665,7 +667,7 @@ export class InMemorySessionRowStore implements SessionRowStorePort {
         }
         next.messages.set(message.messageId, {
           ...clone(message),
-          ...(commit.record.rowFormatVersion === 3 ? { facts: deriveMessageFacts(message.message) } : {}),
+          facts: deriveMessageFacts(message.message),
         })
       }
     } catch (error) {
@@ -681,7 +683,7 @@ export class InMemorySessionRowStore implements SessionRowStorePort {
     if (next.threads.size > 0 || next.messages.size > 0) {
       try {
         validateCommit(diff.sessionId, [...next.threads.values()], commit)
-        if (commit.record.rowFormatVersion === 3) changedForks = projectMemoryRows(next.messages, next.threads)
+        changedForks = projectMemoryRows(next.messages, next.threads)
       } catch (error) {
         return Promise.reject(new SessionRowStoreError('apply-diff', error, diff.sessionId))
       }
@@ -814,7 +816,7 @@ export class InMemorySessionRowStore implements SessionRowStorePort {
       sessionId,
       [...state.threads.values()]
         .filter((row) => row.rootMessageId !== null)
-        .sort((a, b) => transcriptOrder(a.seq) - transcriptOrder(b.seq))
+        .sort((a, b) => transcriptOrder(a.threadOrder) - transcriptOrder(b.threadOrder))
     )
     const statuses = new Map<string, MessageRowMetadata[]>()
     const children = new Map<string, MessageRowMetadata[]>()
@@ -832,7 +834,10 @@ export class InMemorySessionRowStore implements SessionRowStorePort {
       }
     }
     for (const values of children.values())
-      values.sort((a, b) => a.seq - b.seq || (a.messageId < b.messageId ? -1 : a.messageId > b.messageId ? 1 : 0))
+      values.sort(
+        (a, b) =>
+          a.siblingOrder - b.siblingOrder || (a.messageId < b.messageId ? -1 : a.messageId > b.messageId ? 1 : 0)
+      )
     const paused = new Map<string, Array<{ row: MessageRowMetadata; depth: number }>>()
     for (const thread of state.threads.values()) {
       const rows: Array<{ row: MessageRowMetadata; depth: number }> = []
@@ -856,7 +861,11 @@ export class InMemorySessionRowStore implements SessionRowStorePort {
     this.threadSummaryIndex.set(
       sessionId,
       [...state.threads.values()].sort((a, b) =>
-        a.seq === -1 ? -1 : b.seq === -1 ? 1 : b.seq - a.seq || b.threadId.localeCompare(a.threadId)
+        a.threadOrder === -1
+          ? -1
+          : b.threadOrder === -1
+            ? 1
+            : b.threadOrder - a.threadOrder || b.threadId.localeCompare(a.threadId)
       )
     )
     this.sessions.set(sessionId, state)

@@ -45,19 +45,22 @@ describe('SQL transcript query boundaries', () => {
     expect(tokenize).not.toHaveBeenCalled()
   })
 
-  it('rejects a target with a missing membership projection without walking ancestors or reading bodies', async () => {
+  it('derives target membership and rejects an inactive target before reading bodies', async () => {
     const { database, store } = createStore()
     await store.writeRows(transcriptFixture())
-    await database.execute(
-      "UPDATE session_messages SET row_metadata_json=json_remove(row_metadata_json,'$.selected') WHERE session_id='transcript' AND message_id='recent-2'"
-    )
     const query = vi.spyOn(database, 'query')
+    const page = await store.readTranscriptWindow({
+      sessionId: 'transcript',
+      origin: { messageId: 'recent-2' },
+      limit: 20,
+    })
+    expect(page?.messages.slice(0, 2).map((row) => row.messageId)).toEqual(['recent-2', 'recent-3'])
+    query.mockClear()
     await expect(
-      store.readTranscriptWindow({ sessionId: 'transcript', origin: { messageId: 'recent-2' }, limit: 20 })
-    ).rejects.toMatchObject({ cause: { message: 'Transcript selected-path projection is unavailable' } })
-    const sql = query.mock.calls.map(([statement]) => statement).join('\n')
-    expect(sql).not.toMatch(/WITH RECURSIVE|session_message_payload_chunks/)
-    expect(query.mock.calls.filter(([statement]) => statement.includes('FROM session_messages'))).toHaveLength(1)
+      store.readTranscriptWindow({ sessionId: 'transcript', origin: { messageId: 'inactive' }, limit: 20 })
+    ).rejects.toMatchObject({ cause: { message: 'Transcript target is outside the selected path' } })
+    expect(query.mock.calls.some(([sql]) => sql.includes('WITH RECURSIVE ancestors'))).toBe(true)
+    expect(query.mock.calls.some(([sql]) => /m\.message_json|json_quote\(message_json\)/.test(sql))).toBe(false)
   })
 })
 
@@ -67,7 +70,7 @@ it('rejects malformed commit identity and nonpositive revisions without reading 
   await store.writeRows(fixture)
   await database.executeBatch([
     {
-      sql: 'UPDATE session_threads SET session_record_json = ? WHERE session_id = ? AND seq = -1',
+      sql: 'UPDATE session_threads SET session_record_json = ? WHERE session_id = ? AND threadOrder = -1',
       params: [JSON.stringify({ ...fixture.record, id: 'wrong' }), 'transcript'],
     },
   ])
@@ -77,7 +80,7 @@ it('rejects malformed commit identity and nonpositive revisions without reading 
   })
   await database.executeBatch([
     {
-      sql: 'UPDATE session_threads SET session_record_json = ?, commit_revision = 0 WHERE session_id = ? AND seq = -1',
+      sql: 'UPDATE session_threads SET session_record_json = ?, commit_revision = 0 WHERE session_id = ? AND threadOrder = -1',
       params: [JSON.stringify(fixture.record), 'transcript'],
     },
     { sql: 'UPDATE session_row_heads SET revision = 0 WHERE session_id = ?', params: ['transcript'] },

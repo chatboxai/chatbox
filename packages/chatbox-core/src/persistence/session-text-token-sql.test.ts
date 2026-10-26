@@ -67,7 +67,7 @@ describe('SQL source-bound numerical text results', () => {
         sessionId: 's',
         threads: { upsert: [], delete: [] },
         messages: { upsert: [], delete: [] },
-        messageMetadataUpsert: [{ ...metadata, seq: 42 }],
+        messageMetadataUpsert: [{ ...metadata, siblingOrder: 42 }],
       },
       { record: h.snapshot.record, revision: 2 },
       1
@@ -75,7 +75,7 @@ describe('SQL source-bound numerical text results', () => {
     expect(await h.rows.readTextTokenResults([h.results[1].source])).toHaveLength(1)
     const edited = {
       ...row,
-      seq: 42,
+      siblingOrder: 42,
       message: { ...row.message, contentParts: [{ type: 'text' as const, text: 'changed' }] },
     }
     await h.rows.applyDiff(

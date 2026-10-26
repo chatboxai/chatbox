@@ -46,7 +46,7 @@ export interface SessionForkOptionsRequest {
   pivotId: string
   limit: number
   expectedRevision?: number
-  cursor?: { revision: number; pivotId: string; afterSeq: number; afterBranchId: string }
+  cursor?: { revision: number; pivotId: string; afterSiblingOrder: number; afterBranchId: string }
 }
 
 export interface SessionForkOptionsPage {
@@ -57,7 +57,7 @@ export interface SessionForkOptionsPage {
   branchPointId: string
   createdAt: number
   selectedBranchId: string
-  branches: Array<{ branchId: string; firstMessageId: string | null; seq: number; selected: boolean }>
+  branches: Array<{ branchId: string; firstMessageId: string | null; siblingOrder: number; selected: boolean }>
   nextCursor: SessionForkOptionsRequest['cursor'] | null
 }
 
@@ -143,6 +143,7 @@ export interface SessionRowRepositoryPort
   projectSessionMetadata<T>(sessionId: string, project: () => Promise<T>): Promise<T>
   readSessionBranchPreview(request: SessionBranchPreviewRequest): Promise<SessionBranchPreview | null>
   readSessionBranchMessagesPage(request: SessionBranchMessagesRequest): Promise<SessionBranchMessagesPage | null>
+  prefetchSessionThreadLinks?(request: SessionThreadRequest & { signal?: AbortSignal }): Promise<void>
   readSessionTranscriptWindow(request: SessionTranscriptRequest): Promise<SessionTranscriptPage | null>
   readSessionThread(request: SessionThreadRequest): Promise<SessionThreadRead | null>
   readSessionThreadSummariesPage(request: SessionThreadPageRequest): Promise<SessionThreadSummariesPage | null>

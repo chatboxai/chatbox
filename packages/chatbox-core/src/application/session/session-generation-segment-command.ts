@@ -2,7 +2,7 @@ import type { SessionMessageStructureOperation } from '../../ports/session-struc
 import {
   emptyStructurePlan,
   newMessageRow,
-  nextChildSeq,
+  nextSiblingOrder,
   putMetadata,
   readBranchPoint,
   readMetadata,
@@ -70,12 +70,12 @@ export async function planGenerationSegmentSplit(
     point.threadId,
     continuation,
     point.messageId,
-    next?.seq ?? point.pendingBranchSeq ?? (await nextChildSeq(reader, point)),
+    next?.siblingOrder ?? point.pendingBranchOrder ?? (await nextSiblingOrder(reader, point)),
     next?.branchId ?? point.pendingBranchId ?? null
   )
   inserted.activeChildId = next?.messageId ?? null
   plan.diff.messages.upsert.push(inserted)
-  if (next) putMetadata(plan, { ...next, parentMessageId: inserted.messageId, seq: 0, branchId: null })
+  if (next) putMetadata(plan, { ...next, parentMessageId: inserted.messageId, siblingOrder: 0, branchId: null })
   putMetadata(plan, {
     ...point,
     ...(point.messageId === target.messageId
@@ -83,7 +83,7 @@ export async function planGenerationSegmentSplit(
       : {}),
     activeChildId: inserted.messageId,
     pendingBranchId: undefined,
-    pendingBranchSeq: undefined,
+    pendingBranchOrder: undefined,
   })
   plan.appendedMessageIds.push(inserted.messageId)
   plan.result.applied = true

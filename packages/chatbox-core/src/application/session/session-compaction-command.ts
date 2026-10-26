@@ -61,7 +61,7 @@ export async function planCompactionStructure(
   summary.activeChildId = boundary.activeChildId
   summary.forkPivotId = boundary.forkPivotId
   summary.pendingBranchId = boundary.pendingBranchId
-  summary.pendingBranchSeq = boundary.pendingBranchSeq
+  summary.pendingBranchOrder = boundary.pendingBranchOrder
   plan.diff.messages.upsert.push(summary)
   plan.diff.insertParents = [
     { threadId: thread.threadId, parentMessageId: boundary.messageId, newParentMessageId: summary.messageId },
@@ -71,7 +71,7 @@ export async function planCompactionStructure(
     activeChildId: summary.messageId,
     forkPivotId: undefined,
     pendingBranchId: undefined,
-    pendingBranchSeq: undefined,
+    pendingBranchOrder: undefined,
   })
   putThread(plan, {
     ...thread,

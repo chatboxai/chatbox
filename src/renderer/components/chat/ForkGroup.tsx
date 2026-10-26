@@ -42,7 +42,10 @@ function liveReveals(messages: SessionGenerationControl['cancellableMessages']):
   for (const message of messages) {
     if (!message.branchId) continue
     let ids = result.get(message.branchId)
-    if (!ids) result.set(message.branchId, (ids = new Set()))
+    if (!ids) {
+      ids = new Set()
+      result.set(message.branchId, ids)
+    }
     ids.add(message.messageId)
   }
   return result
@@ -61,6 +64,8 @@ export default function ForkGroup(props: ForkGroupProps) {
     [props.liveMessages, fork.pivotId, fork.selectedBranchId]
   )
   const [expanded, setExpanded] = useState(false)
+  const [switching, setSwitching] = useState(false)
+  const [switchError, setSwitchError] = useState<string | null>(null)
   const [flash, setFlash] = useState(false)
   const [revealedBranchIds, setRevealedBranchIds] = useState(() => new Set(liveReveals(liveMessages).keys()))
   const [revealedMessages, setRevealedMessages] = useState(() => liveReveals(liveMessages))
@@ -135,15 +140,24 @@ export default function ForkGroup(props: ForkGroupProps) {
   }, [newBranchStart, options.branches, options.isLoading, options.hasNextPage, options.isError, fork.count])
 
   const switchTo = useCallback(
-    (target: 'next' | 'prev' | { branchId: string }) => {
+    async (target: 'next' | 'prev' | { branchId: string }) => {
+      if (switching) return
       if (!switchGate.allowed) {
         void notifySessionLockBlocked(switchGate.reason, t)
         return
       }
-      if (typeof target === 'string') void switchFork(sessionId, fork.pivotId, target)
-      else void switchForkTo(sessionId, fork.pivotId, target.branchId)
+      setSwitching(true)
+      setSwitchError(null)
+      try {
+        if (typeof target === 'string') await switchFork(sessionId, fork.pivotId, target)
+        else await switchForkTo(sessionId, fork.pivotId, target.branchId)
+      } catch (error) {
+        setSwitchError(error instanceof Error ? error.message : String(error))
+      } finally {
+        setSwitching(false)
+      }
     },
-    [switchGate, t, sessionId, fork.pivotId]
+    [switchGate, t, sessionId, fork.pivotId, switching]
   )
 
   const alternativeEntries = options.branches
@@ -224,6 +238,8 @@ export default function ForkGroup(props: ForkGroupProps) {
     <Flex gap="xs" align="center">
       <ActionIcon
         data-testid={TestId.message.forkPrevious}
+        loading={switching}
+        aria-busy={switching || undefined}
         variant="subtle"
         size={20}
         radius="lg"
@@ -286,6 +302,8 @@ export default function ForkGroup(props: ForkGroupProps) {
       </ActionMenu>
       <ActionIcon
         data-testid={TestId.message.forkNext}
+        loading={switching}
+        aria-busy={switching || undefined}
         variant="subtle"
         size={20}
         radius="lg"
@@ -301,6 +319,11 @@ export default function ForkGroup(props: ForkGroupProps) {
   )
   return (
     <Stack data-testid={TestId.message.forkGroup} data-message-id={msgId} gap="xs">
+      {switchError && (
+        <Text role="alert" size="xs" c="chatbox-error">
+          {switchError}
+        </Text>
+      )}
       <Flex justify="flex-end" pr="md" mr="md" className="self-end">
         {forkControlsLocked && !isSmallScreen ? (
           <Tooltip label={lockReason} withArrow>

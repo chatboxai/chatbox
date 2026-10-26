@@ -14,7 +14,7 @@ export interface SessionCommandScope extends Omit<SessionRowCommit, 'record'> {
   /** Required only for append to a nonempty thread. */
   tail?: MessageRowMetadata
   /** First available direct-child order at the append anchor. */
-  nextChildSeq?: number
+  nextSiblingOrder?: number
 }
 
 export interface SessionCommandPlan {
@@ -91,7 +91,7 @@ export function planSessionCommand(
   if (tail && (tail.sessionId !== record.id || tail.threadId !== thread.threadId || tail.activeChildId !== null))
     throw new Error('Invalid append anchor')
   if (!tail && thread.rootMessageId !== null) throw new Error('A nonempty thread requires an append anchor')
-  if (tail && tail.pendingBranchSeq === undefined && scope.nextChildSeq === undefined)
+  if (tail && tail.pendingBranchOrder === undefined && scope.nextSiblingOrder === undefined)
     throw new Error('The append sibling order is required')
   const appended: MessageRow[] = []
   const inputs = new Map<string, Message>()
@@ -118,7 +118,7 @@ export function planSessionCommand(
       messageId: message.id,
       parentMessageId: previous?.messageId ?? tail?.messageId ?? null,
       activeChildId: null,
-      seq: previous || !tail ? 0 : checkedOrder(tail.pendingBranchSeq ?? scope.nextChildSeq ?? 0),
+      siblingOrder: previous || !tail ? 0 : checkedOrder(tail.pendingBranchOrder ?? scope.nextSiblingOrder ?? 0),
       kind: message.isSummary ? 'summary' : 'message',
       status: message.generating ? 'generating' : 'settled',
       createdAt,
@@ -139,7 +139,7 @@ export function planSessionCommand(
         ...tail,
         activeChildId: appended[0].messageId,
         pendingBranchId: undefined,
-        pendingBranchSeq: undefined,
+        pendingBranchOrder: undefined,
       },
     ]
   }

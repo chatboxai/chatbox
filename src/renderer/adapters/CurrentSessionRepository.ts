@@ -220,9 +220,6 @@ export class CurrentSessionRepository implements SessionRepositoryPort {
     if ((await rows.readCommit(id))?.record.rowAuthority === 1) return (await this.getSessionHeader(id))?.header ?? null
     const record = await this.records.getRecord(id)
     if (!record) return null
-    if ('storageFormat' in record && record.storageFormat === 'rows') {
-      return (await this.getSessionHeader(id))?.header ?? null
-    }
     const {
       messages: _messages,
       threads: _threads,
@@ -375,6 +372,12 @@ export class CurrentSessionRepository implements SessionRepositoryPort {
     ...args: Parameters<SessionRepositoryPort['readSessionSearchCandidates']>
   ): ReturnType<SessionRepositoryPort['readSessionSearchCandidates']> {
     return this.withForegroundSessionWork(() => this.getData().readSessionSearchCandidates(...args))
+  }
+
+  prefetchSessionThreadLinks(
+    request: import('@chatbox/core/ports').SessionThreadRequest & { signal?: AbortSignal }
+  ): Promise<void> {
+    return this.getData().prefetchSessionThreadLinks(request)
   }
 
   readSessionTranscriptWindow(

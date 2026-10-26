@@ -91,7 +91,7 @@ function conversation(id: string): BackupBusinessRecord[] {
       thread: {
         sessionId: id,
         threadId: id,
-        seq: -1,
+        threadOrder: -1,
         name: null,
         createdAt: 2,
         rootMessageId: `${id}-message`,
@@ -106,7 +106,7 @@ function conversation(id: string): BackupBusinessRecord[] {
         messageId: `${id}-message`,
         parentMessageId: null,
         activeChildId: null,
-        seq: 0,
+        siblingOrder: 0,
         kind: 'message',
         branchId: null,
         createdAt: 2,

@@ -17,8 +17,8 @@ export function decodeSessionTree(tree: SessionTree): DecodeSessionTreeResult {
   if (!activeThreadRow) {
     return { ok: false, reason: `active thread ${tree.session.activeThreadId} has no thread row` }
   }
-  if (activeThreadRow.seq !== -1) {
-    return { ok: false, reason: `active thread ${activeThreadRow.threadId} must have seq -1` }
+  if (activeThreadRow.threadOrder !== -1) {
+    return { ok: false, reason: `active thread ${activeThreadRow.threadId} must have siblingOrder -1` }
   }
 
   const rowsById = new Map<string, MessageRow>()
@@ -45,7 +45,8 @@ export function decodeSessionTree(tree: SessionTree): DecodeSessionTreeResult {
   for (const siblings of childrenByParent.values()) {
     siblings.sort(
       (left, right) =>
-        left.seq - right.seq || (left.messageId < right.messageId ? -1 : left.messageId > right.messageId ? 1 : 0)
+        left.siblingOrder - right.siblingOrder ||
+        (left.messageId < right.messageId ? -1 : left.messageId > right.messageId ? 1 : 0)
     )
   }
 
@@ -129,8 +130,9 @@ export function decodeSessionTree(tree: SessionTree): DecodeSessionTreeResult {
           lists.push({ id, messages: branch.messages })
         }
         if (row.activeChildId === null) {
-          const pendingSeq = row.pendingBranchSeq
-          const nextSibling = pendingSeq === undefined ? -1 : children.findIndex((child) => child.seq > pendingSeq)
+          const pendingSeq = row.pendingBranchOrder
+          const nextSibling =
+            pendingSeq === undefined ? -1 : children.findIndex((child) => child.siblingOrder > pendingSeq)
           position = nextSibling < 0 ? lists.length : nextSibling
           lists.splice(position, 0, { id: row.pendingBranchId ?? `fork_list_empty_${pivot.pivotId}`, messages: [] })
         } else if (position < 0) {
@@ -193,7 +195,7 @@ export function decodeSessionTree(tree: SessionTree): DecodeSessionTreeResult {
 
   const archivedRows = tree.threads
     .filter((thread) => thread !== activeThreadRow)
-    .sort((left, right) => left.seq - right.seq)
+    .sort((left, right) => left.threadOrder - right.threadOrder)
   const threads: SessionThread[] = []
   for (const threadRow of archivedRows) {
     if (threadRow.name === null) {

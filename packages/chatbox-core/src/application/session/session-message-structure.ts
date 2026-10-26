@@ -10,7 +10,7 @@ import {
   assertStructureGuard,
   emptyStructurePlan,
   newMessageRow,
-  nextChildSeq,
+  nextSiblingOrder,
   putMetadata,
   putThread,
   readBranchPoint,
@@ -129,7 +129,7 @@ export async function planMessageStructure(
     const inserted = newMessageRow(reader.record.id, thread.threadId, message, null, 0)
     inserted.activeChildId = root?.messageId ?? null
     plan.diff.messages.upsert.push(inserted)
-    if (root) putMetadata(plan, { ...root, parentMessageId: inserted.messageId, seq: 0, branchId: null })
+    if (root) putMetadata(plan, { ...root, parentMessageId: inserted.messageId, siblingOrder: 0, branchId: null })
     putThread(plan, {
       ...thread,
       rootMessageId: inserted.messageId,
@@ -169,24 +169,25 @@ export async function planMessageStructure(
     const thread = anchor ? await reader.thread(anchor.threadId) : reader.activeThread
     if (!thread) throw new Error('Missing insertion thread')
     const next = await readMetadata(reader, anchor?.activeChildId ?? null)
-    const seq = next?.seq ?? anchor?.pendingBranchSeq ?? (anchor ? await nextChildSeq(reader, anchor) : 0)
+    const siblingOrder =
+      next?.siblingOrder ?? anchor?.pendingBranchOrder ?? (anchor ? await nextSiblingOrder(reader, anchor) : 0)
     const inserted = newMessageRow(
       reader.record.id,
       thread.threadId,
       operation.message,
       anchor?.messageId ?? null,
-      seq,
+      siblingOrder,
       next?.branchId ?? anchor?.pendingBranchId ?? null
     )
     inserted.activeChildId = next?.messageId ?? null
     plan.diff.messages.upsert.push(inserted)
-    if (next) putMetadata(plan, { ...next, parentMessageId: inserted.messageId, seq: 0, branchId: null })
+    if (next) putMetadata(plan, { ...next, parentMessageId: inserted.messageId, siblingOrder: 0, branchId: null })
     if (anchor)
       putMetadata(plan, {
         ...anchor,
         activeChildId: inserted.messageId,
         pendingBranchId: undefined,
-        pendingBranchSeq: undefined,
+        pendingBranchOrder: undefined,
       })
     else putThread(plan, { ...thread, rootMessageId: inserted.messageId, activeLeafMessageId: inserted.messageId })
     plan.appendedMessageIds.push(inserted.messageId)
@@ -245,7 +246,7 @@ export async function planMessageStructure(
       target.threadId,
       { id: operation.replacementPivotId, role: 'system', contentParts: [] },
       target.parentMessageId,
-      target.seq,
+      target.siblingOrder,
       target.branchId
     )
     Object.assign(replacement, {
@@ -253,7 +254,7 @@ export async function planMessageStructure(
       forkCreatedAt: target.forkCreatedAt,
       forkPivotId: point.messageId === target.messageId ? replacement.messageId : undefined,
       pendingBranchId: target.pendingBranchId,
-      pendingBranchSeq: target.pendingBranchSeq,
+      pendingBranchOrder: target.pendingBranchOrder,
     })
     plan.diff.messages.upsert.push(replacement)
     if (point.messageId !== target.messageId)
@@ -277,17 +278,22 @@ export async function planMessageStructure(
       )
   } else if (parent) {
     const lastChild = (await readChildren(reader, target, 1, { reverse: true }))[0]
-    const spread = Math.max(lastChild?.seq ?? 0, target.pendingBranchSeq ?? 0)
+    const spread = Math.max(lastChild?.siblingOrder ?? 0, target.pendingBranchOrder ?? 0)
     if (spread)
       plan.diff.siblingShifts = [
-        { threadId: target.threadId, parentMessageId: parent.messageId, afterSeq: target.seq, delta: spread },
+        {
+          threadId: target.threadId,
+          parentMessageId: parent.messageId,
+          afterSiblingOrder: target.siblingOrder,
+          delta: spread,
+        },
       ]
     plan.diff.reparentChildren = [
       {
         threadId: target.threadId,
         parentMessageId: target.messageId,
         newParentMessageId: parent.messageId,
-        seqOffset: target.seq,
+        siblingOrderOffset: target.siblingOrder,
         ...(!hasFork && target.kind !== 'summary' ? { branchId: target.branchId } : {}),
       },
     ]
@@ -296,7 +302,7 @@ export async function planMessageStructure(
       updatedParent.activeChildId = target.activeChildId
       if (target.pendingBranchId) {
         updatedParent.pendingBranchId = target.pendingBranchId
-        updatedParent.pendingBranchSeq = target.seq + target.pendingBranchSeq!
+        updatedParent.pendingBranchOrder = target.siblingOrder + target.pendingBranchOrder!
       }
     }
     putMetadata(plan, updatedParent)
@@ -311,10 +317,14 @@ export async function planMessageStructure(
     if (!target.activeChildId && !target.pendingBranchId && !lastChild) {
       if (parent.activeChildId === target.messageId) {
         const next =
-          (await readChildren(reader, parent, 1, { boundary: { seq: target.seq, messageId: target.messageId } }))[0] ??
           (
             await readChildren(reader, parent, 1, {
-              boundary: { seq: target.seq, messageId: target.messageId },
+              boundary: { siblingOrder: target.siblingOrder, messageId: target.messageId },
+            })
+          )[0] ??
+          (
+            await readChildren(reader, parent, 1, {
+              boundary: { siblingOrder: target.siblingOrder, messageId: target.messageId },
               reverse: true,
             })
           )[0]
@@ -335,7 +345,7 @@ export async function planMessageStructure(
             ...(plan.diff.messageMetadataUpsert?.find((row) => row.messageId === parent.messageId) ?? updatedParent),
             forkPivotId: undefined,
             pendingBranchId: undefined,
-            pendingBranchSeq: undefined,
+            pendingBranchOrder: undefined,
           })
           if (siblings[0]) putMetadata(plan, { ...siblings[0], branchId: null })
         }
@@ -343,7 +353,7 @@ export async function planMessageStructure(
     }
   } else {
     const child = await readMetadata(reader, target.activeChildId)
-    if (child) putMetadata(plan, { ...child, parentMessageId: null, seq: 0, branchId: null })
+    if (child) putMetadata(plan, { ...child, parentMessageId: null, siblingOrder: 0, branchId: null })
     updatedThread.rootMessageId = child?.messageId ?? null
   }
   putThread(plan, updatedThread)
@@ -360,12 +370,12 @@ export function retainedSystem(row: MessageRow): MessageRow {
     ...row,
     parentMessageId: null,
     activeChildId: null,
-    seq: 0,
+    siblingOrder: 0,
     branchId: null,
     forkCreatedAt: undefined,
     fork: undefined,
     forkPivotId: undefined,
     pendingBranchId: undefined,
-    pendingBranchSeq: undefined,
+    pendingBranchOrder: undefined,
   }
 }

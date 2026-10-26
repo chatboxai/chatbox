@@ -28,7 +28,7 @@ export type SessionMessageRelationsSelector =
       kind: 'children'
       parentMessageId: string | null
       reverse?: boolean
-      boundary?: { seq: number; messageId: string }
+      boundary?: { siblingOrder: number; messageId: string }
       branchId?: string
     }
   | { kind: 'ancestors'; messageId: string }
@@ -86,14 +86,14 @@ export interface SessionRowRelationsPort {
 
 /** Range operations use the old committed relationships and run before explicit upserts. */
 export interface SessionRowRangeMutations {
-  siblingShifts?: Array<{ threadId: string; parentMessageId: string | null; afterSeq: number; delta: number }>
+  siblingShifts?: Array<{ threadId: string; parentMessageId: string | null; afterSiblingOrder: number; delta: number }>
   /** Collapse a deleted pivot into its existing parent, preserving its children's order and subtrees. */
   insertParents?: Array<{ threadId: string; parentMessageId: string; newParentMessageId: string }>
   reparentChildren?: Array<{
     threadId: string
     parentMessageId: string
     newParentMessageId: string
-    seqOffset: number
+    siblingOrderOffset: number
     branchId?: string | null
   }>
   /** Replace a deleted pivot with a new row at the same parent, sibling position, and branch identity. */

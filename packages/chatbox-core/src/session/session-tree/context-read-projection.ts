@@ -3,7 +3,7 @@ import type { CompactionPoint } from '../../types/session'
 
 export interface ContextCheckpointEndpoint {
   messageId: string
-  seq: number
+  siblingOrder: number
   subtreeEnd: number
   eligible: boolean
 }

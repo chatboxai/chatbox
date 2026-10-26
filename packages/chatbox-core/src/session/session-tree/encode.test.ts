@@ -30,7 +30,7 @@ function structure(tree: SessionTree, threadId = 'thread-active') {
       id: row.messageId,
       parent: row.parentMessageId,
       active: row.activeChildId,
-      seq: row.seq,
+      siblingOrder: row.siblingOrder,
       branch: row.branchId,
     }))
 }
@@ -53,16 +53,16 @@ describe('encodeSessionTree', () => {
     )
 
     expect(structure(tree)).toEqual([
-      { id: 'u1', parent: null, active: 'a1', seq: 0, branch: null },
-      { id: 'a1', parent: 'u1', active: 'u2', seq: 1, branch: null },
-      { id: 'u2', parent: 'a1', active: 'a2', seq: 2, branch: null },
-      { id: 'a2', parent: 'u2', active: null, seq: 3, branch: null },
+      { id: 'u1', parent: null, active: 'a1', siblingOrder: 0, branch: null },
+      { id: 'a1', parent: 'u1', active: 'u2', siblingOrder: 1, branch: null },
+      { id: 'u2', parent: 'a1', active: 'a2', siblingOrder: 2, branch: null },
+      { id: 'a2', parent: 'u2', active: null, siblingOrder: 3, branch: null },
     ])
     expect(tree.threads).toEqual([
       {
         sessionId: 'session-1',
         threadId: 'thread-active',
-        seq: -1,
+        threadOrder: -1,
         name: 'Current',
         createdAt: 0,
         rootMessageId: 'u1',
@@ -121,11 +121,11 @@ describe('encodeSessionTree', () => {
     )
 
     expect(structure(tree)).toEqual([
-      { id: 'u1', parent: null, active: 'a1', seq: 0, branch: null },
-      { id: 'alt-1', parent: 'u1', active: null, seq: 1, branch: 'list-first' },
-      { id: 'a1', parent: 'u1', active: null, seq: 2, branch: 'list-active' },
-      { id: 'alt-2', parent: 'u1', active: 'alt-2-reply', seq: 3, branch: 'list-last' },
-      { id: 'alt-2-reply', parent: 'alt-2', active: null, seq: 4, branch: null },
+      { id: 'u1', parent: null, active: 'a1', siblingOrder: 0, branch: null },
+      { id: 'alt-1', parent: 'u1', active: null, siblingOrder: 1, branch: 'list-first' },
+      { id: 'a1', parent: 'u1', active: null, siblingOrder: 2, branch: 'list-active' },
+      { id: 'alt-2', parent: 'u1', active: 'alt-2-reply', siblingOrder: 3, branch: 'list-last' },
+      { id: 'alt-2-reply', parent: 'alt-2', active: null, siblingOrder: 4, branch: null },
     ])
     expect(tree.threads[0].activeLeafMessageId).toBe('a1')
   })
@@ -156,11 +156,11 @@ describe('encodeSessionTree', () => {
     )
 
     expect(structure(tree)).toEqual([
-      { id: 'u1', parent: null, active: 'a1', seq: 0, branch: null },
-      { id: 'a1', parent: 'u1', active: null, seq: 1, branch: 'outer-active' },
-      { id: 'inner-pivot', parent: 'u1', active: 'inner-tail', seq: 2, branch: 'outer-saved' },
-      { id: 'inner-alt', parent: 'inner-pivot', active: null, seq: 3, branch: 'inner-saved' },
-      { id: 'inner-tail', parent: 'inner-pivot', active: null, seq: 4, branch: 'inner-active' },
+      { id: 'u1', parent: null, active: 'a1', siblingOrder: 0, branch: null },
+      { id: 'a1', parent: 'u1', active: null, siblingOrder: 1, branch: 'outer-active' },
+      { id: 'inner-pivot', parent: 'u1', active: 'inner-tail', siblingOrder: 2, branch: 'outer-saved' },
+      { id: 'inner-alt', parent: 'inner-pivot', active: null, siblingOrder: 3, branch: 'inner-saved' },
+      { id: 'inner-tail', parent: 'inner-pivot', active: null, siblingOrder: 4, branch: 'inner-active' },
     ])
   })
 
@@ -190,11 +190,11 @@ describe('encodeSessionTree', () => {
     )
 
     expect(structure(tree, 'thread-old')).toEqual([
-      { id: 't-u1', parent: null, active: 't-a1', seq: 0, branch: null },
-      { id: 't-a1', parent: 't-u1', active: null, seq: 1, branch: 'thread-active-branch' },
-      { id: 't-alt', parent: 't-u1', active: null, seq: 2, branch: 'thread-saved-branch' },
+      { id: 't-u1', parent: null, active: 't-a1', siblingOrder: 0, branch: null },
+      { id: 't-a1', parent: 't-u1', active: null, siblingOrder: 1, branch: 'thread-active-branch' },
+      { id: 't-alt', parent: 't-u1', active: null, siblingOrder: 2, branch: 'thread-saved-branch' },
     ])
-    expect(tree.threads.map((thread) => [thread.threadId, thread.seq, thread.rootMessageId])).toEqual([
+    expect(tree.threads.map((thread) => [thread.threadId, thread.threadOrder, thread.rootMessageId])).toEqual([
       ['thread-active', -1, null],
       ['thread-old', 0, 't-u1'],
     ])
@@ -218,10 +218,10 @@ describe('encodeSessionTree', () => {
     )
 
     expect(structure(tree)).toEqual([
-      { id: 'u1', parent: null, active: 's1', seq: 0, branch: null },
-      { id: 's1', parent: 'u1', active: 'a1', seq: 1, branch: null },
-      { id: 'a1', parent: 's1', active: null, seq: 2, branch: 'list-active' },
-      { id: 'alt', parent: 's1', active: null, seq: 3, branch: 'list-saved' },
+      { id: 'u1', parent: null, active: 's1', siblingOrder: 0, branch: null },
+      { id: 's1', parent: 'u1', active: 'a1', siblingOrder: 1, branch: null },
+      { id: 'a1', parent: 's1', active: null, siblingOrder: 2, branch: 'list-active' },
+      { id: 'alt', parent: 's1', active: null, siblingOrder: 3, branch: 'list-saved' },
     ])
   })
 
@@ -243,11 +243,11 @@ describe('encodeSessionTree', () => {
     )
 
     expect(structure(tree)).toEqual([
-      { id: 'u1', parent: null, active: 'a1', seq: 0, branch: null },
-      { id: 'a1', parent: 'u1', active: null, seq: 1, branch: 'list-active' },
-      { id: 'alt', parent: 'u1', active: 'alt-s', seq: 2, branch: 'list-saved' },
-      { id: 'alt-s', parent: 'alt', active: 'alt-u', seq: 3, branch: null },
-      { id: 'alt-u', parent: 'alt-s', active: null, seq: 4, branch: null },
+      { id: 'u1', parent: null, active: 'a1', siblingOrder: 0, branch: null },
+      { id: 'a1', parent: 'u1', active: null, siblingOrder: 1, branch: 'list-active' },
+      { id: 'alt', parent: 'u1', active: 'alt-s', siblingOrder: 2, branch: 'list-saved' },
+      { id: 'alt-s', parent: 'alt', active: 'alt-u', siblingOrder: 3, branch: null },
+      { id: 'alt-u', parent: 'alt-s', active: null, siblingOrder: 4, branch: null },
     ])
     expect(row(tree, 'alt-s').kind).toBe('summary')
   })
@@ -270,8 +270,8 @@ describe('encodeSessionTree', () => {
     )
 
     expect(structure(tree)).toEqual([
-      { id: 'u1', parent: null, active: null, seq: 0, branch: null },
-      { id: 'alt', parent: 'u1', active: null, seq: 1, branch: 'list-saved' },
+      { id: 'u1', parent: null, active: null, siblingOrder: 0, branch: null },
+      { id: 'alt', parent: 'u1', active: null, siblingOrder: 1, branch: 'list-saved' },
     ])
     expect(tree.threads[0].activeLeafMessageId).toBe('u1')
   })
@@ -286,13 +286,15 @@ describe('encodeSessionTree', () => {
 
     expect(tree.threads[0]).toMatchObject({
       threadId: 'thread-active',
-      seq: -1,
+      threadOrder: -1,
       name: null,
       createdAt: 1_000,
       rootMessageId: null,
       activeLeafMessageId: null,
     })
-    expect(structure(tree, 'thread-old')).toEqual([{ id: 't-u1', parent: null, active: null, seq: 0, branch: null }])
+    expect(structure(tree, 'thread-old')).toEqual([
+      { id: 't-u1', parent: null, active: null, siblingOrder: 0, branch: null },
+    ])
   })
 
   test('keeps an explicit empty active thread name distinct from a missing name', () => {

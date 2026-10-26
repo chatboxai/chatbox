@@ -70,11 +70,11 @@ export async function planThreadStructure(
   }
   const latest = await reader.latestArchivedThread()
   const archive = (now: number) => {
-    const seq = (latest?.seq ?? -1) + 1
-    if (!Number.isSafeInteger(seq)) throw new Error('Thread ordering exhausted')
+    const threadOrder = (latest?.threadOrder ?? -1) + 1
+    if (!Number.isSafeInteger(threadOrder)) throw new Error('Thread ordering exhausted')
     putThread(plan, {
       ...active,
-      seq,
+      threadOrder,
       name: active.name || reader.record.name,
       createdAt: now,
       sessionPromptContextSnapshot: reader.record.settings?.sessionPromptContextSnapshot,
@@ -83,7 +83,7 @@ export async function planThreadStructure(
   }
   const restore = (thread: ThreadRow) => {
     const { sessionPromptContextSnapshot: _snapshot, ...activeFields } = thread
-    putThread(plan, { ...activeFields, seq: -1 })
+    putThread(plan, { ...activeFields, threadOrder: -1 })
     plan.record = {
       ...plan.record,
       activeThreadId: thread.threadId,
@@ -182,7 +182,7 @@ export async function planThreadStructure(
     const thread: ThreadRow = {
       sessionId: reader.record.id,
       threadId,
-      seq: -1,
+      threadOrder: -1,
       name: '',
       createdAt: operation.now,
       rootMessageId: messages[0]?.id ?? null,

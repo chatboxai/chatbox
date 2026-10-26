@@ -140,30 +140,25 @@ it('rejects cycles in stored branch metadata', async () => {
   ).rejects.toThrow(/[Cc]yclic/)
 })
 
-it.each([
-  'missing-child',
-  'wrong-thread',
-  'wrong-parent',
-  'wrong-session',
-  'missing-facts',
-  'missing-selection',
-] as const)('rejects %s metadata before returning a misleading branch count', async (failure) => {
-  const { commit, metadata } = branchMetadata()
-  const reply = metadata.get('reply')!
-  if (failure === 'missing-child') metadata.delete('reply')
-  if (failure === 'wrong-thread') reply.threadId = 'recent'
-  if (failure === 'wrong-parent') reply.parentMessageId = 'old-0'
-  if (failure === 'wrong-session') reply.sessionId = 'other'
-  if (failure === 'missing-facts') delete reply.facts
-  if (failure === 'missing-selection') delete reply.selected
-  await expect(
-    readBranchPreviewFromMetadata(
-      { sessionId: 'transcript', firstMessageId: 'user' },
-      commit,
-      async (id) => metadata.get(id) ?? null
-    )
-  ).rejects.toThrow()
-})
+it.each(['missing-child', 'wrong-thread', 'wrong-parent', 'wrong-session', 'missing-facts'] as const)(
+  'rejects %s metadata before returning a misleading branch count',
+  async (failure) => {
+    const { commit, metadata } = branchMetadata()
+    const reply = metadata.get('reply')!
+    if (failure === 'missing-child') metadata.delete('reply')
+    if (failure === 'wrong-thread') reply.threadId = 'recent'
+    if (failure === 'wrong-parent') reply.parentMessageId = 'old-0'
+    if (failure === 'wrong-session') reply.sessionId = 'other'
+    if (failure === 'missing-facts') delete reply.facts
+    await expect(
+      readBranchPreviewFromMetadata(
+        { sessionId: 'transcript', firstMessageId: 'user' },
+        commit,
+        async (id) => metadata.get(id) ?? null
+      )
+    ).rejects.toThrow()
+  }
+)
 
 it.each([
   ['cycle', "UPDATE session_messages SET active_child_id='user' WHERE session_id='transcript' AND message_id='reply'"],
@@ -179,10 +174,6 @@ it.each([
   [
     'missing facts',
     "UPDATE session_messages SET row_metadata_json=json_remove(row_metadata_json,'$.facts') WHERE session_id='transcript' AND message_id='reply'",
-  ],
-  [
-    'missing selection',
-    "UPDATE session_messages SET row_metadata_json=json_remove(row_metadata_json,'$.selected') WHERE session_id='transcript' AND message_id='reply'",
   ],
 ] as const)('SQL rejects stored %s metadata without returning a partial count', async (_failure, corruption) => {
   const database = openNodeSessionRowDatabase()
@@ -277,4 +268,15 @@ it('SQL preserves Unicode preview identities across compact native bridge slices
     expect(Array.from(rows[0].value).length).toBeLessThanOrEqual(4096)
     expect(Object.keys(rows[0]).every((key) => key === 'value' || key === 'value_length')).toBe(true)
   }
+})
+
+it('reads branch facts without persisted path membership', async () => {
+  const { commit, metadata } = branchMetadata()
+  for (const row of metadata.values()) delete row.selected
+  const preview = await readBranchPreviewFromMetadata(
+    { sessionId: 'transcript', firstMessageId: 'user' },
+    commit,
+    async (id) => metadata.get(id) ?? null
+  )
+  expect(preview).toBeTruthy()
 })

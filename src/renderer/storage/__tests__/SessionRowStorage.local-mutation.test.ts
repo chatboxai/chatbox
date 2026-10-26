@@ -109,7 +109,7 @@ describe('IndexedDB local row mutation', () => {
       const point = published.find((row) => row.messageId === (summaryPoint ? 'summary' : 'user'))!
       expect(point.activeChildId).toBe('alternative-reply')
       expect(point.pendingBranchId).toBeUndefined()
-      expect(point.pendingBranchSeq).toBeUndefined()
+      expect(point.pendingBranchOrder).toBeUndefined()
       const physicalFields = [
         'message',
         'selectedDepth',
@@ -196,7 +196,13 @@ describe('IndexedDB local row mutation', () => {
       operation: { action: 'message-remove', messageId: 'middle', replacementPivotId: 'hidden' },
     })
     const read = await rows.readMessages({ sessionId: 's', messageIds: ['tail'] })
-    expect(read?.messages[0]).toMatchObject({ parentMessageId: 'user', selected: true })
+    expect(read?.messages[0]).toMatchObject({ parentMessageId: 'user' })
+    const membership = await rows.readMessageMetadata({
+      sessionId: 's',
+      messageIds: [read!.messages[0].messageId],
+      expectedRevision: read!.revision,
+    })
+    expect(membership?.status === 'ready' && membership.rows[0].selected).toBe(true)
     expect(await repository.getSessionHeader('s')).toMatchObject({ summary: { messageCount: 2 } })
   })
 
@@ -208,8 +214,8 @@ describe('IndexedDB local row mutation', () => {
       threads: { upsert: [], delete: [] },
       messages: { upsert: [], delete: [] },
       siblingShifts: [
-        { threadId: 's', parentMessageId: 'user', afterSeq: -1, delta: 1 },
-        { threadId: 's', parentMessageId: 'user', afterSeq: -1, delta: -1 },
+        { threadId: 's', parentMessageId: 'user', afterSiblingOrder: -1, delta: 1 },
+        { threadId: 's', parentMessageId: 'user', afterSiblingOrder: -1, delta: -1 },
       ],
     }
     await expect(rows.applyDiff(diff, { ...previous, revision: 2 }, 1)).rejects.toMatchObject({
@@ -217,7 +223,7 @@ describe('IndexedDB local row mutation', () => {
     })
     expect((await rows.readCommit('s'))?.revision).toBe(1)
     const read = await rows.readMessageMetadata({ sessionId: 's', messageIds: ['reply'], expectedRevision: 1 })
-    expect(read?.status === 'ready' && read.rows[0].seq).toBe(0)
+    expect(read?.status === 'ready' && read.rows[0].siblingOrder).toBe(0)
   })
 
   it('clears only the active thread while archived fork rows remain readable', async () => {

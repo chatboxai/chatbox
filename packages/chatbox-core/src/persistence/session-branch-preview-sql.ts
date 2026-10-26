@@ -6,7 +6,7 @@ import type { SessionRowSqlBindValue, SessionRowSqlDatabase } from './session-ro
 /** Path identities stay in SQLite; only preview identities and scalar statistics cross the driver. */
 const BRANCH_PREVIEW_SQL = `WITH RECURSIVE
   first AS (
-    SELECT session_id,thread_id,message_id,parent_message_id,active_child_id,seq,kind,status,created_at,updated_at,branch_id,row_metadata_json
+    SELECT session_id,thread_id,message_id,parent_message_id,active_child_id,siblingOrder,kind,status,created_at,updated_at,branch_id,row_metadata_json
       FROM session_messages WHERE session_id=? AND message_id=?
   ),
   reachable(message_id) AS (
@@ -16,10 +16,10 @@ const BRANCH_PREVIEW_SQL = `WITH RECURSIVE
       JOIN session_messages m ON m.session_id=f.session_id AND m.thread_id=f.thread_id AND m.message_id=p.message_id
       WHERE m.active_child_id IS NOT NULL
   ),
-  ordered(message_id,parent_message_id,active_child_id,thread_id,seq,kind,status,created_at,updated_at,branch_id,row_metadata_json,depth,broken_parent) AS (
-    SELECT message_id,parent_message_id,active_child_id,thread_id,seq,kind,status,created_at,updated_at,branch_id,row_metadata_json,0,0 FROM first
+  ordered(message_id,parent_message_id,active_child_id,thread_id,siblingOrder,kind,status,created_at,updated_at,branch_id,row_metadata_json,depth,broken_parent) AS (
+    SELECT message_id,parent_message_id,active_child_id,thread_id,siblingOrder,kind,status,created_at,updated_at,branch_id,row_metadata_json,0,0 FROM first
     UNION ALL
-    SELECT m.message_id,m.parent_message_id,m.active_child_id,m.thread_id,m.seq,m.kind,m.status,m.created_at,m.updated_at,m.branch_id,m.row_metadata_json,p.depth+1,
+    SELECT m.message_id,m.parent_message_id,m.active_child_id,m.thread_id,m.siblingOrder,m.kind,m.status,m.created_at,m.updated_at,m.branch_id,m.row_metadata_json,p.depth+1,
       m.parent_message_id IS NOT p.message_id
     FROM ordered p CROSS JOIN first f
       JOIN session_messages m ON m.session_id=f.session_id AND m.thread_id=f.thread_id AND m.message_id=p.active_child_id
@@ -32,7 +32,6 @@ const BRANCH_PREVIEW_SQL = `WITH RECURSIVE
       CASE WHEN json_valid(row_metadata_json)
         THEN json_type(row_metadata_json,'$.facts')='object'
           AND json_type(row_metadata_json,'$.facts.role')='text'
-          AND json_type(row_metadata_json,'$.selected') IN ('true','false')
         ELSE 0 END AS projection_ready
     FROM ordered
   ),
@@ -49,7 +48,7 @@ const BRANCH_PREVIEW_SQL = `WITH RECURSIVE
       'firstFound',EXISTS(SELECT 1 FROM first),
       'threadFound',EXISTS(SELECT 1 FROM first f JOIN session_threads t ON t.session_id=f.session_id AND t.thread_id=f.thread_id),
       'projectionUnavailable',EXISTS(SELECT 1 FROM facts WHERE COALESCE(projection_ready,0)=0),
-      'invalidPath',EXISTS(SELECT 1 FROM facts WHERE broken_parent=1 OR typeof(seq)<>'integer' OR seq<0 OR seq>9007199254740991
+      'invalidPath',EXISTS(SELECT 1 FROM facts WHERE broken_parent=1 OR typeof(siblingOrder)<>'integer' OR siblingOrder<0 OR siblingOrder>9007199254740991
         OR typeof(created_at) NOT IN ('integer','real') OR typeof(updated_at) NOT IN ('integer','real')
         OR kind NOT IN ('message','summary') OR status NOT IN ('settled','generating')
         OR thread_id='' OR message_id='' OR parent_message_id='' OR active_child_id='' OR branch_id='')

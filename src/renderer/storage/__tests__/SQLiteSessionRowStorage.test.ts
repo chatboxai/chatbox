@@ -11,7 +11,10 @@ import {
 import { SESSION_ROW_PROJECTION_SCHEMA_SQL } from '../../../../packages/chatbox-core/src/persistence/session-row-projection-sql'
 import { SESSION_TEXT_TOKEN_SCHEMA_SQL } from '../../../../packages/chatbox-core/src/persistence/session-text-token-sql'
 import { SESSION_TOKEN_CACHE_SQL } from '../../../../packages/chatbox-core/src/persistence/session-token-cache-sql'
-import { projectRowFixture } from '../../../../packages/chatbox-core/src/ports/testing/session-row-fixtures'
+import {
+  projectRowFixture as projectFactsFixture,
+  storageRowFixture,
+} from '../../../../packages/chatbox-core/src/ports/testing/session-row-fixtures'
 import { SQLiteSessionRowStore } from '../SQLiteSessionRowStorage'
 
 const mockDatabase = vi.hoisted(() => ({
@@ -43,7 +46,7 @@ function threadRow(threadId: string, overrides: Partial<ThreadRow> = {}): Thread
   return {
     sessionId: 'session-1',
     threadId,
-    seq: -1,
+    threadOrder: -1,
     name: threadId,
     createdAt: 1_000,
     rootMessageId: null,
@@ -60,7 +63,7 @@ function messageRow(messageId: string, overrides: Partial<MessageRow> = {}): Mes
     messageId,
     parentMessageId: null,
     activeChildId: null,
-    seq: 0,
+    siblingOrder: 0,
     kind: 'message',
     status: 'settled',
     createdAt: 1_000,
@@ -206,7 +209,7 @@ describe('SQLiteSessionRowStore', () => {
       snapshot({
         sessionId: 'session-1',
         threads: [threadRow('thread-active')],
-        messages: [messageRow('m1'), messageRow('m2', { seq: 1, parentMessageId: 'm1' })],
+        messages: [messageRow('m1'), messageRow('m2', { siblingOrder: 1, parentMessageId: 'm1' })],
       })
     )
 
@@ -309,9 +312,9 @@ describe('SQLiteSessionRowStore', () => {
   it('chunks oversized payloads into bounded transactional bridge calls', async () => {
     const store = new SQLiteSessionRowStore()
     const payload = 'x'.repeat(300 * 1024)
-    const bigMessage = (messageId: string, seq: number) =>
+    const bigMessage = (messageId: string, siblingOrder: number) =>
       messageRow(messageId, {
-        seq,
+        siblingOrder,
         message: { id: messageId, role: 'user', contentParts: [{ type: 'text', text: payload }] },
       })
 
@@ -348,7 +351,7 @@ describe('SQLiteSessionRowStore', () => {
         snapshot({
           sessionId: 'session-1',
           threads: [threadRow('thread-active')],
-          messages: Array.from({ length: count }, (_, index) => messageRow(`m${index}`, { seq: index })),
+          messages: Array.from({ length: count }, (_, index) => messageRow(`m${index}`, { siblingOrder: index })),
         })
       )
     } finally {
@@ -371,7 +374,7 @@ describe('SQLiteSessionRowStore', () => {
     const contentParts = [{ type: 'text' as const, text: 'x'.repeat(64 * 1024) }]
     let serializedMessages = 0
     const messages = Array.from({ length: count }, (_, index) => {
-      const row = messageRow(`m${index}`, { seq: index })
+      const row = messageRow(`m${index}`, { siblingOrder: index })
       Object.defineProperty(row.message, 'contentParts', {
         enumerable: true,
         get: () => {
@@ -433,9 +436,9 @@ describe('SQLiteSessionRowStore', () => {
   it('leaves current rows untouched when staging an oversized batch fails', async () => {
     const store = new SQLiteSessionRowStore()
     const payload = 'x'.repeat(300 * 1024)
-    const bigMessage = (messageId: string, seq: number) =>
+    const bigMessage = (messageId: string, siblingOrder: number) =>
       messageRow(messageId, {
-        seq,
+        siblingOrder,
         message: { id: messageId, role: 'user', contentParts: [{ type: 'text', text: payload }] },
       })
     mockDatabase.executeSet.mockResolvedValueOnce({ changes: { changes: 1 } }).mockRejectedValueOnce(new Error('boom'))
@@ -604,3 +607,7 @@ describe('SQLiteSessionRowStore', () => {
     await expect(store.hasRows('missing')).resolves.toBe(false)
   })
 })
+
+function projectRowFixture(...args: Parameters<typeof projectFactsFixture>) {
+  return storageRowFixture(projectFactsFixture(...args))
+}

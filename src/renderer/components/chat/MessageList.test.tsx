@@ -271,26 +271,30 @@ function page(request: SessionTranscriptRequest): SessionTranscriptPage {
   const end =
     request.cursor?.direction === 'before' ? Number(request.cursor.messageId?.slice(1)) : Math.min(first + size, 220)
   const messages = Array.from({ length: end - first }, (_, index) => {
-    const seq = first + index
+    const siblingOrder = first + index
     return {
       sessionId: 's',
       threadId: 't',
-      messageId: `m${seq}`,
-      seq,
-      parentMessageId: seq ? `m${seq - 1}` : null,
-      activeChildId: seq < 219 ? `m${seq + 1}` : null,
+      messageId: `m${siblingOrder}`,
+      siblingOrder,
+      parentMessageId: siblingOrder ? `m${siblingOrder - 1}` : null,
+      activeChildId: siblingOrder < 219 ? `m${siblingOrder + 1}` : null,
       kind: 'message' as const,
       status: 'settled' as const,
       createdAt: 1,
       updatedAt: 1,
       branchId: null,
-      message: { id: `m${seq}`, role: seq % 2 ? ('assistant' as const) : ('user' as const), contentParts: [] },
+      message: {
+        id: `m${siblingOrder}`,
+        role: siblingOrder % 2 ? ('assistant' as const) : ('user' as const),
+        contentParts: [],
+      },
     }
   })
   const cursor = (messageId: string, direction: 'before' | 'after') => ({
     sessionId: 's',
     threadId: 't',
-    threadSeq: -1,
+    threadOrder: -1,
     revision: 1,
     limit: size,
     maxBytes: 2 * 1024 * 1024,
@@ -305,7 +309,7 @@ function page(request: SessionTranscriptRequest): SessionTranscriptPage {
       {
         sessionId: 's',
         threadId: 't',
-        seq: -1,
+        threadOrder: -1,
         name: 'Current',
         createdAt: 1,
         rootMessageId: 'm0',
@@ -545,7 +549,8 @@ describe('row transcript host', () => {
     scrollGeometry(viewport, 800)
     viewport.getBoundingClientRect = () => ({ top: 40, bottom: 640, height: 600 }) as DOMRect
     h.rowTop = 40
-    for (let seq = 11; seq < 111; seq++) h.rowOffsets.set(`m${seq}`, (seq - 60) * 100)
+    for (let siblingOrder = 11; siblingOrder < 111; siblingOrder++)
+      h.rowOffsets.set(`m${siblingOrder}`, (siblingOrder - 60) * 100)
     h.scrollIntoView.mockClear()
     h.scrollTo.mockClear()
     h.scrollToIndex.mockClear()
@@ -566,7 +571,8 @@ describe('row transcript host', () => {
     const view = render(<Host search="m60" />)
     await waitFor(() => expect(h.firstReady).toBe(true))
     h.rowTop = 0
-    for (let seq = 11; seq < 111; seq++) h.rowOffsets.set(`m${seq}`, (seq - 60) * 100)
+    for (let siblingOrder = 11; siblingOrder < 111; siblingOrder++)
+      h.rowOffsets.set(`m${siblingOrder}`, (siblingOrder - 60) * 100)
     expect(h.controller?.getSnapshot().rows.some((row) => row.messageId === target)).toBe(true)
     expect(view.container.querySelector(`[data-transcript-message="${target}"]`)).toBeNull()
     h.scrollIntoView.mockClear()
@@ -588,7 +594,8 @@ describe('row transcript host', () => {
     const view = render(<Host search="m60" />)
     await waitFor(() => expect(h.firstReady).toBe(true))
     h.rowTop = 0
-    for (let seq = 11; seq < 111; seq++) h.rowOffsets.set(`m${seq}`, (seq - current) * 100)
+    for (let siblingOrder = 11; siblingOrder < 111; siblingOrder++)
+      h.rowOffsets.set(`m${siblingOrder}`, (siblingOrder - current) * 100)
     h.scrollIntoView.mockClear()
     h.scrollTo.mockClear()
     fireEvent.click(view.getByRole('button', { name: label }))
@@ -603,7 +610,8 @@ describe('row transcript host', () => {
     await waitFor(() => expect(h.firstReady).toBe(true))
     scrollGeometry(view.getByTestId('virtuoso'), 800)
     h.rowTop = -10
-    for (let seq = 11; seq < 111; seq++) h.rowOffsets.set(`m${seq}`, (seq - 60) * 100)
+    for (let siblingOrder = 11; siblingOrder < 111; siblingOrder++)
+      h.rowOffsets.set(`m${siblingOrder}`, (siblingOrder - 60) * 100)
     h.scrollToIndex.mockClear()
     fireEvent.click(view.getByRole('button', { name: 'Previous message' }))
     expect(h.scrollToIndex).toHaveBeenCalledExactlyOnceWith({ index: 49, align: 'start', behavior: 'smooth' })
@@ -679,7 +687,8 @@ describe('row transcript host', () => {
     expect(h.controller?.getSnapshot().operation?.phase).toBe('error')
     scrollGeometry(view.getByTestId('virtuoso'), 800)
     h.rowTop = 0
-    for (let seq = 11; seq < 111; seq++) h.rowOffsets.set(`m${seq}`, (seq - 60) * 100)
+    for (let siblingOrder = 11; siblingOrder < 111; siblingOrder++)
+      h.rowOffsets.set(`m${siblingOrder}`, (siblingOrder - 60) * 100)
     h.scrollToIndex.mockClear()
     fireEvent.click(view.getByRole('button', { name: 'Previous message' }))
     expect(h.scrollToIndex).toHaveBeenCalledExactlyOnceWith({ index: 47, align: 'start', behavior: 'smooth' })
@@ -693,7 +702,8 @@ describe('row transcript host', () => {
     scrollGeometry(viewport, 800)
     fireEvent.wheel(viewport, { deltaY: -80 })
     h.rowTop = 0
-    for (let seq = 11; seq < 111; seq++) h.rowOffsets.set(`m${seq}`, (seq - 14) * 100)
+    for (let siblingOrder = 11; siblingOrder < 111; siblingOrder++)
+      h.rowOffsets.set(`m${siblingOrder}`, (siblingOrder - 14) * 100)
     h.scrollToIndex.mockClear()
     fireEvent.click(view.getByRole('button', { name: 'Previous message' }))
     expect(h.scrollToIndex).toHaveBeenCalledExactlyOnceWith({ index: 1, align: 'start', behavior: 'smooth' })
@@ -724,7 +734,7 @@ describe('row transcript host', () => {
     h.threadCount = 2
     h.read.mockImplementation(async (request: SessionTranscriptRequest) => {
       const result = page(request)
-      result.threads[0] = { ...result.threads[0], seq: 0, name: 'History', createdAt: 1_700_000_000_000 }
+      result.threads[0] = { ...result.threads[0], threadOrder: 0, name: 'History', createdAt: 1_700_000_000_000 }
       if (empty) {
         result.messages = []
         result.threads[0].rootMessageId = null

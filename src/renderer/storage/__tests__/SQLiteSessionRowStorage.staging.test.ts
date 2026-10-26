@@ -9,7 +9,8 @@ import {
 } from '../../../../packages/chatbox-core/src/persistence/node-sqlite.test-support'
 import {
   prepareSessionRowsFixture,
-  projectRowFixture,
+  projectRowFixture as projectFactsFixture,
+  storageRowFixture,
 } from '../../../../packages/chatbox-core/src/ports/testing/session-row-fixtures'
 import { InMemorySessionRecordStore } from '../../../../packages/chatbox-core/src/testing/InMemorySessionRecordStore'
 import { SQLiteSessionRowStore } from '../SQLiteSessionRowStorage'
@@ -50,7 +51,7 @@ function snapshot(count: number, revision = 1): SessionRowSnapshot {
         {
           sessionId: 'session',
           threadId: 'active',
-          seq: -1,
+          threadOrder: -1,
           name: 'Active',
           createdAt: 1,
           rootMessageId: 'm0',
@@ -64,7 +65,7 @@ function snapshot(count: number, revision = 1): SessionRowSnapshot {
         messageId: `m${index}`,
         parentMessageId: index ? `m${index - 1}` : null,
         activeChildId: index === count - 1 ? null : `m${index + 1}`,
-        seq: index,
+        siblingOrder: index,
         kind: 'message',
         status: 'settled',
         createdAt: index,
@@ -196,11 +197,11 @@ describe('Capacitor staging transport on real SQLite', () => {
       await store.writeRows(projectRowFixture(old), null)
       await store.acceptTextTokenResults(await tokenResults(store))
       const before = await database.query<{ message_id: string; payload_id: string }>(
-        'SELECT message_id, payload_id FROM session_messages ORDER BY seq'
+        'SELECT message_id, payload_id FROM session_messages ORDER BY siblingOrder'
       )
       const messages = (removeTail ? old.rows.messages.slice(0, -1) : old.rows.messages).map((row) => ({
         ...row,
-        seq: row.seq + 10,
+        siblingOrder: row.siblingOrder + 10,
         activeChildId: removeTail && row.messageId === 'm998' ? null : row.activeChildId,
       }))
       const threads = removeTail ? [{ ...old.rows.threads[0], activeLeafMessageId: 'm998' }] : old.rows.threads
@@ -215,14 +216,15 @@ describe('Capacitor staging transport on real SQLite', () => {
         { record: old.record, revision: 2 },
         1
       )
-      expect(calls.some(isStaging)).toBe(true)
-      expect(await database.query('SELECT message_id, payload_id FROM session_messages ORDER BY seq')).toEqual(
+      expect(calls.some(isStaging)).toBe(false)
+      expect(calls.flat().some((row) => row.statement.includes('INSERT INTO session_row_local_metadata'))).toBe(true)
+      expect(await database.query('SELECT message_id, payload_id FROM session_messages ORDER BY siblingOrder')).toEqual(
         removeTail ? before.slice(0, -1) : before
       )
       const read = await store.readSnapshot('session')
       expect(read?.revision).toBe(2)
-      expect(read?.rows.messages.map((row) => [row.messageId, row.seq])).toEqual(
-        messages.map((row) => [row.messageId, row.seq])
+      expect(read?.rows.messages.map((row) => [row.messageId, row.siblingOrder])).toEqual(
+        messages.map((row) => [row.messageId, row.siblingOrder])
       )
       expect((await database.query('SELECT * FROM session_text_tokens')).length).toBe(messages.length)
     },
@@ -338,7 +340,7 @@ describe('Capacitor staging transport on real SQLite', () => {
           (await database.query<{ message_id: string }>('SELECT message_id FROM session_messages_staging'))
             .map((row) => row.message_id)
             .sort()
-        ).toEqual(['m4', ...Array.from({ length: 14 }, (_, index) => `m${index + 6}`)].sort())
+        ).toEqual(['m19'])
       }
       if (outcome === 'rollback') {
         hooks.rollback = isPublish
@@ -402,7 +404,8 @@ describe('Capacitor staging transport on real SQLite', () => {
     const publish = calls.findLast(isPublish)
     const tokenCleanup = publish?.filter((row) => row.statement.startsWith('DELETE FROM session_text_tokens'))
     expect(tokenCleanup).toHaveLength(1)
-    expect(calls.some(isStaging)).toBe(true)
+    expect(calls.some(isStaging)).toBe(false)
+    expect(calls.flat().some((row) => row.statement.includes('session_row_local_deletes'))).toBe(true)
     expect(await storeRevision(database)).toBe(2)
   })
 
@@ -505,7 +508,7 @@ describe('Capacitor staging transport on real SQLite', () => {
     const fork = {
       ...old.rows.messages[0],
       messageId: 'fork',
-      seq: 20,
+      siblingOrder: 20,
       parentMessageId: 'm10',
       activeChildId: null,
       branchId: 'fork',
@@ -517,7 +520,7 @@ describe('Capacitor staging transport on real SQLite', () => {
     old.rows.threads.push({
       ...old.rows.threads[0],
       threadId: 'zz-archive',
-      seq: 0,
+      threadOrder: 0,
       name: 'Archived',
       rootMessageId: 'archived',
       activeLeafMessageId: 'archived',
@@ -736,7 +739,7 @@ describe('Capacitor staging transport on real SQLite', () => {
       const expected = snapshot(count)
       await store.writeRows(expected, null)
       expect(await readContentSnapshot(store)).toEqual(expectedSnapshot(expected))
-      const insertFamilies = [{ prefix: 'INSERT OR REPLACE INTO session_messages_staging ', width: 17 }]
+      const insertFamilies = [{ prefix: 'INSERT OR REPLACE INTO session_messages_staging ', width: 16 }]
       const isRowInsert = (row: NativeStatement) =>
         insertFamilies.some(({ prefix }) => row.statement.startsWith(prefix))
       const rowBatches = calls.filter((batch) => batch.some(isRowInsert))
@@ -1068,3 +1071,7 @@ it.each(['ios', 'android'] as const)(
     expect(calls.length).toBeGreaterThan(0)
   }
 )
+
+function projectRowFixture(...args: Parameters<typeof projectFactsFixture>) {
+  return storageRowFixture(projectFactsFixture(...args))
+}

@@ -24,7 +24,7 @@ import {
   revisionHead,
   storedRevision,
 } from './session-row-idb-records'
-import { putTranscriptMessage, putTranscriptThread, TRANSCRIPT_THREADS } from './session-row-idb-transcript'
+import { putTranscriptMessage } from './session-row-idb-transcript'
 
 type Phase = 'collecting' | 'ready' | 'published'
 interface Control {
@@ -63,7 +63,7 @@ const PAGE_SIZE = 128
 const allRange = (id: string) => IDBKeyRange.bound([id], [id, []])
 const kindRange = (id: string, kind: string) => IDBKeyRange.bound([id, kind], [id, kind, []])
 const sessionRange = (id: string) => IDBKeyRange.bound([id], [id, []])
-const visibleStores = [THREADS, MESSAGES, TRANSCRIPT_THREADS, MESSAGE_TREE, SESSION_ROW_TOKEN_CACHE_STORE]
+const visibleStores = [THREADS, MESSAGES, MESSAGE_TREE, SESSION_ROW_TOKEN_CACHE_STORE]
 const head = (tx: IDBTransaction, sessionId: string) =>
   requestValue<RevisionHeadRow | undefined>(tx.objectStore(THREADS).get([sessionId, REVISION_HEAD_THREAD_ID]))
 
@@ -304,7 +304,6 @@ export async function resumeIndexedDBImportRows(
             for (const name of visibleStores) tx.objectStore(name).delete(sessionRange(sessionId))
             for (const thread of current.threads.values()) {
               tx.objectStore(THREADS).put(thread)
-              putTranscriptThread(tx, thread)
             }
             const stage = tx.objectStore(ROW_TRANSFER_STAGE)
             await visitBatches<MessageEntry>(stage, id, 'message', (entries) => {

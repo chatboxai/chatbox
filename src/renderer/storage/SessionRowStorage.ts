@@ -21,12 +21,10 @@ import type {
   SessionThreadPageRequest,
 } from '@chatbox/core/ports'
 import {
-  putTranscriptThread,
   readIndexedDBCommit,
   readIndexedDBThread,
   readIndexedDBTranscript,
   readIndexedDBBranch,
-  TRANSCRIPT_THREADS,
 } from './session-row-idb-transcript'
 import type {
   SessionThreadRequest,
@@ -504,7 +502,6 @@ export class IndexedDBSessionRowStore implements SessionRowStorePort {
       const threadStore = tx.objectStore(SESSION_ROW_THREAD_STORE)
       const messageStore = tx.objectStore(SESSION_ROW_MESSAGE_STORE)
       const replace = () => {
-        tx.objectStore(TRANSCRIPT_THREADS).delete(IDBKeyRange.bound([sessionId], [sessionId, []]))
         tx.objectStore(MESSAGE_TREE).delete(IDBKeyRange.bound([sessionId], [sessionId, []]))
         tx.objectStore(SESSION_ROW_TOKEN_CACHE_STORE).delete(IDBKeyRange.bound([sessionId], [sessionId, []]))
         clearSessionRows(threadStore, sessionId, () => {
@@ -512,7 +509,6 @@ export class IndexedDBSessionRowStore implements SessionRowStorePort {
             try {
               for (const thread of rows.threads) {
                 threadStore.put(thread)
-                putTranscriptThread(tx, thread)
               }
               putStoredMessages(
                 tx,
@@ -596,7 +592,6 @@ export class IndexedDBSessionRowStore implements SessionRowStorePort {
     await this.runWrite('delete-rows', sessionId, ROW_STORES, (tx, fail) => {
       const threadStore = tx.objectStore(SESSION_ROW_THREAD_STORE)
       const remove = (revision: number | null) => {
-        tx.objectStore(TRANSCRIPT_THREADS).delete(IDBKeyRange.bound([sessionId], [sessionId, []]))
         tx.objectStore(MESSAGE_TREE).delete(IDBKeyRange.bound([sessionId], [sessionId, []]))
         tx.objectStore(SESSION_ROW_TOKEN_CACHE_STORE).delete(IDBKeyRange.bound([sessionId], [sessionId, []]))
         clearSessionRows(threadStore, sessionId, () => {

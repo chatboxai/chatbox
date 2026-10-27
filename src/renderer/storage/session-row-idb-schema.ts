@@ -1,4 +1,5 @@
 import { MESSAGE_TREE, TREE_MESSAGE_ID } from './session-row-idb-tree'
+import { THREAD_ORDER_INDEX } from './session-row-idb-records'
 import { reportDbOpenSucceeded, toDbOpenError, watchDbOpenBlocked, watchDbVersionChange } from './db-schema-guard'
 
 interface IndexSchema {
@@ -14,19 +15,14 @@ interface StoreSchema {
 const index = (name: string, ...keyPath: string[]): IndexSchema => ({ name, keyPath })
 const sessionIndex: IndexSchema = { name: 'bySession', keyPath: 'sessionId' }
 const schema: StoreSchema[] = [
-  { name: 'threads', keyPath: ['sessionId', 'threadId'], indexes: [sessionIndex] },
+  {
+    name: 'threads',
+    keyPath: ['sessionId', 'threadId'],
+    indexes: [sessionIndex, index(THREAD_ORDER_INDEX, 'sessionId', 'threadOrder', 'threadId')],
+  },
   { name: 'messages', keyPath: ['sessionId', 'messageId'], indexes: [sessionIndex] },
   { name: 'tokenCache', keyPath: ['sessionId', 'messageId', 'cacheKey'] },
   { name: 'rowTransferStage', keyPath: ['stageId', 'kind', 'id'] },
-  {
-    name: 'transcriptThreads',
-    keyPath: ['sessionId', 'threadId'],
-    indexes: [
-      sessionIndex,
-      index('bySummaryOrder', 'sessionId', 'searchOrder', 'threadId'),
-      index('bySessionNonemptyOrder', 'sessionId', 'nonempty', 'order', 'threadId'),
-    ],
-  },
   {
     name: MESSAGE_TREE,
     keyPath: ['sessionId', 'threadId', 'messageId'],

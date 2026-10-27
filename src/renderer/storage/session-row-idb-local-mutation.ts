@@ -9,7 +9,7 @@ import {
   REVISION_HEAD_THREAD_ID,
   isRevisionHeadRow,
 } from './session-row-idb-records'
-import { putTranscriptThread, TRANSCRIPT_THREADS, requestValue } from './session-row-idb-transcript'
+import { requestValue } from './session-row-idb-transcript'
 import { deleteStoredMessage, putStoredMessages, messageMetadata } from './session-row-idb-messages'
 import { MESSAGE_TREE, readTreeMessage, encodeTreeMetadata } from './session-row-idb-tree'
 
@@ -53,14 +53,12 @@ export async function applyIndexedDBLocalMutation(
   }
   for (const thread of plan.threads.values()) {
     threads.put(thread)
-    putTranscriptThread(tx, thread)
   }
   const removed = new Set(diff.threads.delete)
   if (diff.deleteArchivedThreads)
     for (const id of await threadIds()) if (id !== commit.record.activeThreadId) removed.add(id)
   for (const id of removed) {
     threads.delete([sessionId, id])
-    tx.objectStore(TRANSCRIPT_THREADS).delete([sessionId, id])
     tree.delete(IDBKeyRange.bound([sessionId, id], [sessionId, id, []]))
   }
   return {

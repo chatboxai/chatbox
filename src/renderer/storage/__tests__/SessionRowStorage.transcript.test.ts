@@ -9,7 +9,7 @@ import {
   SESSION_ROW_MESSAGE_STORE,
   SESSION_ROW_THREAD_STORE,
 } from '../SessionRowStorage'
-import { revisionHead } from '../session-row-idb-records'
+import { REVISION_HEAD_THREAD_ID, revisionHead } from '../session-row-idb-records'
 
 beforeEach(() => {
   globalThis.indexedDB = new IDBFactory()
@@ -150,4 +150,114 @@ it('reads selected bodies using only the revision head and requested message ids
     store.readMessages({ sessionId: 'transcript', messageIds: ['old-0'], expectedRevision: 2 })
   ).rejects.toMatchObject({ name: 'SessionRowConflictError' })
   store.close()
+})
+
+it.each([false, true])(
+  'traverses sparse archive orders and consecutive empty threads with empty active=%s',
+  async (emptyActive) => {
+    const store = new IndexedDBSessionRowStore()
+    try {
+      const fixture = transcriptFixture(emptyActive)
+      for (const thread of fixture.rows.threads)
+        if (thread.threadOrder >= 0) thread.threadOrder = thread.threadOrder * 10 + 4
+      const empty = fixture.rows.threads.find((thread) => thread.threadId === 'empty')!
+      for (const threadOrder of [1, 15, 40])
+        fixture.rows.threads.push({ ...empty, threadId: `empty-${threadOrder}`, threadOrder })
+      fixture.rows.threads.reverse()
+      await store.writeRows(fixture)
+      const neighboring = transcriptFixture()
+      neighboring.rows.sessionId = neighboring.record.id = 'transcript-next'
+      for (const row of [...neighboring.rows.threads, ...neighboring.rows.messages]) row.sessionId = 'transcript-next'
+      await store.writeRows(neighboring)
+
+      const collect = async (direction: 'older' | 'newer') => {
+        let page = await store.readTranscriptWindow({
+          sessionId: 'transcript',
+          origin: direction === 'newer' ? 'head' : 'tail',
+          limit: 4,
+        })
+        let result: string[] = []
+        for (let remaining = 8; remaining > 0; remaining--) {
+          if (!page) throw new Error('Expected transcript page')
+          expect(page.messages.every((row) => row.sessionId === 'transcript')).toBe(true)
+          const ids = page.messages.map((row) => row.messageId)
+          result = direction === 'newer' ? [...result, ...ids] : [...ids, ...result]
+          const cursor = page[direction]
+          if (!cursor) return result
+          page = await store.readTranscriptWindow({ sessionId: 'transcript', cursor, limit: 4 })
+        }
+        throw new Error('Transcript pagination did not terminate')
+      }
+      const expected = [
+        'old-0',
+        'old-1',
+        'old-2',
+        'recent-0',
+        'recent-1',
+        'recent-2',
+        'recent-3',
+        ...(emptyActive ? [] : ['active-0', 'active-1', 'active-2']),
+      ]
+      expect(await collect('newer')).toEqual(expected)
+      expect(await collect('older')).toEqual(expected)
+      expect((await store.readThread({ sessionId: 'transcript', threadId: 'empty-40' }))?.thread).toMatchObject({
+        threadId: 'empty-40',
+        rootMessageId: null,
+        threadOrder: 40,
+      })
+      const anchor = await store.readTranscriptWindow({
+        sessionId: 'transcript',
+        origin: { threadId: 'empty-40', edge: 'head' },
+        limit: 2,
+      })
+      expect(anchor?.messages).toEqual([])
+      expect(anchor?.anchor).toEqual({ threadId: 'empty-40', messageId: null })
+      expect(anchor?.newer === null).toBe(emptyActive)
+      expect(await store.readThread({ sessionId: 'transcript', threadId: REVISION_HEAD_THREAD_ID })).toBeNull()
+    } finally {
+      store.close()
+    }
+  }
+)
+
+it('stores canonical thread fields and returns lightweight thread views', async () => {
+  const store = new IndexedDBSessionRowStore()
+  const fixture = transcriptFixture()
+  await store.writeRows(fixture)
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open(SESSION_ROW_DB_NAME)
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+  try {
+    const tx = db.transaction(SESSION_ROW_THREAD_STORE, 'readonly')
+    const requests = fixture.rows.threads.map((thread) =>
+      tx.objectStore(SESSION_ROW_THREAD_STORE).get([thread.sessionId, thread.threadId])
+    )
+    const persisted = await Promise.all(
+      requests.map(
+        (request) =>
+          new Promise<unknown>((resolve, reject) => {
+            request.onsuccess = () => resolve(request.result)
+            request.onerror = () => reject(request.error)
+          })
+      )
+    )
+    expect(persisted).toEqual(fixture.rows.threads)
+    for (const thread of persisted) {
+      expect(thread).not.toHaveProperty('nonempty')
+      expect(thread).not.toHaveProperty('order')
+      expect(thread).not.toHaveProperty('searchOrder')
+    }
+    const read = await store.readThread({ sessionId: 'transcript', threadId: 'old' })
+    expect(read?.thread).toMatchObject({
+      threadOrder: 0,
+      summary: fixture.rows.threads.find((thread) => thread.threadId === 'old')!.summary,
+      control: { generatingAssistantCount: 0 },
+    })
+    expect(read?.thread).not.toHaveProperty('compactionPoints')
+  } finally {
+    db.close()
+    store.close()
+  }
 })

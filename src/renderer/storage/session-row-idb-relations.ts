@@ -1,12 +1,13 @@
 import { messageMetadata } from './session-row-idb-messages'
 import { loadTreeLinks } from './session-row-idb-links'
-import { threadLinksRelationReader, ThreadLinks } from '@chatbox/core/persistence'
+import { threadLinksRelationReader } from '@chatbox/core/persistence'
 import { MESSAGE_TREE, readTreeMessage, decodeTreeMetadata, type StoredTreeMetadata } from './session-row-idb-tree'
 import {
   readMetadataSelection,
   readRelationsPage,
   readBranchPreviewFromMetadata,
   validateBranchPreviewRequest,
+  transcriptThread,
   type SessionRelationReader,
 } from '@chatbox/core/persistence'
 import type { SessionBranchPreviewRequest } from '@chatbox/core/ports'
@@ -19,16 +20,9 @@ import {
   type SessionRowCommit,
   type SessionTranscriptThread,
 } from '@chatbox/core/ports'
-import type { MessageRowMetadata, ThreadRow } from '@chatbox/core/session/session-tree'
-import {
-  TRANSCRIPT_THREADS,
-  THREAD_SUMMARY_ORDER,
-  requestValue,
-  readTranscriptTransaction,
-  readTranscriptCommit,
-  plainTranscriptThread,
-} from './session-row-idb-transcript'
-import { SESSION_ROW_THREAD_STORE, SESSION_ROW_MESSAGE_STORE, STATUS_INDEX } from './session-row-idb-records'
+import type { ThreadRow } from '@chatbox/core/session/session-tree'
+import { requestValue, readTranscriptTransaction, readTranscriptCommit } from './session-row-idb-transcript'
+import { SESSION_ROW_THREAD_STORE, THREAD_ORDER_INDEX } from './session-row-idb-records'
 
 export function idbRelationReader(tx: IDBTransaction, sessionId: string, revision: number): SessionRelationReader {
   return threadLinksRelationReader({
@@ -93,15 +87,20 @@ export function readIndexedDBThreadSummaries(db: IDBDatabase, request: SessionTh
     { sessionId: request.sessionId, expectedRevision: request.cursor?.revision },
     async (tx, commit) => {
       const threads: SessionTranscriptThread[] = []
+      const store = tx.objectStore(SESSION_ROW_THREAD_STORE)
+      const active = await requestValue<ThreadRow | undefined>(
+        store.get([request.sessionId, commit.record.activeThreadId])
+      )
+      const offset = request.cursor?.offset ?? 0
+      if (active && offset === 0) threads.push(transcriptThread(active))
       await new Promise<void>((resolve, reject) => {
-        const cursor = tx
-          .objectStore(TRANSCRIPT_THREADS)
-          .index(THREAD_SUMMARY_ORDER)
-          .openCursor(IDBKeyRange.bound([request.sessionId], [request.sessionId, []]))
-        let skip = request.cursor?.offset ?? 0
+        const cursor = store
+          .index(THREAD_ORDER_INDEX)
+          .openCursor(IDBKeyRange.bound([request.sessionId, 0], [request.sessionId, []]), 'prev')
+        let skip = Math.max(0, offset - Number(Boolean(active)))
         cursor.onerror = () => reject(cursor.error)
         cursor.onsuccess = () => {
-          if (!cursor.result || threads.length > request.limit) {
+          if (!cursor.result) {
             resolve()
             return
           }
@@ -111,8 +110,9 @@ export function readIndexedDBThreadSummaries(db: IDBDatabase, request: SessionTh
             cursor.result.advance(count)
             return
           }
-          threads.push(plainTranscriptThread(cursor.result.value)!)
-          cursor.result.continue()
+          threads.push(transcriptThread(cursor.result.value as ThreadRow))
+          if (threads.length > request.limit) resolve()
+          else cursor.result.continue()
         }
       })
       return {

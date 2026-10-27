@@ -23,7 +23,7 @@ import {
   storedRevision,
   SESSION_ROW_THREAD_STORE as THREADS,
 } from './session-row-idb-records'
-import { putTranscriptMessage, putTranscriptThread, TRANSCRIPT_THREADS } from './session-row-idb-transcript'
+import { putTranscriptMessage } from './session-row-idb-transcript'
 
 interface StageThread {
   stageId: string
@@ -279,12 +279,11 @@ export async function stageIndexedDBRows(
                 if (parent !== thread.activeLeafMessageId) throw new Error('Invalid selected row leaf')
               })
               if (activeThreads !== 1) throw new Error('Active copied thread is missing')
-              for (const store of [THREADS, MESSAGES, TRANSCRIPT_THREADS, MESSAGE_TREE, SESSION_ROW_TOKEN_CACHE_STORE])
+              for (const store of [THREADS, MESSAGES, MESSAGE_TREE, SESSION_ROW_TOKEN_CACHE_STORE])
                 await requestValue(tx.objectStore(store).delete(sessionRange(sessionId)))
               await visitStage(tx, stageId, (entry) => {
                 if (entry.kind === 'thread') {
                   tx.objectStore(THREADS).put(entry.value)
-                  putTranscriptThread(tx, entry.value)
                 } else {
                   const row = entry.value
                   tx.objectStore(MESSAGES).put({ ...messageMetadata(row), message: row.message })

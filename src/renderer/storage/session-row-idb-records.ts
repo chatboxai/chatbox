@@ -8,12 +8,12 @@ export const SESSION_ROW_TOKEN_CACHE_STORE = 'tokenCache'
 export const ROW_TRANSFER_STAGE = 'rowTransferStage'
 
 export const SESSION_INDEX = 'bySession'
+export const THREAD_ORDER_INDEX = 'byThreadOrder'
 export const STATUS_INDEX = 'byStatus'
 export const ROW_STORES = [
   SESSION_ROW_THREAD_STORE,
   SESSION_ROW_MESSAGE_STORE,
   SESSION_ROW_TOKEN_CACHE_STORE,
-  'transcriptThreads',
   'messageTree',
 ]
 export const REVISION_HEAD_THREAD_ID = '__chatbox_internal_revision_head__'

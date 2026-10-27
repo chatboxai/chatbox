@@ -84,3 +84,45 @@ it('discards an aborted background prefetch and reloads on the next request', as
     store.prefetchThreadLinks({ sessionId: 'transcript', threadId: 'old', expectedRevision: 1 })
   ).resolves.toBeUndefined()
 })
+
+it.each([1, 2, 3])('pages thread summaries across sparse archive orders with a limit of %i', async (limit) => {
+  const store = new IndexedDBSessionRowStore()
+  stores.push(store)
+  const fixture = relationFixture()
+  for (const thread of fixture.rows.threads)
+    if (thread.threadOrder >= 0) thread.threadOrder = thread.threadOrder * 10 + 4
+  await store.writeRows(fixture)
+  const neighboring = relationFixture()
+  neighboring.rows.sessionId = neighboring.record.id = 'transcript-next'
+  for (const row of [...neighboring.rows.threads, ...neighboring.rows.messages]) row.sessionId = 'transcript-next'
+  await store.writeRows(neighboring)
+
+  const first = await store.readThreadSummariesPage({ sessionId: 'transcript', limit })
+  if (!first?.nextCursor) throw new Error('Expected thread page continuation')
+  const threads = [...first.threads]
+  let cursor = first.nextCursor
+  for (let remaining = 4; remaining > 0; remaining--) {
+    const page = await store.readThreadSummariesPage({ sessionId: 'transcript', limit, cursor })
+    if (!page) throw new Error('Expected thread page')
+    expect(page.revision).toBe(1)
+    threads.push(...page.threads)
+    if (!page.nextCursor) break
+    cursor = page.nextCursor
+  }
+  expect(threads.map((thread) => [thread.threadId, thread.threadOrder, thread.summary?.messageCount])).toEqual([
+    ['active', -1, 3],
+    ['recent', 24, 4],
+    ['empty', 14, 0],
+    ['old', 4, 3],
+  ])
+  expect(threads.every((thread) => thread.sessionId === 'transcript')).toBe(true)
+  expect(threads.every((thread) => thread.control?.generatingAssistantCount === 0)).toBe(true)
+  await expect(
+    store.readThreadSummariesPage({ sessionId: 'transcript-next', limit, cursor: first.nextCursor })
+  ).rejects.toThrow('Invalid thread summary page')
+
+  await store.writeRows({ ...fixture, revision: 2 }, 1)
+  await expect(
+    store.readThreadSummariesPage({ sessionId: 'transcript', limit, cursor: first.nextCursor })
+  ).rejects.toMatchObject({ name: 'SessionRowConflictError' })
+})

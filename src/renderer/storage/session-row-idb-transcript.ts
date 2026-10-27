@@ -6,7 +6,6 @@ import {
   readBranchMessagesPage,
   validateBranchMessagesRequest,
   readTranscriptPage,
-  transcriptOrder,
   transcriptThread,
   assertTranscriptRevision,
   validateTranscriptRequest,
@@ -30,29 +29,10 @@ import {
   ROW_STORES,
   SESSION_ROW_MESSAGE_STORE,
   SESSION_ROW_THREAD_STORE,
-  SESSION_INDEX,
+  THREAD_ORDER_INDEX,
   isRevisionHeadRow,
   type RevisionHeadRow,
 } from './session-row-idb-records'
-
-export const TRANSCRIPT_THREADS = 'transcriptThreads'
-export const THREAD_SUMMARY_ORDER = 'bySummaryOrder'
-const NONEMPTY_ORDER = 'bySessionNonemptyOrder'
-interface StoredTranscriptThread extends SessionTranscriptThread {
-  nonempty: number
-  order: number
-  searchOrder: number
-}
-
-export function putTranscriptThread(tx: IDBTransaction, row: ThreadRow): void {
-  if (isRevisionHeadRow(row)) return
-  tx.objectStore(TRANSCRIPT_THREADS).put({
-    ...transcriptThread(row),
-    nonempty: Number(row.rootMessageId !== null),
-    order: transcriptOrder(row.threadOrder),
-    searchOrder: row.threadOrder === -1 ? -Number.MAX_SAFE_INTEGER : -row.threadOrder,
-  } satisfies StoredTranscriptThread)
-}
 
 export function putTranscriptMessage(tx: IDBTransaction, row: StoredMessageRow, payloadBytes?: number): void {
   const { message, ...metadata } = row
@@ -73,10 +53,22 @@ export function requestValue<T>(request: IDBRequest): Promise<T> {
   })
 }
 
-export function plainTranscriptThread(row: StoredTranscriptThread | undefined): SessionTranscriptThread | null {
-  if (!row) return null
-  const { order: _order, nonempty: _nonempty, searchOrder: _searchOrder, ...thread } = row
-  return thread
+function firstNonemptyThread(
+  index: IDBIndex,
+  range: IDBKeyRange,
+  direction: IDBCursorDirection
+): Promise<SessionTranscriptThread | null> {
+  return new Promise((resolve, reject) => {
+    const request = index.openCursor(range, direction)
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => {
+      const cursor = request.result
+      if (!cursor) return resolve(null)
+      const row = cursor.value as ThreadRow
+      if (row.rootMessageId !== null) return resolve(transcriptThread(row))
+      cursor.continue()
+    }
+  })
 }
 
 async function readRevision(tx: IDBTransaction, sessionId: string): Promise<number | null> {
@@ -105,22 +97,29 @@ export async function readTranscriptCommit(tx: IDBTransaction, sessionId: string
 }
 
 function reader(tx: IDBTransaction, sessionId: string): SessionTranscriptReader {
-  const threads = tx.objectStore(TRANSCRIPT_THREADS)
+  const threads = tx.objectStore(SESSION_ROW_THREAD_STORE)
   return {
-    thread: async (id) =>
-      plainTranscriptThread(await requestValue<StoredTranscriptThread | undefined>(threads.get([sessionId, id]))),
+    thread: async (id) => {
+      const row = await requestValue<ThreadRow | RevisionHeadRow | undefined>(threads.get([sessionId, id]))
+      return row && !isRevisionHeadRow(row) ? transcriptThread(row) : null
+    },
     adjacent: async (thread, direction) => {
-      const lower = [sessionId, 1]
-      const upper = [sessionId, 1, []]
-      const key = thread ? [sessionId, 1, transcriptOrder(thread.threadOrder), thread.threadId] : null
+      const index = threads.index(THREAD_ORDER_INDEX)
+      const activeRange = IDBKeyRange.bound([sessionId, -1], [sessionId, -1, []])
+      if (direction === 'after' && thread?.threadOrder === -1) return null
+      if (direction === 'before' && !thread) {
+        const active = await firstNonemptyThread(index, activeRange, 'next')
+        if (active) return active
+      }
+      const lower = [sessionId, 0]
+      const upper = [sessionId, []]
+      const key = thread && thread.threadOrder >= 0 ? [sessionId, thread.threadOrder, thread.threadId] : null
       const range =
         direction === 'after'
           ? IDBKeyRange.bound(key ?? lower, upper, key !== null, false)
           : IDBKeyRange.bound(lower, key ?? upper, false, key !== null)
-      const cursor = await requestValue<IDBCursorWithValue | null>(
-        threads.index(NONEMPTY_ORDER).openCursor(range, direction === 'after' ? 'next' : 'prev')
-      )
-      return plainTranscriptThread(cursor?.value as StoredTranscriptThread | undefined)
+      const history = await firstNonemptyThread(index, range, direction === 'after' ? 'next' : 'prev')
+      return history ?? (direction === 'after' ? firstNonemptyThread(index, activeRange, 'next') : null)
     },
     isOnPath: async (row) => {
       const revision = await readRevision(tx, sessionId)

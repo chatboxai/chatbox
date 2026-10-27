@@ -47,8 +47,10 @@ it('creates the complete row schema at version 1 with bounded initialization', a
       'rowTransferStage',
       'threads',
       'tokenCache',
-      'transcriptThreads',
     ])
+    const threads = db.transaction('threads').objectStore('threads')
+    expect(Array.from(threads.indexNames)).toEqual(['bySession', 'byThreadOrder'])
+    expect(threads.index('byThreadOrder').keyPath).toEqual(['sessionId', 'threadOrder', 'threadId'])
     expect(cursor).not.toHaveBeenCalled()
   } finally {
     db.close()

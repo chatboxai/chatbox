@@ -883,6 +883,31 @@ describe('row transcript host', () => {
       vi.useRealTimers()
     }
   })
+  test('settles the tail when rendering a long message blocks frames past the deadline', async () => {
+    vi.useFakeTimers()
+    try {
+      let blocked = true
+      // A slow device spends several seconds rendering a long message before the next frame.
+      vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+        const delay = blocked ? 6000 : 16
+        blocked = false
+        return setTimeout(() => callback(performance.now()), delay)
+      })
+      vi.stubGlobal('cancelAnimationFrame', clearTimeout)
+      const view = render(<Host />)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(6100)
+      })
+      expect(view.queryByText('Try Again')).toBeNull()
+      expect(h.firstReady).toBe(true)
+      expect(h.currentScroller?.scrollTop).toBe(400)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
   test('loads one older page only after upward user input', async () => {
     const view = render(<Host />)
     await waitFor(() => expect(h.firstReady).toBe(true))

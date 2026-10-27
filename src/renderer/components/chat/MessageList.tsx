@@ -319,7 +319,6 @@ const MessageList = forwardRef<
   }, [owner, session.id, controller, follow, navigate, scrollToItem])
 
   const layoutFrame = useRef<number | null>(null)
-  const layoutDeadline = useRef<ReturnType<typeof setTimeout> | null>(null)
   const applying = useRef<number | null>(null)
   const layoutCorrection = useCallback(
     (anchor: SessionTranscriptViewportAnchor) => {
@@ -353,9 +352,7 @@ const MessageList = forwardRef<
         }
         if (canYield) {
           if (layoutFrame.current !== null) cancelAnimationFrame(layoutFrame.current)
-          if (layoutDeadline.current !== null) clearTimeout(layoutDeadline.current)
           layoutFrame.current = null
-          layoutDeadline.current = null
           applying.current = null
           controller.cancelLayout(layout.requestId)
         }
@@ -374,7 +371,6 @@ const MessageList = forwardRef<
     )
       return
     if (layoutFrame.current !== null) cancelAnimationFrame(layoutFrame.current)
-    if (layoutDeadline.current !== null) clearTimeout(layoutDeadline.current)
     applying.current = layout.requestId
     const isCurrent = () => controller.getSnapshot().layout?.requestId === layout.requestId
     const index = layout.anchor.messageId
@@ -393,12 +389,20 @@ const MessageList = forwardRef<
     let previousAnchorHeight = -1
     let stableTailFrames = 0
     let previousTailHeight = -1
-    layoutDeadline.current = setTimeout(() => {
-      if (layoutFrame.current !== null) cancelAnimationFrame(layoutFrame.current)
+    // The deadline counts frame time, capping each gap, so a long render on a slow device does not consume it.
+    let layoutTime = 0
+    let previousFrame: number | null = null
+    const nextFrame = () => {
+      if (layoutTime < 5000) {
+        layoutFrame.current = requestAnimationFrame(finish)
+        return
+      }
       applying.current = null
       controller.rejectLayout(layout.requestId, new Error('Message layout is unavailable'))
-    }, 5000)
-    const finish = () => {
+    }
+    const finish = (time: number) => {
+      layoutTime += previousFrame === null ? 0 : Math.min(time - previousFrame, 100)
+      previousFrame = time
       if (live.current.transcript.layout?.requestId !== layout.requestId) {
         applying.current = null
         return
@@ -412,7 +416,7 @@ const MessageList = forwardRef<
       if ((layout.kind === 'anchor' || layout.kind === 'preserve') && index >= 0) {
         if (!element) {
           if (virtuoso.current) scrollToItem(index, 'start', 'auto', isCurrent)
-          layoutFrame.current = requestAnimationFrame(finish)
+          nextFrame()
           return
         }
         const offset = 'offset' in layout.anchor ? layout.anchor.offset : 0
@@ -440,7 +444,7 @@ const MessageList = forwardRef<
         previousAnchorHeight = viewport.scrollHeight
         if (!settled) scrollByGeometry(correction)
         if (stableAnchorFrames < 2) {
-          layoutFrame.current = requestAnimationFrame(finish)
+          nextFrame()
           return
         }
       } else if (layout.kind === 'tail') {
@@ -459,14 +463,12 @@ const MessageList = forwardRef<
             if (!tail && currentItems.length) scrollToItem(currentItems.length - 1, 'end', 'auto', isCurrent)
             else scrollToPosition({ top: maxTop, behavior: 'auto' })
           }
-          layoutFrame.current = requestAnimationFrame(finish)
+          nextFrame()
           return
         }
       }
       const acknowledge = () => {
         if (live.current.transcript.layout?.requestId !== layout.requestId) return
-        if (layoutDeadline.current !== null) clearTimeout(layoutDeadline.current)
-        layoutDeadline.current = null
         applying.current = null
         if (scrollbarPointer.current && scroller.current)
           scrollbarPointer.current.scrollTop = scroller.current.scrollTop
@@ -490,7 +492,6 @@ const MessageList = forwardRef<
   useEffect(
     () => () => {
       if (layoutFrame.current !== null) cancelAnimationFrame(layoutFrame.current)
-      if (layoutDeadline.current !== null) clearTimeout(layoutDeadline.current)
     },
     []
   )

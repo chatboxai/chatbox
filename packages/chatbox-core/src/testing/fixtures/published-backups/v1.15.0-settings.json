@@ -1,0 +1,761 @@
+{
+  "settings": {
+    "showWordCount": false,
+    "showTokenCount": false,
+    "showTokenUsed": true,
+    "showModelName": true,
+    "showMessageTimestamp": false,
+    "showFirstTokenLatency": false,
+    "userAvatarKey": "",
+    "defaultAssistantAvatarKey": "",
+    "theme": 2,
+    "language": "en",
+    "fontSize": 14,
+    "spellCheck": true,
+    "defaultPrompt": "You are a helpful assistant.",
+    "allowReportingAndTracking": false,
+    "enableMarkdownRendering": true,
+    "enableLaTeXRendering": true,
+    "enableMermaidRendering": true,
+    "injectDefaultMetadata": true,
+    "autoPreviewArtifacts": false,
+    "autoCollapseCodeBlock": true,
+    "pasteLongTextAsAFile": true,
+    "autoGenerateTitle": true,
+    "autoLaunch": false,
+    "autoUpdate": false,
+    "betaUpdate": false,
+    "shortcuts": {
+      "quickToggle": "Alt+`",
+      "inputBoxFocus": "mod+i",
+      "inputBoxWebBrowsingMode": "mod+e",
+      "newChat": "mod+n",
+      "newPictureChat": "mod+shift+n",
+      "sessionListNavNext": "mod+tab",
+      "sessionListNavPrev": "mod+shift+tab",
+      "sessionListNavTargetIndex": "mod",
+      "messageListRefreshContext": "mod+r",
+      "dialogOpenSearch": "mod+k",
+      "inpubBoxSendMessage": "Enter",
+      "inpubBoxSendMessageWithoutResponse": "Ctrl+Enter",
+      "optionNavUp": "up",
+      "optionNavDown": "down",
+      "optionSelect": "enter"
+    },
+    "extension": {
+      "webSearch": {
+        "provider": "build-in",
+        "tavilyApiKey": ""
+      },
+      "knowledgeBase": {
+        "models": {}
+      }
+    },
+    "mcp": {
+      "servers": [],
+      "enabledBuiltinServers": []
+    },
+    "providers": {
+      "chatbox-ai": {
+        "models": [
+          {
+            "modelId": "chatboxai-3.5",
+            "nickname": "Chatbox AI 3.5",
+            "labels": [
+              "recommended"
+            ],
+            "capabilities": [
+              "tool_use"
+            ]
+          },
+          {
+            "modelId": "chatboxai-4",
+            "nickname": "Chatbox AI 4",
+            "labels": [
+              "recommended",
+              "pro"
+            ],
+            "capabilities": [
+              "tool_use"
+            ]
+          },
+          {
+            "modelId": "claude-opus-5-5",
+            "nickname": "Claude Opus 5.5",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "claude-opus-5",
+            "nickname": "Claude Opus 5",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "claude-opus-4.8",
+            "nickname": "Claude Opus 4.8",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "claude-opus-4.6",
+            "nickname": "Claude Opus 4.6",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "claude-sonnet-5-5",
+            "nickname": "Claude Sonnet 5.5",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "claude-sonnet-5",
+            "nickname": "Claude Sonnet 5",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "gemini-4-argon",
+            "nickname": "Gemini 4 Argon",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "gemini-3.1-pro",
+            "nickname": "Gemini 3.1 Pro",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "gpt-6-astra",
+            "nickname": "GPT 6 Astra",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "gpt-6.1-sol",
+            "nickname": "GPT 6.1 Sol",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "gpt-6-sol",
+            "nickname": "GPT 6 Sol",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "gpt-5.6-sol",
+            "nickname": "GPT 5.6 Sol",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "gpt-5.5",
+            "nickname": "GPT 5.5",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use"
+            ]
+          },
+          {
+            "modelId": "deepseek-v4.1-flash",
+            "nickname": "DeepSeek V4.1 Flash",
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "deepseek-v4-pro",
+            "nickname": "DeepSeek V4 Pro",
+            "capabilities": [
+              "tool_use"
+            ]
+          },
+          {
+            "modelId": "deepseek-v4-flash",
+            "nickname": "DeepSeek V4 Flash",
+            "capabilities": [
+              "tool_use"
+            ]
+          },
+          {
+            "modelId": "deepseek-v4-flash-vision",
+            "nickname": "DeepSeek V4 Flash Vision",
+            "capabilities": [
+              "vision",
+              "tool_use"
+            ]
+          },
+          {
+            "modelId": "deepseek-v3.2",
+            "nickname": "DeepSeek V3.2",
+            "capabilities": [
+              "tool_use"
+            ]
+          },
+          {
+            "modelId": "deepseek-reasoner",
+            "nickname": "DeepSeek R1",
+            "capabilities": [
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "hy4-preview",
+            "nickname": "Hy4 preview",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "kimi-k3.1-pro",
+            "nickname": "Kimi K3.1 Pro",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "kimi-k3",
+            "nickname": "Kimi K3",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "kimi-k2.7-code",
+            "nickname": "Kimi K2.7 Code",
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "qwen3.8-max",
+            "nickname": "Qwen3.8 Max",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "qwen3.8-flash",
+            "nickname": "Qwen3.8 Flash",
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "qwen3.7-max",
+            "nickname": "Qwen3.7 Max",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "qwen3.7-plus",
+            "nickname": "Qwen3.7 Plus",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "qwen3.6-plus",
+            "nickname": "Qwen3.6 Plus",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "qwen-plus-character",
+            "nickname": "Qwen Plus Character",
+            "capabilities": [
+              "tool_use"
+            ]
+          },
+          {
+            "modelId": "glm-5.3-flash",
+            "nickname": "GLM-5.3 Flash",
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "glm-5.3",
+            "nickname": "GLM-5.3",
+            "capabilities": [
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "glm-5.2",
+            "nickname": "GLM-5.2",
+            "capabilities": [
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "minimax-m3.1-flash",
+            "nickname": "MiniMax M3.1 Flash",
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "minimax-m3",
+            "nickname": "MiniMax-M3",
+            "capabilities": [
+              "tool_use"
+            ]
+          },
+          {
+            "modelId": "doubao-seed-2-1-pro",
+            "nickname": "Doubao Seed 2.1 Pro",
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "doubao-seed-2-1-turbo",
+            "nickname": "Doubao Seed 2.1 Turbo",
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "mimo-v2.6-pro-ultraspeed",
+            "nickname": "MiMo V2.6 Pro UltraSpeed",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "mimo-v2.6-pro",
+            "nickname": "MiMo V2.6 Pro",
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "mimo-v2.6-flash",
+            "nickname": "MiMo V2.6 Flash",
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "mimo-v2.5-pro",
+            "nickname": "MiMo V2.5 Pro",
+            "capabilities": [
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "mimo-v2.5",
+            "nickname": "MiMo V2.5",
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "claude-fable-5-1",
+            "nickname": "Claude Fable 5.1",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "claude-fable-5",
+            "nickname": "Claude Fable 5",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "claude-opus-4.7",
+            "nickname": "Claude Opus 4.7",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "claude-sonnet-4.6",
+            "nickname": "Claude Sonnet 4.6",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use"
+            ]
+          },
+          {
+            "modelId": "claude-sonnet-4.6-thinking",
+            "nickname": "Claude Sonnet 4.6 Thinking",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "claude-haiku-5-5",
+            "nickname": "Claude Haiku 5.5",
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "claude-haiku-4.5",
+            "nickname": "Claude Haiku 4.5",
+            "capabilities": [
+              "vision",
+              "tool_use"
+            ]
+          },
+          {
+            "modelId": "grok-4.7",
+            "nickname": "Grok 4.7",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "grok-4.6",
+            "nickname": "Grok 4.6",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "grok-4.5",
+            "nickname": "Grok 4.5",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "grok-4",
+            "nickname": "Grok 4",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use"
+            ]
+          },
+          {
+            "modelId": "gpt-5.6-terra",
+            "nickname": "GPT 5.6 Terra",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "gpt-6-luna",
+            "nickname": "GPT 6 Luna",
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "gpt-5.6-luna",
+            "nickname": "GPT 5.6 Luna",
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "gpt-4o",
+            "nickname": "GPT 4o",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use"
+            ]
+          },
+          {
+            "modelId": "gemini-3.8-flash",
+            "nickname": "Gemini 3.8 Flash",
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "gemini-3-flash",
+            "nickname": "Gemini 3 Flash",
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "gemini-2.5-pro",
+            "nickname": "Gemini 2.5 Pro",
+            "labels": [
+              "pro"
+            ],
+            "capabilities": [
+              "vision",
+              "tool_use",
+              "reasoning"
+            ]
+          },
+          {
+            "modelId": "gpt-5.4-mini",
+            "nickname": "GPT 5.4 Mini",
+            "capabilities": [
+              "vision",
+              "tool_use"
+            ]
+          },
+          {
+            "modelId": "text-embedding-3-small",
+            "nickname": "Chatbox Embedding 3 Small",
+            "type": "embedding"
+          },
+          {
+            "modelId": "gemini-3.1-flash-image",
+            "nickname": "Nano Banana 2",
+            "capabilities": [
+              "vision"
+            ]
+          },
+          {
+            "modelId": "gpt-image-2",
+            "nickname": "GPT Image 2",
+            "capabilities": [
+              "vision"
+            ]
+          }
+        ]
+      }
+    },
+    "customProviders": [],
+    "languageInited": true
+  },
+  "configVersion": 11,
+  "__exported_items": [
+    "setting",
+    "conversations"
+  ],
+  "__exported_at": "2026-10-27T04:49:59.702Z",
+  "session:compat-v1-settings-repro": {
+    "id": "compat-v1-settings-repro",
+    "name": "COMPAT historic settings minimal",
+    "type": "chat",
+    "messages": [
+      {
+        "id": "compat-v1-settings-repro-m0",
+        "role": "system",
+        "timestamp": 1700000000000,
+        "contentParts": [
+          {
+            "type": "text",
+            "text": "Synthetic system prompt. Preserve facts."
+          }
+        ]
+      }
+    ],
+    "starred": false,
+    "settings": {
+      "temperature": 0.42,
+      "topP": 0.83,
+      "maxContextMessageCount": 16
+    },
+    "threadName": "当前话题"
+  },
+  "chat-sessions-list": [
+    {
+      "id": "compat-v1-settings-repro",
+      "name": "COMPAT historic settings minimal",
+      "type": "chat",
+      "starred": false
+    }
+  ]
+}

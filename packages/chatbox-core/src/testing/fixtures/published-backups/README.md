@@ -17,6 +17,10 @@
 
 这些 V1 夹具验证正式版本接受的 JSON 导入契约，不宣称该版本仍提供 V1 导出。V2 夹具则直接来自正式版本导出器。
 
+## v1.15.0 设置夹具
+
+`v1.15.0-settings.json` 来自 `v1.15.0` 实际 UI 导出的 JSON（`configVersion=11`），缩减为 1 个会话和 1 条文本消息，settings 保持原样且不含凭据。settings 没有 `__version`，快捷键仍使用历史拼写 `inpubBoxSendMessage` / `inpubBoxSendMessageWithoutResponse`。
+
 ## 预发布基线夹具
 
 - `v1.json`：JSON 键值备份，包含会话列表和一条中英文消息。

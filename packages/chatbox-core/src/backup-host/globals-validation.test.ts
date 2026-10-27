@@ -21,6 +21,7 @@ describe('V3 global payload validation', () => {
     ],
     ['copilot-memory', null],
     ['session-settings', { modelId: 42 }],
+    ['settings', { shortcuts: { inputBoxSendMessage: 'Alt+Enter' } }],
   ] as const)('rejects malformed %s values', (category, value) => {
     expect(() => check(category, value)).toThrow()
   })

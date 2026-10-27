@@ -1,8 +1,9 @@
 import { ImageSourceSchema, SessionFolderSchema, SessionSettingsSchema } from '@shared/types'
+import deepmerge from 'deepmerge'
 import { z } from 'zod'
 import { projectSettingsForExport } from '../application/settings/export-projection'
 import type { BackupBusinessRecord, BackupImportContext, BackupManifest, BackupSelection } from '../backup-v3/types'
-import { SettingsSchema, mergeSettingsWithDefaults } from '../domain/settings'
+import { SettingsSchema, createDefaultSettings, mergeSettingsWithDefaults } from '../domain/settings'
 import type { KeyValueStoragePort } from '../ports/key-value-storage'
 import type { Message, SessionHeader } from '../types/session'
 import {
@@ -130,9 +131,14 @@ function validateSettingsFields(value: unknown, shape: Record<string, z.ZodType>
 /** Validate foreign values before they can become normal application storage. */
 export function validateBackupGlobal(record: Global): void {
   switch (record.category) {
-    case 'settings':
-      SettingsSchema.parse(mergeSettingsWithDefaults(validateSettingsFields(record.value, SettingsSchema.shape)))
+    case 'settings': {
+      // Older backups omit fields added later; settings migration fills them from defaults before committing.
+      const settings = deepmerge(createDefaultSettings(), object(record.value), {
+        arrayMerge: (_target, source) => source,
+      })
+      SettingsSchema.parse(mergeSettingsWithDefaults(validateSettingsFields(settings, SettingsSchema.shape)))
       break
+    }
     case 'copilot':
       copilotSchema.parse(record.value)
       break

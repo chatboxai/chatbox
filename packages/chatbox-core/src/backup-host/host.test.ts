@@ -1,7 +1,9 @@
+import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { zipSync } from 'fflate'
 import { importBackupV3 } from '../backup-v3/archive'
 import { getBackupImportPartialResult } from '../backup-v3/errors'
+import { importBackup } from '../backup-import'
 import { createSessionMetaRecord } from '../application/session/session-metadata'
 import { toBackupMessage, toBackupSession, toBackupThread } from '../backup-v3/records'
 import type {
@@ -23,6 +25,7 @@ import { InMemoryKeyValueStorage } from '../testing/InMemoryKeyValueStorage'
 import type { SessionMetaRecord } from '../types'
 import { cleanupBackupImport, createBackupExportSource, createBackupImportTarget } from './host'
 import { GLOBAL_KEYS } from './globals'
+import { commitBackupSettings } from './settings'
 import type { BackupHostOptions, BackupHostResources } from './types'
 
 const databases: NodeSessionRowSqlDatabase[] = []
@@ -512,6 +515,46 @@ describe('incremental backup host import', () => {
       records.push(row)
     expect(new Set(ensure.mock.calls.flat())).toEqual(new Set(['chosen']))
     expect(records.filter((row) => row.type === 'session')).toMatchObject([{ session: { id: 'chosen' } }])
+  })
+  it('imports a v1.15.0 JSON backup and migrates its pre-versioned settings', async () => {
+    const f = setup()
+    const backup = JSON.parse(
+      readFileSync(new URL('../testing/fixtures/published-backups/v1.15.0-settings.json', import.meta.url), 'utf8')
+    )
+    // Distinguish the legacy spellings from the current defaults they migrate into.
+    Object.assign(backup.settings.shortcuts, {
+      inpubBoxSendMessage: 'Ctrl+Enter',
+      inpubBoxSendMessageWithoutResponse: 'Enter',
+    })
+    const bytes = new TextEncoder().encode(JSON.stringify(backup))
+    const replaceSettings = vi.fn()
+    const set = f.storage.set.bind(f.storage)
+    vi.spyOn(f.storage, 'set').mockImplementation((key, value) =>
+      key === GLOBAL_KEYS.settings
+        ? commitBackupSettings(value, {
+            settings: { replaceSettings },
+            write: (encoded) => set(key, encoded),
+            isDesktopLike: true,
+          })
+        : set(key, value)
+    )
+    const target = createBackupImportTarget(f.options)
+    const result = await importBackup({
+      archiveId: 'v1-15-0',
+      source: { size: bytes.length, readBytes: async (offset, length) => bytes.slice(offset, offset + length) },
+      workspace: f.workspace,
+      target,
+    })
+    expect(result.importReport).toMatchObject({ importedSessions: 1, importedMessages: 1, issueCount: 0 })
+    expect(await f.metadata.getById('compat-v1-settings-repro')).toMatchObject({
+      name: 'COMPAT historic settings minimal',
+    })
+    expect(await f.storage.get(GLOBAL_KEYS.settings)).toMatchObject({
+      language: 'en',
+      autoUpdate: false,
+      shortcuts: { inputBoxSendMessage: 'Ctrl+Enter', inputBoxSendMessageWithoutResponse: 'Enter' },
+    })
+    expect(replaceSettings).toHaveBeenCalledOnce()
   })
 })
 

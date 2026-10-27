@@ -11,6 +11,7 @@ import type {
   BackupManifest,
   BackupResourceRecord,
   BackupWorkspace,
+  BackupWarningRecord,
 } from '../backup-v3/types'
 import { mergeSettingsWithDefaults } from '../domain/settings'
 import { contextSnapshot } from '../persistence/session-context-read.test-support'
@@ -509,7 +510,7 @@ describe('incremental backup host import', () => {
       sessionIds: ['chosen'],
     }))
       records.push(row)
-    expect(ensure.mock.calls).toEqual([['chosen']])
+    expect(new Set(ensure.mock.calls.flat())).toEqual(new Set(['chosen']))
     expect(records.filter((row) => row.type === 'session')).toMatchObject([{ session: { id: 'chosen' } }])
   })
 })
@@ -592,3 +593,37 @@ it.each(['missing-threads', 'message-identity'])(
     )
   }
 )
+
+describe('backup folder selection', () => {
+  it.each([
+    { selected: ['A', 'B'], expected: ['work'] },
+    { selected: ['B'], expected: [] },
+    { selected: [], expected: [] },
+    { selected: undefined, expected: ['work', 'empty'] },
+  ])('exports only applicable folders for $selected', async ({ selected, expected }) => {
+    const f = setup()
+    const a = fixture('A')
+    a.record.folderId = 'work'
+    await f.seed(a)
+    await f.seed(fixture('B'))
+    await f.storage.set(GLOBAL_KEYS.folders, [
+      { id: 'work', name: 'Work' },
+      { id: 'empty', name: 'Empty' },
+    ])
+    const exported: Array<BackupBusinessRecord | BackupWarningRecord> = []
+    for await (const row of createBackupExportSource(f.options).records({
+      ...manifest.selection,
+      sessionIds: selected,
+    }))
+      exported.push(row)
+    expect(
+      exported
+        .filter((row) => row.type === 'global' && row.category === 'folder')
+        .map((row) => (row.type === 'global' ? row.id : ''))
+    ).toEqual(expected)
+    const session = exported.find((row) => row.type === 'session' && row.session.id === 'A')
+    if (selected === undefined || selected.includes('A')) {
+      expect(session?.type === 'session' && session.session.folderId).toBe('work')
+    }
+  })
+})

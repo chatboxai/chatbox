@@ -48,7 +48,7 @@ export function createBackupExportSource(
   return {
     openResource: (key) => options.resources.open(key),
     async *records(selection, signal) {
-      if (includeGlobals) yield* exportGlobals(options, selection)
+      if (includeGlobals) yield* exportGlobals(options, selection, signal)
       if (!selection.sessions) return
       const ids = selection.sessionIds ?? options.listSessionIds()
       for await (const sessionId of ids) {

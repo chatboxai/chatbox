@@ -15,6 +15,7 @@ import {
   type SessionPromptContextSnapshot,
 } from '../types/agent-persona'
 import type { BackupHostOptions } from './types'
+import { throwIfAborted } from '../utils/abort'
 
 export const GLOBAL_KEYS = {
   settings: 'settings',
@@ -164,7 +165,11 @@ export function validateBackupGlobal(record: Global): void {
   }
 }
 
-export async function* exportGlobals(options: BackupHostOptions, selection: BackupSelection): AsyncIterable<Global> {
+export async function* exportGlobals(
+  options: BackupHostOptions,
+  selection: BackupSelection,
+  signal?: AbortSignal
+): AsyncIterable<Global> {
   const sourceBudget = new GlobalDataBudget()
   const get = async (key: string) => {
     const value = await options.storage.get(key)
@@ -200,7 +205,21 @@ export async function* exportGlobals(options: BackupHostOptions, selection: Back
         const value = await get(key)
         if (value !== null) yield row('session-settings', key, value)
       }
-      for (const folder of list(await get(GLOBAL_KEYS.folders))) yield row('folder', id(folder), folder)
+      let selectedFolderIds: Set<string> | undefined
+      if (selection.sessionIds !== undefined) {
+        selectedFolderIds = new Set<string>()
+        for (const sessionId of selection.sessionIds) {
+          throwIfAborted(signal)
+          await options.ensureRows(sessionId)
+          const commit = await options.rows.readCommit(sessionId)
+          if (!commit) throw new Error(`Conversation is unavailable: ${sessionId}`)
+          if (commit.record.folderId) selectedFolderIds.add(commit.record.folderId)
+        }
+      }
+      for (const folder of list(await get(GLOBAL_KEYS.folders))) {
+        const folderId = id(folder)
+        if (selectedFolderIds === undefined || selectedFolderIds.has(folderId)) yield row('folder', folderId, folder)
+      }
     }
   }
   yield* bounded(records())

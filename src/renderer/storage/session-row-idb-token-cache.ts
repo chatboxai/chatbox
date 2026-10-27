@@ -3,6 +3,7 @@ import { readTreeMessage, encodeTreeMetadata } from './session-row-idb-tree'
 import { v4 as uuid } from 'uuid'
 import {
   SessionRowConflictError,
+  SESSION_TOKEN_PAGE_MESSAGES,
   validTokenCachedValue,
   validTokenCacheResult,
   validateTokenCacheRequest,
@@ -81,7 +82,7 @@ export async function acceptIndexedDBTokenCache(
   db: IDBDatabase,
   results: readonly SessionTokenCacheResult[]
 ): Promise<void> {
-  if (results.length > 16) throw new Error('Token cache write exceeds page size')
+  if (results.length > SESSION_TOKEN_PAGE_MESSAGES) throw new Error('Token cache write exceeds page size')
   await transaction(db, async (tx) => {
     const cache = tx.objectStore(SESSION_ROW_TOKEN_CACHE_STORE)
     for (const result of results) {

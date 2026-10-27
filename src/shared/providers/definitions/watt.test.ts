@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Config, Settings } from '../../types'
 import { ModelProviderEnum, ModelProviderType } from '../../types'
 import type { ModelDependencies } from '../../types/adapters'
-import { WATT_API_HOST, wattProvider } from './watt'
 import Watt from './models/watt'
+import { WATT_API_HOST, wattProvider } from './watt'
 
 function createDependencies(): ModelDependencies {
   return {
@@ -56,7 +56,7 @@ describe('wattProvider', () => {
     ])
   })
 
-  it('formats the message header with the model nickname', () => {
+  it('shows the model nickname in the display name', () => {
     expect(wattProvider.getDisplayName?.('DeepSeek-V4-Pro', wattProvider.defaultSettings)).toBe(
       'Watt Cloud (DeepSeek V4 Pro)'
     )
@@ -65,7 +65,7 @@ describe('wattProvider', () => {
     )
   })
 
-  it('creates a model pointed at the Watt API host', () => {
+  it('uses the default Watt endpoint when no host override is set', () => {
     const model = wattProvider.createModel({
       settings: { temperature: 0.7, topP: 1 },
       globalSettings: {} as Settings,
@@ -84,7 +84,7 @@ describe('wattProvider', () => {
     expect((model as Watt).options.apiKey).toBe('sk-test')
   })
 
-  it('prefers a custom formatted API host when provided', () => {
+  it('overrides the endpoint with the custom formatted host', () => {
     const model = wattProvider.createModel({
       settings: { temperature: 0.7, topP: 1 },
       globalSettings: {} as Settings,

@@ -1011,6 +1011,7 @@
   "Set the maximum number of tokens for model output. Please set it within the acceptable range of the model, otherwise errors may occur.": "تحديد الحد الأقصى لعدد الـ Tokens لمخرجات النموذج. يرجى ضبطه ضمن النطاق المقبول للنموذج، وإلا قد تحدث أخطاء.",
   "Services": "الخدمات",
   "Settings": "الإعدادات",
+  "Settings in the backup are invalid and were skipped. Current settings were kept.": "الإعدادات في النسخة الاحتياطية غير صالحة وتم تخطيها. تم الاحتفاظ بالإعدادات الحالية.",
   "Setup guide": "دليل الإعداد",
   "Setup later": "الإعداد لاحقاً",
   "Setup Provider": "إعداد المزود",

@@ -1011,6 +1011,7 @@
   "Set the maximum number of tokens for model output. Please set it within the acceptable range of the model, otherwise errors may occur.": "Angi maksimalt antall Tokens for modellutdata. Vennligst angi det innenfor modellens akseptable område, ellers kan feil oppstå.",
   "Services": "Tjenester",
   "Settings": "Innstillinger",
+  "Settings in the backup are invalid and were skipped. Current settings were kept.": "Innstillingene i sikkerhetskopien er ugyldige og ble hoppet over. Gjeldende innstillinger ble beholdt.",
   "Setup guide": "Oppsettguide",
   "Setup later": "Sett opp senere",
   "Setup Provider": "Sett opp leverandør",

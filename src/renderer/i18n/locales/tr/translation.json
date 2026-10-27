@@ -1010,6 +1010,7 @@
   "Set Background Image": "Arka Plan Görselini Ayarla",
   "Set the maximum number of tokens for model output. Please set it within the acceptable range of the model, otherwise errors may occur.": "Model çıktısı için maksimum Token sayısını ayarlayın. Lütfen modelin kabul edilebilir aralığında ayarlayın, aksi takdirde hatalar oluşabilir.",
   "Settings": "Ayarlar",
+  "Settings in the backup are invalid and were skipped. Current settings were kept.": "Yedekteki ayarlar geçersiz olduğu için atlandı. Mevcut ayarlar korundu.",
   "Setup guide": "Kurulum rehberi",
   "Setup later": "Daha sonra kur",
   "Setup Provider": "Sağlayıcıyı Kur",

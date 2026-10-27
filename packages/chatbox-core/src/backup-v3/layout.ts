@@ -154,7 +154,7 @@ export class BackupConfigurations {
 export function configurationKeys(path: ConfigPath, value: unknown, selection: BackupManifest['selection']): string[] {
   if (path === 'settings.json') {
     if (!selection.settings) throw new Error('Backup settings are outside the selected categories')
-    object(value)
+    // The import target validates the settings value and skips it when invalid.
     return ['settings']
   }
   if (path === 'copilots.json') {

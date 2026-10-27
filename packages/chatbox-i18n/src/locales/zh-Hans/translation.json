@@ -1011,6 +1011,7 @@
   "Set the maximum number of tokens for model output. Please set it within the acceptable range of the model, otherwise errors may occur.": "设置模型输出的最大 token 数量。请将其设置在模型可接受的范围内，否则可能会发生错误。",
   "Services": "服务",
   "Settings": "设置",
+  "Settings in the backup are invalid and were skipped. Current settings were kept.": "备份中的设置无效，已跳过。当前设置保持不变。",
   "Setup guide": "设置指南",
   "Setup later": "稍后设置",
   "Setup Provider": "设置提供方",

@@ -1011,6 +1011,7 @@
   "Set the maximum number of tokens for model output. Please set it within the acceptable range of the model, otherwise errors may occur.": "Defina o número máximo de Tokens para a saída do modelo. Por favor, defina-o dentro do intervalo aceitável do modelo, caso contrário podem ocorrer erros.",
   "Services": "Serviços",
   "Settings": "Definições",
+  "Settings in the backup are invalid and were skipped. Current settings were kept.": "As definições da cópia de segurança são inválidas e foram ignoradas. As definições atuais foram mantidas.",
   "Setup guide": "Guia de configuração",
   "Setup later": "Configurar mais tarde",
   "Setup Provider": "Configurar Fornecedor",

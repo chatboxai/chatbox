@@ -45,6 +45,8 @@ export function getBackupImportIssueMessage(
       return t(
         'Conversation data was saved, but its list could not be updated. Use Recover Conversation List in settings.'
       )
+    case 'invalid-settings':
+      return t('Settings in the backup are invalid and were skipped. Current settings were kept.')
     case 'invalid-legacy-session':
       return t('A conversation could not be converted. Local data was kept.')
     case 'unusable-session':

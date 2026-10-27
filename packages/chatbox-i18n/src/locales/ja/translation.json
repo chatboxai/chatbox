@@ -1011,6 +1011,7 @@
   "Set the maximum number of tokens for model output. Please set it within the acceptable range of the model, otherwise errors may occur.": "モデル出力の最大Token数を設定します。モデルの許容範囲内で設定してください。範囲外の場合、エラーが発生する可能性があります。",
   "Services": "サービス",
   "Settings": "設定",
+  "Settings in the backup are invalid and were skipped. Current settings were kept.": "バックアップ内の設定が無効なため、スキップしました。現在の設定はそのまま保持されます。",
   "Setup guide": "セットアップガイド",
   "Setup later": "後で設定する",
   "Setup Provider": "プロバイダーを設定",

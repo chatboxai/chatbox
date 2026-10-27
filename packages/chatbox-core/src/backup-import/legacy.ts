@@ -70,6 +70,22 @@ export function normalizeSettings(
   return settings
 }
 
+/**
+ * Settings that are not a convertible object become a null settings record, which the import target skips.
+ * Conversion only inspects this value, so no storage, cancellation or budget failure is absorbed here.
+ */
+export function legacySettings(
+  value: unknown,
+  configVersion: number | undefined,
+  archiveId: string
+): Record<string, unknown> | null {
+  try {
+    return normalizeSettings(value, configVersion, archiveId)
+  } catch {
+    return null
+  }
+}
+
 /** Converts only keys that are explicitly present in the external backup. */
 export function* globalRecords(
   key: string,
@@ -82,7 +98,7 @@ export function* globalRecords(
     id: string,
     data: unknown
   ): BackupBusinessRecord => ({ type: 'global', category, id, value: data })
-  if (key === 'settings') yield row('settings', key, normalizeSettings(value, configVersion, archiveId))
+  if (key === 'settings') yield row('settings', key, legacySettings(value, configVersion, archiveId))
   else if (key === 'agent-soul') yield row('soul', key, value)
   else if (key.endsWith('-session-settings')) yield row('session-settings', key, object(value))
   else if (key === 'copilot-memories') {

@@ -99,6 +99,8 @@ export interface BackupImportSummary {
   importedResources: number
   importedGlobals: number
   skippedRecords: number
+  /** The backup's settings failed validation; current settings were kept and everything else was imported. */
+  settingsSkipped?: boolean
 }
 export interface BackupImportReport extends BackupImportSummary {
   issueCount: number

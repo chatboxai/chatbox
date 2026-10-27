@@ -670,3 +670,157 @@ describe('backup folder selection', () => {
     }
   })
 })
+
+describe('backup import with invalid settings', () => {
+  const invalidSettings = { language: 'en', fontSize: 'huge' }
+  const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value))
+  const legacySession = { id: 'legacy', name: 'Legacy', messages: [{ id: 'legacy-m', role: 'user', content: 'Hi' }] }
+  const v3 = (files: Record<string, unknown>) =>
+    zipSync({
+      'manifest.json': encode({ ...manifest, selection: { ...manifest.selection, settings: true } }),
+      'resources.jsonl': new Uint8Array(),
+      ...Object.fromEntries(Object.entries(files).map(([path, value]) => [path, encode(value)])),
+      'sessions/v3.jsonl': new TextEncoder().encode(
+        backupRecords(fixture('v3'))
+          .map((row) => JSON.stringify(row))
+          .join('\n') + '\n'
+      ),
+      'complete.json': encode({ archiveId: manifest.archiveId }),
+    })
+  const v2 = (settings: unknown, sourceConfigVersion = 15, session: unknown = legacySession) =>
+    zipSync({
+      'settings.json': encode(settings),
+      'sessions/legacy/session.json': encode(session),
+      'manifest.json': encode({
+        format: 'chatbox-backup',
+        formatVersion: 2,
+        sourceConfigVersion,
+        data: { settings: { path: 'settings.json' } },
+        sessions: [{ id: 'legacy', path: 'sessions/legacy/session.json', meta: { id: 'legacy', name: 'Legacy' } }],
+        resources: [],
+      }),
+    })
+  // Pre-provider settings whose custom providers cannot be migrated.
+  const unmigratable = { aiProvider: 'custom', customProviders: 'broken' }
+  const backups = [
+    ...(
+      [
+        ['invalid fields', invalidSettings],
+        ['a string', 'x'],
+        ['an array', []],
+        ['null', null],
+      ] as const
+    ).flatMap(([label, settings]) => [
+      ['V1', label, () => encode({ settings, 'chat-sessions': [legacySession] })] as const,
+      ['V2', label, () => v2(settings)] as const,
+      ['V3', label, () => v3({ 'settings.json': settings })] as const,
+    ]),
+    [
+      'V1',
+      'unmigratable providers',
+      () => encode({ configVersion: 9, settings: unmigratable, 'chat-sessions': [legacySession] }),
+    ] as const,
+    ['V2', 'unmigratable providers', () => v2(unmigratable, 9)] as const,
+  ]
+  const run = async (f: ReturnType<typeof setup>, bytes: Uint8Array) =>
+    importBackup({
+      archiveId: 'invalid-settings',
+      source: { size: bytes.length, readBytes: async (offset, length) => bytes.slice(offset, offset + length) },
+      workspace: f.workspace,
+      target: createBackupImportTarget(f.options),
+    })
+
+  it.each(backups)('imports %s conversations and skips settings that are %s', async (format, _label, backup) => {
+    const f = setup()
+    const current = { language: 'zh-Hans', fontSize: 16 }
+    await f.storage.set(GLOBAL_KEYS.settings, current)
+    const set = vi.spyOn(f.storage, 'set')
+    const result = await run(f, backup())
+    const sessionId = format === 'V3' ? 'v3' : 'legacy'
+    expect(result.importReport).toMatchObject({ importedSessions: 1, settingsSkipped: true, skippedRecords: 1 })
+    expect(result.importReport?.issues).toContainEqual(
+      expect.objectContaining({ code: 'invalid-settings', objectId: 'settings' })
+    )
+    expect(await f.metadata.getById(sessionId)).toMatchObject({ id: sessionId })
+    expect(set).not.toHaveBeenCalledWith(GLOBAL_KEYS.settings, expect.anything())
+    expect(await f.storage.get(GLOBAL_KEYS.settings)).toEqual(current)
+  })
+
+  it.each([invalidSettings, 'x'])(
+    'imports global memories and only renews the memory state of the current settings (%j)',
+    async (settings) => {
+      const f = setup()
+      await f.storage.set(GLOBAL_KEYS.settings, { language: 'zh-Hans', memoryStateToken: 'local' })
+      const memory = { id: 'memory', content: 'Remember', createdAt: 1 }
+      const result = await run(
+        f,
+        v3({ 'settings.json': settings, 'session-settings.json': { 'agent-memories': [memory] } })
+      )
+      expect(result.importReport).toMatchObject({ importedSessions: 1, settingsSkipped: true })
+      expect(await f.storage.get(GLOBAL_KEYS.memories)).toEqual([memory])
+      const stored = await f.storage.get(GLOBAL_KEYS.settings)
+      expect(stored).toEqual({ language: 'zh-Hans', memoryStateToken: expect.any(String) })
+      expect(stored).not.toMatchObject({ memoryStateToken: 'local' })
+    }
+  )
+
+  // A pre-provider conversation that takes its custom provider from the global settings.
+  const customSession = { ...legacySession, settings: { aiProvider: 'custom' } }
+  const legacyBackups = (settings: unknown) =>
+    [
+      ['V1', () => encode({ configVersion: 9, settings, 'chat-sessions': [customSession] })],
+      ['V2', () => v2(settings, 9, customSession)],
+    ] as const
+
+  it.each(
+    // Converts as legacy settings, but its custom provider list fails settings validation.
+    legacyBackups({ providers: {}, aiProvider: 'custom', customProviders: [null] })
+  )('imports %s conversations without provider hints from skipped settings', async (_format, backup) => {
+    const f = setup()
+    const result = await run(f, backup())
+    expect(result.importReport).toMatchObject({ importedSessions: 1, skippedRecords: 1, settingsSkipped: true })
+    expect((await f.rows.readCommit('legacy'))?.record.settings?.provider).toBeUndefined()
+  })
+
+  it.each(
+    legacyBackups({
+      aiProvider: 'custom',
+      selectedCustomProviderId: 'local',
+      customProviders: [{ id: 'local', name: 'Local', host: 'https://example.test', model: 'local-model' }],
+    })
+  )('keeps legacy custom provider mapping for %s conversations with valid settings', async (_format, backup) => {
+    const f = setup()
+    const result = await run(f, backup())
+    expect(result.importReport).toMatchObject({ importedSessions: 1, skippedRecords: 0 })
+    expect(result.importReport?.settingsSkipped).toBeUndefined()
+    expect((await f.rows.readCommit('legacy'))?.record.settings).toMatchObject({
+      provider: 'custom-provider-invalid-settings-0',
+      modelId: 'local-model',
+    })
+  })
+
+  it.each([
+    ['V1', () => encode({ settings: {}, 'chat-session-settings': 'x', 'chat-sessions': [legacySession] })],
+    ['V3', () => v3({ 'settings.json': {}, 'session-settings.json': 'x' })],
+  ] as const)(
+    'still rejects the whole %s import when another configuration is not an object',
+    async (format, backup) => {
+      const f = setup()
+      const error = await run(f, backup()).catch((error: unknown) => error)
+      expect(error).toBeInstanceOf(Error)
+      expect(await f.metadata.getById(format === 'V3' ? 'v3' : 'legacy')).toBeNull()
+      expect(await f.storage.get(GLOBAL_KEYS.settings)).toBeNull()
+    }
+  )
+
+  it('still rejects the whole import when another global record is invalid', async () => {
+    const f = setup()
+    const error = await run(
+      f,
+      v3({ 'settings.json': { language: 'en' }, 'session-settings.json': { 'chat-session-settings': { modelId: 42 } } })
+    ).catch((error: unknown) => error)
+    expect(getBackupImportPartialResult(error)?.importReport).toMatchObject({ importedSessions: 0 })
+    expect(await f.metadata.getById('v3')).toBeNull()
+    expect(await f.storage.get(GLOBAL_KEYS.settings)).toBeNull()
+  })
+})

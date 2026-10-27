@@ -344,6 +344,34 @@ it('reports actual imports separately from skipped records and bounds expandable
   expect(screen.queryByText('Object: message-0')).toBeNull()
 })
 
+it('tells the user when invalid backup settings were skipped', async () => {
+  backup.import.mockResolvedValue({
+    cleanupPending: false,
+    complete: { counts: { warning: 0 } },
+    importReport: {
+      importedSessions: 1,
+      importedMessages: 2,
+      importedResources: 0,
+      importedGlobals: 0,
+      skippedRecords: 1,
+      settingsSkipped: true,
+      issueCount: 1,
+      issues: [{ code: 'invalid-settings', objectId: 'settings', message: 'Invalid settings' }],
+    },
+  })
+  await show()
+  const input = document.querySelector('input[type="file"]')
+  if (!input) throw new Error('Missing backup picker')
+  fireEvent.change(input, { target: { files: [new File(['zip'], 'backup.zip')] } })
+  fireEvent.click(
+    within(await screen.findByRole('dialog', { name: 'Import Backup' })).getByRole('button', { name: 'Import Backup' })
+  )
+  await screen.findByText('Imported 1 conversations and 2 messages.')
+  expect(
+    screen.getByText('Settings in the backup are invalid and were skipped. Current settings were kept.')
+  ).toBeTruthy()
+})
+
 it('checks all generation before opening the import picker and lists names', async () => {
   backup.getGeneratingSessionIds.mockReturnValue(['b'])
   await show()

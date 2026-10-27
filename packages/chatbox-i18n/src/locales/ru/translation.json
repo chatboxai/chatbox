@@ -1011,6 +1011,7 @@
   "Set the maximum number of tokens for model output. Please set it within the acceptable range of the model, otherwise errors may occur.": "Установите максимальное количество Tokens для вывода модели. Пожалуйста, установите его в пределах допустимого диапазона модели, иначе могут возникнуть ошибки.",
   "Services": "Сервисы",
   "Settings": "Настройки",
+  "Settings in the backup are invalid and were skipped. Current settings were kept.": "Настройки в резервной копии недействительны и были пропущены. Текущие настройки сохранены.",
   "Setup guide": "Руководство по настройке",
   "Setup later": "Настроить позже",
   "Setup Provider": "Настроить провайдера",

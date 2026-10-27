@@ -169,7 +169,15 @@ export function createBackupImportTarget(options: BackupHostOptions): BackupImpo
         throwIfAborted(signal)
         if (entry.type === 'global') {
           if (active || !globals || globalsPublished) throw new Error('Global records must precede conversations')
-          globals.append(entry)
+          if (!globals.append(entry)) {
+            summary.skippedRecords++
+            summary.settingsSkipped = true
+            reportIssue?.({
+              code: 'invalid-settings',
+              objectId: entry.id,
+              message: 'Settings in the backup are invalid and were skipped. Current settings were kept.',
+            })
+          }
         } else if (entry.type === 'session') {
           await flush()
           await finishSession()

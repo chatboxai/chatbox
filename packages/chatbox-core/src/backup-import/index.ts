@@ -16,7 +16,7 @@ import type {
 import type { ByteSource, ByteSink } from '../io'
 import { throwIfAborted } from '../utils/abort'
 import { createTaskYielder } from '../utils/task-yield'
-import { convertSession, globalRecords, object, type ConvertedLegacySession } from './legacy'
+import { convertSession, globalRecords, legacySettings, object, type ConvertedLegacySession } from './legacy'
 import {
   isZip,
   readV1,
@@ -239,7 +239,12 @@ async function importLegacy(input: LegacyInput, options: ImportBackupOptions): P
       progress.records += batch.length
     }
     await target.prepare()
-    const settings = input.globals.has('settings') ? object(input.globals.get('settings')) : {}
+    const sourceSettings = input.globals.get('settings')
+    // Conversations take legacy provider hints only from settings the import target accepted.
+    const settings =
+      !target.getSummary().settingsSkipped && legacySettings(sourceSettings, input.configVersion, options.archiveId)
+        ? object(sourceSettings)
+        : {}
     const yieldTask = createTaskYielder()
     await input.readSessions(
       async (source) => {

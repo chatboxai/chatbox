@@ -1011,6 +1011,7 @@
   "Set the maximum number of tokens for model output. Please set it within the acceptable range of the model, otherwise errors may occur.": "Ställ in det maximala antalet Tokens för modellens utdata. Vänligen ställ in det inom modellens acceptabla intervall, annars kan fel uppstå.",
   "Services": "Tjänster",
   "Settings": "Inställningar",
+  "Settings in the backup are invalid and were skipped. Current settings were kept.": "Inställningarna i säkerhetskopian är ogiltiga och hoppades över. De nuvarande inställningarna behölls.",
   "Setup guide": "Inställningsguide",
   "Setup later": "Konfigurera senare",
   "Setup Provider": "Konfigurera leverantör",

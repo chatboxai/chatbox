@@ -9,6 +9,11 @@ export function BackupImportReport({ report }: { report: NonNullable<BackupResul
   const [expanded, setExpanded] = useState(false)
   return (
     <Stack gap="xs" mt="sm">
+      {report.settingsSkipped ? (
+        <Text size="sm" fw={500}>
+          {t('Settings in the backup are invalid and were skipped. Current settings were kept.')}
+        </Text>
+      ) : null}
       <Text size="sm">
         {t('Imported {{sessions}} conversations and {{messages}} messages.', {
           sessions: report.importedSessions,

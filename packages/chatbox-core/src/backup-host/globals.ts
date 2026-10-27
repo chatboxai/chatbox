@@ -244,6 +244,7 @@ export class ImportedGlobals {
   private globalToken = ''
   private readonly invalidToken = createMemoryStateToken()
   private readonly includedGlobalKeys: ReadonlySet<string> | undefined
+  private settingsSkipped = false
   constructor(
     private readonly manifest: BackupManifest,
     private readonly storage: KeyValueStoragePort,
@@ -253,6 +254,7 @@ export class ImportedGlobals {
   }
 
   private includes(key: string): boolean {
+    if (key === GLOBAL_KEYS.settings && this.settingsSkipped) return false
     return this.includedGlobalKeys?.has(key) ?? true
   }
 
@@ -263,12 +265,28 @@ export class ImportedGlobals {
     )
   }
 
-  append(record: Global): void {
-    validateBackupGlobal(record)
+  /** Returns false when the settings record fails validation and is skipped; other invalid records reject the import. */
+  append(record: Global): boolean {
+    try {
+      validateBackupGlobal(record)
+    } catch (error) {
+      if (
+        record.category !== 'settings' ||
+        record.id !== 'settings' ||
+        !this.manifest.selection.settings ||
+        !this.includes(GLOBAL_KEYS.settings) ||
+        this.values
+      )
+        throw error
+      // Imported conversations treat the settings as not imported, so current settings stay authoritative.
+      this.settingsSkipped = true
+      return false
+    }
     if (!this.includes(globalStorageKey(record))) throw new Error('Global record is not included in the import context')
     if (this.values) throw new Error('Global records must precede sessions')
     this.inputBudget.serialize(record)
     this.records.push(record)
+    return true
   }
 
   async prepare(): Promise<Map<string, unknown>> {

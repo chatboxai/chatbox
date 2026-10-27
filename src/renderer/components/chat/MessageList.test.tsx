@@ -203,8 +203,13 @@ vi.mock('react-virtuoso', async () => {
               }
           }
           h.initialLocations.push(props.initialTopMostItemIndex)
+        }, [props])
+        // Virtuoso reports its scroller from a passive effect, after the host's layout effects,
+        // and reports no rendered range for empty data.
+        React.useEffect(() => {
           props.scrollerRef(element.current)
-          if (h.acknowledgeMeasurements) props.rangeChanged()
+          if (h.acknowledgeMeasurements && props.data.length) props.rangeChanged()
+          return () => props.scrollerRef(null)
         }, [props])
         h.heightChanged = props.totalListHeightChanged
         h.atTop = props.atTopStateChange
@@ -457,6 +462,19 @@ describe('row transcript host', () => {
     await waitFor(() => expect(h.firstReady).toBe(true))
     expect(view.queryByText('Current')).toBeNull()
     expect(h.renderMenu).not.toHaveBeenCalled()
+  })
+  test('finishes opening an empty conversation once the list attaches its scroller', async () => {
+    h.read.mockImplementation(async (request: SessionTranscriptRequest) => ({
+      ...page(request),
+      messages: [],
+      older: null,
+      newer: null,
+    }))
+    const view = render(<Host />)
+    await waitFor(() => expect(h.firstReady).toBe(true))
+    expect(h.controller?.getSnapshot().layout).toBeNull()
+    expect(view.getByTestId('session-transcript').getAttribute('aria-busy')).toBe('false')
+    expect(getComputedStyle(view.getByTestId('virtuoso')).visibility).toBe('visible')
   })
   test.each(['off', 'on'] as const)(
     'shows multi-thread headings when only one thread is loaded in mode %s',

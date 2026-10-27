@@ -841,6 +841,8 @@ const MessageList = forwardRef<
               scrollerRef={(element) => {
                 scroller.current = element instanceof HTMLElement ? element : null
                 setViewportHeight(scroller.current?.clientHeight ?? 0)
+                // Virtuoso attaches the scroller after this component's layout effects, and an empty list reports no range.
+                if (scroller.current) applyLayout()
               }}
               onScroll={onScroll}
               startReached={() => loadAtEdge('older')}

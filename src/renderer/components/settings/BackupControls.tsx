@@ -45,6 +45,7 @@ export function BackupControls() {
     title: string
     message: string
     warningCount?: number
+    missingResources?: number
     importReport?: BackupResult['importReport']
     error?: boolean
   } | null>(null)
@@ -117,6 +118,7 @@ export function BackupControls() {
         operation: 'export',
         title: t('Backup archive created'),
         warningCount: exported.complete.counts.warning,
+        missingResources: exported.missingResources,
         message: exported.cleanupPending
           ? t('The backup is complete. Temporary files will be cleaned up on the next start.')
           : t('The backup file is ready.'),
@@ -520,12 +522,12 @@ export function BackupControls() {
               c={
                 result.error
                   ? 'chatbox-error'
-                  : result.warningCount || result.importReport?.issueCount
+                  : result.warningCount || result.missingResources || result.importReport?.issueCount
                     ? 'chatbox-warning'
                     : 'chatbox-success'
               }
             >
-              {result.error || result.warningCount || result.importReport?.issueCount ? (
+              {result.error || result.warningCount || result.missingResources || result.importReport?.issueCount ? (
                 <IconInfoCircle size={44} stroke={1.5} />
               ) : (
                 <IconCircleCheck size={44} stroke={1.5} />
@@ -537,6 +539,16 @@ export function BackupControls() {
             <Text size="sm" c="dimmed" style={{ overflowWrap: 'anywhere', whiteSpace: 'pre-line' }}>
               {result.message}
             </Text>
+            {result.missingResources ? (
+              <Text size="sm">
+                {t(
+                  'Attachments not found on this device were skipped: {{count}}. The rest of the backup is complete.',
+                  {
+                    count: result.missingResources,
+                  }
+                )}
+              </Text>
+            ) : null}
             {result.warningCount ? (
               <Text size="sm">
                 {t('{{count}} portability warnings. Local file links and retrieval indexes are not included.', {

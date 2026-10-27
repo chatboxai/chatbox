@@ -1928,6 +1928,7 @@
   "Use the share sheet to save or send the backup file.": "Use the share sheet to save or send the backup file.",
   "Validating backup...": "Validating backup...",
   "Your backup has been restored.": "Your backup has been restored.",
+  "Attachments not found on this device were skipped: {{count}}. The rest of the backup is complete.": "Attachments not found on this device were skipped: {{count}}. The rest of the backup is complete.",
   "{{count}} conversations selected": "{{count}} conversations selected",
   "{{count}} portability warnings. Local file links and retrieval indexes are not included.": "{{count}} portability warnings. Local file links and retrieval indexes are not included.",
   "{{messages}} messages · {{resources}} resources · {{bytes}} MB processed": "{{messages}} messages · {{resources}} resources · {{bytes}} MB processed",

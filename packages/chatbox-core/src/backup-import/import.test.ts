@@ -3,6 +3,7 @@ import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
 import { zipSync } from 'fflate'
+import { exportBackup } from '../backup-export'
 import { exportBackupV3 } from '../backup-v3/archive'
 import { getBackupImportPartialResult } from '../backup-v3/errors'
 import type {
@@ -644,6 +645,74 @@ describe('published backup import', () => {
     })
     expect(result.importReport).toMatchObject({ importedSessions: 0, skippedRecords: 104, issueCount: 104 })
     expect(result.importReport?.issues).toHaveLength(100)
+  })
+
+  it('imports a V2 export whose missing attachment was skipped', async () => {
+    let bytes: Uint8Array = new Uint8Array()
+    const exported = await exportBackup({
+      format: 'v2',
+      archiveId: 'fixture',
+      producer: 'test',
+      selection: { sessions: true, settings: false, copilots: false, credentials: false },
+      source: {
+        async *records() {
+          yield { type: 'session', session: { id: 'A', name: 'A', activeThreadId: 'A' } }
+          yield {
+            type: 'thread',
+            thread: {
+              sessionId: 'A',
+              threadId: 'A',
+              threadOrder: -1,
+              name: null,
+              createdAt: 1,
+              rootMessageId: 'A-m',
+              compactionPoints: [],
+            },
+          }
+          yield {
+            type: 'message',
+            message: {
+              sessionId: 'A',
+              threadId: 'A',
+              messageId: 'A-m',
+              parentMessageId: null,
+              activeChildId: null,
+              siblingOrder: 0,
+              kind: 'message',
+              branchId: null,
+              createdAt: 1,
+              updatedAt: 1,
+              message: {
+                id: 'A-m',
+                role: 'user',
+                contentParts: [
+                  { type: 'image', storageKey: 'picture:missing' },
+                  { type: 'image', storageKey: 'picture:kept' },
+                ],
+              },
+            },
+          }
+        },
+        openResource: async (key) =>
+          key === 'picture:kept'
+            ? { source: source(Uint8Array.of(1, 2, 3)), mimeType: 'image/png', contentType: 'binary' }
+            : null,
+      },
+      workspace: new Workspace(),
+      output: sink((value) => {
+        bytes = value
+      }),
+    })
+    expect(exported.missingResources).toBe(1)
+    const restored = target()
+    const result = await importBackup({
+      ...importOptions,
+      source: source(bytes),
+      workspace: new Workspace(),
+      target: restored.target,
+    })
+    expect(result.importReport).toMatchObject({ importedSessions: 1, importedMessages: 1, importedResources: 1 })
+    expect([...restored.resources.keys()]).toEqual(['picture:kept'])
   })
 
   it('delegates V3 inspection and importing to the existing codec', async () => {

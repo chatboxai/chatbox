@@ -1928,6 +1928,7 @@
   "Use the share sheet to save or send the backup file.": "使用分享面板儲存或傳送備份檔案。",
   "Validating backup...": "正在驗證備份...",
   "Your backup has been restored.": "備份已還原。",
+  "Attachments not found on this device were skipped: {{count}}. The rest of the backup is complete.": "已略過本裝置上找不到的附件：{{count}} 個。備份的其餘內容已完整匯出。",
   "{{count}} conversations selected": "已選擇 {{count}} 個對話",
   "{{count}} portability warnings. Local file links and retrieval indexes are not included.": "{{count}} 則可移轉性提醒。本機檔案連結和檢索索引未包含在備份中。",
   "{{messages}} messages · {{resources}} resources · {{bytes}} MB processed": "已處理 {{messages}} 則訊息 · {{resources}} 個資源 · {{bytes}} MB",

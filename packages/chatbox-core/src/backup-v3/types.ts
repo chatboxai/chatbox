@@ -170,4 +170,6 @@ export interface BackupResult {
   cleanupPending: boolean
   refreshPending?: boolean
   importReport?: BackupImportReport
+  /** Export only: referenced resources that were absent from local storage and left out of the archive. */
+  missingResources?: number
 }

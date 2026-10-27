@@ -1928,6 +1928,7 @@
   "Use the share sheet to save or send the backup file.": "Используйте меню «Поделиться», чтобы сохранить или отправить файл резервной копии.",
   "Validating backup...": "Проверка резервной копии...",
   "Your backup has been restored.": "Резервная копия восстановлена.",
+  "Attachments not found on this device were skipped: {{count}}. The rest of the backup is complete.": "Пропущено вложений, не найденных на этом устройстве: {{count}}. Остальная часть резервной копии создана полностью.",
   "{{count}} conversations selected": "Выбрано бесед: {{count}}",
   "{{count}} portability warnings. Local file links and retrieval indexes are not included.": "Предупреждения о переносимости: {{count}}. Ссылки на локальные файлы и поисковые индексы не включены.",
   "{{messages}} messages · {{resources}} resources · {{bytes}} MB processed": "Обработано: {{messages}} сообщений · {{resources}} ресурсов · {{bytes}} МБ",

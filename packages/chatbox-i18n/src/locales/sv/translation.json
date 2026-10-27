@@ -1928,6 +1928,7 @@
   "Use the share sheet to save or send the backup file.": "Använd delningsmenyn för att spara eller skicka säkerhetskopian.",
   "Validating backup...": "Kontrollerar säkerhetskopian...",
   "Your backup has been restored.": "Din säkerhetskopia har återställts.",
+  "Attachments not found on this device were skipped: {{count}}. The rest of the backup is complete.": "Bilagor som inte hittades på den här enheten och hoppades över: {{count}}. Resten av säkerhetskopian är komplett.",
   "{{count}} conversations selected": "{{count}} konversationer valda",
   "{{count}} portability warnings. Local file links and retrieval indexes are not included.": "{{count}} varningar om flyttbarhet. Lokala fillänkar och sökindex ingår inte.",
   "{{messages}} messages · {{resources}} resources · {{bytes}} MB processed": "{{messages}} meddelanden · {{resources}} resurser · {{bytes}} MB bearbetade",

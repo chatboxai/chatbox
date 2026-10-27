@@ -1928,6 +1928,7 @@
   "Use the share sheet to save or send the backup file.": "Speichere oder sende die Sicherungsdatei über das Teilen-Menü.",
   "Validating backup...": "Sicherung wird überprüft...",
   "Your backup has been restored.": "Deine Sicherung wurde wiederhergestellt.",
+  "Attachments not found on this device were skipped: {{count}}. The rest of the backup is complete.": "Auf diesem Gerät nicht gefundene Anhänge wurden übersprungen: {{count}}. Der Rest der Sicherung ist vollständig.",
   "{{count}} conversations selected": "{{count}} Unterhaltungen ausgewählt",
   "{{count}} portability warnings. Local file links and retrieval indexes are not included.": "{{count}} Hinweise zur Übertragbarkeit. Lokale Dateiverknüpfungen und Suchindizes sind nicht enthalten.",
   "{{messages}} messages · {{resources}} resources · {{bytes}} MB processed": "{{messages}} Nachrichten · {{resources}} Ressourcen · {{bytes}} MB verarbeitet",

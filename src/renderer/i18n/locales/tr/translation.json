@@ -1924,6 +1924,7 @@
   "Use the share sheet to save or send the backup file.": "Yedek dosyasını kaydetmek veya göndermek için paylaşım menüsünü kullanın.",
   "Validating backup...": "Yedek doğrulanıyor...",
   "Your backup has been restored.": "Yedeğiniz geri yüklendi.",
+  "Attachments not found on this device were skipped: {{count}}. The rest of the backup is complete.": "Bu cihazda bulunamayan ve atlanan ekler: {{count}}. Yedeğin geri kalanı eksiksiz.",
   "{{count}} conversations selected": "{{count}} konuşma seçildi",
   "{{count}} portability warnings. Local file links and retrieval indexes are not included.": "{{count}} taşınabilirlik uyarısı. Yerel dosya bağlantıları ve arama dizinleri dahil edilmemiştir.",
   "{{messages}} messages · {{resources}} resources · {{bytes}} MB processed": "{{messages}} mesaj · {{resources}} kaynak · {{bytes}} MB işlendi",

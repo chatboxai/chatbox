@@ -274,6 +274,21 @@ it.each([1, 2])('does not warn about replacing credentials for a V%s memory-only
   expect(dialog.queryByText(/Settings import also replaces saved credentials/)).toBeNull()
 })
 
+it.each([1, 2])('reports %i skipped attachments that are missing locally after export', async (count) => {
+  backup.export.mockResolvedValue({
+    cleanupPending: false,
+    missingResources: count,
+    complete: { counts: { warning: 0 } },
+  })
+  await show()
+  fireEvent.click(screen.getByRole('button', { name: 'Export Data' }))
+  const dialog = within(screen.getByRole('dialog', { name: 'Export Data' }))
+  await dialog.findByRole('checkbox', { name: 'Beta' })
+  fireEvent.click(dialog.getByRole('button', { name: 'Export Data' }))
+  await screen.findByText('Backup archive created')
+  screen.getByText(`Attachments not found on this device were skipped: ${count}. The rest of the backup is complete.`)
+})
+
 it('shows portability warnings after a successful import', async () => {
   backup.import.mockResolvedValue({ cleanupPending: false, complete: { counts: { warning: 2 } } })
   await show()

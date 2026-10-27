@@ -1928,6 +1928,7 @@
   "Use the share sheet to save or send the backup file.": "共有シートからバックアップファイルを保存または送信してください。",
   "Validating backup...": "バックアップを検証しています...",
   "Your backup has been restored.": "バックアップを復元しました。",
+  "Attachments not found on this device were skipped: {{count}}. The rest of the backup is complete.": "このデバイスで見つからずスキップした添付ファイル：{{count}} 件。バックアップのその他の内容はすべて含まれています。",
   "{{count}} conversations selected": "{{count}} 件の会話を選択済み",
   "{{count}} portability warnings. Local file links and retrieval indexes are not included.": "移行に関する注意が {{count}} 件あります。ローカルファイルへのリンクと検索インデックスは含まれません。",
   "{{messages}} messages · {{resources}} resources · {{bytes}} MB processed": "{{messages}} 件のメッセージ · {{resources}} 件のリソース · {{bytes}} MB を処理済み",

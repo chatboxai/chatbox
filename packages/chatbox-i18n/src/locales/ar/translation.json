@@ -1928,6 +1928,7 @@
   "Use the share sheet to save or send the backup file.": "استخدم قائمة المشاركة لحفظ ملف النسخة الاحتياطية أو إرساله.",
   "Validating backup...": "جارٍ التحقق من النسخة الاحتياطية...",
   "Your backup has been restored.": "تمت استعادة النسخة الاحتياطية.",
+  "Attachments not found on this device were skipped: {{count}}. The rest of the backup is complete.": "المرفقات التي لم يُعثر عليها على هذا الجهاز وتم تخطيها: {{count}}. باقي النسخة الاحتياطية مكتمل.",
   "{{count}} conversations selected": "المحادثات المحددة: {{count}}",
   "{{count}} portability warnings. Local file links and retrieval indexes are not included.": "تنبيهات قابلية النقل: {{count}}. لا تتضمن النسخة روابط الملفات المحلية وفهارس الاسترجاع.",
   "{{messages}} messages · {{resources}} resources · {{bytes}} MB processed": "تمت معالجة {{messages}} رسالة · {{resources}} مورد · {{bytes}} ميغابايت",

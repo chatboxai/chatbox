@@ -116,6 +116,7 @@ export async function exportBackupV3(options: ExportBackupV3Options): Promise<Ba
   let dataBytes = 0
   let globalBytes = 0
   let resourceCount = 0
+  let missingResources = 0
   let configurationCount = 0
   const checkData = (added: number) => {
     dataBytes += added
@@ -223,7 +224,11 @@ export async function exportBackupV3(options: ExportBackupV3Options): Promise<Ba
         throwIfAborted(signal)
         notify({ phase: 'resources', resources: counts.resource, bytes: resourceBytes })
         const opened = await source.openResource(key, signal)
-        if (!opened) throw new Error(`Missing backup resource: ${key}`)
+        if (!opened) {
+          missingResources++
+          resourceCount--
+          continue
+        }
         const path = backupResourcePath(index++, opened.mimeType)
         let size: number | undefined
         try {
@@ -301,7 +306,7 @@ export async function exportBackupV3(options: ExportBackupV3Options): Promise<Ba
       cleanupPending = true
     }
     notify({ phase: 'complete', bytes: outputBytes })
-    return { manifest, complete, cleanupPending }
+    return { manifest, complete, cleanupPending, missingResources }
   } catch (error) {
     if (!committed) {
       const cleanup = await Promise.allSettled([output.abort(), workspace.dispose()])

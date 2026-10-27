@@ -300,10 +300,25 @@ describe('V2 compatibility archive export', () => {
     expect(test.workspace.disposed).toBe(true)
   })
 
-  it('fails a missing managed attachment and disposes temporary files', async () => {
+  it('skips a missing managed attachment and reports it', async () => {
     const test = setup()
     test.resources.delete('picture:shared')
-    await expect(exportBackup(test.options)).rejects.toThrow('Missing backup resource')
+    const result = await exportBackup(test.options)
+    expect(result.missingResources).toBe(1)
+    const { entries, manifest } = readArchive(test.archive.bytes())
+    expect(manifest.resources.map((resource) => resource.originalStorageKeys)).toEqual([['file:text']])
+    expect(manifest.stats.resourceCount).toBe(1)
+    expect(result.complete.entryCount).toBe(Object.keys(entries).length)
+    expect(test.archive.state).toEqual({ closed: true, aborted: false })
+    expect(test.workspace.disposed).toBe(true)
+  })
+
+  it('fails when opening an existing attachment fails and disposes temporary files', async () => {
+    const test = setup()
+    test.options.source.openResource = async () => {
+      throw new Error('Resource read failed')
+    }
+    await expect(exportBackup(test.options)).rejects.toThrow('Resource read failed')
     expect(test.archive.state).toEqual({ closed: false, aborted: true })
     expect(test.workspace.disposed).toBe(true)
   })

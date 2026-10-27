@@ -1928,6 +1928,7 @@
   "Use the share sheet to save or send the backup file.": "공유 시트를 사용하여 백업 파일을 저장하거나 보내세요.",
   "Validating backup...": "백업 검증 중...",
   "Your backup has been restored.": "백업이 복원되었습니다.",
+  "Attachments not found on this device were skipped: {{count}}. The rest of the backup is complete.": "이 기기에서 찾을 수 없어 건너뛴 첨부 파일: {{count}}개. 백업의 나머지 내용은 모두 포함되었습니다.",
   "{{count}} conversations selected": "대화 {{count}}개 선택됨",
   "{{count}} portability warnings. Local file links and retrieval indexes are not included.": "이식성 관련 알림 {{count}}개. 로컬 파일 링크와 검색 인덱스는 포함되지 않습니다.",
   "{{messages}} messages · {{resources}} resources · {{bytes}} MB processed": "메시지 {{messages}}개 · 리소스 {{resources}}개 · {{bytes}} MB 처리됨",

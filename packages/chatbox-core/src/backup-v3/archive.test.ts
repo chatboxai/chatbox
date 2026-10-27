@@ -10,6 +10,7 @@ import { decodeJsonLines, encodeLine, singleChunk } from './streams'
 import type {
   BackupBusinessRecord,
   BackupCodec,
+  BackupExportSource,
   BackupImportTarget,
   BackupImportIssueReporter,
   BackupImportSummary,
@@ -136,6 +137,7 @@ async function archive(
     cleanupFails?: boolean
     codec?: BackupCodec
     limits?: Partial<BackupLimits>
+    openResource?: BackupExportSource['openResource']
   } = {}
 ) {
   let bytes: Uint8Array = new Uint8Array()
@@ -161,8 +163,9 @@ async function archive(
       async *records() {
         yield* records
       },
-      async openResource(key) {
+      async openResource(key, signal) {
         opened.push(key)
+        if (options.openResource) return options.openResource(key, signal)
         return { source: source(encoder.encode('shared attachment')), mimeType: 'text/plain', contentType: 'text' }
       },
     },
@@ -572,6 +575,36 @@ describe('V3 row archive', () => {
     expect(target.records[2]).toMatchObject({
       message: { message: { contentParts: [{ type: 'text' }, { type: 'image', storageKey: 'resource:共享' }] } },
     })
+  })
+
+  it('skips a referenced resource that is missing locally and keeps the archive importable', async () => {
+    const { bytes, result, workspace } = await archive([...fixture('A', 'resource-A'), ...fixture('B', 'resource-B')], {
+      openResource: async (key) =>
+        key === 'resource-A'
+          ? null
+          : { source: source(encoder.encode('B attachment')), mimeType: 'text/plain', contentType: 'text' },
+    })
+    expect(result.missingResources).toBe(1)
+    expect(result.complete.counts.resource).toBe(1)
+    expect(workspace.disposed).toBe(true)
+    const entries = unzipSync(bytes)
+    expect(Object.keys(entries).filter((path) => path.startsWith('resources/'))).toEqual(['resources/000000.txt'])
+    expect(result.complete.entryCount).toBe(Object.keys(entries).length)
+    const target = new Target()
+    const imported = await importBackupV3({ source: source(bytes), workspace: new Workspace(), target })
+    expect(imported.importReport).toMatchObject({ importedSessions: 2, importedMessages: 2, issueCount: 1 })
+    expect(imported.importReport?.issues[0]).toMatchObject({ code: 'missing-resource', sessionId: 'A' })
+    expect([...target.resources.keys()]).toEqual(['resource-B'])
+  })
+
+  it('still fails when opening an existing resource fails', async () => {
+    await expect(
+      archive(fixture(), {
+        openResource: async () => {
+          throw new Error('Resource read failed')
+        },
+      })
+    ).rejects.toThrow('Resource read failed')
   })
 
   it('imports sparse resource paths after attachment deletion without losing either conversation', async () => {

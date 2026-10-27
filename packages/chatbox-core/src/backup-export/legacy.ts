@@ -102,6 +102,7 @@ export async function* exportBackupV2Stream(
   let globalBytes = 0
   let dataBytes = 0
   let resourceBytes = 0
+  let missingResources = 0
   let metadataBytes = 0
   let failure: unknown
   let result: BackupExportResult | undefined
@@ -282,7 +283,10 @@ export async function* exportBackupV2Stream(
         throwIfAborted(signal)
         notify({ phase: 'resources', resources: counts.resource, bytes: resourceBytes })
         const opened = await source.openResource(resource.storageKey, signal)
-        if (!opened) throw new Error(`Missing backup resource: ${resource.storageKey}`)
+        if (!opened) {
+          missingResources++
+          continue
+        }
         const path = backupResourcePath(counts.resource, opened.mimeType)
         const hash = sha256.create()
         let size = 0
@@ -352,10 +356,11 @@ export async function* exportBackupV2Stream(
         counts,
         resourceBytes,
         dataBytes,
-        entryCount: files.length + resources.size + 1,
+        entryCount: files.length + counts.resource + 1,
         uncompressedBytes: dataBytes + resourceBytes,
       },
       cleanupPending: false,
+      missingResources,
     }
     notify({ phase: 'complete', bytes: archiveBytes, resources: counts.resource })
     return result

@@ -1928,6 +1928,7 @@
   "Use the share sheet to save or send the backup file.": "Usa il pannello di condivisione per salvare o inviare il file di backup.",
   "Validating backup...": "Verifica del backup...",
   "Your backup has been restored.": "Il backup è stato ripristinato.",
+  "Attachments not found on this device were skipped: {{count}}. The rest of the backup is complete.": "Allegati non trovati su questo dispositivo e saltati: {{count}}. Il resto del backup è completo.",
   "{{count}} conversations selected": "{{count}} conversazioni selezionate",
   "{{count}} portability warnings. Local file links and retrieval indexes are not included.": "{{count}} avvisi di portabilità. I collegamenti ai file locali e gli indici di ricerca non sono inclusi.",
   "{{messages}} messages · {{resources}} resources · {{bytes}} MB processed": "{{messages}} messaggi · {{resources}} risorse · {{bytes}} MB elaborati",

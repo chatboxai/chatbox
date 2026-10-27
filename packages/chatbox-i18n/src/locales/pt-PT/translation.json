@@ -1928,6 +1928,7 @@
   "Use the share sheet to save or send the backup file.": "Utilize o menu de partilha para guardar ou enviar o ficheiro de cópia de segurança.",
   "Validating backup...": "A validar a cópia de segurança...",
   "Your backup has been restored.": "A sua cópia de segurança foi restaurada.",
+  "Attachments not found on this device were skipped: {{count}}. The rest of the backup is complete.": "Anexos não encontrados neste dispositivo e ignorados: {{count}}. O resto da cópia de segurança está completo.",
   "{{count}} conversations selected": "{{count}} conversas selecionadas",
   "{{count}} portability warnings. Local file links and retrieval indexes are not included.": "{{count}} avisos de portabilidade. As ligações a ficheiros locais e os índices de pesquisa não estão incluídos.",
   "{{messages}} messages · {{resources}} resources · {{bytes}} MB processed": "{{messages}} mensagens · {{resources}} recursos · {{bytes}} MB processados",

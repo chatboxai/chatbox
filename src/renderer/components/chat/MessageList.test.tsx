@@ -30,6 +30,9 @@ const h = vi.hoisted(() => ({
   initialLocations: [] as unknown[],
   hideSystem: false,
   threadCount: 1,
+  emptyThreadCount: 0,
+  activeThreadEmpty: false,
+  moreThreadPages: false,
   agentMode: 'off' as 'off' | 'on',
   renderMenu: vi.fn(),
   smallScreen: false,
@@ -47,7 +50,20 @@ vi.mock('@/app/renderer-application', () => ({
     sessionQueryBridge: { registerWindow: h.registerWindow },
     sessionHooks: {
       useSessionThreads: () => ({
-        threads: Array.from({ length: h.threadCount }, (_, index) => ({ threadId: `thread-${index}` })),
+        threads: [
+          ...Array.from({ length: h.threadCount }, (_, index) => ({
+            threadId: `thread-${index}`,
+            rootMessageId: `root-${index}`,
+            threadOrder: index,
+          })),
+          ...Array.from({ length: h.emptyThreadCount }, (_, index) => ({
+            threadId: `empty-${index}`,
+            rootMessageId: null,
+            threadOrder: h.threadCount + index,
+          })),
+          ...(h.activeThreadEmpty ? [{ threadId: 'active-empty', rootMessageId: null, threadOrder: -1 }] : []),
+        ],
+        hasNextPage: h.moreThreadPages,
       }),
     },
   },
@@ -373,6 +389,9 @@ beforeEach(() => {
   h.initialLocations.length = 0
   h.hideSystem = false
   h.threadCount = 1
+  h.emptyThreadCount = 0
+  h.activeThreadEmpty = false
+  h.moreThreadPages = false
   h.agentMode = 'off'
   h.renderMenu.mockClear()
   h.smallScreen = false
@@ -495,6 +514,30 @@ describe('row transcript host', () => {
       )
     }
   )
+  test('hides the sole thread heading when the other thread rows are empty', async () => {
+    h.emptyThreadCount = 2
+    const view = render(<Host search="m0" />)
+    await waitFor(() => expect(h.firstReady).toBe(true))
+    expect(view.queryByText('Current')).toBeNull()
+    expect(h.renderMenu).not.toHaveBeenCalled()
+    expect(view.getByTestId('message-m1')).toBeTruthy()
+  })
+  test('keeps headings when empty rows fill a summary page that has more pages', async () => {
+    h.emptyThreadCount = 49
+    h.moreThreadPages = true
+    const view = render(<Host search="m0" />)
+    await waitFor(() => expect(h.firstReady).toBe(true))
+    expect(view.getAllByText('Current')).toHaveLength(1)
+    h.moreThreadPages = false
+    view.rerender(<Host search="m0" />)
+    expect(view.queryByText('Current')).toBeNull()
+  })
+  test('shows archived thread headings next to an empty active thread', async () => {
+    h.activeThreadEmpty = true
+    const view = render(<Host search="m0" />)
+    await waitFor(() => expect(h.firstReady).toBe(true))
+    expect(view.getAllByText('Current')).toHaveLength(1)
+  })
   test('updates heading visibility when thread metadata changes without rereading message bodies', async () => {
     const view = render(<Host search="m0" />)
     await waitFor(() => expect(h.firstReady).toBe(true))

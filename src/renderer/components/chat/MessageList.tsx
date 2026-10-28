@@ -100,10 +100,15 @@ const MessageList = forwardRef<
   const virtuoso = useRef<VirtuosoHandle>(null)
   const lastItem = useRef<HTMLDivElement>(null)
   const owner = useMemo(() => Symbol(session.id), [session.id])
-  const { threads: sessionThreads } = rendererApplication.sessionHooks.useSessionThreads(session.id, {
-    enabled: transcript.firstWindowReady,
-  })
-  const showThreadLabels = sessionThreads.length > 1
+  const { threads: sessionThreads, hasNextPage: moreSessionThreads } =
+    rendererApplication.sessionHooks.useSessionThreads(session.id, {
+      enabled: transcript.firstWindowReady,
+    })
+  // Empty archived thread rows are not visible threads, so they never make a single thread look like several.
+  // Unloaded summary pages may still hold a visible thread, so a partial list is judged by its row count.
+  const showThreadLabels = moreSessionThreads
+    ? sessionThreads.length > 1
+    : sessionThreads.filter((thread) => thread.rootMessageId !== null || thread.threadOrder < 0).length > 1
   const items = useMemo(
     () =>
       buildTranscriptRenderItems(transcript.rows, transcript.threads).filter(

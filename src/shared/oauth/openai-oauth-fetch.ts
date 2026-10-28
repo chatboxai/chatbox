@@ -5,6 +5,20 @@ import { headersToRecord } from './fetch-utils'
 
 const CODEX_ENDPOINT = 'https://chatgpt.com/backend-api/codex/responses'
 
+function withCodexToolDefaults(tool: unknown): unknown {
+  if (!tool || typeof tool !== 'object' || Array.isArray(tool)) return tool
+  const definition = tool as Record<string, unknown>
+  // Responses can implicitly normalize unspecified function schemas into strict mode.
+  // MCP schemas use best-effort generation with local argument validation instead.
+  if (definition.type === 'function' && definition.strict == null) {
+    return { ...definition, strict: false }
+  }
+  if (definition.type === 'namespace' && Array.isArray(definition.tools)) {
+    return { ...definition, tools: definition.tools.map(withCodexToolDefaults) }
+  }
+  return tool
+}
+
 function shouldRewriteUrl(input: RequestInfo | URL): boolean {
   try {
     const url = new URL(input instanceof Request ? input.url : String(input))
@@ -181,6 +195,9 @@ export function createOpenAIOAuthFetch(
           if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
             const body = parsed as Record<string, unknown>
             if (body.store !== false) body.store = false
+            if (Array.isArray(body.tools)) {
+              body.tools = body.tools.map(withCodexToolDefaults)
+            }
             // Stateless requests keep reasoning across turns only through the encrypted item.
             const include = Array.isArray(body.include) ? body.include : []
             if (!include.includes('reasoning.encrypted_content')) {

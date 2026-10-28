@@ -29,6 +29,46 @@ function createDependencies() {
 }
 
 describe('createOpenAIOAuthFetch', () => {
+  it.each(['https://api.openai.com/v1/responses', 'https://api.openai.com/v1/models'])(
+    'defaults unspecified function strictness only for Codex requests: %s',
+    async (url) => {
+      const { apiRequest, dependencies } = createDependencies()
+      const fetcher = createOpenAIOAuthFetch(dependencies, {
+        getCredential: vi.fn().mockResolvedValue({ accessToken: 'oauth-token' }),
+        getAccessToken: vi.fn(),
+        clear: vi.fn(),
+      })
+      const parameters = { type: 'object', properties: { query: { type: 'string' } } }
+      const implicit = { type: 'function', name: 'mcp__search', parameters }
+      const nullable = { ...implicit, name: 'nullable', strict: null }
+      const explicit = { ...implicit, name: 'explicit', strict: true }
+      const nonstrict = { ...implicit, name: 'nonstrict', strict: false }
+      const namespace = { type: 'namespace', name: 'library', tools: [implicit, explicit] }
+      const builtin = { type: 'web_search' }
+      const tools = [implicit, nullable, explicit, nonstrict, namespace, builtin]
+
+      await fetcher(url, {
+        method: 'POST',
+        body: JSON.stringify({ model: 'gpt-6-astra', input: 'hello', stream: true, tools }),
+      })
+
+      const { body } = apiRequest.mock.calls[0][0] as { body: string }
+      expect(JSON.parse(body).tools).toEqual(
+        url.endsWith('/responses')
+          ? [
+              { ...implicit, strict: false },
+              { ...nullable, strict: false },
+              explicit,
+              nonstrict,
+              { ...namespace, tools: [{ ...implicit, strict: false }, explicit] },
+              builtin,
+            ]
+          : tools
+      )
+      expect(implicit).not.toHaveProperty('strict')
+    }
+  )
+
   it('handles URL string inputs used by the AI SDK', async () => {
     const { apiRequest, dependencies } = createDependencies()
     const fetcher = createOpenAIOAuthFetch(dependencies, {

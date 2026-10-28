@@ -46,7 +46,15 @@ function host(jobId: string, workspace: IndexedDBBackupWorkspace): BackupHostOpt
     removeItem: (key) => rawKV.remove(key),
     getAllKeys: () => rawKV.keys(),
   })
-  const migration = new SessionRowMigration(records, rows, new SessionRowWriteQueue((_id, action) => action()))
+  const migration = new SessionRowMigration(
+    records,
+    {
+      readCommit: (id) => rows.readExportCommit(id),
+      getRevision: (id) => rows.getRevision(id),
+      writeRows: (snapshot, revision) => rows.writeRows(snapshot, revision),
+    },
+    new SessionRowWriteQueue((_id, action) => action())
+  )
   return {
     jobId,
     workspace,
@@ -57,7 +65,7 @@ function host(jobId: string, workspace: IndexedDBBackupWorkspace): BackupHostOpt
     resources: createRendererBackupResources(workspace),
     ensureRows: async (id) => {
       await rows.initialize()
-      await migration.ensureRows(id)
+      return migration.ensureRows(id)
     },
     async *listSessionIds() {
       await metadata.initialize()

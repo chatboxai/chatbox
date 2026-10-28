@@ -1,4 +1,4 @@
-import type { MessageRow, ThreadRow } from '../session/session-tree/types'
+import type { MessageRow, SessionRecordV2, ThreadRow } from '../session/session-tree/types'
 import type { SessionRowCommit } from './session-row-store'
 
 export type SessionStoredRow = { kind: 'thread'; thread: ThreadRow } | { kind: 'message'; message: MessageRow }
@@ -28,6 +28,8 @@ export interface SessionRowIterationRequest {
   sessionId: string
   threadId?: string
   expectedRevision?: number
+  /** Export reads assume the caller keeps the source idle; revision reads detect changes between pages. */
+  consistency?: 'revision' | 'export'
   signal?: AbortSignal
 }
 
@@ -35,16 +37,16 @@ export interface SessionRowIterationRequest {
 export interface SessionRowWriter {
   appendThread(thread: ThreadRow): Promise<void>
   appendMessage(message: MessageRow): Promise<void>
-  /** Publishes rows and commit metadata atomically, checking the expected target revision. */
+  /** Publishes rows and commit metadata atomically. */
   publish(): Promise<void>
   /** Discards unpublished rows; does not undo a successful publication. */
   dispose(): Promise<void>
 }
 
-/** Durable, hidden rows owned by one import job. */
+/** Hidden candidate rows with one in-memory lifecycle owner. */
 export interface SessionRowImportWriter extends SessionRowWriter {
   readonly candidateId: string
-  readonly commit: SessionRowCommit
+  readonly record: SessionRecordV2
   appendRows(rows: readonly SessionStoredRow[], onIssue?: SessionRowImportIssueHandler): Promise<void>
   /** Repairs relationships; reuses internal fork projections only while the candidate remains unchanged. */
   prepare(
@@ -54,14 +56,14 @@ export interface SessionRowImportWriter extends SessionRowWriter {
 }
 
 export interface SessionRowTransferPort {
-  /** Threads precede complete messages; reads must stay at one committed revision. */
+  /** Reads the published export header once, assuming the caller keeps the source idle. */
+  readExportCommit(sessionId: string): Promise<SessionRowCommit | null>
+  /** Threads precede complete messages. Revision consistency is the default. */
   iterateRows(request: SessionRowIterationRequest): AsyncIterable<SessionStoredRow>
-  /** Stages internal rows whose topology is preserved or validated by the calling operation. */
+  /** Stages internal rows and checks the expected revision when publishing. */
   stageRows(commit: SessionRowCommit, expectedRevision: number | null): Promise<SessionRowWriter>
-  stageImportRows?(
-    commit: SessionRowCommit,
-    expectedRevision: number | null,
-    jobId: string
-  ): Promise<SessionRowImportWriter>
-  resumeImportRows?(candidateId: string): Promise<SessionRowImportWriter>
+  /** Replaces a session atomically, allocating its next revision during publication. */
+  stageImportRows?(record: SessionRecordV2, jobId: string): Promise<SessionRowImportWriter>
+  /** Removes candidate data directly, including candidates abandoned by a stopped import. */
+  disposeImportRows?(candidateId: string): Promise<void>
 }

@@ -92,6 +92,26 @@ export async function readSqlTranscriptCommit(
   revision: number | null,
   bounded = true
 ): Promise<SessionRowCommit | null> {
+  return readSqlCommitHeader(database, sessionId, revision, bounded)
+}
+
+export async function readSqlExportCommit(
+  database: SessionRowSqlDatabase,
+  sessionId: string,
+  bounded = true
+): Promise<SessionRowCommit | null> {
+  const commit = await readSqlCommitHeader(database, sessionId, undefined, bounded)
+  if (commit && (commit.record.rowAuthority !== 1 || commit.record.rowFormatVersion !== 3))
+    throw new Error('Export commit row format is unsupported')
+  return commit
+}
+
+async function readSqlCommitHeader(
+  database: SessionRowSqlDatabase,
+  sessionId: string,
+  expectedRevision: number | null | undefined,
+  bounded: boolean
+): Promise<SessionRowCommit | null> {
   const rows = await database.query<{
     thread_id: string
     commit_revision: number | null
@@ -103,6 +123,7 @@ export async function readSqlTranscriptCommit(
     [sessionId]
   )
   if (rows.length === 0) return null
+  const revision = expectedRevision === undefined ? Number(rows[0].commit_revision) : expectedRevision
   if (
     rows.length !== 1 ||
     revision === null ||

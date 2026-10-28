@@ -2,7 +2,6 @@ import { MESSAGE_TREE } from './session-row-idb-tree'
 import { messageMetadata } from './session-row-idb-messages'
 import {
   type SessionRowCommit,
-  SessionRowConflictError,
   type SessionRowImportWriter,
   type SessionRowImportIssueHandler,
   type SessionRowImportPreparation,
@@ -10,7 +9,7 @@ import {
   sessionImportCandidateId,
 } from '@chatbox/core/ports'
 import { deriveMessageFacts } from '@chatbox/core/session/session-tree'
-import type { MessageRow, MessageRowMetadata, ThreadRow } from '@chatbox/core/session/session-tree'
+import type { MessageRow, MessageRowMetadata, SessionRecordV2, ThreadRow } from '@chatbox/core/session/session-tree'
 import { prepareImportIndex, validateMessageRow, validateThreadRow } from '@chatbox/core/persistence'
 import { requestValue, transaction } from './session-row-idb-transfer'
 import {
@@ -26,26 +25,14 @@ import {
 } from './session-row-idb-records'
 import { putTranscriptMessage } from './session-row-idb-transcript'
 
-type Phase = 'collecting' | 'ready' | 'published'
-interface Control {
-  stageId: string
-  kind: 'control'
-  id: ''
-  jobId: string
-  commit: SessionRowCommit
-  expectedRevision: number | null
-  phase: Phase
-  version: number
-}
+type Phase = 'collecting' | 'ready' | 'published' | 'failed' | 'disposed'
 interface Meta {
   value: MessageRowMetadata
   pathDepth: number | null
 }
 interface ImportIndex {
-  version: number
   threads: Map<string, ThreadRow>
   messages: Map<string, Meta>
-  prepared?: SessionRowImportPreparation
 }
 interface ThreadEntry {
   stageId: string
@@ -87,99 +74,61 @@ function messageMeta(row: MessageRow): Meta {
   const { message: _body, ...value } = row
   return { value, pathDepth: null }
 }
-function emptyIndex(version: number): ImportIndex {
-  return { version, threads: new Map(), messages: new Map() }
+function emptyIndex(): ImportIndex {
+  return { threads: new Map(), messages: new Map() }
 }
-async function readIndex(store: IDBObjectStore, control: Control): Promise<ImportIndex> {
-  const index = emptyIndex(control.version)
-  await visitBatches<ThreadEntry>(store, control.stageId, 'thread', (entries) => {
-    for (const entry of entries) index.threads.set(entry.id, entry.value)
-  })
-  await visitBatches<MessageEntry>(store, control.stageId, 'message', (entries) => {
-    for (const entry of entries) index.messages.set(entry.id, messageMeta(entry.value))
-  })
-  return index
-}
-function validateCommit(commit: SessionRowCommit, expected: number | null, jobId: string) {
-  if (
-    !jobId ||
-    !commit.record.id ||
-    !commit.record.activeThreadId ||
-    commit.record.rowFormatVersion !== 3 ||
-    !Number.isSafeInteger(commit.revision) ||
-    (expected !== null && (!Number.isSafeInteger(expected) || expected < 1)) ||
-    commit.revision !== (expected ?? 0) + 1
-  )
-    throw new Error('Invalid import candidate commit')
+function validateRecord(record: SessionRecordV2, jobId: string) {
+  if (!jobId || !record.id || !record.activeThreadId || record.rowFormatVersion !== 3)
+    throw new Error('Invalid import candidate record')
 }
 
 export async function stageIndexedDBImportRows(
   db: IDBDatabase,
-  input: SessionRowCommit,
-  expectedRevision: number | null,
+  input: SessionRecordV2,
   jobId: string
 ): Promise<SessionRowImportWriter> {
-  const commit = { record: structuredClone(input.record), revision: input.revision }
-  validateCommit(commit, expectedRevision, jobId)
+  const commit = { record: structuredClone(input), revision: 1 }
+  validateRecord(commit.record, jobId)
   const id = sessionImportCandidateId(jobId, commit.record.id)
+  return createImportWriter(db, id, commit)
+}
+
+export async function disposeIndexedDBImportRows(db: IDBDatabase, id: string): Promise<void> {
   await transaction(
     db,
     'readwrite',
     async (tx) => {
-      const actual = storedRevision(await head(tx, commit.record.id))
-      if (actual !== expectedRevision) throw new SessionRowConflictError(commit.record.id, expectedRevision, actual)
-      tx.objectStore(ROW_TRANSFER_STAGE).add({
-        stageId: id,
-        kind: 'control',
-        id: '',
-        jobId,
-        commit,
-        expectedRevision,
-        phase: 'collecting',
-        version: 0,
-      } satisfies Control)
+      tx.objectStore(ROW_TRANSFER_STAGE).delete(allRange(id))
     },
-    [THREADS, ROW_TRANSFER_STAGE]
+    [ROW_TRANSFER_STAGE]
   )
-  return resumeIndexedDBImportRows(db, id, true)
 }
 
-export async function resumeIndexedDBImportRows(
-  db: IDBDatabase,
-  id: string,
-  allowConvertedForks = false
-): Promise<SessionRowImportWriter> {
-  const getControl = (tx: IDBTransaction) =>
-    requestValue<Control | undefined>(tx.objectStore(ROW_TRANSFER_STAGE).get([id, 'control', '']))
-  const initial = await transaction(db, 'readonly', getControl, [ROW_TRANSFER_STAGE])
-  if (!initial) throw new Error('Import candidate is missing')
-  const commit = initial.commit
+function createImportWriter(db: IDBDatabase, id: string, commit: SessionRowCommit): SessionRowImportWriter {
   const sessionId = commit.record.id
-  let index: ImportIndex | undefined = allowConvertedForks ? emptyIndex(initial.version) : undefined
+  let phase: Phase = 'collecting'
+  let index: ImportIndex | undefined = emptyIndex()
+  let prepared: SessionRowImportPreparation | undefined
   let tail: Promise<void> = Promise.resolve()
   let rowsChanged = false
   const enqueue = <T>(work: () => Promise<T>): Promise<T> => {
-    const result = tail.then(work).catch((error: unknown) => {
-      index = undefined
-      throw error
-    })
+    const result = tail.then(work)
     tail = result.then(
       () => undefined,
       () => undefined
     )
     return result
   }
-  const requireControl = async (tx: IDBTransaction) => {
-    const control = await getControl(tx)
-    if (!control) throw new Error('Import candidate is missing')
-    return control
-  }
-  const requireIndex = async (tx: IDBTransaction, control: Control) => {
-    if (!index || index.version !== control.version) {
-      index = await readIndex(tx.objectStore(ROW_TRANSFER_STAGE), control)
-      rowsChanged = true
-    }
+  const requireIndex = () => {
+    if (phase === 'failed') throw new Error('Import candidate has failed')
+    if (phase === 'disposed') throw new Error('Import candidate is missing')
+    if (!index) throw new Error('Import candidate is closed')
     return index
+  }
+  const fail = (error: unknown): never => {
+    phase = 'failed'
+    index = undefined
+    throw error
   }
   const appendRows = (inputRows: readonly SessionStoredRow[], onIssue?: SessionRowImportIssueHandler) => {
     const rows = structuredClone(inputRows)
@@ -187,14 +136,13 @@ export async function resumeIndexedDBImportRows(
       rowsChanged = true
       onIssue?.(issue)
     }
-    return enqueue(() =>
-      transaction(
+    return enqueue(async () => {
+      const current = requireIndex()
+      if (phase !== 'collecting') throw new Error('Import candidate is closed')
+      await transaction(
         db,
         'readwrite',
         async (tx) => {
-          const control = await requireControl(tx)
-          if (control.phase !== 'collecting') throw new Error('Import candidate is closed')
-          const current = await requireIndex(tx, control)
           const store = tx.objectStore(ROW_TRANSFER_STAGE)
           for (const row of rows) {
             const rowId = row.kind === 'thread' ? row.thread.threadId : row.message.messageId
@@ -242,65 +190,45 @@ export async function resumeIndexedDBImportRows(
               current.messages.set(rowId, messageMeta(message))
             }
           }
-          control.version++
-          store.put(control)
-          current.version = control.version
         },
         [ROW_TRANSFER_STAGE]
-      )
-    )
+      ).catch(fail)
+    })
   }
   return {
     candidateId: id,
-    commit,
+    record: commit.record,
     appendRows,
     appendThread: (thread) => appendRows([{ kind: 'thread', thread }]),
     appendMessage: (message) => appendRows([{ kind: 'message', message }]),
     prepare: (onIssue, forks) =>
       enqueue(async () => {
-        const prepared = await transaction(
-          db,
-          'readwrite',
-          async (tx) => {
-            const control = await requireControl(tx)
-            if (control.phase === 'ready' || control.phase === 'published') return
-            const current = await requireIndex(tx, control)
-            current.prepared = prepareImportIndex(
-              current,
-              control.commit,
-              onIssue,
-              allowConvertedForks && !rowsChanged ? forks : undefined,
-              { reservedThreadId: REVISION_HEAD_THREAD_ID }
-            )
-            control.phase = 'ready'
-            control.version++
-            tx.objectStore(ROW_TRANSFER_STAGE).put(control)
-            current.version = control.version
-            return { result: current.prepared, record: control.commit.record }
-          },
-          [ROW_TRANSFER_STAGE]
-        )
-        if (prepared) {
-          commit.record = prepared.record
-          return prepared.result
+        if (phase === 'ready' || phase === 'published') return prepared
+        const current = requireIndex()
+        try {
+          prepared = prepareImportIndex(current, commit, onIssue, !rowsChanged ? forks : undefined, {
+            reservedThreadId: REVISION_HEAD_THREAD_ID,
+          })
+          phase = 'ready'
+          return prepared
+        } catch (error) {
+          fail(error)
         }
       }),
     publish: () =>
       enqueue(async () => {
-        const record = await transaction(
+        if (phase === 'published') return
+        const current = requireIndex()
+        if (phase !== 'ready') throw new Error('Import candidate is not prepared')
+        await transaction(
           db,
           'readwrite',
           async (tx) => {
-            const control = await requireControl(tx)
-            if (control.phase === 'published') return control.commit.record
-            if (control.phase !== 'ready') throw new Error('Import candidate is not prepared')
             const actual = storedRevision(await head(tx, sessionId))
-            if (actual !== control.expectedRevision)
-              throw new SessionRowConflictError(sessionId, control.expectedRevision, actual)
-            const current = await requireIndex(tx, control)
-            current.prepared ??= prepareImportIndex(current, control.commit, undefined, undefined, {
-              reservedThreadId: REVISION_HEAD_THREAD_ID,
-            })
+            if (actual !== null && (!Number.isSafeInteger(actual) || actual < 1))
+              throw new Error('Session row revision is invalid')
+            if (actual === Number.MAX_SAFE_INTEGER) throw new Error('Session row revision is exhausted')
+            commit.revision = (actual ?? 0) + 1
             for (const name of visibleStores) tx.objectStore(name).delete(sessionRange(sessionId))
             for (const thread of current.threads.values()) {
               tx.objectStore(THREADS).put(thread)
@@ -315,28 +243,22 @@ export async function resumeIndexedDBImportRows(
                 putTranscriptMessage(tx, message)
               }
             })
-            tx.objectStore(THREADS).put(revisionHead(sessionId, control.commit))
+            tx.objectStore(THREADS).put(revisionHead(sessionId, commit))
             stage.delete(allRange(id))
-            control.phase = 'published'
-            control.version++
-            stage.put(control)
-            return control.commit.record
           },
           [...ROW_STORES, ROW_TRANSFER_STAGE]
         )
-        commit.record = record
+        phase = 'published'
         index = undefined
       }),
     dispose: () =>
       enqueue(async () => {
-        await transaction(
-          db,
-          'readwrite',
-          async (tx) => {
-            tx.objectStore(ROW_TRANSFER_STAGE).delete(allRange(id))
-          },
-          [ROW_TRANSFER_STAGE]
-        )
+        if (phase === 'published' || phase === 'disposed') {
+          phase = 'disposed'
+          return
+        }
+        await disposeIndexedDBImportRows(db, id)
+        phase = 'disposed'
         index = undefined
       }),
   }

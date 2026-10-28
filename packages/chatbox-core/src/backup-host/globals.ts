@@ -216,8 +216,7 @@ export async function* exportGlobals(
         selectedFolderIds = new Set<string>()
         for (const sessionId of selection.sessionIds) {
           throwIfAborted(signal)
-          await options.ensureRows(sessionId)
-          const commit = await options.rows.readCommit(sessionId)
+          const commit = await options.ensureRows(sessionId)
           if (!commit) throw new Error(`Conversation is unavailable: ${sessionId}`)
           if (commit.record.folderId) selectedFolderIds.add(commit.record.folderId)
         }

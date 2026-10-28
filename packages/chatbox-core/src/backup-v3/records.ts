@@ -40,10 +40,18 @@ const orderIssueMessages = {
   'message-identity': 'The message was skipped because its row ID and content ID do not match.',
 } as const
 
+type IdentityTable = 'global-ids' | 'session-ids' | 'thread-ids' | 'message-ids'
+
 export class RecordOrder {
   private phase: 'resource' | 'global' | 'session' | 'warning' = 'resource'
   private sessionId: string | undefined
   private messagesStarted = false
+  private readonly exportIds: Record<IdentityTable, Set<string>> = {
+    'global-ids': new Set(),
+    'session-ids': new Set(),
+    'thread-ids': new Set(),
+    'message-ids': new Set(),
+  }
   constructor(
     private readonly workspace: BackupWorkspace,
     private readonly manifest: BackupManifest,
@@ -87,6 +95,8 @@ export class RecordOrder {
       }
       this.sessionId = sessionId
       this.messagesStarted = false
+      this.exportIds['thread-ids'].clear()
+      this.exportIds['message-ids'].clear()
       return true
     }
     const row = record.type === 'thread' ? record.thread : record.message
@@ -96,35 +106,26 @@ export class RecordOrder {
     if (this.onIssue) return true
     if (record.type === 'thread') {
       if (this.messagesStarted) return this.reject('record-order', objectId, row.sessionId)
-      return this.unique(
-        'thread-ids',
-        JSON.stringify([row.sessionId, row.threadId]),
-        'duplicate-thread',
-        objectId,
-        row.sessionId
-      )
+      return this.unique('thread-ids', row.threadId, 'duplicate-thread', objectId, row.sessionId)
     }
     this.messagesStarted = true
     if (record.message.messageId !== record.message.message.id)
       return this.reject('message-identity', objectId, row.sessionId)
-    if (!(await this.workspace.get('thread-ids', JSON.stringify([row.sessionId, row.threadId]))))
-      return this.reject('missing-thread', objectId, row.sessionId)
-    return this.unique(
-      'message-ids',
-      JSON.stringify([row.sessionId, objectId]),
-      'duplicate-message',
-      objectId,
-      row.sessionId
-    )
+    if (!this.exportIds['thread-ids'].has(row.threadId)) return this.reject('missing-thread', objectId, row.sessionId)
+    return this.unique('message-ids', objectId, 'duplicate-message', objectId, row.sessionId)
   }
   private async unique(
-    table: string,
+    table: IdentityTable,
     key: string,
     code: keyof typeof orderIssueMessages,
     objectId: string,
     sessionId?: string
   ) {
-    return (await this.workspace.put(table, key, '1')) || this.reject(code, objectId, sessionId)
+    if (this.onIssue) return (await this.workspace.put(table, key, '1')) || this.reject(code, objectId, sessionId)
+    const ids = this.exportIds[table]
+    if (ids.has(key)) return this.reject(code, objectId, sessionId)
+    ids.add(key)
+    return true
   }
   private reject(code: keyof typeof orderIssueMessages, objectId?: string, sessionId?: string): false {
     const issue: BackupImportIssue = { code, objectId, sessionId, message: orderIssueMessages[code] }

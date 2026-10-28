@@ -20,17 +20,11 @@ import type { BackupHostOptions } from './types'
 
 const CANDIDATES = 'import-candidates'
 
-async function cleanupCandidates(options: BackupHostOptions): Promise<void> {
+async function cleanupCandidates(options: BackupHostOptions, settled?: ReadonlySet<string>): Promise<void> {
   for await (const { value: candidateId } of options.workspace.entries(CANDIDATES)) {
-    if (!options.rows.resumeImportRows) throw new Error('Row import cleanup is unavailable')
-    let candidate: SessionRowImportWriter
-    try {
-      candidate = await options.rows.resumeImportRows(candidateId)
-    } catch (error) {
-      if (error instanceof Error && error.message === 'Import candidate is missing') continue
-      throw error
-    }
-    await candidate.dispose()
+    if (settled?.has(candidateId)) continue
+    if (!options.rows.disposeImportRows) throw new Error('Row import cleanup is unavailable')
+    await options.rows.disposeImportRows(candidateId)
   }
   await options.resources.cleanup(options.jobId)
 }
@@ -53,8 +47,7 @@ export function createBackupExportSource(
       const ids = selection.sessionIds ?? options.listSessionIds()
       for await (const sessionId of ids) {
         throwIfAborted(signal)
-        await options.ensureRows(sessionId)
-        const commit = await options.rows.readCommit(sessionId)
+        const commit = await options.ensureRows(sessionId)
         if (!commit) throw new Error(`Conversation is unavailable: ${sessionId}`)
         const metadata = await options.metadata.getById(sessionId)
         yield {
@@ -62,7 +55,7 @@ export function createBackupExportSource(
           session: toBackupSession(commit.record),
           ...(metadata ? { meta: { sortOrder: metadata.sortOrder, createdAt: metadata.createdAt } } : {}),
         }
-        for await (const row of options.rows.iterateRows({ sessionId, expectedRevision: commit.revision, signal }))
+        for await (const row of options.rows.iterateRows({ sessionId, consistency: 'export', signal }))
           yield row.kind === 'thread'
             ? { type: 'thread', thread: toBackupThread(row.thread) }
             : { type: 'message', message: toBackupMessage(row.message) }
@@ -73,6 +66,7 @@ export function createBackupExportSource(
 
 export function createBackupImportTarget(options: BackupHostOptions): BackupImportTarget {
   const { workspace, storage, rows, resources, jobId } = options
+  const settledCandidates = new Set<string>()
   let globals: ImportedGlobals | null = null
   let globalsPublished = false
   let active: SessionRowImportWriter | null = null
@@ -123,17 +117,19 @@ export function createBackupImportTarget(options: BackupHostOptions): BackupImpo
       summary.skippedRecords += 1 + activeThreads - skippedThreads
       reportIssue?.({
         code: 'unusable-session',
-        objectId: active.commit.record.id,
-        sessionId: active.commit.record.id,
+        objectId: active.record.id,
+        sessionId: active.record.id,
         message: 'The conversation was skipped because none of its messages could be restored.',
       })
       await active.dispose()
+      settledCandidates.add(active.candidateId)
     } else {
       throwIfAborted(signal)
       await active.publish()
+      settledCandidates.add(active.candidateId)
       summary.importedSessions++
       summary.importedMessages += prepared?.messageCount ?? activeMessages
-      const record = active.commit.record
+      const record = active.record
       try {
         await options.metadata.createMany([
           createSessionMetaRecord(record, activeMeta?.sortOrder ?? -Date.now(), activeMeta?.createdAt ?? Date.now()),
@@ -152,7 +148,7 @@ export function createBackupImportTarget(options: BackupHostOptions): BackupImpo
   }
   return {
     async begin(manifest, onIssue, abortSignal, context) {
-      if (!rows.stageImportRows || !rows.resumeImportRows) throw new Error('Row import is unavailable')
+      if (!rows.stageImportRows || !rows.disposeImportRows) throw new Error('Row import is unavailable')
       signal = abortSignal
       reportIssue = onIssue
       throwIfAborted(signal)
@@ -193,19 +189,15 @@ export function createBackupImportTarget(options: BackupHostOptions): BackupImpo
               ...record.settings,
               sessionPromptContextSnapshot: globals.snapshot(record.settings.sessionPromptContextSnapshot, record),
             }
-          if (await options.records.getRecord(record.id)) await options.ensureRows(record.id)
-          const previousRevision = await rows.getRevision(record.id)
-          const metadata = await options.metadata.getById(record.id)
-          activeMeta =
-            entry.meta ?? (metadata ? { sortOrder: metadata.sortOrder, createdAt: metadata.createdAt } : undefined)
+          activeMeta = entry.meta
+          if (!activeMeta) {
+            const metadata = await options.metadata.getById(record.id)
+            activeMeta = metadata ? { sortOrder: metadata.sortOrder, createdAt: metadata.createdAt } : undefined
+          }
           const candidateId = sessionImportCandidateId(jobId, record.id)
           if (!(await workspace.put(CANDIDATES, record.id, candidateId))) throw new Error('Duplicate import session')
           if (!rows.stageImportRows) throw new Error('Row import is unavailable')
-          active = await rows.stageImportRows(
-            { record, revision: (previousRevision ?? 0) + 1 },
-            previousRevision,
-            jobId
-          )
+          active = await rows.stageImportRows(record, jobId)
           activeRecord = record
         } else {
           const sessionId = entry.type === 'thread' ? entry.thread.sessionId : entry.message.sessionId
@@ -262,6 +254,6 @@ export function createBackupImportTarget(options: BackupHostOptions): BackupImpo
       return { ...summary }
     },
     getSummary: () => ({ ...summary }),
-    cleanup: () => cleanupCandidates(options),
+    cleanup: () => cleanupCandidates(options, settledCandidates),
   }
 }

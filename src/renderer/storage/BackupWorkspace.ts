@@ -30,8 +30,10 @@ const jobRange = (job: string) => IDBKeyRange.bound([job], [job, []])
 export class IndexedDBBackupWorkspace implements BackupWorkspace {
   private db: IDBDatabase | null = null
   private opening: Promise<IDBDatabase> | null = null
+  private disposed = false
   constructor(readonly jobId: string) {}
   async initialize(): Promise<IDBDatabase> {
+    if (this.disposed) throw new Error('Backup workspace is disposed')
     if (this.db) return this.db
     if (!this.opening)
       this.opening = new Promise<IDBDatabase>((resolve, reject) => {
@@ -200,6 +202,7 @@ export class IndexedDBBackupWorkspace implements BackupWorkspace {
     }
   }
   async dispose(): Promise<void> {
+    if (this.disposed) return
     const db = await this.initialize(),
       tx = db.transaction(['catalog', 'files', 'chunks', 'jobs'], 'readwrite'),
       done = complete(tx)
@@ -214,6 +217,7 @@ export class IndexedDBBackupWorkspace implements BackupWorkspace {
     }
     tx.objectStore('jobs').delete(this.jobId)
     await done
+    this.disposed = true
     db.close()
     this.db = null
     this.opening = null

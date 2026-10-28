@@ -283,6 +283,13 @@ export class InMemorySessionRowStore implements SessionRowStorePort {
     return state ? clone({ record: state.record, revision: state.revision }) : null
   }
 
+  async readExportCommit(sessionId: string): Promise<SessionRowCommit | null> {
+    const commit = await this.readCommit(sessionId)
+    if (commit && (commit.record.rowAuthority !== 1 || commit.record.rowFormatVersion !== 3))
+      throw new Error('Export commit row format is unsupported')
+    return commit
+  }
+
   async readThread(request: SessionThreadRequest): Promise<SessionThreadRead | null> {
     const state = this.sessions.get(request.sessionId)
     assertSessionReadRevision(request, this.revisions.get(request.sessionId) ?? null)
@@ -521,11 +528,15 @@ export class InMemorySessionRowStore implements SessionRowStorePort {
 
   async *iterateRows(request: SessionRowIterationRequest): AsyncGenerator<SessionStoredRow> {
     const { sessionId, threadId, signal } = request
+    const exporting = request.consistency === 'export'
+    if (exporting && request.expectedRevision !== undefined)
+      throw new Error('Export row iteration cannot require a revision')
     const state = this.sessions.get(sessionId)
     if (!state) throw new Error('Session is missing')
     const revision = request.expectedRevision ?? state.revision
     const check = () => {
       throwIfAborted(signal)
+      if (exporting) return
       const actual = this.revisions.get(sessionId) ?? null
       if (actual !== revision) throw new SessionRowConflictError(sessionId, revision, actual)
     }

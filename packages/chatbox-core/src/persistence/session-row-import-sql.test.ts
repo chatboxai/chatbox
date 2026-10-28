@@ -85,13 +85,13 @@ async function append(
     onIssue
   )
 }
-describe('durable SQL row imports', () => {
+describe('SQL row imports', () => {
   it('keeps old live rows when replacement fails inside its transaction', async () => {
     const { db, store } = setup()
     await store.writeRows(fixture('old'))
     const before = await store.readSnapshot('s')
     const next = { ...fixture('replacement'), revision: 2 }
-    const writer = await store.stageImportRows(next, 1, 'failed-transaction')
+    const writer = await store.stageImportRows(next.record, 'failed-transaction')
     await append(writer, next)
     await writer.prepare()
     await db.execute(`CREATE TRIGGER fail_import BEFORE INSERT ON session_messages
@@ -104,7 +104,7 @@ describe('durable SQL row imports', () => {
   it('recognizes the committed receipt when a native publish reply is lost', async () => {
     const { db, store } = setup()
     const source = fixture()
-    const writer = await store.stageImportRows(source, null, 'lost-reply')
+    const writer = await store.stageImportRows(source.record, 'lost-reply')
     await append(writer, source)
     await writer.prepare()
     const execute = db.executeBatch.bind(db)
@@ -124,13 +124,12 @@ describe('durable SQL row imports', () => {
     await store.writeRows(old)
     const snapshot = await store.readSnapshot('s')
     const next = { ...fixture('new😀'.repeat(40000)), revision: 2 }
-    const writer = await store.stageImportRows(next, 1, 'job')
+    const writer = await store.stageImportRows(next.record, 'job')
     await append(writer, next)
     await writer.prepare()
     expect(await store.readSnapshot('s')).toEqual(snapshot)
-    const resumed = await new SqlSessionRowStore(db).resumeImportRows(writer.candidateId)
-    await resumed.publish()
-    await resumed.publish()
+    await writer.publish()
+    await writer.publish()
     expect((await store.readMessages({ sessionId: 's', messageIds: ['a'] }))?.messages[0].message.contentParts).toEqual(
       next.rows.messages[0].message.contentParts
     )
@@ -143,21 +142,20 @@ describe('durable SQL row imports', () => {
     const published = await store.readSnapshot('s')
     expect(await db.query('SELECT * FROM session_messages_staging')).toEqual([])
     expect(await db.query('SELECT * FROM session_threads_staging')).toEqual([])
-    await (await new SqlSessionRowStore(db).resumeImportRows(writer.candidateId)).dispose()
-    await resumed.dispose()
+    await new SqlSessionRowStore(db).disposeImportRows(writer.candidateId)
+    await writer.dispose()
     expect(await store.readSnapshot('s')).toEqual(published)
-    expect(await db.query('SELECT * FROM session_row_imports')).toEqual([])
   })
   it('discards unpublished rows and keeps a committed import after candidate cleanup', async () => {
     const { store } = setup(),
       source = fixture()
-    const writer = await store.stageImportRows(source, null, 'job')
+    const writer = await store.stageImportRows(source.record, 'job')
     await append(writer, source)
     await writer.prepare()
     await writer.dispose()
     expect(await store.hasRows('s')).toBe(false)
     expect(await store.getRevision('s')).toBeNull()
-    const second = await store.stageImportRows(source, null, 'job2')
+    const second = await store.stageImportRows(source.record, 'job2')
     await append(second, source)
     await second.prepare()
     await second.publish()
@@ -168,11 +166,11 @@ describe('durable SQL row imports', () => {
     const { db, store } = setup()
     await store.writeRows(fixture('old'))
     const next = { ...fixture('new'), revision: 2 }
-    const writer = await store.stageImportRows(next, 1, 'replace')
+    const writer = await store.stageImportRows(next.record, 'replace')
     await append(writer, next)
     await writer.prepare()
     await writer.publish()
-    const pending = await store.stageImportRows({ ...fixture('pending'), revision: 3 }, 2, 'other-job')
+    const pending = await store.stageImportRows({ ...fixture('pending'), revision: 3 }.record, 'other-job')
     await append(pending, fixture('pending'))
     const ordinary = await store.stageRows({ ...fixture('copy'), revision: 3 }, 2)
     for (const thread of fixture('copy').rows.threads) await ordinary.appendThread(thread)
@@ -187,83 +185,87 @@ describe('durable SQL row imports', () => {
     expect(await staged()).toHaveLength(2)
     await ordinary.dispose()
     expect(await staged()).toEqual([])
-    expect(await db.query('SELECT * FROM session_row_imports')).toEqual([])
     expect(await store.readMessages({ sessionId: 's', messageIds: ['a'] })).toMatchObject({
       messages: [{ message: { contentParts: [{ text: 'new' }] } }],
     })
   })
-  it.each(
-    ['detached-cycle', 'missing-parent', 'duplicate-sibling', 'compaction', 'empty-slot'].flatMap((kind) =>
-      [false, true].map((resume) => ({ kind, resume }))
-    )
-  )('preserves usable rows while repairing imported relationships: %j', async ({ kind, resume }) => {
-    const { db, store } = setup(),
-      source = fixture()
-    if (kind === 'missing-parent') source.rows.messages[1].parentMessageId = 'missing'
-    if (kind === 'compaction')
-      source.rows.threads[0].compactionPoints = [{ boundaryMessageId: 'a', summaryMessageId: 'missing', createdAt: 1 }]
-    if (kind === 'empty-slot') {
-      source.rows.messages[1].pendingBranchId = 'empty'
-      source.rows.messages[1].pendingBranchOrder = -1
-    }
-    if (kind === 'duplicate-sibling')
-      source.rows.messages.push({
-        ...source.rows.messages[1],
-        messageId: 'c',
-        message: { ...source.rows.messages[1].message, id: 'c' },
-      })
-    if (kind === 'detached-cycle')
-      source.rows.messages.push(
-        ...['c', 'd'].map((id, index) => ({
+  it.each(['detached-cycle', 'missing-parent', 'duplicate-sibling', 'compaction', 'empty-slot'])(
+    'preserves usable rows while repairing imported relationships: %s',
+    async (kind) => {
+      const { db, store } = setup(),
+        source = fixture()
+      if (kind === 'missing-parent') source.rows.messages[1].parentMessageId = 'missing'
+      if (kind === 'compaction')
+        source.rows.threads[0].compactionPoints = [
+          { boundaryMessageId: 'a', summaryMessageId: 'missing', createdAt: 1 },
+        ]
+      if (kind === 'empty-slot') {
+        source.rows.messages[1].pendingBranchId = 'empty'
+        source.rows.messages[1].pendingBranchOrder = -1
+      }
+      if (kind === 'duplicate-sibling')
+        source.rows.messages.push({
           ...source.rows.messages[1],
-          messageId: id,
-          parentMessageId: index ? 'c' : 'd',
-          activeChildId: null,
-          message: { ...source.rows.messages[1].message, id },
-        }))
+          messageId: 'c',
+          message: { ...source.rows.messages[1].message, id: 'c' },
+        })
+      if (kind === 'detached-cycle')
+        source.rows.messages.push(
+          ...['c', 'd'].map((id, index) => ({
+            ...source.rows.messages[1],
+            messageId: id,
+            parentMessageId: index ? 'c' : 'd',
+            activeChildId: null,
+            message: { ...source.rows.messages[1].message, id },
+          }))
+        )
+      const writer = await store.stageImportRows(source.record, 'job')
+      await append(writer, source)
+      const issues: SessionRowImportIssue[] = []
+      const prepared = await writer.prepare((issue) => issues.push(issue))
+      expect(prepared).toMatchObject({
+        messageCount: kind === 'missing-parent' ? 1 : kind === 'duplicate-sibling' ? 3 : 2,
+        skipSession: false,
+      })
+      expect(issues.length).toBeGreaterThan(0)
+      await writer.publish()
+      const restored = await store.readSnapshot('s')
+      expect(restored?.rows.messages.find((row) => row.messageId === 'a')?.message).toEqual(
+        source.rows.messages[0].message
       )
-    const writer = await store.stageImportRows(source, null, 'job')
-    await append(writer, source)
-    const issues: SessionRowImportIssue[] = []
-    const prepared = await writer.prepare((issue) => issues.push(issue))
-    expect(prepared).toMatchObject({
-      messageCount: kind === 'missing-parent' ? 1 : kind === 'duplicate-sibling' ? 3 : 2,
-      skipSession: false,
-    })
-    expect(issues.length).toBeGreaterThan(0)
-    const publishing = resume ? await new SqlSessionRowStore(db).resumeImportRows(writer.candidateId) : writer
-    await publishing.publish()
-    const restored = await store.readSnapshot('s')
-    expect(restored?.rows.messages.find((row) => row.messageId === 'a')?.message).toEqual(
-      source.rows.messages[0].message
-    )
-    expect(restored?.rows.threads[0].compactionPoints).toEqual([])
-    if (kind === 'detached-cycle') expect(issues.filter((issue) => issue.action === 'skipped')).toHaveLength(2)
-    if (kind === 'duplicate-sibling')
-      expect(
-        new Set(restored?.rows.messages.filter((row) => row.parentMessageId === 'a').map((row) => row.siblingOrder))
-          .size
-      ).toBe(2)
-    await writer.dispose()
-  })
+      expect(restored?.rows.threads[0].compactionPoints).toEqual([])
+      if (kind === 'detached-cycle') expect(issues.filter((issue) => issue.action === 'skipped')).toHaveLength(2)
+      if (kind === 'duplicate-sibling')
+        expect(
+          new Set(restored?.rows.messages.filter((row) => row.parentMessageId === 'a').map((row) => row.siblingOrder))
+            .size
+        ).toBe(2)
+      await writer.dispose()
+    }
+  )
   it('batches insertion and does not split complete messages into SQL concatenation updates', async () => {
     const { db, store } = setup(),
       source = fixture('large😀'.repeat(20000))
-    const writer = await store.stageImportRows(source, null, 'job')
+    const writer = await store.stageImportRows(source.record, 'job')
     db.reset()
     await append(writer, source)
     expect(db.batchCount).toBeLessThanOrEqual(2)
     expect(db.executed.join('\n')).not.toContain('message_json=message_json||')
   })
-  it('refuses to overwrite a newer target or roll it back', async () => {
+  it('allocates the revision at publication after another write advances the target', async () => {
     const { store } = setup(),
       source = fixture()
     await store.writeRows(source)
-    const writer = await store.stageImportRows({ ...source, revision: 2 }, 1, 'job')
+    const writer = await store.stageImportRows(source.record, 'job')
     await append(writer, source)
     await writer.prepare()
     await store.writeRows({ ...source, revision: 2 }, 1)
-    await expect(writer.publish()).rejects.toMatchObject({ name: 'SessionRowConflictError' })
+    await writer.publish()
+    const restored = await store.readSnapshot('s')
+    expect(restored?.revision).toBe(3)
+    expect(restored?.record).toEqual(source.record)
+    await writer.publish()
+    expect(await store.getRevision('s')).toBe(3)
     await writer.dispose()
   })
 })
@@ -276,7 +278,7 @@ it.each([
 ])('derives imported fork navigation (summary=$summaryPoint, empty=$empty)', async ({ summaryPoint, empty }) => {
   const { store } = setup(),
     { source, pivotId, replyId, alternativeId, fork } = forkFixture(summaryPoint, empty)
-  const writer = await store.stageImportRows(source, null, 'job')
+  const writer = await store.stageImportRows(source.record, 'job')
   await append(writer, source)
   await writer.prepare()
   await writer.publish()
@@ -303,7 +305,7 @@ it('derives the complete selected path and summary for a large branchless candid
         contentParts: [{ type: 'text' as const, text: `body-${i}` }],
       })),
     })
-  const writer = await store.stageImportRows(source, null, 'large-branchless')
+  const writer = await store.stageImportRows(source.record, 'large-branchless')
   await append(writer, source)
   expect(await writer.prepare()).toMatchObject({ messageCount: 1024, skipSession: false })
   await writer.publish()
@@ -332,7 +334,7 @@ it('keeps fork counts and selected branches independent across threads', async (
     name: 'History',
   })
   first.source.rows.messages.push(...second.source.rows.messages.map((row) => ({ ...row, threadId: 'history' })))
-  const writer = await store.stageImportRows(first.source, null, 'two-threads')
+  const writer = await store.stageImportRows(first.source.record, 'two-threads')
   await append(writer, first.source)
   await writer.prepare()
   await writer.publish()
@@ -344,8 +346,8 @@ it('scopes pivot lookup to one candidate even when another session uses the same
   const { store } = setup(),
     first = fixture(),
     second = forkFixture(false, true, 'other')
-  const writer = await store.stageImportRows(first, null, 'same-job')
-  const other = await store.stageImportRows(second.source, null, 'same-job')
+  const writer = await store.stageImportRows(first.record, 'same-job')
+  const other = await store.stageImportRows(second.source.record, 'same-job')
   await append(writer, first)
   await append(other, second.source)
   await writer.prepare()
@@ -360,7 +362,7 @@ it.each([false, true])('uses complete converted fork projections, including an e
   const { store } = setup(),
     data = forkFixture(true, true),
     source = emptyMap ? fixture() : data.source
-  const writer = await store.stageImportRows(source, null, 'converted')
+  const writer = await store.stageImportRows(source.record, 'converted')
   await append(writer, source)
   const forks = emptyMap ? new Map<string, typeof data.fork>() : new Map([[data.pivotId, data.fork]])
   const consume = vi.spyOn(forks, Symbol.iterator)
@@ -378,12 +380,12 @@ it.each([false, true])('uses complete converted fork projections, including an e
   expect(thread?.status === 'ready' && thread.thread.summary.messageCount).toBeGreaterThan(0)
 })
 
-it.each(['duplicate', 'invalid', 'missing-thread', 'repair', 'resume'])(
+it.each(['duplicate', 'invalid', 'missing-thread', 'repair'])(
   'rebuilds converted fork projections after %s',
   async (kind) => {
     const { store } = setup(),
       data = forkFixture()
-    const writer = await store.stageImportRows(data.source, null, 'fallback')
+    const writer = await store.stageImportRows(data.source.record, 'fallback')
     if (kind === 'repair') data.source.rows.threads[0].rootMessageId = 'missing-root'
     await append(writer, data.source)
     const row = data.source.rows.messages[0]
@@ -397,12 +399,11 @@ it.each(['duplicate', 'invalid', 'missing-thread', 'repair', 'resume'])(
         threadId: 'absent',
         message: { ...row.message, id: 'missing-thread-row' },
       })
-    const prepared = kind === 'resume' ? await store.resumeImportRows(writer.candidateId) : writer
     const forks = new Map<string, typeof data.fork>()
     const consume = vi.spyOn(forks, Symbol.iterator)
-    await prepared.prepare(undefined, forks)
+    await writer.prepare(undefined, forks)
     expect(consume).not.toHaveBeenCalled()
-    await prepared.publish()
+    await writer.publish()
     expect((await store.readMessages({ sessionId: 's', messageIds: [data.pivotId] }))?.messages[0].fork).toEqual(
       data.fork
     )
@@ -442,7 +443,7 @@ it.each([false, true])('projects many fork points with bounded work (converted=%
       position: 0,
     })
   }
-  const writer = await store.stageImportRows(source, null, 'many-converted')
+  const writer = await store.stageImportRows(source.record, 'many-converted')
   await append(writer, source)
   const batches: SessionRowSqlStatement[][] = [],
     execute = db.executeBatch.bind(db)
@@ -475,7 +476,7 @@ it.each([false, true])(
     data.source.rows.messages[0].forkPivotId = data.pivotId
     data.source.rows.messages.find((row) => row.messageId === data.pointId)!.branchId = 'summary-branch'
     if (reverse) data.source.rows.messages.reverse()
-    const writer = await store.stageImportRows(data.source, null, 'duplicate-pivot')
+    const writer = await store.stageImportRows(data.source.record, 'duplicate-pivot')
     await append(writer, data.source)
     await writer.prepare()
     await writer.publish()
@@ -501,7 +502,7 @@ it('coalesces many candidate rows into bounded native statements', async () => {
         contentParts: [{ type: 'text' as const, text: 'small' }],
       })),
     })
-  const writer = await store.stageImportRows(source, null, 'job')
+  const writer = await store.stageImportRows(source.record, 'job')
   const batches: SessionRowSqlStatement[][] = []
   const execute = db.executeBatch.bind(db)
   const capture = vi.spyOn(db, 'executeBatch').mockImplementation((statements, options) => {
@@ -539,7 +540,7 @@ it('keeps the first duplicate ID and repairs stale child, root and fork referenc
   source.rows.threads[0].rootMessageId = 'absent'
   source.rows.messages[1].activeChildId = 'absent'
   source.rows.messages[1].forkPivotId = 'absent'
-  const writer = await store.stageImportRows(source, null, 'duplicates')
+  const writer = await store.stageImportRows(source.record, 'duplicates')
   await append(writer, source)
   const issues: SessionRowImportIssue[] = []
   await writer.appendRows(
@@ -572,7 +573,7 @@ it('marks candidates with no usable messages for session skipping and keeps old 
   await store.writeRows(old)
   const source = { ...fixture('broken'), revision: 2 }
   source.rows.messages[0].parentMessageId = 'missing'
-  const writer = await store.stageImportRows(source, 1, 'unusable')
+  const writer = await store.stageImportRows(source.record, 'unusable')
   await append(writer, source)
   const issues: SessionRowImportIssue[] = []
   expect(await writer.prepare((issue) => issues.push(issue))).toMatchObject({ messageCount: 0, skipSession: true })
@@ -603,7 +604,7 @@ it('keeps usable branches, normalizes conflicting sibling order and removes orph
     make('descendant', 'orphan', 0),
     make('missing-thread', 'a', 0, 'absent-thread')
   )
-  const writer = await rows.stageImportRows(source, null, 'mixed')
+  const writer = await rows.stageImportRows(source.record, 'mixed')
   const issues: SessionRowImportIssue[] = []
   await append(writer, source, (issue) => issues.push(issue))
   expect(await writer.prepare((issue) => issues.push(issue))).toMatchObject({ messageCount: 4, skipSession: false })
@@ -640,7 +641,7 @@ it('does not prune a healthy thread referenced by a broken cross-thread parent',
     activeChildId: null,
     message: { ...source.rows.messages[1].message, id: '0broken' },
   })
-  const writer = await rows.stageImportRows(source, null, 'cross-thread')
+  const writer = await rows.stageImportRows(source.record, 'cross-thread')
   await append(writer, source)
   const issues: SessionRowImportIssue[] = []
   expect(await writer.prepare((issue) => issues.push(issue))).toMatchObject({ messageCount: 2, skipSession: false })
@@ -655,7 +656,7 @@ it('accepts the first usable row after same-ID rows with missing threads or inva
   const { store: rows } = setup()
   const source = fixture('usable'),
     first = source.rows.messages[0]
-  const writer = await rows.stageImportRows(source, null, 'first-usable')
+  const writer = await rows.stageImportRows(source.record, 'first-usable')
   const issues: SessionRowImportIssue[] = []
   await writer.appendRows(
     [
@@ -675,7 +676,7 @@ it('accepts the first usable row after same-ID rows with missing threads or inva
 })
 
 it.each([1, 2])(
-  'retries append after native message batch %s fails without retaining unwritten rows',
+  'terminates append after native message batch %s fails and cleans staging on disposal',
   async (failBatch) => {
     const { db, store } = setup()
     await store.writeRows(fixture('old'))
@@ -692,7 +693,7 @@ it.each([1, 2])(
       }),
       revision: 2,
     }
-    const writer = await store.stageImportRows(source, 1, 'retry-append')
+    const writer = await store.stageImportRows(source.record, 'failed-append')
     await writer.appendThread(source.rows.threads[0])
     const execute = db.executeBatch.bind(db)
     let messageBatches = 0
@@ -716,65 +717,133 @@ it.each([1, 2])(
     expect(staged).toBeLessThan(messages.length)
     if (failBatch === 1) expect(staged).toBe(0)
     else expect(staged).toBeGreaterThan(0)
-    const issues: SessionRowImportIssue[] = []
-    await writer.appendRows(messages, (issue) => issues.push(issue))
-    expect(issues).toHaveLength(staged)
-    expect(issues.every((issue) => issue.reason === 'duplicate-row')).toBe(true)
-    expect(await writer.prepare()).toMatchObject({ messageCount: messages.length, skipSession: false })
-    await writer.publish()
-    const restored = await store.readSnapshot('s')
-    const actual = new Map(restored?.rows.messages.map((row) => [row.messageId, row.message]))
-    expect(actual.size).toBe(messages.length)
-    for (const row of source.rows.messages) expect(actual.get(row.messageId)).toEqual(row.message)
+    await expect(writer.appendRows(messages)).rejects.toThrow('Import candidate is closed')
+    await expect(writer.prepare()).rejects.toThrow('Import candidate is closed')
+    await expect(writer.publish()).rejects.toThrow('Import candidate is closed')
+    await writer.dispose()
+    expect(await db.query('SELECT * FROM session_messages_staging')).toEqual([])
+    expect(await db.query('SELECT * FROM session_threads_staging')).toEqual([])
+    expect(await store.readSnapshot('s')).toEqual(before)
   }
 )
 
-it('retries relation repair from durable rows after an issue handler fails', async () => {
-  const { store } = setup(),
+it('terminates preparation when an issue handler fails and disposes unpublished rows', async () => {
+  const { db, store } = setup(),
     source = fixture()
   source.rows.messages[1].parentMessageId = 'missing'
-  const writer = await store.stageImportRows(source, null, 'retry-prepare')
+  const writer = await store.stageImportRows(source.record, 'failed-prepare')
   await append(writer, source)
   await expect(
     writer.prepare(() => {
       throw new Error('controlled issue failure')
     })
   ).rejects.toThrow('controlled issue failure')
-  const issues: SessionRowImportIssue[] = []
-  expect(await writer.prepare((issue) => issues.push(issue))).toMatchObject({ messageCount: 1, skipSession: false })
-  expect(issues).toContainEqual(expect.objectContaining({ id: 'b', action: 'skipped' }))
-  await writer.publish()
-  expect((await store.readSnapshot('s'))?.rows.messages.map((row) => row.messageId)).toEqual(['a'])
+  await expect(writer.prepare()).rejects.toThrow('Import candidate is closed')
+  await expect(writer.publish()).rejects.toThrow('Import candidate is closed')
+  await writer.dispose()
+  expect(await db.query('SELECT * FROM session_messages_staging')).toEqual([])
+  expect(await db.query('SELECT * FROM session_threads_staging')).toEqual([])
+  expect(await store.hasRows('s')).toBe(false)
 })
 
-it('refreshes candidate metadata when another writer appends or prepares it', async () => {
+it('keeps import lifecycle in memory and disposes published candidates without database calls', async () => {
   const { db, store } = setup(),
     source = fixture()
-  const first = await store.stageImportRows(source, null, 'shared-candidate')
-  await first.appendThread(source.rows.threads[0])
-  const second = await new SqlSessionRowStore(db).resumeImportRows(first.candidateId)
-  await second.appendMessage(source.rows.messages[0])
-  const issues: SessionRowImportIssue[] = []
-  await first.appendRows(
-    source.rows.messages.map((message) => ({ kind: 'message' as const, message })),
-    (issue) => issues.push(issue)
-  )
-  expect(issues).toEqual([expect.objectContaining({ id: 'a', reason: 'duplicate-row' })])
-  expect(await second.prepare()).toMatchObject({ messageCount: 2, skipSession: false })
-  await first.publish()
-  const restored = await store.readSnapshot('s')
+  await store.initialize()
+  const query = vi.spyOn(db, 'query')
+  const execute = vi.spyOn(db, 'execute')
+  const executeBatch = vi.spyOn(db, 'executeBatch')
+  const writer = await store.stageImportRows(source.record, 'memory-owned')
+  expect(executeBatch).not.toHaveBeenCalled()
+  await append(writer, source)
+  const prepared = await writer.prepare()
+  expect(await writer.prepare()).toEqual(prepared)
+  await writer.publish()
+  expect(executeBatch).toHaveBeenCalledTimes(3)
   expect(
-    await membership(
-      store,
-      's',
-      restored!.rows.messages.map((row) => row.messageId),
-      restored!.revision
-    )
-  ).toEqual([true, true])
-  expect(restored?.rows.threads[0].summary?.messageCount).toBe(2)
+    executeBatch.mock.calls
+      .flatMap(([statements]) => [...statements])
+      .map(({ sql }) => sql)
+      .join('\n')
+  ).not.toContain('session_row_imports')
+  executeBatch.mockClear()
+  await writer.publish()
+  await writer.dispose()
+  await writer.dispose()
+  expect(executeBatch).not.toHaveBeenCalled()
+  expect(query).not.toHaveBeenCalled()
+  expect(execute).not.toHaveBeenCalled()
+  expect((await store.readSnapshot('s'))?.revision).toBe(1)
 })
 
-it('publishes repaired rows across metadata pages after resuming the candidate', async () => {
+it('cleans an abandoned candidate from a new store without changing published rows', async () => {
+  const { db, store } = setup(),
+    source = fixture()
+  await store.writeRows(source)
+  const before = await store.readSnapshot('s')
+  const writer = await store.stageImportRows(source.record, 'abandoned')
+  await append(writer, source)
+  await db.executeBatch([
+    {
+      sql: 'INSERT INTO session_row_local_metadata(mutation_id,message_id,value) VALUES (?,?,?)',
+      params: [writer.candidateId, 'text', 'partial'],
+    },
+  ])
+  const cleanup = new SqlSessionRowStore(db)
+  await cleanup.disposeImportRows(writer.candidateId)
+  await cleanup.disposeImportRows(writer.candidateId)
+  expect(await db.query('SELECT * FROM session_messages_staging')).toEqual([])
+  expect(await db.query('SELECT * FROM session_threads_staging')).toEqual([])
+  expect(await db.query('SELECT * FROM session_row_local_metadata')).toEqual([])
+  expect(await store.readSnapshot('s')).toEqual(before)
+})
+
+it('cleans a missing candidate from a fresh database idempotently', async () => {
+  const { db, store } = setup()
+  const query = vi.spyOn(db, 'query')
+  const execute = vi.spyOn(db, 'execute')
+  await store.disposeImportRows('uncreated-candidate')
+  await store.disposeImportRows('uncreated-candidate')
+  expect(query).not.toHaveBeenCalled()
+  expect(execute.mock.calls.some(([sql]) => sql.includes('session_row_imports'))).toBe(false)
+})
+
+it('advances a deleted session tombstone and synchronizes the imported header revision', async () => {
+  const { db, store } = setup(),
+    source = fixture()
+  await store.writeRows(source)
+  const writer = await store.stageImportRows(source.record, 'tombstone')
+  await append(writer, source)
+  await writer.prepare()
+  await store.deleteRows('s', 1)
+  expect(await store.getRevision('s')).toBe(2)
+  await writer.publish()
+  expect((await store.readSnapshot('s'))?.revision).toBe(3)
+  expect(
+    await db.query('SELECT commit_revision FROM session_threads WHERE session_id=? AND threadOrder=-1', ['s'])
+  ).toEqual([{ commit_revision: 3 }])
+})
+
+it('rolls back publication when the existing revision cannot be advanced safely', async () => {
+  const { db, store } = setup(),
+    source = fixture()
+  await store.writeRows(source)
+  const writer = await store.stageImportRows(source.record, 'exhausted-revision')
+  await append(writer, source)
+  await writer.prepare()
+  await db.executeBatch([
+    { sql: 'UPDATE session_row_heads SET revision=? WHERE session_id=?', params: [Number.MAX_SAFE_INTEGER, 's'] },
+  ])
+  await expect(writer.publish()).rejects.toThrow()
+  expect(await store.getRevision('s')).toBe(Number.MAX_SAFE_INTEGER)
+  await expect(writer.publish()).rejects.toThrow('Import candidate is closed')
+  await writer.dispose()
+  expect(await db.query('SELECT COUNT(*) AS count FROM session_messages WHERE session_id=?', ['s'])).toEqual([
+    { count: 2 },
+  ])
+})
+
+it('publishes repaired rows collected across multiple append calls', async () => {
   const { db, store } = setup()
   const source = contextSnapshot({
     id: 'many',
@@ -785,7 +854,7 @@ it('publishes repaired rows across metadata pages after resuming the candidate',
       contentParts: [{ type: 'text' as const, text: `body ${index} 😀` }],
     })),
   })
-  const writer = await store.stageImportRows(source, null, 'paged')
+  const writer = await store.stageImportRows(source.record, 'paged')
   await writer.appendThread(source.rows.threads[0])
   for (let offset = 0; offset < source.rows.messages.length; offset += 73) {
     await writer.appendRows(
@@ -799,8 +868,7 @@ it('publishes repaired rows across metadata pages after resuming the candidate',
     message: { ...source.rows.messages[0].message, id: 'message-128-orphan' },
   })
   expect(await writer.prepare()).toMatchObject({ messageCount: 257, skipSession: false })
-  const resumed = await new SqlSessionRowStore(db).resumeImportRows(writer.candidateId)
-  await resumed.publish()
+  await writer.publish()
   const restored = await store.readSnapshot('many')
   const actual = new Map(restored?.rows.messages.map((row) => [row.messageId, row]))
   expect(actual.size).toBe(257)
@@ -825,15 +893,15 @@ it('publishes repaired rows across metadata pages after resuming the candidate',
   })
 })
 
-it.each([false, true].flatMap((allInvalid) => [false, true].map((resume) => ({ allInvalid, resume }))))(
-  'retries partially committed relation repair without turning discarded content into a valid empty session: %j',
-  async ({ allInvalid, resume }) => {
+it.each([false, true])(
+  'disposes partially committed relation repair while preserving the published session (allInvalid=%s)',
+  async (allInvalid) => {
     const { db, store } = setup()
     await store.writeRows(fixture('old'))
     const before = await store.readSnapshot('s')
     const source = { ...fixture('incoming'), revision: 2 }
     source.rows.messages[allInvalid ? 0 : 1].parentMessageId = 'missing'
-    const writer = await store.stageImportRows(source, 1, 'partial-prepare')
+    const writer = await store.stageImportRows(source.record, 'partial-prepare')
     await append(writer, source)
     const remaining = allInvalid ? 0 : 1
     const execute = db.executeBatch.bind(db)
@@ -860,25 +928,19 @@ it.each([false, true].flatMap((allInvalid) => [false, true].map((resume) => ({ a
     failure.mockRestore()
     expect(injected).toBe(true)
     expect(await store.readSnapshot('s')).toEqual(before)
-    const retry = resume ? await new SqlSessionRowStore(db).resumeImportRows(writer.candidateId) : writer
-    expect(await retry.prepare()).toMatchObject({ messageCount: remaining, skipSession: allInvalid })
-    if (!allInvalid) {
-      await retry.publish()
-      const restored = await store.readSnapshot('s')
-      expect(restored?.rows.messages.map((row) => row.messageId)).toEqual(['a'])
-      expect(restored?.rows.messages[0]).toMatchObject({ activeChildId: null })
-      expect(await membership(store, 's', ['a'], restored!.revision)).toEqual([true])
-      expect(restored?.rows.threads[0]).toMatchObject({ activeLeafMessageId: 'a', summary: { messageCount: 1 } })
-    }
-    await retry.dispose()
-    if (allInvalid) expect(await store.readSnapshot('s')).toEqual(before)
+    await expect(writer.prepare()).rejects.toThrow('Import candidate is closed')
+    await expect(writer.publish()).rejects.toThrow('Import candidate is closed')
+    await writer.dispose()
+    expect(await db.query('SELECT * FROM session_messages_staging')).toEqual([])
+    expect(await db.query('SELECT * FROM session_threads_staging')).toEqual([])
+    expect(await store.readSnapshot('s')).toEqual(before)
   }
 )
 
-it('retries a large message after its last native write fails without keeping a partial body', async () => {
+it('disposes partially written message slices after a native batch fails', async () => {
   const { db, store } = setup()
   const source = fixture('long😀'.repeat(65000))
-  const writer = await store.stageImportRows(source, null, 'sliced-message')
+  const writer = await store.stageImportRows(source.record, 'sliced-message')
   await writer.appendThread(source.rows.threads[0])
   const execute = db.executeBatch.bind(db)
   let bodyBatches = 0
@@ -892,60 +954,39 @@ it('retries a large message after its last native write fails without keeping a 
   await expect(writer.appendRows(messages)).rejects.toThrow('large message write interrupted')
   failure.mockRestore()
   expect(bodyBatches).toBe(2)
-  expect(
-    await db.query('SELECT message_id FROM session_messages_staging WHERE mutation_id=?', [writer.candidateId])
-  ).toEqual([])
-  const issues: SessionRowImportIssue[] = []
-  await writer.appendRows(messages, (issue) => issues.push(issue))
-  expect(issues).toEqual([])
-  expect(await writer.prepare()).toMatchObject({ messageCount: 2, skipSession: false })
-  await writer.publish()
-  expect((await store.readMessages({ sessionId: 's', messageIds: ['a'] }))?.messages[0].message).toEqual(
-    source.rows.messages[0].message
-  )
+  expect(await store.hasRows('s')).toBe(false)
+  await expect(writer.appendRows(messages)).rejects.toThrow('Import candidate is closed')
+  await writer.dispose()
+  expect(await db.query('SELECT * FROM session_messages_staging')).toEqual([])
+  expect(await db.query('SELECT * FROM session_threads_staging')).toEqual([])
 })
 
-it.each([
-  { allInvalid: false, resume: false },
-  { allInvalid: true, resume: false },
-  { allInvalid: true, resume: true },
-])('recovers the preparation result when the ready reply is lost: %j', async ({ allInvalid, resume }) => {
-  const { db, store } = setup()
-  await store.writeRows(fixture('old'))
-  const before = await store.readSnapshot('s')
-  const source = { ...fixture('incoming'), revision: 2 }
-  if (allInvalid) source.rows.messages[0].parentMessageId = 'missing'
-  const writer = await store.stageImportRows(source, 1, 'lost-ready-reply')
-  await append(writer, source)
-  const execute = db.executeBatch.bind(db)
-  let readyCommitted = false
-  const failure = vi.spyOn(db, 'executeBatch').mockImplementation(async (statements, options) => {
-    const batch = [...statements]
-    await execute(batch, options)
-    if (batch.some((statement) => statement.sql.includes("SET phase='ready'"))) {
-      readyCommitted = true
-      throw new Error('native ready reply lost')
-    }
-  })
-  await expect(writer.prepare()).rejects.toThrow('native ready reply lost')
-  failure.mockRestore()
-  expect(readyCommitted).toBe(true)
-  expect(await store.readSnapshot('s')).toEqual(before)
-  const retry = resume ? await new SqlSessionRowStore(db).resumeImportRows(writer.candidateId) : writer
-  expect(await retry.prepare()).toMatchObject({
-    messageCount: allInvalid ? 0 : 2,
-    threadCount: 1,
-    skipSession: allInvalid,
-  })
-  if (!allInvalid) {
-    await retry.publish()
-    expect((await store.readMessages({ sessionId: 's', messageIds: ['a'] }))?.messages[0].message).toEqual(
-      source.rows.messages[0].message
-    )
+it.each([false, true])(
+  'disposes prepared rows when the native prepare reply is lost (allInvalid=%s)',
+  async (allInvalid) => {
+    const { db, store } = setup()
+    await store.writeRows(fixture('old'))
+    const before = await store.readSnapshot('s')
+    const source = { ...fixture('incoming'), revision: 2 }
+    if (allInvalid) source.rows.messages[0].parentMessageId = 'missing'
+    const writer = await store.stageImportRows(source.record, 'lost-prepare-reply')
+    await append(writer, source)
+    const execute = db.executeBatch.bind(db)
+    const failure = vi.spyOn(db, 'executeBatch').mockImplementationOnce(async (statements, options) => {
+      await execute(statements, options)
+      throw new Error('native prepare reply lost')
+    })
+    await expect(writer.prepare()).rejects.toThrow('native prepare reply lost')
+    failure.mockRestore()
+    expect(await store.readSnapshot('s')).toEqual(before)
+    await expect(writer.prepare()).rejects.toThrow('Import candidate is closed')
+    await expect(writer.publish()).rejects.toThrow('Import candidate is closed')
+    await writer.dispose()
+    expect(await db.query('SELECT * FROM session_messages_staging')).toEqual([])
+    expect(await db.query('SELECT * FROM session_threads_staging')).toEqual([])
+    expect(await store.readSnapshot('s')).toEqual(before)
   }
-  await retry.dispose()
-  if (allInvalid) expect(await store.readSnapshot('s')).toEqual(before)
-})
+)
 
 it('imports a large conversation header within native statement and batch budgets', async () => {
   const { db, store } = setup()
@@ -961,7 +1002,7 @@ it('imports a large conversation header within native statement and batch budget
     batches.push(batch)
     return execute(batch, options)
   })
-  const writer = await store.stageImportRows(source, null, 'large-header')
+  const writer = await store.stageImportRows(source.record, 'large-header')
   await append(writer, source)
   expect(await writer.prepare()).toMatchObject({ messageCount: 2, skipSession: false })
   await writer.publish()

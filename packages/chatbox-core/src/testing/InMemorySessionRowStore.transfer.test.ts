@@ -2,6 +2,33 @@ import { expect, it } from 'vitest'
 import { prepareSessionRowsFixture } from '../ports/testing/session-row-fixtures'
 import { InMemorySessionRowStore } from './InMemorySessionRowStore'
 
+it('exports a published header and rows while keeping cancellation independent of revision checks', async () => {
+  const store = new InMemorySessionRowStore()
+  const tree = prepareSessionRowsFixture({
+    id: 'export-session',
+    name: 'Export',
+    messages: [{ id: 'message', role: 'user', contentParts: [{ type: 'text', text: '完整正文😀' }] }],
+  })
+  const source = {
+    record: tree.session,
+    revision: 1,
+    rows: { sessionId: tree.session.id, threads: tree.threads, messages: tree.messages },
+  }
+  await store.writeRows(source)
+  expect(await store.readExportCommit(source.record.id)).toEqual({ record: source.record, revision: 1 })
+  const invalid = store.iterateRows({ sessionId: source.record.id, consistency: 'export', expectedRevision: 1 })
+  await expect(invalid.next()).rejects.toThrow('Export row iteration cannot require a revision')
+  const rows = []
+  for await (const row of store.iterateRows({ sessionId: source.record.id, consistency: 'export' })) rows.push(row)
+  expect(rows.filter((row) => row.kind === 'message').map((row) => row.message)).toEqual(source.rows.messages)
+
+  const controller = new AbortController()
+  const iterator = store.iterateRows({ sessionId: source.record.id, consistency: 'export', signal: controller.signal })
+  await iterator.next()
+  controller.abort()
+  await expect(iterator.next()).rejects.toMatchObject({ name: 'AbortError' })
+})
+
 it('rejects invalid revisions and duplicate message identities', async () => {
   const store = new InMemorySessionRowStore()
   const fixture = prepareSessionRowsFixture({

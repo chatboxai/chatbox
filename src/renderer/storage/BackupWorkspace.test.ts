@@ -8,6 +8,7 @@ beforeEach(() => {
   vi.stubGlobal('IDBKeyRange', IDBKeyRange)
 })
 afterEach(async () => {
+  vi.restoreAllMocks()
   for (const workspace of workspaces.splice(0)) await workspace.dispose()
   vi.unstubAllGlobals()
 })
@@ -66,5 +67,48 @@ describe('durable backup workspace', () => {
     await bytes.close()
     const jobs = await second.listJobIds()
     expect(jobs).toEqual(['b'])
+  })
+
+  it('keeps successful disposal terminal and does not reopen or register the job again', async () => {
+    const store = workspace('finished'),
+      observer = workspace('observer')
+    await store.put('table', 'key', 'value')
+    await observer.initialize()
+    const db = await store.initialize(),
+      transactions = vi.spyOn(db, 'transaction')
+    await store.dispose()
+    transactions.mockClear()
+    const open = vi.spyOn(indexedDB, 'open')
+    await store.dispose()
+    expect(open).not.toHaveBeenCalled()
+    expect(transactions).not.toHaveBeenCalled()
+    expect(await observer.listJobIds()).toEqual(['observer'])
+    await expect(store.put('table', 'new', 'value')).rejects.toThrow('disposed')
+    expect(open).not.toHaveBeenCalled()
+  })
+
+  it('retries disposal after an aborted cleanup transaction', async () => {
+    const store = workspace('retry'),
+      observer = workspace('observer')
+    await store.put('table', 'key', 'value')
+    const sink = await store.createFile('saved')
+    await sink.write(new Uint8Array([1, 2, 3]))
+    await sink.close()
+    await observer.initialize()
+    const db = await store.initialize(),
+      transaction = db.transaction.bind(db)
+    vi.spyOn(db, 'transaction').mockImplementationOnce((stores, mode, options) => {
+      const tx = transaction(stores, mode, options)
+      queueMicrotask(() => tx.abort())
+      return tx
+    })
+    await expect(store.dispose()).rejects.toBeDefined()
+    expect(await store.get('table', 'key')).toBe('value')
+    const saved = await store.openFile('saved')
+    expect(await saved.readBytes!(0, 3)).toEqual(new Uint8Array([1, 2, 3]))
+    await saved.close()
+    expect(await observer.listJobIds()).toContain('retry')
+    await store.dispose()
+    expect(await observer.listJobIds()).toEqual(['observer'])
   })
 })

@@ -106,7 +106,7 @@ function setup() {
       publish: vi.fn(),
       cleanup: vi.fn(),
     },
-    async ensureRows() {},
+    ensureRows: (id) => rows.readExportCommit(id),
     async *listSessionIds() {},
     getSettings: () => mergeSettingsWithDefaults({}),
     async refresh() {},

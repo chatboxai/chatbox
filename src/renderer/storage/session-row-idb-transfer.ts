@@ -91,28 +91,34 @@ export async function* iterateIndexedDBRows(
   request: SessionRowIterationRequest
 ): AsyncGenerator<SessionStoredRow> {
   const { sessionId, threadId, signal } = request
+  const exporting = request.consistency === 'export'
+  if (exporting && request.expectedRevision !== undefined)
+    throw new Error('Export row iteration cannot require a revision')
   if (!sessionId || threadId === '') throw new Error('Row iteration requires a valid identity')
   throwIfAborted(signal)
-  const initial = await transaction(db, 'readonly', async (tx) => {
-    const current = await head(tx, sessionId)
-    if (
-      current?.sessionRecord &&
-      threadId !== undefined &&
-      !(await requestValue(tx.objectStore(THREADS).get([sessionId, threadId])))
-    )
-      throw new Error('Row iteration thread is missing')
-    return current
-  })
-  const expected = initial?.commitRevision ?? null
-  if (request.expectedRevision !== undefined) assertRevision(sessionId, request.expectedRevision, expected)
-  if (!initial?.sessionRecord) return
+  let expected: number | null = null
+  if (!exporting) {
+    const initial = await transaction(db, 'readonly', async (tx) => {
+      const current = await head(tx, sessionId)
+      if (
+        current?.sessionRecord &&
+        threadId !== undefined &&
+        !(await requestValue(tx.objectStore(THREADS).get([sessionId, threadId])))
+      )
+        throw new Error('Row iteration thread is missing')
+      return current
+    })
+    expected = initial?.commitRevision ?? null
+    if (request.expectedRevision !== undefined) assertRevision(sessionId, request.expectedRevision, expected)
+    if (!initial?.sessionRecord) return
+  }
 
   for (const kind of ['thread', 'message'] as const) {
     let after: IDBValidKey | undefined
     while (true) {
       throwIfAborted(signal)
       const result = await transaction(db, 'readonly', async (tx) => {
-        assertRevision(sessionId, expected, (await head(tx, sessionId))?.commitRevision ?? null)
+        if (!exporting) assertRevision(sessionId, expected, (await head(tx, sessionId))?.commitRevision ?? null)
         const isMessage = kind === 'message'
         const source = tx.objectStore(isMessage ? MESSAGE_TREE : THREADS)
         const prefix = isMessage && threadId !== undefined ? [sessionId, threadId] : [sessionId]
@@ -152,10 +158,11 @@ export async function* iterateIndexedDBRows(
       }
     }
   }
-  await transaction(db, 'readonly', async (tx) => {
-    throwIfAborted(signal)
-    assertRevision(sessionId, expected, (await head(tx, sessionId))?.commitRevision ?? null)
-  })
+  throwIfAborted(signal)
+  if (!exporting)
+    await transaction(db, 'readonly', async (tx) => {
+      assertRevision(sessionId, expected, (await head(tx, sessionId))?.commitRevision ?? null)
+    })
 }
 
 function visitStage(tx: IDBTransaction, id: string, visit: (row: StageRow) => void | Promise<void>): Promise<void> {

@@ -1,6 +1,6 @@
 import { MESSAGE_TREE } from './session-row-idb-tree'
 import { prefetchTreeLinks, treeLinksCache } from './session-row-idb-links'
-import { stageIndexedDBImportRows, resumeIndexedDBImportRows } from './session-row-idb-import'
+import { stageIndexedDBImportRows, disposeIndexedDBImportRows } from './session-row-idb-import'
 import type { SessionBranchPreviewRequest } from '@chatbox/core/ports'
 import { readIndexedDBTokenCache, acceptIndexedDBTokenCache } from './session-row-idb-token-cache'
 import type { SessionTokenCacheRequest, SessionTokenCacheResult } from '@chatbox/core/ports'
@@ -70,7 +70,7 @@ import {
   type SessionRows,
   type SessionRowsDiff,
 } from '@chatbox/core/ports'
-import type { MessageRow, MessageRowStatus, ThreadRow } from '@chatbox/core/session/session-tree'
+import type { MessageRow, MessageRowStatus, SessionRecordV2, ThreadRow } from '@chatbox/core/session/session-tree'
 import { openSessionRowDatabase } from './session-row-idb-schema'
 
 export { SESSION_ROW_DB_NAME, SESSION_ROW_THREAD_STORE, SESSION_ROW_MESSAGE_STORE } from './session-row-idb-records'
@@ -261,18 +261,13 @@ export class IndexedDBSessionRowStore implements SessionRowStorePort {
     return stageIndexedDBRows(await this.ensureDatabase('write-rows', captured.record.id), captured, expectedRevision)
   }
 
-  async stageImportRows(commit: SessionRowCommit, expectedRevision: number | null, jobId: string) {
-    const captured = structuredClone(commit)
-    return stageIndexedDBImportRows(
-      await this.ensureDatabase('write-rows', captured.record.id),
-      captured,
-      expectedRevision,
-      jobId
-    )
+  async stageImportRows(record: SessionRecordV2, jobId: string) {
+    const captured = structuredClone(record)
+    return stageIndexedDBImportRows(await this.ensureDatabase('write-rows', captured.id), captured, jobId)
   }
 
-  async resumeImportRows(candidateId: string) {
-    return resumeIndexedDBImportRows(await this.ensureDatabase('write-rows'), candidateId)
+  async disposeImportRows(candidateId: string) {
+    await disposeIndexedDBImportRows(await this.ensureDatabase('write-rows'), candidateId)
   }
 
   async readMessageMetadata(request: SessionMessageMetadataRequest) {
@@ -290,6 +285,13 @@ export class IndexedDBSessionRowStore implements SessionRowStorePort {
 
   async readCommit(sessionId: string): Promise<SessionRowCommit | null> {
     return readIndexedDBCommit(await this.ensureDatabase('read-commit', sessionId), sessionId)
+  }
+
+  async readExportCommit(sessionId: string): Promise<SessionRowCommit | null> {
+    const commit = await this.readCommit(sessionId)
+    if (commit && (commit.record.rowAuthority !== 1 || commit.record.rowFormatVersion !== 3))
+      throw new Error('Export commit row format is unsupported')
+    return commit
   }
 
   async readThread(request: SessionThreadRequest): Promise<SessionThreadRead | null> {

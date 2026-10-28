@@ -3,7 +3,7 @@ import type { ByteSink } from '../io'
 import type { KeyValueStoragePort } from '../ports/key-value-storage'
 import type { SessionMetaRepositoryPort } from '../ports/session-repository'
 import type { SessionRecordStorePort } from '../ports/session-record-store'
-import type { SessionRowStorePort } from '../ports/session-row-store'
+import type { SessionRowCommit, SessionRowStorePort } from '../ports/session-row-store'
 import type { Settings } from '../domain/settings'
 
 /** Complete resource candidates are atomically published; cleanup only removes temporary files. */
@@ -22,8 +22,8 @@ export interface BackupHostOptions {
   records: SessionRecordStorePort
   metadata: SessionMetaRepositoryPort
   resources: BackupHostResources
-  /** Uses the host's direct access to migrate a selected local conversation. */
-  ensureRows(sessionId: string): Promise<void>
+  /** Reads the export header, migrating the selected conversation when needed. */
+  ensureRows(sessionId: string): Promise<SessionRowCommit | null>
   listSessionIds(): AsyncIterable<string>
   getSettings(): Settings
   refresh(): Promise<void>

@@ -1,0 +1,256 @@
+diff --git a/android/src/main/java/com/getcapacitor/community/database/sqlite/CapacitorSQLite.java b/android/src/main/java/com/getcapacitor/community/database/sqlite/CapacitorSQLite.java
+index 17294270ace3731844d9577a8ac3b31718e355fb..9a88ee41195efb14ba8744f0a2a2a078a9b6e47e 100644
+--- a/android/src/main/java/com/getcapacitor/community/database/sqlite/CapacitorSQLite.java
++++ b/android/src/main/java/com/getcapacitor/community/database/sqlite/CapacitorSQLite.java
+@@ -328,6 +328,18 @@ public class CapacitorSQLite {
+         int version,
+         Dictionary<Integer, JSONObject> vUpgObject,
+         Boolean readonly
++    ) throws Exception {
++        createConnection(dbName, encrypted, mode, version, vUpgObject, readonly, false);
++    }
++
++    public void createConnection(
++        String dbName,
++        boolean encrypted,
++        String mode,
++        int version,
++        Dictionary<Integer, JSONObject> vUpgObject,
++        Boolean readonly,
++        boolean androidPhysicalDelete
+     ) throws Exception {
+         dbName = getDatabaseName(dbName);
+         String connName = readonly ? "RO_" + dbName : "RW_" + dbName;
+@@ -350,7 +362,8 @@ public class CapacitorSQLite {
+                 isEncryption,
+                 vUpgObject,
+                 sharedPreferences,
+-                readonly
++                readonly,
++                androidPhysicalDelete
+             );
+             dbDict.put(connName, db);
+         } catch (Exception e) {
+diff --git a/android/src/main/java/com/getcapacitor/community/database/sqlite/CapacitorSQLitePlugin.java b/android/src/main/java/com/getcapacitor/community/database/sqlite/CapacitorSQLitePlugin.java
+index 8545d21908266111a15a0ce5524aef6203a49d03..a25d80deeb818e8abd4bd66ebfa4e163559fb44c 100644
+--- a/android/src/main/java/com/getcapacitor/community/database/sqlite/CapacitorSQLitePlugin.java
++++ b/android/src/main/java/com/getcapacitor/community/database/sqlite/CapacitorSQLitePlugin.java
+@@ -300,10 +300,11 @@ public class CapacitorSQLitePlugin extends Plugin {
+             inMode = "no-encryption";
+         }
+         boolean readOnly = call.getBoolean("readonly", false);
++        boolean androidPhysicalDelete = call.getBoolean("androidPhysicalDelete", false);
+         Dictionary<Integer, JSONObject> upgDict = versionUpgrades.get(dbName);
+         if (implementation != null) {
+             try {
+-                implementation.createConnection(dbName, encrypted, inMode, dbVersion, upgDict, readOnly);
++                implementation.createConnection(dbName, encrypted, inMode, dbVersion, upgDict, readOnly, androidPhysicalDelete);
+                 rHandler.retResult(call, null, null);
+             } catch (Exception e) {
+                 String msg = "CreateConnection: " + e.getMessage();
+diff --git a/android/src/main/java/com/getcapacitor/community/database/sqlite/SQLite/Database.java b/android/src/main/java/com/getcapacitor/community/database/sqlite/SQLite/Database.java
+index ecce9267bffb1c1e524d6f0b021e4c1b6aea364b..aa891e792e83446620b0789c4b1b268d661e8203 100644
+--- a/android/src/main/java/com/getcapacitor/community/database/sqlite/SQLite/Database.java
++++ b/android/src/main/java/com/getcapacitor/community/database/sqlite/SQLite/Database.java
+@@ -52,6 +52,7 @@ public class Database {
+     private final Boolean _encrypted;
+     private final Boolean _isEncryption;
+     private final Boolean _readOnly;
++    private final boolean _androidPhysicalDelete;
+     private final File _file;
+     private final int _version;
+     private SupportSQLiteDatabase _db = null;
+@@ -78,6 +79,21 @@ public class Database {
+         Dictionary<Integer, JSONObject> vUpgObject,
+         SharedPreferences sharedPreferences,
+         Boolean readonly
++    ) {
++        this(context, dbName, encrypted, mode, version, isEncryption, vUpgObject, sharedPreferences, readonly, false);
++    }
++
++    public Database(
++        Context context,
++        String dbName,
++        Boolean encrypted,
++        String mode,
++        int version,
++        Boolean isEncryption,
++        Dictionary<Integer, JSONObject> vUpgObject,
++        SharedPreferences sharedPreferences,
++        Boolean readonly,
++        boolean androidPhysicalDelete
+     ) {
+         this._context = context;
+         this._dbName = dbName;
+@@ -87,6 +103,7 @@ public class Database {
+         this._version = version;
+         this._vUpgObject = vUpgObject;
+         this._readOnly = readonly;
++        this._androidPhysicalDelete = androidPhysicalDelete;
+         if (dbName.contains("/") && dbName.endsWith("SQLite.db")) {
+             this.ncDB = true;
+             this._file = new File(dbName);
+@@ -908,6 +925,9 @@ public class Database {
+      * @throws Exception
+      */
+     public String deleteSQL(Database mDB, String statement, ArrayList<Object> values) throws Exception {
++        if (_androidPhysicalDelete) {
++            return statement;
++        }
+         String sqlStmt = statement;
+         String msg = "DeleteSQL";
+ 
+diff --git a/dist/esm/definitions.d.ts b/dist/esm/definitions.d.ts
+index f4901d19063ee8205dbac1e24236a19e9783e477..a84d3058e78ada9f6374ed3decf3cb7d2b59351e 100644
+--- a/dist/esm/definitions.d.ts
++++ b/dist/esm/definitions.d.ts
+@@ -472,6 +472,12 @@ export interface capConnectionOptions {
+      * Set to true (database in read-only mode) / false
+      */
+     readonly?: boolean;
++    /**
++     * Android only: execute DELETE statements as physical deletes for this connection.
++     * Enable only for databases that do not use the plugin's synchronization protocol.
++     * Defaults to false. Other platforms ignore this option.
++     */
++    androidPhysicalDelete?: boolean;
+ }
+ export interface capAllConnectionsOptions {
+     /**
+@@ -1121,10 +1127,11 @@ export interface ISQLiteConnection {
+      * @param mode
+      * @param version
+      * @param readonly
++     * @param androidPhysicalDelete Android physical deletion for databases without plugin synchronization
+      * @returns Promise<SQLiteDBConnection>
+      * @since 2.9.0 refactor
+      */
+-    createConnection(database: string, encrypted: boolean, mode: string, version: number, readonly: boolean): Promise<SQLiteDBConnection>;
++    createConnection(database: string, encrypted: boolean, mode: string, version: number, readonly: boolean, androidPhysicalDelete?: boolean): Promise<SQLiteDBConnection>;
+     /**
+      * Check if a connection exists
+      * @param database
+@@ -1323,7 +1330,7 @@ export declare class SQLiteConnection implements ISQLiteConnection {
+     clearEncryptionSecret(): Promise<void>;
+     checkEncryptionSecret(passphrase: string): Promise<capSQLiteResult>;
+     addUpgradeStatement(database: string, upgrade: capSQLiteVersionUpgrade[]): Promise<void>;
+-    createConnection(database: string, encrypted: boolean, mode: string, version: number, readonly: boolean): Promise<SQLiteDBConnection>;
++    createConnection(database: string, encrypted: boolean, mode: string, version: number, readonly: boolean, androidPhysicalDelete?: boolean): Promise<SQLiteDBConnection>;
+     closeConnection(database: string, readonly: boolean): Promise<void>;
+     isConnection(database: string, readonly: boolean): Promise<capSQLiteResult>;
+     retrieveConnection(database: string, readonly: boolean): Promise<SQLiteDBConnection>;
+diff --git a/dist/esm/definitions.js b/dist/esm/definitions.js
+index e076073df3e12880070280c4b485f4caff747c9e..21b8581344cb87757b121ed1bb0351b252a5bf20 100644
+--- a/dist/esm/definitions.js
++++ b/dist/esm/definitions.js
+@@ -117,7 +117,7 @@ export class SQLiteConnection {
+             return Promise.reject(err);
+         }
+     }
+-    async createConnection(database, encrypted, mode, version, readonly) {
++    async createConnection(database, encrypted, mode, version, readonly, androidPhysicalDelete = false) {
+         try {
+             if (database.endsWith('.db'))
+                 database = database.slice(0, -3);
+@@ -126,7 +126,7 @@ export class SQLiteConnection {
+                 encrypted,
+                 mode,
+                 version,
+-                readonly,
++                readonly, androidPhysicalDelete,
+             });
+             const conn = new SQLiteDBConnection(database, readonly, this.sqlite);
+             const connName = readonly ? `RO_${database}` : `RW_${database}`;
+diff --git a/dist/plugin.cjs.js b/dist/plugin.cjs.js
+index e8895cb14df3a748f3032524e750b958965bdb20..a43fc8d56a8da7e71c5ac6a582302f36655ce5fa 100644
+--- a/dist/plugin.cjs.js
++++ b/dist/plugin.cjs.js
+@@ -121,7 +121,7 @@ class SQLiteConnection {
+             return Promise.reject(err);
+         }
+     }
+-    async createConnection(database, encrypted, mode, version, readonly) {
++    async createConnection(database, encrypted, mode, version, readonly, androidPhysicalDelete = false) {
+         try {
+             if (database.endsWith('.db'))
+                 database = database.slice(0, -3);
+@@ -130,7 +130,7 @@ class SQLiteConnection {
+                 encrypted,
+                 mode,
+                 version,
+-                readonly,
++                readonly, androidPhysicalDelete,
+             });
+             const conn = new SQLiteDBConnection(database, readonly, this.sqlite);
+             const connName = readonly ? `RO_${database}` : `RW_${database}`;
+diff --git a/dist/plugin.js b/dist/plugin.js
+index 1190c707ecb04f94dbe3d323dbea1e6e51e2a6a7..181096a63972d8f7cc08a359bf6dc5b88bee76eb 100644
+--- a/dist/plugin.js
++++ b/dist/plugin.js
+@@ -120,7 +120,7 @@ var capacitorCapacitorSQLite = (function (exports, core) {
+                 return Promise.reject(err);
+             }
+         }
+-        async createConnection(database, encrypted, mode, version, readonly) {
++        async createConnection(database, encrypted, mode, version, readonly, androidPhysicalDelete = false) {
+             try {
+                 if (database.endsWith('.db'))
+                     database = database.slice(0, -3);
+@@ -129,7 +129,7 @@ var capacitorCapacitorSQLite = (function (exports, core) {
+                     encrypted,
+                     mode,
+                     version,
+-                    readonly,
++                    readonly, androidPhysicalDelete,
+                 });
+                 const conn = new SQLiteDBConnection(database, readonly, this.sqlite);
+                 const connName = readonly ? `RO_${database}` : `RW_${database}`;
+diff --git a/src/definitions.ts b/src/definitions.ts
+index fc0afff8b717128cd4800f108ed95522ea2f2f4f..02004c43ff760277f0fccc08bbeee92e5e5674e2 100644
+--- a/src/definitions.ts
++++ b/src/definitions.ts
+@@ -484,6 +484,12 @@ export interface capConnectionOptions {
+    * Set to true (database in read-only mode) / false
+    */
+   readonly?: boolean;
++  /**
++   * Android only: execute DELETE statements as physical deletes for this connection.
++   * Enable only for databases that do not use the plugin's synchronization protocol.
++   * Defaults to false. Other platforms ignore this option.
++   */
++  androidPhysicalDelete?: boolean;
+ }
+ export interface capAllConnectionsOptions {
+   /**
+@@ -1142,6 +1148,7 @@ export interface ISQLiteConnection {
+    * @param mode
+    * @param version
+    * @param readonly
++   * @param androidPhysicalDelete Android physical deletion for databases without plugin synchronization
+    * @returns Promise<SQLiteDBConnection>
+    * @since 2.9.0 refactor
+    */
+@@ -1151,6 +1158,7 @@ export interface ISQLiteConnection {
+     mode: string,
+     version: number,
+     readonly: boolean,
++    androidPhysicalDelete?: boolean,
+   ): Promise<SQLiteDBConnection>;
+   /**
+    * Check if a connection exists
+@@ -1448,6 +1456,7 @@ export class SQLiteConnection implements ISQLiteConnection {
+     mode: string,
+     version: number,
+     readonly: boolean,
++    androidPhysicalDelete = false,
+   ): Promise<SQLiteDBConnection> {
+     try {
+       if (database.endsWith('.db')) database = database.slice(0, -3);
+@@ -1457,6 +1466,7 @@ export class SQLiteConnection implements ISQLiteConnection {
+         mode,
+         version,
+         readonly,
++        androidPhysicalDelete,
+       });
+       const conn = new SQLiteDBConnection(database, readonly, this.sqlite);
+       const connName = readonly ? `RO_${database}` : `RW_${database}`;

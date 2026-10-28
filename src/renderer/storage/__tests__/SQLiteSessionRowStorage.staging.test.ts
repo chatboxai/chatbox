@@ -1054,7 +1054,7 @@ it.each(['ios', 'android'] as const)(
     await store.writeRows(source)
     const next = snapshot(3, 2)
     next.rows.messages[1].message.contentParts = [{ type: 'text', text: 'whole😀中文'.repeat(90000) }]
-    const candidate = await store.stageImportRows(next, 1, 'native-import')
+    const candidate = await store.stageImportRows(next.record, 'native-import')
     await candidate.appendRows([
       ...next.rows.threads.map((thread) => ({ kind: 'thread' as const, thread })),
       ...next.rows.messages.map((message) => ({ kind: 'message' as const, message })),
@@ -1065,7 +1065,7 @@ it.each(['ios', 'android'] as const)(
       (await store.readMessages({ sessionId: 'session', messageIds: ['m1'] }))?.messages[0].message.contentParts
     ).toEqual(next.rows.messages[1].message.contentParts)
     const published = await readContentSnapshot(store)
-    await (await store.resumeImportRows(candidate.candidateId)).dispose()
+    await store.disposeImportRows(candidate.candidateId)
     await candidate.dispose()
     expect(await readContentSnapshot(store)).toEqual(published)
     expect(calls.length).toBeGreaterThan(0)

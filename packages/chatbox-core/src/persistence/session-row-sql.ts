@@ -50,7 +50,7 @@ import { parseRowExtra, rowExtra, SESSION_ROW_PROJECTION_SCHEMA_SQL } from './se
 import { readMetadataSelection, readRelationsPage } from './session-row-relations-read'
 import { sqlRelationReader, loadSqlThreadLinks } from './session-row-relations-sql'
 import { createSqlRowWriter } from './session-row-transfer-sql'
-import { createSqlImportWriter, resumeSqlImportWriter } from './session-row-import-sql'
+import { createSqlImportWriter, disposeSqlImportRows } from './session-row-import-sql'
 import {
   createTextTokenSource,
   SESSION_TEXT_TOKEN_SCHEMA_SQL,
@@ -61,6 +61,7 @@ import { assertSessionThreadPageRevision, validateSessionThreadPageRequest } fro
 import { acceptSqlTokenCache, readSqlTokenCache, SESSION_TOKEN_CACHE_SQL } from './session-token-cache-sql'
 import { validateTranscriptRequest } from './session-transcript-read'
 import {
+  readSqlExportCommit,
   readSqlTranscriptThread,
   readTranscriptPage,
   SESSION_TRANSCRIPT_SCHEMA_SQL,
@@ -201,14 +202,20 @@ const ADVANCE_SESSION_REVISION_SQL =
 // Four inline fields across eight threads leave room for escaped structural IDs
 // within the metadata response budget. Larger text stays on the sliced path.
 const THREAD_INLINE_TEXT_BYTES = 512
-function threadMetadataColumns(bounded = true): string {
+function threadMetadataColumns(bounded = true, includeSessionRecord = true): string {
   return (
-    'session_id, thread_id, threadOrder, length(name) AS name_length, created_at, root_message_id, active_leaf_message_id, length(compaction_points_json) AS compaction_points_json_length, length(session_prompt_context_snapshot_json) AS session_prompt_context_snapshot_json_length, length(session_record_json) AS session_record_json_length, commit_revision, projection_json, ' +
+    'session_id, thread_id, threadOrder, length(name) AS name_length, created_at, root_message_id, active_leaf_message_id, length(compaction_points_json) AS compaction_points_json_length, length(session_prompt_context_snapshot_json) AS session_prompt_context_snapshot_json_length, ' +
+    (includeSessionRecord
+      ? 'length(session_record_json) AS session_record_json_length, commit_revision, '
+      : 'NULL AS session_record_json_length, NULL AS commit_revision, ') +
+    'projection_json, ' +
     ['name', 'compaction_points_json', 'session_prompt_context_snapshot_json', 'session_record_json']
       .map((column) =>
-        bounded
-          ? `CASE WHEN length(CAST(${column} AS BLOB)) <= ${THREAD_INLINE_TEXT_BYTES} AND instr(${column}, char(0)) = 0 THEN ${column} ELSE NULL END AS ${column}_inline`
-          : `CASE WHEN instr(${column}, char(0)) > 0 THEN json_quote(${column}) ELSE ${column} END AS ${column}_inline,
+        column === 'session_record_json' && !includeSessionRecord
+          ? 'NULL AS session_record_json_inline'
+          : bounded
+            ? `CASE WHEN length(CAST(${column} AS BLOB)) <= ${THREAD_INLINE_TEXT_BYTES} AND instr(${column}, char(0)) = 0 THEN ${column} ELSE NULL END AS ${column}_inline`
+            : `CASE WHEN instr(${column}, char(0)) > 0 THEN json_quote(${column}) ELSE ${column} END AS ${column}_inline,
               (instr(${column}, char(0)) > 0) AS ${column}_nul_encoded`
       )
       .join(', ')
@@ -818,6 +825,10 @@ export class SqlSessionRowStore implements SessionRowStorePort {
     )
   }
 
+  async readExportCommit(sessionId: string) {
+    return this.run('read-commit', sessionId, () => readSqlExportCommit(this.database, sessionId, this.boundedReads))
+  }
+
   async readThread(request: SessionThreadRequest) {
     return this.run('read-thread', request.sessionId, () =>
       withSqlTranscriptCommit(
@@ -881,50 +892,49 @@ export class SqlSessionRowStore implements SessionRowStorePort {
     }
   }
 
-  async stageImportRows(commit: SessionRowCommit, expectedRevision: number | null, jobId: string) {
-    const captured = { record: structuredClone(commit.record), revision: commit.revision }
+  async stageImportRows(record: SessionRecordV2, jobId: string) {
+    const captured = structuredClone(record)
     await this.initialize()
-    const writer = await createSqlImportWriter(this.database, captured, expectedRevision, jobId)
+    const writer = await createSqlImportWriter(this.database, captured, jobId)
     return {
       ...writer,
       publish: async () => {
         await writer.publish()
-        this.linksCache.invalidate(captured.record.id)
+        this.linksCache.invalidate(captured.id)
       },
     }
   }
 
-  async resumeImportRows(candidateId: string) {
+  async disposeImportRows(candidateId: string): Promise<void> {
     await this.initialize()
-    const writer = await resumeSqlImportWriter(this.database, candidateId)
-    return {
-      ...writer,
-      publish: async () => {
-        await writer.publish()
-        this.linksCache.clear()
-      },
-    }
+    await disposeSqlImportRows(this.database, candidateId)
   }
 
   async *iterateRows(request: SessionRowIterationRequest): AsyncGenerator<SessionStoredRow> {
     const { sessionId, threadId, signal, expectedRevision } = request
+    const exporting = request.consistency === 'export'
+    if (exporting && expectedRevision !== undefined) throw new Error('Export row iteration cannot require a revision')
     await this.initialize()
     throwIfAborted(signal)
-    const revision = await this.readRevision(sessionId)
-    if (expectedRevision !== undefined && expectedRevision !== revision)
-      throw new SessionRowConflictError(sessionId, expectedRevision, revision)
-    if (revision === null) return
+    const revision = exporting ? null : await this.readRevision(sessionId)
+    if (!exporting) {
+      if (expectedRevision !== undefined && expectedRevision !== revision)
+        throw new SessionRowConflictError(sessionId, expectedRevision, revision)
+      if (revision === null) return
+    }
     const check = async () => {
       throwIfAborted(signal)
+      if (exporting) return
       const actual = await this.readRevision(sessionId)
       if (actual !== revision) throw new SessionRowConflictError(sessionId, revision, actual)
     }
+    const threadsPageSql = exporting
+      ? `SELECT ${threadMetadataColumns(this.boundedReads, false)} FROM session_threads WHERE session_id = ? ORDER BY threadOrder, thread_id LIMIT ? OFFSET ?`
+      : this.threadsPageSql
     for (let offset = 0; ; offset += THREAD_PAGE_SIZE) {
       await check()
       const page = await this.database.query<ThreadMetadataRecord>(
-        threadId
-          ? this.threadsPageSql.replace('session_id = ?', 'session_id = ? AND thread_id = ?')
-          : this.threadsPageSql,
+        threadId ? threadsPageSql.replace('session_id = ?', 'session_id = ? AND thread_id = ?') : threadsPageSql,
         threadId ? [sessionId, threadId, THREAD_PAGE_SIZE, offset] : [sessionId, THREAD_PAGE_SIZE, offset]
       )
       if (!page.length) break
@@ -934,6 +944,7 @@ export class SqlSessionRowStore implements SessionRowStorePort {
         throwIfAborted(signal)
         yield { kind: 'thread', thread: toThreadRow(thread) }
       }
+      if (page.length < THREAD_PAGE_SIZE) break
     }
     let cursor: MessageRecord | undefined
     for (;;) {

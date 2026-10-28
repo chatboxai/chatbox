@@ -33,7 +33,7 @@ import type {
   SessionTranscriptPage,
   SessionTranscriptRequest,
 } from '@chatbox/core/ports'
-import type { MessageRowStatus } from '@chatbox/core/session/session-tree'
+import type { MessageRowStatus, SessionRecordV2 } from '@chatbox/core/session/session-tree'
 
 const DB_NAME = 'chatbox-messages'
 
@@ -474,6 +474,10 @@ export class SQLiteSessionRowStore implements SessionRowStorePort {
   readCommit(sessionId: string): Promise<SessionRowCommit | null> {
     return this.store.readCommit(sessionId)
   }
+
+  readExportCommit(sessionId: string): Promise<SessionRowCommit | null> {
+    return this.store.readExportCommit(sessionId)
+  }
   readThread(request: SessionThreadRequest): Promise<SessionThreadRead | null> {
     return this.store.readThread(request)
   }
@@ -523,12 +527,12 @@ export class SQLiteSessionRowStore implements SessionRowStorePort {
     return this.store.stageRows(commit, expectedRevision)
   }
 
-  stageImportRows(commit: SessionRowCommit, expectedRevision: number | null, jobId: string) {
-    return this.store.stageImportRows(commit, expectedRevision, jobId)
+  stageImportRows(record: SessionRecordV2, jobId: string) {
+    return this.store.stageImportRows(record, jobId)
   }
 
-  resumeImportRows(candidateId: string) {
-    return this.store.resumeImportRows(candidateId)
+  disposeImportRows(candidateId: string) {
+    return this.store.disposeImportRows(candidateId)
   }
 
   listSessionIds(): Promise<string[]> {
@@ -556,7 +560,8 @@ export class SQLiteSessionRowStore implements SessionRowStorePort {
       // ignore - connection may not exist
     }
 
-    const database = await this.sqlite.createConnection(DB_NAME, false, 'no-encryption', 1, false)
+    // Android row transactions own cleanup and require physical DELETE semantics.
+    const database = await this.sqlite.createConnection(DB_NAME, false, 'no-encryption', 1, false, true)
     await database.open()
     return database
   }

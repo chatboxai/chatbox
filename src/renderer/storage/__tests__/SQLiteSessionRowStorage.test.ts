@@ -152,7 +152,14 @@ describe('SQLiteSessionRowStore', () => {
     await store.initialize()
     await store.initialize()
 
-    expect(mockConnection.createConnection).toHaveBeenCalledWith('chatbox-messages', false, 'no-encryption', 1, false)
+    expect(mockConnection.createConnection).toHaveBeenCalledWith(
+      'chatbox-messages',
+      false,
+      'no-encryption',
+      1,
+      false,
+      true
+    )
     expect(
       mockDatabase.execute.mock.calls.filter(([sql]) =>
         String(sql).includes('CREATE TABLE IF NOT EXISTS session_threads (')

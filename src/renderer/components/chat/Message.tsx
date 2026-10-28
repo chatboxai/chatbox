@@ -811,7 +811,7 @@ const _Message: FC<Props> = (props) => {
   // Small screens put a smaller assistant avatar above the reply so the text keeps the full width.
   const stackAssistantAvatar = isSmallScreen && shouldShowAvatar && msg.role === 'assistant'
   const stackedAssistantAvatar = stackAssistantAvatar && (
-    <Box className="relative mb-1 self-start">
+    <Box className="relative mb-1 w-fit self-start">
       <AssistantAvatar
         size={24}
         avatarKey={assistantAvatarKey}

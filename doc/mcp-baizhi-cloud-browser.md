@@ -64,3 +64,11 @@ Tool inputs go to Baizhi Cloud and page activity reaches the websites you visit.
 Review the service terms and privacy information before sending data. For
 service/account help, use the [browser console](https://capybrowser.app.baizhi.cloud/)
 and [setup guide](https://capybrowser.app.baizhi.cloud/docs/installation.md).
+
+## Maintenance and support
+
+Configuration example: [source](https://github.com/ctcbyzx/chatbox/blob/fd229d87d6e2659724e8e3c95c3c862fd59901a2/doc/mcp-baizhi-cloud-browser.md).
+
+Maintained by [ctcbyzx](https://github.com/ctcbyzx), a contributor to [Chaitin's public integration guides](https://github.com/chaitin/baizhi-cloud-browser). See [other browser integrations](https://github.com/ctcbyzx/baizhi-cloud-browser).
+
+For setup help, use the [integration issue tracker](https://github.com/ctcbyzx/baizhi-cloud-browser/issues) and include the client version and a redacted error. Use the service console for private account or billing questions.

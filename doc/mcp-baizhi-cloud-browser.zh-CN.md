@@ -49,3 +49,11 @@ CapyBrowser）通过 MCP 提供运行、档案、人工交接和下载管理。�
 工具输入发送至百智云，网页操作会访问目标站点；使用前审阅服务条款与隐私说明。
 账号与服务问题可查看[控制台](https://capybrowser.app.baizhi.cloud/)及
 [接入指南](https://capybrowser.app.baizhi.cloud/docs/installation.md)。
+
+## 维护与支持
+
+[配置示例源码](https://github.com/ctcbyzx/chatbox/blob/fd229d87d6e2659724e8e3c95c3c862fd59901a2/doc/mcp-baizhi-cloud-browser.zh-CN.md)。
+
+维护者：[ctcbyzx](https://github.com/ctcbyzx)（[Chaitin 公共接入仓](https://github.com/chaitin/baizhi-cloud-browser)贡献者）。更多接入方式见[公开接入材料](https://github.com/ctcbyzx/baizhi-cloud-browser)。
+
+配置问题可到[接入维护仓 Issues](https://github.com/ctcbyzx/baizhi-cloud-browser/issues)反馈，附客户端版本和脱敏错误信息。账号或账务问题请通过服务控制台处理。

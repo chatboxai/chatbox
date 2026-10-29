@@ -1,9 +1,32 @@
 // Disable no-unused-vars, broken for spread args
 /* eslint no-unused-vars: off */
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { ALLOWED_INVOKE_CHANNELS } from 'src/shared/electron-ipc-channels'
 import type { ElectronIPC } from 'src/shared/electron-types'
 
 // export type Channels = 'ipc-example';
+
+/**
+ * Forwards to ipcRenderer.invoke, but only for channels on the allowlist.
+ *
+ * This is a security boundary, not a convenience wrapper: `contextBridge`
+ * exposes whatever this function does to *every* script that ever runs in
+ * the renderer's main world — including a future XSS payload, a compromised
+ * dependency, or malicious content rendered into the DOM (e.g. from a chat
+ * message). Forwarding an arbitrary, renderer-supplied channel straight to
+ * ipcRenderer.invoke would let any such script call any main-process IPC
+ * handler — file read/write, the persisted settings store (API keys
+ * included), MCP process spawning, and more — with attacker-controlled
+ * arguments. Keep this check even though every legitimate call site already
+ * uses a channel from ALLOWED_INVOKE_CHANNELS; the check is for code that
+ * doesn't come from a legitimate call site.
+ */
+function invoke(channel: string, ...args: unknown[]): Promise<unknown> {
+  if (!ALLOWED_INVOKE_CHANNELS.has(channel)) {
+    return Promise.reject(new Error(`Blocked IPC invoke: "${channel}" is not on the renderer allowlist`))
+  }
+  return ipcRenderer.invoke(channel, ...args)
+}
 
 function createListener<T extends unknown[]>(channel: string) {
   return (callback: (...args: T) => void) => {
@@ -39,7 +62,7 @@ ipcRenderer.on('navigate-to', (_event, path: string) => {
 })
 
 const electronHandler: ElectronIPC = {
-  invoke: ipcRenderer.invoke,
+  invoke,
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   onSystemThemeChange: (callback: () => void) => {
     ipcRenderer.on('system-theme-updated', callback)

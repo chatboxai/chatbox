@@ -181,6 +181,7 @@ export async function setSessionAgentMode(
   // queue/steering) to swap in place — the user starts a new chat instead.
   // Smart-switching resolution ('system') is exempt, and 'auto' ↔ 'off' is a
   // chat-internal preference, not a mode change.
+  let expectedRevision: number | undefined
   if ((options.source ?? 'user') === 'user' && resolveSessionMode(value) !== resolveSessionMode(next.value)) {
     let cursor: import('@chatbox/core/ports').SessionThreadPageCursor | undefined
     do {
@@ -189,6 +190,8 @@ export async function setSessionAgentMode(
       if (page.threads.some((thread) => (thread.summary?.userMessageCount ?? 0) > 0)) return next
       cursor = page.nextCursor ?? undefined
     } while (cursor)
+    // The empty-conversation scan only holds at the revision it read.
+    expectedRevision = source.revision
   }
 
   await rendererApplication.sessions.updateSessionHeader(
@@ -198,7 +201,7 @@ export async function setSessionAgentMode(
       next = resolved.entry
       return resolved.session
     },
-    { expectedRevision: source.revision }
+    { expectedRevision }
   )
   uiStore.getState().clearSessionAgentMode(sessionId)
   return next

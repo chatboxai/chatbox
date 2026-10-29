@@ -16,6 +16,7 @@ import type { CompactionBudget } from '../application/token-estimation/math'
 import { selectTokenEstimationContext } from '../application/token-estimation/TokenEstimationService'
 import { contextPathFacts } from '../session/context-path-facts'
 import { contextSession, contextSnapshot } from '../persistence/session-context-read.test-support'
+import { SessionRowConflictError } from '../ports/session-row-store'
 import { generationStreamFixture } from '../testing/generation-stream'
 import { InMemorySessionRecordStore } from '../testing/InMemorySessionRecordStore'
 import { InMemorySessionRowStore } from '../testing/InMemorySessionRowStore'
@@ -680,6 +681,35 @@ describe('generation context sources', () => {
       })
     )
     expect(new Set(reads.mock.calls.flatMap(([request]) => request.messageIds)).size).toBeLessThanOrEqual(24)
+  })
+
+  it('re-reads an unpinned context after a concurrent commit advances the revision', async () => {
+    const harness = createHarness()
+    const read = harness.sessions.getSessionContextSource
+    let reads = 0
+    harness.sessions.getSessionContextSource = (request) => {
+      reads += 1
+      return reads === 1
+        ? Promise.reject(new SessionRowConflictError(request.sessionId, request.expectedRevision ?? null, null))
+        : read(request)
+    }
+    await harness.service.orchestrate('session-1', targetMessage())
+    expect(reads).toBe(2)
+    expect(harness.preparedRequests).toHaveLength(1)
+  })
+
+  it('stops re-reading a context that keeps changing', async () => {
+    const harness = createHarness()
+    let reads = 0
+    harness.sessions.getSessionContextSource = (request) => {
+      reads += 1
+      return Promise.reject(new SessionRowConflictError(request.sessionId, request.expectedRevision ?? null, null))
+    }
+    await expect(harness.service.orchestrate('session-1', targetMessage())).rejects.toBeInstanceOf(
+      SessionRowConflictError
+    )
+    expect(reads).toBe(3)
+    expect(harness.preparedRequests).toHaveLength(0)
   })
 
   it('prepares a bounded source and original history before initializing the target', async () => {

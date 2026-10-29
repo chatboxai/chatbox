@@ -11,6 +11,7 @@ import {
   UNTITLED_SESSION_NAME,
 } from '../../session/auto-title'
 import type { SessionHeaderRead } from '../../ports/session-row-repository'
+import { SessionRowConflictError } from '../../ports/session-row-store'
 import type { SessionHeader } from '../../ports/session-read-model'
 import type { Language, Message, ModelProvider, SessionSettings, Settings } from '../../types'
 import type { SessionUseCasePort } from './session-use-case-port'
@@ -272,7 +273,8 @@ export class SessionNamingService {
       if (!current || namingIdentity(current) !== expectedIdentity || !canWrite(current)) return false
       return await this.writeGeneratedName(session, name, mode, canWrite !== ALWAYS_ELIGIBLE)
     } catch (error: unknown) {
-      if (error instanceof SessionNotFoundError) return false
+      // A commit after the header read stales the naming snapshot; a later scheduling pass retries it.
+      if (error instanceof SessionNotFoundError || error instanceof SessionRowConflictError) return false
       if (!isExpectedGenerationError(error)) {
         this.dependencies.reportUnexpectedError(error)
       }

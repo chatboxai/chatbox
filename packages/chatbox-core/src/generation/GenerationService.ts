@@ -81,6 +81,7 @@ import type { GenerationRuntimeStore } from './runtime-store'
 import { createInitialState, processStreamChunk } from './stream-chunk-processor'
 
 const STREAM_PERSIST_INTERVAL_MS = 2_000
+const CONTEXT_READ_ATTEMPTS = 3
 
 const APPROVAL_TIMEOUT_DENIAL = `Automatically denied: no user response within ${APPROVAL_RESPONSE_TIMEOUT_MS / 1000} seconds.`
 
@@ -380,6 +381,26 @@ export class GenerationService<TContext> {
     })
   }
 
+  /**
+   * A new reply builds on the latest conversation, so a commit between the header
+   * and context reads (streaming, naming) only means reading again. Tool-call
+   * continuations keep the conflict: their approval must match what was read.
+   */
+  private async readReplyContext(request: SessionContextRequest): Promise<SessionContextSource | null> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.readContext(request)
+      } catch (error) {
+        if (
+          !(error instanceof SessionRowConflictError) ||
+          request.expectedRevision !== undefined ||
+          attempt >= CONTEXT_READ_ATTEMPTS
+        )
+          throw error
+      }
+    }
+  }
+
   private readMessages(request: SessionMessagesRequest): Promise<SessionMessagesSource | null> {
     return this.dependencies.sessions.readSessionMessages(request)
   }
@@ -516,7 +537,7 @@ export class GenerationService<TContext> {
           request.includeTarget = undefined
         }
       }
-      source = await this.readContext(request)
+      source = await this.readReplyContext(request)
       if (controller.signal.aborted) return finishCanceledSetup(Boolean(source))
       if (!source) {
         finishRuntime()
@@ -544,13 +565,8 @@ export class GenerationService<TContext> {
       if (override) conversationScope = new Set(override.map((message) => message.id))
       lastUserMessage = getLastUserMessage(messages, promptTargetMessageIndex)
       if (!lastUserMessage && history.userMessageCount === 1 && history.lastUserMessageId) {
-        lastUserMessage = (
-          await this.readMessages({
-            sessionId,
-            messageIds: [history.lastUserMessageId],
-            expectedRevision: source.revision ?? undefined,
-          })
-        )?.messages[0]
+        // A point read by id; pinning it to the snapshot revision would fail on unrelated concurrent commits.
+        lastUserMessage = (await this.readMessages({ sessionId, messageIds: [history.lastUserMessageId] }))?.messages[0]
       }
       settings = await sessions.getSessionSettings(sessionId, session)
       if (controller.signal.aborted) return finishCanceledSetup(true)

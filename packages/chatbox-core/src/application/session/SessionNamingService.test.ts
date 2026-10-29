@@ -6,6 +6,7 @@ import type { Message, Session, Settings } from '../../types'
 import { type ScheduledNameGeneration, SessionNamingService } from './SessionNamingService'
 import { rowChatFixture } from '../chat/testing/row-chat-fixture'
 import type { SessionHeaderRead } from '../../ports/session-row-repository'
+import { SessionRowConflictError } from '../../ports/session-row-store'
 import { SessionNotFoundError } from './SessionWriteCoordinator'
 
 function createSession(overrides: Partial<Session> = {}): Session {
@@ -66,6 +67,8 @@ function createHarness() {
     return result
   }
   const executeStructureCommand = vi.fn(execute)
+  const readSessionNamingMessages = vi.fn(fixture.useCases.readSessionNamingMessages)
+  const reportUnexpectedError = vi.fn()
   const toModelMessages = vi.fn((messages: Message[]) => {
     const textPart = messages[0]?.contentParts[0]
     return Promise.resolve([
@@ -77,7 +80,7 @@ function createHarness() {
       getSessionHeader: getSession,
       updateSessionHeader: updateSession,
       executeStructureCommand,
-      readSessionNamingMessages: fixture.useCases.readSessionNamingMessages,
+      readSessionNamingMessages,
     },
     settings: { getSettings: () => settings },
     models: { createModel: vi.fn(() => Promise.resolve(model)) },
@@ -94,12 +97,14 @@ function createHarness() {
     },
     getLanguageName: (language) => (language === 'zh-Hans' ? 'Simplified Chinese' : 'English'),
     toModelMessages,
-    reportUnexpectedError: vi.fn(),
+    reportUnexpectedError,
   })
   return {
     service,
     scheduled,
     chat,
+    readSessionNamingMessages,
+    reportUnexpectedError,
     getSession,
     updateSession,
     executeStructureCommand,
@@ -131,6 +136,16 @@ describe('SessionNamingService', () => {
     const prompt = harness.toModelMessages.mock.calls[0][0][0].contentParts[0]
     expect(prompt).toMatchObject({ type: 'text' })
     if (prompt.type === 'text') expect(prompt.text).toContain('Simplified Chinese')
+  })
+
+  test('leaves a snapshot staled by a concurrent commit to a later attempt without reporting it', async () => {
+    const harness = createHarness()
+    harness.readSessionNamingMessages.mockRejectedValueOnce(new SessionRowConflictError('session-1', 1, 2))
+
+    await expect(harness.service.generateNameAndThreadName('session-1', 'en')).resolves.toBe(false)
+
+    expect(harness.chat).not.toHaveBeenCalled()
+    expect(harness.reportUnexpectedError).not.toHaveBeenCalled()
   })
 
   test('keeps the first pending schedule and names only after eligibility is re-checked', async () => {

@@ -1,3 +1,5 @@
+import type { ToolSet } from 'ai'
+
 export type MCPProtocolMode = 'auto' | 'legacy'
 
 export type MCPServerConfig<TransportConfig = MCPTransportConfig> = {
@@ -24,4 +26,11 @@ export type MCPTransportConfig =
 export type MCPServerStatus = {
   state: 'idle' | 'starting' | 'running' | 'stopping'
   error?: string
+}
+
+/** One server's tools, keyed by the names the MCP server declares. */
+export type MCPToolGroup = {
+  serverId: string
+  server: string
+  tools: ToolSet
 }

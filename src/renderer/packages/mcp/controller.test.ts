@@ -1074,7 +1074,7 @@ describe('mobile MCP lifecycle', () => {
     vi.unstubAllGlobals()
   })
 
-  it('rejects colliding tool names instead of replacing an enabled server tool', async () => {
+  it('keeps both servers when their tool names collide and names each by its server id', async () => {
     const configs = ['collision-a', 'collision-b'].map((id) => ({
       id,
       name: 'Same Name',
@@ -1083,13 +1083,19 @@ describe('mobile MCP lifecycle', () => {
     }))
     for (const config of configs) {
       const instance = new MCPServer(config, { mobile: true })
-      vi.spyOn(instance, 'getAvailableTools').mockReturnValue({ echo: { inputSchema: jsonSchema({ type: 'object' }) } })
+      vi.spyOn(instance, 'getAvailableTools').mockReturnValue({
+        echo: { description: 'Echo the input.', inputSchema: jsonSchema({ type: 'object' }) },
+      })
       mcpController.servers.set(config.id, { config, instance })
     }
     try {
-      expect(() => mcpController.getAvailableTools(new Set(configs.map(({ id }) => id)))).toThrow(
-        'MCP tool name collision: mcp__same_name__echo'
-      )
+      const tools = mcpController.getAvailableTools(new Set(configs.map(({ id }) => id)))
+      const names = Object.keys(tools)
+      expect(names).toHaveLength(2)
+      for (const name of names) {
+        expect(name).toMatch(/^mcp__same_name__echo_[0-9a-z]{6}$/)
+        expect(tools[name].description).toBe('[MCP server: Same Name] Echo the input.')
+      }
       expect(Object.keys(mcpController.getAvailableTools(new Set(['collision-a'])))).toEqual(['mcp__same_name__echo'])
     } finally {
       await Promise.all(configs.map(({ id }) => mcpController.stopServer(id)))

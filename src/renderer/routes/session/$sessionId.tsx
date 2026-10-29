@@ -1,6 +1,7 @@
 import { getSessionSearchTarget, clearSessionSearchTarget } from '@/stores/session-search-target'
 import { resolveSessionMode } from '@chatbox/core/session/mode-policy'
 import { Box, Button, Loader } from '@mantine/core'
+import { supportsSessionGeneration } from '@shared/session/capabilities'
 import type { ModelProvider } from '@shared/types'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -37,6 +38,7 @@ import { applyChatboxLicenseDefaultModelToSession } from '@/stores/defaultChatMo
 import { lastUsedModelStore } from '@/stores/lastUsedModelStore'
 import { useSessionAgentMode } from '@/stores/session/agent-mode'
 import { switchCurrentSession } from '@/stores/session/crud'
+import { startAutoDialogue } from '@/stores/session/generation'
 import { submitNewUserMessage } from '@/stores/session/messages'
 import { startNewThread } from '@/stores/session/threads'
 import { clearSessionActivity, setOnScreenSession } from '@/stores/sessionActivityStore'
@@ -215,6 +217,17 @@ function RouteComponent() {
     [autoScrollNewMessagesToTop, currentSession, currentSessionWithDefaultModel]
   )
 
+  const onStartAutoDialogue = useCallback(
+    (userSidePrompt: string) => {
+      if (!currentSession) {
+        return
+      }
+      messageListRef.current?.setIsNewMessage(autoScrollNewMessagesToTop)
+      void startAutoDialogue(currentSession.id, userSidePrompt)
+    },
+    [autoScrollNewMessagesToTop, currentSession]
+  )
+
   const onClickSessionSettings = useCallback(() => {
     if (!currentSession) {
       return false
@@ -324,6 +337,7 @@ function RouteComponent() {
               onStopGenerating={onStopGenerating}
               stopGenerationStatus={stopGenerationStatus}
               onViewCompactionSummary={onViewCompactionSummary}
+              onStartAutoDialogue={supportsSessionGeneration(currentSession.type) ? onStartAutoDialogue : undefined}
             />
           </ErrorBoundary>
         </Box>

@@ -26,6 +26,7 @@ import {
   IconCirclePlus,
   IconFilePencil,
   IconFolder,
+  IconMessages,
   IconPhoto,
   IconPlayerStopFilled,
   IconWand,
@@ -123,6 +124,7 @@ import { ModelProviderIcon } from '../icons/ModelProviderIcon'
 import ModelSelectorV2 from '../ModelSelectorV2'
 import AgentModeButton from './AgentModeButton'
 import { FileMiniCard, getParserTypeLabel, ImageMiniCard } from './Attachments'
+import { AutoDialogueConfirmBar } from './AutoDialogueConfirmBar'
 import { getAgentModeUIState } from './agentModeState'
 import { ComposerSettingsMenu } from './ComposerSettingsMenu'
 import { ImageUploadInput } from './ImageUploadInput'
@@ -177,6 +179,7 @@ export type InputBoxProps = {
   onStartNewThread?(): Promise<(() => Promise<boolean>) | undefined>
   onClickSessionSettings?(): boolean | Promise<boolean>
   onViewCompactionSummary?(summaryMessageId: string): void
+  onStartAutoDialogue?(userSidePrompt: string): void
 }
 
 function getSessionAttachmentProgressValue(embeddedChunks?: number, totalChunks?: number): number | undefined {
@@ -221,6 +224,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       onStartNewThread,
       onClickSessionSettings,
       onViewCompactionSummary,
+      onStartAutoDialogue,
     },
     ref
   ) => {
@@ -1613,6 +1617,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
             />
           )}
           {currentSessionId && !isNewSession && <QueuedMessagesBar sessionId={currentSessionId} />}
+          {currentSessionId && !isNewSession && <AutoDialogueConfirmBar sessionId={currentSessionId} />}
           {currentSession && !isNewSession && (
             <ErrorBoundary name="pending-action-bar">
               <PendingActionBar
@@ -2028,6 +2033,27 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   draftCopilotId={draftCopilotId}
                   draftCopilotName={draftCopilotName}
                 />
+
+                {onStartAutoDialogue && (
+                  <Tooltip
+                    label={t('AI vs AI: let AI play the user side (input text becomes its persona)')}
+                    position="top"
+                    withArrow
+                  >
+                    <UnstyledButton
+                      aria-label={t('AI vs AI: let AI play the user side (input text becomes its persona)')}
+                      onClick={() => onStartAutoDialogue(latestInputRef.current.trim())}
+                      disabled={generating}
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors disabled:opacity-50"
+                    >
+                      <IconMessages
+                        size={toolbarIconSize}
+                        strokeWidth={1.8}
+                        className="text-[var(--chatbox-tint-secondary)]"
+                      />
+                    </UnstyledButton>
+                  </Tooltip>
+                )}
 
                 {!isSmallScreen &&
                   canCreateThread &&

@@ -944,6 +944,29 @@ describe('row transcript host', () => {
       vi.useRealTimers()
     }
   })
+  test('shows a mounted tail that cannot reach the measured bottom once the deadline passes', async () => {
+    vi.useFakeTimers()
+    try {
+      // The list clamps scrolling short of scrollHeight - clientHeight, as device rounding can.
+      h.scrollTo.mockImplementation(({ top }: { top: number }) => {
+        if (h.currentScroller) h.currentScroller.scrollTop = Math.min(top, h.measuredHeight - 600 - 40)
+      })
+      const view = render(<Host />)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(h.firstReady).toBe(false)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5100)
+      })
+      expect(view.queryByText('Try Again')).toBeNull()
+      expect(h.firstReady).toBe(true)
+      expect(getComputedStyle(view.getByTestId('virtuoso')).visibility).toBe('visible')
+      expect(h.currentScroller?.scrollTop).toBe(360)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
   test('settles the tail when rendering a long message blocks frames past the deadline', async () => {
     vi.useFakeTimers()
     try {

@@ -397,9 +397,26 @@ const MessageList = forwardRef<
     // The deadline counts frame time, capping each gap, so a long render on a slow device does not consume it.
     let layoutTime = 0
     let previousFrame: number | null = null
-    const nextFrame = () => {
+    const acknowledge = () => {
+      if (live.current.transcript.layout?.requestId !== layout.requestId) return
+      applying.current = null
+      if (scrollbarPointer.current && scroller.current) scrollbarPointer.current.scrollTop = scroller.current.scrollTop
+      if (scroller.current)
+        follow.syncScrollPosition(
+          scroller.current.scrollTop,
+          Math.max(0, scroller.current.scrollHeight - scroller.current.clientHeight)
+        )
+      controller.acknowledgeLayout(layout.requestId)
+      contentAnchor.adopt(layout.kind === 'preserve' && 'offset' in layout.anchor ? layout.anchor : null)
+    }
+    // At the deadline a mounted target is shown where it rests; device rounding can keep it from settling exactly.
+    const nextFrame = (targetMounted: boolean) => {
       if (layoutTime < 5000) {
         layoutFrame.current = requestAnimationFrame(finish)
+        return
+      }
+      if (targetMounted) {
+        acknowledge()
         return
       }
       applying.current = null
@@ -421,7 +438,7 @@ const MessageList = forwardRef<
       if ((layout.kind === 'anchor' || layout.kind === 'preserve') && index >= 0) {
         if (!element) {
           if (virtuoso.current) scrollToItem(index, 'start', 'auto', isCurrent)
-          nextFrame()
+          nextFrame(false)
           return
         }
         const offset = 'offset' in layout.anchor ? layout.anchor.offset : 0
@@ -449,7 +466,7 @@ const MessageList = forwardRef<
         previousAnchorHeight = viewport.scrollHeight
         if (!settled) scrollByGeometry(correction)
         if (stableAnchorFrames < 2) {
-          nextFrame()
+          nextFrame(true)
           return
         }
       } else if (layout.kind === 'tail') {
@@ -468,22 +485,9 @@ const MessageList = forwardRef<
             if (!tail && currentItems.length) scrollToItem(currentItems.length - 1, 'end', 'auto', isCurrent)
             else scrollToPosition({ top: maxTop, behavior: 'auto' })
           }
-          nextFrame()
+          nextFrame(!!tail || !currentItems.length)
           return
         }
-      }
-      const acknowledge = () => {
-        if (live.current.transcript.layout?.requestId !== layout.requestId) return
-        applying.current = null
-        if (scrollbarPointer.current && scroller.current)
-          scrollbarPointer.current.scrollTop = scroller.current.scrollTop
-        if (scroller.current)
-          follow.syncScrollPosition(
-            scroller.current.scrollTop,
-            Math.max(0, scroller.current.scrollHeight - scroller.current.clientHeight)
-          )
-        controller.acknowledgeLayout(layout.requestId)
-        contentAnchor.adopt(layout.kind === 'preserve' && 'offset' in layout.anchor ? layout.anchor : null)
       }
       if (layout.kind === 'tail' || ((layout.kind === 'anchor' || layout.kind === 'preserve') && index >= 0))
         acknowledge()

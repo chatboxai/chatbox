@@ -44,6 +44,7 @@ import { isExpectedGenerationError } from './error-classification'
 import { ApiError, BaseError, ChatboxAIAPIError, NetworkError } from './errors'
 import { toMessageUsage } from './message-usage'
 import { wrapOpenAICompatibleNonStreamingModel } from './openai-compatible-non-streaming'
+import { openAIResponsesToolStrictMiddleware } from './openai-responses-tool-strict'
 import { stopWhenPersistentToolCallPause } from './persistent-tool-call-pause'
 import { bindReplaySource } from './provider-part-metadata'
 import { createRetryableChatModel } from './retryable-chat-model'
@@ -163,7 +164,11 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
 
   protected abstract getChatModel(options: CallChatCompletionOptions): LanguageModelV4
 
-  private prepareChatModel(model: LanguageModelV4): LanguageModelV4 {
+  private prepareChatModel(baseModel: LanguageModelV4): LanguageModelV4 {
+    const model =
+      this.apiStyle === 'openai-responses'
+        ? wrapLanguageModel({ model: baseModel, middleware: openAIResponsesToolStrictMiddleware })
+        : baseModel
     if (this.apiStyle === 'google') {
       return wrapLanguageModel({
         model,

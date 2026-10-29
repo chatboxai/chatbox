@@ -4,12 +4,43 @@ import { useMemo } from 'react'
 import type { SessionQueryDefinitions } from './session-query-options'
 
 export function createSessionHooks(definitions: SessionQueryDefinitions) {
-  function useSession(sessionId: string | null) {
-    const { data: session, ...rest } = useQuery({
-      ...definitions.session(sessionId ?? ''),
-      enabled: !!sessionId,
+  function useSessionHeader(sessionId: string | null, options: { enabled?: boolean } = {}) {
+    const { data: read, ...rest } = useQuery({
+      ...definitions.header(sessionId ?? ''),
+      enabled: !!sessionId && options.enabled !== false,
     })
-    return { session, ...rest }
+    return { read, session: read ? read.header : read, ...rest }
+  }
+
+  function useSessionMessage(sessionId: string | null, messageId: string | null) {
+    const { data: read, ...rest } = useQuery({
+      ...definitions.message(sessionId ?? '', messageId ?? ''),
+      enabled: !!sessionId && !!messageId,
+    })
+    return { read, message: read?.message ?? (read === undefined ? undefined : null), ...rest }
+  }
+
+  function useSessionThread(sessionId: string | null, threadId?: string) {
+    const { data: read, ...rest } = useQuery({ ...definitions.thread(sessionId ?? '', threadId), enabled: !!sessionId })
+    return { read, ...rest }
+  }
+
+  function useSessionThreads(sessionId: string | null, options: { enabled?: boolean } = {}) {
+    const result = useInfiniteQuery({
+      ...definitions.threads(sessionId ?? ''),
+      enabled: !!sessionId && options.enabled !== false,
+    })
+    const threads = useMemo(() => result.data?.pages.flatMap((page) => page?.threads ?? []) ?? [], [result.data])
+    return { ...result, threads }
+  }
+
+  function useSessionForks(sessionId: string | null, pivotId: string | null) {
+    const result = useInfiniteQuery({
+      ...definitions.forks(sessionId ?? '', pivotId ?? ''),
+      enabled: !!sessionId && !!pivotId,
+    })
+    const branches = useMemo(() => result.data?.pages.flatMap((page) => page?.branches ?? []) ?? [], [result.data])
+    return { ...result, branches, fork: result.data?.pages[0] }
   }
 
   function useSessionList() {
@@ -18,13 +49,12 @@ export function createSessionHooks(definitions: SessionQueryDefinitions) {
       () => (result.data ? uniqueSessionRecords(result.data.pages.flatMap((page) => page.items)) : undefined),
       [result.data]
     )
-    return {
-      sessionMetaList,
-      refetch: result.refetch,
-      fetchNextPage: result.fetchNextPage,
-      hasNextPage: result.hasNextPage,
-      isFetchingNextPage: result.isFetchingNextPage,
-    }
+    return { ...result, sessionMetaList }
+  }
+
+  function useSessionFolders() {
+    const { data: folders, ...rest } = useQuery(definitions.folders)
+    return { folders, ...rest }
   }
 
   function useArchivedSessionList() {
@@ -33,19 +63,17 @@ export function createSessionHooks(definitions: SessionQueryDefinitions) {
       () => (result.data ? uniqueSessionRecords(result.data.pages.flatMap((page) => page.items)) : undefined),
       [result.data]
     )
-    return {
-      archivedSessionMetaList,
-      refetch: result.refetch,
-      fetchNextPage: result.fetchNextPage,
-      hasNextPage: result.hasNextPage,
-      isFetchingNextPage: result.isFetchingNextPage,
-      isLoading: result.isLoading,
-    }
+    return { ...result, archivedSessionMetaList }
   }
 
   return {
-    useSession,
+    useSessionHeader,
+    useSessionMessage,
+    useSessionThread,
+    useSessionThreads,
+    useSessionForks,
     useSessionList,
+    useSessionFolders,
     useArchivedSessionList,
   }
 }

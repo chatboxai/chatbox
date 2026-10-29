@@ -481,10 +481,10 @@ function ProviderSettings({ providerId }: { providerId: string }) {
     return <Text p="md">{t('Provider not found')}</Text>
   }
 
+  const isSystemManagedModelList = false
   const showApiKey =
     !isOAuthOnlyProvider &&
     ![
-      ModelProviderEnum.Local,
       ModelProviderEnum.Ollama,
       ModelProviderEnum.LMStudio,
       ModelProviderEnum.Bedrock,

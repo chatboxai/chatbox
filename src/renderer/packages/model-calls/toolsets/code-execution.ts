@@ -500,13 +500,9 @@ process.stdout.write(fs.realpathSync(filePath))
     toModelOutput: toTextModelOutput(formatDownloadOutput),
   }
 
-  const runtimeList = isHarmony
-    ? '- Node.js (Bash and PowerShell are unavailable on HarmonyOS)'
-    : '- Bash\n- Node.js\n- PowerShell (Windows only; PowerShell 7 preferred, Windows PowerShell fallback)'
-  const runtimeNames = isHarmony ? 'Node.js' : 'Node.js, PowerShell, or Bash'
-  const scriptLanguageGuidance = isHarmony
-    ? '- Use Node.js for all scripts.'
-    : '- Use Node.js for most file-processing tasks.'
+  const runtimeList = '- Bash\n- Node.js\n- PowerShell (Windows only; PowerShell 7 preferred, Windows PowerShell fallback)'
+  const runtimeNames = 'Node.js, PowerShell, or Bash'
+  const scriptLanguageGuidance = '- Use Node.js for most file-processing tasks.'
   const description = `
 ## Code Execution
 You have access to a sandboxed environment for lightweight code execution and file processing. Use it primarily for concrete tasks such as calculating spreadsheet data, cleaning CSV/JSON files, extracting document information, creating simple charts, converting files, and producing downloadable outputs.
@@ -520,10 +516,10 @@ Use the preinstalled runtime first:
 - XLSX, DOCX, PPTX, PDF, and image files: prefer <PARSED_SANDBOX_PATH> for extracted text. If direct binary manipulation requires unavailable libraries, explain the limitation or produce a text/CSV/HTML alternative.
 - Charts and visual outputs: generate standalone HTML with inline SVG or Canvas. Keep JavaScript, CSS, and small data inline in the HTML instead of referencing sibling .js/.css/data files. Save the HTML file, then call create_download when the user needs the result. Do not rely on Python plotting libraries.
 - File outputs: prefer CSV, JSON, Markdown, HTML, or other text-based formats that can be generated with ${runtimeNames}.
-- Python is not available in this code_execution tool; choose ${isHarmony ? 'Node.js' : 'Node.js, PowerShell on Windows, or Bash'}.
+- Python is not available in this code_execution tool; choose ${'Node.js, PowerShell on Windows, or Bash'}.
 
 ### Package Installation
-Avoid installing packages. Most simple file-processing tasks should be completed with Node.js built-ins${isHarmony ? '' : ' and shell tools'}.
+Avoid installing packages. Most simple file-processing tasks should be completed with Node.js built-ins${' and shell tools'}.
 If a package install seems necessary:
 - First try an approach using the preinstalled runtime.
 - Do not use sudo, apt, brew, or other system package managers.

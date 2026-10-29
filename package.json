@@ -51,7 +51,7 @@
     "lint": "biome lint .",
     "lint:fix": "biome lint . --write",
     "check": "node scripts/build-mobile-work-worker.cjs && node scripts/generate-routes.mjs && node --max-old-space-size=8192 ./node_modules/typescript/bin/tsc --noEmit",
-    "check:packages": "pnpm --filter @chatbox/core check && pnpm --filter @chatbox/i18n check",
+    "check:packages": "pnpm --filter @chatbox/core check && pnpm --filter @chatbox/react check && pnpm --filter @chatbox/i18n check",
     "format": "biome format --write",
     "check:biome": "biome check",
     "check:ci": "biome ci",
@@ -323,7 +323,8 @@
     "webpack-merge": "^5.9.0",
     "webpack-obfuscator": "^3.5.1",
     "zod": "^4.0.17",
-    "zustand": "^5.0.6"
+    "zustand": "^5.0.6",
+    "@anthropic-ai/sandbox-runtime": "^0.0.54"
   },
   "dependencies": {
     "@libsql/client": "^0.15.6",

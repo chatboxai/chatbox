@@ -23,7 +23,7 @@ import './static/globals.css'
 import './static/index.css'
 import { initLogAtom, migrationProcessAtom } from './stores/atoms/utilAtoms'
 import { captureRendererDevLaunchOptions } from './utils/dev-launch'
-import { CHATBOX_BUILD_PLATFORM, CHATBOX_BUILD_TARGET } from './variables'
+import { CHATBOX_BUILD_TARGET } from './variables'
 
 const MobileExecutionHost = lazy(() => import('./packages/mobile-work-mode/MobileExecutionHost'))
 
@@ -43,12 +43,10 @@ import './setup/protect'
 // Token estimation system initialization (runs in all environments)
 
 // 引入移动端安全区域代码，主要为了解决异形屏幕的问题
-let androidStatusBarSetup: Promise<typeof import('./setup/mobile_status_bar')> | undefined
+
 if (CHATBOX_BUILD_TARGET === 'mobile_app') {
   void import('./setup/mobile_safe_area')
-  if (CHATBOX_BUILD_PLATFORM === 'android') {
-    androidStatusBarSetup = import('./setup/mobile_status_bar')
-  }
+
 }
 
 // ==========渲染节点==============
@@ -163,7 +161,6 @@ void runRendererStartup({
         }
         splashScreenFinalized = true
         el.remove()
-        void androidStatusBarSetup?.then(({ syncStatusBarTheme }) => syncStatusBarTheme())
       }
       el.addEventListener('animationend', removeSplashScreen, { once: true })
       el.classList.add('splash-screen-fade-out')
@@ -171,7 +168,6 @@ void runRendererStartup({
       // Never leave the initialized application permanently covered by the splash screen.
       setTimeout(removeSplashScreen, 600)
     } else {
-      void androidStatusBarSetup?.then(({ syncStatusBarTheme }) => syncStatusBarTheme())
     }
   },
 })

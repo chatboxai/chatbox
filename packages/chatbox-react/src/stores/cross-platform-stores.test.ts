@@ -12,16 +12,18 @@ import {
 class MemoryPersistStorage<T> implements PersistStorage<T> {
   readonly values = new Map<string, StorageValue<T>>()
 
-  async getItem(name: string): Promise<StorageValue<T> | null> {
-    return this.values.get(name) ?? null
+  getItem(name: string): Promise<StorageValue<T> | null> {
+    return Promise.resolve(this.values.get(name) ?? null)
   }
 
-  async setItem(name: string, value: StorageValue<T>): Promise<void> {
+  setItem(name: string, value: StorageValue<T>): Promise<void> {
     this.values.set(name, value)
+    return Promise.resolve()
   }
 
-  async removeItem(name: string): Promise<void> {
+  removeItem(name: string): Promise<void> {
     this.values.delete(name)
+    return Promise.resolve()
   }
 }
 
@@ -54,5 +56,14 @@ describe('cross-platform Zustand stores', () => {
     expect(store.getState().chat).toEqual({ provider: 'openai', modelId: 'gpt-5' })
     store.getState().setTaskModel('openai', 'gpt-5-codex')
     expect(store.getState().task).toEqual({ provider: 'openai', modelId: 'gpt-5-codex' })
+
+    const pendingClear = store.getState().chat
+    store.getState().setChatModel('claude', 'claude-new')
+    store.getState().clearChatModel(pendingClear)
+    expect(store.getState().chat).toEqual({ provider: 'claude', modelId: 'claude-new' })
+    store.getState().clearChatModel({ provider: 'claude', modelId: 'claude-new' })
+    expect(store.getState().chat).toBeUndefined()
+    await Promise.resolve()
+    expect(storage.values.get(LAST_USED_MODEL_PERSIST_KEY)?.state.chat).toBeUndefined()
   })
 })

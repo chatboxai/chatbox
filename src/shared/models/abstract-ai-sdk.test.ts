@@ -333,7 +333,7 @@ describe('AbstractAISDKModel chatStream closure', () => {
     vi.clearAllMocks()
   })
 
-  it.each(['mobile', 'desktop', 'web', 'harmony', undefined] as const)(
+  it.each(['mobile', 'desktop', 'web', undefined] as const)(
     'disables SDK tracing for both streaming entry points on %s hosts',
     async (platformType) => {
       mockEmptyStream()

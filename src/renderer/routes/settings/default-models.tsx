@@ -765,7 +765,6 @@ function sourceForSlot(
         : 'Uses local parsing where supported, with Chatbox cloud parsing as a fallback.'
   if (slotId === 'search') return 'Search requests are sent to the selected service.'
   if (!provider) return 'Automatic selection follows the defaults for this feature.'
-  if (provider === ModelProviderEnum.Local) return 'On-device model'
   const endpoint =
     settings.providers?.[provider]?.apiHost ||
     SystemProviders().find((item) => item.id === provider)?.defaultSettings?.apiHost

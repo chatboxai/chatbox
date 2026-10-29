@@ -19,7 +19,7 @@ vi.mock('@/stores/uiStore', () => ({
   },
 }))
 
-import zhHans from '@/i18n/locales/zh-Hans/translation.json'
+import zhHans from '../../../packages/chatbox-i18n/src/locales/zh-Hans/translation.json'
 import {
   confirmModelSwitchIfNeeded,
   confirmPromptCacheBreakingAction,

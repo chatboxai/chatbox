@@ -1,7 +1,7 @@
 import type { AgentModeEntry } from '@shared/types'
 import { describe, expect, test, vi } from 'vitest'
 
-const platformMock = vi.hoisted(() => ({ type: 'desktop' as string }))
+const platformMock = vi.hoisted(() => ({ type: 'desktop' as string, isDesktopLike: true }))
 vi.mock('@/platform', () => ({ default: platformMock }))
 
 import { getAgentModeUIState } from './agentModeState'
@@ -85,6 +85,7 @@ describe('getAgentModeUIState', () => {
 
   test('forces off and inactive on web even when agent mode is on', () => {
     platformMock.type = 'web'
+    platformMock.isDesktopLike = false
     expect(getAgentModeUIState(createEntry('on'), true)).toEqual({
       displayValue: 'off',
       isActive: false,

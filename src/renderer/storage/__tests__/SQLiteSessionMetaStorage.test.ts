@@ -130,6 +130,9 @@ describe('SQLiteSessionMetaStorage', () => {
 
     expect(mockDatabase.execute).toHaveBeenCalledWith('ALTER TABLE session_meta ADD COLUMN archived_at INTEGER')
     expect(mockDatabase.execute).toHaveBeenCalledWith(
+      'ALTER TABLE session_meta ADD COLUMN has_paused_tool_call INTEGER NOT NULL DEFAULT 0'
+    )
+    expect(mockDatabase.execute).toHaveBeenCalledWith(
       'ALTER TABLE session_meta ADD COLUMN recovery_archived INTEGER NOT NULL DEFAULT 0'
     )
     expect(mockDatabase.execute).toHaveBeenCalledWith('ALTER TABLE session_meta ADD COLUMN folder_id TEXT')
@@ -195,8 +198,8 @@ describe('SQLiteSessionMetaStorage', () => {
       'chat',
       100,
       100,
-      1,
       0,
+      1,
     ])
 
     mockDatabase.query.mockResolvedValueOnce({
@@ -223,7 +226,7 @@ describe('SQLiteSessionMetaStorage', () => {
     const storage = new SQLiteSessionMetaStorage()
     mockDatabase.query
       .mockResolvedValueOnce({
-        values: [{ name: 'archived_at' }, { name: 'recovery_archived' }],
+        values: [{ name: 'archived_at' }, { name: 'has_paused_tool_call' }, { name: 'recovery_archived' }],
       })
       .mockResolvedValueOnce({
         values: [
@@ -257,6 +260,32 @@ describe('SQLiteSessionMetaStorage', () => {
       0,
       'recovery',
     ])
+  })
+
+  it('getById maps the persisted paused-tool-call column back onto the record', async () => {
+    const storage = new SQLiteSessionMetaStorage()
+    mockDatabase.query
+      .mockResolvedValueOnce({ values: [{ name: 'archived_at' }, { name: 'has_paused_tool_call' }] })
+      .mockResolvedValueOnce({
+        values: [
+          {
+            id: 'paused',
+            name: 'Paused',
+            starred: 0,
+            hidden: 0,
+            archived_at: null,
+            type: 'chat',
+            sort_order: 100,
+            created_at: 100,
+            has_paused_tool_call: 1,
+          },
+        ],
+      })
+
+    await expect(storage.getById('paused')).resolves.toMatchObject({
+      id: 'paused',
+      hasPausedToolCall: true,
+    })
   })
 
   it('getArchivedPage queries archived rows with limit and offset', async () => {

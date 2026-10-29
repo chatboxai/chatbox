@@ -657,7 +657,6 @@
   "Loading webpage...": "Web sayfası yükleniyor...",
   "Loading...": "Yükleniyor...",
   "Local": "Yerel",
-  "HarmonyOS Local Model": "HarmonyOS Yerel Modeli",
   "Local (stdio)": "Yerel (stdio)",
   "Local Agent Skills": "Yerel Ajan Yetenekleri",
   "Local document parsing failed. You can go to <OpenDocumentParserSettingButton>Settings</OpenDocumentParserSettingButton> and switch to Chatbox AI for cloud-based document parsing.": "Yerel belge ayrıştırma başarısız oldu. Bulut tabanlı belge ayrıştırma için <OpenDocumentParserSettingButton>Ayarlar</OpenDocumentParserSettingButton>'a gidip Chatbox AI'ya geçebilirsiniz.",

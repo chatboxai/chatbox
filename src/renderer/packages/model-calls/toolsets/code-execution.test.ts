@@ -455,25 +455,6 @@ describe('buildCodeExecutionTools', () => {
     expect(description).toContain('refer the user to the download card')
   })
 
-  test('HarmonyOS description advertises only Node.js', async () => {
-    const platform = (await import('@/platform')).default
-    platform.type = 'harmony'
-    try {
-      const { description, tools } = buildCodeExecutionTools({
-        sessionId: 'test-session',
-        files: [],
-        provider: mockProvider,
-      })
-      expect(description).toContain('Bash and PowerShell are unavailable on HarmonyOS')
-      expect(description).not.toMatch(/^- Bash$/m)
-      expect(description).not.toContain('Node.js, PowerShell, or Bash')
-      expect(description).not.toContain('On Windows, prefer PowerShell')
-      expect(tools.code_execution.description).not.toContain('shell tools')
-    } finally {
-      platform.type = 'desktop'
-    }
-  })
-
   test('read_file requests a retry before advancing when the total output is shortened', async () => {
     mockProvider.readFileOut.mockResolvedValue({
       success: true,

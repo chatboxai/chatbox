@@ -128,7 +128,7 @@ export function computeEffectiveAgentMode(agentModeValue: AgentModeValue, agentM
 }
 
 export async function refreshSessionAttachmentStatuses(messages: Message[]): Promise<Message[]> {
-  if (platform.type !== 'desktop') {
+  if (!platform.isDesktopLike) {
     return messages
   }
 

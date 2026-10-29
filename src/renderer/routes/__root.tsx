@@ -306,8 +306,10 @@ function Root() {
   }, [_theme])
 
   useEffect(() => {
-    if (shouldSkipOnboardingGuide(getRendererDevLaunchOptions())) return
     if (startupPathname.current !== '/') return
+    if (shouldSkipOnboardingGuide(getRendererDevLaunchOptions())) {
+      return
+    }
     const { startupPage } = settingsStore.getState()
     let sid = ''
     try {

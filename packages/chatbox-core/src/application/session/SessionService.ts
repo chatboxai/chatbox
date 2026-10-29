@@ -100,7 +100,6 @@ export class SessionService {
   private disposed = false
   private readonly now: () => number
   private readonly getLastUsedModels: NonNullable<SessionServiceOptions['getLastUsedModels']>
-  private readonly getVisibleSessionMetas: NonNullable<SessionServiceOptions['getVisibleSessionMetas']>
   private readonly pendingMetaRepairs = new Set<string>()
   private readonly pendingArchiveListRefreshes = new Set<string>()
   private archiveStateRevision = 0

@@ -423,26 +423,9 @@ export {
 } from './session/generation-state'
 export { type ForkIdentityPort } from './session/message-forks'
 export {
-  type AutoTitleAction,
-  type AutoTitleSession,
-  backfillMissingThreadName,
-  buildNameGenerationAttemptKey,
-  DEFAULT_INBOX_SESSION_ID,
-  DEFAULT_INBOX_SESSION_NAME,
-  getCurrentThreadNamingIdentity,
-  isDefaultInboxSession,
-  isNameGenerationAttemptKeyForSession,
-  type NameGenerationKind,
-  resolveAutoTitleAction,
-  sanitizeGeneratedSessionName,
-  shouldBackfillThreadName,
-  type ThreadNamingIdentitySession,
-  UNTITLED_SESSION_NAME,
-} from './session/auto-title'
-export {
   hasContentForAutoTitle,
   hasSuccessfulUserAssistantTurn,
   isSuccessfulAssistantReply,
 } from './session/message-success'
 export { createMessage, isChatSession } from './types'
-export { getMessageText } from './utils/message'
+export { applyLastOutputTextEdit, getEditableTextPartIndexes, getMessageText } from './utils/message'

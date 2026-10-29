@@ -505,8 +505,8 @@ export const SessionMetaSchema = SessionHeaderSchema.pick({
   backgroundImage: true,
   type: true,
 }).extend({
-  recoveryArchived: z.boolean().optional(),
   hasPausedToolCall: z.boolean().optional(),
+  recoveryArchived: z.boolean().optional(),
 })
 
 export const SessionMetaRecordSchema = SessionMetaSchema.extend({

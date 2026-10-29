@@ -1,5 +1,4 @@
 import { MAX_CHAT_IMAGE_ATTACHMENTS } from '@chatbox/core/application/attachments'
-import { LOCAL_WORK_ATTACHMENT_ACCEPT } from '@/packages/mobile-work-mode/attachments'
 import { listPendingPauseInteractions } from '@chatbox/core/message-approval'
 import { getSubmitAvailability } from '@chatbox/core/session/action-gates'
 import { isActionAvailableInMode, resolveSessionMode } from '@chatbox/core/session/mode-policy'
@@ -67,7 +66,11 @@ import { useSessionPresentation } from '@/hooks/useSessionPresentation'
 import { cn } from '@/lib/utils'
 import { isAutoCompactionEnabled, isCompactionInProgress, useContextTokens } from '@/packages/context-management'
 import { trackingEvent } from '@/packages/event'
-import { isLocalWorkAttachment, LOCAL_WORK_ATTACHMENT_MAX_BYTES } from '@/packages/mobile-work-mode/attachments'
+import {
+  isLocalWorkAttachment,
+  LOCAL_WORK_ATTACHMENT_ACCEPT,
+  LOCAL_WORK_ATTACHMENT_MAX_BYTES,
+} from '@/packages/mobile-work-mode/attachments'
 import {
   getModelContextWindowSync,
   getProviderModelContextWindowSync,

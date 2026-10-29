@@ -1,8 +1,45 @@
 import { CapacitorSQLite, SQLiteConnection, type SQLiteDBConnection } from '@capacitor-community/sqlite'
 import localforage from 'localforage'
+import { v4 as uuidv4 } from 'uuid'
 import { StorageKey } from '@/storage'
+import { reportError } from '@/utils/sentry'
 import platform from '.'
 import type { Storage } from './interfaces'
+
+const DIAGNOSTIC_KEY_SUFFIXES = ['_tokenMap', '_parserType'] as const
+
+// Storage keys can embed file names, URLs and session ids, so telemetry only
+// ever sees the stable prefix / known-suffix shape (e.g. `file:*_tokenMap`).
+function sanitizeStoreKeyForDiagnostics(key: string): string {
+  const suffix = DIAGNOSTIC_KEY_SUFFIXES.find((candidate) => key.endsWith(candidate)) ?? ''
+  const base = suffix ? key.slice(0, key.length - suffix.length) : key
+  const colonIndex = base.indexOf(':')
+  if (colonIndex >= 0) return `${base.slice(0, colonIndex)}:*${suffix}`
+  return /^[\w.-]{1,48}$/.test(base) ? `${base}${suffix}` : `*${suffix}`
+}
+
+const reportedNonSerializableKeys = new Set<string>()
+
+// JSON.stringify returns undefined (not a string) when the root value is
+// undefined, a function or a symbol. The storage drivers only accept strings,
+// so coerce such writes to the JSON null literal — the row reads back as null,
+// matching what the pre-chunking SQLite writer persisted — and report the
+// sanitized key so the caller can be identified in production.
+function serializeStoreValue(storageType: string, key: string, value: unknown): string {
+  const json = JSON.stringify(value)
+  if (typeof json === 'string') return json
+  const sanitizedKey = sanitizeStoreKeyForDiagnostics(key)
+  console.error(`Storage received a non-serializable value (type: ${typeof value}) for key "${sanitizedKey}"`)
+  if (!reportedNonSerializableKeys.has(sanitizedKey)) {
+    reportedNonSerializableKeys.add(sanitizedKey)
+    reportError(new Error('Storage write received a value that serialized to a non-string'), {
+      domain: 'storage',
+      operation: 'serialize_store_value',
+      tags: { storage_type: storageType, storage_key: sanitizedKey, value_type: typeof value },
+    })
+  }
+  return 'null'
+}
 
 export class DesktopFileStorage implements Storage {
   public ipc = window.electronAPI
@@ -125,19 +162,31 @@ class SQLiteStorage {
       }
       this.database = await this.sqlite.createConnection('chatbox.db', false, 'no-encryption', 1, false)
 
-      // 创建表
-      const createTable = `
-                CREATE TABLE IF NOT EXISTS key_value (
-                    key TEXT PRIMARY KEY NOT NULL,
-                    value TEXT
-                );
-            `
       await this.database.open()
-      await this.database.execute(createTable)
+      await this.initializeSchema()
     } catch (error) {
       console.error('Failed to initialize database', error)
       throw error
     }
+  }
+
+  private async initializeSchema(): Promise<void> {
+    await this.database.execute(`
+      CREATE TABLE IF NOT EXISTS key_value (
+        key TEXT PRIMARY KEY NOT NULL,
+        value TEXT
+      );
+    `)
+    await this.database.execute(`
+      CREATE TABLE IF NOT EXISTS key_value_chunks (
+        key TEXT NOT NULL,
+        generation TEXT NOT NULL,
+        chunk_index INTEGER NOT NULL,
+        value TEXT NOT NULL,
+        PRIMARY KEY (key, generation, chunk_index)
+      );
+    `)
+    await this.cleanupUnreferencedChunks()
   }
 
   // 确保数据库初始化完成
@@ -153,9 +202,24 @@ class SQLiteStorage {
     await this.initializePromise
   }
 
-  // 插入或更新数据
-  async setItem(key: string, value: string): Promise<void> {
-    await this.ensureInitialized()
+  private parseChunkManifest(value: string | null): { generation: string; chunkCount: number; length: number } | null {
+    if (!value?.startsWith(SQLiteStorage.CHUNKED_VALUE_PREFIX)) return null
+    const fields = value.slice(SQLiteStorage.CHUNKED_VALUE_PREFIX.length).split(':')
+    if (fields.length !== 3) return null
+    const [generation, chunkCountValue, lengthValue] = fields
+    const chunkCount = Number(chunkCountValue)
+    const length = Number(lengthValue)
+    if (
+      !generation ||
+      !Number.isSafeInteger(chunkCount) ||
+      chunkCount < 1 ||
+      !Number.isSafeInteger(length) ||
+      length < 1
+    ) {
+      return null
+    }
+    return { generation, chunkCount, length }
+  }
 
   private createChunkManifest(generation: string, chunkCount: number, length: number): string {
     return `${SQLiteStorage.CHUNKED_VALUE_PREFIX}${generation}:${chunkCount}:${length}`
@@ -340,11 +404,59 @@ class SQLiteStorage {
     const current = previous.catch(() => undefined).then(operation)
     this.operationQueues.set(key, current)
     try {
-      const query = `
-          INSERT OR REPLACE INTO key_value (key, value)
-          VALUES (?, ?);
-        `
-      await this.database.run(query, [key, value])
+      return await current
+    } finally {
+      if (this.operationQueues.get(key) === current) this.operationQueues.delete(key)
+    }
+  }
+
+  private async writeItem(key: string, value: string): Promise<void> {
+    try {
+      if (value.length <= SQLiteStorage.BRIDGE_CHUNK_SIZE) {
+        await this.database.run(
+          `
+            INSERT OR REPLACE INTO key_value (key, value)
+            VALUES (?, ?);
+          `,
+          [key, value]
+        )
+        await this.cleanupChunks(key)
+        return
+      }
+
+      const chunks = this.splitValue(value)
+      const generation = uuidv4()
+      try {
+        for (let index = 0; index < chunks.length; index += SQLiteStorage.CHUNKS_PER_WRITE) {
+          const batch = chunks.slice(index, index + SQLiteStorage.CHUNKS_PER_WRITE).map((chunk, batchIndex) => ({
+            statement: `
+                INSERT INTO key_value_chunks (key, generation, chunk_index, value)
+                VALUES (?, ?, ?, ?);
+              `,
+            values: [key, generation, index + batchIndex, chunk],
+          }))
+          await this.database.executeSet(batch, true)
+        }
+        await this.database.run(
+          `
+            INSERT OR REPLACE INTO key_value (key, value)
+            VALUES (?, ?);
+          `,
+          [key, this.createChunkManifest(generation, chunks.length, value.length)]
+        )
+      } catch (error) {
+        await this.database
+          .run(
+            `
+              DELETE FROM key_value_chunks
+              WHERE key = ? AND generation = ?;
+            `,
+            [key, generation]
+          )
+          .catch(() => undefined)
+        throw error
+      }
+      await this.cleanupChunks(key, generation)
     } catch (error) {
       console.error('Failed to set value', error)
       throw error
@@ -469,16 +581,21 @@ class SQLiteStorage {
   async removeItem(key: string): Promise<void> {
     await this.ensureInitialized()
 
-    try {
-      const query = `
-          DELETE FROM key_value
-          WHERE key = ?;
-        `
-      await this.database.run(query, [key])
-    } catch (error) {
-      console.error('Failed to delete value', error)
-      throw error
-    }
+    await this.enqueueOperation(key, async () => {
+      try {
+        await this.database.run(
+          `
+            DELETE FROM key_value
+            WHERE key = ?;
+          `,
+          [key]
+        )
+        await this.cleanupChunks(key)
+      } catch (error) {
+        console.error('Failed to delete value', error)
+        throw error
+      }
+    })
   }
 
   // 获取所有键值对
@@ -486,16 +603,10 @@ class SQLiteStorage {
     await this.ensureInitialized()
 
     try {
-      const query = `
-            SELECT * FROM key_value;
-          `
-      const result = await this.database.query(query)
-      // 将结果转换为 { [key: string]: value } 格式
       const keyValueObject: { [key: string]: any } = {}
-      if (result.values && result.values.length > 0) {
-        result.values.forEach((row) => {
-          keyValueObject[row.key] = row.value
-        })
+      for (const key of await this.getAllKeys()) {
+        const value = await this.getItem(key)
+        if (value !== null) keyValueObject[key] = value
       }
       return keyValueObject
     } catch (error) {
@@ -537,6 +648,11 @@ class SQLiteStorage {
   }
 }
 
+export const __test__ = {
+  SQLiteStorage,
+  sanitizeStoreKeyForDiagnostics,
+}
+
 export class MobileSQLiteStorage implements Storage {
   // Native connections are keyed by database name across all wrappers. Migration
   // probes and the platform must share initialization and per-key operation queues.
@@ -568,7 +684,7 @@ export class MobileSQLiteStorage implements Storage {
     return this.sqliteStorage.removeItems(keys)
   }
   public async setStoreValue(key: string, value: any) {
-    await this.sqliteStorage.setItem(key, JSON.stringify(value))
+    await this.sqliteStorage.setItem(key, serializeStoreValue(this.getStorageType(), key, value))
   }
   public async getStoreValue(key: string) {
     const json = await this.sqliteStorage.getItem(key)
@@ -611,7 +727,7 @@ export class IndexedDBStorage implements Storage {
     // 为什么序列化成 JSON？
     // 因为 IndexedDB 作为底层驱动时，可以直接存储对象，但是如果对象中包含函数或引用，将会直接报错
     try {
-      await this.store.setItem(key, JSON.stringify(value))
+      await this.store.setItem(key, serializeStoreValue(this.getStorageType(), key, value))
     } catch (error) {
       throw new Error(`Failed to store value for key "${key}": ${(error as Error).message}`)
     }

@@ -8,6 +8,7 @@ export async function generateCompactionSummaryWithModel(options: {
   model: ModelInterface
   messages: Message[]
   languageName: string
+  prompt?: string
   resolveImage?: ModelImageResolver
   onStreamUpdate?: (text: string) => void
   abortSignal?: AbortSignal
@@ -16,7 +17,7 @@ export async function generateCompactionSummaryWithModel(options: {
 
   try {
     const { coreMessages } = await prepareModelMessages({
-      messages: summarizeConversation(options.messages, options.languageName),
+      messages: summarizeConversation(options.messages, options.languageName, options.prompt),
       model: options.model,
       resolveImage: options.resolveImage ?? (async () => null),
     })

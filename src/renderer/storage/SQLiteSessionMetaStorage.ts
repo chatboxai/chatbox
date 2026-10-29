@@ -14,6 +14,15 @@ import { type SessionMetaStorage, sortSessionRecords } from './SessionMetaStorag
 
 const DB_NAME = 'chatbox-session-meta'
 
+function safeJsonParse(value: string | null | undefined): SessionMetaRecord['backgroundImage'] {
+  if (!value) return undefined
+  try {
+    return JSON.parse(value) as SessionMetaRecord['backgroundImage']
+  } catch {
+    return undefined
+  }
+}
+
 function parseBackgroundImage(value: string | null | undefined): SessionMetaRecord['backgroundImage'] {
   const parsed = safeJsonParse(value)
   if (!parsed || typeof parsed !== 'object') return undefined

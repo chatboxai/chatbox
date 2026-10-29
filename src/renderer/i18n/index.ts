@@ -19,9 +19,6 @@ i18n.use(initReactI18next).init({
     en: {
       translation: { ...translationResources.en.translation, ...authErrorOverrides.en },
     },
-    tr: {
-      translation: tr,
-    },
   },
   fallbackLng: 'en',
 

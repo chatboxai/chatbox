@@ -2004,11 +2004,10 @@ describe('chat mode memories', () => {
   })
 
   test('reloads global memory after a copilot memory round trip', async () => {
-    const storage = (await import('@/storage')).default
     const copilotId = 'cp-memory-round-trip'
     await enableCopilotMemory({ id: copilotId, name: 'Tutor' })
     await disableCopilotMemory(copilotId)
-    await storage.setItemNow('agent-memories', [
+    await storageMock.setItemNow('agent-memories', [
       { id: 'gm-latest', content: 'Latest global fact', createdAt: 1700000000000 },
     ])
     const persistSessionPromptContextSnapshot = vi.fn()
@@ -2049,6 +2048,6 @@ describe('chat mode memories', () => {
     expect(serialized).toContain('[gm-latest] Latest global fact')
     expect(serialized).not.toContain('Stale global fact')
 
-    await storage.setItemNow('agent-memories', [])
+    await storageMock.setItemNow('agent-memories', [])
   })
 })

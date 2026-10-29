@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS session_meta (
   background_image TEXT,
   type TEXT,
   sort_order REAL NOT NULL,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  recovery_archived INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_session_meta_sort_order

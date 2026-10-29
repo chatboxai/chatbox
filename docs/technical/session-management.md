@@ -90,3 +90,4 @@ Renderer 入口位于 `src/renderer/stores/session/`；共享服务位于 `packa
 
 回归范围包括命令/CAS正确性、正文和关系读取预算、跨thread分页、窗口回收、迟到请求、分支/摘要修复、空thread、消息格式升级及会话复制。真实宿主验证应记录页数、正文解码量、布局坐标、可见位置误差、首窗时间和Token任务开始顺序；存储测试不能代替FlashList或浏览器布局证据。
 
+相关：[Token 数据流](../token-estimation.md)、[备份功能边界](data-backup.md)。

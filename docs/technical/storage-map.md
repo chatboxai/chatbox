@@ -25,6 +25,7 @@ Desktop 只有三个通用 key 被分流到文件：`settings`、`configs`、`co
 
 RN 当前组装采用 Capacitor-compatible SQLite。相同文件名和 schema 不证明 Capacitor 已安装应用可原位升级到 RN，目录与应用身份仍是独立边界。
 
+证据：[Desktop 分流](../../src/renderer/platform/desktop_platform.ts)、[Web 附件](../../src/renderer/platform/web_platform.ts)、[Capacitor 附件](../../src/renderer/platform/mobile_platform.ts)。
 
 ## 关键 key 与业务含义
 
@@ -65,6 +66,7 @@ RN 使用带命名空间的 AsyncStorage，例如 `@chatbox/v1:auth-info:chatbox
 
 `StorageKey` 枚举不是当前存储的完整清单：`chat-sessions`、`chat-sessions-list` 属于历史会话组织结构；`authInfo` 不是当前账号 store 的实际 key；`chat-session-settings`、`picture-session-settings` 是历史设置 key，当前单会话设置随会话保存。
 
+证据：[key 定义](../../src/renderer/storage/StoreStorage.ts)、[设置 schema](../../packages/chatbox-core/src/domain/settings/settings-schema.ts)、[账号 store](../../src/renderer/stores/authInfoStore.ts)、[人设与记忆](../../src/renderer/stores/agentPersonaStore.ts)。
 
 ## 会话目录、记录与消息行
 
@@ -85,7 +87,7 @@ revision head、staging 和提交记录负责冲突检测与原子发布；`sess
 
 本地升级入口将正式发布版本的完整 Session 转换为规范行，验证候选后原子发布。资源 GC 通过普通行接口扫描引用，遇到扫描失败或并发状态变化时保留资源。
 
-聊天窗口、导航、Token 和生成上下文使用各自的行查询。单会话文本/HTML/JSON 输出使用普通聊天导出接口；完整输出文件可能仍需内存缓冲。详细边界见 [存储架构](./storage.md#会话行存储与读取范围)。
+聊天窗口、导航、Token 和生成上下文使用各自的行查询。单会话文本/HTML/JSON 输出使用普通聊天导出接口；完整输出文件可能仍需内存缓冲。详细边界见 存储架构。
 
 证据：[消息结构](../../packages/chatbox-core/src/session/session-tree/types.ts)、[SQLite schema](../../packages/chatbox-core/src/persistence/capacitor-compatible-schema.ts)、[IndexedDB 行库](../../src/renderer/storage/SessionRowStorage.ts)、[行传输接口](../../packages/chatbox-core/src/ports/session-row-transfer.ts)。
 
@@ -120,6 +122,7 @@ Web 与 Capacitor 通过 localforage 读写资源字符串；RN Blob owner 读�
 
 知识库与聊天附件检索是独立业务。`kb_file.filepath` 可以指向用户原文件路径，不能承诺知识库已将所有原文件复制进 App。向量索引属于落盘的派生数据，与 React Query 内存缓存不同。Skills 还可以读取外部目录；工作模式临时目录位于系统 temp，生命周期与持久产物不同。
 
+证据：[桌面 Blob](../../src/main/store-node.ts)、[知识库](../../src/main/knowledge-base/db.ts)、[附件检索](../../src/main/session-attachment-rag/db.ts)、[Skills](../../src/main/skills/installer.ts)、[命令输出](../../src/main/command-output-capture.ts)。
 
 ## 缓存与备份边界
 
@@ -129,3 +132,4 @@ React Query、Jotai / Zustand 的内存值不是独立的最终持久化来源�
 
 数据库升级和会话列表恢复不是归档导入：前者转换当前磁盘记录，后者重建目录投影。复制配置文件、复制消息库也不能代替完整用户数据迁移。新的 V3 归档及 V1/V2 文件适配按 [备份功能边界](./data-backup.md) 所列阶段交付。
 
+证据：[设置数据入口](../../src/renderer/components/settings/DataSections.tsx)、[普通聊天输出](../../src/renderer/stores/session/export.ts)、[资源引用规则](../../packages/chatbox-core/src/resources/index.ts)、[资源清理](../../src/renderer/setup/storage_clear.ts)、[辅助缓存](../../src/shared/utils/cache.ts)。

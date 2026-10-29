@@ -1,16 +1,13 @@
-# Chatbox Pro 技术设计文档
+# Chatbox Community Edition 技术设计文档
 
 > Last updated: 2026-10
 
-本目录包含 Chatbox Pro 的系统设计与技术决策文档，面向工程师和技术负责人。
-
-如需了解产品功能概述（面向非技术人员），请参阅 [`docs/product/`](../product/index.md)。
+本目录包含 Chatbox Community Edition 的系统设计与技术决策文档，面向工程师和技术负责人。
 
 ## 文档目录
 
 | 文档 | 描述 |
 |------|------|
-| [跨平台架构](./architecture.md) | 应用整体架构、平台抽象层、进程模型、模块划分 |
 | [AI 供应商系统](./ai-providers.md) | 模型供应商注册表、OAuth 登录集成、模型类层级、能力声明、自建供应商 |
 | [Provider 网络兼容性请求](./provider-networking.md) | 改善网络兼容性的跨平台传输矩阵、Desktop 主进程直连、relay 与取消边界 |
 | [Cursor / OpenCode 订阅登录](./subscription-oauth-research.md) | 两个订阅产品的官方登录机制、Cursor 无私有 API 接入、OpenCode Zen / Go API Key 网关 |
@@ -20,12 +17,8 @@
 | [会话管理系统](./session-management.md) | 数据模型、模块拆分、新会话机制、线程历史、消息分叉 |
 | [聊天/工作模式分化](./chat-work-mode-split.md) | 在下方回答平铺回退、模式策略（mode-policy）、队列/steering 聊天禁用、生成中切分支、性能与兼容性决策 |
 | [App 存储地图](./storage-map.md) | 业务分类、平台介质、关键 key、附件与备份范围 |
-| [存储架构](./storage.md) | 混合存储策略、跨平台方案、版本迁移历史 |
 | [数据备份与恢复边界](./data-backup.md) | 设置入口可用状态、普通数据操作、V3 与 V1/V2 适配交付边界 |
-| [Token 估算系统](./token-estimation.md) | 独立行数据、首窗门控、分批缓存与发送上下文一致性 |
 | [工具步间上下文压缩](./mid-run-compaction.md) | 生成分段、分支归属、摘要边界与步间上下文替换 |
-| [上下文管理系统](./context-management.md) | 上下文构建流程、AttachmentResolver 抽象、Compaction 机制 |
-| [知识库（RAG 系统）](./knowledge-base.md) | 向量数据库、文档索引、语义搜索、跨平台限制 |
 | [Session Attachment RAG 评测](./session-attachment-rag-eval.md) | 大文件问答 RAG 的模型工具调用评测、真实 Chatbox 流程与 fixture 策略 |
 | [工具与集成系统](./tools-and-integrations.md) | MCP 服务器、Web 搜索、内置工具集、Tool 构建 |
 | [Agent 文件编辑工具调研](./agent-file-editing-research.md) | 开源 edit 协议演进、Chatbox 当前实现、并发与容错边界、改进顺序和评测设计 |
@@ -35,20 +28,16 @@
 | [Chat 代码执行](./code-execution.md) | Agent Mode、Code Execution 工具集、SandboxProvider 抽象、会话隔离 |
 | [移动端本地工作模式](./mobile-work-mode.md) | RN 本地 JavaScript 沙箱、文档产物、按需工具加载与系统权限 |
 | [Windows 原生代码执行](./windows-sandbox.md) | Windows 代码执行根因分析、SRT/Codex 方案对比、当前最小原生支持（放弃隔离）与未来强隔离演进 |
-| [状态管理](./state-management.md) | 三层状态体系（Jotai/Zustand/React Query）、协作关系 |
 | [构建与部署](./build-and-deployment.md) | 构建工具链、依赖管理、签名打包、CI/CD |
 | [自动更新系统](./auto-updater.md) | electron-updater 机制、状态管理、Feed URL Fallback、本地测试方法 |
 | [Sentry 错误上报](./sentry-error-reporting.md) | 错误覆盖范围、统一分类、采样降噪、去重与隐私规则 |
 | [产品分析上报](./analytics.md) | GA 客户端 DAU、Plausible 页面趋势、跨平台事件与追踪授权边界 |
 | [VibeDrop HTML 发布](./vibedrop-publish.md) | 跨仓发布链路、鉴权、可见性、内容审核和运行时依赖的实施记录 |
-| [关键技术决策记录](./key-decisions.md) | 14 项关键决策、替代方案分析、权衡理由 |
 
 ## 文档定位
 
 - **本目录**（`docs/technical/`）：**怎样**设计的？技术架构与决策记录
-- **产品文档**（`docs/product/`）：**做什么**？产品功能说明，面向非技术人员
 - **实现文档**（`docs/`）：**怎样**实现的？开发指南和代码规范
-- **AGENTS.md**：开发工作流和快速命令
 
 ## 如何维护
 

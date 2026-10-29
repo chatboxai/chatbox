@@ -11,7 +11,7 @@ import platform from '@/platform'
 import { ScalableIcon } from '../common/ScalableIcon'
 
 /**
- * Minimize / maximize / close for frameless windows on Windows, Linux and HarmonyOS.
+ * Minimize / maximize / close for frameless windows on Windows and Linux.
  * With `height`, the buttons fill a title bar of that height edge to edge behind a divider;
  * without it they keep the compact size used by small-screen page headers.
  */

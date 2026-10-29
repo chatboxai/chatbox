@@ -2,7 +2,7 @@
 
 Chatbox 通用 KV 存储方案和版本迁移机制说明。全应用业务分类、实际介质和关键 key 见 [App 存储地图](./technical/storage-map.md)。
 
-本文保留 KV 后端选型与 `configVersion` 迁移机制。当前会话的 rows 格式、窗口读取、RN/Capacitor 差异及备份边界见 [存储架构](./technical/storage.md#会话行存储与读取范围)，阶段进度见 [会话消息窗口化计划](./plans/session-window-read.md)。
+本文保留 KV 后端选型与 `configVersion` 迁移机制。当前会话的行存储与读取边界见 [会话管理系统](./technical/session-management.md)，备份兼容性见 [数据备份与恢复边界](./technical/data-backup.md)。
 
 ## 跨平台存储方案
 

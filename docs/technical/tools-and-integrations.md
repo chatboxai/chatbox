@@ -2,7 +2,7 @@
 
 > Last updated: 2026-08
 
-本文档描述 Chatbox Pro 的工具（Tool）与外部集成系统的产品设计。关于整体架构和进程模型，请参阅 [`./architecture.md`](./architecture.md)。
+本文档描述 Chatbox Pro 的工具（Tool）与外部集成系统的产品设计。关于整体架构和进程模型，请参阅 `./architecture.md`。
 
 ---
 

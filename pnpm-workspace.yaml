@@ -36,8 +36,8 @@ allowBuilds:
   # Downloads the Electron binary that `pnpm dev`, `pnpm exec electron` and the
   # local packaging scripts run against; no other package supplies it.
   electron: true
-  # Builds the native binding used by `pnpm mobile:assets` to generate the iOS
-  # and Android icons and splash screens.
+  # Builds the native image-processing binding required by the retained
+  # @capacitor/assets development dependency (see `pnpm why sharp`).
   sharp: true
 
   # The remaining install scripts are either compile-from-source fallbacks whose

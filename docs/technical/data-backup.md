@@ -25,6 +25,7 @@ Renderer 与 RN 的数据设置支持 V1 JSON、V2 ZIP 和 V3 ZIP 导入，默�
 |---|---|
 | 字节源、范围缓存、ZIP 流与解压预算 | [core/io](../../packages/chatbox-core/src/io/index.ts) |
 | 会话业务并发与数据库事务 | 会话写入协调器与各平台行存储；归档入口只检查生成状态 |
+| 原生文件安全发布、资源文件读写 | [Electron 文件传输](../../src/main/file-transfers.ts) 与平台 exporter |
 | 设置导出投影、提交后的内存刷新 | [设置投影](../../packages/chatbox-core/src/application/settings/export-projection.ts)、Settings/Copilot/Memory Service |
 | 阶段进度、当前页选择和警告、离开前取消 | renderer 的受控 Backup 组件与导航 hook；数据及任务由调用方提供 |
 
@@ -38,11 +39,12 @@ Renderer 备份界面使用专用 Modal：导出选择、导入确认、处理�
 
 资源文件使用编号及 MIME 对应后缀（例如 `resources/000000.png`），未知类型使用 `.bin`；原 storageKey、路径、MIME 和内容类型存于资源索引。选择后缀不额外读取正文，导入以索引中的原 key 恢复附件。会话 ID 经安全编码用于文件名，真实业务身份仍保存在会话行。
 
+归档通过 `BackupOptions.codec` 接入严格 UTF-8 解码，使用共享默认实现。解码必须拒绝非法 UTF-8。
 
 ## 归档交付阶段
 
-1. [存储与依赖清理](../plans/2026-10-20-backup-cleanup.md)：完整消息行、正式发布数据升级、普通业务与资源管理回归。
-2. [新 V3 归档](../plans/2026-10-20-backup-v3-row-format.md)：每个会话一个 JSONL，三个配置 JSON、资源索引及可选警告各自保存，附件独立保存，支持选择部分会话导出；导入保留资源原 ID，已有同 ID 资源直接覆盖；共享 codec 与逐项提交由各宿主适配。
+1. 存储与依赖清理：完整消息行、正式发布数据升级、普通业务与资源管理回归。
+2. V3 归档：每个会话一个 JSONL，三个配置 JSON、资源索引及可选警告各自保存，附件独立保存，支持选择部分会话导出；导入保留资源原 ID，已有同 ID 资源直接覆盖；共享 codec 与逐项提交由各宿主适配。
 3. V1/V2 文件导入适配：共享读取器将已发布格式转换为行，交给同一个逐项提交接口。
 
 开发分支的中间状态不作为公开升级发布。格式方案不能代替兼容测试和性能验收证据。
@@ -51,6 +53,7 @@ Renderer 备份界面使用专用 Modal：导出选择、导入确认、处理�
 
 ## 源码入口
 
+- [Renderer 数据设置](../../src/renderer/components/settings/DataSections.tsx)：类别选择、覆盖提示、进度及导入结果。
 - [备份导入入口](../../packages/chatbox-core/src/backup-import/index.ts)：识别 V1/V2/V3；旧格式在备份边界转换，不进入普通业务读写。
 - [备份导出入口](../../packages/chatbox-core/src/backup-export/index.ts)：默认 V3，显式选择 V2 或仅含核心对话的 V1；共用行数据源、会话选择和宿主文件输出。
 - [单会话导出](../../src/renderer/stores/session/export.ts)：聊天输出。

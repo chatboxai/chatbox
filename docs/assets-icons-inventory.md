@@ -73,6 +73,7 @@ Electron Builder 配置(`electron-builder.yml`)关键项:
 
 普通版在「设置 → 通用 → 应用图标」提供经典、扁平渐变和立体三种样式，经典为默认图标。`AppIconPlugin` 使用系统 `alternateIconName` 读取当前选择，使用 `setAlternateIconName` 切换；选择由 iOS 保存，不进入设置同步或聊天备份。
 
+- 普通版扁平渐变来自 [Figma `chatbox logo_rounded`（652:1158）](https://www.figma.com/design/rXievlhKAqDxyN8Y4y7CmY/Chatbox-Marketing?node-id=652-1158)，源文件为 `resources/icon-flat-gradient.svg`，导出 PNG 为 `resources/icon-flat-gradient.png`。SVG 的外层 256px 圆角由 iOS 系统裁切，其余图形与渐变保留原稿，采用黄橙面板、象牙白气泡和黄橙绿青外缘。更新设计时同步 `ios/App/App/Assets.xcassets/FlatGradient.appiconset/1024.png` 和 `src/renderer/static/app-icons/flat-gradient.png` 设置预览。
 - 立体图标直接导出自 [Figma `chatbox logo_2.0_classic`（658:1345）](https://www.figma.com/design/rXievlhKAqDxyN8Y4y7CmY/Chatbox-Marketing?node-id=658-1345)，导出 PNG 去除画板外透明边缘，截取 `(29, 0, 1024, 1024)`，源 PNG 为 `resources/icon-sculpted.png`，同步到 `Sculpted.appiconset/1024.png` 和 `src/renderer/static/app-icons/sculpted.png`。
 - Xcode 的 Debug / Release 配置都将 `FlatGradient` 和 `Sculpted` 注册为 Alternate App Icon Set，保留 `AppIcon` 为 Primary App Icon Set。
 - 设置预览 `src/renderer/static/app-icons/default.png` 来自经典 `AppIcon.appiconset/180.png`。

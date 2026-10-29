@@ -36,6 +36,7 @@ export const aiProviderNameHash: Record<ModelProviderEnum, string> = {
   [ModelProviderEnum.XiaomiMiMo]: 'Xiaomi MiMo API',
   [ModelProviderEnum.LongCat]: 'LongCat API',
   [ModelProviderEnum.ZhipuGLMCodingPlan]: 'GLM Coding Plan',
+  [ModelProviderEnum.AtlasCloud]: 'Atlas Cloud API',
   [ModelProviderEnum.Custom]: 'Custom Provider',
 }
 

@@ -1,4 +1,12 @@
 const changelog = `
+## v1.24.0 - 2026.10.29
+1. Organize conversations into folders and use the redesigned sidebar and settings pages
+2. Faster, more reliable long conversations with row-based storage and bounded message loading
+3. New V3 backups with session selection and support for importing older backup formats
+4. Improved Work Mode, tool approvals, file editing, and conversation compaction
+5. Added OpenRouter image generation support and improved model/provider compatibility
+6. Fixed startup recovery, conversation navigation, and generated image history issues
+
 ## v1.23.5 - 2026.09.24
 1. Fixed external one-click MCP setup links failing to open the prefilled server dialog when the app was not running
 

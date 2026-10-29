@@ -1,78 +1,12 @@
-import { forkTailStartIndex } from '../session/message-forks'
-import type { Message, MessageToolCallPart, Session, SessionThread } from '../types/session'
+import type { Message, MessageToolCallPart } from '../types/session'
 import { getMessageText } from './message'
-
-/** Minimal thread shape shared by every export formatter. */
-export type ExportableThread = Pick<SessionThread, 'name' | 'messages'>
-
-function expandMessageBranches(
-  messages: Message[],
-  messageForksHash: Session['messageForksHash'],
-  visitedForkIds: ReadonlySet<string> = new Set()
-): Message[][] {
-  if (!messageForksHash) {
-    return [messages]
-  }
-
-  const forkMessageIndex = messages.findIndex(
-    (message) => Boolean(messageForksHash[message.id]) && !visitedForkIds.has(message.id)
-  )
-  if (forkMessageIndex < 0) {
-    return [messages]
-  }
-
-  const forkMessage = messages[forkMessageIndex]
-  const fork = messageForksHash[forkMessage.id]
-  if (!fork || fork.lists.length === 0) {
-    return [messages]
-  }
-
-  const tailStart = forkTailStartIndex(messages, forkMessageIndex)
-  const sharedPrefix = messages.slice(0, tailStart)
-  const activeTail = messages.slice(tailStart)
-  const activePosition =
-    Number.isInteger(fork.position) && fork.position >= 0 && fork.position < fork.lists.length ? fork.position : 0
-  const nextVisitedForkIds = new Set(visitedForkIds).add(forkMessage.id)
-
-  return fork.lists.flatMap((branch, position) => {
-    const branchTail = position === activePosition ? activeTail : branch.messages
-    return expandMessageBranches(branchTail, messageForksHash, nextVisitedForkIds).map((expandedTail) => [
-      ...sharedPrefix,
-      ...expandedTail,
-    ])
-  })
-}
-
-/**
- * Build ordinary export threads for Markdown/TXT and non-interactive HTML.
- * Exporting all branches is opt-in because flattening duplicates shared
- * prefixes and can produce a large document for deeply nested forks.
- */
-export function buildSessionExportThreads(
-  session: Session,
-  includeArchivedThreads: boolean,
-  includeAllBranches = false
-): ExportableThread[] {
-  const threads: ExportableThread[] = includeArchivedThreads ? [...(session.threads ?? [])] : []
-  threads.push({
-    name: session.threadName || session.name,
-    messages: session.messages,
-  })
-  if (!includeAllBranches) {
-    return threads
-  }
-
-  return threads.flatMap((thread) => {
-    const branches = expandMessageBranches(thread.messages, session.messageForksHash)
-    if (branches.length === 1) {
-      return [thread]
-    }
-    return branches.map((messages, index) => ({
-      name: `${thread.name} (Branch ${index + 1}/${branches.length})`,
-      messages,
-    }))
-  })
-}
+import type { ExportableThread } from './row-chat-export'
+export {
+  type ExportableThread,
+  type SessionChatExport,
+  openSessionChatExport,
+  formatSessionAsJson,
+} from './row-chat-export'
 
 export type ToolCallSummary = {
   id: string
@@ -158,12 +92,16 @@ export function renderToolCallTxt(summary: ToolCallSummary): string {
  * native mobile shell so the two stop drifting on per-part / per-message formatting.
  * HTML export stays in the renderer (`lib/format-chat.tsx`) because it needs DOM rendering.
  */
-export function formatChatAsMarkdown(sessionName: string, threads: ExportableThread[]): string {
+export async function formatChatAsMarkdown(
+  sessionName: string,
+  threads: AsyncIterable<ExportableThread> | Iterable<ExportableThread>
+): Promise<string> {
   let content = `# ${sessionName}\n\n`
-  for (let i = 0; i < threads.length; i++) {
-    const thread = threads[i]
-    content += `## ${i + 1}. ${thread.name}\n\n`
-    for (const msg of thread.messages) {
+  let i = 0
+  for await (const thread of threads) {
+    i++
+    content += `## ${i}. ${thread.name}\n\n`
+    for await (const msg of thread.messages) {
       const attachments = getAttachmentNames(msg)
       const toolCallSummaries = collectToolCallSummaries(msg)
       const renderedToolCalls = new Set<string>()
@@ -228,12 +166,16 @@ export function formatChatAsMarkdown(sessionName: string, threads: ExportableThr
   return content
 }
 
-export function formatChatAsTxt(sessionName: string, threads: ExportableThread[]): string {
+export async function formatChatAsTxt(
+  sessionName: string,
+  threads: AsyncIterable<ExportableThread> | Iterable<ExportableThread>
+): Promise<string> {
   let content = `==================================== [[${sessionName}]] ====================================`
-  for (let i = 0; i < threads.length; i++) {
-    const thread = threads[i]
-    content += `\n\n------------------------------ [${i + 1}. ${thread.name}] ------------------------------\n\n`
-    for (const msg of thread.messages) {
+  let i = 0
+  for await (const thread of threads) {
+    i++
+    content += `\n\n------------------------------ [${i}. ${thread.name}] ------------------------------\n\n`
+    for await (const msg of thread.messages) {
       const attachments = getAttachmentNames(msg)
       const toolCallSummaries = collectToolCallSummaries(msg)
       const renderedToolCalls = new Set<string>()

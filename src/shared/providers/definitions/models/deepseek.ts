@@ -1,6 +1,6 @@
 import { createDeepSeek, type DeepSeekChatOptions } from '@ai-sdk/deepseek'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
-import type { LanguageModelV3 } from '@ai-sdk/provider'
+import type { LanguageModelV4 } from '@ai-sdk/provider'
 import AbstractAISDKModel, { type CallSettings } from '../../../models/abstract-ai-sdk'
 import { ApiError } from '../../../models/errors'
 import { getOpenAICompatibleProviderOptionsKey } from '../../../models/openai-compatible'
@@ -53,7 +53,7 @@ export default class DeepSeek extends AbstractAISDKModel {
     })
   }
 
-  protected getChatModel(_options: CallChatCompletionOptions): LanguageModelV3 {
+  protected getChatModel(_options: CallChatCompletionOptions): LanguageModelV4 {
     if (this.usesVisionCompatibleTransport()) {
       const provider = createOpenAICompatible({
         name: this.name,
@@ -105,10 +105,13 @@ export default class DeepSeek extends AbstractAISDKModel {
       return settings
     }
 
+    // The native DeepSeek API names its strongest effort `max`; `xhigh` is the
+    // equivalent value used by the Anthropic-compatible endpoint.
+    const nativeReasoningEffort = reasoningEffort === 'xhigh' ? 'max' : reasoningEffort
     settings.providerOptions = {
       deepseek: {
         ...(thinkingType ? { thinking: { type: thinkingType } } : {}),
-        ...(reasoningEffort ? { reasoningEffort } : {}),
+        ...(nativeReasoningEffort ? { reasoningEffort: nativeReasoningEffort } : {}),
       } satisfies DeepSeekChatOptions,
     }
 

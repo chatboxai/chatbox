@@ -1,5 +1,5 @@
+import type { SessionHeader } from '@chatbox/core/ports'
 import {
-  deriveSessionLockState,
   getSessionActionGate,
   type SessionAction,
   type SessionActionContext,
@@ -7,7 +7,6 @@ import {
 } from '@chatbox/core/session/action-gates'
 import { resolveSessionMode } from '@chatbox/core/session/mode-policy'
 import { supportsSessionGeneration } from '@shared/session/capabilities'
-import type { Session } from '@shared/types'
 import { t } from 'i18next'
 import { rendererApplication } from '@/app/renderer-application'
 import { notifySessionLockBlocked } from '@/utils/session-lock-copy'
@@ -18,25 +17,35 @@ import { getSessionAgentModeEntry } from './agent-mode'
  * Derive the lock snapshot for a session from its current stored state plus
  * the compaction runtime flag. Imperative counterpart to useSessionLockState
  * for call sites that must not hold a subscription (store actions, modal
- * click handlers). Callers that already fetched the session pass it to avoid
- * a second read.
+ * click handlers). Only control metadata is needed for the lock state.
  */
-export async function getSessionLockStateNow(
-  sessionId: string,
-  preloadedSession?: Session | null
-): Promise<SessionLockState | null> {
-  const session =
-    preloadedSession !== undefined
-      ? preloadedSession
-      : await rendererApplication.sessionQueryBridge.getSession(sessionId)
-  if (!session) {
-    return null
-  }
-  const compactionRunning = getCompactionUIState(sessionId).status === 'running'
-  return deriveSessionLockState(session, {
-    compactionRunning,
-    activeGenerationMessageIds: rendererApplication.generationRuntime.getActiveMessageIds(sessionId),
+export async function getSessionLockStateNow(sessionId: string): Promise<SessionLockState | null> {
+  const control = await rendererApplication.sessions.readSessionGenerationControl({
+    sessionId,
+    activeGenerationMessageIds: [...rendererApplication.generationRuntime.getActiveMessageIds(sessionId)],
   })
+  return control
+    ? {
+        generatingReplyCount: control.generatingReplyCount,
+        anyReplyGenerating: control.anyReplyGenerating,
+        awaitingPauseDecision: control.awaitingPauseDecision,
+        compactionRunning: getCompactionUIState(sessionId).status === 'running',
+      }
+    : null
+}
+
+async function readLockSnapshot(
+  sessionId: string,
+  preloadedSession?: SessionHeader | null
+): Promise<{ session: SessionHeader; locks: SessionLockState } | null> {
+  const locks = await getSessionLockStateNow(sessionId)
+  if (!locks) return null
+  const session = preloadedSession ?? (await rendererApplication.sessions.getSessionHeader(sessionId))?.header
+  if (!session) return null
+  return {
+    session,
+    locks,
+  }
 }
 
 /**
@@ -54,16 +63,14 @@ export async function guardSessionAction(
   sessionId: string,
   action: SessionAction,
   context: SessionActionContext = {},
-  preloadedSession?: Session | null
+  preloadedSession?: SessionHeader | null
 ): Promise<boolean> {
-  let session: Session | null
+  let session: SessionHeader | null
   let locks: SessionLockState | null
   try {
-    session =
-      preloadedSession !== undefined
-        ? preloadedSession
-        : await rendererApplication.sessionQueryBridge.getSession(sessionId)
-    locks = await getSessionLockStateNow(sessionId, session)
+    const snapshot = await readLockSnapshot(sessionId, preloadedSession)
+    session = snapshot?.session ?? null
+    locks = snapshot?.locks ?? null
   } catch {
     // A failed session read must not turn a void-called action into an
     // unhandled rejection; fall back to the action's own error handling.

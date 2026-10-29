@@ -1,3 +1,4 @@
+import type { SessionContextBeforeTarget } from '@chatbox/core/ports'
 import type { Message, SessionPromptContextSnapshot, SessionSettings } from '@shared/types'
 import { COPILOT_PROMPT_MAX_CHARS } from '@shared/types/agent-persona'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
@@ -90,6 +91,59 @@ describe('resolveSessionPromptContextSnapshot', () => {
     matchesDirectories.mockReset()
     matchesDirectories.mockReturnValue(false)
   })
+
+  const compactedHistory: SessionContextBeforeTarget = {
+    firstMessageTimestamp: 123,
+    userMessageCount: 10,
+    hasAssistantMessage: true,
+    hasLegacyCommandHistory: true,
+    fileResourceKeys: [],
+    sandboxSeedAttachments: [],
+  }
+
+  test('retains a legacy command contract outside the compacted payload', async () => {
+    captureSnapshot.mockResolvedValue(snapshot(2))
+    const result = await resolveSessionPromptContextSnapshot({
+      effectiveAgentMode: 'on',
+      memoryEnabled: true,
+      settings: {},
+      messages: [],
+      targetMsgIx: 0,
+      history: compactedHistory,
+    })
+    expect(result?.agentToolContractVersion).toBe(1)
+  })
+
+  test('does not capture newly available global memories halfway through compacted history', async () => {
+    captureSnapshot.mockResolvedValue(snapshot(2))
+    listMemoriesForScope.mockResolvedValue([{ content: 'new memory' }])
+    const result = await resolveSessionPromptContextSnapshot({
+      effectiveAgentMode: 'off',
+      memoryEnabled: true,
+      settings: {},
+      messages: [],
+      targetMsgIx: 0,
+      history: compactedHistory,
+    })
+    expect(result).toBeUndefined()
+    expect(captureSnapshot).not.toHaveBeenCalled()
+  })
+
+  test.each([123, undefined])(
+    'anchors a late snapshot to the original first timestamp %s',
+    async (firstMessageTimestamp) => {
+      captureSnapshot.mockResolvedValue(snapshot(2, { capturedAt: 1000 }))
+      const result = await resolveSessionPromptContextSnapshot({
+        effectiveAgentMode: 'off',
+        memoryEnabled: false,
+        settings: {},
+        messages: [{ id: 'tail', role: 'user', timestamp: 999, contentParts: [] }],
+        targetMsgIx: 1,
+        history: { ...compactedHistory, firstMessageTimestamp },
+      })
+      expect(result?.capturedAt).toBe(firstMessageTimestamp ?? 1000)
+    }
+  )
 
   test.each([
     [2, 1],

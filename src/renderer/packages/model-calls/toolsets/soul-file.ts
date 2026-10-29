@@ -1,3 +1,5 @@
+import { compactFileEditSummary, summarizeFileEdit } from '@shared/file-edit-summary'
+import { applyTextEdits, type FileEditError, type FileEditSummary } from '@shared/file-edits'
 import { SOUL_VIRTUAL_PATH } from '@shared/types/agent-persona'
 import { readSoul, updateSoul, writeSoul } from '@/stores/agentPersonaStore'
 
@@ -28,23 +30,20 @@ export async function writeSoulVirtualFile(
 
 export async function editSoulVirtualFile(
   edits: Array<{ old_text: string; new_text: string }>
-): Promise<{ success: true; file_path: string; edits: number; note: string } | { error: string }> {
+): Promise<(FileEditSummary & { file_path: string; note: string }) | FileEditError> {
   // The read-modify-write runs atomically inside the soul mutation lock, so a
   // concurrent Settings save cannot be clobbered by a stale edit.
+  let summary: ReturnType<typeof summarizeFileEdit> | undefined
   const result = await updateSoul((content) => {
-    let text = content
-    for (const [index, edit] of edits.entries()) {
-      const first = text.indexOf(edit.old_text)
-      if (first === -1) {
-        return { error: `Edit ${index + 1}: search text not found` }
-      }
-      if (text.indexOf(edit.old_text, first + edit.old_text.length) !== -1) {
-        return { error: `Edit ${index + 1}: search text is not unique` }
-      }
-      text = text.slice(0, first) + edit.new_text + text.slice(first + edit.old_text.length)
-    }
-    return text
+    const computed = applyTextEdits(
+      content,
+      edits.map((edit) => ({ search: edit.old_text, replace: edit.new_text }))
+    )
+    if (!computed.success) return computed
+    summary = compactFileEditSummary(summarizeFileEdit(content, computed.content, edits.length))
+    return computed.content
   })
   if ('error' in result) return result
-  return { success: true, file_path: SOUL_VIRTUAL_PATH, edits: edits.length, note: SNAPSHOT_NOTE }
+  if (!summary) throw new Error('Soul edit summary is missing')
+  return { ...summary, success: true, file_path: SOUL_VIRTUAL_PATH, edits: edits.length, note: SNAPSHOT_NOTE }
 }

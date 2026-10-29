@@ -1,4 +1,4 @@
-import type { LanguageModelV3CallOptions } from '@ai-sdk/provider'
+import type { LanguageModelV4CallOptions } from '@ai-sdk/provider'
 import type { ModelDependencies } from '@shared/types/adapters'
 import type { SentryScope } from '@shared/utils/sentry_adapter'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -50,7 +50,7 @@ function createModel(endpoint: string, apiVersion: string) {
   )
 }
 
-const request: LanguageModelV3CallOptions = {
+const request: LanguageModelV4CallOptions = {
   prompt: [{ role: 'user', content: [{ type: 'text', text: 'Hi' }] }],
 }
 

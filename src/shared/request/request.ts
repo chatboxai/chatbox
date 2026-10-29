@@ -1,4 +1,5 @@
 import { ApiError, BaseError, ChatboxAIAPIError, NetworkError } from '../models/errors'
+import type { AbortSignalLike } from '../types/adapters'
 import { parseJsonOrEmpty } from '../utils/json_utils'
 import { isChatboxAPI } from './chatboxai_pool'
 
@@ -27,9 +28,9 @@ function toError(e: unknown): Error {
  * retry logic — retrying a request the caller already cancelled is wasted work
  * and surfaces a confusing NetworkError instead of the original AbortError.
  */
-function isAbortError(e: unknown, signal?: AbortSignal | null): boolean {
+function isAbortError(e: unknown, signal?: AbortSignalLike | null): boolean {
   if (signal?.aborted) return true
-  return e instanceof DOMException && e.name === 'AbortError'
+  return getStringProperty(e, 'name') === 'AbortError'
 }
 
 /**
@@ -97,7 +98,7 @@ function sanitizeResponseBody(status: number, response: string): string {
 
 export function createAfetch(
   platformInfo: PlatformInfo,
-  fetchImplementation: FetchImplementation = (url, init) => fetch(url, init)
+  fetchImplementation: FetchImplementation = (url, init) => fetch(url as RequestInfo, init)
 ) {
   return async function afetch(
     url: RequestInfo | URL,
@@ -142,7 +143,8 @@ export function createAfetch(
             `Status Code ${res.status}, ${sanitizeResponseBody(res.status, response)}`,
             response || undefined,
             res.status,
-            requestId
+            requestId,
+            res.headers.get('retry-after') ?? undefined
           )
         }
         return res
@@ -171,16 +173,33 @@ export function createAfetch(
   }
 }
 
-export async function uploadFile(file: File, url: string) {
+function createUploadAbortError(): Error {
+  const error = new Error('Upload canceled')
+  error.name = 'AbortError'
+  return error
+}
+
+export async function uploadFile(file: File, url: string, signal?: AbortSignal) {
   // COS 需要使用原始的 XMLHttpRequest（根据官网示例）
   // 如果使用 fetch，会导致上传的 excel、docx 格式不正确
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(createUploadAbortError())
+      return
+    }
     const xhr = new XMLHttpRequest()
+    const cleanup = () => signal?.removeEventListener('abort', abort)
+    const abort = () => {
+      cleanup()
+      xhr.abort()
+      reject(createUploadAbortError())
+    }
     xhr.open('PUT', url, true)
     xhr.upload.onprogress = () => {
       // do nothing
     }
     xhr.onload = () => {
+      cleanup()
       if (/^2\d\d$/.test(`${xhr.status}`)) {
         const ETag = xhr.getResponseHeader('etag')
         resolve({ url: url, ETag: ETag })
@@ -190,10 +209,21 @@ export async function uploadFile(file: File, url: string) {
       }
     }
     xhr.onerror = () => {
+      cleanup()
       const error = new NetworkError(`XMLHttpRequest failed, status code ${xhr.status}`, '')
       reject(error)
     }
-    xhr.send(file)
+    xhr.onabort = () => {
+      cleanup()
+      reject(createUploadAbortError())
+    }
+    signal?.addEventListener('abort', abort, { once: true })
+    try {
+      xhr.send(file)
+    } catch (error) {
+      cleanup()
+      reject(error)
+    }
   })
 }
 
@@ -259,7 +289,7 @@ export function createAuthenticatedAfetch(config: AuthenticatedAfetchConfig) {
 
     for (let i = 0; i < retry + 1; i++) {
       try {
-        const res = await fetch(url, init)
+        const res = await fetch(url as RequestInfo, init)
 
         // 检查 401 Unauthorized
         if (res.status === 401) {
@@ -299,7 +329,7 @@ export function createAuthenticatedAfetch(config: AuthenticatedAfetchConfig) {
           }
 
           console.debug('🔄 Retrying request with new token...')
-          const retryRes = await fetch(url, init)
+          const retryRes = await fetch(url as RequestInfo, init)
 
           if (!retryRes.ok) {
             const response = await retryRes.text().catch((e: unknown) => {
@@ -318,7 +348,8 @@ export function createAuthenticatedAfetch(config: AuthenticatedAfetchConfig) {
               `Status Code ${retryRes.status}, ${sanitizeResponseBody(retryRes.status, response)}`,
               response || undefined,
               retryRes.status,
-              requestId
+              requestId,
+              retryRes.headers.get('retry-after') ?? undefined
             )
           }
 
@@ -343,7 +374,8 @@ export function createAuthenticatedAfetch(config: AuthenticatedAfetchConfig) {
             `Status Code ${res.status}, ${sanitizeResponseBody(res.status, response)}`,
             response || undefined,
             res.status,
-            requestId
+            requestId,
+            res.headers.get('retry-after') ?? undefined
           )
         }
 

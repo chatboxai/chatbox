@@ -1,3 +1,4 @@
+import { type MCPToolSummary, summarizeMCPTools } from '@chatbox/core/mcp'
 import {
   ActionIcon,
   Anchor,
@@ -14,26 +15,21 @@ import {
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { IconRefresh } from '@tabler/icons-react'
-import type { ToolSet } from 'ai'
-import pTimeout from 'p-timeout'
-import { type FC, useEffect, useRef, useState } from 'react'
+import { type FC, type ReactNode, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Modal } from '@/components/layout/Overlay'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { useMCPServerStatus } from '@/hooks/mcp'
 import { MCPServer, mcpController } from '@/packages/mcp/controller'
 import type { MCPServerConfig } from '@/packages/mcp/types'
+import platform from '@/platform'
 import { trackEvent } from '@/utils/track'
 import { getConfigFromFormValues, getFormValuesFromConfig, type MCPServerConfigFormValues } from './utils'
 
 interface ConnectionTestingResult {
   config: MCPServerConfig
-  tools: { name: string; description?: string }[]
+  tools: MCPToolSummary[]
   error?: Error
-}
-
-function toToolSummaries(tools: ToolSet): ConnectionTestingResult['tools'] {
-  return Object.entries(tools).map(([name, tool]) => ({ name, description: tool.description }))
 }
 
 const TestingResult: FC<{ result: ConnectionTestingResult; onRefresh?: () => void; refreshing?: boolean }> = ({
@@ -92,6 +88,7 @@ const ConfigForm: FC<{
   const [testingResult, setTestingResult] = useState<ConnectionTestingResult | null>()
   const testingAbortController = useRef<AbortController | null>(null)
   const liveStatus = useMCPServerStatus(props.config.id)
+  useEffect(() => () => testingAbortController.current?.abort(), [])
 
   const form = useForm<MCPServerConfigFormValues>({
     mode: 'controlled',
@@ -105,7 +102,7 @@ const ConfigForm: FC<{
     }
     const server = mcpController.getServer(props.config.id)
     if (liveStatus?.state === 'running' && server) {
-      setTestingResult({ config: props.config, tools: toToolSummaries(server.getAvailableTools()) })
+      setTestingResult({ config: props.config, tools: summarizeMCPTools(server.getAvailableTools()) })
     } else if (liveStatus?.error) {
       setTestingResult({ config: props.config, tools: [], error: new Error(liveStatus.error) })
     }
@@ -118,7 +115,7 @@ const ConfigForm: FC<{
     }
     setRefreshing(true)
     try {
-      setTestingResult({ config: props.config, tools: toToolSummaries(await server.refreshTools()) })
+      setTestingResult({ config: props.config, tools: summarizeMCPTools(await server.refreshTools()) })
     } catch (err) {
       setTestingResult({ config: props.config, tools: [], error: err as Error })
     } finally {
@@ -134,29 +131,31 @@ const ConfigForm: FC<{
     setTesting(true)
     setTestingResult(null)
     trackEvent('test_mcp_server_connection', { type: config.transport.type })
+    const server = new MCPServer(config)
+    const controller = new AbortController()
+    testingAbortController.current = controller
     try {
-      const server = new MCPServer(config)
-      testingAbortController.current = new AbortController()
-      await pTimeout(server.start(), {
-        milliseconds: 5 * 60_000,
-        signal: testingAbortController.current.signal,
-      })
+      await server.start({ signal: controller.signal })
+      if (controller.signal.aborted) return
       if (server.status.state !== 'running') {
         throw new Error(server.status.error || `Failed to start server: ${server.status.state}`)
       }
       const tools = await server.getAvailableTools()
       setTestingResult({
         config,
-        tools: Object.keys(tools).map((name) => ({ name, description: tools[name].description })),
+        tools: summarizeMCPTools(tools),
       })
-      await server.stop()
     } catch (err) {
       if (testingAbortController.current?.signal.aborted) {
         return
       }
       setTestingResult({ config, error: err as Error, tools: [] })
     } finally {
-      setTesting(false)
+      await server.stop()
+      if (testingAbortController.current === controller) {
+        testingAbortController.current = null
+        setTesting(false)
+      }
     }
   }
 
@@ -177,7 +176,13 @@ const ConfigForm: FC<{
         >
           <Group>
             <Radio variant="outline" size="sm" value="http" label={t('Remote (http/sse)')} />
-            <Radio variant="outline" size="sm" value="stdio" label={t('Local (stdio)')} />
+            <Radio
+              variant="outline"
+              size="sm"
+              value="stdio"
+              disabled={platform.type === 'mobile'}
+              label={t('Local (stdio)')}
+            />
           </Group>
         </Radio.Group>
         <Stack gap={4}>
@@ -198,6 +203,11 @@ const ConfigForm: FC<{
             )}
           </Text>
         </Stack>
+        {platform.type === 'mobile' && form.values.transport.type === 'stdio' && (
+          <Text size="sm" c="dimmed">
+            {t('Local MCP servers are only available on desktop')}
+          </Text>
+        )}
         {form.values.transport.type === 'stdio' && (
           <>
             <Textarea
@@ -243,7 +253,12 @@ const ConfigForm: FC<{
                 {t('Cancel')}
               </Button>
             )}
-            <Button variant="outline" onClick={testConnection} loading={testing} disabled={testing}>
+            <Button
+              variant="outline"
+              onClick={testConnection}
+              loading={testing}
+              disabled={testing || (platform.type === 'mobile' && form.values.transport.type === 'stdio')}
+            >
               {t('Connect')}
             </Button>
             {props.mode === 'edit' || testingResult ? (
@@ -272,6 +287,7 @@ const ConfigForm: FC<{
 interface Props {
   mode?: 'add' | 'edit'
   config: MCPServerConfig | null
+  help?: ReactNode
   onClose: () => void
   onSave: (config: MCPServerConfig) => void
   onDelete: (id: string) => void
@@ -288,8 +304,19 @@ export const ConfigModal: FC<Props> = (props) => {
       centered
       overlayProps={{ backgroundOpacity: 0.35, blur: 7 }}
     >
+      {props.help && (
+        <Text fz="sm" c="chatbox-tertiary" mb="md">
+          {props.help}
+        </Text>
+      )}
       {props.mode && props.config && (
-        <ConfigForm mode={props.mode} config={props.config} onSave={props.onSave} onDelete={props.onDelete} />
+        <ConfigForm
+          key={props.config.id}
+          mode={props.mode}
+          config={props.config}
+          onSave={props.onSave}
+          onDelete={props.onDelete}
+        />
       )}
     </Modal>
   )

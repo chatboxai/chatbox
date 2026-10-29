@@ -1,3 +1,4 @@
+import { binaryChunks, bytesToBase64 } from './binary-chunks'
 import { Directory, Encoding, Filesystem, type WriteFileOptions, type WriteFileResult } from '@capacitor/filesystem'
 import { Share } from '@capacitor/share'
 import { Toast } from '@capacitor/toast'
@@ -18,18 +19,6 @@ const MIME_TYPES_BY_EXTENSION: Record<string, string> = {
   svg: 'image/svg+xml',
   txt: 'text/plain',
   zip: 'application/zip',
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  const parts: string[] = []
-  const chunkSize = 3 * 16_384
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    const chunk = bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length))
-    let binary = ''
-    for (let index = 0; index < chunk.length; index++) binary += String.fromCharCode(chunk[index])
-    parts.push(globalThis.btoa(binary))
-  }
-  return parts.join('')
 }
 
 function getMimeTypeForFilename(filename: string, fallback = '*/*'): string {
@@ -144,22 +133,6 @@ export abstract class FilterWriter {
   protected abstract handlePostWrite(result: WriteFileResult): Promise<void>
   protected abstract handleError(error: unknown): Promise<void>
 
-  async checkOrRequestPermission?(): Promise<void> {
-    // Default implementation - do nothing
-  }
-
-  async cleanupPartialExport(_filename: string, _actualPath?: string): Promise<void> {
-    const config = this.getWriteConfig(_filename)
-    try {
-      await Filesystem.deleteFile({
-        path: _actualPath || config.path,
-        directory: config.directory,
-      })
-    } catch (_error) {
-      // The file may not have been created yet.
-    }
-  }
-
   async writeFileAutoRenameOnConflict(options: WriteFileOptions): Promise<WriteFileResult> {
     const availablePath = await this.getAvailableFilePath(options)
     return await Filesystem.writeFile({ ...options, path: availablePath })
@@ -269,51 +242,6 @@ export abstract class FilterWriter {
     }
   }
 
-  async writeFirstChunk(filename: string, content: string): Promise<string> {
-    const config = this.getWriteConfig(filename)
-    await Filesystem.writeFile({
-      path: config.path,
-      data: content,
-      directory: config.directory,
-      encoding: Encoding.UTF8,
-      recursive: config.recursive,
-    })
-    return config.path
-  }
-
-  async appendChunk(filename: string, content: string, actualPath?: string) {
-    const config = this.getWriteConfig(filename)
-    await Filesystem.appendFile({
-      path: actualPath || config.path,
-      data: content,
-      directory: config.directory,
-      encoding: Encoding.UTF8,
-    })
-  }
-
-  async writeCompleteFile(filename: string, content: string) {
-    const config = this.getWriteConfig(filename)
-    const result = await Filesystem.writeFile({
-      path: config.path,
-      data: content,
-      directory: config.directory,
-      encoding: Encoding.UTF8,
-      recursive: config.recursive,
-    })
-    await this.handlePostWrite(result)
-  }
-
-  async finishWriting(filename: string, content: string, actualPath?: string) {
-    const config = this.getWriteConfig(filename)
-    await Filesystem.appendFile({
-      path: actualPath || config.path,
-      data: content,
-      directory: config.directory,
-      encoding: Encoding.UTF8,
-    })
-    await this.completeExport(filename, actualPath)
-  }
-
   async completeExport(filename: string, actualPath?: string) {
     const config = this.getWriteConfig(filename)
     const fileUri = await Filesystem.getUri({
@@ -324,7 +252,6 @@ export abstract class FilterWriter {
   }
 
   async writeFirstBinaryChunk(filename: string, content: Uint8Array): Promise<string> {
-    await this.checkOrRequestPermission?.()
     const config = this.getWriteConfig(filename)
     await this.ensureDirectoryExists(config)
     const availablePath = await this.getAvailableFilePath({
@@ -356,14 +283,9 @@ export abstract class FilterWriter {
     })
   }
 
-  async writeCompleteBinaryFile(filename: string, content: Uint8Array) {
-    const actualPath = await this.writeFirstBinaryChunk(filename, content)
-    await this.completeExport(filename, actualPath)
-  }
-
-  async finishBinaryWriting(filename: string, content: Uint8Array, actualPath?: string) {
-    await this.appendBinaryChunk(filename, content, actualPath)
-    await this.completeExport(filename, actualPath)
+  async cleanupPartialExport(filename: string, actualPath?: string): Promise<void> {
+    const config = this.getWriteConfig(filename)
+    await Filesystem.deleteFile({ path: actualPath ?? config.path, directory: config.directory }).catch(() => undefined)
   }
 
   protected async ensureDirectoryExists(config: FileWriteConfig) {
@@ -407,17 +329,6 @@ export class IOSFilterWriter extends FilterWriter {
   }
 
   async exportTextFile(filename: string, content: string) {
-    const config = this.getWriteConfig(filename)
-    const result = await Filesystem.writeFile({
-      path: config.path,
-      data: content,
-      directory: config.directory,
-      encoding: Encoding.UTF8,
-    })
-    await this.handlePostWrite(result)
-  }
-
-  async writeCompleteFile(filename: string, content: string) {
     const config = this.getWriteConfig(filename)
     const result = await Filesystem.writeFile({
       path: config.path,
@@ -492,86 +403,6 @@ export class AndroidFilterWriter extends FilterWriter {
     }
   }
 
-  async exportStreamingFileWithSystemPicker(
-    filename: string,
-    dataCallback: () => AsyncGenerator<string, void, unknown>,
-    mimeType = 'application/json'
-  ) {
-    const tempPath = this.getCachePath(filename)
-    const chunkSize = 1024 * 1024
-    let tempUri: string | undefined
-    let bufferedContent = ''
-    let chunkCount = 0
-    let totalLength = 0
-
-    log.warn('exportStreamingFileWithSystemPicker:start', { filename, mimeType, chunkSize })
-
-    const flush = async () => {
-      if (!bufferedContent && tempUri) {
-        return
-      }
-
-      const content = bufferedContent
-      bufferedContent = ''
-      totalLength += content.length
-      chunkCount++
-
-      if (!tempUri) {
-        const result = await Filesystem.writeFile({
-          path: tempPath,
-          data: content,
-          directory: Directory.Cache,
-          encoding: Encoding.UTF8,
-          recursive: true,
-        })
-        tempUri = result.uri
-        return
-      }
-
-      await Filesystem.appendFile({
-        path: tempPath,
-        data: content,
-        directory: Directory.Cache,
-        encoding: Encoding.UTF8,
-      })
-    }
-
-    try {
-      for await (const chunk of dataCallback()) {
-        bufferedContent += chunk
-        if (bufferedContent.length >= chunkSize) {
-          await flush()
-        }
-      }
-
-      if (bufferedContent || !tempUri) {
-        await flush()
-      }
-
-      if (!tempUri) {
-        throw new Error('Failed to create temporary export file')
-      }
-
-      log.warn('exportStreamingFileWithSystemPicker:tempWritten', {
-        filename,
-        path: tempPath,
-        uri: tempUri,
-        chunkCount,
-        totalLength,
-      })
-
-      const saveResult = await AndroidDocumentSaver.saveFile({
-        sourceUri: tempUri,
-        suggestedName: filename,
-        mimeType,
-      })
-      log.warn('exportStreamingFileWithSystemPicker:pickerSaved', saveResult)
-      await this.handlePostWrite({ uri: saveResult.uri })
-    } finally {
-      await this.cleanupCacheTempFile(tempPath, filename)
-    }
-  }
-
   async exportStreamingBinaryFileWithSystemPicker(
     filename: string,
     dataCallback: () => AsyncGenerator<Uint8Array, void, unknown>,
@@ -582,7 +413,7 @@ export class AndroidFilterWriter extends FilterWriter {
     let tempUri: string | undefined
     let wroteAnyChunk = false
     try {
-      for await (const chunk of dataCallback()) {
+      for await (const chunk of binaryChunks(dataCallback(), signal)) {
         if (signal?.aborted) throw signal.reason ?? new DOMException('Operation canceled', 'AbortError')
         if (!wroteAnyChunk) {
           const result = await Filesystem.writeFile({
@@ -610,6 +441,7 @@ export class AndroidFilterWriter extends FilterWriter {
         })
         tempUri = result.uri
       }
+      signal?.throwIfAborted()
       const saveResult = await AndroidDocumentSaver.saveFile({ sourceUri: tempUri, suggestedName: filename, mimeType })
       await this.handlePostWrite({ uri: saveResult.uri })
     } finally {
@@ -816,44 +648,6 @@ export class AndroidFilterWriter extends FilterWriter {
         })
         await this.handleError(fallbackError)
       }
-    }
-  }
-
-  async writeFirstChunk(filename: string, content: string): Promise<string> {
-    log.info('writeFirstChunk:start', { filename, contentLength: content.length })
-    await this.checkOrRequestPermission()
-    const config = this.getWriteConfig(filename)
-    const availablePath = await this.getRetryableAvailablePath(config, content)
-    log.info('writeFirstChunk:resolvedPath', { filename, availablePath })
-    await Filesystem.writeFile({
-      path: availablePath,
-      data: content,
-      directory: config.directory,
-      encoding: Encoding.UTF8,
-      recursive: config.recursive,
-    })
-    return availablePath
-  }
-
-  async writeCompleteFile(filename: string, content: string) {
-    log.info('writeCompleteFile:start', { filename, contentLength: content.length })
-    await this.checkOrRequestPermission()
-    const result = await this.writeTextToDocuments(filename, content, Encoding.UTF8)
-    await this.handlePostWrite(result)
-  }
-
-  async cleanupPartialExport(filename: string, actualPath?: string): Promise<void> {
-    const config = this.getWriteConfig(filename)
-    const path = actualPath || config.path
-    try {
-      log.warn('cleanupPartialExport:start', { filename, path })
-      await Filesystem.deleteFile({
-        path,
-        directory: config.directory,
-      })
-      log.warn('cleanupPartialExport:success', { filename, path })
-    } catch (error) {
-      log.warn('cleanupPartialExport:skipped', { filename, path, error })
     }
   }
 

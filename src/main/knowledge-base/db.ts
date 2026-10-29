@@ -103,13 +103,6 @@ async function initDB(db: Client) {
     log.info('[DB] Database initialized')
   } catch (error) {
     log.error('[DB] Failed to initialize database:', error)
-
-    sentry.withScope((scope) => {
-      scope.setTag('component', 'knowledge-base-db')
-      scope.setTag('operation', 'database_initialization')
-      scope.setExtra('dbPath', dbPath)
-      sentry.captureException(error)
-    })
     throw error
   }
 }
@@ -131,6 +124,7 @@ export async function initializeDatabase() {
     sentry.withScope((scope) => {
       scope.setTag('component', 'knowledge-base-db')
       scope.setTag('operation', 'vector_store_initialization')
+      scope.setTag('arch', process.arch)
       scope.setExtra('dbPath', dbPath)
       sentry.captureException(error)
     })
@@ -142,11 +136,6 @@ export function getDatabase(): Client {
   if (!db) {
     const error = new Error('Database not initialized')
     log.error('[DB] Database not initialized')
-    sentry.withScope((scope) => {
-      scope.setTag('component', 'knowledge-base-db')
-      scope.setTag('operation', 'database_access')
-      sentry.captureException(error)
-    })
     throw error
   }
   return db
@@ -156,11 +145,6 @@ export function getVectorStore(): LibSQLVector {
   if (!vectorStore) {
     const error = new Error('Vector store not initialized')
     log.error('[DB] Vector store not initialized')
-    sentry.withScope((scope) => {
-      scope.setTag('component', 'knowledge-base-db')
-      scope.setTag('operation', 'vector_store_access')
-      sentry.captureException(error)
-    })
     throw error
   }
   return vectorStore

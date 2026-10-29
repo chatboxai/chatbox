@@ -1,3 +1,4 @@
+import { SETTINGS_PERSIST_VERSION } from '@chatbox/core/domain/settings'
 import { settings as defaultSettings } from '@shared/defaults'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -25,6 +26,7 @@ async function loadSettingsStoreModule(
     default: {
       type: platformType,
       isDesktopLike: platformType === 'desktop',
+      getSettings: vi.fn(async () => persistedSettings ?? { ...defaultSettings(), allowReportingAndTracking: false }),
       ensureShortcutConfig: vi.fn(),
       ensureProxyConfig: vi.fn(),
       ensureAutoLaunch: vi.fn(),
@@ -151,7 +153,7 @@ describe('settingsStore persistence', () => {
           apiHost: 'https://api.openai.com',
         },
       },
-      __version: 6,
+      __version: SETTINGS_PERSIST_VERSION,
     })
   })
 

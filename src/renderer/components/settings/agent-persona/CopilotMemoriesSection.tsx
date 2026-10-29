@@ -1,11 +1,12 @@
-import { ActionIcon, Badge, Box, Button, Flex, Loader, Paper, Stack, Text, Title } from '@mantine/core'
+import { Badge, Box, Button, Flex, Loader, Text } from '@mantine/core'
 import type { MemoryEntry } from '@shared/types/agent-persona'
-import { IconTrash } from '@tabler/icons-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import PopoverConfirm from '@/components/common/PopoverConfirm'
+import { SettingsListItem, SettingsSection } from '@/components/settings/SettingsLayout'
 import { useCopilotMemory, useMyCopilots } from '@/hooks/useCopilots'
 import { clearCopilotMemories, deleteCopilotMemory, listAllCopilotMemories } from '@/stores/agentPersonaStore'
+import { MemoryEntryItem } from './MemoryEntryItem'
 
 interface CopilotMemoryGroup {
   copilotId: string
@@ -78,17 +79,16 @@ export function CopilotMemoriesSection() {
   if (groups.length === 0) return null
 
   return (
-    <Stack gap="sm">
-      <Title order={6}>{t('Copilot Memories')}</Title>
-      <Text size="sm" c="dimmed">
-        {t(
-          'Memories saved by chats with a specific copilot. Each copilot has its own list, and global memories stay out of those chats.'
-        )}
-      </Text>
+    <SettingsSection
+      title={t('Copilot Memories')}
+      description={t(
+        'Memories saved by chats with a specific copilot. Each copilot has its own list, and global memories stay out of those chats.'
+      )}
+    >
       {groups.map((group) => (
-        <Stack key={group.copilotId} gap="xs">
-          <Flex align="center" gap="xs">
-            <Text size="sm" fw={500}>
+        <Fragment key={group.copilotId}>
+          <SettingsListItem tint="secondary">
+            <Text fz={14} fw={600} truncate>
               {group.name}
             </Text>
             <Badge size="sm" variant="light" color="chatbox-secondary">
@@ -101,38 +101,20 @@ export function CopilotMemoriesSection() {
               confirmButtonColor="chatbox-error"
               onConfirm={() => void handleClear(group.copilotId)}
             >
-              <Button size="xs" variant="subtle" color="chatbox-error">
+              <Button size="compact-sm" variant="subtle" color="chatbox-error">
                 {t('Clear all')}
               </Button>
             </PopoverConfirm>
-          </Flex>
-          <Stack gap={6}>
-            {group.entries.map((entry) => (
-              <Paper key={entry.id} withBorder radius="md" p="xs">
-                <Flex align="flex-start" gap="xs">
-                  <Box flex={1}>
-                    <Text size="sm" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                      {entry.content}
-                    </Text>
-                    <Text size="xs" c="dimmed" mt={2}>
-                      {new Date(entry.createdAt).toLocaleDateString()}
-                    </Text>
-                  </Box>
-                  <ActionIcon
-                    variant="subtle"
-                    color="chatbox-error"
-                    size="sm"
-                    aria-label={t('Delete')}
-                    onClick={() => void handleDelete(group.copilotId, entry.id)}
-                  >
-                    <IconTrash size={16} />
-                  </ActionIcon>
-                </Flex>
-              </Paper>
-            ))}
-          </Stack>
-        </Stack>
+          </SettingsListItem>
+          {group.entries.map((entry) => (
+            <MemoryEntryItem
+              key={entry.id}
+              entry={entry}
+              onDelete={() => void handleDelete(group.copilotId, entry.id)}
+            />
+          ))}
+        </Fragment>
       ))}
-    </Stack>
+    </SettingsSection>
   )
 }

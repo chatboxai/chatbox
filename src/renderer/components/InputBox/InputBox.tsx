@@ -1,3 +1,4 @@
+import { MAX_CHAT_IMAGE_ATTACHMENTS } from '@chatbox/core/application/attachments'
 import { listPendingPauseInteractions } from '@chatbox/core/message-approval'
 import { getSubmitAvailability } from '@chatbox/core/session/action-gates'
 import { isActionAvailableInMode, resolveSessionMode } from '@chatbox/core/session/mode-policy'
@@ -54,22 +55,23 @@ import { useStore } from 'zustand'
 import { JK_PAGE_NAMES } from '@/analytics/jk-events'
 import { rendererApplication } from '@/app/renderer-application'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
+import { paddedContentColumnClassName } from '@/components/layout/contentColumn'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import useInputBoxHistory from '@/hooks/useInputBoxHistory'
 import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
 import { useProviders } from '@/hooks/useProviders'
 import { useSaveBlob } from '@/hooks/useSaveBlob'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
-import { useSessionLockState } from '@/hooks/useSessionLockState'
+import { useSessionControls } from '@/hooks/useSessionLockState'
+import { useSessionPresentation } from '@/hooks/useSessionPresentation'
 import { cn } from '@/lib/utils'
-import {
-  getContextMessageIds,
-  isAutoCompactionEnabled,
-  isCompactionInProgress,
-  useContextTokens,
-  useStableEligibleMessages,
-} from '@/packages/context-management'
+import { isAutoCompactionEnabled, isCompactionInProgress, useContextTokens } from '@/packages/context-management'
 import { trackingEvent } from '@/packages/event'
+import {
+  isLocalWorkAttachment,
+  LOCAL_WORK_ATTACHMENT_ACCEPT,
+  LOCAL_WORK_ATTACHMENT_MAX_BYTES,
+} from '@/packages/mobile-work-mode/attachments'
 import {
   getModelContextWindowSync,
   getProviderModelContextWindowSync,
@@ -78,6 +80,7 @@ import {
 import * as picUtils from '@/packages/pic_utils'
 import { skillsController, subscribeSkillsChanged } from '@/packages/skills/controller'
 import { seedExactDraftTokens } from '@/packages/token-estimation'
+import { resolveTokenSandboxMode } from '@/packages/token-estimation/policy'
 import platform from '@/platform'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import * as atoms from '@/stores/atoms'
@@ -104,6 +107,8 @@ import {
   enqueueUserMessage,
   MAX_QUEUED_MESSAGES,
   messageQueueStore,
+  requestSteerFirstQueuedMessage,
+  requestSteerQueuedMessage,
   resumeQueueAndDrain,
 } from '../../stores/session/message-queue'
 import { startPreparedSessionAttachmentIndexing } from '../../stores/sessionAttachmentRagIndexing'
@@ -115,7 +120,7 @@ import { AdaptiveModal } from '../common/AdaptiveModal'
 import { CompressionModal } from '../common/CompressionModal'
 import { ScalableIcon } from '../common/ScalableIcon'
 import Disclaimer from '../Disclaimer'
-import ProviderImageIcon from '../icons/ProviderImageIcon'
+import { ModelProviderIcon } from '../icons/ModelProviderIcon'
 import ModelSelectorV2 from '../ModelSelectorV2'
 import AgentModeButton from './AgentModeButton'
 import { FileMiniCard, getParserTypeLabel, ImageMiniCard } from './Attachments'
@@ -123,7 +128,12 @@ import { AutoDialogueConfirmBar } from './AutoDialogueConfirmBar'
 import { getAgentModeUIState } from './agentModeState'
 import { ComposerSettingsMenu } from './ComposerSettingsMenu'
 import { ImageUploadInput } from './ImageUploadInput'
-import { INPUT_SURFACE_CLASS_NAME, INPUT_SURFACE_MIN_HEIGHT_CLASS_NAME, INPUT_SURFACE_STYLE } from './inputSurface'
+import {
+  INPUT_SURFACE_CLASS_NAME,
+  INPUT_SURFACE_MIN_HEIGHT_CLASS_NAME,
+  INPUT_SURFACE_STYLE,
+  SEND_BUTTON_BLOCKED_CLASS,
+} from './inputSurface'
 import { MessageInputField, type MessageInputFieldRef } from './MessageInputField'
 import PendingActionBar from './PendingActionBar'
 import { cleanupFile, markFileProcessing, onFileProcessed, storeFilePromise } from './preprocessState'
@@ -139,8 +149,6 @@ import { useThreadCreation } from './useThreadCreation'
 import { WebSearchUnavailableBanner } from './WebSearchUnavailableBanner'
 import WorkModeStatusRow from './WorkModeStatusRow'
 
-const useSession = (sessionId: string | null) => rendererApplication.sessionHooks.useSession(sessionId)
-
 export type InputBoxPayload = {
   constructedMessage: Message
   needGenerating?: boolean
@@ -153,6 +161,7 @@ export type InputBoxRef = {
 }
 
 export type InputBoxProps = {
+  tokenEstimationEnabled?: boolean
   sessionId?: string
   sessionType?: SessionType
   /** Copilot picked on the new-chat page, where the draft session is not persisted yet. */
@@ -203,6 +212,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     {
       sessionId,
       sessionType = 'chat',
+      tokenEstimationEnabled = true,
       draftCopilotId,
       draftCopilotName,
       model,
@@ -379,23 +389,24 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const pictureKeys = preConstructedMessage.pictureKeys || []
     const attachments = preConstructedMessage.attachments || []
 
-    const { session: currentSession } = useSession(sessionId || null)
+    const { read: headerRead, header: sessionHeader } = useSessionPresentation(sessionId || null)
+    const currentSession = sessionHeader
+    const contextPending = !isNewSession && (!headerRead || !tokenEstimationEnabled)
     const { sessionSettings: currentSessionMergedSettings } = useSessionSettings(sessionId || null)
-    const sessionLocks = useSessionLockState(currentSession)
+    const controls = useSessionControls(currentSession, sessionId)
+    const sessionLocks = controls.locks
     const submitAvailability = getSubmitAvailability(sessionLocks)
     // While replies stream, an empty draft shows Stop; entering content turns
     // the same control back into Send so it can be queued. The hard block
-    // (compaction/pause decision) remains an independent axis.
+    // (pause decision) remains an independent axis; a running compression
+    // turns into queue mode in work mode (see submitBlocked below).
     const generating = submitAvailability.control === 'stop'
     const generatingCount = sessionLocks.generatingReplyCount
     const isAwaitingPauseDecision = sessionLocks.awaitingPauseDecision
     // Every pause holds the input read-only, so the pending-action bar takes over
     // its slot instead of stacking above a dead text field. Same predicate the bar
     // renders on, so the slot never ends up empty.
-    const pauseTakeover = useMemo(() => {
-      if (isNewSession || !currentSession) return false
-      return listPendingPauseInteractions(currentSession.messages).length > 0
-    }, [isNewSession, currentSession])
+    const pauseTakeover = !isNewSession && sessionLocks.awaitingPauseDecision
 
     const skillMenuOpen = skillCommandQuery !== null && matchingInputSkills.length > 0 && !isAwaitingPauseDecision
 
@@ -456,25 +467,6 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       ),
     })
 
-    // Get current messages for token counting - will only recalculate when stable messages actually change
-    // Uses getContextMessageIds to respect compaction points. Keyed off the
-    // eligible-message subset so per-chunk streaming updates don't re-run it.
-    const stableSessionMessages = useStableEligibleMessages(currentSession?.messages)
-    const currentContextMessageIds = useMemo(() => {
-      if (isNewSession) return null
-      if (!currentSession || !stableSessionMessages.length) return null
-
-      return getContextMessageIds(
-        { ...currentSession, messages: stableSessionMessages },
-        currentSessionMergedSettings?.maxContextMessageCount
-      )
-    }, [
-      isNewSession,
-      currentSessionMergedSettings?.maxContextMessageCount,
-      stableSessionMessages,
-      currentSession?.compactionPoints,
-    ])
-
     const { knowledgeBase, setKnowledgeBase } = useKnowledgeBase({ isNewSession })
 
     // Agent mode value for conditional toolbar rendering
@@ -484,9 +476,25 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     // control and submits are blocked with the standard generating notice.
     // Items already queued before the mode split still drain in order.
     const queueEnabled = isActionAvailableInMode('queue-message', sessionMode)
+    // Same mode policy as the queue bar's "Send now": interjecting into the
+    // running reply is a work-mode capability.
+    const steeringEnabled = isActionAvailableInMode('steer-queued-message', sessionMode)
     const canCreateThread = isActionAvailableInMode('create-thread', sessionMode)
 
     const [showCompressionModal, setShowCompressionModal] = useState(false)
+    const compressionSessionIdRef = useRef(sessionId)
+    compressionSessionIdRef.current = sessionId
+    const openCompressionModal = useCallback(async () => {
+      if (!sessionId || isNewSession) return
+      try {
+        const read = await rendererApplication.sessions.getSessionHeader(sessionId)
+        if (read && compressionSessionIdRef.current === sessionId) setShowCompressionModal(true)
+      } catch (error) {
+        if (compressionSessionIdRef.current === sessionId) {
+          toastActions.add(`${t('Failed')}: ${error instanceof Error ? error.message : String(error)}`)
+        }
+      }
+    }, [sessionId, isNewSession, currentSession, t])
 
     const [isSubmitting, setIsSubmitting] = useState(false)
     const activeSubmitRef = useRef<{ token: symbol; startedWhileGenerating: boolean } | null>(null)
@@ -696,8 +704,13 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     // Check model tool use capabilities for agent mode and file handling.
     // Uses 'agent' scope as the gate — models with weak function calling
     // (e.g. DeepSeek V3/R1) return false, disabling agent mode entirely.
-    const { modelSupportToolUseForFile, modelSupportsAgentMode, isModelToolCapabilityFetched } =
-      useModelToolCapabilities(model, currentSessionMergedSettings)
+    const {
+      modelSupportToolUseForFile,
+      modelSupportsAgentMode,
+      isModelToolCapabilityFetched,
+      isModelToolCapabilityLoading,
+      isModelToolCapabilityError,
+    } = useModelToolCapabilities(model, currentSessionMergedSettings)
     const showSessionRetrievalToolWarning =
       hasSessionRetrievalFiles && isModelToolCapabilityFetched && !modelSupportToolUseForFile
     const agentModeUIState = useMemo(
@@ -705,34 +718,60 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       [agentModeEntry, model, modelSupportsAgentMode]
     )
 
-    // Determine sandbox mode: files exist in session and model supports tool use for files
-    const sandboxMode = useMemo(() => {
-      if (!modelSupportToolUseForFile || !currentSession) return false
-      return currentSession.messages.some((m) => m.files?.length)
-    }, [modelSupportToolUseForFile, currentSession?.messages])
+    const licenseKey = useSettingsStore((state) => state.licenseKey)
+    const licenseDetail = useSettingsStore((state) => state.licenseDetail)
+    const licensePlanName = useSettingsStore((state) => state.licensePlanName)
+    const sandboxQuery = useQuery({
+      queryKey: [
+        'token-estimation-sandbox',
+        agentModeEntry.value,
+        modelSupportsAgentMode,
+        currentSessionMergedSettings?.workingDirectories,
+        licenseKey,
+        licenseDetail,
+        licensePlanName,
+      ],
+      queryFn: () =>
+        resolveTokenSandboxMode(
+          agentModeEntry.value === 'on',
+          modelSupportsAgentMode,
+          currentSessionMergedSettings ?? {}
+        ),
+      enabled: agentModeEntry.value === 'on' && isModelToolCapabilityFetched,
+      staleTime: 0,
+    })
+    const sandboxMode = agentModeEntry.value === 'on' && sandboxQuery.data === true
+    const policyPending = isModelToolCapabilityLoading || (agentModeEntry.value === 'on' && sandboxQuery.isLoading)
 
-    // Calculate token counts using unified cache layer
+    const language = useSettingsStore((state) => state.language)
+    // Calculate the live input and selected-history token counts.
     const {
       contextTokens,
       currentInputTokens,
       totalTokens,
-      isCalculating,
+      isCalculating: tokensCalculating,
       isCurrentInputApproximate,
-      isTotalApproximate,
+      isTotalApproximate: tokensTotalApproximate,
       isContextApproximate,
-      isContextCalculating,
+      isContextCalculating: tokensContextCalculating,
       pendingContextMessages,
       messageCount,
       exactDraftTokens,
     } = useContextTokens({
       sessionId: currentSessionId || null,
-      session: currentSession,
+      revision: headerRead?.revision,
+      enabled: tokenEstimationEnabled,
       settings: currentSessionMergedSettings || {},
       model,
       modelSupportToolUseForFile,
       sandboxMode,
       constructedMessage: preConstructedMessage.message,
+      language,
     })
+    const isCalculating = contextPending || policyPending || tokensCalculating
+    const isTotalApproximate =
+      contextPending || policyPending || isModelToolCapabilityError || sandboxQuery.isError || tokensTotalApproximate
+    const isContextCalculating = contextPending || tokensContextCalculating
 
     const globalAutoCompaction = useSettingsStore((state) => state.autoCompaction)
     const [isCompacting, setIsCompacting] = useState(false)
@@ -740,16 +779,23 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     // The session-level share of the submit gate comes from the shared
     // availability model; the remaining flags are renderer-local draft state.
     const submitInProgress = isSubmitting && !generating
+    // Work mode keeps the composer usable while a compression runs: a draft
+    // queues behind it and delivers when the summary settles (the queue drain
+    // serializes on the session generation lock the summary holds). Chat mode
+    // keeps the hard block.
+    const compactionBlocking = submitAvailability.blockReason === 'compaction'
+    const compactionQueable = compactionBlocking && queueEnabled
     const submitBlocked =
       disableSubmit ||
       isPreprocessing ||
       submitInProgress ||
-      submitAvailability.blockReason !== undefined ||
+      (submitAvailability.blockReason !== undefined && !compactionQueable) ||
       hasPreprocessErrors ||
       hasBlockedSessionRagFiles ||
       stopGenerationStatus !== 'idle'
     const submitControl = getSubmitControl({
       generating,
+      compactionBlocking,
       hasDraft: !disableSubmit,
       canQueueDraft: !submitBlocked && currentQueueLength < MAX_QUEUED_MESSAGES,
       queueEnabled,
@@ -763,7 +809,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         : stopGenerationStatus === 'failed'
           ? t('Retry stopping')
           : submitControl === 'queue'
-            ? t('Will send after the current response finishes')
+            ? compactionBlocking
+              ? t('Will send after the compression finishes')
+              : t('Will send after the current response finishes')
             : submitControl === 'stop'
               ? generatingCount > 1
                 ? t('Stop all {{n}} replies', { n: generatingCount })
@@ -776,9 +824,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     })
 
     const autoCompactionEnabled = useMemo(() => {
-      if (!currentSession) return globalAutoCompaction ?? true
-      return isAutoCompactionEnabled(currentSession.settings, settingsStore.getState())
-    }, [currentSession, globalAutoCompaction])
+      if (!sessionHeader) return globalAutoCompaction ?? true
+      return isAutoCompactionEnabled(sessionHeader.settings, settingsStore.getState())
+    }, [sessionHeader, globalAutoCompaction])
 
     const contextWindowKnown = useMemo(() => {
       if (!model?.modelId) return false
@@ -802,9 +850,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
 
     // Calculate token usage percentage
     const tokenPercentage = useMemo(() => {
-      if (!effectiveContextWindow || effectiveContextWindow <= 0) return null
+      if (contextPending || !effectiveContextWindow || effectiveContextWindow <= 0) return null
       return Math.round((totalTokens / effectiveContextWindow) * 100)
-    }, [totalTokens, effectiveContextWindow])
+    }, [totalTokens, effectiveContextWindow, contextPending])
 
     useEffect(() => {
       if (!currentSessionId || isNewSession) {
@@ -822,7 +870,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const handleAutoCompactionChange = useCallback(
       async (enabled: boolean) => {
         if (!currentSessionId || isNewSession) return
-        await rendererApplication.sessions.updateSession(currentSessionId, (session) => {
+        await rendererApplication.sessions.updateSessionHeader(currentSessionId, (session) => {
           if (!session) {
             throw new Error('Session not found')
           }
@@ -866,7 +914,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const { addInputBoxHistory, getPreviousHistoryInput, getNextHistoryInput, resetHistoryIndex } = useInputBoxHistory()
     resetHistoryIndexRef.current = resetHistoryIndex
 
-    type SubmitOptions = { allowUnreadySessionAttachments?: boolean }
+    type SubmitOptions = { allowUnreadySessionAttachments?: boolean; steer?: boolean }
     type InsertFilesOptions = { source?: 'pasted-text' }
     const handleSubmitRef = useRef<(needGenerating?: boolean, options?: SubmitOptions) => void>(() => {})
     const getPreviousHistoryInputRef = useRef(getPreviousHistoryInput)
@@ -878,6 +926,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const handleSubmit = async (needGenerating = true, options: SubmitOptions = {}) => {
       const submitAction = getSubmitAction({
         generating,
+        compactionBlocking,
         needGenerating,
         sessionType,
         queueLength: currentSessionId ? (messageQueueStore.getState().queues[currentSessionId]?.length ?? 0) : 0,
@@ -885,7 +934,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
           disableSubmit ||
           submitInProgress ||
           isPreprocessing ||
-          submitAvailability.blockReason !== undefined ||
+          (submitAvailability.blockReason !== undefined && !compactionQueable) ||
           hasPreprocessErrors ||
           hasBlockedSessionRagFiles ||
           stopGenerationStatus !== 'idle',
@@ -963,6 +1012,14 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         // itself; the projection check inside skips a draft edited since.
         const outgoingMessage = seedExactDraftTokens(latestMessage, exactDraftTokens)
 
+        if (platform.type === 'mobile' && agentModeUIState.isActive) {
+          const [{ capacitorWorkspace }, { currentBlobStorage }] = await Promise.all([
+            import('@/packages/mobile-work-mode/runtime'),
+            import('@/adapters/CurrentBlobStorage'),
+          ])
+          await capacitorWorkspace.preflight(sessionId || 'new', [outgoingMessage], currentBlobStorage)
+        }
+
         const messageTextForHistory = latestMessage.contentParts.find((p) => p.type === 'text')?.text || ''
 
         const finalizeUserMessageDraft = () => {
@@ -1007,7 +1064,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
           const enqueueResult = enqueueUserMessage(
             currentSessionId,
             outgoingMessage,
-            currentSession?.messages.at(-1)?.id
+            headerRead?.summary.lastNonSummaryMessageId
           )
           if (enqueueResult !== 'queued') {
             // The draft is kept in both failure cases — it is the only copy of the text.
@@ -1015,6 +1072,13 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
             return
           }
           finalizeUserMessageDraft()
+          // The send shortcut asked this draft to interject: the reply streaming
+          // right now consumes it at its next step instead of letting it wait
+          // for the turn to end. Only a running reply has a consumer to hand it
+          // to; behind a compression the item simply keeps its place in line.
+          if (options.steer && generating && steeringEnabled) {
+            requestSteerQueuedMessage(currentSessionId, outgoingMessage.id)
+          }
           if (submitAction === 'queue-resume') {
             resumeQueueAndDrain(currentSessionId)
           }
@@ -1086,6 +1150,20 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         const isSendShortcut = isPressedHash[shortcuts.inputBoxSendMessage]
         const isSendWithoutResponseShortcut = isPressedHash[shortcuts.inputBoxSendMessageWithoutResponse]
 
+        // 排队发送时 Cmd/Ctrl+Enter 直接插话：有草稿就把它作为插话入队，由正在
+        // 生成的回复在下一步消费；输入框为空则把队列里的第一条消息变为插话。
+        // 没有正在进行的回复时该组合键保持原有语义（发送/不生成回复）。
+        const isSteerShortcut = isPressedHash['CommandOrControl+Enter']
+        if (isSteerShortcut && steeringEnabled && generating && currentSessionId) {
+          event.preventDefault()
+          if (!disableSubmit) {
+            handleSubmitRef.current(true, { steer: true })
+          } else {
+            requestSteerFirstQueuedMessage(currentSessionId)
+          }
+          return
+        }
+
         // 发送消息
         if (isSendShortcut) {
           if (platform.type === 'mobile' && isSmallScreen && shortcuts.inputBoxSendMessage === 'Enter') {
@@ -1137,12 +1215,16 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         }
       },
       [
+        currentSessionId,
+        disableSubmit,
+        generating,
         insertSkillCommand,
         isSmallScreen,
         matchingInputSkills,
         shortcuts,
         skillCommandQuery,
         skillCommandSelectedIndex,
+        steeringEnabled,
         updateSkillCommandQuery,
       ]
     )
@@ -1156,17 +1238,21 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
           return
         }
         if (
-          !(await confirmModelSwitchIfNeeded(sessionMode, currentSession?.messages, isNewSession, {
-            compactionPoints: currentSession?.compactionPoints,
-            maxContextMessageCount: currentSessionMergedSettings.maxContextMessageCount,
-          }))
+          !(await confirmModelSwitchIfNeeded(
+            !isNewSession &&
+              !!sessionId &&
+              (await rendererApplication.sessions.shouldConfirmPromptCacheBreak(sessionId, {
+                mode: sessionMode,
+                maxContextMessageCount: currentSessionMergedSettings.maxContextMessageCount,
+              }))
+          ))
         ) {
           return
         }
         onSelectModel(provider, modelId)
       },
       [
-        currentSession,
+        sessionId,
         currentSessionMergedSettings.maxContextMessageCount,
         isNewSession,
         model?.modelId,
@@ -1239,13 +1325,11 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         })
     }
 
-    // In agent mode, allow all file types (sandbox can handle archives, binaries, etc.)
-    // isActive is true only for 'on' — 'auto' and mobile/web behave like normal mode,
-    // so they keep the standard file-type validation and accept filter.
+    // Desktop execution accepts arbitrary files; mobile execution uses its local document formats.
     const isAgentModeActive = agentModeUIState.isActive
 
     const insertFiles = async (files: File[], options: InsertFilesOptions = {}) => {
-      const MAX_IMAGES = 8
+      const MAX_IMAGES = MAX_CHAT_IMAGE_ATTACHMENTS
       const MAX_ATTACHMENTS = 20
       // 用本地累加器跟踪本次新增数量：同步循环内 state/ref 可能尚未刷新，靠它做无竞态的限额判断
       let imageCount = preConstructedMessageRef.current.pictureKeys?.length || 0
@@ -1256,7 +1340,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       for (const file of files) {
         // 文件和图片插入方法复用，会导致 svg、gif 这类不支持的图片也被插入，但暂时没看到有什么问题
         if (file.type.startsWith('image/')) {
-          // 超过上限时直接跳过：保留最先添加的前 8 张，且不浪费转码/不产生孤儿 blob
+          // Skip excess images before transcoding or storing their blobs.
           if (imageCount >= MAX_IMAGES) {
             droppedImages++
             continue
@@ -1266,10 +1350,24 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
           await saveBlob.mutateAsync({ key, value: base64 })
           setPreConstructedMessage((prev) => ({
             ...prev,
-            pictureKeys: [...(prev.pictureKeys || []), key].slice(0, MAX_IMAGES), // 保留最先添加的前 8 张
+            pictureKeys: [...(prev.pictureKeys || []), key].slice(0, MAX_IMAGES),
           }))
           imageCount++
         } else {
+          if (platform.type === 'mobile' && isAgentModeActive) {
+            if (file.size > LOCAL_WORK_ATTACHMENT_MAX_BYTES) {
+              toastActions.add(t('Work Mode attachments must be {{limit}} or smaller.', { limit: '10 MB' }))
+              continue
+            }
+            if (!isLocalWorkAttachment(file.name)) {
+              toastActions.add(
+                t(
+                  'Work Mode supports text, PDF, Word (.doc/.docx), Excel (.xls/.xlsx), and PowerPoint (.ppt/.pptx) files.'
+                )
+              )
+              continue
+            }
+          }
           if (file.size > KNOWLEDGE_BASE_MAX_FILE_SIZE) {
             toastActions.add(
               t('Chat attachments must be {{limit}} or smaller.', {
@@ -1481,12 +1579,14 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     // Show deprecated notice for legacy picture sessions
     if (sessionType === 'picture') {
       return (
-        <Box pt={0} pb={isSmallScreen ? 'md' : 'sm'} px="sm" id={dom.InputBoxID}>
+        <Box
+          pt={0}
+          pb={isSmallScreen ? 'md' : 'sm'}
+          id={dom.InputBoxID}
+          className={paddedContentColumnClassName(widthFull)}
+        >
           <Stack
-            className={cn(
-              'rounded-lg bg-chatbox-background-secondary shadow-[0_8px_48px_-8px_rgba(0,0,0,0.15)] dark:shadow-[0_8px_48px_-8px_rgba(0,0,0,0.5)]',
-              widthFull ? 'w-full' : 'max-w-4xl mx-auto'
-            )}
+            className="rounded-lg border border-solid border-chatbox-border-primary bg-chatbox-background-primary shadow-sm"
             gap="xs"
             p="md"
             align="center"
@@ -1503,25 +1603,28 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     }
 
     return (
-      <Box
-        pt={0}
-        pb={isSmallScreen ? 'md' : 'sm'}
-        px="sm"
-        id={dom.InputBoxID}
-        className="overflow-visible"
-        {...getRootProps()}
-      >
+      <Box pt={0} pb={isSmallScreen ? 'md' : 'sm'} id={dom.InputBoxID} className="overflow-visible" {...getRootProps()}>
         <input className="hidden" {...getInputProps()} />
-        <Stack className={cn('overflow-visible', widthFull ? 'w-full' : 'max-w-4xl mx-auto')} gap="xs">
+        <Stack className={cn('overflow-visible', paddedContentColumnClassName(widthFull))} gap="xs">
           {currentSessionId && (
             <CompactionStatus sessionId={currentSessionId} onViewSummary={onViewCompactionSummary} />
           )}
-          {currentSession && !isNewSession && <WebSearchUnavailableBanner session={currentSession} />}
+          {!isNewSession && headerRead && (
+            <WebSearchUnavailableBanner
+              sessionId={headerRead.header.id}
+              errorCount={headerRead.summary.webSearchSignInErrorCount}
+              latestHasError={controls.data?.latestMessageHasWebSearchSignInError}
+            />
+          )}
           {currentSessionId && !isNewSession && <QueuedMessagesBar sessionId={currentSessionId} />}
           {currentSessionId && !isNewSession && <AutoDialogueConfirmBar sessionId={currentSessionId} />}
           {currentSession && !isNewSession && (
             <ErrorBoundary name="pending-action-bar">
-              <PendingActionBar session={currentSession} />
+              <PendingActionBar
+                sessionId={currentSession.id}
+                activeThreadId={headerRead?.activeThreadId ?? ''}
+                messageIds={controls.data?.pausedMessageIds ?? []}
+              />
             </ErrorBoundary>
           )}
           <Box
@@ -1598,12 +1701,12 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                 align="center"
                 justify="space-between"
                 gap="sm"
-                className="rounded-md bg-red-50 px-2 py-1 dark:bg-red-950/30"
+                className="rounded-md bg-chatbox-background-error-secondary px-2 py-1"
               >
-                <Text size="xs" c="red" fw={500}>
+                <Text size="xs" c="chatbox-error" fw={500}>
                   {t('The response could not be stopped safely. Retry to finish saving it.')}
                 </Text>
-                <Button variant="subtle" color="red" size="compact-xs" onClick={onStopGenerating}>
+                <Button variant="subtle" color="chatbox-error" size="compact-xs" onClick={onStopGenerating}>
                   {t('Retry')}
                 </Button>
               </Flex>
@@ -1615,7 +1718,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                 ref={messageInputFieldRef}
                 isNewSession={isNewSession}
                 viewportHeight={viewportHeight}
-                isReadOnly={submitAvailability.blockReason !== undefined}
+                isReadOnly={submitAvailability.blockReason !== undefined && !compactionQueable}
                 placeholder={
                   composerPlaceholder.kind === 'locked'
                     ? getSessionLockNotice(composerPlaceholder.reason, t)
@@ -1651,15 +1754,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   size={32}
                   variant="filled"
                   color={showingStopControl ? 'dark' : 'chatbox-brand'}
-                  radius="lg"
+                  radius="xl"
                   onClick={showingStopControl ? onStopGenerating : () => handleSubmit()}
-                  className={cn(
-                    'shrink-0 mb-1',
-                    !showingStopControl && submitBlocked && 'disabled:!opacity-100 !text-white'
-                  )}
-                  style={
-                    !showingStopControl && submitBlocked ? { backgroundColor: 'rgba(222, 226, 230, 1)' } : undefined
-                  }
+                  className={cn('shrink-0 mb-1', !showingStopControl && submitBlocked && SEND_BUTTON_BLOCKED_CLASS)}
                 >
                   {showingStopControl ? (
                     stopGenerationStatus === 'stopping' ? (
@@ -1896,7 +1993,13 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                 className="hidden"
                 onChange={onFileInputChange}
                 multiple
-                accept={isAgentModeActive ? undefined : getFileAcceptString()}
+                accept={
+                  isAgentModeActive
+                    ? platform.type === 'mobile'
+                      ? LOCAL_WORK_ATTACHMENT_ACCEPT
+                      : undefined
+                    : getFileAcceptString()
+                }
               />
 
               {/* Left Group: Tool Buttons */}
@@ -1918,6 +2021,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   iconSize={toolbarIconSize}
                   compact={isSmallScreen}
                   modelSupportsAgentMode={model ? modelSupportsAgentMode : true}
+                  hasDraftAttachments={attachments.length > 0 || pictureKeys.length > 0}
                   webBrowsingMode={webBrowsingMode}
                   onWebBrowsingChange={(v) => {
                     setWebBrowsingMode(v)
@@ -1959,7 +2063,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                         data-testid={TestId.chat.rollbackThread}
                         aria-label={t('Rollback Thread')}
                         onClick={rollbackThread}
-                        className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors"
+                        className="flex items-center gap-1 px-2 py-1 rounded-md hover:bg-[var(--chatbox-background-tertiary)] transition-colors"
                       >
                         <IconArrowBackUp
                           size={toolbarIconSize}
@@ -1976,7 +2080,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                         onClick={startNewThread}
                         disabled={!onStartNewThread || threadActionPending}
                         aria-busy={threadActionPending}
-                        className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors disabled:opacity-50"
+                        className="flex items-center gap-1 px-2 py-1 rounded-md hover:bg-[var(--chatbox-background-tertiary)] transition-colors disabled:opacity-50"
                       >
                         {threadActionPending ? (
                           <Loader size={toolbarIconSize} />
@@ -1991,14 +2095,24 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                     </Tooltip>
                   ))}
 
-                {!isSmallScreen && (
+                {isSmallScreen ? (
+                  <ComposerSettingsMenu
+                    canCreateThread={canCreateThread}
+                    toolbarIconSize={toolbarIconSize}
+                    threadActionPending={threadActionPending}
+                    showRollbackThread={showRollbackThreadButton}
+                    onStartNewThread={onStartNewThread ? startNewThread : undefined}
+                    onRollbackThread={rollbackThread}
+                    onClickSessionSettings={onClickSessionSettings}
+                  />
+                ) : (
                   <Tooltip label={t('Conversation Settings')} position="top" withArrow>
                     <UnstyledButton
                       data-testid={TestId.chat.sessionSettings}
                       aria-label={t('Conversation Settings') || undefined}
                       onClick={onClickSessionSettings}
                       disabled={!onClickSessionSettings}
-                      className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors disabled:opacity-50"
+                      className="flex items-center gap-1 px-2 py-1 rounded-md hover:bg-[var(--chatbox-background-tertiary)] transition-colors disabled:opacity-50"
                     >
                       <IconAdjustmentsHorizontal
                         size={toolbarIconSize}
@@ -2007,16 +2121,6 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                       />
                     </UnstyledButton>
                   </Tooltip>
-                )}
-
-                {isSmallScreen && (
-                  <ComposerSettingsMenu
-                    canCreateThread={canCreateThread}
-                    toolbarIconSize={toolbarIconSize}
-                    onStartNewThread={startNewThread}
-                    threadActionPending={threadActionPending}
-                    onClickSessionSettings={onClickSessionSettings}
-                  />
                 )}
               </Flex>
 
@@ -2031,22 +2135,30 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   isTotalApproximate={isTotalApproximate}
                   isContextApproximate={isContextApproximate}
                   isContextCalculating={isContextCalculating}
+                  isContextLoading={contextPending}
                   pendingContextMessages={pendingContextMessages}
                   totalContextMessages={messageCount}
                   contextWindow={effectiveContextWindow ?? undefined}
-                  currentMessageCount={currentContextMessageIds?.length ?? 0}
+                  currentMessageCount={messageCount}
                   maxContextMessageCount={currentSessionMergedSettings?.maxContextMessageCount}
-                  onCompressClick={sessionId && !isNewSession ? () => setShowCompressionModal(true) : undefined}
+                  onCompressClick={
+                    sessionId && !isNewSession
+                      ? () => {
+                          void openCompressionModal()
+                        }
+                      : undefined
+                  }
                   autoCompactionEnabled={autoCompactionEnabled}
                   isCompacting={isCompacting}
                   contextWindowKnown={contextWindowKnown}
                   onAutoCompactionChange={sessionId && !isNewSession ? handleAutoCompactionChange : undefined}
                 >
                   <Flex
+                    data-testid={TestId.chat.contextMenuTrigger}
                     align="center"
                     gap="2"
-                    className={`shrink-0 text-xs cursor-pointer hover:text-chatbox-tint-secondary transition-colors px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] ${
-                      tokenPercentage && tokenPercentage > 80 ? 'text-red-500' : 'text-chatbox-tint-tertiary'
+                    className={`shrink-0 text-xs cursor-pointer hover:text-chatbox-tint-secondary transition-colors px-2 py-1 rounded-md hover:bg-[var(--chatbox-background-tertiary)] ${
+                      tokenPercentage && tokenPercentage > 80 ? 'text-chatbox-tint-error' : 'text-chatbox-tint-tertiary'
                     }`}
                   >
                     <ScalableIcon icon={IconArrowUp} size={14} />
@@ -2054,6 +2166,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                     <Text span size="xs" className="whitespace-nowrap" c="inherit">
                       {isTotalApproximate ? '~' : ''}
                       {formatNumber(totalTokens)}
+                      {contextPending && ` · ${t('Partial estimate')}`}
                       {tokenPercentage !== null && tokenPercentage > 10 && ` (${tokenPercentage}%)`}
                     </Text>
                   </Flex>
@@ -2075,11 +2188,11 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   >
                     <UnstyledButton
                       className={cn(
-                        'flex min-w-0 max-w-full items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors',
-                        !model && 'animate-pulse bg-blue-500/20'
+                        'flex min-w-0 max-w-full items-center gap-1 px-2 py-1 rounded-md hover:bg-[var(--chatbox-background-tertiary)] transition-colors',
+                        !model && 'animate-pulse bg-chatbox-background-brand-secondary'
                       )}
                     >
-                      {!!model && <ProviderImageIcon size={18} provider={model.provider} />}
+                      {!!model && <ModelProviderIcon size={20} modelId={model.modelId} providerId={model.provider} />}
                       <Text
                         size="sm"
                         data-testid={TestId.model.selectorTrigger}
@@ -2101,7 +2214,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
             </Flex>
           </Box>
 
-          <Disclaimer />
+          {/* Small screens show the disclaimer only on a new conversation, where the row is free. */}
+          {(!isSmallScreen || isNewSession) && <Disclaimer />}
         </Stack>
         {currentSession && (
           <CompressionModal
@@ -2171,7 +2285,7 @@ const AttachmentMenu: React.FC<{
       <Menu.Target>
         <UnstyledButton
           data-testid={TestId.chat.attachmentMenuTrigger}
-          className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors"
+          className="flex items-center gap-1 px-2 py-1 rounded-md hover:bg-[var(--chatbox-background-tertiary)] transition-colors"
         >
           <IconCirclePlus size={toolbarIconSize} strokeWidth={1.8} className="text-[var(--chatbox-tint-secondary)]" />
         </UnstyledButton>

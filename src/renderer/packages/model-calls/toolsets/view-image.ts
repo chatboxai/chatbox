@@ -4,16 +4,29 @@ import { DEFAULT_TOOL_RESULT_IMAGE_INLINE_LIMIT } from '@shared/tool-result-imag
 import {
   buildViewImageToolResultContent,
   buildViewImageUserMessage,
+  isImageViewingToolName,
+  isReadFileImagePath,
   parseViewImageToolResult,
+  READ_FILE_IMAGE_EXTENSIONS,
   VIEW_IMAGE_MAX_READ_BYTES,
   VIEW_IMAGE_MAX_SOURCE_DIMENSION,
   VIEW_IMAGE_MAX_SOURCE_PIXELS,
   VIEW_IMAGE_TOOL_NAME,
   type ViewImageInjection,
   type ViewImageToolResult,
+  viewedImageLabel,
   viewImageAttachmentNotice,
 } from '@shared/tools/view-image'
-import { jsonSchema, type ModelMessage, type ToolSet } from 'ai'
+import {
+  createViewImageBatchBudget,
+  lastAssistantMessageIndex,
+  VIEW_IMAGE_BATCH_GUIDANCE,
+  VIEW_IMAGE_MAX_NORMALIZED_LENGTH,
+} from '@shared/tools/view-image-batch'
+import { boundToolResultImages } from '@shared/tools/view-image-replay'
+import { isUploadedFilePath } from '@shared/uploaded-file-tools'
+import { validatedToolSchema } from '@shared/validated-tool-schema'
+import type { ModelMessage, ToolResultPart, ToolSet } from 'ai'
 import { getImageBase64AndResize, MODEL_IMAGE_MAX_DIMENSION, svgToPngBase64 } from '@/packages/pic_utils'
 import platform from '@/platform'
 import { saveImage } from '@/utils/image'
@@ -150,15 +163,68 @@ export function isViewImageAvailable(): boolean {
   return Boolean(platform.fsReadImage || platform.sandboxReadFileBytes)
 }
 
+/** Lets another image-viewing tool deliver its image through the same step injection and replay bounds. */
+export interface ImageToolResults {
+  reserve: ReturnType<typeof createViewImageBatchBudget>
+  /** Stores a model-ready data URL and returns the tool result to persist. `label` names the image to the model. */
+  record(params: { toolCallId: string; label: string; dataUrl: string }): Promise<ViewImageToolResult>
+  /** Model output for a result returned by `record`. */
+  toModelOutput(options: { toolCallId: string; output: unknown }): Promise<ToolResultOutput>
+}
+
+type ToolResultOutput = { type: 'text'; value: string } | ReturnType<typeof buildViewImageToolResultContent>
+
 export interface ViewImageToolSetResult {
   tools: ToolSet
   description: string
+  imageResults: ImageToolResults
   /**
-   * Rewrites step messages inside the running generation to keep only the most recent
-   * image results inline. Protocols without tool-result media additionally receive those
+   * Preserves pending image results and bounds the consumed historical images. Protocols without tool-result media additionally receive those
    * images as user messages. Wire it into prepareStep.
    */
   injectImagesIntoStepMessages?: (messages: ModelMessage[]) => Promise<ModelMessage[]>
+  /** Reads an image file into a stored result, sharing view_image's per-step budget, limits and replay bounds. */
+  viewFile(params: {
+    toolCallId: string
+    filePath: string
+    /** Step messages; absent when a paused or failed call is resumed outside a model step. */
+    messages?: ModelMessage[]
+  }): Promise<ViewImageToolResult | { error: string }>
+}
+
+/**
+ * Lets read_file open image files as real visual input through the view_image pipeline;
+ * every other path keeps the original read_file behavior.
+ */
+export function withImageFileReading(
+  readFile: ToolSet[string],
+  viewImage: Pick<ViewImageToolSetResult, 'viewFile' | 'imageResults'>
+): ToolSet[string] {
+  const readsImage = (input: unknown) => {
+    const filePath = stringField(asRecord(input), 'file_path')
+    return filePath !== undefined && !isUploadedFilePath(filePath) && isReadFileImagePath(filePath)
+  }
+  const baseDescription = typeof readFile.description === 'string' ? readFile.description : ''
+  const imageFormats = READ_FILE_IMAGE_EXTENSIONS.map((extension) => extension.slice(1)).join(', ')
+  const tool: ToolSet[string] = {
+    description: `${baseDescription} Image files (${imageFormats}) are returned as real visual input.`,
+    inputSchema: readFile.inputSchema,
+    execute: (input, toolOptions) => {
+      if (!readsImage(input)) return readFile.execute?.(input, toolOptions)
+      return viewImage.viewFile({
+        toolCallId: toolOptions.toolCallId,
+        filePath: (input as { file_path: string }).file_path,
+        messages: toolOptions.messages,
+      })
+    },
+    toModelOutput: (options: { toolCallId: string; input: unknown; output: unknown }) => {
+      if (readsImage(options.input)) return viewImage.imageResults.toModelOutput(options)
+      return readFile.toModelOutput
+        ? readFile.toModelOutput(options)
+        : { type: 'text' as const, value: JSON.stringify(options.output) }
+    },
+  }
+  return tool
 }
 
 async function resolveStoredImage(storageKey: string): Promise<{ base64Data: string; mediaType: string } | null> {
@@ -167,105 +233,25 @@ async function resolveStoredImage(storageKey: string): Promise<{ base64Data: str
   return parseDataUrl(blob.startsWith('data:') ? blob : `data:image/png;base64,${blob}`)
 }
 
-const VIEW_IMAGE_LABEL_PREFIX = '[Image from view_image tool: '
-
-function viewImageLabelFilePath(part: { type: string; text?: string }): string | undefined {
-  if (part.type !== 'text' || !part.text?.startsWith(VIEW_IMAGE_LABEL_PREFIX) || !part.text.endsWith(']')) {
-    return undefined
-  }
-  return part.text.slice(VIEW_IMAGE_LABEL_PREFIX.length, -1)
+function unavailableImageNotice(filePath: string): string {
+  return `${viewedImageLabel(filePath)} (image data is no longer available)`
 }
 
-function followsToolImageResult(messages: ModelMessage[], messageIndex: number): boolean {
-  const previousMessage = messageIndex > 0 ? messages[messageIndex - 1] : undefined
-  return previousMessage?.role === 'tool'
-}
-
-function boundToolResultImages(messages: ModelMessage[], limit: number): ModelMessage[] {
-  let remainingImages = Math.max(0, Math.floor(limit))
-  const reversedMessages: ModelMessage[] = []
-  const omittedFilePathsByToolMessage = new Map<number, string[]>()
-
-  for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
-    const message = messages[messageIndex]
-    if (message.role === 'user' && Array.isArray(message.content) && followsToolImageResult(messages, messageIndex)) {
-      const boundedContent = [] as typeof message.content
-      for (let partIndex = message.content.length - 1; partIndex >= 0; partIndex -= 1) {
-        const part = message.content[partIndex]
-        const label = partIndex > 0 ? message.content[partIndex - 1] : undefined
-        const filePath = label ? viewImageLabelFilePath(label) : undefined
-        if (part.type === 'image' && label && filePath !== undefined) {
-          if (remainingImages > 0) {
-            boundedContent.unshift(label, part)
-            remainingImages -= 1
-          } else {
-            const omittedFilePaths = omittedFilePathsByToolMessage.get(messageIndex - 1) ?? []
-            omittedFilePaths.push(filePath)
-            omittedFilePathsByToolMessage.set(messageIndex - 1, omittedFilePaths)
-          }
-          partIndex -= 1
-          continue
-        }
-        boundedContent.unshift(part)
-      }
-      if (boundedContent.length > 0) reversedMessages.push({ ...message, content: boundedContent })
-      continue
-    }
-
-    if (message.role === 'tool') {
-      const boundedContent = [] as typeof message.content
-      const omittedFilePaths = omittedFilePathsByToolMessage.get(messageIndex) ?? []
-      for (let partIndex = message.content.length - 1; partIndex >= 0; partIndex -= 1) {
-        const part = message.content[partIndex]
-        // Tool messages also carry approval responses, which have no output to bound.
-        if (part.type !== 'tool-result') {
-          boundedContent.unshift(part)
-          continue
-        }
-        const output = part.output
-        if (output.type !== 'content') {
-          if (output.type === 'text') {
-            const outputText = output.value
-            const omittedPathIndex = omittedFilePaths.findIndex((filePath) =>
-              outputText.startsWith(`Viewed image: ${filePath}. The image is attached`)
-            )
-            if (omittedPathIndex >= 0) {
-              const [filePath] = omittedFilePaths.splice(omittedPathIndex, 1)
-              boundedContent.unshift({
-                ...part,
-                output: {
-                  type: 'text',
-                  value: `Viewed image: ${filePath}. Image omitted from this replay to keep the request payload bounded.`,
-                },
-              })
-              continue
-            }
-          }
-          boundedContent.unshift(part)
-          continue
-        }
-        const boundedValue = [] as typeof output.value
-        for (let valueIndex = output.value.length - 1; valueIndex >= 0; valueIndex -= 1) {
-          const valuePart = output.value[valueIndex]
-          if (valuePart.type !== 'image-data') {
-            boundedValue.unshift(valuePart)
-            continue
-          }
-          if (remainingImages > 0) {
-            boundedValue.unshift(valuePart)
-            remainingImages -= 1
-          }
-        }
-        boundedContent.unshift({ ...part, output: { ...output, value: boundedValue } })
-      }
-      reversedMessages.push({ ...message, content: boundedContent })
-      continue
-    }
-
-    reversedMessages.push(message)
+/** Whether a tool result is exactly one of the outputs produced for this image, never arbitrary text content. */
+function reportsViewedImage(output: ToolResultPart['output'], filePath: string): boolean {
+  if (output.type === 'text') {
+    return output.value === viewImageAttachmentNotice(filePath) || output.value === unavailableImageNotice(filePath)
   }
-
-  return reversedMessages.reverse()
+  if (output.type === 'content') {
+    const [label, image] = output.value
+    return (
+      output.value.length === 2 &&
+      label.type === 'text' &&
+      label.text === viewedImageLabel(filePath) &&
+      image.type === 'file'
+    )
+  }
+  return false
 }
 
 function matchResultEntriesToMessagePositions(
@@ -286,8 +272,12 @@ function matchResultEntriesToMessagePositions(
     if (message.role !== 'tool' || !Array.isArray(message.content)) continue
     for (let partIndex = message.content.length - 1; partIndex >= 0 && unmatchedResultCount > 0; partIndex -= 1) {
       const part = message.content[partIndex]
-      if (part.type !== 'tool-result' || part.toolName !== VIEW_IMAGE_TOOL_NAME) continue
+      if (part.type !== 'tool-result' || !isImageViewingToolName(part.toolName)) continue
       const unmatchedResults = unmatchedResultsByToolCallId.get(part.toolCallId)
+      const candidate = unmatchedResults?.at(-1)
+      // A reused call ID may belong to a later text result (read_file on a text file, a browser
+      // read); only a result that reports this image may claim it.
+      if (!candidate || !reportsViewedImage(part.output, candidate.result.file_path)) continue
       const matchedResult = unmatchedResults?.pop()
       if (!matchedResult) continue
       const messageMatches = matchedResults.get(messageIndex) ?? new Map<number, ViewImageResultEntry>()
@@ -302,6 +292,7 @@ function matchResultEntriesToMessagePositions(
 export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolSetResult {
   // Keep occurrence order as well as the downscaled data. Some providers reuse tool-call
   // IDs across turns, so IDs alone cannot identify or bound historical image occurrences.
+  const reserveImageCall = createViewImageBatchBudget()
   const resultEntries: ViewImageResultEntry[] = []
   const resultEntriesByStorageKey = new Map<string, ViewImageResultEntry>()
   const resolvedImagesByStorageKey = new Map<string, ViewImageInjection>()
@@ -321,12 +312,112 @@ export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolS
     return image
   }
 
+  const recordImageResult: ImageToolResults['record'] = async ({ toolCallId, label, dataUrl }) => {
+    const parsedImage = parseDataUrl(dataUrl)
+    if (!parsedImage) throw new Error('Failed to process image into a model-compatible format.')
+    const imageStorageKey = await saveImage(`view-image:${context.sessionId ?? 'session'}`, dataUrl)
+    const result: ViewImageToolResult = {
+      file_path: label,
+      image_storage_key: imageStorageKey,
+      media_type: parsedImage.mediaType,
+    }
+    const entry: ViewImageResultEntry = { toolCallId, result, image: { filePath: label, ...parsedImage } }
+    resultEntries.push(entry)
+    resultEntriesByStorageKey.set(result.image_storage_key, entry)
+    return result
+  }
+
+  const toImageModelOutput: ImageToolResults['toModelOutput'] = async ({ toolCallId, output }) => {
+    const record = asRecord(output)
+    const error = stringField(record, 'error')
+    if (error) return { type: 'text' as const, value: `Error: ${error}` }
+    const result = parseViewImageToolResult(output)
+    if (!result) return { type: 'text' as const, value: 'Error: the tool returned an unexpected image result.' }
+    const entry = resultEntriesByStorageKey.get(result.image_storage_key)
+    const parsed = await resolveToolCallImage(result, entry?.toolCallId === toolCallId ? entry : undefined)
+    if (!parsed) {
+      return { type: 'text' as const, value: unavailableImageNotice(result.file_path) }
+    }
+    if (!context.toolResultImages) {
+      return { type: 'text' as const, value: viewImageAttachmentNotice(result.file_path) }
+    }
+    return buildViewImageToolResultContent(parsed)
+  }
+
+  const viewFile: ViewImageToolSetResult['viewFile'] = async ({ toolCallId, filePath: requestedPath, messages }) => {
+    reserveImageCall(messages)
+    if (isUploadedFilePath(requestedPath))
+      return {
+        error: 'This virtual path requires the uploaded-file read_file tool. Use a filesystem path for this operation.',
+      }
+    let filePath = await remapPhantomHomePathForProvider(requestedPath, context.provider)
+    filePath = normalizeToolPathForPlatform(filePath)
+
+    const readResult = await readImageBytes(context, filePath)
+    if ('error' in readResult) return { error: readResult.error }
+    const sourceBytes = new Uint8Array(readResult.bytes)
+
+    const mediaType = mediaTypeFromMagicBytes(sourceBytes.subarray(0, 12)) ?? mediaTypeFromExtension(filePath)
+    if (!mediaType) {
+      return { error: 'Unsupported or unrecognized image format. Supported: png, jpg, webp, gif, bmp, svg.' }
+    }
+    if (mediaType !== 'image/svg+xml') {
+      const sourceBounds = readRasterImageBounds(sourceBytes, mediaType)
+      if (!sourceBounds) {
+        return { error: 'Failed to inspect image dimensions safely. The file may be corrupted.' }
+      }
+      if (
+        sourceBounds.maxWidth > VIEW_IMAGE_MAX_SOURCE_DIMENSION ||
+        sourceBounds.maxHeight > VIEW_IMAGE_MAX_SOURCE_DIMENSION ||
+        sourceBounds.maxPixels > VIEW_IMAGE_MAX_SOURCE_PIXELS
+      ) {
+        return {
+          error: `Image dimensions are too large (${sourceBounds.maxWidth}x${sourceBounds.maxHeight}, up to ${sourceBounds.maxPixels} pixels)`,
+        }
+      }
+    }
+
+    // Downscale to mainstream vision-model limits and normalize exotic formats to
+    // png/jpeg before storing — keeps blobs and request payloads bounded.
+    let dataUrl: string
+    try {
+      let file: File
+      if (mediaType === 'image/svg+xml') {
+        const convertedSvg = await svgToPngBase64(`data:image/svg+xml;base64,${bytesToBase64(sourceBytes)}`, {
+          maxOutputDimension: MODEL_IMAGE_MAX_DIMENSION,
+          strictResourceIsolation: true,
+        })
+        const convertedImage = parseDataUrl(convertedSvg)
+        if (!convertedImage?.base64Data) throw new Error('SVG conversion produced an empty image')
+        const convertedBlob = await fetch(convertedSvg).then((response) => response.blob())
+        file = new File([convertedBlob], fileNameOf(filePath), { type: convertedImage.mediaType })
+      } else {
+        file = new File([readResult.bytes], fileNameOf(filePath), { type: mediaType })
+      }
+      dataUrl = await getImageBase64AndResize(file, { outputType: 'image/webp', quality: 0.85 })
+    } catch {
+      return { error: 'Failed to decode image. The file may be corrupted or not a valid image.' }
+    }
+
+    if (dataUrl.length > VIEW_IMAGE_MAX_NORMALIZED_LENGTH) {
+      return { error: 'Normalized image exceeds the request image limit. Resize or crop the image and try again.' }
+    }
+    const parsedImage = parseDataUrl(dataUrl)
+    if (!parsedImage) {
+      return { error: 'Failed to process image into a model-compatible format.' }
+    }
+    return recordImageResult({ toolCallId, label: requestedPath, dataUrl })
+  }
+
   const view_image: ToolSet[string] = {
     description:
-      'View an image file so you can actually see its contents (screenshots, charts, photos, generated images). ' +
-      'Relative paths are resolved in the session sandbox; absolute paths read the user filesystem (read-only). ' +
-      'Supported formats: png, jpg, webp, gif, bmp, svg. Large images are downscaled automatically.',
-    inputSchema: jsonSchema({
+      'View an image file as real visual input (screenshots, charts, photos, generated images). ' +
+      (context.provider?.type === 'local' && context.sessionId
+        ? 'Relative paths resolve in the session sandbox; absolute paths read the user filesystem (read-only). '
+        : 'Use absolute paths; they read the user filesystem (read-only). ') +
+      'Supports png, jpg, webp, gif, bmp, svg; large images are downscaled. ' +
+      VIEW_IMAGE_BATCH_GUIDANCE,
+    inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
         file_path: {
@@ -337,109 +428,41 @@ export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolS
       required: ['file_path'],
       additionalProperties: false,
     }),
-    execute: async (input, toolOptions) => {
-      const viewInput = input as { file_path: string }
-      let filePath = await remapPhantomHomePathForProvider(viewInput.file_path, context.provider)
-      filePath = normalizeToolPathForPlatform(filePath)
-
-      const readResult = await readImageBytes(context, filePath)
-      if ('error' in readResult) return { error: readResult.error }
-      const sourceBytes = new Uint8Array(readResult.bytes)
-
-      const mediaType = mediaTypeFromMagicBytes(sourceBytes.subarray(0, 12)) ?? mediaTypeFromExtension(filePath)
-      if (!mediaType) {
-        return { error: 'Unsupported or unrecognized image format. Supported: png, jpg, webp, gif, bmp, svg.' }
-      }
-      if (mediaType !== 'image/svg+xml') {
-        const sourceBounds = readRasterImageBounds(sourceBytes, mediaType)
-        if (!sourceBounds) {
-          return { error: 'Failed to inspect image dimensions safely. The file may be corrupted.' }
-        }
-        if (
-          sourceBounds.maxWidth > VIEW_IMAGE_MAX_SOURCE_DIMENSION ||
-          sourceBounds.maxHeight > VIEW_IMAGE_MAX_SOURCE_DIMENSION ||
-          sourceBounds.maxPixels > VIEW_IMAGE_MAX_SOURCE_PIXELS
-        ) {
-          return {
-            error: `Image dimensions are too large (${sourceBounds.maxWidth}x${sourceBounds.maxHeight}, up to ${sourceBounds.maxPixels} pixels)`,
-          }
-        }
-      }
-
-      // Downscale to mainstream vision-model limits and normalize exotic formats to
-      // png/jpeg before storing — keeps blobs and request payloads bounded.
-      let dataUrl: string
-      try {
-        let file: File
-        if (mediaType === 'image/svg+xml') {
-          const convertedSvg = await svgToPngBase64(`data:image/svg+xml;base64,${bytesToBase64(sourceBytes)}`, {
-            maxOutputDimension: MODEL_IMAGE_MAX_DIMENSION,
-            strictResourceIsolation: true,
-          })
-          const convertedImage = parseDataUrl(convertedSvg)
-          if (!convertedImage?.base64Data) throw new Error('SVG conversion produced an empty image')
-          const convertedBlob = await fetch(convertedSvg).then((response) => response.blob())
-          file = new File([convertedBlob], fileNameOf(filePath), { type: convertedImage.mediaType })
-        } else {
-          file = new File([readResult.bytes], fileNameOf(filePath), { type: mediaType })
-        }
-        dataUrl = await getImageBase64AndResize(file, { outputType: 'image/webp', quality: 0.85 })
-      } catch {
-        return { error: 'Failed to decode image. The file may be corrupted or not a valid image.' }
-      }
-
-      const parsedImage = parseDataUrl(dataUrl)
-      if (!parsedImage) {
-        return { error: 'Failed to process image into a model-compatible format.' }
-      }
-      const imageStorageKey = await saveImage(`view-image:${context.sessionId ?? 'session'}`, dataUrl)
-      const result: ViewImageToolResult = {
-        file_path: viewInput.file_path,
-        image_storage_key: imageStorageKey,
-        media_type: parsedImage.mediaType,
-      }
-      const entry: ViewImageResultEntry = {
+    execute: async (input, toolOptions) =>
+      viewFile({
         toolCallId: toolOptions.toolCallId,
-        result,
-        image: { filePath: result.file_path, ...parsedImage },
-      }
-      resultEntries.push(entry)
-      resultEntriesByStorageKey.set(result.image_storage_key, entry)
-      return result
-    },
+        filePath: (input as { file_path: string }).file_path,
+        messages: toolOptions.messages,
+      }),
     // Within the running generation, later steps must receive the actual image — never
     // base64-as-text. Media-capable protocols embed it in the tool result; others get a
     // text notice here and the image via injectImagesIntoStepMessages (user message).
     // History resends are handled by the shared model-message converter the same way.
-    toModelOutput: async ({ toolCallId, output }: { toolCallId: string; output: unknown }) => {
-      const record = asRecord(output)
-      const error = stringField(record, 'error')
-      if (error) return { type: 'text' as const, value: `Error: ${error}` }
-      const result = parseViewImageToolResult(output)
-      if (!result) return { type: 'text' as const, value: 'Error: view_image returned an unexpected result.' }
-      const entry = resultEntriesByStorageKey.get(result.image_storage_key)
-      const parsed = await resolveToolCallImage(result, entry?.toolCallId === toolCallId ? entry : undefined)
-      if (!parsed) {
-        return { type: 'text' as const, value: `Viewed image: ${result.file_path} (image data is no longer available)` }
-      }
-      if (!context.toolResultImages) {
-        return { type: 'text' as const, value: viewImageAttachmentNotice(result.file_path) }
-      }
-      return buildViewImageToolResultContent(parsed)
-    },
+    toModelOutput: toImageModelOutput,
   }
 
-  // Keep current-generation replay bounded. Older image outputs become compact JSON;
-  // selected images are either already embedded in tool output or injected as user parts.
+  // Keep pending results until a subsequent assistant response, and bound older pixels.
+  // Selected images are embedded in tool output or injected as user parts.
   // Runs per step (prepareStep), so it never mutates the input messages.
   const injectImagesIntoStepMessages = async (messages: ModelMessage[]): Promise<ModelMessage[]> => {
-    if (resultEntries.length === 0) return messages
+    if (resultEntries.length === 0) return boundToolResultImages(messages, DEFAULT_TOOL_RESULT_IMAGE_INLINE_LIMIT)
 
     // Match current-generation executions to tool-result positions from newest to oldest.
     // This prevents a reused call ID from capturing older history or duplicating one image.
     const matchedResults = matchResultEntriesToMessagePositions(messages, resultEntries)
 
-    const recentResults = new Set(resultEntries.slice(-DEFAULT_TOOL_RESULT_IMAGE_INLINE_LIMIT))
+    const lastAssistant = lastAssistantMessageIndex(messages)
+    let remainingHistory = DEFAULT_TOOL_RESULT_IMAGE_INLINE_LIMIT
+    const recentResults = new Set<ViewImageResultEntry>()
+    for (const [messageIndex, entries] of matchedResults) {
+      for (const entry of entries.values()) {
+        if (messageIndex > lastAssistant) recentResults.add(entry)
+        else if (remainingHistory > 0) {
+          recentResults.add(entry)
+          remainingHistory -= 1
+        }
+      }
+    }
     const output: ModelMessage[] = []
     for (const [messageIndex, message] of messages.entries()) {
       if (message.role !== 'tool' || !Array.isArray(message.content)) {
@@ -449,7 +472,7 @@ export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolS
       const imageInjections: ViewImageInjection[] = []
       const boundedContent = [] as typeof message.content
       for (const [partIndex, part] of message.content.entries()) {
-        if (part.type !== 'tool-result' || part.toolName !== VIEW_IMAGE_TOOL_NAME) {
+        if (part.type !== 'tool-result' || !isImageViewingToolName(part.toolName)) {
           boundedContent.push(part)
           continue
         }
@@ -459,7 +482,13 @@ export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolS
           continue
         }
         if (!recentResults.has(cached)) {
-          boundedContent.push({ ...part, output: { type: 'json' as const, value: { ...cached.result } } })
+          boundedContent.push({
+            ...part,
+            output: {
+              type: 'text' as const,
+              value: `Historical image pixels omitted: ${cached.result.file_path}. View or capture it again if needed.`,
+            },
+          })
           continue
         }
         if (context.toolResultImages) {
@@ -472,7 +501,23 @@ export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolS
       }
       output.push({ ...message, content: boundedContent })
       if (imageInjections.length > 0) {
-        output.push(buildViewImageUserMessage(imageInjections))
+        const next = messages[messageIndex + 1]
+        const nextContent = next?.role === 'user' && Array.isArray(next.content) ? next.content : []
+        const injection = buildViewImageUserMessage(imageInjections)
+        const alreadyInjected =
+          Array.isArray(injection.content) &&
+          injection.content.length === nextContent.length &&
+          injection.content.every((part, index) => {
+            const existing = nextContent[index]
+            return (
+              (part.type === 'text' && existing.type === 'text' && part.text === existing.text) ||
+              (part.type === 'image' &&
+                existing.type === 'image' &&
+                part.image === existing.image &&
+                part.mediaType === existing.mediaType)
+            )
+          })
+        if (!alreadyInjected) output.push(injection)
       }
     }
     for (const entry of resultEntries) {
@@ -485,14 +530,14 @@ export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolS
     tools: { [VIEW_IMAGE_TOOL_NAME]: view_image },
     description: `
 ## Viewing Images
-Use the view_image tool to look at image files — you will see the actual image, not a text description. Use it to inspect screenshots, rendered charts, downloaded pictures, and images you generated or modified in the sandbox.
-- Relative paths read from the session sandbox working directory; absolute paths read the user's filesystem (read-only).
-- After generating or editing an image in the sandbox, view it to verify the result before presenting it to the user.${
+- After generating or editing an image, view it with view_image to verify the result before presenting it to the user.${
       context.toolResultImages
         ? ''
         : '\n- The viewed image arrives in a user message immediately after the tool result. It is real image input, not text.'
     }
 `,
     injectImagesIntoStepMessages,
+    viewFile,
+    imageResults: { reserve: reserveImageCall, record: recordImageResult, toModelOutput: toImageModelOutput },
   }
 }

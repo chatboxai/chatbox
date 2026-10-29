@@ -70,10 +70,6 @@ html[data-theme="dark"] {
   a {
     color: #fff;
   }
-  /* 错误消息中的链接强制成蓝色 */
-  .message-error-tips a {
-    color: #2563eb !important;
-  }
 }
 
 html[data-theme="light"] {
@@ -84,10 +80,11 @@ html[data-theme="light"] {
   a {
     color: #333;
   }
-  /* 错误消息中的链接强制成蓝色 */
-  .message-error-tips a {
-    color: #2563eb !important;
-  }
+}
+
+/* 错误消息中的链接使用品牌色 */
+.message-error-tips a {
+  color: var(--chatbox-tint-brand) !important;
 }
 
 .App {
@@ -105,9 +102,8 @@ html[data-theme="light"] {
   padding-left: var(--mobile-safe-area-inset-left, 0px);
 }
 
-/* 当页面包含 disclaimer 时，取消 .App 的底部安全区域 padding，
-   让 disclaimer 沉入安全区域，减少底部留白 */
-.App:has(.disclaimer-safe-area) {
+/* iOS allows the disclaimer to extend into the bottom safe area to reduce visual whitespace. */
+.App[data-chatbox-platform="ios"]:has(.disclaimer-safe-area) {
   padding-bottom: 0;
 }
 
@@ -159,4 +155,71 @@ html[data-theme="light"] {
   src: url("./fonts/Cairo-Bold.ttf") format("truetype");
   font-weight: 700;
   font-style: normal;
+}
+
+/* Settings rows (components/settings/SettingsLayout.tsx) */
+.settings-section-body {
+  container-type: inline-size;
+}
+
+.settings-section-body > .settings-row + .settings-row {
+  border-top: 1px solid var(--chatbox-background-gray-secondary);
+}
+
+.settings-row-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.settings-row[data-density="compact"] .settings-row-main {
+  padding: 10px 12px;
+}
+
+.settings-row[data-density="touch"] .settings-row-main {
+  min-height: 44px;
+  padding: 10px 14px;
+}
+
+.settings-row-label {
+  flex: 1 1 auto;
+}
+
+.settings-row-control {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  max-width: 100%;
+}
+
+.settings-row[data-layout="block"] .settings-row-main {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.settings-row[data-layout="block"] .settings-row-control {
+  justify-content: flex-start;
+}
+
+.settings-row[data-layout="block"] .settings-row-control > * {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+@container (min-width: 560px) {
+  .settings-row[data-layout="block"]:not([data-density="touch"]) .settings-row-main {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .settings-row[data-layout="block"]:not([data-density="touch"]) .settings-row-label {
+    flex: 0 0 220px;
+    padding-top: 6px;
+  }
+
+  .settings-row[data-layout="block"]:not([data-density="touch"]) .settings-row-control {
+    flex: 1 1 auto;
+  }
 }

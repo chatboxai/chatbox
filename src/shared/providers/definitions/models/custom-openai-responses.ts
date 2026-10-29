@@ -8,6 +8,11 @@ import type { ProviderModelInfo } from '../../../types'
 import type { ModelDependencies } from '../../../types/adapters'
 import { normalizeOpenAIResponsesHostAndPath } from '../../../utils/llm_utils'
 import { normalizeOpenAIReasoningOptions } from '../../../utils/reasoning-control'
+import {
+  compatibleImageApiHeaders,
+  createOpenAICompatibleImageModel,
+  getOpenAIImageGenerationOptions,
+} from './openai-compatible-image'
 
 interface Options {
   apiKey: string
@@ -99,6 +104,22 @@ export default class CustomOpenAIResponses extends AbstractAISDKModel {
   }
 
   protected getImageModel() {
-    return null
+    const modelId = this.options.model.modelId
+    if (!modelId) return null
+    return createOpenAICompatibleImageModel({
+      apiKey: this.options.apiKey,
+      apiHost: this.options.apiHost,
+      modelId,
+      fetch: createFetchWithProxy(this.options.useProxy, this.dependencies),
+      headers: compatibleImageApiHeaders(this.options.apiHost),
+    })
+  }
+
+  protected override getImageGenerationOptions(aspectRatio?: string) {
+    return getOpenAIImageGenerationOptions(this.options.model.modelId, aspectRatio)
+  }
+
+  protected override getMaxImagesPerGenerationRequest() {
+    return 1
   }
 }

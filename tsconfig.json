@@ -27,6 +27,7 @@
     "test",
     "release",
     "out",
+    "apps/mobile",
     ".erb/dll",
     "ios",
     "android",

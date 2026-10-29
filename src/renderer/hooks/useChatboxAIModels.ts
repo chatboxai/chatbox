@@ -1,8 +1,35 @@
-import { ModelProviderEnum, type ProviderModelInfo } from '@shared/types'
-import { useQuery } from '@tanstack/react-query'
-import { useMemo } from 'react'
+import { type ChatboxAILicenseDetail, ModelProviderEnum, type ProviderModelInfo } from '@shared/types'
+import { type QueryFilters, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useMemo } from 'react'
 import { type ChatboxAIModelList, getChatboxAIModelList, getModelManifest } from '@/packages/remote'
 import { useLanguage, useProviderSettings, useSettingsStore } from '@/stores/settingsStore'
+
+const CHATBOX_AI_MODELS_QUERY_KEY = 'chatbox-ai-models'
+
+export function useRefreshChatboxAIModelsOnLicenseChange(
+  licenseKey: string | null | undefined,
+  detail:
+    | Pick<ChatboxAILicenseDetail, 'plan' | 'name' | 'status' | 'expires_at' | 'token_expire_time'>
+    | null
+    | undefined
+) {
+  const queryClient = useQueryClient()
+  const activeLicenseKey = useSettingsStore((state) => state.licenseKey)
+  const entitlement = detail
+    ? JSON.stringify([detail.plan, detail.name, detail.status, detail.expires_at, detail.token_expire_time])
+    : undefined
+
+  useEffect(() => {
+    if (!licenseKey || licenseKey !== activeLicenseKey || !entitlement) return
+
+    // The model catalog includes server-resolved access, so refresh it when the active plan changes.
+    const filters: QueryFilters = {
+      predicate: (query) => query.queryKey[0] === CHATBOX_AI_MODELS_QUERY_KEY && query.queryKey[2] === licenseKey,
+    }
+    // Discard requests started before the new entitlement was observed, including the first catalog load.
+    void queryClient.cancelQueries(filters).then(() => queryClient.invalidateQueries(filters))
+  }, [queryClient, activeLicenseKey, licenseKey, entitlement])
+}
 
 type ChatboxAIManifestModel = {
   modelId: string
@@ -42,7 +69,7 @@ const useChatboxAIModels = () => {
   const licenseKey = useSettingsStore((state) => state.licenseKey)
 
   const { data, ...others } = useQuery({
-    queryKey: ['chatbox-ai-models', language, licenseKey],
+    queryKey: [CHATBOX_AI_MODELS_QUERY_KEY, language, licenseKey],
     queryFn: async () => {
       const [manifest, modelList] = await Promise.all([
         getModelManifest({
@@ -76,6 +103,7 @@ const useChatboxAIModels = () => {
       }
     },
     staleTime: 3600 * 1000,
+    refetchOnWindowFocus: 'always',
   })
 
   const allChatboxAIModels = useMemo(
@@ -90,11 +118,12 @@ const useChatboxAIModels = () => {
           ({
             modelId: item.modelId,
             nickname: item.modelName,
+            description: item.description,
             labels: item.labels,
             capabilities: item.capabilities,
             type: item.type || 'image',
             contextWindow: item.contextWindow || undefined,
-          }) as ProviderModelInfo
+          }) satisfies ProviderModelInfo & { description?: string }
       ) || [],
     [data]
   )

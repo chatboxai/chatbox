@@ -1,10 +1,9 @@
 import './setup'
+import { InMemorySessionRepository } from '@chatbox/core/testing'
 import { v4 as uuidv4 } from 'uuid'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   buildContextForAI,
-  buildContextForSession,
-  buildContextForThread,
   checkOverflow,
   DEFAULT_COMPACTION_THRESHOLD,
   isAutoCompactionEnabled,
@@ -19,6 +18,11 @@ import type {
   Session,
   SessionThread,
 } from '../../../src/shared/types/session'
+
+/** Usable window when the reply limit is unknown: the reservation is capped at a quarter of the window. */
+function usableWindow(contextWindow: number): number {
+  return contextWindow - Math.min(OUTPUT_RESERVE_TOKENS, Math.floor(contextWindow * 0.25))
+}
 import type { SessionSettings, Settings } from '../../../src/shared/types/settings'
 
 vi.mock('../../../src/renderer/packages/model-registry', () => ({
@@ -110,6 +114,18 @@ function createTestThread(
     createdAt: Date.now(),
     compactionPoints: options?.compactionPoints,
   }
+}
+
+async function seedContextRows(fixture: Session) {
+  const repository = new InMemorySessionRepository()
+  await repository.seedSession(fixture)
+  return repository
+}
+
+async function selectRowContext(repository: InMemorySessionRepository, sessionId: string, threadId?: string) {
+  const source = await repository.getSessionContextSource({ sessionId, threadId })
+  if (!source) throw new Error('Missing context source')
+  return buildContextForAI({ messages: source.candidateMessages, compactionPoints: source.compactionPoints })
 }
 
 describe('Context Management Integration Tests', () => {
@@ -269,7 +285,7 @@ describe('Context Management Integration Tests', () => {
   })
 
   describe('Session and Thread Context Building', () => {
-    it('should build context for session with compaction points', () => {
+    it('should build context for session with compaction points', async () => {
       const msg1 = createTestMessage('user', 'Old')
       const msg2 = createTestMessage('assistant', 'Old response')
       const msg3 = createTestMessage('user', 'New')
@@ -280,13 +296,14 @@ describe('Context Management Integration Tests', () => {
         compactionPoints: [createCompactionPoint(summary.id, msg2.id)],
       })
 
-      const result = buildContextForSession(session)
+      const repository = await seedContextRows(session)
+      const result = await selectRowContext(repository, session.id)
 
       expect(result).toHaveLength(3) // summary + msg3 + msg4
       expect(result[0].isSummary).toBe(true)
     })
 
-    it('should build context for specific thread in session', () => {
+    it('should build context for specific thread in session', async () => {
       const sessionMessages = [createTestMessage('user', 'Session message')]
 
       const threadMsg1 = createTestMessage('user', 'Thread message 1')
@@ -301,14 +318,15 @@ describe('Context Management Integration Tests', () => {
         threads: [thread],
       })
 
-      const result = buildContextForSession(session, { threadId: thread.id })
+      const repository = await seedContextRows(session)
+      const result = await selectRowContext(repository, session.id, thread.id)
 
       // Should use thread's messages and compaction points
       expect(result).toHaveLength(2) // summary + threadMsg2
       expect(result[0].isSummary).toBe(true)
     })
 
-    it('should build context for standalone thread', () => {
+    it('should build context for standalone thread', async () => {
       const msg1 = createTestMessage('user', 'Thread msg 1')
       const msg2 = createTestMessage('assistant', 'Thread response 1')
       const msg3 = createTestMessage('user', 'Thread msg 2')
@@ -319,26 +337,19 @@ describe('Context Management Integration Tests', () => {
         compactionPoints: [createCompactionPoint(summary.id, msg2.id)],
       })
 
-      const result = buildContextForThread(thread)
+      const session = createTestSession([], { threads: [thread] })
+      const repository = await seedContextRows(session)
+      const result = await selectRowContext(repository, session.id, thread.id)
 
       expect(result).toHaveLength(3) // summary + msg3 + msg4
     })
 
-    it('should fall back to session messages when threadId not found', () => {
-      const sessionMessages = [
-        createTestMessage('user', 'Session message'),
-        createTestMessage('assistant', 'Session response'),
-      ]
-
-      const session = createTestSession(sessionMessages, {
-        threads: [],
-      })
-
-      const result = buildContextForSession(session, { threadId: 'non-existent-thread' })
-
-      // Should use session messages
-      expect(result).toHaveLength(2)
-      expect(result[0].contentParts[0]).toEqual({ type: 'text', text: 'Session message' })
+    it('rejects an unavailable thread without selecting the active path', async () => {
+      const session = createTestSession([createTestMessage('user', 'Current message')])
+      const repository = await seedContextRows(session)
+      const activeThreadId = (await repository.getSessionHeader(session.id))?.activeThreadId
+      await expect(selectRowContext(repository, session.id, 'missing-thread')).rejects.toThrow('Context thread')
+      expect((await repository.getSessionHeader(session.id))?.activeThreadId).toBe(activeThreadId)
     })
   })
 
@@ -380,15 +391,15 @@ describe('Context Management Integration Tests', () => {
   describe('Compaction Trigger Detection (Overflow)', () => {
     it('should detect overflow when tokens exceed threshold', () => {
       // gpt-4o has 128k context
-      // Available = 128000 - 32000 = 96000
-      // Threshold at 0.6 = 57600
-      const highTokens = 60_000 // Above threshold
+      // Usable = 128000 - 32000 = 96000
+      // Threshold at 0.75 = 72000
+      const highTokens = 80_000 // Above threshold
 
       const result = checkOverflow({ tokens: highTokens, modelId: 'gpt-4o' })
 
       expect(result.isOverflow).toBe(true)
       expect(result.contextWindow).toBe(128_000)
-      expect(result.thresholdTokens).toBe(Math.floor(96_000 * DEFAULT_COMPACTION_THRESHOLD))
+      expect(result.thresholdTokens).toBe(Math.floor(usableWindow(128_000) * DEFAULT_COMPACTION_THRESHOLD))
     })
 
     it('should not detect overflow when tokens are below threshold', () => {
@@ -400,7 +411,7 @@ describe('Context Management Integration Tests', () => {
     })
 
     it('should assume a fallback window for unknown models', () => {
-      // Fallback window 128k: threshold = (128k − 32k) × 0.6 = 57.6k
+      // Fallback window 128k: threshold = (128k − 32k) × 0.75 = 72k
       const result = checkOverflow({ tokens: 100_000, modelId: 'unknown-model' })
 
       expect(result.isOverflow).toBe(true)
@@ -409,7 +420,7 @@ describe('Context Management Integration Tests', () => {
 
     it('should use custom compactionThreshold from settings', () => {
       // With 0.9 threshold: 96000 * 0.9 = 86400
-      const tokens = 70_000 // Would overflow at 0.6, but not at 0.9
+      const tokens = 80_000 // Would overflow at 0.75, but not at 0.9
 
       const resultDefault = checkOverflow({ tokens, modelId: 'gpt-4o' })
       const resultHigh = checkOverflow({
@@ -424,29 +435,29 @@ describe('Context Management Integration Tests', () => {
 
     it('should handle models with different context windows', () => {
       // Claude 3.5 has 200k context
-      // Available = 200000 - 32000 = 168000
-      // Threshold at 0.6 = 100800
+      // Usable = 200000 - 32000 = 168000
+      // Threshold at 0.75 = 126000
       const result = checkOverflow({ tokens: 90_000, modelId: 'claude-3-5-sonnet-20241022' })
 
-      expect(result.isOverflow).toBe(false) // 90000 < 100800
+      expect(result.isOverflow).toBe(false) // 90000 < 126000
       expect(result.contextWindow).toBe(200_000)
     })
 
     it('should handle models with small context windows', () => {
       // small-context-model has 48k
-      // With fallback: Available = max(48000 - 32000, 48000 * 0.5) = max(16000, 24000) = 24000
-      // Threshold at 0.6 = 14400
+      // The reply reservation is capped at a quarter: Usable = 48000 - 12000 = 36000
+      // Threshold at 0.75 = 27000
       const contextWindow = 48_000
-      const availableWindow = Math.max(contextWindow - OUTPUT_RESERVE_TOKENS, Math.floor(contextWindow * 0.5))
+      const availableWindow = usableWindow(contextWindow)
       const result = checkOverflow({ tokens: 10_000, modelId: 'small-context-model' })
 
-      expect(result.isOverflow).toBe(false) // 10000 < 14400
+      expect(result.isOverflow).toBe(false) // 10000 < 27000
       expect(result.thresholdTokens).toBe(Math.floor(availableWindow * DEFAULT_COMPACTION_THRESHOLD))
     })
 
     it('should correctly compute threshold at boundary', () => {
-      // gpt-4o: threshold = 57600
-      const threshold = Math.floor((128_000 - OUTPUT_RESERVE_TOKENS) * DEFAULT_COMPACTION_THRESHOLD)
+      // gpt-4o: threshold = 72000
+      const threshold = Math.floor(usableWindow(128_000) * DEFAULT_COMPACTION_THRESHOLD)
 
       const atThreshold = checkOverflow({ tokens: threshold, modelId: 'gpt-4o' })
       const aboveThreshold = checkOverflow({ tokens: threshold + 1, modelId: 'gpt-4o' })
@@ -456,11 +467,12 @@ describe('Context Management Integration Tests', () => {
     })
   })
 
-  describe('Tool Cleanup Modes (shared buildContext)', () => {
+  describe('Tool call parts (shared buildContext)', () => {
     const attachmentResolver = { read: async () => null }
 
-    function toolConversation(toolCallPart: MessageContentParts[number]) {
-      return [
+    it('keeps tool calls and results intact', async () => {
+      const toolCallPart = createToolCallPart('tool1', { query: 'X' })
+      const messages = [
         createTestMessage('user', 'Q1'),
         createTestMessage('assistant', 'Text', {
           contentParts: [{ type: 'text', text: 'Text' }, toolCallPart],
@@ -468,40 +480,15 @@ describe('Context Management Integration Tests', () => {
         createTestMessage('user', 'Q2'),
         createTestMessage('assistant', 'A2'),
       ]
-    }
 
-    it('keeps everything intact in mode none', async () => {
-      const messages = toolConversation(createToolCallPart('tool1'))
+      const result = await buildContext(messages, { attachmentResolver })
 
-      const result = await buildContext(messages, { attachmentResolver, toolCleanupMode: 'none' })
-
-      expect(result[1].contentParts.some((p) => p.type === 'tool-call')).toBe(true)
       expect(result[1].contentParts.find((p) => p.type === 'tool-call')).toMatchObject({
-        result: { success: true },
-      })
-    })
-
-    it('stubs old results but keeps the call in stub mode', async () => {
-      const toolCallPart = createToolCallPart('tool1', { query: 'X' })
-      const messages = toolConversation(toolCallPart)
-
-      const result = await buildContext(messages, {
-        attachmentResolver,
-        toolCleanupMode: 'stub-old-results',
-        keepToolCallRounds: 1,
-      })
-
-      const stubbed = result[1].contentParts.find((p) => p.type === 'tool-call')
-      expect(stubbed).toMatchObject({
         toolName: 'tool1',
         args: { query: 'X' },
-        state: 'result',
-        result: { _cleared: true },
+        result: { success: true },
       })
-      // Original message must not be mutated
       expect(toolCallPart).toMatchObject({ result: { success: true } })
-      // Recent round keeps its parts untouched
-      expect(result[3].contentParts.some((p) => p.type === 'tool-call')).toBe(false)
     })
   })
 
@@ -536,7 +523,7 @@ describe('Context Management Integration Tests', () => {
       expect(result[2].contentParts[0]).toEqual({ type: 'text', text: 'Round 3 A' })
     })
 
-    it('should work with session containing both threads and main messages', () => {
+    it('should work with session containing both threads and main messages', async () => {
       const mainMsg1 = createTestMessage('user', 'Main Q')
       const mainMsg2 = createTestMessage('assistant', 'Main A')
       const mainSummary = createTestMessage('assistant', 'Main summary', { isSummary: true })
@@ -551,12 +538,12 @@ describe('Context Management Integration Tests', () => {
         threads: [thread],
       })
 
-      // Get main session context
-      const mainResult = buildContextForSession(session)
+      const repository = await seedContextRows(session)
+      const mainResult = await selectRowContext(repository, session.id)
       expect(mainResult).toHaveLength(2) // summary + mainMsg2
 
       // Get thread context
-      const threadResult = buildContextForSession(session, { threadId: 'thread-1' })
+      const threadResult = await selectRowContext(repository, session.id, 'thread-1')
       expect(threadResult).toHaveLength(2) // threadMsg1 + threadMsg2 (no compaction in thread)
     })
   })

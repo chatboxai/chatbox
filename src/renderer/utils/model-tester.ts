@@ -44,6 +44,38 @@ const testWeatherTools: CallChatCompletionOptions['tools'] = {
 } satisfies ToolSet
 
 /**
+ * Lightweight connectivity ping used by the Model Rig self-check.
+ */
+export async function pingModel(
+  options: Omit<TestModelOptions, 'onStateChange'> & { vision?: boolean; signal?: AbortSignal }
+): Promise<{ ok: boolean; error?: string }> {
+  const { providerId, modelId, settings, configs, dependencies, vision, signal } = options
+  try {
+    const modelInstance = getModel({ ...settings, provider: providerId, modelId }, settings, configs, dependencies)
+    if (vision) {
+      await modelInstance.chat(
+        [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'What color is in this image?' },
+              { type: 'image', image: `data:image/png;base64,${TEST_IMAGE_BASE64}` },
+            ],
+          },
+        ],
+        { onResultChange: () => {}, signal }
+      )
+    } else {
+      await modelInstance.chat([{ role: 'user', content: 'Hi' }], { onResultChange: undefined, signal })
+    }
+    return { ok: true }
+  } catch (e: unknown) {
+    const error = e as { responseBody?: string; message?: string }
+    return { ok: false, error: error?.responseBody || error?.message || String(e) }
+  }
+}
+
+/**
  * Test a model's capabilities
  * @returns The final test state
  */

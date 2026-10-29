@@ -1,4 +1,4 @@
-import type { Session, SessionMetaRecord } from '../../types'
+import type { SessionHeader, SessionMetaRecord } from '../../types'
 import type { SessionRepositoryPort } from '../session-repository'
 
 export type SessionRepositoryContractFactory = () => SessionRepositoryPort | Promise<SessionRepositoryPort>
@@ -8,15 +8,12 @@ export interface SessionRepositoryContractCase {
   run: () => Promise<void>
 }
 
-function createSession(id: string): Session {
+function createSession(id: string): SessionHeader {
   return {
     id,
     name: id,
     type: 'chat',
-    messages: [],
     settings: { temperature: undefined },
-    threads: undefined,
-    messageForksHash: {},
   }
 }
 
@@ -73,17 +70,24 @@ export function createSessionRepositoryContract(
 ): SessionRepositoryContractCase[] {
   return [
     {
-      name: 'stores, reads, lists, and deletes full sessions with null for missing data',
+      name: 'stores row headers and messages, lists identities, and deletes authority',
       run: async () => {
         const repository = await prepareRepository(createRepository)
         const first = createSession('session-1')
         const second = createSession('session-2')
 
-        assertEqual(await repository.getSession('missing'), null, 'Missing sessions must resolve to null')
-        await repository.setSession(first)
-        await repository.setSession(second)
+        assertEqual(await repository.getSessionHeader('missing'), null, 'Missing sessions must resolve to null')
+        await repository.createSessionRows(first, [
+          { id: 'user', role: 'user', contentParts: [{ type: 'text', text: 'Stored message' }] },
+        ])
+        await repository.createSessionRows(second, [])
 
-        assertDeepEqual(await repository.getSession(first.id), first, 'Stored sessions must round-trip')
+        assertDeepEqual((await repository.getSessionHeader(first.id))?.header, first, 'Stored headers must round-trip')
+        assertEqual(
+          (await repository.readSessionMessages({ sessionId: first.id, messageIds: ['user'] }))?.messages[0]?.id,
+          'user',
+          'Stored messages must be point-readable'
+        )
         assertDeepEqual(
           (await repository.getAllSessionIds()).sort(),
           [first.id, second.id],
@@ -91,7 +95,7 @@ export function createSessionRepositoryContract(
         )
 
         await repository.deleteSession(first.id)
-        assertEqual(await repository.getSession(first.id), null, 'Deleted sessions must resolve to null')
+        assertEqual(await repository.getSessionHeader(first.id), null, 'Deleted sessions must resolve to null')
         await repository.deleteSession('missing')
       },
     },
@@ -188,6 +192,11 @@ export function createSessionRepositoryContract(
           await repository.meta.getPage(2, 2),
           { items: [regularOld], nextCursor: null, total: 3 },
           'Visible last page must terminate pagination'
+        )
+        assertDeepEqual(
+          await repository.meta.getPage(1, 2),
+          { items: [regularNew, regularOld], nextCursor: null, total: 3 },
+          'A full visible page that reaches the end must terminate pagination'
         )
         assertDeepEqual(
           await repository.meta.getArchivedPage(0, 1),

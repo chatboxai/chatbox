@@ -304,6 +304,126 @@ function sanitizeText(value: unknown): string {
     .replace(/([A-Z]):\/Users\/[^/\s]+/gi, '$1:/Users/[redacted]')
 }
 
+const APP_FRAME_SCHEME = 'app:///'
+const FRAME_ORIGIN_PATTERN = /^([a-z][a-z0-9+.-]*):\/\/([^/]*)/i
+const APP_FRAME_PROTOCOLS = new Set(['app', 'capacitor', 'file', 'ionic'])
+const LOCAL_HOST_PATTERN = /^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i
+const FRAME_DRIVE_LETTER_PATTERN = /^\/?[a-z]:(?=\/)/i
+const FRAME_APP_ROOT_MARKERS = ['/resources/app.asar/', '/resources/app/', '/app.asar/']
+const FRAME_BUNDLE_ROOTS = ['apps', 'dist', 'node_modules', 'out', 'output', 'packages', 'src']
+
+function resolveRelativeSegments(path: string): string {
+  const resolved: string[] = []
+  for (const segment of path.split('/')) {
+    if (segment === '' || segment === '.') continue
+    if (segment === '..') {
+      resolved.pop()
+      continue
+    }
+    resolved.push(segment)
+  }
+  return resolved.join('/')
+}
+
+/** Index of the earliest bundle root that occupies a whole path segment, or -1. */
+function findBundleRootIndex(path: string): number {
+  let earliest = -1
+  for (const root of FRAME_BUNDLE_ROOTS) {
+    const needle = `${root}/`
+    for (let from = 0; ; ) {
+      const index = path.indexOf(needle, from)
+      if (index === -1) break
+      if (index === 0 || path[index - 1] === '/') {
+        if (earliest === -1 || index < earliest) earliest = index
+        break
+      }
+      from = index + 1
+    }
+  }
+  return earliest
+}
+
+/**
+ * Collapse a stack frame path to an install-independent `app:///` path.
+ *
+ * Frames carry the absolute location the app happens to run from — an installed
+ * `.../AppData/Local/Programs/Chatbox/resources/app.asar/...`, a portable
+ * `F:/AI/chatbox/...`, a translocated `/private/var/folders/<uuid>/d/Chatbox.app/...`,
+ * or a `capacitor://localhost/` origin. Sentry derives both the issue fingerprint
+ * and the release artifact lookup from that path, so an unnormalized frame splits
+ * one defect across every install location and matches no uploaded source map.
+ *
+ * Only paths that resolve against a known app layout are rewritten: re-rooting a
+ * remote script or an unrelated checkout would merge genuinely distinct frames.
+ */
+function normalizeFramePath(value: string): string {
+  const origin = FRAME_ORIGIN_PATTERN.exec(value)
+  let isAppRooted = false
+  let path = value
+
+  if (origin) {
+    const [matched, protocol, host] = origin
+    const isAppOrigin = APP_FRAME_PROTOCOLS.has(protocol.toLowerCase()) || LOCAL_HOST_PATTERN.test(host)
+    if (!isAppOrigin) {
+      return value
+    }
+    path = value.slice(matched.length)
+    isAppRooted = true
+  }
+
+  path = path.replace(/[?#].*$/, '').replace(/\\/g, '/')
+  const withoutDriveLetter = path.replace(FRAME_DRIVE_LETTER_PATTERN, '')
+  const isAbsoluteFilePath = !isAppRooted && (withoutDriveLetter !== path || path.startsWith('/'))
+  path = withoutDriveLetter
+  if (!path.includes('/')) {
+    return value
+  }
+
+  // macOS bundles capitalize `Contents/Resources`, Windows and Linux do not.
+  const lowerCasePath = path.toLowerCase()
+  for (const marker of FRAME_APP_ROOT_MARKERS) {
+    const markerIndex = lowerCasePath.lastIndexOf(marker)
+    if (markerIndex !== -1) {
+      path = path.slice(markerIndex + marker.length)
+      isAppRooted = true
+      break
+    }
+  }
+
+  path = resolveRelativeSegments(path)
+
+  // The bundle-root fallback covers unpackaged runs, where no app bundle marker
+  // exists. It must not re-root an unrelated absolute path that merely happens to
+  // contain a `src/` or `dist/` segment.
+  if (isAppRooted || !isAbsoluteFilePath) {
+    const bundleRootIndex = findBundleRootIndex(path)
+    if (bundleRootIndex !== -1) {
+      path = path.slice(bundleRootIndex)
+      isAppRooted = true
+    }
+  }
+
+  return isAppRooted && path ? `${APP_FRAME_SCHEME}${path}` : value
+}
+
+/**
+ * Keep `module` consistent with the normalized path so culprits stop varying per
+ * install, in the `dir.dots:file` shape the Node SDK itself emits.
+ */
+function normalizeFrameModule(normalizedPath: string, fallback: string): string {
+  if (!normalizedPath.startsWith(APP_FRAME_SCHEME)) {
+    return fallback
+  }
+  const relativePath = normalizedPath.slice(APP_FRAME_SCHEME.length)
+  const lastSeparator = relativePath.lastIndexOf('/')
+  const file = relativePath.slice(lastSeparator + 1).replace(/\.[^.]+$/, '')
+  if (lastSeparator === -1) {
+    return file || fallback
+  }
+  const directory = relativePath.slice(0, lastSeparator).replace(/\//g, '.')
+  return directory ? `${directory}:${file}` : file || fallback
+}
+
 function normalizeContextKey(key: string): string {
   return key
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
@@ -377,14 +497,22 @@ function sanitizeEvent(event: SentryEventLike): void {
       exception.value = sanitizeText(exception.value)
     }
     for (const frame of exception.stacktrace?.frames ?? []) {
+      let normalizedPath: string | undefined
       if (frame.filename !== undefined) {
-        frame.filename = sanitizeText(frame.filename)
+        normalizedPath = normalizeFramePath(sanitizeText(frame.filename))
+        frame.filename = normalizedPath
       }
       if (frame.abs_path !== undefined) {
-        frame.abs_path = sanitizeText(frame.abs_path)
+        const normalizedAbsPath = normalizeFramePath(sanitizeText(frame.abs_path))
+        frame.abs_path = normalizedAbsPath
+        // `filename` is often a bare basename, so prefer whichever path resolved.
+        if (!normalizedPath?.startsWith(APP_FRAME_SCHEME)) {
+          normalizedPath = normalizedAbsPath
+        }
       }
       if (frame.module !== undefined) {
-        frame.module = sanitizeText(frame.module)
+        const sanitizedModule = sanitizeText(frame.module)
+        frame.module = normalizedPath ? normalizeFrameModule(normalizedPath, sanitizedModule) : sanitizedModule
       }
     }
   }

@@ -1,4 +1,4 @@
-import type { LanguageModelV3, LanguageModelV3CallOptions } from '@ai-sdk/provider'
+import type { LanguageModelV4, LanguageModelV4CallOptions } from '@ai-sdk/provider'
 import { describe, expect, it, vi } from 'vitest'
 import { settings as getDefaultSettings, newConfigs } from '../../defaults'
 import type { ModelInterface } from '../../models/types'
@@ -264,12 +264,12 @@ describe('GitHub Copilot reasoning catalog metadata', () => {
   })
 })
 
-const generateRequest: LanguageModelV3CallOptions = {
+const generateRequest: LanguageModelV4CallOptions = {
   prompt: [{ role: 'user', content: [{ type: 'text', text: 'Hi' }] }],
 }
 
-function exposeChatModel(model: ModelInterface): LanguageModelV3 {
-  return (model as unknown as { getChatModel(options?: object): LanguageModelV3 }).getChatModel({})
+function exposeChatModel(model: ModelInterface): LanguageModelV4 {
+  return (model as unknown as { getChatModel(options?: object): LanguageModelV4 }).getChatModel({})
 }
 
 function jsonReply(body: unknown) {

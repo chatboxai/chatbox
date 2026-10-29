@@ -90,24 +90,23 @@
 }
 
 /* // markdown table */
-html[data-theme="light"] .msg-block {
+.msg-block {
   table {
-    background-color: #f8f8f8;
-    margin: 0 auto var(--chatbox-spacing-xxl);
+    background-color: var(--chatbox-background-primary);
+    margin: 0 auto var(--chatbox-spacing-md);
     border-collapse: separate;
     border-spacing: 0;
     font-size: 1em;
-    font-family: Arial, sans-serif;
     line-height: 1.2;
-    border: 1px solid #ddd;
+    border: 1px solid var(--chatbox-border-primary);
     border-radius: var(--chatbox-radius-lg);
     overflow: hidden;
   }
   table th,
   table td {
     padding: 0.5em 1.2em;
-    border-right: 1px solid #ddd;
-    border-bottom: 1px solid #ddd;
+    border-right: 1px solid var(--chatbox-border-primary);
+    border-bottom: 1px solid var(--chatbox-border-primary);
     text-align: center;
   }
   table th:last-child,
@@ -118,48 +117,12 @@ html[data-theme="light"] .msg-block {
     border-bottom: none;
   }
   table th {
-    background-color: #e5e5e5;
+    background-color: var(--chatbox-background-secondary);
     font-weight: bold;
-    color: #333;
+    color: var(--chatbox-tint-primary);
   }
   table tr:nth-child(even) {
-    background-color: #f2f2f2;
-  }
-}
-html[data-theme="dark"] .msg-block {
-  table {
-    background-color: #333;
-    color: #fff;
-    margin: 0 auto var(--chatbox-spacing-sm);
-    border-collapse: separate;
-    border-spacing: 0;
-    font-size: 1em;
-    font-family: Arial, sans-serif;
-    line-height: 1.2;
-    border: 1px solid #666;
-    border-radius: var(--chatbox-radius-lg);
-    overflow: hidden;
-  }
-  table th,
-  table td {
-    padding: 0.5em 1.2em;
-    border-right: 1px solid #666;
-    border-bottom: 1px solid #666;
-    text-align: center;
-  }
-  table th:last-child,
-  table td:last-child {
-    border-right: none;
-  }
-  table tr:last-child td {
-    border-bottom: none;
-  }
-  table th {
-    background-color: #555;
-    font-weight: bold;
-  }
-  table tr:nth-child(even) {
-    background-color: #444;
+    background-color: var(--chatbox-background-gray-secondary);
   }
 }
 

@@ -1,346 +1,160 @@
+import type { ImageGenerationServiceOptions } from '@chatbox/core/application/image-generation'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const submitImageGenerationMock = vi.fn()
-const pollTaskUntilCompleteMock = vi.fn()
-const pollImageTaskMock = vi.fn()
-const createRecordMock = vi.fn()
-const updateRecordMock = vi.fn()
-const getImageGenerationByIdMock = vi.fn()
-const setQueryDataMock = vi.fn()
-const invalidateQueriesMock = vi.fn()
-const getImageMock = vi.fn()
-const setCurrentGeneratingIdMock = vi.fn()
-const setCurrentRecordIdMock = vi.fn()
-const trackEventMock = vi.fn()
-
-vi.mock('@/adapters', () => ({
-  createModelDependencies: vi.fn(async () => ({
-    storage: {
-      getImage: getImageMock,
-    },
-  })),
+const mocks = vi.hoisted(() => ({
+  options: undefined as ImageGenerationServiceOptions | undefined,
+  service: {
+    subscribe: vi.fn(),
+    subscribeRecords: vi.fn(),
+    getSnapshot: vi.fn(),
+    start: vi.fn(),
+    cancel: vi.fn(),
+    getRecord: vi.fn(),
+    resume: vi.fn(),
+    retry: vi.fn(),
+  },
+  bridge: {},
+  setCurrentRecordId: vi.fn(),
+  setCurrentGeneratingId: vi.fn(),
+  submit: vi.fn(),
+  poll: vi.fn(),
+  getModel: vi.fn(),
+  getImage: vi.fn(),
+  capabilities: vi.fn(),
+  track: vi.fn(),
+  storage: {},
+  blobs: {},
+  config: { uuid: 'config' },
+  settings: { providers: {} },
 }))
 
-vi.mock('@/packages/remote', () => ({
-  IMAGE_GENERATION_POLL_INTERVAL_MS: 2000,
-  submitImageGeneration: submitImageGenerationMock,
-  pollTaskUntilComplete: pollTaskUntilCompleteMock,
-  pollImageTask: pollImageTaskMock,
+vi.mock('@chatbox/core/application/image-generation', () => ({
+  ImageGenerationService: class {
+    constructor(options: ImageGenerationServiceOptions) {
+      mocks.options = options
+      Object.assign(this, mocks.service)
+    }
+  },
 }))
-
+vi.mock('@chatbox/react', () => ({ getImageGenerationQueryBridge: () => mocks.bridge }))
+vi.mock('@shared/providers', () => ({ getModel: mocks.getModel }))
+vi.mock('@/adapters', () => ({ createModelDependencies: async () => ({ storage: { getImage: mocks.getImage } }) }))
+vi.mock('@/adapters/CurrentBlobStorage', () => ({ currentBlobStorage: mocks.blobs }))
+vi.mock('@/packages/image-model-catalog', () => ({ getImageModelCapabilities: mocks.capabilities }))
+vi.mock('@/packages/remote', () => ({ submitImageGeneration: mocks.submit, pollImageTask: mocks.poll }))
+vi.mock('@/platform', () => ({
+  default: { getConfig: async () => mocks.config, getImageGenerationStorage: () => mocks.storage },
+}))
+vi.mock('@/storage/StoreStorage', () => ({ StorageKeyGenerator: { picture: (key: string) => `picture:${key}:uuid` } }))
 vi.mock('./imageGenerationStore', () => ({
-  IMAGE_GEN_LIST_QUERY_KEY: 'image-gen-list',
-  IMAGE_GEN_QUERY_KEY: 'image-gen',
-  createRecord: createRecordMock,
-  updateRecord: updateRecordMock,
-  addGeneratedImage: vi.fn(),
   imageGenerationStore: {
     getState: () => ({
-      currentGeneratingId: null,
       currentRecordId: null,
-      setCurrentGeneratingId: setCurrentGeneratingIdMock,
-      setCurrentRecordId: setCurrentRecordIdMock,
+      setCurrentRecordId: mocks.setCurrentRecordId,
+      setCurrentGeneratingId: mocks.setCurrentGeneratingId,
     }),
   },
 }))
-
-vi.mock('./queryClient', () => ({
-  queryClient: {
-    setQueryData: setQueryDataMock,
-    invalidateQueries: invalidateQueriesMock,
-  },
-}))
-
+vi.mock('./queryClient', () => ({ queryClient: {} }))
 vi.mock('./settingsStore', () => ({
-  settingsStore: {
-    getState: () => ({
-      licenseKey: 'license-key',
-    }),
-  },
+  settingsStore: { getState: () => ({ licenseKey: 'license', getSettings: () => mocks.settings }) },
 }))
-
-vi.mock('@/utils/track', () => ({
-  trackEvent: trackEventMock,
+vi.mock('@/analytics/plausible', () => ({
+  normalizePlausibleProvider: (provider: string) => provider,
+  normalizePlausibleModel: (_provider: string, model: string) => model,
 }))
+vi.mock('@/utils/track', () => ({ trackEvent: mocks.track }))
+vi.mock('@/lib/utils', () => ({ getLogger: () => ({ error: vi.fn() }) }))
 
-vi.mock('@/lib/utils', () => ({
-  getLogger: () => ({
-    debug: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
-    info: vi.fn(),
-  }),
-}))
+import {
+  cancelGeneration,
+  clearCurrentRecord,
+  createAndGenerate,
+  getImageGenerationQueries,
+  getImageGenerationService,
+  isGenerating,
+  loadRecord,
+  resumeGeneration,
+  retryGeneration,
+  startImageGeneration,
+} from './imageGenerationActions'
 
-vi.mock('@/platform', () => ({
-  default: {
-    getImageGenerationStorage: () => ({
-      getById: getImageGenerationByIdMock,
-    }),
-  },
-}))
+const params = { prompt: 'bird', referenceImages: [], model: { provider: 'chatbox-ai', modelId: 'gpt-image-1' } }
 
-vi.mock('@/storage', () => ({
-  default: {},
-}))
-
-vi.mock('@/storage/StoreStorage', () => ({
-  StorageKeyGenerator: {},
-}))
-
-describe('imageGenerationActions reference image payload', () => {
+describe('renderer image-generation facade', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-
-    createRecordMock.mockResolvedValue({ id: 'record-1', createdAt: 1_000 })
-    updateRecordMock.mockImplementation(async (id: string, patch: Record<string, unknown>) => ({ id, ...patch }))
-    submitImageGenerationMock.mockResolvedValue({
-      task_id: 'task-1',
-      items: [{ status: 'pending' }],
-    })
-    pollTaskUntilCompleteMock.mockResolvedValue({
-      items: [
-        {
-          status: 'completed',
-          image_url: 'https://example.com/output.png',
-          thumbnail_url: 'https://example.com/output.png?thumbnail=512x512',
-        },
-      ],
-    })
-    getImageMock.mockResolvedValue('data:image/png;base64,AAAA')
-    getImageGenerationByIdMock.mockResolvedValue({
-      id: 'record-1',
-      prompt: 'make an image',
-      referenceImages: [],
-      generatedImages: [],
-      createdAt: 1_000,
-      model: { provider: 'chatbox-ai', modelId: 'gpt-image-1' },
-      imageGenerateNum: 1,
-      status: 'generating',
-      taskId: 'task-1',
-      source: {
-        type: 'chatbox_cli',
-        sessionId: 'session-1',
-        toolCallId: 'tool-1',
-      },
-    })
+    mocks.service.getSnapshot.mockReturnValue({ currentGeneratingId: null, phase: 'idle' })
+    mocks.service.start.mockResolvedValue({ recordId: 'record', startedAt: 123, completion: Promise.resolve(null) })
   })
 
-  it('sends reference images as image_url entries for both URLs and stored images', async () => {
-    const { createAndGenerate } = await import('./imageGenerationActions')
-
-    await createAndGenerate({
-      prompt: 'make a variation',
-      referenceImages: ['https://example.com/reference.png', 'storage-key-1'],
-      model: {
-        provider: 'chatbox-ai',
-        modelId: 'gpt-image-1',
-      },
-      imageGenerateNum: 1,
-    })
-
-    await vi.waitFor(() => {
-      expect(submitImageGenerationMock).toHaveBeenCalledTimes(1)
-    })
-
-    expect(submitImageGenerationMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        images: [{ image_url: 'https://example.com/reference.png' }, { image_url: 'data:image/png;base64,AAAA' }],
-      }),
-      'license-key'
-    )
-    expect(trackEventMock).toHaveBeenCalledWith('generate_image', expect.objectContaining({ has_reference: true }))
+  it('shares one service and query bridge for renderer and CLI entry points', () => {
+    expect(getImageGenerationService()).toBe(getImageGenerationService())
+    expect(getImageGenerationQueries()).toBe(mocks.bridge)
+    expect(mocks.options?.storage).toBe(mocks.storage)
+    expect(mocks.options?.blobStorage).toBe(mocks.blobs)
   })
 
-  it('exposes a completion promise for background task consumers', async () => {
-    const { startImageGeneration } = await import('./imageGenerationActions')
-
-    const handle = await startImageGeneration({
-      prompt: 'make an image',
-      referenceImages: [],
-      model: {
-        provider: 'chatbox-ai',
-        modelId: 'gpt-image-1',
-      },
-      imageGenerateNum: 1,
-    })
-
-    expect(handle).toMatchObject({
-      recordId: 'record-1',
-      startedAt: 1_000,
-      monitoring: { mode: 'polling', intervalMs: 2_000 },
-    })
-
-    await expect(handle.completion).resolves.toMatchObject({
-      id: 'record-1',
-      status: 'done',
-      generatedImages: ['https://example.com/output.png'],
-    })
+  it('forwards source, the durable-record callback and completion without changing the CLI contract', async () => {
+    const onRecordCreated = vi.fn()
+    const source = { type: 'chatbox_cli' as const, sessionId: 'session', toolCallId: 'tool' }
+    const handle = await startImageGeneration({ ...params, source }, { onRecordCreated })
+    expect(mocks.service.start).toHaveBeenCalledWith({ ...params, source }, { onRecordCreated })
+    expect(mocks.setCurrentRecordId).toHaveBeenCalledWith('record')
+    expect(handle.completion).toBeInstanceOf(Promise)
+    await expect(createAndGenerate(params)).resolves.toBe('record')
   })
 
-  it('persists caller retry metadata before starting the provider request', async () => {
-    let releasePersistence: (() => void) | undefined
-    const persistenceGate = new Promise<void>((resolve) => {
-      releasePersistence = resolve
-    })
-    const onRecordCreated = vi.fn(async () => persistenceGate)
-    const { startImageGeneration } = await import('./imageGenerationActions')
-
-    const handlePromise = startImageGeneration(
-      {
-        prompt: 'make an image',
-        referenceImages: [],
-        model: {
-          provider: 'chatbox-ai',
-          modelId: 'gpt-image-1',
-        },
-      },
-      { onRecordCreated }
-    )
-
-    await vi.waitFor(() => expect(onRecordCreated).toHaveBeenCalledOnce())
-    expect(submitImageGenerationMock).not.toHaveBeenCalled()
-
-    releasePersistence?.()
-    await handlePromise
-    await vi.waitFor(() => expect(submitImageGenerationMock).toHaveBeenCalledOnce())
+  it('delegates stop, retry, resume, loading and browsing without replacing the active job', async () => {
+    getImageGenerationService()
+    mocks.service.getRecord.mockResolvedValue({ id: 'history' })
+    mocks.service.resume.mockResolvedValue({ id: 'task', status: 'done' })
+    cancelGeneration()
+    await retryGeneration('retry')
+    await expect(resumeGeneration('task')).resolves.toEqual({ id: 'task', status: 'done' })
+    await loadRecord('history')
+    clearCurrentRecord()
+    expect(mocks.service.cancel).toHaveBeenCalledOnce()
+    expect(mocks.service.retry).toHaveBeenCalledWith('retry')
+    expect(mocks.setCurrentRecordId.mock.calls).toEqual([['history'], [null]])
+    mocks.service.getSnapshot.mockReturnValue({ currentGeneratingId: 'task', phase: 'generating' })
+    expect(isGenerating()).toBe(true)
   })
 
-  it('returns the terminal record when resuming an existing backend task', async () => {
-    pollImageTaskMock.mockResolvedValueOnce({
-      is_finished: true,
-      items: [
-        {
-          status: 'completed',
-          image_url: 'https://example.com/resumed.png',
-          thumbnail_url: 'https://example.com/resumed-thumbnail.png',
-        },
-      ],
-    })
-    updateRecordMock.mockResolvedValueOnce({
-      id: 'record-1',
-      prompt: 'make an image',
-      referenceImages: [],
-      generatedImages: ['https://example.com/resumed.png'],
-      generatedImageThumbnails: ['https://example.com/resumed-thumbnail.png'],
-      createdAt: 1_000,
-      model: { provider: 'chatbox-ai', modelId: 'gpt-image-1' },
-      imageGenerateNum: 1,
-      status: 'done',
-      taskId: 'task-1',
-      source: {
-        type: 'chatbox_cli',
-        sessionId: 'session-1',
-        toolCallId: 'tool-1',
-      },
-    })
-
-    const { resumeGeneration } = await import('./imageGenerationActions')
-
-    await expect(resumeGeneration('record-1')).resolves.toMatchObject({
-      id: 'record-1',
-      status: 'done',
-      source: {
-        type: 'chatbox_cli',
-        sessionId: 'session-1',
-        toolCallId: 'tool-1',
-      },
-    })
-  })
-
-  it('stores structured error codes from Chatbox AI image generation failures', async () => {
-    const { BaseError } = await import('@shared/models/errors')
-    class StructuredImageGenerationError extends BaseError {
-      public code = 20004
+  it('adapts shared requests to current host credentials and forwards the poll signal', async () => {
+    getImageGenerationService()
+    const request = {
+      model: 'image',
+      prompt: 'bird',
+      response_format: 'b64_json' as const,
+      style: 'vivid' as const,
+      quantity: 1,
     }
-    submitImageGenerationMock.mockRejectedValueOnce(new StructuredImageGenerationError('license not found'))
-
-    const { createAndGenerate } = await import('./imageGenerationActions')
-
-    await createAndGenerate({
-      prompt: 'make an image',
-      referenceImages: [],
-      model: {
-        provider: 'chatbox-ai',
-        modelId: 'gpt-image-1',
-      },
-      imageGenerateNum: 1,
-    })
-
-    await vi.waitFor(() => {
-      expect(updateRecordMock).toHaveBeenCalledWith(
-        'record-1',
-        expect.objectContaining({
-          status: 'error',
-          error: 'license not found',
-          errorCode: 20004,
-        })
-      )
-    })
+    await mocks.options?.asyncClient.submit(request)
+    const signal = new AbortController().signal
+    await mocks.options?.asyncClient.poll('task', signal)
+    expect(mocks.submit).toHaveBeenCalledWith(request, 'license')
+    expect(mocks.poll).toHaveBeenCalledWith('task', 'license', signal)
   })
 
-  it('stores thumbnail URLs separately from original image URLs', async () => {
-    const { createAndGenerate } = await import('./imageGenerationActions')
-
-    await createAndGenerate({
-      prompt: 'make an image',
-      referenceImages: [],
-      model: {
-        provider: 'chatbox-ai',
-        modelId: 'gpt-image-1',
-      },
-      imageGenerateNum: 1,
-    })
-
-    await vi.waitFor(() => {
-      expect(updateRecordMock).toHaveBeenCalledWith(
-        'record-1',
-        expect.objectContaining({
-          generatedImages: ['https://example.com/output.png'],
-          generatedImageThumbnails: ['https://example.com/output.png?thumbnail=512x512'],
-          status: 'done',
-        })
-      )
-    })
-  })
-
-  it('stores failed item error messages from async image generation results', async () => {
-    pollTaskUntilCompleteMock.mockResolvedValueOnce({
-      task_id: 'task-1',
-      is_finished: true,
-      items: [
-        {
-          uuid: 'item-1',
-          status: 'failed',
-          created_at: '2026-05-08T15:23:34.442+08:00',
-          error_code: 'image_content_moderation_blocked',
-          error_message: 'Content rejected by content moderation',
-        },
-      ],
-    })
-
-    const { createAndGenerate } = await import('./imageGenerationActions')
-
-    await createAndGenerate({
-      prompt: 'make an image',
-      referenceImages: [],
-      model: {
-        provider: 'chatbox-ai',
-        modelId: 'gpt-image-1',
-      },
-      imageGenerateNum: 1,
-    })
-
-    await vi.waitFor(() => {
-      expect(updateRecordMock).toHaveBeenCalledWith(
-        'record-1',
-        expect.objectContaining({
-          status: 'error',
-          error: 'Content rejected by content moderation',
-          errorCode: 'image_content_moderation_blocked',
-          errorItemUuid: 'item-1',
-        })
-      )
-    })
+  it('uses the renderer model factory, storage resolver and current catalog validation', async () => {
+    getImageGenerationService()
+    await mocks.options?.createModel(params.model)
+    expect(mocks.getModel).toHaveBeenCalledWith(
+      params.model,
+      mocks.settings,
+      mocks.config,
+      expect.objectContaining({ storage: expect.objectContaining({ getImage: mocks.getImage }) })
+    )
+    await mocks.options?.resolveReferenceImage('reference')
+    expect(mocks.getImage).toHaveBeenCalledWith('reference')
+    const signal = new AbortController().signal
+    await mocks.options?.validateRequest?.(params, signal)
+    expect(mocks.capabilities).toHaveBeenCalledWith(params.model, mocks.settings, signal)
+    mocks.options?.onGenerate?.(params, 'direct')
+    expect(mocks.track).toHaveBeenCalledWith(
+      'generate_image',
+      expect.objectContaining({ path: 'direct', num_images: 1 })
+    )
   })
 })

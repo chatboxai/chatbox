@@ -1,18 +1,26 @@
-import { Haptics, ImpactStyle } from '@capacitor/haptics'
 import NiceModal from '@ebay/nice-modal-react'
 import { ActionIcon, Box, Flex, Input, Text } from '@mantine/core'
-import { TestId } from '@shared/automation/testids'
+import { AutomationAdjacentAttr, AutomationStateAttr, TestId } from '@shared/automation/testids'
 import type { SessionMetaRecord } from '@shared/types'
-import { IconArchive, IconArrowsMoveVertical, IconLoader2, IconPinned, IconPinnedFilled } from '@tabler/icons-react'
+import {
+  IconArchive,
+  IconArrowsMoveVertical,
+  IconClockHour4,
+  IconFolderShare,
+  IconLoader2,
+  IconPinned,
+  IconPinnedFilled,
+} from '@tabler/icons-react'
 import clsx from 'clsx'
 import dayjs from 'dayjs'
 import { type MouseEvent, memo, type PointerEvent, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { rendererApplication } from '@/app/renderer-application'
+import { ShortcutKeysChip } from '@/components/Shortcut'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
+import { useTouchLayout } from '@/hooks/useTouchLayout'
 import { navigateToSettings } from '@/modals/settings-navigation'
-import platform from '@/platform'
 import { showSessionArchiveUndo } from '@/presentation/session/session-archive-notification'
 import { router } from '@/router'
 import { switchCurrentSession } from '@/stores/session/crud'
@@ -22,10 +30,9 @@ import { useUIStore } from '@/stores/uiStore'
 import ActionMenu, { type ActionMenuItemProps } from '../ActionMenu'
 import { AssistantAvatar } from '../common/Avatar'
 import { ScalableIcon } from '../common/ScalableIcon'
+import { useSidebarContextMenu } from './useSidebarContextMenu'
 
 const ARCHIVED_SESSION_CLEANUP_THRESHOLD = 600
-const MOBILE_LONG_PRESS_DELAY = 550
-const MOBILE_LONG_PRESS_MOVE_TOLERANCE = 10
 
 function formatSessionTime(createdAt: number) {
   const created = dayjs(createdAt)
@@ -39,36 +46,45 @@ function formatSessionTime(createdAt: number) {
   return created.format('YY/MM/DD')
 }
 
-function triggerLongPressHaptic() {
-  if (platform.type === 'mobile') {
-    void Haptics.impact({ style: ImpactStyle.Light }).catch(() => {
-      navigator.vibrate?.(10)
-    })
-    return
-  }
-  navigator.vibrate?.(10)
-}
-
 export interface Props {
   session: SessionMetaRecord
   selected: boolean
+  hideAvatar?: boolean
   isReordering?: boolean
   onStartReordering?: () => void
+  /**
+   * Digit that opens this conversation while the switch modifier is held. Set
+   * only while the list is peeking, so the row shows the key instead of its
+   * trailing time and hover actions.
+   */
+  switchShortcutDigit?: number
 }
 
 function SessionItem(props: Props) {
   const { session, selected } = props
+  const switchShortcutDigit = props.switchShortcutDigit
   const { t } = useTranslation()
-  const activity = useSessionActivity(session.id)
+  const activity = useSessionActivity(session.id, session.hasPausedToolCall === true)
+  const activityLabel =
+    activity === 'generating'
+      ? t('Generating...')
+      : activity === 'waiting'
+        ? t('Waiting for you...')
+        : activity === 'failed'
+          ? t('Failed')
+          : t('Completed')
   const pinActionLabel = session.starred ? t('Unpin') : t('Pin')
   const archiveActionLabel = t('Archive')
+  const moveToProjectLabel = t('Move to project')
+  const openMoveToProject = () => {
+    void NiceModal.show('session-folder-move', { sessionId: session.id, folderId: session.folderId })
+  }
   const setShowSidebar = useUIStore((s) => s.setShowSidebar)
   const onClick = () => {
     if (props.isReordering || renaming) {
       return
     }
-    if (longPressTriggeredRef.current) {
-      longPressTriggeredRef.current = false
+    if (consumeClick()) {
       return
     }
     switchCurrentSession(session.id)
@@ -77,17 +93,28 @@ function SessionItem(props: Props) {
     }
   }
   const isSmallScreen = useIsSmallScreen()
+  const touchLayout = useTouchLayout()
   // const smallSize = theme.typography.pxToRem(20)
 
   const [archiving, setArchiving] = useState(false)
   const [actionTooltipDismissed, setActionTooltipDismissed] = useState(false)
-  const [mobileMenuOpened, setMobileMenuOpened] = useState(false)
-  const [longPressing, setLongPressing] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [draftName, setDraftName] = useState('')
-  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const longPressTriggeredRef = useRef(false)
-  const longPressStartPointRef = useRef<{ x: number; y: number } | null>(null)
+  const {
+    menuOpened,
+    menuPortalTarget,
+    longPressing,
+    consumeClick,
+    handleContextMenu,
+    handleMenuChange,
+    handlePointerDown,
+    handlePointerMove,
+    clearLongPressTimer,
+  } = useSidebarContextMenu({
+    touchLayout,
+    disabled: props.isReordering || renaming || switchShortcutDigit !== undefined,
+    nativeContextMenu: renaming,
+  })
   const renameClickStartedOnSelectedSessionRef = useRef(selected)
 
   const stopItemClick = (event: MouseEvent | PointerEvent) => {
@@ -102,12 +129,7 @@ function SessionItem(props: Props) {
   const startRenaming = (event: MouseEvent) => {
     event.stopPropagation()
     event.preventDefault()
-    if (
-      isSmallScreen ||
-      platform.type === 'mobile' ||
-      props.isReordering ||
-      !renameClickStartedOnSelectedSessionRef.current
-    ) {
+    if (touchLayout || props.isReordering || !renameClickStartedOnSelectedSessionRef.current) {
       return
     }
     setDraftName(session.name)
@@ -120,7 +142,7 @@ function SessionItem(props: Props) {
     if (!name || name === session.name) {
       return
     }
-    void rendererApplication.sessions.updateSession(session.id, { name }).catch((error) => {
+    void rendererApplication.sessions.updateSessionHeader(session.id, { name }).catch((error) => {
       console.error('Failed to rename session:', error)
     })
   }
@@ -171,76 +193,40 @@ function SessionItem(props: Props) {
     setArchiving(false)
   }
 
-  const clearLongPressTimer = () => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current)
-      longPressTimerRef.current = null
-    }
-    longPressStartPointRef.current = null
-    setLongPressing(false)
-  }
-
-  const handlePointerDown = (event: PointerEvent) => {
-    if (!isSmallScreen || props.isReordering) {
-      return
-    }
-    clearLongPressTimer()
-    longPressTriggeredRef.current = false
-    longPressStartPointRef.current = { x: event.clientX, y: event.clientY }
-    setLongPressing(true)
-    longPressTimerRef.current = setTimeout(() => {
-      longPressTriggeredRef.current = true
-      setLongPressing(false)
-      triggerLongPressHaptic()
-      setMobileMenuOpened(true)
-    }, MOBILE_LONG_PRESS_DELAY)
-  }
-
-  const handlePointerMove = (event: PointerEvent) => {
-    if (!isSmallScreen || !longPressStartPointRef.current) {
-      return
-    }
-    const deltaX = Math.abs(event.clientX - longPressStartPointRef.current.x)
-    const deltaY = Math.abs(event.clientY - longPressStartPointRef.current.y)
-    if (deltaX > MOBILE_LONG_PRESS_MOVE_TOLERANCE || deltaY > MOBILE_LONG_PRESS_MOVE_TOLERANCE) {
-      clearLongPressTimer()
-    }
-  }
-
   const handlePointerLeave = () => {
     clearLongPressTimer()
     setActionTooltipDismissed(false)
   }
 
-  const handleContextMenu = (event: MouseEvent) => {
-    if (!isSmallScreen) {
-      return
-    }
-    event.preventDefault()
-  }
-
-  const handleMobileMenuChange = (opened: boolean) => {
-    setMobileMenuOpened(opened)
-    if (!opened) {
-      clearLongPressTimer()
-      longPressTriggeredRef.current = false
-    }
-  }
-
-  const mobileMenuItems: ActionMenuItemProps[] = [
+  const menuItems: ActionMenuItemProps[] = [
     {
       text: pinActionLabel || '',
       icon: session.starred ? IconPinnedFilled : IconPinned,
       onClick: () => {
-        void rendererApplication.sessions.updateSession(session.id, { starred: !session.starred })
+        void rendererApplication.sessions.updateSessionHeader(session.id, { starred: !session.starred })
       },
     },
-    {
-      text: t('Adjust order') || '',
-      icon: IconArrowsMoveVertical,
-      disabled: !props.onStartReordering,
-      onClick: props.onStartReordering,
-    },
+    // A pinned chat stays in Pinned; it returns to its project once unpinned.
+    ...(session.starred
+      ? []
+      : [
+          {
+            text: moveToProjectLabel || '',
+            icon: IconFolderShare,
+            onClick: openMoveToProject,
+          },
+        ]),
+    // Hover layouts reorder by dragging; the menu entry starts the touch reorder mode.
+    ...(touchLayout
+      ? [
+          {
+            text: t('Adjust order') || '',
+            icon: IconArrowsMoveVertical,
+            disabled: !props.onStartReordering,
+            onClick: props.onStartReordering,
+          },
+        ]
+      : []),
     {
       text: archiveActionLabel || '',
       icon: IconArchive,
@@ -254,27 +240,27 @@ function SessionItem(props: Props) {
   const content = (
     <Flex
       data-testid={TestId.sidebar.sessionItem}
-      data-session-id={session.id}
+      {...{ [AutomationAdjacentAttr.sessionId]: session.id }}
+      {...{ [AutomationStateAttr.sessionPinned]: String(Boolean(session.starred)) }}
       align="center"
       className={clsx(
-        'cursor-pointer rounded-lg group/session-item',
+        'cursor-pointer rounded-md group/session-item',
         'select-none',
         props.isReordering && 'cursor-grab active:cursor-grabbing',
-        isSmallScreen
-          ? props.isReordering
-            ? 'bg-chatbox-background-primary'
-            : longPressing
-              ? 'bg-chatbox-background-gray-secondary'
-              : ''
+        props.isReordering
+          ? 'bg-chatbox-background-primary'
           : selected
-            ? 'bg-chatbox-background-brand-secondary'
-            : 'hover:bg-chatbox-background-gray-secondary'
+            ? 'bg-chatbox-background-secondary-hover'
+            : touchLayout
+              ? longPressing && 'bg-chatbox-background-gray-secondary'
+              : 'hover:bg-chatbox-background-gray-secondary'
       )}
       ml="xs"
       mr={isSmallScreen ? 'xs' : 0}
+      mih={isSmallScreen ? 44 : 36}
       pl="xs"
       pr={props.isReordering ? 44 : 'xs'}
-      py={8}
+      py={isSmallScreen ? 10 : 6}
       gap={10}
       onClick={onClick}
       onContextMenu={handleContextMenu}
@@ -284,14 +270,16 @@ function SessionItem(props: Props) {
       onPointerLeave={handlePointerLeave}
       onPointerCancel={clearLongPressTimer}
     >
-      <AssistantAvatar
-        avatarKey={session.assistantAvatarKey}
-        picUrl={session.picUrl}
-        sessionType={session.type}
-        size="sm"
-        type="chat"
-        c={selected ? 'chatbox-brand' : 'chatbox-primary'}
-      />
+      {!props.hideAvatar && (
+        <AssistantAvatar
+          avatarKey={session.assistantAvatarKey}
+          picUrl={session.picUrl}
+          sessionType={session.type}
+          size="sm"
+          type="chat"
+          c="chatbox-primary"
+        />
+      )}
 
       {renaming ? (
         <Input
@@ -320,10 +308,7 @@ function SessionItem(props: Props) {
           }}
           className="min-w-0"
           classNames={{
-            input: clsx(
-              '!h-6 !min-h-6 !px-1.5 !text-sm',
-              selected ? '!text-chatbox-tint-brand' : '!text-chatbox-tint-primary'
-            ),
+            input: '!h-6 !min-h-6 !px-1.5 !text-sm !text-chatbox-tint-primary',
           }}
         />
       ) : (
@@ -332,8 +317,8 @@ function SessionItem(props: Props) {
           span
           flex={1}
           lineClamp={1}
-          c={selected ? 'chatbox-brand' : 'chatbox-primary'}
-          fw={activity === 'completed' ? 600 : undefined}
+          c="chatbox-primary"
+          fw={selected ? 500 : undefined}
           onMouseDown={(event) => {
             if (event.detail === 1) {
               renameClickStartedOnSelectedSessionRef.current = selected
@@ -350,32 +335,51 @@ function SessionItem(props: Props) {
           component="span"
           data-session-activity={activity}
           role="status"
-          aria-label={activity === 'generating' ? t('Generating...') : t('Completed')}
-          title={activity === 'generating' ? t('Generating...') : t('Completed')}
+          aria-label={activityLabel}
+          title={activityLabel}
           className={clsx(
             'shrink-0 flex h-5 w-5 items-center justify-center',
-            !isSmallScreen && 'group-hover/session-item:hidden'
+            !touchLayout && 'group-hover/session-item:hidden'
           )}
         >
           {activity === 'generating' ? (
             <ScalableIcon icon={IconLoader2} size={15} className="animate-spin text-chatbox-brand" />
+          ) : activity === 'waiting' ? (
+            <ScalableIcon icon={IconClockHour4} size={15} className="text-chatbox-tint-warning" />
           ) : (
-            <Box component="span" w={8} h={8} bg="chatbox-brand" className="rounded-full" />
+            <Box
+              component="span"
+              w={8}
+              h={8}
+              bg={activity === 'failed' ? 'chatbox-error' : 'chatbox-brand'}
+              className="rounded-full"
+            />
           )}
         </Box>
       )}
 
-      {!isSmallScreen && !renaming && activity === 'idle' && (
-        <Text
-          span
-          c="chatbox-disabled"
-          className="shrink-0 text-[10px] tabular-nums opacity-50 group-hover/session-item:hidden"
-        >
+      {!renaming && activity === 'idle' && switchShortcutDigit === undefined && (
+        <Text span c="chatbox-tertiary" fz={11} className="shrink-0 tabular-nums group-hover/session-item:hidden">
           {formatSessionTime(session.createdAt)}
         </Text>
       )}
 
-      <Flex gap={2} className={clsx(isSmallScreen || renaming ? 'hidden' : 'group-hover/session-item:flex hidden')}>
+      {switchShortcutDigit !== undefined && !renaming && (
+        // `flex` keeps the slot at the hint's own height: an inline wrapper would
+        // add the inherited line box and make the peeked row taller than the rest.
+        <Box component="span" data-testid={TestId.sidebar.sessionSwitchHint} aria-hidden className="flex shrink-0">
+          <ShortcutKeysChip keys={['mod', String(switchShortcutDigit)]} />
+        </Box>
+      )}
+
+      <Flex
+        gap={2}
+        className={clsx(
+          touchLayout || renaming || switchShortcutDigit !== undefined
+            ? 'hidden'
+            : 'group-hover/session-item:flex hidden'
+        )}
+      >
         <Tooltip label={pinActionLabel} openDelay={1000} withArrow disabled={actionTooltipDismissed}>
           <ActionIcon
             data-testid={TestId.sidebar.sessionPin}
@@ -387,7 +391,7 @@ function SessionItem(props: Props) {
             onClick={(event) => {
               stopItemClick(event)
               dismissActionTooltip()
-              void rendererApplication.sessions.updateSession(session.id, { starred: !session.starred })
+              void rendererApplication.sessions.updateSessionHeader(session.id, { starred: !session.starred })
             }}
           >
             {session.starred ? (
@@ -423,18 +427,15 @@ function SessionItem(props: Props) {
     </Flex>
   )
 
-  if (!isSmallScreen) {
-    return content
-  }
-
   return (
     <ActionMenu
       type="contextual"
       trigger="manual"
-      items={mobileMenuItems}
-      opened={mobileMenuOpened}
-      onChange={handleMobileMenuChange}
-      position="bottom-end"
+      items={menuItems}
+      opened={menuOpened}
+      portalProps={{ target: menuPortalTarget }}
+      onChange={handleMenuChange}
+      position={isSmallScreen ? 'bottom-end' : 'bottom-start'}
       offset={0}
     >
       {content}

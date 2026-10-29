@@ -5,6 +5,12 @@ import type { Message, MessageToolCallPart } from './types'
 // orchestration resume batches, the approval card UI) must route through this module
 // so a new approval pause type only ever needs to be added here.
 
+/** An approval with no user response for this long is denied automatically. */
+export const APPROVAL_RESPONSE_TIMEOUT_MS = 45_000
+
+/** Why a paused approval is being denied: an explicit click or the response timeout. */
+export type ApprovalDenyReason = 'user' | 'timeout'
+
 export type ApprovalPauseReason = Extract<
   NonNullable<MessageToolCallPart['pauseReason']>,
   { type: 'user_exec_approval' | 'command_escalation_approval' | 'file_mutation_approval' | 'app_action_approval' }

@@ -18,10 +18,16 @@ import SettingsKnowledgeBaseRouteComponent from '@/components/knowledge-base/Kno
 import { Modal } from '@/components/layout/Overlay'
 import useNeedRoomForWinControls from '@/hooks/useNeedRoomForWinControls'
 import { getSettingsSearchParam, navigateToDynamicPath, router } from '@/router'
+import { RouteComponent as SettingsAboutRouteComponent } from '@/routes/settings/about'
+import { RouteComponent as SettingsAdvancedRouteComponent } from '@/routes/settings/advanced'
 import { RouteComponent as SettingsAgentRouteComponent } from '@/routes/settings/agent'
+import { RouteComponent as SettingsAppIconRouteComponent } from '@/routes/settings/app-icon'
+import { RouteComponent as SettingsAppearanceRouteComponent } from '@/routes/settings/appearance'
 import { RouteComponent as SettingsArchiveRouteComponent } from '@/routes/settings/archive'
 import { RouteComponent as SettingsChatRouteComponent } from '@/routes/settings/chat'
 import { RouteComponent as SettingsChatboxAiRouteComponent } from '@/routes/settings/chatbox-ai'
+import { RouteComponent as SettingsContextRouteComponent } from '@/routes/settings/context'
+import { RouteComponent as SettingsDataRouteComponent } from '@/routes/settings/data'
 import { RouteComponent as SettingsDefaultModelsRouteComponent } from '@/routes/settings/default-models'
 import { RouteComponent as SettingsDocumentParserRouteComponent } from '@/routes/settings/document-parser'
 import { RouteComponent as SettingsGeneralRouteComponent } from '@/routes/settings/general'
@@ -57,6 +63,42 @@ const SettingsChatboxAiRoute = createRoute({
 const SettingsGeneralRoute = createRoute({
   component: SettingsGeneralRouteComponent,
   path: '/settings/general',
+  getParentRoute: () => RootRoute,
+})
+
+const SettingsAppearanceRoute = createRoute({
+  component: SettingsAppearanceRouteComponent,
+  path: '/settings/appearance',
+  getParentRoute: () => RootRoute,
+})
+
+const SettingsDataRoute = createRoute({
+  component: SettingsDataRouteComponent,
+  path: '/settings/data',
+  getParentRoute: () => RootRoute,
+})
+
+const SettingsAdvancedRoute = createRoute({
+  component: SettingsAdvancedRouteComponent,
+  path: '/settings/advanced',
+  getParentRoute: () => RootRoute,
+})
+
+const SettingsAboutRoute = createRoute({
+  component: SettingsAboutRouteComponent,
+  path: '/settings/about',
+  getParentRoute: () => RootRoute,
+})
+
+const SettingsContextRoute = createRoute({
+  component: SettingsContextRouteComponent,
+  path: '/settings/context',
+  getParentRoute: () => RootRoute,
+})
+
+const SettingsAppIconRoute = createRoute({
+  component: SettingsAppIconRouteComponent,
+  path: '/settings/app-icon',
   getParentRoute: () => RootRoute,
 })
 
@@ -154,7 +196,13 @@ const routeTree = RootRoute.addChildren([
   SettingsIndexRoute,
   SettingsChatboxAiRoute,
   SettingsGeneralRoute,
+  SettingsAppearanceRoute,
+  SettingsDataRoute,
+  SettingsAdvancedRoute,
+  SettingsAboutRoute,
+  SettingsAppIconRoute,
   SettingsChatRoute,
+  SettingsContextRoute,
   SettingsArchiveRoute,
   SettingsWebSearchRoute,
   SettingsMcpRoute,
@@ -217,7 +265,11 @@ export const SettingsModal: FC<SettingsModalProps> = (props) => {
       }}
       transitionProps={{ transition: 'fade-up' }}
     >
-      <Flex flex="0 0 auto" className="title-bar border-0 border-b border-chatbox-border-primary border-solid">
+      <Flex
+        flex="0 0 auto"
+        pt="var(--mobile-safe-area-inset-top, 0px)"
+        className="title-bar border-0 border-b border-chatbox-border-primary border-solid"
+      >
         <div className={clsx('flex-[1_1_0]', needRoomForMacWindowControls ? 'min-w-16' : '')} />
         <Flex p="sm" align="center" w={'100%'} maw={1200} gap="xs">
           <Title order={3} flex={1}>

@@ -101,5 +101,5 @@ Agent Skills 的核心目标是以低耦合方式扩展模型能力：
 
 ## 相关文档
 
-- 产品说明：[`docs/product/agent-skills.md`](../product/agent-skills.md)
+- 产品说明：`docs/product/agent-skills.md`
 - 工具系统：[`./tools-and-integrations.md`](./tools-and-integrations.md)

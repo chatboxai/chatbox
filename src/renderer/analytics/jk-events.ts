@@ -26,6 +26,8 @@ export const JK_EVENTS = {
   TOKEN_EXHAUSTED_CARD: 'token_exhausted_card',
   TOKEN_EXHAUSTED_CARD_CLICK: 'token_exhausted_card_click',
   MERMAID_RENDER_FAILED: 'mermaid_render_failed',
+  NOTIFICATION_IMPRESSION: 'notification_impression',
+  NOTIFICATION_LINK_CLICK: 'notification_link_click',
 } as const
 
 export const JK_PAGE_NAMES = {
@@ -35,4 +37,5 @@ export const JK_PAGE_NAMES = {
   COPILOTS_PAGE: 'copilots_page',
   HELP_PAGE: 'help_page',
   ABOUT_PAGE: 'about_page',
+  CLIENT_NOTIFICATION_DIALOG: 'client_notification_dialog',
 } as const

@@ -1,3 +1,9 @@
+import {
+  createImageGenerationAsyncClient,
+  IMAGE_GENERATION_POLL_INTERVAL_MS,
+  type ImageCompletionRequest,
+  type ImageGenerationAPIResponse,
+} from '@chatbox/core/application/image-generation'
 import { ofetch } from 'ofetch'
 import { z } from 'zod'
 import { getLogger } from '@/lib/utils'
@@ -326,6 +332,34 @@ export interface DialogConfig {
   buttons: { label: string; url: string }[]
 }
 
+const ClientNotificationSchema = z.object({
+  cover_image_url: z.string().optional(),
+  batch_id: z.string().uuid(),
+  title: z.string().min(1).max(200),
+  subtitle: z.string().max(400).optional(),
+  body_markdown: z
+    .string()
+    .min(1)
+    .max(32 * 1024),
+  content_language: z.enum(['zh', 'en']),
+})
+
+const ClientNotificationResponseSchema = z.object({
+  data: ClientNotificationSchema.nullable(),
+})
+
+export type ClientNotification = z.infer<typeof ClientNotificationSchema>
+
+export async function getNextClientNotification(params: { locale: string; displayed_batch_ids: string[] }) {
+  const response = await ofetch<unknown>(`${getAPIOrigin()}/api/client_notifications/next`, {
+    method: 'POST',
+    retry: 0,
+    body: params,
+    headers: await getChatboxHeaders(),
+  })
+  return ClientNotificationResponseSchema.parse(response).data
+}
+
 export async function getDialogConfig(params: { uuid: string; language: string; version: string }) {
   type Response = {
     data: null | DialogConfig
@@ -365,7 +399,18 @@ export interface LicenseDetailResponse {
   error?: LicenseDetailError
 }
 
-export async function getLicenseDetailRealtime(params: { licenseKey: string }): Promise<LicenseDetailResponse> {
+export function getLicenseDetailRealtime(params: { licenseKey: string }): Promise<LicenseDetailResponse> {
+  return fetchLicenseDetail(params, 'realtime')
+}
+
+export function getLicenseDetailForInspection(params: { licenseKey: string }): Promise<LicenseDetailResponse> {
+  return fetchLicenseDetail(params, 'all_status')
+}
+
+async function fetchLicenseDetail(
+  params: { licenseKey: string },
+  endpoint: 'realtime' | 'all_status'
+): Promise<LicenseDetailResponse> {
   type Response = {
     data: ChatboxAILicenseDetail | null
     error?: LicenseDetailError
@@ -373,7 +418,7 @@ export async function getLicenseDetailRealtime(params: { licenseKey: string }): 
   // 用于捕获错误响应体
   let capturedError: LicenseDetailError | undefined
   try {
-    const res = await ofetch<Response>(`${getAPIOrigin()}/api/license/detail/realtime`, {
+    const res = await ofetch<Response>(`${getAPIOrigin()}/api/license/detail/${endpoint}`, {
       retry: 5,
       headers: {
         Authorization: params.licenseKey,
@@ -398,7 +443,7 @@ export async function getLicenseDetailRealtime(params: { licenseKey: string }): 
   }
 }
 
-export async function generateUploadUrl(params: { licenseKey: string; filename: string }) {
+export async function generateUploadUrl(params: { licenseKey: string; filename: string }, signal?: AbortSignal) {
   type Response = {
     data: {
       url: string
@@ -409,6 +454,7 @@ export async function generateUploadUrl(params: { licenseKey: string; filename: 
   const res = await afetch(
     `${getAPIOrigin()}/api/files/generate-upload-url`,
     {
+      signal,
       method: 'POST',
       headers: {
         Authorization: params.licenseKey,
@@ -423,12 +469,15 @@ export async function generateUploadUrl(params: { licenseKey: string; filename: 
   return json['data']
 }
 
-export async function createUserFile<T extends boolean>(params: {
-  licenseKey: string
-  filename: string
-  filetype: string
-  returnContent: T
-}) {
+export async function createUserFile<T extends boolean>(
+  params: {
+    licenseKey: string
+    filename: string
+    filetype: string
+    returnContent: T
+  },
+  signal?: AbortSignal
+) {
   type Response = {
     data: {
       uuid: string
@@ -439,6 +488,7 @@ export async function createUserFile<T extends boolean>(params: {
   const res = await afetch(
     `${getAPIOrigin()}/api/files/create`,
     {
+      signal,
       method: 'POST',
       headers: {
         Authorization: params.licenseKey,
@@ -453,21 +503,37 @@ export async function createUserFile<T extends boolean>(params: {
   return json['data']
 }
 
+async function uploadUserFile(licenseKey: string, file: File, signal?: AbortSignal) {
+  signal?.throwIfAborted()
+  const { url, filename } = await generateUploadUrl(
+    {
+      licenseKey,
+      filename: file.name,
+    },
+    signal
+  )
+  signal?.throwIfAborted()
+  await uploadFile(file, url, signal)
+  signal?.throwIfAborted()
+  const result = await createUserFile(
+    {
+      licenseKey,
+      filename,
+      filetype: file.type,
+      returnContent: true,
+    },
+    signal
+  )
+  signal?.throwIfAborted()
+  return result
+}
+
+export async function uploadAndParseUserFile(licenseKey: string, file: File, signal: AbortSignal): Promise<string> {
+  return (await uploadUserFile(licenseKey, file, signal)).content
+}
+
 export async function uploadAndCreateUserFile(licenseKey: string, file: File) {
-  const { url, filename } = await generateUploadUrl({
-    licenseKey,
-    filename: file.name,
-  })
-  log.debug(`Uploading user file to URL: ${url}`)
-  await uploadFile(file, url)
-  log.debug(`Uploaded user file: ${file.name}`)
-  const result = await createUserFile({
-    licenseKey,
-    filename,
-    filetype: file.type,
-    returnContent: true,
-  })
-  log.debug(`Created user file with UUID: ${result.uuid}`)
+  const result = await uploadUserFile(licenseKey, file)
   const storageKey = `parseFile-${file.name}_${result.uuid}.${file.type.split('/')[1]}.txt`
 
   await platform.setStoreBlob(storageKey, result.content)
@@ -578,6 +644,7 @@ export async function validateLicense(params: { licenseKey: string; instanceId: 
 const RemoteModelInfoSchema = z.object({
   modelId: z.string(),
   modelName: z.string(),
+  description: z.string().optional(),
   labels: z.array(z.string()).optional(),
   type: z.enum(['chat', 'embedding', 'rerank', 'image']).optional(),
   apiStyle: z.enum(['google', 'openai', 'openai-responses', 'anthropic']).optional(),
@@ -1068,7 +1135,19 @@ export interface UserLicense {
   expires_at: string
   created_at: string
   recurring_canceled: boolean
-  quota_packs: any[]
+  quota_packs: UserLicenseQuotaPack[]
+}
+
+export interface UserLicenseQuotaPack {
+  id: number
+  license_key: string
+  product_name: string
+  quantity: number
+  quota_limit: number
+  quota_usage: number
+  status: string
+  current_period_start: string | null
+  current_period_end: string | null
 }
 
 export async function listLicensesByUser(): Promise<UserLicense[]> {
@@ -1122,99 +1201,40 @@ export async function claimFreeAgentModeReward(licenseKey: string): Promise<Clai
 
 const IMAGE_GEN_API_ORIGIN = getAPIOrigin()
 
-export interface ImageCompletionRequest {
-  model: string
-  prompt: string
-  response_format: 'b64_json'
-  style?: string
-  aspect_ratio?: string
-  quantity?: number
-  images?: Array<{ image_url: string }>
+export type { ImageCompletionRequest, ImageGenerationItem } from '@chatbox/core/application/image-generation'
+export type ImageGenerationTaskResponse = ImageGenerationAPIResponse
+export { IMAGE_GENERATION_POLL_INTERVAL_MS }
+
+function imageGenerationClient(licenseKey: string) {
+  return createImageGenerationAsyncClient({
+    apiOrigin: IMAGE_GEN_API_ORIGIN,
+    getLicenseKey: () => licenseKey,
+    getHeaders: getChatboxHeaders,
+    request: { fetchWithOptions: async (...args) => (await getAfetch())(...args) },
+  })
 }
 
-// Zod schemas for runtime validation
-// 后端异步生图任务的单个图片 item 状态；不要和客户端本地状态 ImageGeneration.status 混淆。
-// 这些状态来自接口，客户端会在 imageGenerationActions.ts 中聚合成一条本地生成记录的整体状态。
-const ImageGenerationItemSchema = z.object({
-  uuid: z.string(),
-  status: z.enum(['pending', 'processing', 'completed', 'failed']),
-  created_at: z.string(),
-  image_url: z.string().optional(),
-  thumbnail_url: z.string().optional(),
-  generated_at: z.string().optional(),
-  error_code: z.string().optional(),
-  error_message: z.string().optional(),
-})
-
-const ImageGenerationTaskResponseSchema = z.object({
-  // 接口结构预留为数组，但当前产品功能层面不支持一次异步生成多张图。
-  // 现阶段后端也写死item 为 1；
-  items: z.array(ImageGenerationItemSchema),
-  is_finished: z.boolean(),
-  task_id: z.string(),
-})
-
-export type ImageGenerationItem = z.infer<typeof ImageGenerationItemSchema>
-export type ImageGenerationTaskResponse = z.infer<typeof ImageGenerationTaskResponseSchema>
-
-export async function submitImageGeneration(
+export function submitImageGeneration(
   params: ImageCompletionRequest,
   licenseKey: string
 ): Promise<ImageGenerationTaskResponse> {
-  const afetch = await getAfetch()
-  const res = await afetch(
-    `${IMAGE_GEN_API_ORIGIN}/api/images/async_generations`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${licenseKey}`,
-        'Content-Type': 'application/json',
-        ...(await getChatboxHeaders()),
-      },
-      body: JSON.stringify(params),
-    },
-    {
-      parseChatboxRemoteError: true,
-      retry: 2,
-    }
-  )
-  const json = await res.json()
-  return ImageGenerationTaskResponseSchema.parse(json)
+  return imageGenerationClient(licenseKey).submit(params)
 }
 
-export async function pollImageTask(
+export function pollImageTask(
   taskId: string,
   licenseKey: string,
   signal?: AbortSignal
 ): Promise<ImageGenerationTaskResponse> {
-  const afetch = await getAfetch()
-  const res = await afetch(
-    `${IMAGE_GEN_API_ORIGIN}/api/images/async_generations/${taskId}`,
-    {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${licenseKey}`,
-        ...(await getChatboxHeaders()),
-      },
-      signal,
-    },
-    {
-      parseChatboxRemoteError: true,
-      retry: 2,
-    }
-  )
-  const json = await res.json()
-  return ImageGenerationTaskResponseSchema.parse(json)
+  return imageGenerationClient(licenseKey).poll(taskId, signal)
 }
-
-export const IMAGE_GENERATION_POLL_INTERVAL_MS = 2000
 
 export async function pollTaskUntilComplete(
   taskId: string,
   licenseKey: string,
   options?: {
     signal?: AbortSignal
-    onPoll?: (response: ImageGenerationTaskResponse) => void
+    onPoll?: (response: ImageGenerationTaskResponse) => void | Promise<void>
   }
 ): Promise<ImageGenerationTaskResponse> {
   while (true) {
@@ -1223,7 +1243,7 @@ export async function pollTaskUntilComplete(
     }
 
     const result = await pollImageTask(taskId, licenseKey, options?.signal)
-    options?.onPoll?.(result)
+    await options?.onPoll?.(result)
 
     if (result.is_finished) {
       return result

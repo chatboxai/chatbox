@@ -2,7 +2,7 @@
 
 > Last updated: 2026-08
 
-本文档描述 Chatbox Pro 的工具（Tool）与外部集成系统的产品设计。关于整体架构和进程模型，请参阅 [`./architecture.md`](./architecture.md)。
+本文档描述 Chatbox Pro 的工具（Tool）与外部集成系统的产品设计。关于整体架构和进程模型，请参阅 `./architecture.md`。
 
 ---
 
@@ -119,14 +119,13 @@ Web Search 采用抽象基类模式（`src/renderer/packages/web-search/base.ts`
 
 ### 知识库工具集（`toolsets/knowledge-base.ts`）
 
-与本地 RAG 知识库交互，提供四个工具：
+与本地 RAG 知识库交互，提供单个 `knowledge_base` 工具，由 `command` 选择操作：
 
-- **query_knowledge_base**：语义搜索，模型被要求对每个新问题都先执行搜索
-- **get_files_meta**：获取文件元数据
-- **read_file_chunks**：按块读取文档内容
-- **list_files**：分页列出所有文件
+- **search**：语义搜索，结果带文件 ID、块序号和文件的索引状态
+- **read**：从指定块起连续读取若干块；文件未完成索引时说明只有部分块可读
+- **list**：分页列出已完成索引的文件及其 ID
 
-工具集的 `description` 动态生成，包含知识库名称和文件列表，使模型了解可检索的内容范围。
+工具的 `description` 在每次生成时按知识库名称和已完成索引的文件列表生成，文件不变时保持不变，使模型了解可检索的内容范围。
 
 ### Web Search 工具集（`toolsets/web-search.ts`）
 

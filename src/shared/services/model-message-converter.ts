@@ -2,15 +2,23 @@ import type { JSONValue } from '@ai-sdk/provider'
 import type { ReasoningPart } from '@ai-sdk/provider-utils'
 import type { FilePart, ImagePart, ModelMessage, TextPart, ToolCallPart } from 'ai'
 import { compact } from 'lodash'
-import { pickPersistableProviderMetadata } from '../models/provider-part-metadata'
+import {
+  collectReplayableOpenAIItemIds,
+  pickPersistableProviderMetadata,
+  pickReplayMetadata,
+  type ReplayTarget,
+} from '../models/provider-part-metadata'
 import { DEFAULT_TOOL_RESULT_IMAGE_INLINE_LIMIT, getToolResultImageReference } from '../tool-result-image'
 import {
   buildViewImageToolResultContent,
   buildViewImageUserMessage,
+  isImageViewingToolName,
   type ViewImageInjection,
   viewImageAttachmentNotice,
 } from '../tools/view-image'
+import { lastAssistantMessageIndex } from '../tools/view-image-batch'
 import type { Message, MessageContentParts, MessageContentToolCallPart } from '../types'
+import { uploadedFileToolHint } from '../uploaded-file-tools'
 import { getMessageText } from '../utils/message'
 
 /**
@@ -26,19 +34,16 @@ export interface ConvertToModelMessagesOptions {
    * Whether historical assistant reasoning survives conversion.
    * - `false`/omitted: reasoning is dropped (most providers reject or mangle it).
    * - `true` / `'all-turns'` (equivalent): reasoning is kept on every assistant
-   *   turn (DeepSeek thinking mode, and Anthropic Messages signed replay —
-   *   the documented pattern: send everything back, the API filters per model).
+   *   turn (DeepSeek thinking mode, and the signed replay routes — Anthropic
+   *   Messages, OpenAI Responses, Gemini — the documented pattern: send
+   *   everything back, the API filters per model).
    */
   preserveReasoning?: boolean | 'all-turns'
-  /**
-   * When true, only reasoning parts that carry whitelisted replay metadata
-   * (Anthropic `signature` / `redactedData`) go on the wire. This is the
-   * Cherry-style source filter: Kimi/DeepSeek/Gemini thoughts have no
-   * Anthropic signature and are omitted, while Claude signatures survive a
-   * same-realm model or host switch (Claude API / Bedrock Messages / Vertex
-   * signatures are cross-compatible).
-   */
+  /** Only replay reasoning carrying metadata accepted by the target protocol. */
   signedReasoningOnly?: boolean
+  /** Target protocol's replay namespaces. Text metadata requires an explicit opt-in. */
+  replayNamespaces?: readonly string[]
+  reasoningReplaySource?: string
   ensureGoogleFunctionCallSignatures?: boolean
   /**
    * The model's wire protocol accepts images inside tool results (see
@@ -47,7 +52,7 @@ export interface ConvertToModelMessagesOptions {
    * keeps compact JSON for auxiliary callers such as naming and summarization.
    */
   supportToolResultImages?: boolean
-  /** Maximum number of most-recent stored tool images to inline into one request. */
+  /** Maximum historical tool images to inline; pending view_image results have a separate batch budget. */
   maxInlineToolResultImages?: number
 }
 
@@ -160,10 +165,78 @@ function isCompletedToolCall(part: MessageContentParts[number]): part is Message
   return part.type === 'tool-call' && (part.state === 'result' || part.state === 'error')
 }
 
-function isSameToolCallBatch(first: MessageContentToolCallPart, next: MessageContentToolCallPart): boolean {
-  // stepIndex is the provider-level step boundary; parts without one (legacy messages)
-  // keep the old one-call-per-batch serialization.
-  return first.stepIndex !== undefined && first.stepIndex === next.stepIndex
+/** A completed call of an image-viewing tool whose result holds the image it looked at. */
+function isViewedImageResult(part: MessageContentParts[number]): boolean {
+  return (
+    part.type === 'tool-call' &&
+    part.state === 'result' &&
+    isImageViewingToolName(part.toolName) &&
+    getToolResultImageReference(part) !== null
+  )
+}
+
+function isAssistantResponsePart(part: MessageContentParts[number]): boolean {
+  return (
+    part.type === 'tool-call' ||
+    part.type === 'image' ||
+    (part.type === 'text' && part.text.length > 0) ||
+    (part.type === 'reasoning' && (part.text.length > 0 || part.providerMetadata !== undefined))
+  )
+}
+
+function lastAssistantResponseIndex(messages: Message[]): number {
+  for (let index = lastAssistantMessageIndex(messages); index >= 0; index -= 1) {
+    if (messages[index].role === 'assistant' && messages[index].contentParts?.some(isAssistantResponsePart))
+      return index
+  }
+  return -1
+}
+
+function canReplayUnmarkedTail(messages: Message[], assistantIndex: number): boolean {
+  if (assistantIndex < 0 || messages[assistantIndex].finishReason === 'stop') return false
+  return messages
+    .slice(assistantIndex + 1)
+    .every(
+      (message) =>
+        message.role === 'system' ||
+        (message.role === 'assistant' && !message.contentParts?.some(isAssistantResponsePart))
+    )
+}
+
+/** Keep a provider's entire step before its tool results, including interleaved text. */
+function getToolCallBatch(parts: MessageContentParts, start: number, allowUnmarkedTail: boolean) {
+  const first = parts[start]
+  const toolCallPartIndexes = [start]
+  let end = start + 1
+  if (first.type !== 'tool-call' || first.stepIndex === undefined) return { end, toolCallPartIndexes }
+
+  let nextMarkedIndex = start
+  let hasViewImageResult = isViewedImageResult(first)
+  for (; end < parts.length; end += 1) {
+    const part = parts[end]
+    const partStep = 'stepIndex' in part ? part.stepIndex : undefined
+    if (partStep !== undefined && partStep !== first.stepIndex) break
+    if (part.type === 'tool-call') {
+      if (partStep === undefined) break
+      if (isCompletedToolCall(part)) toolCallPartIndexes.push(end)
+      if (isViewedImageResult(part)) hasViewImageResult = true
+    } else if (isAssistantResponsePart(part) && partStep === undefined) {
+      if (nextMarkedIndex <= end) {
+        nextMarkedIndex = end + 1
+        while (nextMarkedIndex < parts.length) {
+          const next = parts[nextMarkedIndex]
+          if ('stepIndex' in next && next.stepIndex !== undefined) break
+          nextMarkedIndex += 1
+        }
+      }
+      const nextMarkedPart = parts[nextMarkedIndex]
+      const nextStep = nextMarkedPart && 'stepIndex' in nextMarkedPart ? nextMarkedPart.stepIndex : undefined
+      // Legacy text has no step identity. Preserve an ambiguous final batch on
+      // resume; the next provider response will make it eligible for eviction.
+      if (nextStep !== first.stepIndex && !(nextStep === undefined && allowUnmarkedTail && hasViewImageResult)) break
+    }
+  }
+  return { end, toolCallPartIndexes }
 }
 
 async function convertContentParts<T extends TextPart | ImagePart | FilePart>(
@@ -179,6 +252,7 @@ async function convertContentParts<T extends TextPart | ImagePart | FilePart>(
           return { type: 'text', text: c.text } as T
         } else if (c.type === 'image') {
           if (options?.modelSupportVision === false) {
+            if (!c.ocrResult) return null
             return { type: 'text', text: `This is an image, OCR Result: \n${c.ocrResult}` } as T
           }
           const resolved = await resolveImageData(c.storageKey, resolveImage)
@@ -213,8 +287,18 @@ type EffectiveReasoningReplay = false | 'text' | 'signed-only'
 async function convertAssistantContentParts(
   contentParts: MessageContentParts,
   resolveImage: ModelImageResolver,
-  options?: { preserveReasoning?: EffectiveReasoningReplay }
+  options?: {
+    modelSupportVision?: boolean
+    preserveReasoning?: EffectiveReasoningReplay
+    replayNamespaces?: readonly string[]
+    reasoningReplaySource?: string
+  }
 ): Promise<Array<TextPart | FilePart | ToolCallPart | ReasoningPart>> {
+  const replayTarget: ReplayTarget = {
+    namespaces: options?.replayNamespaces ?? ['anthropic'],
+    source: options?.reasoningReplaySource,
+    replayableOpenAIItemIds: collectReplayableOpenAIItemIds(contentParts, options?.reasoningReplaySource),
+  }
   const results: Array<TextPart | FilePart | ToolCallPart | ReasoningPart | null> = await Promise.all(
     contentParts.map(async (c) => {
       if (c.type === 'tool-call') {
@@ -234,22 +318,35 @@ async function convertAssistantContentParts(
         // only for structure (`protocolOnly`) are equally invisible to providers
         // until a route that requires them (Bedrock Converse) opts in explicitly.
         if (!c.text || c.protocolOnly) return null
-        return { type: 'text', text: c.text } as TextPart
+        // Text parts carry replay metadata too: Gemini signs the last text part of
+        // a response that has no function call. Same namespace filter as reasoning —
+        // only the target route's metadata may go out.
+        const textReplayMetadata = pickPersistableProviderMetadata(
+          c.providerMetadata,
+          options?.replayNamespaces?.includes('google') ? ['google'] : []
+        )
+        return {
+          type: 'text',
+          text: c.text,
+          ...(textReplayMetadata ? { providerOptions: textReplayMetadata } : {}),
+        } as TextPart
       }
       // Reasoning is opt-in per provider. DeepSeek thinking mode requires it on follow-up
       // requests, including when routed through an OpenAI-compatible provider, but other
       // providers reject it (xAI Grok 400s on unknown `reasoning_content`) or merge it into
       // text content (Mistral concatenates without a separator). Default off keeps prior
       // behavior; orchestration enables it only for positively identified DeepSeek and
-      // Anthropic Messages routes that require reasoning history on follow-up requests.
+      // signed-replay routes (Anthropic Messages, OpenAI Responses, Gemini) that need
+      // reasoning history on follow-up requests.
       if (c.type === 'reasoning') {
         const mode = options?.preserveReasoning
         if (!mode) return null
-        // Only whitelisted replay metadata (Anthropic signature / redactedData) goes
-        // back out; anything else persisted on the part must not leak onto the wire.
-        const replayMetadata = pickPersistableProviderMetadata(c.providerMetadata)
-        // The signed-replay channel (Anthropic Messages) carries only blocks
-        // that can pass upstream signature validation; unsigned reasoning —
+        // Only whitelisted replay metadata goes back out, and only for namespaces the
+        // target route understands — anything else persisted on the part must not leak
+        // onto the wire.
+        const replayMetadata = pickReplayMetadata(c.providerMetadata, replayTarget)
+        // The signed-replay channel (Anthropic Messages, OpenAI Responses, Gemini)
+        // carries only blocks that can pass upstream validation; unsigned reasoning —
         // e.g. saved by app versions predating metadata capture — is omitted,
         // matching Cherry-style "skip foreign thinking, keep it in the UI".
         if (mode === 'signed-only' && !replayMetadata) return null
@@ -261,6 +358,10 @@ async function convertAssistantContentParts(
         } satisfies ReasoningPart
       }
       if (c.type === 'image') {
+        if (options?.modelSupportVision === false) {
+          if (!c.ocrResult) return null
+          return { type: 'text', text: `This is an image, OCR Result: \n${c.ocrResult}` } as TextPart
+        }
         const resolved = await resolveImageData(c.storageKey, resolveImage)
         if (!resolved) return null
         return { type: 'file', data: resolved.base64Data, mediaType: resolved.mediaType } as FilePart
@@ -282,7 +383,9 @@ type ToolResultModelOutput =
   | { type: 'json'; value: JSONValue }
   | {
       type: 'content'
-      value: Array<{ type: 'text'; text: string } | { type: 'image-data'; data: string; mediaType: string }>
+      value: Array<
+        { type: 'text'; text: string } | { type: 'file'; data: { type: 'data'; data: string }; mediaType: string }
+      >
     }
 
 function truncatedToolResultOutput(toolCallPart: MessageContentToolCallPart): ToolResultModelOutput {
@@ -292,7 +395,7 @@ function truncatedToolResultOutput(toolCallPart: MessageContentToolCallPart): To
       _truncated: true,
       preview: String(toolCallPart.result ?? ''),
       fullResultFileKey: toolCallPart.resultStorageKey,
-      hint: 'Result was too large and has been truncated. Use the read_file tool with the fullResultFileKey above to read the complete result.',
+      hint: `Result was too large and has been truncated. ${uploadedFileToolHint(toolCallPart.resultStorageKey ?? '')}`,
     } as JSONValue,
   }
 }
@@ -360,12 +463,26 @@ async function toToolResultImageOutput(
 
 function collectRecentToolResultImagePositions(
   messages: Message[],
-  limit: number
+  limit: number,
+  lastAssistantIndex: number,
+  allowUnmarkedTail: boolean
 ): ReadonlyMap<number, ReadonlySet<number>> {
   const selected = new Map<number, Set<number>>()
   const normalizedLimit = Math.max(0, Math.floor(limit))
   if (normalizedLimit === 0) return selected
 
+  const lastParts = messages[lastAssistantIndex]?.contentParts ?? []
+  let lastPartIndex = lastParts.length - 1
+  while (lastPartIndex >= 0 && !isAssistantResponsePart(lastParts[lastPartIndex])) lastPartIndex -= 1
+  const pendingIndexes = new Set<number>()
+  for (let index = 0; index <= lastPartIndex; index += 1) {
+    if (!isCompletedToolCall(lastParts[index])) continue
+    const batch = getToolCallBatch(lastParts, index, allowUnmarkedTail)
+    if (batch.end > lastPartIndex) {
+      for (const partIndex of batch.toolCallPartIndexes) pendingIndexes.add(partIndex)
+    }
+    index = batch.end - 1
+  }
   let selectedCount = 0
   for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
     const parts = messages[messageIndex].contentParts ?? []
@@ -373,11 +490,13 @@ function collectRecentToolResultImagePositions(
       const part = parts[partIndex]
       if (part.type !== 'tool-call' || part.state !== 'result') continue
       if (!getToolResultImageReference(part)) continue
+      const pending =
+        messageIndex === lastAssistantIndex && pendingIndexes.has(partIndex) && isImageViewingToolName(part.toolName)
+      if (!pending && selectedCount >= normalizedLimit) continue
       const selectedPartIndexes = selected.get(messageIndex) ?? new Set<number>()
       selectedPartIndexes.add(partIndex)
       selected.set(messageIndex, selectedPartIndexes)
-      selectedCount += 1
-      if (selectedCount >= normalizedLimit) return selected
+      if (!pending) selectedCount += 1
     }
   }
 
@@ -390,10 +509,13 @@ async function emitAssistantMessages(
   output: ModelMessage[],
   options?: {
     preserveReasoning?: EffectiveReasoningReplay
+    replayNamespaces?: readonly string[]
+    reasoningReplaySource?: string
     ensureGoogleFunctionCallSignatures?: boolean
     modelSupportVision?: boolean
     supportToolResultImages?: boolean
     inlineToolResultImagePartIndexes?: ReadonlySet<number>
+    allowUnmarkedTail?: boolean
   }
 ): Promise<void> {
   let cursor = 0
@@ -401,17 +523,12 @@ async function emitAssistantMessages(
     const tcIdx = contentParts.findIndex((part, index) => index >= cursor && isCompletedToolCall(part))
     if (tcIdx === -1) break
 
-    // Collect the contiguous run of completed tool calls that belong to the same batch.
-    const toolCallParts: MessageContentToolCallPart[] = []
-    const toolCallPartIndexes: number[] = []
-    for (let index = tcIdx; index < contentParts.length; index += 1) {
-      const part = contentParts[index]
-      if (!isCompletedToolCall(part)) break
-      if (toolCallParts.length > 0 && !isSameToolCallBatch(toolCallParts[0], part)) break
-      toolCallParts.push(part)
-      toolCallPartIndexes.push(index)
-    }
-    const batchEnd = tcIdx + toolCallParts.length
+    const { end: batchEnd, toolCallPartIndexes } = getToolCallBatch(
+      contentParts,
+      tcIdx,
+      options?.allowUnmarkedTail ?? false
+    )
+    const toolCallParts = toolCallPartIndexes.map((index) => contentParts[index]).filter(isCompletedToolCall)
 
     // Gemini 3 signs only the first functionCall of a batch, so a missing signature on the
     // batch head is the only case that needs the validator bypass.
@@ -419,7 +536,8 @@ async function emitAssistantMessages(
       toolCallParts[0] = withGoogleThoughtSignatureBypass(toolCallParts[0])
     }
 
-    const segment = [...contentParts.slice(cursor, tcIdx), ...toolCallParts]
+    const segment = contentParts.slice(cursor, batchEnd)
+    segment[tcIdx - cursor] = toolCallParts[0]
     const converted = await convertAssistantContentParts(segment, resolveImage, options)
     if (converted.length > 0) {
       output.push({ role: 'assistant' as const, content: converted })
@@ -506,11 +624,15 @@ export async function convertToModelMessages(
     : options?.signedReasoningOnly
       ? 'signed-only'
       : 'text'
+  const lastAssistantIndex = lastAssistantResponseIndex(messages)
+  const allowUnmarkedTail = canReplayUnmarkedTail(messages, lastAssistantIndex)
   const inlineToolResultImagePositions = collectRecentToolResultImagePositions(
     messages,
     options?.supportToolResultImages === undefined
       ? 0
-      : (options.maxInlineToolResultImages ?? DEFAULT_MAX_INLINE_TOOL_RESULT_IMAGES)
+      : (options.maxInlineToolResultImages ?? DEFAULT_MAX_INLINE_TOOL_RESULT_IMAGES),
+    lastAssistantIndex,
+    allowUnmarkedTail
   )
 
   for (const [messageIndex, m] of messages.entries()) {
@@ -532,10 +654,13 @@ export async function convertToModelMessages(
       case 'assistant':
         await emitAssistantMessages(m.contentParts || [], resolveImage, output, {
           preserveReasoning: effectiveReasoningReplay,
+          replayNamespaces: options?.replayNamespaces,
+          reasoningReplaySource: options?.reasoningReplaySource,
           ensureGoogleFunctionCallSignatures: options?.ensureGoogleFunctionCallSignatures,
           modelSupportVision: options?.modelSupportVision,
           supportToolResultImages: options?.supportToolResultImages,
           inlineToolResultImagePartIndexes: inlineToolResultImagePositions.get(messageIndex),
+          allowUnmarkedTail: messageIndex === lastAssistantIndex && allowUnmarkedTail,
         })
         break
       case 'tool':

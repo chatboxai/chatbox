@@ -1,33 +1,79 @@
+import { collectCompactedAttachments } from '@shared/context/attachments'
+import { projectContextMessagesForModel } from '@shared/context/model-projection'
 import { flattenToolCallPartsToText } from '@shared/context/tool-flatten'
 import type { LoggerPort, SettingsRepositoryPort } from '../../ports'
-import type { Message, Session, SessionSettings, Settings } from '../../types'
-import { findLastCompactionBoundaryMessage } from './compaction-boundary'
-import { buildCompactionCommitPatch } from './compaction-commit'
+import type { Message, SessionHeader, SessionSettings, Settings } from '../../types'
+import type { SessionHeaderRead } from '../../ports/session-row-repository'
+import type { SessionContextRepositoryPort, SessionContextSource } from '../../ports/session-context-source'
+import type { SessionCompactionOperation } from '../../ports/session-structure-command'
+import { getTokenizerType } from '@shared/token-estimation/tokenizer'
+import { type CompactionBudget, estimateTokensBySampling, shouldCompactAtTokens } from '../token-estimation/math'
+import type { TokenEstimationModel } from '../token-estimation/TokenEstimationService'
+import { createCompactionPlan } from './compaction-plan'
+import type {
+  CompactionFailureCode,
+  CompactionRequest,
+  CompactionRunOptions,
+  CompactionServiceResult,
+} from './compaction-types'
 
-export interface CompactionSessionPort {
-  getSession(sessionId: string): Promise<Session | null>
-  getSessionSettings(sessionId: string): Promise<SessionSettings>
-  updateSessionWithMessages(
+export interface CompactionSessionPort extends SessionContextRepositoryPort {
+  getSessionHeader(sessionId: string): Promise<SessionHeaderRead | null>
+  getSessionSettings(sessionId: string, header: SessionHeader): Promise<SessionSettings>
+  commitSessionCompaction(
     sessionId: string,
-    updater: (session: Session | null | undefined) => Session
-  ): Promise<Session>
+    operation: SessionCompactionOperation
+  ): Promise<{ applied: boolean; revision: number }>
+}
+
+/** What the last request sent outside the conversation history. */
+export interface RequestOverheadTokens {
+  /** Tool definitions, which no message carries. */
+  toolTokens: number
+  /**
+   * System instructions beyond the session's own system messages: agent
+   * instructions, memory, knowledge base.
+   */
+  extraSystemTokens: number
+}
+
+/**
+ * Overhead a pre-send estimate adds to its history count. An estimate that
+ * already counted some host instructions passes them so they are not counted twice.
+ */
+export function getRequestOverheadBeyond(
+  overhead: RequestOverheadTokens,
+  countedInstructions = '',
+  model?: TokenEstimationModel
+): number {
+  const counted = countedInstructions ? estimateTokensBySampling(countedInstructions, getTokenizerType(model)) : 0
+  return overhead.toolTokens + Math.max(0, overhead.extraSystemTokens - counted)
+}
+
+export interface CompactionPressure {
+  /** Estimated request size: context, pending input and request overhead. */
+  tokens: number
+  budget: CompactionBudget
 }
 
 export interface CompactionPolicyPort {
-  shouldCompact(input: {
+  /** Null when the session has no measurable request or model window. */
+  measure(input: {
     sessionId: string
-    session: Session
+    header: SessionHeader
     sessionSettings: SessionSettings
     globalSettings: Settings
     pendingMessage?: Message
-  }): Promise<boolean>
+    /** Request tokens outside the conversation (tool definitions, extra instructions) seen on the last request. */
+    requestOverhead: RequestOverheadTokens
+  }): Promise<CompactionPressure | null>
   /**
-   * The host's send-context selection, including its message-count limit and
-   * tool-result cleanup. The summary covers this window through its latest
-   * eligible message; persisted history remains available in the conversation.
+   * The host's send-context selection, including its message-count limit.
+   * The summary covers this window through its latest eligible message;
+   * persisted history remains available in the conversation.
    */
   getCompactionContext(
-    session: Session,
+    source: SessionContextSource,
     sessionSettings: SessionSettings,
     pendingMessage?: Message
   ): Message[] | Promise<Message[]>
@@ -41,24 +87,8 @@ export interface CompactionSummaryPort {
     language: Settings['language']
     prompt?: string
     onStreamUpdate?: (text: string) => void
+    abortSignal?: AbortSignal
   }): Promise<{ success: boolean; summary?: string; error?: Error }>
-}
-
-export type CompactionFailureCode = 'session_not_found' | 'summary_failed' | 'no_messages' | 'update_failed'
-
-export interface CompactionFailure {
-  code: CompactionFailureCode
-  message: string
-  cause?: unknown
-}
-
-export interface CompactionServiceResult {
-  success: boolean
-  compacted: boolean
-  failure?: CompactionFailure
-  summaryMessageId?: string
-  /** Another compaction for this session already owns the streaming run. */
-  alreadyRunning?: boolean
 }
 
 export interface CompactionServiceOptions {
@@ -78,9 +108,31 @@ export function isAutoCompactionEnabled(sessionSettings?: SessionSettings, globa
   return globalSettings?.autoCompaction ?? true
 }
 
+/** Per-session request facts are kept for recently active sessions only. */
+const SESSION_FACT_LIMIT = 256
+
+const NO_REQUEST_OVERHEAD: RequestOverheadTokens = { toolTokens: 0, extraSystemTokens: 0 }
+
+/** The context a compaction left: valid only while the active path still ends past that summary. */
+interface CompactedSize {
+  tokens: number
+  threadId: string
+  summaryMessageId: string | undefined
+  usableTokens: number
+}
+
+function remember<T>(map: Map<string, T>, sessionId: string, value: T): void {
+  map.delete(sessionId)
+  map.set(sessionId, value)
+  while (map.size > SESSION_FACT_LIMIT) map.delete(map.keys().next().value!)
+}
+
 export class CompactionService {
   private readonly ongoing = new Set<string>()
   private readonly now: () => number
+  private readonly requestOverhead = new Map<string, RequestOverheadTokens>()
+  /** Request size a conversation compaction left; the next automatic one waits for growth past it. */
+  private readonly compactedSizes = new Map<string, CompactedSize>()
 
   constructor(private readonly options: CompactionServiceOptions) {
     this.now = options.now ?? Date.now
@@ -90,74 +142,143 @@ export class CompactionService {
     return this.ongoing.has(sessionId)
   }
 
+  /**
+   * Record what the last request sent outside the conversation history, so the
+   * next pre-send check measures the request the model will actually receive.
+   */
+  recordRequestOverhead(sessionId: string, overhead: RequestOverheadTokens): void {
+    const valid = (tokens: number) => Number.isFinite(tokens) && tokens >= 0
+    if (!valid(overhead.toolTokens) || !valid(overhead.extraSystemTokens)) return
+    remember(this.requestOverhead, sessionId, {
+      toolTokens: Math.ceil(overhead.toolTokens),
+      extraSystemTokens: Math.ceil(overhead.extraSystemTokens),
+    })
+  }
+
   async needsCompaction(sessionId: string, pendingMessage?: Message): Promise<boolean> {
-    const session = await this.options.sessions.getSession(sessionId)
+    const read = await this.options.sessions.getSessionHeader(sessionId)
+    const session = read?.header
     if (!session) return false
 
     const globalSettings = this.options.settings.getSettings()
     if (!isAutoCompactionEnabled(session.settings, globalSettings)) return false
 
-    const modelId = session.settings?.modelId ?? globalSettings.defaultChatModel?.model
-    if (!modelId) return false
+    const pressure = await this.measure(sessionId, session, globalSettings, pendingMessage)
+    if (!pressure) return false
+    // Another thread or fork, or a different model window, starts without the earlier baseline.
+    const compacted = this.compactedSizes.get(sessionId)
+    const baseline =
+      compacted &&
+      compacted.threadId === read.activeThreadId &&
+      compacted.summaryMessageId === read.summary.lastSummaryMessageId &&
+      compacted.usableTokens === pressure.budget.usableTokens
+        ? compacted.tokens
+        : undefined
+    return shouldCompactAtTokens(pressure.budget, pressure.tokens, baseline)
+  }
 
-    const sessionSettings = await this.options.sessions.getSessionSettings(sessionId)
-    return this.options.policy.shouldCompact({ sessionId, session, sessionSettings, globalSettings, pendingMessage })
+  private async measure(
+    sessionId: string,
+    session: SessionHeader,
+    globalSettings: Settings,
+    pendingMessage?: Message
+  ): Promise<CompactionPressure | null> {
+    const modelId = session.settings?.modelId ?? globalSettings.defaultChatModel?.model
+    if (!modelId) return null
+
+    const sessionSettings = await this.options.sessions.getSessionSettings(sessionId, session)
+    return this.options.policy.measure({
+      sessionId,
+      header: session,
+      sessionSettings,
+      globalSettings,
+      pendingMessage,
+      requestOverhead: this.requestOverhead.get(sessionId) ?? NO_REQUEST_OVERHEAD,
+    })
+  }
+
+  /** Remember the size a conversation compaction left, for the next automatic decision. */
+  private async recordCompactedSize(sessionId: string, request: CompactionRequest): Promise<void> {
+    this.compactedSizes.delete(sessionId)
+    // A generation compaction measures the live request itself; the next turn starts fresh.
+    if (request.kind === 'generation') return
+    try {
+      const read = await this.options.sessions.getSessionHeader(sessionId)
+      if (!read) return
+      const pressure = await this.measure(sessionId, read.header, this.options.settings.getSettings())
+      if (pressure) {
+        remember(this.compactedSizes, sessionId, {
+          tokens: pressure.tokens,
+          threadId: read.activeThreadId,
+          summaryMessageId: read.summary.lastSummaryMessageId,
+          usableTokens: pressure.budget.usableTokens,
+        })
+      }
+    } catch (error) {
+      try {
+        await this.options.logger?.log('warn', 'Failed to measure the compacted conversation', { sessionId, error })
+      } catch {
+        // Diagnostics must never change the successful compaction outcome.
+      }
+    }
   }
 
   async run(
     sessionId: string,
-    options: {
-      force?: boolean
-      prompt?: string
-      onStreamUpdate?: (text: string) => void
-      pendingMessage?: Message
-    } = {}
+    request: CompactionRequest,
+    options: CompactionRunOptions = {}
   ): Promise<CompactionServiceResult> {
     if (this.ongoing.has(sessionId)) {
-      return { success: true, compacted: false, alreadyRunning: true }
+      return { status: 'skipped', reason: 'busy' }
     }
-    if (!options.force && !(await this.needsCompaction(sessionId, options.pendingMessage))) {
-      return { success: true, compacted: false }
+    if (options.abortSignal?.aborted) return { status: 'cancelled' }
+    if (request.kind === 'automatic' && !(await this.needsCompaction(sessionId, request.pendingMessage))) {
+      return { status: 'skipped', reason: 'not_needed' }
     }
     if (this.ongoing.has(sessionId)) {
-      return { success: true, compacted: false, alreadyRunning: true }
+      return { status: 'skipped', reason: 'busy' }
     }
 
+    if (options.abortSignal?.aborted) return { status: 'cancelled' }
     this.ongoing.add(sessionId)
     try {
-      const session = await this.options.sessions.getSession(sessionId)
-      if (!session) {
-        return this.failure('session_not_found', 'Session not found')
-      }
-
+      options.onStart?.()
+      const read = await this.options.sessions.getSessionHeader(sessionId)
+      if (!read) return this.failure('session_not_found', 'Session not found')
+      const session = read.header
       const globalSettings = this.options.settings.getSettings()
       const modelId = session.settings?.modelId ?? globalSettings.defaultChatModel?.model
-      if (!modelId) {
-        return { success: true, compacted: false }
-      }
+      if (!modelId) return { status: 'skipped', reason: 'no_model' }
+      const sessionSettings = await this.options.sessions.getSessionSettings(sessionId, session)
+      const source = await this.options.sessions.getSessionContextSource({
+        sessionId,
+        expectedRevision: read.revision,
+        maxContextMessageCount: sessionSettings.maxContextMessageCount,
+        reserveCurrentInput: true,
+        ...(request.kind === 'generation' ? { targetMessageId: request.targetMessageId } : {}),
+      })
+      if (!source) return this.failure('session_not_found', 'Session not found')
 
-      const sessionSettings = await this.options.sessions.getSessionSettings(sessionId)
-      // Summarize the full selected context through its latest eligible message.
-      // Capture the boundary before generation so messages arriving during
-      // streaming remain after the summary and available to the next request.
-      const contextMessages = await this.options.policy.getCompactionContext(
-        session,
-        sessionSettings,
-        options.pendingMessage
+      const planned = await createCompactionPlan(source, request, (context, pendingMessage) =>
+        this.options.policy.getCompactionContext(context, sessionSettings, pendingMessage)
       )
-      const boundary = findLastCompactionBoundaryMessage(contextMessages)
-      if (!boundary) {
-        return this.failure('no_messages', 'No messages to compact')
-      }
-      const boundaryIndex = contextMessages.findIndex((message) => message.id === boundary.id)
+      if (planned.status !== 'ready') return planned
+      const { plan } = planned
+      if (options.abortSignal?.aborted) return { status: 'cancelled' }
       const summaryResult = await this.options.summaries.generate({
         sessionId,
-        messages: flattenToolCallPartsToText(contextMessages.slice(0, boundaryIndex + 1)),
+        messages: flattenToolCallPartsToText(
+          projectContextMessagesForModel(plan.messages, { language: globalSettings.language, purpose: 'summarize' })
+        ),
         sessionSettings: session.settings,
         language: globalSettings.language,
         prompt: options.prompt?.trim() || globalSettings.compactionPrompt,
         onStreamUpdate: options.onStreamUpdate,
+        abortSignal: options.abortSignal,
       })
+      if (options.abortSignal?.aborted) {
+        return { status: 'cancelled' }
+      }
       if (!summaryResult.success || !summaryResult.summary) {
         return this.failure(
           'summary_failed',
@@ -166,37 +287,49 @@ export class CompactionService {
         )
       }
 
+      const attachments = collectCompactedAttachments(plan.messages)
       const summaryMessage: Message = {
         id: this.options.createId(),
         role: 'assistant',
         contentParts: [{ type: 'text', text: summaryResult.summary }],
         timestamp: this.now(),
         isSummary: true,
+        ...attachments,
       }
 
-      const point = {
-        summaryMessageId: summaryMessage.id,
-        boundaryMessageId: boundary.id,
-        createdAt: this.now(),
-      }
+      let committedRevision: number
       try {
-        let committed = false
-        await this.options.sessions.updateSessionWithMessages(sessionId, (current) => {
-          if (!current) throw new Error('Session not found during update')
-          const updated = buildCompactionCommitPatch(current, summaryMessage, point)
-          if (!updated) return current
-          committed = true
-          return updated
+        if (options.abortSignal?.aborted) {
+          return { status: 'cancelled' }
+        }
+        const commit = await this.options.sessions.commitSessionCompaction(sessionId, {
+          action: 'compaction-commit',
+          threadId: plan.threadId,
+          summary: summaryMessage,
+          coverage: plan.coverage,
+          pathMessageIds: plan.pathMessageIds,
+          createdAt: this.now(),
+          abortSignal: options.abortSignal,
         })
-        if (!committed) {
-          await this.logAbandonedCompaction(sessionId, boundary.id)
-          return { success: true, compacted: false }
+        committedRevision = commit.revision
+        if (!commit.applied) {
+          await this.logAbandonedCompaction(sessionId, plan.coverage.boundaryMessageId)
+          return options.abortSignal?.aborted ? { status: 'cancelled' } : { status: 'skipped', reason: 'stale_path' }
         }
       } catch (error) {
         return this.failure('update_failed', error instanceof Error ? error.message : String(error), error)
       }
 
-      return { success: true, compacted: true, summaryMessageId: summaryMessage.id }
+      await this.recordCompactedSize(sessionId, request)
+
+      return {
+        status: 'compacted',
+        summaryMessageId: summaryMessage.id,
+        summary: summaryResult.summary,
+        attachments,
+        coverage: plan.coverage,
+        revision: committedRevision,
+      }
     } catch (error) {
       return this.failure('update_failed', error instanceof Error ? error.message : String(error), error)
     } finally {
@@ -205,16 +338,15 @@ export class CompactionService {
   }
 
   private failure(code: CompactionFailureCode, message: string, cause?: unknown): CompactionServiceResult {
-    return { success: false, compacted: false, failure: { code, message, cause } }
+    return { status: 'failed', failure: { code, message, cause } }
   }
 
   private async logAbandonedCompaction(sessionId: string, boundaryMessageId: string): Promise<void> {
     try {
-      await this.options.logger?.log(
-        'warn',
-        'Compaction boundary message disappeared during summary streaming; compaction abandoned',
-        { sessionId, boundaryMessageId }
-      )
+      await this.options.logger?.log('warn', 'Compaction path changed during summary streaming; compaction abandoned', {
+        sessionId,
+        boundaryMessageId,
+      })
     } catch {
       // Diagnostics must never change the successful, non-compacted outcome.
     }

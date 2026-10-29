@@ -5,10 +5,10 @@ import {
   type GenerationSessionPort,
   withSessionGenerationLock,
 } from '@chatbox/core/generation'
-import type { LoggerPort } from '@chatbox/core/ports'
+import type { LoggerPort, SessionContextSource } from '@chatbox/core/ports'
 import { buildContext } from '@shared/context'
-import { toSandboxSeedAttachment } from '@shared/sandbox/attachment-path'
-import type { Message, Session, SessionSettings } from '@shared/types'
+import { workModelDisclosure } from '@shared/mobile-work/model-disclosure'
+import type { Message, SessionPromptContextSnapshot, SessionSettings } from '@shared/types'
 import type { ModelDependencies } from '@shared/types/adapters'
 import { combineMemoryStateTokens } from '@shared/types/agent-persona'
 import {
@@ -17,15 +17,20 @@ import {
   trackWorkModeSuggestionDecision,
 } from '@/analytics/agent-mode'
 import { rendererApplication } from '@/app/renderer-application'
+import { languageNameMap } from '@/i18n/locales'
 import { getLogger } from '@/lib/utils'
 import { captureAgentModeException } from '@/observability/agent-mode'
 import * as appleAppStore from '@/packages/apple_app_store'
 import { wakeBackgroundTaskFollowUps } from '@/packages/chatbox-cli/background-follow-up'
+import { resolveCompactionBudget } from '@/packages/context-management/compaction-detector'
+import { getConfiguredContextWindow, getEffectiveMaxOutputTokens } from '@/packages/context-management/context-pressure'
+import { prepareMobileMCPTools } from '@/packages/mcp/mobile-tools'
+import { buildPausedAgentMemoryTools } from '@/packages/model-calls/toolsets/agent-memory'
 import platform from '@/platform'
 import { createSandboxProvider } from '@/sandbox'
 import { settingsService } from '@/settings-runtime'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
-import { getCopilotMemorySelection, getPausedCallMemoryScope } from '@/stores/copilotStore'
+import { getCopilotMemorySelection } from '@/stores/copilotStore'
 import { markFirstSuccessfulChatCompleted } from '@/stores/firstSuccessfulChat'
 import { prepareAgentGenerationHarness, refreshSessionAttachmentStatuses } from '@/stores/session/agent-harness'
 import {
@@ -34,12 +39,12 @@ import {
   persistSessionPromptContextSnapshotGuarded,
   setSessionAgentMode,
 } from '@/stores/session/agent-mode'
-import { findMessageLocation } from '@/stores/session/forks'
 import { wakeQueuedUserMessages } from '@/stores/session/message-queue'
 import {
   insertMessageAfter,
   modifyMessage,
   persistStreamingMessage,
+  splitStreamingMessage,
   updateStreamingCache,
 } from '@/stores/session/messages'
 import { sessionPromptContextSnapshotMatchesMemoryState } from '@/stores/session/prompt-context-snapshot'
@@ -47,14 +52,12 @@ import { getSessionSettings } from '@/stores/session/session-settings'
 import { registerSteeringConsumer } from '@/stores/session/steering'
 import { buildToolsForSession } from '@/stores/session/tools-builder'
 import {
-  findTargetMessageIndex,
-  getCompactionPointsForTarget,
   getSessionWebBrowsing,
   handleGenerationError,
   initializeTargetMessage,
   trackGenerateEvent,
 } from '@/stores/session/utils'
-import { markSessionReplyCompleted } from '@/stores/sessionActivityStore'
+import { markSessionReplyCompleted, markSessionReplyFailed } from '@/stores/sessionActivityStore'
 import * as settingActions from '@/stores/settingActions'
 import { uiStore } from '@/stores/uiStore'
 import { trackEvent } from '@/utils/track'
@@ -74,11 +77,12 @@ const logger: LoggerPort = {
 }
 
 const sessions: GenerationSessionPort = {
-  getSession: (sessionId) => rendererApplication.sessionQueryBridge.getSession(sessionId),
+  getSessionContextSource: (request) => rendererApplication.sessions.getSessionContextSource(request),
+  readSessionMessages: (request) => rendererApplication.sessions.readSessionMessages(request),
   isSessionMissingError: (error) => error instanceof SessionNotFoundError,
-  getSessionSettings: (sessionId) => getSessionSettings(sessionId),
+  getSessionSettings: (sessionId, header) => getSessionSettings(sessionId, header),
   updateSessionSettings: async (sessionId, update) => {
-    await rendererApplication.sessions.updateSession(sessionId, (current) => {
+    await rendererApplication.sessions.updateSessionHeader(sessionId, (current) => {
       if (!current) {
         throw new Error(`Session ${sessionId} not found`)
       }
@@ -88,31 +92,61 @@ const sessions: GenerationSessionPort = {
   initializeTargetMessage: (message, settings, globalSettings, sessionType) =>
     initializeTargetMessage(message, settings, globalSettings, sessionType),
   persistStreamingMessage: (sessionId, message, options) => persistStreamingMessage(sessionId, message, options),
+  splitStreamingMessage,
   insertMessageAfter: async (sessionId, message, afterMessageId) => {
     await insertMessageAfter(sessionId, message, afterMessageId, { requireAnchor: true })
   },
   updateStreamingCache: (sessionId, message) => updateStreamingCache(sessionId, message),
-  findTargetMessageIndex: (session, messageId) => findTargetMessageIndex(session, messageId),
-  getCompactionPointsForTarget: (session, messageId) => getCompactionPointsForTarget(session, messageId),
-  findMessage(session, messageId) {
-    const location = findMessageLocation(session, messageId)
-    return location ? location.list[location.index] : undefined
-  },
   modifyMessage: (sessionId, message, refreshCounting, updateOnlyCache) =>
     modifyMessage(sessionId, message, refreshCounting, updateOnlyCache),
   handleGenerationError: (error, message, settings, context) =>
     handleGenerationError(error, message, settings, context),
 }
 
-async function buildToolsForPausedToolCall(session: Session, settings: SessionSettings, targetMessage: Message) {
+async function buildToolsForPausedToolCall(
+  source: SessionContextSource,
+  settings: SessionSettings,
+  targetMessage: Message,
+  signal: AbortSignal
+) {
+  const session = source.header
+  const snapshot = source.thread.sessionPromptContextSnapshot ?? settings.sessionPromptContextSnapshot
   const modelDependencies = await createModelDependencies()
   const model = await currentModelFactory.createModel(settings, modelDependencies)
-  const location = findTargetMessageIndex(session, targetMessage.id)
-  const messagesBeforeTarget = location ? location.messages.slice(0, location.index) : session.messages
+  const messagesBeforeTarget = source.candidateMessages
   const agentModeSupported = platform.isDesktopLike && model.isSupportToolUse('agent')
   const { value: storedAgentModeValue } = getSessionAgentModeEntry(session.id, session)
   const agentModeValue = agentModeSupported ? storedAgentModeValue : 'off'
   const effectiveAgentMode = agentModeSupported && agentModeValue === 'on' ? 'on' : 'off'
+
+  if (platform.type === 'mobile' && storedAgentModeValue === 'on' && model.isSupportToolUse('agent')) {
+    const { capacitorWorkMode, buildMobileWebTools, capacitorImageTools } = await import(
+      '@/packages/mobile-work-mode/runtime'
+    )
+    const mcp = await prepareMobileMCPTools({ enabled: true, model, settings: settingsService.getSettings(), signal })
+    const web = buildMobileWebTools(model, getSessionWebBrowsing(session.id, settings.provider))
+    return (
+      await capacitorWorkMode.createTools(
+        {
+          sessionId: session.id,
+          capabilities: settings.localWorkCapabilities,
+          skillPreferences: settingsService.getSettings().mobileSkillPreferences,
+          ...workModelDisclosure(settings, settingsService.getSettings()),
+          signal,
+        },
+        {
+          ...web.tools,
+          ...capacitorImageTools(model, session.id, signal)?.tools,
+          ...mcp.tools,
+          ...buildPausedAgentMemoryTools({
+            targetMessage,
+            languageName: languageNameMap[settingsService.getSettings().language],
+          }).tools,
+        },
+        true
+      )
+    ).tools
+  }
 
   const sandboxProvider = effectiveAgentMode !== 'off' ? createSandboxProvider() : null
   const userWorkingDirectories = settings.workingDirectories?.filter((dir) => dir.trim().length > 0) ?? []
@@ -133,13 +167,11 @@ async function buildToolsForPausedToolCall(session: Session, settings: SessionSe
   const messagesForPrompt = await refreshSessionAttachmentStatuses(messagesBeforeTarget)
   const promptMessages = await buildContext(messagesForPrompt, {
     attachmentResolver: attachmentAdapter,
-    compactionPoints: getCompactionPointsForTarget(session, targetMessage.id),
-    // This context only feeds tool selection below and never reaches a model,
-    // so tool history is kept intact.
-    toolCleanupMode: 'none',
+    compactionPoints: source.compactionPoints,
     modelSupportToolUseForFile: model.isSupportToolUse('read-file'),
     maxContextMessageCount: settings.maxContextMessageCount,
     sandboxMode: canExecuteCode,
+    language: settingsService.getSettings().language,
   })
 
   const knowledgeBase = uiStore.getState().sessionKnowledgeBaseMap[session.id]
@@ -149,7 +181,7 @@ async function buildToolsForPausedToolCall(session: Session, settings: SessionSe
       ? {
           sessionId: session.id,
           provider: sandboxProvider,
-          files: messagesBeforeTarget.flatMap((message) => message.files?.map(toSandboxSeedAttachment) || []),
+          files: source.beforeTarget.sandboxSeedAttachments,
         }
       : undefined
 
@@ -158,6 +190,8 @@ async function buildToolsForPausedToolCall(session: Session, settings: SessionSe
     webBrowsing,
     knowledgeBase,
     messages: promptMessages,
+    fileMessages: messagesForPrompt,
+    fileResourceKeys: source.beforeTarget.fileResourceKeys,
     agentMode: effectiveAgentMode,
     sessionSettings: settings,
     codeExecution,
@@ -165,11 +199,11 @@ async function buildToolsForPausedToolCall(session: Session, settings: SessionSe
       effectiveAgentMode === 'on' && sandboxProvider
         ? { sessionId: session.id, provider: canExecuteCode ? sandboxProvider : undefined }
         : undefined,
-    agentToolContractVersion: settings.sessionPromptContextSnapshot?.agentToolContractVersion ?? 1,
+    agentToolContractVersion: snapshot?.agentToolContractVersion ?? 1,
     onAgentModeActivated: () => {
       void lockSessionAgentMode(session.id, 'load_skill')
     },
-    memoryScope: await getPausedCallMemoryScope(settings.sessionPromptContextSnapshot, session.copilotId),
+    pausedMemoryContext: { targetMessage },
   })
   return tools
 }
@@ -194,6 +228,39 @@ const dependencies: GenerationServiceDependencies<ModelDependencies> = {
   },
   preparation: {
     async prepare(request) {
+      const persistSnapshot = (snapshot: SessionPromptContextSnapshot) => {
+        // A canceled generation (thread switch/new thread) must not write its
+        // late capture. Re-check the live memory state as well: an older
+        // generation may finish loading after the user changes the source.
+        if (request.signal.aborted) return
+        void getCopilotMemorySelection(request.session.copilotId)
+          .then((memorySelection) => {
+            if (request.signal.aborted) return
+            const liveGlobalSettings = settingsService.getSettings()
+            const memoryScope = memorySelection.scope
+            const memoryEnabled = memoryScope.type === 'copilot' || liveGlobalSettings.memoryEnabled !== false
+            const memoryStateToken = combineMemoryStateTokens(
+              memorySelection.memoryStateToken,
+              memoryScope.type === 'global' ? liveGlobalSettings.memoryStateToken : ''
+            )
+            if (
+              !sessionPromptContextSnapshotMatchesMemoryState(snapshot, memoryScope, memoryEnabled, memoryStateToken)
+            ) {
+              return
+            }
+            persistSessionPromptContextSnapshotGuarded(
+              request.session.id,
+              snapshot,
+              request.settings.sessionPromptContextSnapshot?.capturedAt
+            )
+          })
+          .catch((error) => log.error('Failed to validate prompt-context memory state:', error))
+      }
+      if (platform.type === 'mobile' && request.agentModeValue === 'on' && request.agentModeSupported) {
+        const { prepareCapacitorWorkMode } = await import('@/packages/mobile-work-mode/runtime')
+        const { prepareCapacitorMemoryContext } = await import('@/packages/mobile-work-mode/memory-context')
+        return prepareCapacitorWorkMode(request, await prepareCapacitorMemoryContext(request, persistSnapshot))
+      }
       const prepared = await prepareAgentGenerationHarness({
         session: request.session,
         settings: request.settings,
@@ -201,6 +268,8 @@ const dependencies: GenerationServiceDependencies<ModelDependencies> = {
         configs: request.config,
         messages: request.messages,
         targetMsgIx: request.targetMessageIndex,
+        history: request.history,
+        fileResourceKeys: request.history?.fileResourceKeys,
         model: request.model,
         dependencies: request.modelContext,
         attachmentResolver: request.attachments,
@@ -215,39 +284,7 @@ const dependencies: GenerationServiceDependencies<ModelDependencies> = {
         compactionPoints: request.compactionPoints,
         sideEffects: {
           lockAgentMode: request.lockAgentMode,
-          persistSessionPromptContextSnapshot: (snapshot) => {
-            // A canceled generation (thread switch/new thread) must not write its
-            // late capture. Re-check the live memory state as well: an older
-            // generation may finish loading after the user changes the source.
-            if (request.signal.aborted) return
-            void getCopilotMemorySelection(request.session.copilotId)
-              .then((memorySelection) => {
-                if (request.signal.aborted) return
-                const liveGlobalSettings = settingsService.getSettings()
-                const memoryScope = memorySelection.scope
-                const memoryEnabled = memoryScope.type === 'copilot' || liveGlobalSettings.memoryEnabled !== false
-                const memoryStateToken = combineMemoryStateTokens(
-                  memorySelection.memoryStateToken,
-                  memoryScope.type === 'global' ? liveGlobalSettings.memoryStateToken : ''
-                )
-                if (
-                  !sessionPromptContextSnapshotMatchesMemoryState(
-                    snapshot,
-                    memoryScope,
-                    memoryEnabled,
-                    memoryStateToken
-                  )
-                ) {
-                  return
-                }
-                persistSessionPromptContextSnapshotGuarded(
-                  request.session.id,
-                  snapshot,
-                  request.settings.sessionPromptContextSnapshot?.capturedAt
-                )
-              })
-              .catch((error) => log.error('Failed to validate prompt-context memory state:', error))
-          },
+          persistSessionPromptContextSnapshot: persistSnapshot,
         },
         isPro: settingActions.isPro,
       })
@@ -255,10 +292,12 @@ const dependencies: GenerationServiceDependencies<ModelDependencies> = {
         promptMessages: prepared.promptMsgs,
         coreMessages: prepared.coreMessages,
         tools: prepared.tools,
+        memoryToolContext: prepared.memoryToolContext,
         chatOptions: prepared.chatOptions,
         infoParts: prepared.infoParts,
         fallbackToolCallPart: prepared.fallbackToolCallPart,
         systemPrompt: prepared.systemPrompt,
+        attachmentPolicy: prepared.attachmentPolicy,
       }
     },
   },
@@ -278,6 +317,28 @@ const dependencies: GenerationServiceDependencies<ModelDependencies> = {
         insertMessageAfter(sessionId, message, afterMessageId, { requireAnchor: true })
       ),
     wake: (sessionId) => wakeQueuedUserMessages(sessionId),
+  },
+  compaction: {
+    getBudget(sessionSettings, globalSettings) {
+      const providerId = sessionSettings.provider ?? globalSettings.defaultChatModel?.provider
+      const modelId = sessionSettings.modelId ?? globalSettings.defaultChatModel?.model
+      if (!modelId) return null
+      return resolveCompactionBudget(
+        modelId,
+        { compactionThreshold: globalSettings.compactionThreshold },
+        getConfiguredContextWindow(globalSettings, providerId, modelId),
+        getEffectiveMaxOutputTokens(globalSettings, providerId, modelId, sessionSettings.maxTokens)
+      )
+    },
+    recordRequestOverhead(sessionId, overhead) {
+      void import('@/packages/context-management/compaction').then(({ recordRequestOverhead }) =>
+        recordRequestOverhead(sessionId, overhead)
+      )
+    },
+    async compact(sessionId, request, abortSignal) {
+      const { runCompactionWithUIState } = await import('@/packages/context-management/compaction')
+      return runCompactionWithUIState(sessionId, request, { abortSignal })
+    },
   },
   runtime: rendererApplication.generationRuntime,
   blobs: new CurrentBlobStorage(),
@@ -300,6 +361,7 @@ const dependencies: GenerationServiceDependencies<ModelDependencies> = {
       appleAppStore.tickAfterMessageGenerated()
       markSessionReplyCompleted(sessionId, message)
     },
+    afterMessageFailed: (sessionId, message) => markSessionReplyFailed(sessionId, message),
     now: Date.now,
   },
   analytics: {
@@ -322,4 +384,22 @@ const dependencies: GenerationServiceDependencies<ModelDependencies> = {
  * React Native can compose the same service with native implementations of
  * these ports without importing Renderer state, storage, or platform modules.
  */
-export const currentGenerationService = new GenerationService(dependencies)
+const generationService = new GenerationService(dependencies)
+
+async function runGenerationWork(action: () => Promise<void>): Promise<void> {
+  await action()
+}
+
+export const currentGenerationService = {
+  orchestrate: (...args: Parameters<typeof generationService.orchestrate>) => generationService.orchestrate(...args),
+  continuePausedToolCall: (...args: Parameters<typeof generationService.continuePausedToolCall>) =>
+    runGenerationWork(() => generationService.continuePausedToolCall(...args)),
+  disableToolCallLimitPauseAndContinue: (
+    ...args: Parameters<typeof generationService.disableToolCallLimitPauseAndContinue>
+  ) => runGenerationWork(() => generationService.disableToolCallLimitPauseAndContinue(...args)),
+  stopPausedToolCall: (...args: Parameters<typeof generationService.stopPausedToolCall>) =>
+    runGenerationWork(() => generationService.stopPausedToolCall(...args)),
+  retryFromLastToolCallAfterApiError: (
+    ...args: Parameters<typeof generationService.retryFromLastToolCallAfterApiError>
+  ) => runGenerationWork(() => generationService.retryFromLastToolCallAfterApiError(...args)),
+}

@@ -1,9 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
 import { StorageKeyGenerator } from '../StoreStorage'
 
+const { values } = vi.hoisted(() => ({ values: new Map<string, unknown>() }))
+
 vi.mock('@/platform', () => ({
   default: {
     getStorageType: () => 'test',
+    setStoreValue: async (key: string, value: unknown) => {
+      values.set(key, value)
+    },
+    getStoreValue: async (key: string) => values.get(key),
   },
 }))
 

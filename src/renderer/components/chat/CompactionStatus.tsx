@@ -13,8 +13,9 @@ import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { useCopied } from '@/hooks/useCopied'
-import { runCompactionWithUIState } from '@/packages/context-management'
+import { requestManualCompaction } from '@/packages/context-management'
 import { compactionUIStateMapAtom, setCompactionUIState } from '@/stores/atoms'
+import { add as addToast } from '@/stores/toastActions'
 import { ScalableIcon } from '../common/ScalableIcon'
 
 const MAX_CHARS = 200
@@ -68,9 +69,21 @@ export const CompactionStatus = memo(function CompactionStatus({ sessionId, onVi
   const { copied, copy } = useCopied(errorText)
   const isTruncated = shouldTruncate(errorText)
 
+  // Retry is an explicit request to compress now. The automatic threshold check would
+  // skip it once the message that triggered the failed compression is no longer pending.
   const handleRetry = useCallback(() => {
-    void runCompactionWithUIState(sessionId)
-  }, [sessionId])
+    void requestManualCompaction(sessionId, { force: true, prompt: compactionState.retryPrompt })
+      .then((outcome) => {
+        if (outcome === 'queue-full') {
+          addToast(t('Message queue is full'))
+        } else if (outcome === 'queue-failed') {
+          addToast(t('Failed to queue the compression'))
+        } else if (outcome === 'queued') {
+          addToast(t('Compression queued, it runs when the session is idle'))
+        }
+      })
+      .catch(() => addToast(t('Compression could not start')))
+  }, [compactionState.retryPrompt, sessionId, t])
 
   const handleDismiss = useCallback(() => {
     setCompactionUIState(sessionId, {

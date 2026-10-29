@@ -1,6 +1,6 @@
 import { type StartStreamOptions, StreamHttp } from 'capacitor-stream-http'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
-import { createNativeReadableStream } from './stream-http'
+import { createNativeReadableStream, createNativeResponse } from './stream-http'
 
 vi.mock('capacitor-stream-http', () => ({
   StreamHttp: {
@@ -10,14 +10,14 @@ vi.mock('capacitor-stream-http', () => ({
   },
 }))
 
-type EventName = 'chunk' | 'end' | 'error'
-type StreamEvent = { id: string; chunk?: string; error?: string }
+type EventName = 'chunk' | 'end' | 'error' | 'response'
+type StreamEvent = { id: string; chunk?: string; error?: string; status?: number; headers?: Record<string, string> }
 type StreamListener = (data: StreamEvent) => void
 type ListenerRemover = ReturnType<typeof vi.fn<() => Promise<void>>>
 type ListenerHandle = { remove: ListenerRemover }
 
-const eventNames: EventName[] = ['chunk', 'end', 'error']
-const listeners: Record<EventName, StreamListener[]> = { chunk: [], end: [], error: [] }
+const eventNames: EventName[] = ['chunk', 'end', 'error', 'response']
+const listeners: Record<EventName, StreamListener[]> = { chunk: [], end: [], error: [], response: [] }
 const listenerRemovers: ListenerRemover[] = []
 const options: StartStreamOptions = {
   url: 'https://example.com/stream',
@@ -60,7 +60,7 @@ function decode(value: Uint8Array | undefined) {
 }
 
 function expectListenersRemovedOnce() {
-  expect(listenerRemovers).toHaveLength(3)
+  expect(listenerRemovers).toHaveLength(4)
   expect(listenerRemovers.every((remove) => remove.mock.calls.length === 1)).toBe(true)
 }
 
@@ -348,7 +348,7 @@ describe('createNativeReadableStream', () => {
       throw new Error('sync remove failed')
     })
     const successfulRemove = createRemover()
-    const removers = [asyncFailureRemove, syncFailureRemove, successfulRemove]
+    const removers = [asyncFailureRemove, syncFailureRemove, successfulRemove, createRemover()]
     vi.mocked(StreamHttp.addListener).mockImplementation((eventName, listener) => {
       listeners[eventName].push(listener)
       const remove = removers[eventNames.indexOf(eventName)]
@@ -364,5 +364,92 @@ describe('createNativeReadableStream', () => {
     expectListenersRemovedOnce()
     await vi.waitFor(() => expect(warn).toHaveBeenCalledTimes(2))
     expect(warn).toHaveBeenCalledWith('Failed to remove native stream listener', expect.any(Error))
+  })
+
+  test('returns early response metadata and body before the native ID resolves', async () => {
+    const start = createDeferred<{ id: string }>()
+    vi.mocked(StreamHttp.startStream).mockReturnValue(start.promise)
+    const pending = createNativeResponse(options)
+    await waitForNativeStarts()
+    emit('response', { id: 'stream-1', status: 429, headers: { 'retry-after': '12' } })
+    emit('chunk', { id: 'stream-1', chunk: '{"error":"limited"}' })
+    emit('end', { id: 'stream-1' })
+    start.resolve({ id: 'stream-1' })
+    const response = await pending
+    expect(response.status).toBe(429)
+    expect(response.headers.get('retry-after')).toBe('12')
+    expect(await response.json()).toEqual({ error: 'limited' })
+    expectListenersRemovedOnce()
+  })
+
+  test('resolves at headers while the body is still streaming', async () => {
+    const pending = createNativeResponse(options)
+    await waitForActiveStreams()
+    emit('response', { id: 'stream-1', status: 200, headers: { 'content-type': 'text/event-stream' } })
+    const response = await pending
+    if (!response.body) throw new Error('Expected response body')
+    const read = response.body.getReader().read()
+    emit('error', { id: 'stream-1', error: 'connection lost' })
+    await expect(read).rejects.toThrow('connection lost')
+  })
+
+  test('rejects a failure before response headers', async () => {
+    const pending = createNativeResponse(options)
+    const failed = expect(pending).rejects.toThrow('offline')
+    await waitForActiveStreams()
+    emit('error', { id: 'stream-1', error: 'offline' })
+    await failed
+    expectListenersRemovedOnce()
+  })
+
+  test('rejects abort before native ID and cancels the late request once', async () => {
+    const start = createDeferred<{ id: string }>()
+    vi.mocked(StreamHttp.startStream).mockReturnValue(start.promise)
+    const controller = new AbortController()
+    const pending = createNativeResponse(options, { signal: controller.signal })
+    const failed = expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    await waitForNativeStarts()
+    controller.abort()
+    await failed
+    start.resolve({ id: 'stream-1' })
+    await vi.waitFor(() => expect(StreamHttp.cancelStream).toHaveBeenCalledOnce())
+    expectListenersRemovedOnce()
+  })
+
+  test.each([202, 204, 205])('handles empty HTTP %s responses', async (status) => {
+    const pending = createNativeResponse(options)
+    await waitForActiveStreams()
+    emit('response', { id: 'stream-1', status, headers: {} })
+    emit('end', { id: 'stream-1' })
+    const response = await pending
+    expect(response.status).toBe(status)
+    if (status !== 202) expect(response.body).toBeNull()
+    expect(await response.text()).toBe('')
+  })
+
+  test('limits queued body bytes and cancels the producer', async () => {
+    const pending = createNativeResponse(options, { maxBufferedBytes: 4 })
+    await waitForActiveStreams()
+    emit('response', { id: 'stream-1', status: 200, headers: {} })
+    const response = await pending
+    emit('chunk', { id: 'stream-1', chunk: 'unconsumed data' })
+    await expect(response.text()).rejects.toThrow('buffer limit')
+    await vi.waitFor(() => expect(StreamHttp.cancelStream).toHaveBeenCalledOnce())
+  })
+
+  test('bounds waiting for headers and releases the native request', async () => {
+    const pending = createNativeResponse(options, { responseTimeoutMs: 50 })
+    const failed = expect(pending).rejects.toMatchObject({ name: 'TimeoutError' })
+    await failed
+    await vi.waitFor(() => expect(StreamHttp.cancelStream).toHaveBeenCalledOnce())
+    expectListenersRemovedOnce()
+  })
+
+  test('rejects an end event without response metadata', async () => {
+    const pending = createNativeResponse(options)
+    const failed = expect(pending).rejects.toThrow('response metadata')
+    await waitForActiveStreams()
+    emit('end', { id: 'stream-1' })
+    await failed
   })
 })

@@ -1,33 +1,48 @@
-import { buildMessageRenderItems } from '@/components/chat/message-render-items'
-import { rendererApplication } from '@/app/renderer-application'
-import { getAllMessageList } from './sessionHelpers'
 import { uiStore } from './uiStore'
 
-// scrollToMessage 滚动到指定消息，如果消息不存在则返回 false
+/** Navigate through the mounted row window and wait for the target read. */
 export async function scrollToMessage(
   sessionId: string,
-  msgId: string,
-  align: 'start' | 'center' | 'end' = 'start',
-  behavior: 'auto' | 'smooth' = 'auto' // 'auto' 立即滚动到指定位置，'smooth' 平滑滚动到指定位置
+  messageId: string,
+  _align: 'start' | 'center' | 'end' = 'start',
+  _behavior: 'auto' | 'smooth' = 'auto'
 ): Promise<boolean> {
-  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
-  if (!session) {
-    return false
-  }
-  const currentMessages = getAllMessageList(session)
-  if (!currentMessages) {
-    return false
-  }
-  // Virtuoso items don't map 1:1 to messages: MessageList groups the latest user turn
-  // with its assistant reply into a single item, so locate the item containing the message.
-  const itemIndex = buildMessageRenderItems(currentMessages).findIndex((item) =>
-    item.messages.some((message) => message.id === msgId)
-  )
-  if (itemIndex === -1) {
-    return false
-  }
-  scrollToIndex(itemIndex, align, behavior)
-  return true
+  const deadline = performance.now() + 1000
+  return new Promise<boolean>((resolve) => {
+    let settled = false
+    let frame: number | undefined
+    const finish = (result: boolean) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      if (frame !== undefined) cancelAnimationFrame(frame)
+      resolve(result)
+    }
+    const timer = setTimeout(() => finish(false), 1000)
+    const locate = () => {
+      if (settled) return
+      if (performance.now() >= deadline) return finish(false)
+      const navigation = uiStore.getState().transcriptNavigation
+      if (navigation?.sessionId !== sessionId) {
+        frame = requestAnimationFrame(locate)
+        return
+      }
+      try {
+        void navigation.navigateMessage(messageId).then(
+          (applied) =>
+            finish(
+              applied &&
+                performance.now() < deadline &&
+                uiStore.getState().transcriptNavigation?.owner === navigation.owner
+            ),
+          () => finish(false)
+        )
+      } catch {
+        finish(false)
+      }
+    }
+    locate()
+  })
 }
 
 export function scrollToIndex(
@@ -35,8 +50,7 @@ export function scrollToIndex(
   align: 'start' | 'center' | 'end' = 'start',
   behavior: 'auto' | 'smooth' = 'auto' // 'auto' 立即滚动到指定位置，'smooth' 平滑滚动到指定位置
 ) {
-  const virtuoso = uiStore.getState().messageScrolling
-  virtuoso?.current?.scrollToIndex({ index, align, behavior })
+  uiStore.getState().transcriptNavigation?.scrollToIndex({ index, align, behavior })
 }
 
 export function scrollToTop(behavior: 'auto' | 'smooth' = 'auto') {

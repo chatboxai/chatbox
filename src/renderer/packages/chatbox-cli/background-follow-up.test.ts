@@ -1,16 +1,20 @@
-import type { Message, Session, Updater } from '@shared/types'
+import type { Message, Session } from '@shared/types'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { generateMock, getSessionMock, updateSessionWithMessagesMock } = vi.hoisted(() => ({
+const { generateMock, getHeaderMock, executeStructureMock, readTranscriptMock } = vi.hoisted(() => ({
   generateMock: vi.fn(),
-  getSessionMock: vi.fn(),
-  updateSessionWithMessagesMock: vi.fn(),
+  readTranscriptMock: vi.fn(),
+  getHeaderMock: vi.fn(),
+  executeStructureMock: vi.fn(),
 }))
 
 vi.mock('@/app/renderer-application', () => ({
   rendererApplication: {
-    sessions: { updateSessionWithMessages: updateSessionWithMessagesMock },
-    sessionQueryBridge: { getSession: getSessionMock },
+    sessions: {
+      executeStructureCommand: executeStructureMock,
+      getSessionHeader: getHeaderMock,
+      readSessionTranscriptWindow: readTranscriptMock,
+    },
   },
 }))
 vi.mock('@/stores/session/generation', () => ({ _generateWithoutSessionLock: generateMock }))
@@ -18,6 +22,8 @@ vi.mock('@/lib/utils', () => ({
   getLogger: () => ({ error: vi.fn() }),
 }))
 
+import { InMemorySessionRepository } from '@chatbox/core/testing'
+import type { SessionStructureOperation, SessionTranscriptRequest } from '@chatbox/core/ports'
 import { resetSessionGenerationLocksForTests } from '@chatbox/core/generation'
 import {
   flushBackgroundTaskFollowUpsForTests,
@@ -40,7 +46,7 @@ const notification = {
 
 function originMessage(toolCallId = 'tool-1'): Message {
   return {
-    id: 'origin-assistant',
+    id: `origin-${toolCallId}`,
     role: 'assistant',
     contentParts: [
       {
@@ -75,10 +81,28 @@ describe('background task follow-up queue', () => {
     resetBackgroundTaskFollowUpsForTests()
     resetSessionGenerationLocksForTests()
     currentSession = createSession()
-    getSessionMock.mockImplementation(() => Promise.resolve(currentSession))
-    updateSessionWithMessagesMock.mockImplementation((_sessionId: string, updater: Updater<Session>) => {
-      currentSession = typeof updater === 'function' ? updater(currentSession) : { ...currentSession, ...updater }
-      return Promise.resolve(currentSession)
+    const repository = new InMemorySessionRepository()
+    let lastFixture = ''
+    const prepare = async () => {
+      const serialized = JSON.stringify(currentSession)
+      if (lastFixture !== serialized) {
+        await repository.seedSession(currentSession)
+        lastFixture = serialized
+      }
+    }
+    getHeaderMock.mockImplementation(async (id: string) => {
+      await prepare()
+      return repository.getSessionHeader(id)
+    })
+    readTranscriptMock.mockImplementation((request: SessionTranscriptRequest) =>
+      repository.readSessionTranscriptWindow(request)
+    )
+    executeStructureMock.mockImplementation(async (id: string, operation: SessionStructureOperation) => {
+      await prepare()
+      const { delta } = await repository.executeSessionCommand(id, { type: 'structure', operation })
+      currentSession = repository.inspectSession(id)!
+      lastFixture = JSON.stringify(currentSession)
+      return delta.structureResult
     })
     generateMock.mockResolvedValue(undefined)
   })
@@ -97,14 +121,14 @@ describe('background task follow-up queue', () => {
     expect(text).toContain('"recordId":"record-1"')
   })
 
-  it('clears stale generating flags and delivers without retrying forever', async () => {
+  it('delivers while unrelated stale flags await startup recovery', async () => {
     currentSession.messages.push({ id: 'active', role: 'assistant', contentParts: [], generating: true })
 
     queueBackgroundTaskNotification('session-1', 'tool-1', notification)
     await runNextDrain()
 
     expect(generateMock).toHaveBeenCalledOnce()
-    expect(currentSession.messages.find((message) => message.id === 'active')?.generating).toBe(false)
+    expect(currentSession.messages.find((message) => message.id === 'active')?.generating).toBe(true)
     expect(currentSession.messages.slice(-2).map((message) => message.role)).toEqual(['user', 'assistant'])
     expect(currentSession.messages.at(-2)?.backgroundTask).toEqual(notification)
   })
@@ -141,7 +165,7 @@ describe('background task follow-up queue', () => {
 
     await runNextDrain()
     expect(currentSession.messages).toHaveLength(3)
-    expect(updateSessionWithMessagesMock).toHaveBeenCalledOnce()
+    expect(executeStructureMock).toHaveBeenCalledOnce()
     expect(generateMock).toHaveBeenCalledTimes(2)
   })
 
@@ -164,7 +188,7 @@ describe('background task follow-up queue', () => {
     await runNextDrain()
 
     expect(generateMock).not.toHaveBeenCalled()
-    expect(updateSessionWithMessagesMock).not.toHaveBeenCalled()
+    expect(executeStructureMock).not.toHaveBeenCalled()
 
     currentSession.messages[0].contentParts = currentSession.messages[0].contentParts.map((part) =>
       part.type === 'tool-call' && part.toolCallId === 'tool-2'
@@ -180,6 +204,36 @@ describe('background task follow-up queue', () => {
 
     expect(generateMock).toHaveBeenCalledOnce()
     expect(currentSession.messages.at(-2)?.backgroundTask).toEqual(notification)
+  })
+
+  it('defers when approval becomes paused after the bounded origin read', async () => {
+    const execute = executeStructureMock.getMockImplementation()!
+    executeStructureMock.mockImplementationOnce(async (...args: unknown[]) => {
+      currentSession.messages[0].contentParts.push({
+        type: 'tool-call',
+        state: 'paused',
+        toolCallId: 'late-pause',
+        toolName: 'command',
+        pauseReason: { type: 'tool_call_limit', maxToolCalls: 25 },
+      })
+      return execute(...args)
+    })
+    queueBackgroundTaskNotification('session-1', 'tool-1', notification)
+    await runNextDrain()
+    expect(generateMock).not.toHaveBeenCalled()
+    expect(currentSession.messages).toHaveLength(1)
+  })
+
+  it('does not append when the located origin disappears before the atomic command', async () => {
+    const execute = executeStructureMock.getMockImplementation()!
+    executeStructureMock.mockImplementationOnce(async (...args: unknown[]) => {
+      currentSession.messages = []
+      return execute(...args)
+    })
+    queueBackgroundTaskNotification('session-1', 'tool-1', notification)
+    await runNextDrain()
+    expect(generateMock).not.toHaveBeenCalled()
+    expect(currentSession.messages).toEqual([])
   })
 
   it('delivers a ready notification behind a deferred head and wakes the head after approval resolves', async () => {
@@ -255,7 +309,7 @@ describe('background task follow-up queue', () => {
   })
 
   it('retries a transient session read failure instead of discarding the notification', async () => {
-    getSessionMock.mockRejectedValueOnce(new Error('temporary storage failure'))
+    getHeaderMock.mockRejectedValueOnce(new Error('temporary storage failure'))
 
     queueBackgroundTaskNotification('session-1', 'tool-1', notification)
     await runNextDrain()

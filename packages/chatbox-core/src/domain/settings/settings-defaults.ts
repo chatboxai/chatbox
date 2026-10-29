@@ -51,7 +51,7 @@ export function createDefaultSettings(): Settings {
     pasteLongTextAsAFile: true,
     autoGenerateTitle: true,
     autoCompaction: true,
-    compactionThreshold: 0.6,
+    compactionThreshold: 0.75,
     pauseOnToolCallLimit: true,
     autoLaunch: false,
     autoUpdate: true,

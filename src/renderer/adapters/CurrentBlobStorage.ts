@@ -31,3 +31,5 @@ export class CurrentBlobStorage implements BlobStoragePort {
     return this.backend.getBlobKeys()
   }
 }
+
+export const currentBlobStorage = new CurrentBlobStorage()

@@ -165,7 +165,7 @@ export function useReasoningControlState({
 
   const persistProviderOptions = useCallback(
     async (sessionId: string, nextProviderOptions?: ProviderOptions) => {
-      await rendererApplication.sessions.updateSession(sessionId, (session) => {
+      await rendererApplication.sessions.updateSessionHeader(sessionId, (session) => {
         if (!session) {
           throw new Error('Session not found')
         }

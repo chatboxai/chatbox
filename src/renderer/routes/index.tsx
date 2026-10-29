@@ -6,7 +6,8 @@ import {
   createMessage,
   type ImageSource,
   ModelProviderEnum,
-  type Session,
+  type Message,
+  type SessionHeader,
   type SessionSettings,
 } from '@shared/types'
 import { IconChevronLeft, IconChevronRight, IconMessageCircle2Filled, IconX } from '@tabler/icons-react'
@@ -15,7 +16,6 @@ import { zodValidator } from '@tanstack/zod-adapter'
 import clsx from 'clsx'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
 import { trackJkClickEvent } from '@/analytics/jk'
 import { JK_EVENTS, JK_PAGE_NAMES } from '@/analytics/jk-events'
@@ -25,6 +25,7 @@ import { ScalableIcon } from '@/components/common/ScalableIcon'
 import { ImageInStorage } from '@/components/Image'
 import InputBox, { type InputBoxPayload } from '@/components/InputBox/InputBox'
 import HomepageIcon from '@/components/icons/HomepageIcon'
+import { paddedContentColumnClassName } from '@/components/layout/contentColumn'
 import Page from '@/components/layout/Page'
 import { getForceShowNewUserScenarioCardsFlag } from '@/dev/devToolsFlags'
 import { useMyCopilots, useRemoteCopilotsByCursor } from '@/hooks/useCopilots'
@@ -35,13 +36,13 @@ import * as remote from '@/packages/remote'
 import { router } from '@/router'
 import { useAuthInfoStore } from '@/stores/authInfoStore'
 import { resolveChatboxLicenseDefaultModel } from '@/stores/defaultChatModel'
+import { lastUsedModelStore } from '@/stores/lastUsedModelStore'
 import { getHasCompletedFirstSuccessfulChat } from '@/stores/firstSuccessfulChat'
 import { getSessionAgentModeEntry } from '@/stores/session/agent-mode'
 import { switchCurrentSession } from '@/stores/session/crud'
 import { generate } from '@/stores/session/generation'
 import { submitNewUserMessage } from '@/stores/session/messages'
-import { initEmptyChatSession } from '@/stores/sessionHelpers'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
 import { getHomeWelcomeCardMode } from '@/utils/homeWelcomeCard'
 import { NewUserScenarioGrid } from './-new-user-scenarios/NewUserScenarioGrid'
@@ -65,6 +66,7 @@ export const Route = createFileRoute('/')({
       copilotId: z.string().optional(),
       copilot: z.string().optional(),
       settings: z.string().optional(),
+      folderId: z.string().optional(),
     })
   ),
 })
@@ -72,6 +74,7 @@ export const Route = createFileRoute('/')({
 function Index() {
   const { t, i18n } = useTranslation()
   const isSmallScreen = useIsSmallScreen()
+  const { folderId } = Route.useSearch()
 
   const newSessionState = useUIStore((s) => s.newSessionState)
   const setNewSessionState = useUIStore((s) => s.setNewSessionState)
@@ -86,10 +89,14 @@ function Index() {
   const clearSessionWebBrowsing = useUIStore((s) => s.clearSessionWebBrowsing)
   const sessionAgentModeMap = useUIStore((s) => s.sessionAgentModeMap)
   const clearSessionAgentMode = useUIStore((s) => s.clearSessionAgentMode)
-  const [session, setSession] = useState<Session>({
-    id: 'new',
-    ...initEmptyChatSession(),
+  const [session, setSession] = useState<SessionHeader>(() => {
+    const settings = settingsStore.getState().getSettings()
+    const model = settings.defaultChatModel
+      ? { provider: settings.defaultChatModel.provider, modelId: settings.defaultChatModel.model }
+      : lastUsedModelStore.getState().chat || resolveChatboxLicenseDefaultModel(settings)
+    return { id: 'new', name: 'Untitled', type: 'chat', threadName: '', settings: { ...model } }
   })
+  const [systemPrompt, setSystemPrompt] = useState(() => settingsStore.getState().defaultPrompt || '')
   const [hasCompletedFirstSuccessfulChat, setHasCompletedFirstSuccessfulChat] = useState<boolean | null>(null)
   const [forceShowNewUserScenarioCards, setForceShowNewUserScenarioCards] = useState(
     getForceShowNewUserScenarioCardsFlag
@@ -223,21 +230,8 @@ function Index() {
       backgroundImage: selectedCopilot?.backgroundImage,
       name: selectedCopilot?.name || 'Untitled',
       threadName: '',
-      messages: selectedCopilot
-        ? [
-            {
-              id: uuidv4(),
-              role: 'system',
-              contentParts: [
-                {
-                  type: 'text',
-                  text: selectedCopilot.prompt,
-                },
-              ],
-            },
-          ]
-        : initEmptyChatSession().messages,
     }))
+    setSystemPrompt(selectedCopilot?.prompt ?? (settingsStore.getState().defaultPrompt || ''))
   }, [selectedCopilot])
 
   const routerState = useRouterState()
@@ -259,19 +253,8 @@ function Index() {
         backgroundImage: c.backgroundImage,
         name: c.name || 'Untitled',
         threadName: '',
-        messages: [
-          {
-            id: uuidv4(),
-            role: 'system',
-            contentParts: [
-              {
-                type: 'text',
-                text: c.prompt,
-              },
-            ],
-          },
-        ],
       }))
+      setSystemPrompt(c.prompt)
     } else if (copilotId) {
       setSession((old) => ({ ...old, copilotId }))
     }
@@ -281,7 +264,7 @@ function Index() {
     async (options?: {
       name?: string
       threadName?: string
-      messages?: Session['messages']
+      messages?: Message[]
       settingsPatch?: Partial<SessionSettings>
       settingsOverride?: Partial<SessionSettings>
     }) => {
@@ -289,36 +272,44 @@ function Index() {
       // continue the last explicit choice remembered from any earlier chat.
       const effectiveApprovalMode = newSessionState.commandApprovalMode ?? newSessionCommandApprovalModeDefault
       const effectiveWorkingDirectories = newSessionState.workingDirectories ?? newSessionWorkingDirectoriesDefault
-      const newSession = await rendererApplication.sessions.createSession({
-        name: options?.name ?? session.name,
-        type: 'chat',
-        assistantAvatarKey: session.assistantAvatarKey,
-        picUrl: session.picUrl,
-        backgroundImage: session.backgroundImage,
-        messages: options?.messages ?? session.messages,
-        copilotId: session.copilotId,
-        threadName: options?.threadName ?? session.threadName ?? '',
-        settings: {
-          ...session.settings,
-          ...options?.settingsPatch,
-          // Bake the exact mode shown while the chat was "new" into the created session, so
-          // remembered defaults and transient selections follow the same resolution path.
-          agentMode: getSessionAgentModeEntry('new', undefined, sessionAgentModeMap),
-          // Working directories bound while the chat was still "new" (not yet persisted),
-          // falling back to the remembered default from earlier chats.
-          ...(effectiveWorkingDirectories?.length ? { workingDirectories: effectiveWorkingDirectories } : {}),
-          ...(effectiveApprovalMode
-            ? {
-                commandApprovalMode: effectiveApprovalMode,
-                // Keep the legacy flag in lockstep for older readers.
-                ...(effectiveApprovalMode === 'full_access' ? { agentFullAccess: true } : {}),
-              }
-            : newSessionState.agentFullAccess
-              ? { agentFullAccess: true }
+      const newSession = await rendererApplication.sessions.createSession(
+        {
+          name: options?.name ?? session.name,
+          type: 'chat',
+          folderId,
+          assistantAvatarKey: session.assistantAvatarKey,
+          picUrl: session.picUrl,
+          backgroundImage: session.backgroundImage,
+          messages: options?.messages ?? (systemPrompt ? [createMessage('system', systemPrompt)] : []),
+          copilotId: session.copilotId,
+          threadName: options?.threadName ?? session.threadName ?? '',
+          settings: {
+            ...session.settings,
+            ...options?.settingsPatch,
+            // Bake the exact mode shown while the chat was "new" into the created session, so
+            // remembered defaults and transient selections follow the same resolution path.
+            agentMode: getSessionAgentModeEntry('new', undefined, sessionAgentModeMap),
+            ...(newSessionState.localWorkCapabilities !== undefined
+              ? { localWorkCapabilities: newSessionState.localWorkCapabilities }
               : {}),
-          ...options?.settingsOverride,
+            // Working directories bound while the chat was still "new" (not yet persisted),
+            // falling back to the remembered default from earlier chats.
+            ...(effectiveWorkingDirectories?.length ? { workingDirectories: effectiveWorkingDirectories } : {}),
+            ...(effectiveApprovalMode
+              ? {
+                  commandApprovalMode: effectiveApprovalMode,
+                  // Keep the legacy flag in lockstep for older readers.
+                  ...(effectiveApprovalMode === 'full_access' ? { agentFullAccess: true } : {}),
+                }
+              : newSessionState.agentFullAccess
+                ? { agentFullAccess: true }
+                : {}),
+            ...options?.settingsOverride,
+          },
         },
-      })
+        undefined,
+        { copilotName: session.copilotId ? session.name : undefined }
+      )
 
       if (session.copilotId) {
         void remote
@@ -334,8 +325,9 @@ function Index() {
         addSessionKnowledgeBase(newSession.id, newSessionState.knowledgeBase)
       }
       if (
+        newSessionState.localWorkCapabilities !== undefined ||
         newSessionState.knowledgeBase ||
-        newSessionState.workingDirectories?.length ||
+        newSessionState.workingDirectories !== undefined ||
         newSessionState.agentFullAccess ||
         newSessionState.commandApprovalMode
       ) {
@@ -362,7 +354,10 @@ function Index() {
     },
     [
       session,
+      systemPrompt,
+      folderId,
       addSessionKnowledgeBase,
+      newSessionState.localWorkCapabilities,
       newSessionState.knowledgeBase,
       newSessionState.workingDirectories,
       newSessionState.agentFullAccess,
@@ -431,18 +426,16 @@ function Index() {
   }, [])
 
   const onClickSessionSettings = useCallback(async () => {
-    const res: Session = await NiceModal.show('session-settings', {
+    const res: { session: SessionHeader; systemPrompt: string } | undefined = await NiceModal.show('session-settings', {
       session,
-      disableAutoSave: true,
+      systemPrompt,
     })
     if (res) {
-      setSession((old) => ({
-        ...old,
-        ...res,
-      }))
+      setSession(res.session)
+      setSystemPrompt(res.systemPrompt)
     }
     return true
-  }, [session])
+  }, [session, systemPrompt])
 
   const showNewUserScenarios =
     (forceShowNewUserScenarioCards || (hasCompletedFirstSuccessfulChat === false && isLoggedIn)) && !session.copilotId
@@ -469,8 +462,8 @@ function Index() {
 
         <Stack gap="sm" className="shrink-0">
           {session.copilotId ? (
-            <Box px="md">
-              <Stack gap="sm" className={widthFull ? 'w-full' : 'w-full max-w-4xl mx-auto'}>
+            <Box>
+              <Stack gap="sm" className={paddedContentColumnClassName(widthFull)}>
                 <Flex align="center" gap="sm">
                   <CopilotItem
                     name={session.name}
@@ -485,9 +478,8 @@ function Index() {
                   />
                   <ActionIcon
                     size={32}
-                    radius="lg"
                     c="chatbox-tertiary"
-                    bg="#F1F3F5"
+                    bg="var(--chatbox-background-secondary)"
                     onClick={() => setSession((old) => ({ ...old, copilotId: undefined }))}
                   >
                     <ScalableIcon icon={IconX} size={24} />
@@ -495,8 +487,7 @@ function Index() {
                 </Flex>
 
                 <Text c="chatbox-secondary" className="line-clamp-5">
-                  {session.messages[0]?.contentParts?.map((part) => (part.type === 'text' ? part.text : '')).join('') ||
-                    ''}
+                  {systemPrompt}
                 </Text>
               </Stack>
             </Box>
@@ -508,13 +499,8 @@ function Index() {
 
           <Box className="relative">
             {welcomeCardMode !== 'none' && (
-              <Box
-                className="pointer-events-none absolute left-0 right-0 z-10"
-                style={{ bottom: '100%' }}
-                px="sm"
-                mb="sm"
-              >
-                <Box className={widthFull ? 'w-full' : 'w-full max-w-4xl mx-auto'}>
+              <Box className="pointer-events-none absolute left-0 right-0 z-10" style={{ bottom: '100%' }} mb="sm">
+                <Box className={paddedContentColumnClassName(widthFull)}>
                   <ChatboxWelcomeCard
                     mode={welcomeCardMode}
                     pageName={JK_PAGE_NAMES.CHAT_PAGE}
@@ -578,8 +564,8 @@ const CopilotPicker = ({ selectedId, onSelect }: { selectedId?: string; onSelect
   }
 
   return (
-    <Box px="md">
-      <Stack gap="xs" className={widthFull ? 'w-full' : 'w-full max-w-4xl mx-auto'}>
+    <Box>
+      <Stack gap="xs" className={paddedContentColumnClassName(widthFull)}>
         <Flex align="center" justify="space-between">
           <Text size="xxs" c="chatbox-tertiary">
             {t('My Copilots').toUpperCase()}
@@ -701,7 +687,7 @@ const CopilotItem = ({
       bd={selected ? 'none' : '1px solid var(--chatbox-border-primary)'}
       bg={selected ? 'var(--chatbox-background-brand-secondary)' : 'transparent'}
       className={clsx(
-        'max-w-[75vw] sm:max-w-[50vw] cursor-pointer shrink-0 shadow-[0px_2px_12px_0px_rgba(0,0,0,0.04)]',
+        'max-w-[75vw] sm:max-w-[50vw] cursor-pointer shrink-0 shadow-sm',
         isSmallScreen ? 'rounded-full' : 'rounded-lg'
       )}
       onClick={onClick}

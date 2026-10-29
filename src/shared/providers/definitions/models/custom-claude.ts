@@ -1,5 +1,5 @@
 import { createAnthropic } from '@ai-sdk/anthropic'
-import type { LanguageModelV3 } from '@ai-sdk/provider'
+import type { LanguageModelV4 } from '@ai-sdk/provider'
 import type { ModelMessage, ToolSet } from 'ai'
 import AbstractAISDKModel, { type CallSettings } from '../../../models/abstract-ai-sdk'
 import { addAnthropicCacheControl } from '../../../models/anthropic-cache'
@@ -50,7 +50,7 @@ export default class CustomClaude extends AbstractAISDKModel {
     })
   }
 
-  protected getChatModel(options: CallChatCompletionOptions): LanguageModelV3 {
+  protected getChatModel(options: CallChatCompletionOptions): LanguageModelV4 {
     const provider = this.getProvider(options)
     return provider.languageModel(this.options.model.modelId)
   }

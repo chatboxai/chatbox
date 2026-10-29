@@ -1,7 +1,19 @@
-export { buildContext, prepareContextMessages, selectContextMessages } from './builder'
+export { buildContext, injectAttachments, selectContextMessages } from './builder'
+export {
+  buildCompactionHandoff,
+  type CompactionHandoffMode,
+  getCompactionHandoffMode,
+  getContextHistoryStartNote,
+} from './compaction-handoff'
 export { findLatestApplicableCompactionPoint } from './compaction-points'
 export { isContextEligibleMessage } from './message-eligibility'
-export { findRecentRoundsStartIndex } from './rounds'
+export {
+  CONTEXT_HISTORY_START_MESSAGE_ID,
+  type ContextProjectionEntry,
+  type ContextProjectionOptions,
+  getContextProjectionText,
+  projectContextMessagesForModel,
+} from './model-projection'
 export {
   flattenToolCallPartsToText,
   TOOL_FLATTEN_ARGS_PREVIEW_CHARS,
@@ -13,5 +25,4 @@ export type {
   ContextBuilderOptions,
   ContextPreparationOptions,
   ContextSelectionOptions,
-  ToolCleanupMode,
 } from './types'

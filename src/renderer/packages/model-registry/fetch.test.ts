@@ -33,6 +33,23 @@ vi.mock('@shared/model-registry/snapshot.generated', () => ({
   },
 }))
 
+function cachedModel(modelId: string, contextWindow: number) {
+  return {
+    modelId,
+    type: 'chat' as const,
+    capabilities: ['tool_use'],
+    contextWindow,
+    maxOutput: 8_192,
+  }
+}
+
+function blobCache(data: unknown, ageMs: number) {
+  return JSON.stringify({
+    data,
+    timestamp: Date.now() - ageMs,
+  })
+}
+
 describe('model-registry fetch', () => {
   beforeEach(() => {
     vi.resetModules()
@@ -43,22 +60,11 @@ describe('model-registry fetch', () => {
   it('falls back to stale blob cache instead of the build snapshot when refresh fails', async () => {
     const staleCache = {
       openai: {
-        'cached-model': {
-          modelId: 'cached-model',
-          type: 'chat',
-          capabilities: ['tool_use'],
-          contextWindow: 222_000,
-          maxOutput: 8_192,
-        },
+        'cached-model': cachedModel('cached-model', 222_000),
       },
     }
 
-    mockGetStoreBlob.mockResolvedValue(
-      JSON.stringify({
-        data: staleCache,
-        timestamp: Date.now() - 8 * 24 * 60 * 60 * 1000,
-      })
-    )
+    mockGetStoreBlob.mockResolvedValue(blobCache(staleCache, 8 * 24 * 60 * 60 * 1000))
     vi.mocked(fetch).mockRejectedValue(new Error('offline'))
 
     const { getRegistry, getRegistrySync } = await import('./fetch')
@@ -97,5 +103,76 @@ describe('model-registry fetch', () => {
     await expect(forceRefreshRegistry()).resolves.toMatchObject(freshRegistry)
     expect(getRegistrySync()).toMatchObject(freshRegistry)
     expect(mockSetStoreBlob).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not fetch models.dev on prefetch when the 7-day blob cache is still valid', async () => {
+    const validCache = {
+      openai: {
+        'cached-model': cachedModel('cached-model', 222_000),
+      },
+    }
+    mockGetStoreBlob.mockResolvedValue(blobCache(validCache, 24 * 60 * 60 * 1000))
+
+    const { prefetchModelRegistry } = await import('./fetch')
+    await prefetchModelRegistry()
+
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('fetches models.dev for an unknown model even when the 7-day blob cache is still valid', async () => {
+    const validCache = {
+      openai: {
+        'cached-model': cachedModel('cached-model', 222_000),
+      },
+    }
+    const liveRegistry = {
+      openai: {
+        'cached-model': cachedModel('cached-model', 222_000),
+        'new-model': cachedModel('new-model', 1_000_000),
+      },
+    }
+    mockGetStoreBlob.mockResolvedValue(blobCache(validCache, 24 * 60 * 60 * 1000))
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify(liveRegistry), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    )
+
+    const { prefetchModelRegistry, requestUnknownModelRegistryRefresh, getRegistrySync } = await import('./fetch')
+    await prefetchModelRegistry()
+    expect(fetch).not.toHaveBeenCalled()
+
+    await requestUnknownModelRegistryRefresh()
+
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(fetch).mock.calls[0]?.[0]).toBe('https://models.dev/api.json')
+    expect(getRegistrySync()).toMatchObject(liveRegistry)
+  })
+
+  it('does not refetch unknown models during the short cooldown after a recent attempt', async () => {
+    mockGetStoreBlob.mockResolvedValue(null)
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ openai: {} }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    )
+
+    const { requestUnknownModelRegistryRefresh, UNKNOWN_MODEL_REFRESH_COOLDOWN_MS } = await import('./fetch')
+    await requestUnknownModelRegistryRefresh()
+    expect(fetch).toHaveBeenCalledTimes(1)
+
+    await requestUnknownModelRegistryRefresh()
+    expect(fetch).toHaveBeenCalledTimes(1)
+
+    const now = Date.now()
+    const dateNow = vi.spyOn(Date, 'now').mockReturnValue(now + UNKNOWN_MODEL_REFRESH_COOLDOWN_MS + 1)
+    try {
+      await requestUnknownModelRegistryRefresh()
+      expect(fetch).toHaveBeenCalledTimes(2)
+    } finally {
+      dateNow.mockRestore()
+    }
   })
 })

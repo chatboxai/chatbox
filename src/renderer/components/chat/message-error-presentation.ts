@@ -27,6 +27,7 @@ export type MessageErrorPresentation = MessageErrorDetails &
     | { kind: 'api'; providerId?: string; httpStatusCode?: number }
     | { kind: 'network'; host: string }
     | { kind: 'paint-not-supported'; providerId?: string }
+    | { kind: 'provider-missing' }
     | { kind: 'known-chatbox-api'; errorCode: number }
     | { kind: 'unknown' }
   )
@@ -159,12 +160,11 @@ export function resolveMessageErrorPresentation(
   if (msg.errorCode === 10003) {
     return { ...details, kind: 'paint-not-supported', providerId: msg.aiProvider }
   }
+  if (msg.errorCode === MESSAGE_ERROR_CODES.MODEL_PROVIDER_NOT_FOUND) {
+    return { ...details, kind: 'provider-missing' }
+  }
   if (msg.errorCode && ChatboxAIAPIError.getDetail(msg.errorCode)) {
     return { ...details, kind: 'known-chatbox-api', errorCode: msg.errorCode }
   }
   return { ...details, kind: 'unknown' }
-}
-
-export function isMessageReminderPresentation(presentation: MessageErrorPresentation): boolean {
-  return presentation.kind === 'quota' || presentation.kind === 'agent-mode-reward'
 }

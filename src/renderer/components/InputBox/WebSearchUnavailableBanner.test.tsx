@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 
 import { MantineProvider } from '@mantine/core'
-import type { Message, Session } from '@shared/types'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -41,230 +40,70 @@ vi.mock('@/stores/settingsStore', () => ({
     }),
 }))
 
-import { hasChatboxSearchSignInError, WebSearchUnavailableBanner } from './WebSearchUnavailableBanner'
-
-function session(id: string, errorCode = 20024): Session {
-  return {
-    id,
-    name: 'Weather',
-    type: 'chat',
-    picUrl: '',
-    messages: [
-      {
-        id: 'assistant-1',
-        role: 'assistant',
-        contentParts: [
-          {
-            type: 'tool-call',
-            state: 'error',
-            toolCallId: 'search-1',
-            toolName: 'web_search',
-            args: { query: 'weather' },
-            result: { errorCode },
-          },
-        ],
-      },
-    ],
-    threads: [],
-  } as Session
-}
-
-function appendMessage(currentSession: Session, message: Message): Session {
-  return {
-    ...currentSession,
-    messages: [...currentSession.messages, message],
-  }
-}
-
-function conversationMessage(id: string): Message {
-  return {
-    id,
-    role: 'user',
-    contentParts: [{ type: 'text', text: 'Try again' }],
-  }
-}
-
-function syntheticMessage(id: string, flags: Pick<Message, 'isForkMarker' | 'isSummary'>): Message {
-  return {
-    id,
-    role: 'assistant',
-    contentParts: [{ type: 'text', text: 'Synthetic context' }],
-    ...flags,
-  }
-}
-
-function sessionAfterConversationContinues(id: string): Session {
-  return appendMessage(session(id), conversationMessage(`${id}-follow-up`))
-}
-
-function withTrailingAgentLoopParts(currentSession: Session): Session {
-  const latestMessage = currentSession.messages[currentSession.messages.length - 1]
-  if (!latestMessage) return currentSession
-  return {
-    ...currentSession,
-    messages: [
-      ...currentSession.messages.slice(0, -1),
-      {
-        ...latestMessage,
-        contentParts: [
-          ...latestMessage.contentParts,
-          {
-            type: 'tool-call',
-            state: 'result',
-            toolCallId: 'time-1',
-            toolName: 'get_time',
-            args: {},
-            result: { time: '10:00' },
-          },
-          { type: 'text', text: 'I could not search the web, but the agent loop completed.' },
-        ],
-      },
-    ],
-  }
-}
+import { WebSearchUnavailableBanner } from './WebSearchUnavailableBanner'
 
 describe('WebSearchUnavailableBanner', () => {
   beforeEach(() => {
     mocks.isSmallScreen = false
     mocks.licenseKey = ''
     mocks.webSearchProvider = 'build-in'
-    mocks.navigateToSettings.mockReset()
+    mocks.navigateToSettings.mockClear()
   })
-
-  it('finds only the actionable built-in search sign-in error', () => {
-    expect(hasChatboxSearchSignInError(session('matching'))).toBe(true)
-    expect(hasChatboxSearchSignInError(session('other-error', 20025))).toBe(false)
-  })
-
-  it('shows persistent guidance only after the current error card is no longer in the latest conversation message', () => {
-    const firstError = withTrailingAgentLoopParts(session('message-sequence'))
-    const view = render(
-      <MantineProvider>
-        <WebSearchUnavailableBanner session={firstError} />
-      </MantineProvider>
-    )
-
+  const banner = (sessionId: string, errorCount: number, latestHasError: boolean | undefined) => (
+    <MantineProvider>
+      <WebSearchUnavailableBanner sessionId={sessionId} errorCount={errorCount} latestHasError={latestHasError} />
+    </MantineProvider>
+  )
+  it('waits for a later conversation message after the most recent sign-in error', () => {
+    const view = render(banner('sequence', 1, true))
     expect(screen.queryByRole('status')).toBeNull()
-
-    const afterConversationContinues = appendMessage(firstError, conversationMessage('user-2'))
-    view.rerender(
-      <MantineProvider>
-        <WebSearchUnavailableBanner session={afterConversationContinues} />
-      </MantineProvider>
-    )
+    view.rerender(banner('sequence', 1, false))
     expect(screen.getByRole('status')).toBeTruthy()
-
-    const repeatedError = appendMessage(afterConversationContinues, session('repeated-error').messages[0])
-    view.rerender(
-      <MantineProvider>
-        <WebSearchUnavailableBanner session={repeatedError} />
-      </MantineProvider>
-    )
+    view.rerender(banner('sequence', 2, true))
     expect(screen.queryByRole('status')).toBeNull()
-
-    view.rerender(
-      <MantineProvider>
-        <WebSearchUnavailableBanner session={appendMessage(repeatedError, conversationMessage('user-4'))} />
-      </MantineProvider>
-    )
+    view.rerender(banner('sequence', 2, false))
     expect(screen.getByRole('status')).toBeTruthy()
   })
-
-  it('ignores a trailing fork marker when locating the latest conversation message', () => {
-    const currentSession = appendMessage(
-      withTrailingAgentLoopParts(session('fork-marker-sequence')),
-      syntheticMessage('fork-marker', { isForkMarker: true })
-    )
-    render(
-      <MantineProvider>
-        <WebSearchUnavailableBanner session={currentSession} />
-      </MantineProvider>
-    )
-
+  it.each([
+    [0, false],
+    [1, undefined],
+    [1, true],
+  ] as const)('hides for count %s and latest state %s', (count, latest) => {
+    render(banner(`hidden-${count}-${latest}`, count, latest))
     expect(screen.queryByRole('status')).toBeNull()
   })
-
-  it('ignores a trailing compaction summary when locating the latest conversation message', () => {
-    const currentSession = appendMessage(
-      withTrailingAgentLoopParts(session('summary-sequence')),
-      syntheticMessage('summary', { isSummary: true })
-    )
-    render(
-      <MantineProvider>
-        <WebSearchUnavailableBanner session={currentSession} />
-      </MantineProvider>
-    )
-
-    expect(screen.queryByRole('status')).toBeNull()
-  })
-
-  it('ignores a trailing system message when locating the latest conversation message', () => {
-    const currentSession = appendMessage(withTrailingAgentLoopParts(session('system-message-sequence')), {
-      id: 'system-message',
-      role: 'system',
-      contentParts: [{ type: 'text', text: 'System context' }],
-    })
-    render(
-      <MantineProvider>
-        <WebSearchUnavailableBanner session={currentSession} />
-      </MantineProvider>
-    )
-
-    expect(screen.queryByRole('status')).toBeNull()
-  })
-
-  it('keeps guidance above the composer until it is dismissed for this chat', () => {
-    const currentSession = sessionAfterConversationContinues('banner-session')
-    const view = render(
-      <MantineProvider>
-        <WebSearchUnavailableBanner session={currentSession} />
-      </MantineProvider>
-    )
-
-    expect(screen.getByRole('status')).toBeTruthy()
+  it('opens sign-in and provider settings on desktop', () => {
+    render(banner('desktop-actions', 1, false))
     fireEvent.click(screen.getByRole('button', { name: 'Sign in to Chatbox AI' }))
+    expect(mocks.navigateToSettings).toHaveBeenCalledWith()
     fireEvent.click(screen.getByRole('button', { name: 'Web Search settings' }))
-    expect(mocks.navigateToSettings).toHaveBeenNthCalledWith(1)
-    expect(mocks.navigateToSettings).toHaveBeenNthCalledWith(2, '/web-search')
-
+    expect(mocks.navigateToSettings).toHaveBeenCalledWith('/web-search')
+  })
+  it('offers the compact sign-in action on narrow screens', () => {
+    mocks.isSmallScreen = true
+    render(banner('narrow-actions', 1, false))
+    expect(screen.getByText('Web Search was skipped: sign in to Chatbox AI')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+    expect(mocks.navigateToSettings).toHaveBeenCalledWith()
+    expect(screen.queryByRole('button', { name: 'Web Search settings' })).toBeNull()
+  })
+  it('keeps dismissal scoped to a conversation', () => {
+    const view = render(banner('dismissed', 1, false))
     fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     expect(screen.queryByRole('status')).toBeNull()
-
-    view.rerender(
-      <MantineProvider>
-        <WebSearchUnavailableBanner session={sessionAfterConversationContinues('another-session')} />
-      </MantineProvider>
-    )
+    view.rerender(banner('another-conversation', 1, false))
     expect(screen.getByRole('status')).toBeTruthy()
-
-    view.unmount()
-    render(
-      <MantineProvider>
-        <WebSearchUnavailableBanner session={currentSession} />
-      </MantineProvider>
-    )
+    view.rerender(banner('dismissed', 2, false))
     expect(screen.queryByRole('status')).toBeNull()
   })
-
-  it('hides the stale error after a license becomes available', () => {
-    mocks.licenseKey = 'license-key'
-    render(
-      <MantineProvider>
-        <WebSearchUnavailableBanner session={sessionAfterConversationContinues('licensed-session')} />
-      </MantineProvider>
-    )
-
+  it('hides once the user signs in', () => {
+    mocks.licenseKey = 'licensed'
+    render(banner('licensed', 1, false))
     expect(screen.queryByRole('status')).toBeNull()
   })
-
-  it('hides the stale sign-in error after changing search providers', () => {
+  it('hides when the user selects another provider', () => {
     mocks.webSearchProvider = 'tavily'
-    render(
-      <MantineProvider>
-        <WebSearchUnavailableBanner session={sessionAfterConversationContinues('different-provider-session')} />
-      </MantineProvider>
-    )
-
+    render(banner('different-provider', 1, false))
     expect(screen.queryByRole('status')).toBeNull()
   })
 })

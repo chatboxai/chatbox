@@ -164,8 +164,8 @@ vi.mock('@/stores/toastActions', () => ({ add: mocks.toastAddMock }))
 
 vi.mock('@/app/renderer-application', () => ({
   rendererApplication: {
-    sessions: { updateSession: vi.fn() },
-    sessionHooks: { useSession: () => ({ session: undefined }) },
+    sessions: { updateSessionHeader: vi.fn() },
+    sessionHooks: { useSessionHeader: () => ({ read: undefined, session: undefined }) },
   },
 }))
 vi.mock('@/stores/session/session-settings', () => ({
@@ -242,6 +242,40 @@ beforeEach(() => {
 })
 
 describe('AgentModePanel mode buttons', () => {
+  test('shows immediate pending feedback until a mode change is persisted', async () => {
+    let resolveSave: () => void = () => undefined
+    mocks.setSessionAgentModeMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSave = resolve
+        })
+    )
+    renderPanel()
+    fireEvent.click(screen.getByRole('button', { name: 'Chat Mode' }))
+
+    expect((screen.getByRole('button', { name: 'Chat Mode' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByRole('button', { name: 'Chat Mode' }).hasAttribute('data-loading')).toBe(true)
+    expect((screen.getByRole('button', { name: 'Work Mode' }) as HTMLButtonElement).disabled).toBe(true)
+
+    await act(async () => {
+      resolveSave()
+    })
+
+    expect(screen.getByRole('button', { name: 'Chat Mode' }).hasAttribute('data-loading')).toBe(false)
+  })
+
+  test('reports a failed mode save and releases the pending controls', async () => {
+    mocks.setSessionAgentModeMock.mockRejectedValueOnce(new Error('Disk unavailable'))
+    renderPanel()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Chat Mode' }))
+    })
+
+    expect(mocks.toastAddMock).toHaveBeenCalledWith('Failed to save settings')
+    expect((screen.getByRole('button', { name: 'Chat Mode' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
   test('label the chat and work mode buttons with the same status icons as the composer button', () => {
     const view = renderPanel()
 

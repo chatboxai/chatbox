@@ -1,4 +1,6 @@
 import type { Message } from '@shared/types'
+import type { MessageRow } from '@chatbox/core/session/session-tree'
+import type { SessionTranscriptThread } from '@chatbox/core/ports'
 
 // MessageList renders the latest user turn and its assistant reply as ONE Virtuoso item
 // (so they scroll as a unit while streaming). Every consumer that needs a Virtuoso item
@@ -6,6 +8,7 @@ import type { Message } from '@shared/types'
 // here, or scrolling to anything at/after the latest user message lands wrong.
 
 export type MessageRenderItem =
+  | { type: 'thread'; key: string; messages: []; thread: SessionTranscriptThread }
   | {
       type: 'message'
       key: string
@@ -46,8 +49,9 @@ function groupedTurnHasReply(messages: Pick<Message, 'role'>[], groupStart: numb
   return groupStart + 1 < messages.length && messages[groupStart + 1].role === 'assistant'
 }
 
-export function buildMessageRenderItems(messages: Message[]): MessageRenderItem[] {
-  const groupStart = findGroupedLastTurnStart(messages)
+export function buildMessageRenderItems(messages: Message[], lastUserMessageId?: string | null): MessageRenderItem[] {
+  const candidate = findGroupedLastTurnStart(messages)
+  const groupStart = lastUserMessageId === undefined || messages[candidate]?.id === lastUserMessageId ? candidate : -1
   const items: MessageRenderItem[] = []
 
   for (let i = 0; i < messages.length; i++) {
@@ -78,4 +82,21 @@ export function buildMessageRenderItems(messages: Message[]): MessageRenderItem[
   }
 
   return items
+}
+
+export function buildTranscriptRenderItems(
+  rows: readonly MessageRow[],
+  threads: readonly SessionTranscriptThread[]
+): MessageRenderItem[] {
+  const result: MessageRenderItem[] = []
+  const ordered = [...threads].sort(
+    (a, b) => (a.threadOrder < 0 ? Infinity : a.threadOrder) - (b.threadOrder < 0 ? Infinity : b.threadOrder)
+  )
+  for (const thread of ordered) {
+    const messages = rows.filter((row) => row.threadId === thread.threadId).map((row) => row.message)
+    if (!messages.length && thread.rootMessageId === null) {
+      result.push({ type: 'thread', key: `thread-${thread.threadId}`, messages: [], thread })
+    } else result.push(...buildMessageRenderItems(messages, thread.summary?.lastUserMessageId ?? null))
+  }
+  return result
 }

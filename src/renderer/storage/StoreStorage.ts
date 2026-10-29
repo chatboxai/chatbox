@@ -1,7 +1,7 @@
 import type { DebouncedFunc } from 'lodash'
 import debounce from 'lodash/debounce'
 import { v4 as uuidv4 } from 'uuid'
-import BaseStorage from './BaseStorage'
+import BaseStorage, { type StorageReadOptions } from './BaseStorage'
 import { getFileUniqKey } from './file-uniq-key'
 
 export enum StorageKey {
@@ -14,6 +14,7 @@ export enum StorageKey {
   ChatSessionsList = 'chat-sessions-list',
   ChatSessionSettings = 'chat-session-settings',
   PictureSessionSettings = 'picture-session-settings',
+  SessionFolders = 'session-folders',
   AuthInfo = 'authInfo',
 }
 
@@ -36,8 +37,8 @@ export const StorageKeyGenerator = {
 }
 
 export default class StoreStorage extends BaseStorage {
-  public async getItem<T>(key: string, initialValue: T): Promise<T> {
-    const value: T = await super.getItem(key, initialValue)
+  public async getItem<T>(key: string, initialValue: T, options: StorageReadOptions = {}): Promise<T> {
+    const value: T = await super.getItem(key, initialValue, options)
 
     if (key === StorageKey.Configs && value === initialValue) {
       await super.setItemNow(key, initialValue) // 持久化初始生成的 uuid
@@ -46,12 +47,12 @@ export default class StoreStorage extends BaseStorage {
     return value
   }
 
-  private debounceQueue = new Map<string, DebouncedFunc<(key: string, value: unknown) => void>>()
+  private debounceQueue = new Map<string, DebouncedFunc<(key: string, value: unknown) => Promise<void>>>()
 
   public async setItem<T>(key: string, value: T): Promise<void> {
     let debounced = this.debounceQueue.get(key)
     if (!debounced) {
-      debounced = debounce(this.setItemNow.bind(this), 500, { maxWait: 2000 })
+      debounced = debounce((key: string, value: unknown) => this.setItemNow(key, value), 500, { maxWait: 2000 })
       this.debounceQueue.set(key, debounced)
     }
     debounced(key, value)

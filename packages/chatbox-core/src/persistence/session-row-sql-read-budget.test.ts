@@ -1,0 +1,511 @@
+import { storageRowFixture } from '../ports/testing/session-row-fixtures'
+import { afterEach, describe, expect, it } from 'vitest'
+import { readRowContextSource } from '../application/session/row-context'
+import type { SessionRowSnapshot } from '../ports/session-row-store'
+import type { Session } from '../types/session'
+import { type NodeSessionRowSqlDatabase, openNodeSessionRowDatabase } from './node-sqlite.test-support'
+import { contextSnapshot as contextFactsSnapshot } from './session-context-read.test-support'
+import { type SessionRowSqlBindValue, SqlSessionRowStore } from './session-row-sql'
+
+const databases: NodeSessionRowSqlDatabase[] = []
+const encoder = new TextEncoder()
+const budget = 384 * 1024
+
+function sessionSnapshot(count: number, suffix = '', widePrefixCount = 0): SessionRowSnapshot {
+  const id = `message-read-budget-session-${count}${suffix}`
+  const session: Session = {
+    id,
+    type: 'chat',
+    name: 'Read budget',
+    messages: Array.from({ length: count }, (_, index) => ({
+      id: `${id}-message-${index}${index < widePrefixCount ? '界'.repeat(200) : ''}`,
+      role: index % 2 ? 'assistant' : 'user',
+      timestamp: 1_700_000_000_000 + index,
+      contentParts: [{ type: 'text', text: `Message ${index}: ${'text '.repeat(24)}` }],
+    })),
+  }
+  return contextSnapshot(session)
+}
+
+function setup(onQuery?: (sql: string, params: SessionRowSqlBindValue[], rows: unknown[]) => void | Promise<void>) {
+  const database = openNodeSessionRowDatabase()
+  databases.push(database)
+  const calls: Array<{
+    kind: string
+    binds: number
+    rows: number
+    requestBytes: number
+    responseBytes: number
+    ascii: boolean
+    oversized: boolean
+    contextLimit?: SessionRowSqlBindValue
+    keys: string[]
+  }> = []
+  const reader = new SqlSessionRowStore({
+    execute: (sql) => database.execute(sql),
+    executeBatch: (statements, options) => database.executeBatch(statements, options),
+    query: async <T>(sql: string, params: SessionRowSqlBindValue[] = []): Promise<T[]> => {
+      const result = await database.query<T>(sql, params)
+      const kind =
+        sql.includes('payload_id IN (') || sql.startsWith('WITH requested(payload_id, request_index)')
+          ? 'payload'
+          : sql.includes('WITH requested')
+            ? 'selected'
+            : sql.includes('WITH RECURSIVE path')
+              ? 'context'
+              : 'other'
+      const requestBytes = encoder.encode(
+        JSON.stringify({ database: 'chatbox', statement: sql, values: params, readonly: false })
+      ).byteLength
+      const response = JSON.stringify({ values: result }).replace(
+        /[\u007f-\uffff<>&/]/g,
+        (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`
+      )
+      const responseBytes = encoder.encode(response).byteLength
+      const keys = result.length ? Object.keys(result[0] as object) : []
+      const iosResponseBytes = encoder.encode(
+        JSON.stringify({ values: result.length ? [{ ios_columns: keys }, ...result] : [] }).replace(
+          /[\u007f-\uffff<>&/]/g,
+          (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`
+        )
+      ).byteLength
+      expect(requestBytes).toBeLessThan(budget)
+      expect(responseBytes).toBeLessThan(budget)
+      expect(iosResponseBytes).toBeLessThan(budget)
+      expect(params.length).toBeLessThanOrEqual(900)
+      if (kind === 'selected' || kind === 'payload') {
+        const plan = await database.query<{ detail: string }>(`EXPLAIN QUERY PLAN ${sql}`, params)
+        expect(
+          plan.some((step) =>
+            /SEARCH (m|session_messages|session_message_payload_chunks) USING INDEX/.test(step.detail)
+          )
+        ).toBe(true)
+        expect(
+          plan.some((step) => /SCAN (m|session_messages|session_message_payload_chunks)\b/.test(step.detail))
+        ).toBe(false)
+      }
+      calls.push({
+        kind,
+        binds: params.length,
+        rows: result.length,
+        requestBytes,
+        responseBytes,
+        contextLimit: kind === 'context' ? params[5] : undefined,
+        keys,
+        ascii: sql.includes('instr(message_json, char(0))'),
+        oversized: result.some(
+          (row) =>
+            typeof row === 'object' &&
+            row !== null &&
+            (('payload_oversized' in row && row.payload_oversized === 1) ||
+              (kind === 'payload' && 'x' in row && row.x === 1))
+        ),
+      })
+      await onQuery?.(sql, params, result)
+      return result
+    },
+  })
+  return { database, writer: new SqlSessionRowStore(database), reader, calls }
+}
+
+afterEach(() => {
+  while (databases.length) databases.pop()?.close()
+})
+
+describe('SQLite bridge read budgets', () => {
+  it('maps compact payload ordinals to exact sources in requested order', async () => {
+    const { writer, reader, calls } = setup()
+    const snapshot = sessionSnapshot(1000, '-会话😀')
+    await writer.writeRows(snapshot)
+    const ids = snapshot.rows.messages.map((row) => row.messageId).reverse()
+    const result = await reader.readMessages({ sessionId: snapshot.record.id, messageIds: ids })
+    expect(result?.messages).toEqual([...snapshot.rows.messages].reverse())
+    expect(Object.keys(result?.textTokens?.sources ?? {})).toHaveLength(1000)
+    const payload = calls.filter((call) => call.kind === 'payload')
+    expect(payload.length).toBeGreaterThan(1)
+    for (const call of payload) expect(call.keys).toEqual(['i', 'v', 'x'])
+  })
+
+  it.each([-1, 768, 0.5, Number.POSITIVE_INFINITY, '0'])('rejects an invalid payload ordinal %s', async (ordinal) => {
+    const { writer, reader } = setup((sql, _params, rows) => {
+      if (!sql.includes('FROM session_messages JOIN requested') || !rows.length) return
+      const row = rows[0]
+      if (typeof row === 'object' && row !== null && ('payload_oversized' in row || 'x' in row))
+        Object.assign(row, { i: ordinal })
+    })
+    const snapshot = sessionSnapshot(3)
+    await writer.writeRows(snapshot)
+    await expect(
+      reader.readMessages({ sessionId: snapshot.record.id, messageIds: [snapshot.rows.messages[0].messageId] })
+    ).rejects.toMatchObject({
+      name: 'SessionRowStoreError',
+      cause: { message: 'Invalid message payload wire record' },
+    })
+  })
+
+  it('rejects BLOB payload values with a body-free response', async () => {
+    const { writer, reader, database, calls } = setup()
+    const snapshot = sessionSnapshot(1)
+    await writer.writeRows(snapshot)
+    await database.executeBatch([
+      { sql: 'UPDATE session_messages SET message_json=CAST(? AS BLOB)', params: ['x'.repeat(100000)] },
+    ])
+    await expect(
+      reader.readMessages({ sessionId: snapshot.record.id, messageIds: [snapshot.rows.messages[0].messageId] })
+    ).rejects.toMatchObject({ name: 'SessionRowStoreError' })
+    const payload = calls.filter((call) => call.kind === 'payload')
+    expect(payload).toHaveLength(1)
+    expect(payload[0].oversized).toBe(true)
+    expect(payload[0].responseBytes).toBeLessThan(128)
+  })
+
+  it('bounds context bridge projection and adapts lookahead to accepted rows', async () => {
+    const { writer, reader, calls } = setup()
+    const snapshot = sessionSnapshot(3500, '', 1700)
+    await writer.writeRows(snapshot)
+    const context = await readRowContextSource(reader, { sessionId: snapshot.record.id })
+    expect(context?.candidateMessages).toEqual(snapshot.rows.messages.map((row) => row.message))
+    const pages = calls.filter((call) => call.kind === 'context')
+    expect(pages.length).toBeGreaterThan(2)
+    expect(pages.every((page) => Number(page.contextLimit) <= 201)).toBe(true)
+    expect(pages.every((page) => page.responseBytes < budget)).toBe(true)
+  })
+
+  it('reads context with the highest safe sequence values', async () => {
+    const { writer, reader } = setup()
+    const snapshot = sessionSnapshot(4)
+    for (const row of snapshot.rows.messages) row.siblingOrder += Number.MAX_SAFE_INTEGER - 3
+    await writer.writeRows(snapshot)
+    const context = await readRowContextSource(reader, { sessionId: snapshot.record.id })
+    expect(context?.candidateMessages).toEqual(snapshot.rows.messages.map((row) => row.message))
+  })
+
+  it.each([
+    ['siblingOrder', 1.5],
+    ['siblingOrder', -1],
+    ['siblingOrder', Number.POSITIVE_INFINITY],
+    ['siblingOrder', Number.MAX_SAFE_INTEGER + 1],
+    ['siblingOrder', 'invalid'],
+    ['payload_utf8_length', -1],
+    ['payload_utf8_length', 0.5],
+    ['payload_utf8_length', Number.POSITIVE_INFINITY],
+    ['payload_utf8_length', 'invalid'],
+  ] as const)('rejects malformed context metadata %s=%s before payload transfer', async (column, value) => {
+    const { database, writer, reader, calls } = setup()
+    const snapshot = sessionSnapshot(3)
+    await writer.writeRows(snapshot)
+    await database.executeBatch([
+      {
+        sql: `UPDATE session_messages SET ${column} = ? WHERE message_id = ?`,
+        params: [value, snapshot.rows.messages[1].messageId],
+      },
+    ])
+    await expect(readRowContextSource(reader, { sessionId: snapshot.record.id })).rejects.toMatchObject({
+      name: 'SessionRowStoreError',
+    })
+    expect(calls.some((call) => call.kind === 'payload')).toBe(false)
+  })
+
+  it.each(['payload_id', 'parent_message_id'])(
+    'rejects BLOB context identifier %s with a bounded sentinel',
+    async (column) => {
+      const { database, writer, reader, calls } = setup()
+      const snapshot = sessionSnapshot(3)
+      await writer.writeRows(snapshot)
+      await database.executeBatch([
+        {
+          sql: `UPDATE session_messages SET ${column} = CAST(? AS BLOB) WHERE message_id = ?`,
+          params: ['x'.repeat(10000), snapshot.rows.messages[1].messageId],
+        },
+      ])
+      await expect(readRowContextSource(reader, { sessionId: snapshot.record.id })).rejects.toMatchObject({
+        name: 'SessionRowStoreError',
+      })
+      expect(calls.some((call) => call.kind === 'payload')).toBe(false)
+      expect(calls.every((call) => call.responseBytes < budget)).toBe(true)
+    }
+  )
+
+  it('packs safe ASCII payloads after a complete conservative batch', async () => {
+    const { writer, reader, calls } = setup()
+    const snapshot = sessionSnapshot(1000)
+    await writer.writeRows(snapshot)
+    const selected = await reader.readMessages({
+      sessionId: snapshot.record.id,
+      messageIds: snapshot.rows.messages.map((row) => row.messageId),
+    })
+    expect(selected?.messages).toEqual(snapshot.rows.messages)
+    const payload = calls.filter((call) => call.kind === 'payload')
+    expect(payload[0].ascii).toBe(false)
+    expect(payload.some((call) => call.ascii && call.binds > payload[0].binds * 1.5)).toBe(true)
+    expect(payload.every((call) => !call.oversized)).toBe(true)
+  })
+
+  it('keeps initially complex text on the conservative SQL path', async () => {
+    const { writer, reader, calls } = setup()
+    const snapshot = sessionSnapshot(1000)
+    for (const row of snapshot.rows.messages) {
+      row.message.contentParts = [{ type: 'text', text: '中文 [link](https://example.com/?a=1&b=2) **Markdown**' }]
+    }
+    await writer.writeRows(snapshot)
+    const selected = await reader.readMessages({
+      sessionId: snapshot.record.id,
+      messageIds: snapshot.rows.messages.map((row) => row.messageId),
+    })
+    expect(selected?.messages).toEqual(snapshot.rows.messages)
+    expect(calls.some((call) => call.ascii)).toBe(false)
+  })
+
+  it('packs mixed-language conversation payloads within the native response budget', async () => {
+    const { writer, reader, calls } = setup()
+    const snapshot = sessionSnapshot(240)
+    for (const [index, row] of snapshot.rows.messages.entries()) {
+      const size = index % 2 === 0 ? 500 : index % 40 === 1 ? 32_000 : 4_000
+      row.message.contentParts = [
+        {
+          type: 'text',
+          text: `Message ${index} `.padEnd(
+            size,
+            index % 2 === 0 ? '请解释一下这段代码的作用 ' : 'Here is a detailed answer with examples. '
+          ),
+        },
+      ]
+    }
+    await writer.writeRows(snapshot)
+
+    const context = await reader.readMessages({
+      sessionId: snapshot.record.id,
+      messageIds: snapshot.rows.messages.map((row) => row.messageId),
+    })
+
+    expect(context?.messages).toEqual(snapshot.rows.messages)
+    expect(context?.messages).toHaveLength(240)
+    const payload = calls.filter((call) => call.kind === 'payload')
+    expect(payload.length).toBeLessThanOrEqual(12)
+    expect(payload.every((call) => !call.oversized)).toBe(true)
+  })
+
+  it('falls back when text after a mixed-language sample expands beyond the response budget', async () => {
+    const { writer, reader, calls } = setup()
+    const snapshot = sessionSnapshot(240)
+    for (const [index, row] of snapshot.rows.messages.entries()) {
+      row.message.contentParts = [
+        {
+          type: 'text',
+          text: index >= 32 ? '界😀<&>'.repeat(600) : index % 2 === 0 ? '请解释'.repeat(166) : 'answer '.repeat(570),
+        },
+      ]
+    }
+    await writer.writeRows(snapshot)
+
+    const selected = await reader.readMessages({
+      sessionId: snapshot.record.id,
+      messageIds: snapshot.rows.messages.map((row) => row.messageId),
+    })
+
+    expect(selected?.messages).toEqual(snapshot.rows.messages)
+    const payload = calls.filter((call) => call.kind === 'payload')
+    expect(payload.filter((call) => call.oversized)).toHaveLength(1)
+    expect(payload.find((call) => call.oversized)).toMatchObject({ ascii: true, rows: 1 })
+    expect(payload.at(-1)?.ascii).toBe(false)
+  })
+
+  it.each(['界'.repeat(160), '<&>'.repeat(160), '"\\'.repeat(160)])(
+    'replays an overflowing ASCII batch once and stays conservative',
+    async (text) => {
+      const { writer, reader, calls } = setup()
+      const snapshot = sessionSnapshot(1000)
+      for (const row of snapshot.rows.messages.slice(250, 800)) row.message.contentParts = [{ type: 'text', text }]
+      await writer.writeRows(snapshot)
+      const selected = await reader.readMessages({
+        sessionId: snapshot.record.id,
+        messageIds: snapshot.rows.messages.map((row) => row.messageId),
+      })
+      expect(selected?.messages).toEqual(snapshot.rows.messages)
+      const payload = calls.filter((call) => call.kind === 'payload')
+      const attempts = payload.filter((call) => call.ascii)
+      expect(attempts).toHaveLength(1)
+      expect(attempts[0]).toMatchObject({ rows: 1, oversized: true })
+      expect(attempts[0].responseBytes).toBeLessThan(256)
+      expect(payload.at(-1)?.ascii).toBe(false)
+    }
+  )
+
+  it.each(['body', 'blob', 'empty'])('rejects late invalid payload data after ASCII sampling: %s', async (kind) => {
+    const { database, writer, reader } = setup()
+    const snapshot = sessionSnapshot(1000)
+    await writer.writeRows(snapshot)
+    const messageId = snapshot.rows.messages[250].messageId
+    await database.executeBatch([
+      {
+        sql: `UPDATE session_messages SET message_json=${kind === 'blob' ? 'CAST(? AS BLOB)' : '?'} WHERE message_id=?`,
+        params: [kind === 'empty' ? '' : '\u0001'.repeat(100000), messageId],
+      },
+    ])
+    await expect(
+      reader.readMessages({
+        sessionId: snapshot.record.id,
+        messageIds: snapshot.rows.messages.map((row) => row.messageId),
+      })
+    ).rejects.toMatchObject({ name: 'SessionRowStoreError' })
+  })
+
+  it('keeps large supplementary-character slices within the soft response budget', async () => {
+    const { writer, reader } = setup()
+    const snapshot = sessionSnapshot(1)
+    snapshot.rows.messages[0].message.contentParts = [{ type: 'text', text: '😀'.repeat(100000) }]
+    await writer.writeRows(snapshot)
+    const selected = await reader.readMessages({
+      sessionId: snapshot.record.id,
+      messageIds: [snapshot.rows.messages[0].messageId],
+    })
+    expect(selected?.messages).toEqual(snapshot.rows.messages)
+  })
+
+  for (const count of [1000, 10000, 100000]) {
+    it(
+      `uses byte-bounded pages for ${count} ordinary text messages`,
+      async () => {
+        const { writer, reader, calls } = setup()
+        const snapshot = sessionSnapshot(count)
+        await writer.writeRows(snapshot)
+        const selected = await reader.readMessages({
+          sessionId: snapshot.record.id,
+          messageIds: snapshot.rows.messages.map((row) => row.messageId),
+        })
+        expect(selected?.messages).toEqual(snapshot.rows.messages)
+        expect(calls.filter((call) => call.kind === 'selected').length).toBeLessThanOrEqual(Math.ceil(count / 250))
+        expect(calls.filter((call) => call.kind === 'payload').length).toBeLessThanOrEqual(Math.ceil(count / 140))
+        expect(calls.some((call) => call.kind === 'payload' && call.binds > 100)).toBe(true)
+        calls.length = 0
+        const context = await readRowContextSource(reader, { sessionId: snapshot.record.id })
+        expect(context?.candidateMessages).toEqual(snapshot.rows.messages.map((row) => row.message))
+        const contextCalls = calls.filter((call) => call.kind === 'context')
+        expect(contextCalls.length).toBeLessThanOrEqual(Math.ceil(count / 200) * 3)
+        expect(contextCalls.every((call) => call.rows <= 201 && call.responseBytes < budget)).toBe(true)
+      },
+      // The complete context reads 16-row batches, each with bridge-budget and query-plan checks.
+      count === 100000 ? 120000 : 60000
+    )
+  }
+
+  it.each([
+    { label: 'wide ASCII', suffix: 'x'.repeat(850) },
+    { label: 'NUL', suffix: '\u0000'.repeat(200) },
+    { label: 'control', suffix: '\u0001'.repeat(200) },
+    { label: 'quotes and slashes', suffix: '\\"/'.repeat(66) },
+    { label: 'CJK', suffix: '界'.repeat(66) },
+    { label: 'emoji', suffix: '😀'.repeat(50) },
+    { label: 'DEL', suffix: '\u007f'.repeat(200) },
+  ])('keeps structural ID responses bounded for $label', async ({ label, suffix }) => {
+    const { writer, reader } = setup()
+    const snapshot = sessionSnapshot(250, label === 'NUL' ? '' : suffix)
+    if (label === 'NUL') for (const row of snapshot.rows.messages) row.branchId = `branch${suffix}`
+    await writer.writeRows(snapshot)
+    const ids = snapshot.rows.messages.map((row) => row.messageId)
+    const selected = await reader.readMessages({
+      sessionId: snapshot.record.id,
+      messageIds: [ids[40], 'missing', ...ids.slice().reverse(), ids[40]],
+    })
+    expect(selected?.messages.map((row) => row.messageId)).toEqual([...new Set([ids[40], ...ids.slice().reverse()])])
+    const context = await readRowContextSource(reader, { sessionId: snapshot.record.id })
+    expect(context?.candidateMessages).toEqual(snapshot.rows.messages.map((row) => row.message))
+  })
+
+  it.each([false, true])(
+    'rejects oversized context metadata with a bounded response (checkpoint: %s)',
+    async (compacted) => {
+      const { database, writer, reader, calls } = setup()
+      const snapshot = compacted ? contextSnapshot() : sessionSnapshot(3)
+      await writer.writeRows(snapshot)
+      const ancestorId = compacted ? 'question' : snapshot.rows.messages[1].messageId
+      await database.executeBatch([
+        {
+          sql: 'UPDATE session_messages SET payload_id = ? WHERE message_id = ?',
+          params: [`payload\u0000${'\u0001'.repeat(100000)}`, ancestorId],
+        },
+      ])
+      await expect(readRowContextSource(reader, { sessionId: snapshot.record.id })).rejects.toMatchObject({
+        name: 'SessionRowStoreError',
+      })
+      expect(calls.filter((call) => call.kind === 'context').every((call) => call.responseBytes < budget)).toBe(true)
+    }
+  )
+
+  it('rejects a false payload manifest before transferring an oversized body', async () => {
+    const { database, writer, reader, calls } = setup()
+    const snapshot = sessionSnapshot(2)
+    await writer.writeRows(snapshot)
+    await database.executeBatch([
+      {
+        sql: 'UPDATE session_messages SET message_json = ? WHERE message_id = ?',
+        params: ['\u0001'.repeat(100000), snapshot.rows.messages[0].messageId],
+      },
+    ])
+    await expect(
+      reader.readMessages({
+        sessionId: snapshot.record.id,
+        messageIds: snapshot.rows.messages.map((row) => row.messageId),
+      })
+    ).rejects.toMatchObject({
+      name: 'SessionRowStoreError',
+      cause: { message: 'Message payload exceeds the native response budget' },
+    })
+    expect(calls.some((call) => call.kind === 'payload')).toBe(true)
+  })
+
+  it('reserves request SQL and JSON envelope bytes for an oversized payload ID', async () => {
+    const { database, writer, reader, calls } = setup()
+    const snapshot = sessionSnapshot(1)
+    await writer.writeRows(snapshot)
+    await database.executeBatch([
+      { sql: 'UPDATE session_messages SET payload_id = ?', params: ['x'.repeat(budget - 3000)] },
+    ])
+    await expect(
+      reader.readMessages({ sessionId: snapshot.record.id, messageIds: [snapshot.rows.messages[0].messageId] })
+    ).rejects.toMatchObject({
+      name: 'SessionRowStoreError',
+      cause: { message: 'Message payload ID exceeds the native request budget' },
+    })
+    expect(calls.some((call) => call.kind === 'payload')).toBe(false)
+  })
+
+  it.each(['x'.repeat(budget), `branch\u0000${'\u0001'.repeat(100000)}`])(
+    'rejects an oversized metadata row with a small response',
+    async (branchId) => {
+      const { database, writer, reader } = setup()
+      const snapshot = sessionSnapshot(1)
+      await writer.writeRows(snapshot)
+      await database.executeBatch([{ sql: 'UPDATE session_messages SET branch_id = ?', params: [branchId] }])
+      await expect(
+        reader.readMessages({ sessionId: snapshot.record.id, messageIds: [snapshot.rows.messages[0].messageId] })
+      ).rejects.toMatchObject({
+        name: 'SessionRowStoreError',
+      })
+    }
+  )
+
+  it.each([false, true])('keeps enlarged payload batches revision-bound (pinned: %s)', async (pinned) => {
+    let changed = false
+    const snapshot = sessionSnapshot(1000)
+    const { writer, reader } = setup(async (sql) => {
+      if (!changed && sql.startsWith('WITH requested(payload_id, request_index)')) {
+        changed = true
+        await writer.writeRows({ ...snapshot, record: { ...snapshot.record, name: 'Current' }, revision: 2 }, 1)
+      }
+    })
+    await writer.writeRows(snapshot)
+    const selected = reader.readMessages({
+      sessionId: snapshot.record.id,
+      messageIds: snapshot.rows.messages.map((row) => row.messageId),
+      expectedRevision: pinned ? 1 : undefined,
+    })
+    if (pinned) await expect(selected).rejects.toMatchObject({ name: 'SessionRowConflictError', actualRevision: 2 })
+    else expect((await selected)?.revision).toBe(2)
+    expect(changed).toBe(true)
+  })
+})
+
+function contextSnapshot(...args: Parameters<typeof contextFactsSnapshot>) {
+  return storageRowFixture(contextFactsSnapshot(...args))
+}

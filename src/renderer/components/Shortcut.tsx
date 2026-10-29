@@ -1,4 +1,5 @@
 import { Box, Combobox, Flex, InputBase, Kbd, Table, useCombobox } from '@mantine/core'
+import { AutomationAdjacentAttr, TestId } from '@shared/automation/testids'
 import {
   type Settings,
   type ShortcutName,
@@ -46,7 +47,7 @@ function formatKey(key: string) {
   const LINUX_KEY_MAPS: Record<string, string> = {
     ...COMMON_KEY_MAPS,
     meta: 'Super',
-    mod: 'Super',
+    mod: 'Ctrl',
     command: 'Super',
   }
   if (!key) {
@@ -64,6 +65,27 @@ function formatKey(key: string) {
     default:
       return COMMON_KEY_MAPS[lowercaseKey] || keyLabel
   }
+}
+
+/** Inline shortcut label, e.g. `⌘K` on macOS and `Ctrl+K` elsewhere. */
+export function formatShortcut(keys: string[]) {
+  return keys.map(formatKey).join(os === 'Mac' ? '' : '+')
+}
+
+/**
+ * Key chip naming the keys of a shortcut, e.g. the conversation switch keys
+ * peeked in the sidebar. The fill is deliberately near the hover tone of a
+ * list row and the shape stays flat, so a column of these reads as secondary
+ * information instead of a stack of keycaps.
+ */
+export function ShortcutKeysChip(props: { keys: string[] }) {
+  return (
+    <span className="inline-flex shrink-0 items-center gap-[2px] bg-chatbox-background-gray-secondary px-1 py-[1px] text-[10px] leading-4 text-chatbox-tertiary">
+      {props.keys.map((key) => (
+        <span key={key}>{formatKey(key)}</span>
+      ))}
+    </span>
+  )
 }
 
 export function Keys(props: {
@@ -199,7 +221,11 @@ export function ShortcutConfig(props: {
 
         <Table.Tbody>
           {items.map(({ name, label, keys, options }) => (
-            <Table.Tr key={name ?? label}>
+            <Table.Tr
+              key={name ?? label}
+              data-testid={TestId.settings.shortcutRow}
+              {...(name ? { [AutomationAdjacentAttr.shortcutName]: name } : {})}
+            >
               <Table.Td>{label}</Table.Td>
               <Table.Td>
                 {options ? (
@@ -267,6 +293,8 @@ function ShortcutSelect({
     >
       <Combobox.Target targetType="button">
         <InputBase
+          data-testid={TestId.settings.shortcutSelect}
+          {...{ [AutomationAdjacentAttr.shortcutValue]: value }}
           maw={160}
           component="button"
           type="button"
@@ -282,7 +310,7 @@ function ShortcutSelect({
       <Combobox.Dropdown>
         <Combobox.Options>
           {options.map((o) => (
-            <Combobox.Option key={o} value={o}>
+            <Combobox.Option key={o} value={o} {...{ [AutomationAdjacentAttr.shortcutValue]: o }}>
               <ShortcutText shortcut={o} />
             </Combobox.Option>
           ))}

@@ -619,7 +619,7 @@ describe('native Windows writes to user-granted directories', () => {
       await expect(writeFile(grantedFile, 'before', sessionId)).resolves.toEqual({ success: true })
       await expect(
         editFile(grantedFile, { edits: [{ search: 'before', replace: 'after' }] }, sessionId)
-      ).resolves.toEqual({ success: true })
+      ).resolves.toMatchObject({ success: true, changed: true })
       expect(readFileSync(grantedFile, 'utf8')).toBe('after')
 
       await expect(writeFile(path.join(outsideDir, 'out.txt'), 'blocked', sessionId)).resolves.toEqual({
@@ -695,9 +695,10 @@ describe('native Windows writes to user-granted directories', () => {
       })
       await expect(
         editFile(path.join(nestedDir, '.ENV.LOCAL'), { search: 'before', replace: 'after' }, sessionId)
-      ).resolves.toEqual({
+      ).resolves.toMatchObject({
         success: false,
-        error: 'Write access denied for protected file',
+        errorCode: 'PATH_REJECTED',
+        error: 'The target is not writable under the sandbox policy. Choose an allowed path or request access.',
       })
       expect(readFileSync(path.join(nestedDir, '.ENV.LOCAL'), 'utf8')).toBe('before')
     } finally {

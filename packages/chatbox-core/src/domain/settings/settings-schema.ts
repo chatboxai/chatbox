@@ -1,3 +1,4 @@
+import { LOCAL_WORK_CAPABILITY_IDS } from '@shared/mobile-work/capabilities'
 import { z } from 'zod'
 import { DEFAULT_INTERFACE_COLORS, getDefaultInterfaceColors } from '../../theme-colors'
 import { MEMORY_STATE_TOKEN_MAX_CHARS, SessionPromptContextSnapshotSchema } from '../../types/agent-persona'
@@ -65,11 +66,17 @@ export const OAuthCredentialsSchema = z.object({
   extra: z.record(z.string(), z.unknown()).optional().catch(undefined),
 })
 
+export const ProviderModelGroupSchema = z.object({
+  id: z.string(),
+  modelIds: z.array(z.string()),
+})
+
 export const ProviderSettingsSchema = z.object({
   apiKey: z.string().optional().catch(undefined),
   apiHost: z.string().optional().catch(undefined),
   apiPath: z.string().optional().catch(undefined),
   models: z.array(ProviderModelInfoSchema).optional().catch(undefined),
+  modelGroups: z.array(ProviderModelGroupSchema).optional().catch(undefined),
   excludedModels: z.array(z.string()).optional().catch(undefined),
   useProxy: z.boolean().optional().catch(undefined),
 
@@ -191,6 +198,8 @@ export const GlobalSessionSettingsSchema = z.object({
   topP: z.number().optional().catch(undefined),
   maxTokens: z.number().finite().int().min(1).optional().catch(undefined),
   stream: z.boolean().optional().catch(true),
+  // Explicit Web Search preference. Undefined follows the active provider default.
+  webBrowsing: z.boolean().optional().catch(undefined),
 })
 
 export const SessionSettingsSchema = GlobalSessionSettingsSchema.extend({
@@ -223,6 +232,7 @@ export const SessionSettingsSchema = GlobalSessionSettingsSchema.extend({
   // fall back to it when this newer field is missing or stripped during sync.
   commandApprovalMode: z.enum(COMMAND_APPROVAL_MODES).optional().catch(undefined),
   agentMode: AgentModeEntrySchema.optional().catch(undefined),
+  localWorkCapabilities: z.array(z.enum(LOCAL_WORK_CAPABILITY_IDS)).optional().catch(undefined),
   // Frozen session prompt-context inputs (Soul + memories + workspace AGENTS.md),
   // captured on the session's first agent-mode generation so the system prompt
   // prefix stays byte-stable for provider prompt caches. Cleared on new thread.
@@ -395,8 +405,19 @@ const MCPOAuthStateSchema = z.object({
 })
 
 const MCPSettingsSchema = z.object({
-  servers: z.array(MCPServerConfigSchema),
-  enabledBuiltinServers: z.array(z.string()),
+  // Persisted settings are untrusted input; one malformed entry must not make the
+  // whole settings object unparseable (every settings update goes through parse).
+  // Dropped entries are not carried forward: the next persisted write omits them.
+  servers: z
+    .array(z.unknown())
+    .catch([])
+    .transform((servers) =>
+      servers.flatMap((server) => {
+        const parsed = MCPServerConfigSchema.safeParse(server)
+        return parsed.success ? [parsed.data] : []
+      })
+    ),
+  enabledBuiltinServers: z.array(z.string()).catch([]),
   oauth: z.record(z.string(), MCPOAuthStateSchema).optional().catch(undefined),
 })
 
@@ -576,7 +597,7 @@ export const SettingsSchema = GlobalSessionSettingsSchema.extend({
   autoGenerateTitle: z.boolean().default(true),
 
   autoCompaction: z.boolean().default(true),
-  compactionThreshold: z.number().min(0.4).max(0.9).default(0.6),
+  compactionThreshold: z.number().min(0.4).max(0.9).default(0.75),
   compactionPrompt: z.string().optional(),
 
   // Global default for the tool-call-limit confirmation. Individual sessions
@@ -599,6 +620,16 @@ export const SettingsSchema = GlobalSessionSettingsSchema.extend({
 
   extension: ExtensionSettingsSchema,
   mcp: MCPSettingsSchema,
+  mobileSkillPreferences: z
+    .object({
+      'chatbox-product-info': z.boolean().optional(),
+      documents: z.boolean().optional(),
+      spreadsheets: z.boolean().optional(),
+      presentations: z.boolean().optional(),
+      websites: z.boolean().optional(),
+    })
+    .optional()
+    .catch(undefined),
   skills: SkillSettingsSchema.catch({
     enabledSkillNames: [...DEFAULT_ENABLED_BUILTIN_SKILL_NAMES],
     translationEnabled: true,
@@ -613,6 +644,8 @@ export type ProviderInfo = (ProviderBaseInfo | CustomProviderBaseInfo) & Provide
 export type SessionSettings = z.infer<typeof SessionSettingsSchema>
 export type Settings = z.infer<typeof SettingsSchema>
 export type ProviderModelInfo = z.infer<typeof ProviderModelInfoSchema>
+
+export type ProviderModelGroup = z.infer<typeof ProviderModelGroupSchema>
 export type ProviderBaseInfo = z.infer<typeof ProviderBaseInfoSchema>
 export type ProviderSettings = z.infer<typeof ProviderSettingsSchema>
 export type BuiltinProviderBaseInfo = z.infer<typeof BuiltinProviderBaseInfoSchema>

@@ -3,16 +3,20 @@ import {
   normalizePlausibleVersion,
   type Plausible,
   type PlausibleOptions,
+  resolvePlausibleVersion,
 } from '../analytics/plausible'
 import platform from '../platform'
 import { initSettingsStore, settingsStore } from '../stores/settingsStore'
+import { CHATBOX_BUILD_VERSION } from '../variables'
 
 export type PlausibleNavigationSubscriber = (onResolved: (hrefChanged: boolean) => void) => void
 
 export async function initPlausibleTracking(subscribeToNavigation?: PlausibleNavigationSubscriber): Promise<void> {
   try {
     const settings = await initSettingsStore()
-    const version = normalizePlausibleVersion(await platform.getVersion().catch(() => 'unknown'))
+    const version = normalizePlausibleVersion(
+      resolvePlausibleVersion(await platform.getVersion().catch(() => 'unknown'), CHATBOX_BUILD_VERSION)
+    )
 
     // 设置 Plausible 全局属性
     if (window.plausible) {

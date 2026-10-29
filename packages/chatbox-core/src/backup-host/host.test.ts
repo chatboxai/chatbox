@@ -1,0 +1,1014 @@
+import { readFileSync } from 'node:fs'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { zipSync } from 'fflate'
+import { importBackupV3 } from '../backup-v3/archive'
+import { getBackupImportPartialResult } from '../backup-v3/errors'
+import { importBackup } from '../backup-import'
+import { createSessionMetaRecord } from '../application/session/session-metadata'
+import { SessionRowMigration } from '../application/session/SessionRowMigration'
+import { SessionRowWriteQueue } from '../application/session/SessionRowWriteQueue'
+import { toBackupMessage, toBackupSession, toBackupThread } from '../backup-v3/records'
+import type {
+  BackupBusinessRecord,
+  BackupImportProjections,
+  BackupImportIssue,
+  BackupManifest,
+  BackupResourceRecord,
+  BackupWorkspace,
+  BackupWarningRecord,
+} from '../backup-v3/types'
+import { mergeSettingsWithDefaults } from '../domain/settings'
+import { contextSnapshot } from '../persistence/session-context-read.test-support'
+import { InMemorySessionRecordStore } from '../persistence/memory-session-record-store'
+import { type NodeSessionRowSqlDatabase, openNodeSessionRowDatabase } from '../persistence/node-sqlite.test-support'
+import { SqlSessionRowStore } from '../persistence/session-row-sql'
+import type { SessionMetaRepositoryPort } from '../ports/session-repository'
+import { sessionImportCandidateId } from '../ports/session-row-transfer'
+import { InMemoryKeyValueStorage } from '../testing/InMemoryKeyValueStorage'
+import type { Session, SessionMetaRecord } from '../types'
+import { cleanupBackupImport, createBackupExportSource, createBackupImportTarget } from './host'
+import { GLOBAL_KEYS } from './globals'
+import { commitBackupSettings } from './settings'
+import type { BackupHostOptions, BackupHostResources } from './types'
+
+const databases: NodeSessionRowSqlDatabase[] = []
+afterEach(() => {
+  vi.restoreAllMocks()
+  for (const db of databases.splice(0)) db.close()
+})
+const manifest: BackupManifest = {
+  format: 'chatbox-backup',
+  formatVersion: 3,
+  layout: 'rows',
+  archiveId: 'archive',
+  createdAt: '2026-10-21T00:00:00Z',
+  producer: 'test',
+  selection: { sessions: true, settings: false, copilots: false, credentials: false },
+}
+const fixture = (id = 's', text = 'body') =>
+  contextSnapshot({
+    id,
+    name: text,
+    messages: [
+      { id: `${id}:a`, role: 'user', contentParts: [{ type: 'text', text }] },
+      { id: `${id}:b`, role: 'assistant', contentParts: [{ type: 'text', text: 'reply' }] },
+    ],
+  })
+const backupRecords = (snapshot: ReturnType<typeof fixture>): BackupBusinessRecord[] => [
+  { type: 'session', session: toBackupSession(snapshot.record) },
+  ...snapshot.rows.threads.map((thread) => ({ type: 'thread' as const, thread: toBackupThread(thread) })),
+  ...snapshot.rows.messages.map((message) => ({ type: 'message' as const, message: toBackupMessage(message) })),
+]
+const descriptor = (key: string): BackupResourceRecord => ({
+  type: 'resource',
+  resourceId: key,
+  path: 'resources/000000.bin',
+  mimeType: 'text/plain',
+  contentType: 'text',
+  size: 3,
+})
+function setup() {
+  const database = openNodeSessionRowDatabase()
+  databases.push(database)
+  const rows = new SqlSessionRowStore(database),
+    storage = new InMemoryKeyValueStorage(),
+    records = new InMemorySessionRecordStore()
+  const meta = new Map<string, SessionMetaRecord>(),
+    tables = new Map<string, Map<string, string>>()
+  const metadata: SessionMetaRepositoryPort = {
+    async initialize() {},
+    async create(row) {
+      if (meta.has(row.id)) throw new Error('Session metadata already exists')
+      meta.set(row.id, structuredClone(row))
+    },
+    async createMany(rows) {
+      for (const row of rows) meta.set(row.id, structuredClone(row))
+    },
+    async update(id, updates) {
+      const previous = meta.get(id)
+      if (!previous) return null
+      const next = { ...previous, ...updates }
+      meta.set(id, next)
+      return next
+    },
+    async getById(id) {
+      return structuredClone(meta.get(id) ?? null)
+    },
+    async delete(id) {
+      meta.delete(id)
+    },
+    async deleteMany(ids) {
+      for (const id of ids) meta.delete(id)
+    },
+    async getAll() {
+      return [...meta.values()]
+    },
+    async getAllIncludingHidden() {
+      return [...meta.values()]
+    },
+    async getArchived() {
+      return []
+    },
+    async getArchivedPage() {
+      return { items: [], nextCursor: null, total: 0 }
+    },
+    async getPage() {
+      return { items: [...meta.values()], nextCursor: null, total: meta.size }
+    },
+    async getTotal() {
+      return meta.size
+    },
+    async getAllTotal() {
+      return meta.size
+    },
+    async getArchivedTotal() {
+      return 0
+    },
+    async clear() {
+      meta.clear()
+    },
+  }
+  const workspace: BackupWorkspace = {
+    async createFile() {
+      throw new Error('File operation not used by host fixture')
+    },
+    async openFile() {
+      throw new Error('File operation not used by host fixture')
+    },
+    async put(table, key, value) {
+      let map = tables.get(table)
+      if (!map) {
+        map = new Map()
+        tables.set(table, map)
+      }
+      if (map.has(key)) return false
+      map.set(key, value)
+      return true
+    },
+    async get(table, key) {
+      return tables.get(table)?.get(key) ?? null
+    },
+    async *entries(table) {
+      for (const [key, value] of tables.get(table) ?? []) yield { key, value }
+    },
+    async dispose() {
+      tables.clear()
+    },
+  }
+  const liveResources = new Map<string, Uint8Array>(),
+    candidates = new Map<string, Uint8Array>()
+  const resources: BackupHostResources = {
+    async open() {
+      return null
+    },
+    async stage(_job, resource) {
+      const chunks: Uint8Array[] = []
+      return {
+        async write(chunk) {
+          chunks.push(chunk.slice())
+        },
+        async close() {
+          const bytes = new Uint8Array(chunks.reduce((n, chunk) => n + chunk.length, 0))
+          let offset = 0
+          for (const chunk of chunks) {
+            bytes.set(chunk, offset)
+            offset += chunk.length
+          }
+          candidates.set(resource.resourceId, bytes)
+        },
+        async abort() {
+          candidates.delete(resource.resourceId)
+        },
+      }
+    },
+    async publish(_job, key) {
+      const value = candidates.get(key)
+      if (!value) throw new Error('Resource candidate missing')
+      liveResources.set(key, value.slice())
+    },
+    async cleanup() {
+      candidates.clear()
+    },
+  }
+  const options: BackupHostOptions = {
+    jobId: 'job',
+    workspace,
+    storage,
+    rows,
+    records,
+    metadata,
+    resources,
+    ensureRows: (id) => rows.readExportCommit(id),
+    async *listSessionIds() {
+      yield* await rows.listSessionIds()
+    },
+    getSettings: () => mergeSettingsWithDefaults({}),
+    async refresh() {},
+  }
+  const seed = async (snapshot: ReturnType<typeof fixture>) => {
+    await rows.writeRows(snapshot)
+    await metadata.create(createSessionMetaRecord(snapshot.record, 5, 123))
+  }
+  return { database, options, rows, storage, records, metadata, workspace, tables, resources, liveResources, seed }
+}
+async function resource(target: ReturnType<typeof createBackupImportTarget>, key: string, text: string) {
+  const sink = await target.createResource(descriptor(key))
+  await sink.write(new TextEncoder().encode(text))
+  await sink.close()
+}
+
+describe('incremental backup host import', () => {
+  it('keeps imported rows authoritative when the same session has an older legacy record', async () => {
+    const f = setup(),
+      incoming = fixture('A', 'imported content'),
+      legacy: Session = {
+        id: 'A',
+        type: 'chat',
+        name: 'legacy content',
+        messages: [{ id: 'legacy-message', role: 'user', contentParts: [{ type: 'text', text: 'legacy content' }] }],
+      }
+    await f.records.setRecord(legacy)
+    const readLegacy = vi.spyOn(f.records, 'getRecord'),
+      ensureRows = vi.spyOn(f.options, 'ensureRows'),
+      target = createBackupImportTarget(f.options)
+    await target.begin(manifest)
+    await target.appendRecords(backupRecords(incoming))
+    expect(await target.prepare()).toMatchObject({ importedSessions: 1, importedMessages: 2 })
+    await target.cleanup()
+
+    const reopenedRows = new SqlSessionRowStore(f.database),
+      writeRows = vi.spyOn(reopenedRows, 'writeRows'),
+      migration = new SessionRowMigration(
+        f.records,
+        reopenedRows,
+        new SessionRowWriteQueue((_id, operation) => operation())
+      )
+    expect(await migration.ensureRows('A')).toMatchObject({
+      revision: 1,
+      record: { id: 'A', name: 'imported content', rowAuthority: 1, rowFormatVersion: 3 },
+    })
+    expect((await reopenedRows.readSnapshot('A'))?.rows.messages.map((row) => row.message)).toEqual(
+      incoming.rows.messages.map((row) => row.message)
+    )
+    expect(readLegacy).not.toHaveBeenCalled()
+    expect(ensureRows).not.toHaveBeenCalled()
+    expect(writeRows).not.toHaveBeenCalled()
+    expect(f.records.snapshot()).toEqual([legacy])
+  })
+
+  it.each([true, false])('reads local metadata only when absent from the backup (metadata=%s)', async (hasMeta) => {
+    const f = setup(),
+      target = createBackupImportTarget(f.options)
+    await f.seed(fixture('A', 'old'))
+    const readLegacy = vi.spyOn(f.records, 'getRecord'),
+      ensureRows = vi.spyOn(f.options, 'ensureRows'),
+      readRevision = vi.spyOn(f.rows, 'getRevision'),
+      readMetadata = vi.spyOn(f.metadata, 'getById')
+    const input = backupRecords(fixture('A', 'new'))
+    if (hasMeta && input[0].type === 'session') input[0].meta = { sortOrder: 50, createdAt: 10 }
+    await target.begin(manifest)
+    await target.appendRecords(input)
+    await target.prepare()
+    await target.cleanup()
+    expect(readLegacy).not.toHaveBeenCalled()
+    expect(ensureRows).not.toHaveBeenCalled()
+    expect(readRevision).not.toHaveBeenCalled()
+    expect(readMetadata).toHaveBeenCalledTimes(hasMeta ? 0 : 1)
+    expect(await f.metadata.getById('A')).toMatchObject({
+      name: 'new',
+      sortOrder: hasMeta ? 50 : 5,
+      createdAt: hasMeta ? 10 : 123,
+    })
+    expect((await f.rows.readCommit('A'))?.revision).toBe(2)
+  })
+
+  it.each(['complete', 'cancel'])('cleans import candidates and preserves published sessions (%s)', async (outcome) => {
+    const f = setup(),
+      target = createBackupImportTarget(f.options),
+      dispose = vi.spyOn(f.rows, 'disposeImportRows')
+    const controller = new AbortController()
+    await target.begin(manifest, undefined, controller.signal)
+    for (const id of ['A', 'B', 'C']) await target.appendRecords(backupRecords(fixture(id)))
+    if (outcome === 'complete') await target.prepare()
+    else {
+      controller.abort()
+      await expect(target.prepare()).rejects.toThrow()
+    }
+    await target.cleanup()
+    if (outcome === 'complete') expect(dispose).not.toHaveBeenCalled()
+    else expect(dispose).toHaveBeenCalledExactlyOnceWith(sessionImportCandidateId(f.options.jobId, 'C'))
+    await f.workspace.dispose()
+    expect(await f.rows.listSessionIds()).toEqual(outcome === 'complete' ? ['A', 'B', 'C'] : ['A', 'B'])
+    expect(await f.database.query('SELECT * FROM session_messages_staging')).toEqual([])
+    expect(await f.database.query('SELECT * FROM session_threads_staging')).toEqual([])
+    expect(await f.database.query('SELECT * FROM session_row_local_metadata')).toEqual([])
+    expect(f.tables.size).toBe(0)
+  })
+
+  it('cleans registered candidates at startup while retaining published sessions', async () => {
+    const f = setup(),
+      target = createBackupImportTarget(f.options)
+    await target.begin(manifest)
+    await target.appendRecords(backupRecords(fixture('published')))
+    await target.appendRecords(backupRecords(fixture('unfinished')))
+    const dispose = vi.spyOn(f.rows, 'disposeImportRows')
+    const reopened = new SqlSessionRowStore(f.database)
+    const startupDispose = vi.spyOn(reopened, 'disposeImportRows')
+    await cleanupBackupImport({ ...f.options, rows: reopened })
+    expect(dispose).not.toHaveBeenCalled()
+    expect(startupDispose.mock.calls.map(([id]) => id)).toEqual([
+      sessionImportCandidateId(f.options.jobId, 'published'),
+      sessionImportCandidateId(f.options.jobId, 'unfinished'),
+    ])
+    expect(await reopened.listSessionIds()).toEqual(['published'])
+    expect(await f.database.query('SELECT * FROM session_messages_staging')).toEqual([])
+    expect(await f.database.query('SELECT * FROM session_threads_staging')).toEqual([])
+    expect(await f.database.query('SELECT * FROM session_row_local_metadata')).toEqual([])
+    expect(f.tables.size).toBe(0)
+  })
+
+  it('registers candidates before staging so startup can clean a failed stage', async () => {
+    const f = setup(),
+      target = createBackupImportTarget(f.options),
+      candidateId = sessionImportCandidateId(f.options.jobId, 's')
+    vi.spyOn(f.rows, 'stageImportRows').mockImplementation(async () => {
+      expect(f.tables.get('import-candidates')?.get('s')).toBe(candidateId)
+      throw new Error('stage unavailable')
+    })
+    await target.begin(manifest)
+    await expect(target.appendRecords(backupRecords(fixture()))).rejects.toThrow('stage unavailable')
+    const dispose = vi.spyOn(f.rows, 'disposeImportRows')
+    await cleanupBackupImport(f.options)
+    expect(dispose).toHaveBeenCalledExactlyOnceWith(candidateId)
+    expect(f.tables.size).toBe(0)
+  })
+
+  it('retains settled candidates across resource cleanup retries', async () => {
+    const f = setup(),
+      target = createBackupImportTarget(f.options),
+      dispose = vi.spyOn(f.rows, 'disposeImportRows')
+    await f.seed(fixture('A', 'old'))
+    await target.begin(manifest)
+    await target.appendRecords(backupRecords(fixture('A', 'new')))
+    await target.prepare()
+    const cleanup = vi.spyOn(f.resources, 'cleanup').mockRejectedValueOnce(new Error('cleanup unavailable'))
+    await expect(target.cleanup()).rejects.toThrow('cleanup unavailable')
+    expect(f.tables.get('import-candidates')?.size).toBe(1)
+    await target.cleanup()
+    expect(cleanup).toHaveBeenCalledTimes(2)
+    expect(dispose).not.toHaveBeenCalled()
+    expect((await f.rows.readCommit('A'))?.record.name).toBe('new')
+    await f.workspace.dispose()
+    expect(f.tables.size).toBe(0)
+  })
+
+  it('disposes unusable imports and retains the existing session', async () => {
+    const f = setup(),
+      target = createBackupImportTarget(f.options),
+      dispose = vi.spyOn(f.rows, 'disposeImportRows')
+    await f.seed(fixture('A', 'old'))
+    const broken = fixture('A', 'unreachable')
+    for (const row of broken.rows.messages) row.parentMessageId = 'absent'
+    await target.begin(manifest)
+    await target.appendRecords(backupRecords(broken))
+    await target.prepare()
+    expect(target.getSummary().importedSessions).toBe(0)
+    expect(await f.database.query('SELECT * FROM session_messages_staging')).toEqual([])
+    await target.cleanup()
+    expect(dispose).not.toHaveBeenCalled()
+    expect((await f.rows.readCommit('A'))?.record.name).toBe('old')
+  })
+
+  it('forwards converted fork projections only for their active conversation', async () => {
+    const f = setup(),
+      target = createBackupImportTarget(f.options),
+      stage = f.rows.stageImportRows.bind(f.rows),
+      prepare = vi.fn()
+    vi.spyOn(f.rows, 'stageImportRows').mockImplementation(async (...args) => {
+      const writer = await stage(...args),
+        original = writer.prepare
+      writer.prepare = (...input) => {
+        prepare(...input)
+        return original(...input)
+      }
+      return writer
+    })
+    await target.begin(manifest)
+    await target.appendRecords(backupRecords(fixture()))
+    const forks: BackupImportProjections['forks'] = new Map()
+    await expect(target.prepare({ sessionId: 'another', forks })).rejects.toThrow(
+      'Import projections do not match the active conversation'
+    )
+    expect(prepare).not.toHaveBeenCalled()
+    await target.prepare({ sessionId: 's', forks })
+    expect(prepare).toHaveBeenCalledExactlyOnceWith(expect.any(Function), forks)
+    expect(target.getSummary()).toMatchObject({ importedSessions: 1, importedMessages: 2 })
+    await target.appendRecords(backupRecords(fixture('next')))
+    await target.prepare()
+    expect(prepare).toHaveBeenLastCalledWith(expect.any(Function), undefined)
+    await target.cleanup()
+  })
+
+  it('publishes only the global keys present in an optional-collection input', async () => {
+    const f = setup(),
+      target = createBackupImportTarget(f.options)
+    const localMemories = [{ id: 'local-memory', content: 'Keep', createdAt: 1 }]
+    const localOwners = [{ id: 'local', name: 'Local' }]
+    const localTokens = [{ id: 'local', token: 'state', retirementToken: 'lifetime' }]
+    await f.storage.set(GLOBAL_KEYS.settings, { language: 'zh-Hans' })
+    await f.storage.set(GLOBAL_KEYS.memories, localMemories)
+    await f.storage.set(GLOBAL_KEYS.copilotMemories, { local: localMemories })
+    await f.storage.set(GLOBAL_KEYS.owners, localOwners)
+    await f.storage.set(GLOBAL_KEYS.tokens, localTokens)
+    const set = vi.spyOn(f.storage, 'set')
+    await target.begin(
+      { ...manifest, selection: { ...manifest.selection, settings: true, copilots: true } },
+      undefined,
+      undefined,
+      { includedGlobalKeys: [GLOBAL_KEYS.copilots] }
+    )
+    await target.appendRecords(backupRecords(fixture()))
+    await target.prepare()
+    expect(set).toHaveBeenCalledExactlyOnceWith(GLOBAL_KEYS.copilots, [])
+    expect(await f.storage.get(GLOBAL_KEYS.settings)).toEqual({ language: 'zh-Hans' })
+    expect(await f.storage.get(GLOBAL_KEYS.memories)).toEqual(localMemories)
+    expect(await f.storage.get(GLOBAL_KEYS.copilotMemories)).toEqual({ local: localMemories })
+    expect(await f.storage.get(GLOBAL_KEYS.owners)).toEqual(localOwners)
+    expect(await f.storage.get(GLOBAL_KEYS.tokens)).toEqual(localTokens)
+    expect(target.getSummary()).toMatchObject({ importedSessions: 1, importedMessages: 2, importedGlobals: 1 })
+    await target.cleanup()
+  })
+
+  it('publishes explicitly empty settings and memories independently of missing optional collections', async () => {
+    const f = setup(),
+      target = createBackupImportTarget(f.options)
+    await f.storage.set(GLOBAL_KEYS.settings, { language: 'zh-Hans' })
+    await f.storage.set(GLOBAL_KEYS.memories, [{ id: 'local', content: 'Old', createdAt: 1 }])
+    await target.begin({ ...manifest, selection: { ...manifest.selection, settings: true } }, undefined, undefined, {
+      includedGlobalKeys: [GLOBAL_KEYS.settings, GLOBAL_KEYS.memories],
+    })
+    await target.appendRecords([{ type: 'global', category: 'settings', id: 'settings', value: {} }])
+    await target.prepare()
+    expect(await f.storage.get(GLOBAL_KEYS.settings)).toEqual({ memoryStateToken: expect.any(String) })
+    expect(await f.storage.get(GLOBAL_KEYS.memories)).toEqual([])
+    expect(target.getSummary().importedGlobals).toBe(2)
+    await target.cleanup()
+  })
+
+  it('publishes each complete resource and retains it after a later failure', async () => {
+    const f = setup(),
+      target = createBackupImportTarget(f.options)
+    f.liveResources.set('key', new TextEncoder().encode('old'))
+    await target.begin(manifest)
+    const first = await target.createResource(descriptor('key'))
+    await first.write(new TextEncoder().encode('new'))
+    expect(new TextDecoder().decode(f.liveResources.get('key'))).toBe('old')
+    await first.close()
+    expect(new TextDecoder().decode(f.liveResources.get('key'))).toBe('new')
+    await first.close()
+    expect(target.getSummary().importedResources).toBe(1)
+    await cleanupBackupImport(f.options)
+    expect(new TextDecoder().decode(f.liveResources.get('key'))).toBe('new')
+  })
+
+  it('commits the preceding session at the next header and discards only the unfinished candidate', async () => {
+    const f = setup(),
+      target = createBackupImportTarget(f.options)
+    await f.seed(fixture('A', 'old A'))
+    await f.seed(fixture('B', 'old B'))
+    await target.begin(manifest)
+    await target.appendRecords(backupRecords(fixture('A', 'new A')))
+    expect((await f.rows.readCommit('A'))?.record.name).toBe('old A')
+    await target.appendRecords(backupRecords(fixture('B', 'new B')))
+    expect((await f.rows.readCommit('A'))?.record.name).toBe('new A')
+    expect((await f.rows.readCommit('B'))?.record.name).toBe('old B')
+    expect(target.getSummary()).toMatchObject({ importedSessions: 1, importedMessages: 2 })
+    await cleanupBackupImport(f.options)
+    expect((await f.rows.readCommit('A'))?.record.name).toBe('new A')
+    expect((await f.rows.readCommit('B'))?.record.name).toBe('old B')
+  })
+
+  it('retains a published session and actual counts when its metadata projection fails', async () => {
+    const f = setup(),
+      target = createBackupImportTarget(f.options),
+      dispose = vi.spyOn(f.rows, 'disposeImportRows')
+    await f.seed(fixture('s', 'old'))
+    await target.begin(manifest)
+    await target.appendRecords(backupRecords(fixture('s', 'new')))
+    vi.spyOn(f.metadata, 'createMany').mockRejectedValueOnce(new Error('projection failed'))
+    await expect(target.prepare()).rejects.toThrow('list could not be updated')
+    expect(target.getSummary()).toMatchObject({ importedSessions: 1, importedMessages: 2 })
+    await target.cleanup()
+    expect(dispose).not.toHaveBeenCalled()
+    expect((await f.rows.readCommit('s'))?.record.name).toBe('new')
+  })
+
+  it('imports over a whole-session record without rewriting it', async () => {
+    const f = setup(),
+      target = createBackupImportTarget(f.options)
+    const legacy = { id: 'legacy', name: 'before upgrade', type: 'chat' as const, messages: [] }
+    await f.records.setRecord(legacy)
+    const setRecord = vi.spyOn(f.records, 'setRecord')
+    await target.begin(manifest)
+    await target.appendRecords([
+      ...backupRecords(fixture('legacy', 'imported')),
+      ...backupRecords(fixture('new', 'saved rows')),
+    ])
+    await target.prepare()
+    expect(setRecord).not.toHaveBeenCalled()
+    expect(await f.records.getRecord('legacy')).toEqual(legacy)
+    expect(await f.records.getRecord('new')).toBeNull()
+    expect(await f.metadata.getById('new')).toMatchObject({ id: 'new', name: 'saved rows' })
+    await cleanupBackupImport(f.options)
+    expect((await f.rows.readCommit('new'))?.record.name).toBe('saved rows')
+  })
+
+  it('validates the global collection before writing and retains earlier keys on a storage failure', async () => {
+    const f = setup(),
+      target = createBackupImportTarget(f.options)
+    await target.begin({ ...manifest, selection: { ...manifest.selection, settings: true } })
+    await target.appendRecords([{ type: 'global', category: 'settings', id: 'settings', value: { language: 'en' } }])
+    const set = f.storage.set.bind(f.storage)
+    vi.spyOn(f.storage, 'set').mockImplementation(async (key, value) => {
+      if (key === GLOBAL_KEYS.memories) throw new Error('disk full')
+      return set(key, value)
+    })
+    await expect(target.prepare()).rejects.toThrow('disk full')
+    expect(await f.storage.get(GLOBAL_KEYS.settings)).toMatchObject({ language: 'en' })
+    expect(target.getSummary().importedGlobals).toBe(1)
+    await cleanupBackupImport(f.options)
+    expect(await f.storage.get(GLOBAL_KEYS.settings)).toMatchObject({ language: 'en' })
+  })
+
+  it('keeps committed resources when cancellation prevents session publication', async () => {
+    const f = setup(),
+      target = createBackupImportTarget(f.options),
+      controller = new AbortController()
+    await target.begin(manifest, undefined, controller.signal)
+    await resource(target, 'key', 'new')
+    await target.appendRecords(backupRecords(fixture()))
+    controller.abort()
+    await expect(target.prepare()).rejects.toThrow()
+    await cleanupBackupImport(f.options)
+    expect(await f.rows.readCommit('s')).toBeNull()
+    expect(new TextDecoder().decode(f.liveResources.get('key'))).toBe('new')
+    expect(target.getSummary()).toMatchObject({ importedSessions: 0, importedResources: 1 })
+  })
+
+  it('reports committed sessions through the real importer when a later row is malformed', async () => {
+    const f = setup()
+    await f.seed(fixture('A', 'old A'))
+    await f.seed(fixture('B', 'old B'))
+    const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value))
+    const rows = backupRecords(fixture('A', 'new A'))
+    const bytes = zipSync({
+      'manifest.json': encode(manifest),
+      'resources.jsonl': new Uint8Array(),
+      'sessions/A.jsonl': new TextEncoder().encode(rows.map((row) => JSON.stringify(row)).join('\n') + '\n'),
+      'sessions/B.jsonl': new TextEncoder().encode(
+        JSON.stringify(backupRecords(fixture('B', 'new B'))[0]) + '\n{bad json\n'
+      ),
+      'complete.json': encode({ archiveId: manifest.archiveId }),
+    })
+    const error = await importBackupV3({
+      source: { size: bytes.length, readBytes: async (offset, length) => bytes.slice(offset, offset + length) },
+      workspace: f.workspace,
+      target: createBackupImportTarget(f.options),
+    }).catch((error: unknown) => error)
+    expect(getBackupImportPartialResult(error)?.importReport).toMatchObject({
+      importedSessions: 1,
+      importedMessages: 2,
+    })
+    expect((await f.rows.readCommit('A'))?.record.name).toBe('new A')
+    expect((await f.rows.readCommit('B'))?.record.name).toBe('old B')
+  })
+
+  it('keeps the original session when its entry contains a duplicate header and a later malformed row', async () => {
+    const f = setup()
+    await f.seed(fixture('A', 'old A'))
+    const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value))
+    const incoming = backupRecords(fixture('A', 'new A'))
+    const bytes = zipSync({
+      'manifest.json': encode(manifest),
+      'resources.jsonl': new Uint8Array(),
+      'sessions/A.jsonl': new TextEncoder().encode(
+        [...incoming, incoming[0]].map((row) => JSON.stringify(row)).join('\n') + '\n{bad json\n'
+      ),
+      'complete.json': encode({ archiveId: manifest.archiveId }),
+    })
+    const error = await importBackupV3({
+      source: { size: bytes.length, readBytes: async (offset, length) => bytes.slice(offset, offset + length) },
+      workspace: f.workspace,
+      target: createBackupImportTarget(f.options),
+    }).catch((error: unknown) => error)
+    expect(getBackupImportPartialResult(error)?.importReport).toMatchObject({
+      importedSessions: 0,
+      importedMessages: 0,
+    })
+    expect((await f.rows.readCommit('A'))?.record.name).toBe('old A')
+  })
+
+  it('preserves imported metadata order and exports only selected conversations', async () => {
+    const f = setup(),
+      target = createBackupImportTarget(f.options)
+    await f.seed(fixture('chosen'))
+    await f.seed(fixture('other'))
+    const incoming = backupRecords(fixture('chosen', 'updated'))
+    if (incoming[0].type === 'session') incoming[0].meta = { sortOrder: 50, createdAt: 10 }
+    await target.begin(manifest)
+    await target.appendRecords(incoming)
+    await target.prepare()
+    await target.cleanup()
+    expect(await f.metadata.getById('chosen')).toMatchObject({ sortOrder: 50, createdAt: 10 })
+    const ensure = vi.spyOn(f.options, 'ensureRows'),
+      records = []
+    for await (const row of createBackupExportSource(f.options).records({
+      ...manifest.selection,
+      sessionIds: ['chosen'],
+    }))
+      records.push(row)
+    expect(new Set(ensure.mock.calls.flat())).toEqual(new Set(['chosen']))
+    expect(records.filter((row) => row.type === 'session')).toMatchObject([{ session: { id: 'chosen' } }])
+  })
+  it('imports a v1.15.0 JSON backup and migrates its pre-versioned settings', async () => {
+    const f = setup()
+    const backup = JSON.parse(
+      readFileSync(new URL('../testing/fixtures/published-backups/v1.15.0-settings.json', import.meta.url), 'utf8')
+    )
+    // Distinguish the legacy spellings from the current defaults they migrate into.
+    Object.assign(backup.settings.shortcuts, {
+      inpubBoxSendMessage: 'Ctrl+Enter',
+      inpubBoxSendMessageWithoutResponse: 'Enter',
+    })
+    const bytes = new TextEncoder().encode(JSON.stringify(backup))
+    const replaceSettings = vi.fn()
+    const set = f.storage.set.bind(f.storage)
+    vi.spyOn(f.storage, 'set').mockImplementation((key, value) =>
+      key === GLOBAL_KEYS.settings
+        ? commitBackupSettings(value, {
+            settings: { replaceSettings },
+            write: (encoded) => set(key, encoded),
+            isDesktopLike: true,
+          })
+        : set(key, value)
+    )
+    const target = createBackupImportTarget(f.options)
+    const result = await importBackup({
+      archiveId: 'v1-15-0',
+      source: { size: bytes.length, readBytes: async (offset, length) => bytes.slice(offset, offset + length) },
+      workspace: f.workspace,
+      target,
+    })
+    expect(result.importReport).toMatchObject({ importedSessions: 1, importedMessages: 1, issueCount: 0 })
+    expect(await f.metadata.getById('compat-v1-settings-repro')).toMatchObject({
+      name: 'COMPAT historic settings minimal',
+    })
+    expect(await f.storage.get(GLOBAL_KEYS.settings)).toMatchObject({
+      language: 'en',
+      autoUpdate: false,
+      shortcuts: { inputBoxSendMessage: 'Ctrl+Enter', inputBoxSendMessageWithoutResponse: 'Enter' },
+    })
+    expect(replaceSettings).toHaveBeenCalledOnce()
+  })
+})
+
+it('exports conversation rows without reading excluded global configuration', async () => {
+  const f = setup()
+  await f.seed(fixture('chosen'))
+  const readGlobal = vi.spyOn(f.storage, 'get').mockRejectedValue(new Error('Excluded configuration is unavailable'))
+  const readSettings = vi.spyOn(f.options, 'getSettings').mockImplementation(() => {
+    throw new Error('Excluded settings are unavailable')
+  })
+  const source = createBackupExportSource(f.options, { includeGlobals: false })
+  const records = []
+  for await (const record of source.records({ ...manifest.selection, sessionIds: ['chosen'] })) records.push(record)
+  expect(records.map((record) => record.type)).toEqual(['session', 'thread', 'message', 'message'])
+  expect(readGlobal).not.toHaveBeenCalled()
+  expect(readSettings).not.toHaveBeenCalled()
+})
+
+it('reuses the prepared export header while streaming complete rows', async () => {
+  const f = setup(),
+    snapshot = fixture('chosen')
+  await f.seed(snapshot)
+  const header = vi.spyOn(f.rows, 'readExportCommit'),
+    commit = vi.spyOn(f.rows, 'readCommit'),
+    queries = vi.spyOn(f.database, 'query'),
+    records: BackupBusinessRecord[] = []
+  for await (const record of createBackupExportSource(f.options, { includeGlobals: false }).records({
+    ...manifest.selection,
+    sessionIds: ['chosen'],
+  })) {
+    if (record.type !== 'warning') records.push(record)
+  }
+  expect(records).toEqual([
+    { ...backupRecords(snapshot)[0], meta: { sortOrder: 5, createdAt: 123 } },
+    ...backupRecords(snapshot).slice(1),
+  ])
+  expect(header).toHaveBeenCalledExactlyOnceWith('chosen')
+  expect(commit).not.toHaveBeenCalled()
+  expect(queries.mock.calls.some(([sql]) => /FROM session_row_heads\b/i.test(sql))).toBe(false)
+})
+
+it('migrates a legacy-only conversation for export and reuses the published header', async () => {
+  const f = setup()
+  const legacy: Session = {
+    id: 'legacy-export',
+    type: 'chat',
+    name: 'Legacy conversation',
+    messages: [
+      { id: 'question', role: 'user', contentParts: [{ type: 'text', text: '历史正文😀' }] },
+      { id: 'answer', role: 'assistant', contentParts: [{ type: 'text', text: 'Historical reply' }] },
+    ],
+  }
+  await f.records.setRecord(legacy)
+  expect(await f.rows.hasRows(legacy.id)).toBe(false)
+  const migration = new SessionRowMigration(
+    f.records,
+    {
+      readCommit: (id) => f.rows.readExportCommit(id),
+      getRevision: (id) => f.rows.getRevision(id),
+      writeRows: (snapshot, revision) => f.rows.writeRows(snapshot, revision),
+    },
+    new SessionRowWriteQueue((_id, action) => action())
+  )
+  f.options.ensureRows = (id) => migration.ensureRows(id)
+  const header = vi.spyOn(f.rows, 'readExportCommit'),
+    commit = vi.spyOn(f.rows, 'readCommit'),
+    readLegacy = vi.spyOn(f.records, 'getRecord'),
+    publish = vi.spyOn(f.rows, 'writeRows'),
+    ensure = vi.spyOn(migration, 'ensureRows'),
+    records: BackupBusinessRecord[] = []
+  for await (const record of createBackupExportSource(f.options, { includeGlobals: false }).records({
+    ...manifest.selection,
+    sessionIds: [legacy.id],
+  })) {
+    if (record.type !== 'warning') records.push(record)
+  }
+  expect(ensure).toHaveBeenCalledExactlyOnceWith(legacy.id)
+  expect(header).toHaveBeenCalledExactlyOnceWith(legacy.id)
+  expect(commit).not.toHaveBeenCalled()
+  expect(readLegacy).toHaveBeenCalledExactlyOnceWith(legacy.id)
+  expect(publish).toHaveBeenCalledTimes(1)
+  expect(publish.mock.calls[0]).toMatchObject([
+    { record: { id: legacy.id, rowAuthority: 1, rowFormatVersion: 3 }, revision: 1 },
+    null,
+  ])
+  const published = await f.rows.readSnapshot(legacy.id)
+  expect(published).not.toBeNull()
+  expect(records).toEqual(backupRecords(published!))
+  expect(records.map((record) => record.type)).toEqual(['session', 'thread', 'message', 'message'])
+  expect(f.records.snapshot()).toEqual([legacy])
+})
+
+it('imports healthy sessions while preserving an existing session whose candidate is unusable', async () => {
+  const f = setup(),
+    old = fixture('broken', 'existing'),
+    broken = fixture('broken', 'unusable'),
+    healthy = fixture('healthy', 'kept')
+  await f.seed(old)
+  const before = await f.rows.readSnapshot('broken')
+  broken.rows.messages[0].parentMessageId = 'missing'
+  const issues: BackupImportIssue[] = []
+  const target = createBackupImportTarget(f.options)
+  await target.begin(manifest, (issue) => issues.push(issue))
+  await target.appendRecords([...backupRecords(broken), ...backupRecords(healthy)])
+  expect(await target.prepare()).toMatchObject({ importedSessions: 1, importedMessages: 2, skippedRecords: 4 })
+  await target.cleanup()
+  expect(await f.rows.readSnapshot('broken')).toEqual(before)
+  expect((await f.rows.readSnapshot('healthy'))?.rows.messages.map((row) => row.message)).toEqual(
+    healthy.rows.messages.map((row) => row.message)
+  )
+  expect(issues.map((issue) => issue.code)).toContain('unusable-session')
+})
+
+it.each(['missing-threads', 'message-identity'])(
+  'preserves local data through the real ZIP importer when all incoming messages have %s',
+  async (kind) => {
+    const f = setup(),
+      old = fixture('broken', 'existing'),
+      damaged = fixture('broken', 'damaged'),
+      healthy = fixture('healthy', 'restored')
+    await f.seed(old)
+    const before = await f.rows.readSnapshot('broken')
+    const records = backupRecords(damaged).filter((record) => kind !== 'missing-threads' || record.type !== 'thread')
+    if (kind === 'message-identity')
+      for (const record of records) if (record.type === 'message') record.message.message.id = 'wrong'
+    const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value))
+    const bytes = zipSync({
+      'manifest.json': encode(manifest),
+      'resources.jsonl': new Uint8Array(),
+      'sessions/broken.jsonl': new TextEncoder().encode(
+        records.map((record) => JSON.stringify(record)).join('\n') + '\n'
+      ),
+      'sessions/healthy.jsonl': new TextEncoder().encode(
+        backupRecords(healthy)
+          .map((record) => JSON.stringify(record))
+          .join('\n') + '\n'
+      ),
+      'complete.json': encode({ archiveId: manifest.archiveId }),
+    })
+    const result = await importBackupV3({
+      source: { size: bytes.length, readBytes: async (offset, length) => bytes.slice(offset, offset + length) },
+      workspace: f.options.workspace,
+      target: createBackupImportTarget(f.options),
+    })
+    expect(result.importReport).toMatchObject({
+      importedSessions: 1,
+      importedMessages: 2,
+      skippedRecords: kind === 'missing-threads' ? 3 : 4,
+    })
+    expect(await f.rows.readSnapshot('broken')).toEqual(before)
+    expect((await f.rows.readSnapshot('healthy'))?.rows.messages.map((row) => row.message)).toEqual(
+      healthy.rows.messages.map((row) => ({ ...row.message, generating: false }))
+    )
+  }
+)
+
+describe('backup folder selection', () => {
+  it.each([
+    { selected: ['A', 'B'], expected: ['work'] },
+    { selected: ['B'], expected: [] },
+    { selected: [], expected: [] },
+    { selected: undefined, expected: ['work', 'empty'] },
+  ])('exports only applicable folders for $selected', async ({ selected, expected }) => {
+    const f = setup()
+    const a = fixture('A')
+    a.record.folderId = 'work'
+    await f.seed(a)
+    await f.seed(fixture('B'))
+    await f.storage.set(GLOBAL_KEYS.folders, [
+      { id: 'work', name: 'Work' },
+      { id: 'empty', name: 'Empty' },
+    ])
+    const exported: Array<BackupBusinessRecord | BackupWarningRecord> = []
+    for await (const row of createBackupExportSource(f.options).records({
+      ...manifest.selection,
+      sessionIds: selected,
+    }))
+      exported.push(row)
+    expect(
+      exported
+        .filter((row) => row.type === 'global' && row.category === 'folder')
+        .map((row) => (row.type === 'global' ? row.id : ''))
+    ).toEqual(expected)
+    const session = exported.find((row) => row.type === 'session' && row.session.id === 'A')
+    if (selected === undefined || selected.includes('A')) {
+      expect(session?.type === 'session' && session.session.folderId).toBe('work')
+    }
+  })
+})
+
+describe('backup import with invalid settings', () => {
+  const invalidSettings = { language: 'en', fontSize: 'huge' }
+  const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value))
+  const legacySession = { id: 'legacy', name: 'Legacy', messages: [{ id: 'legacy-m', role: 'user', content: 'Hi' }] }
+  const v3 = (files: Record<string, unknown>) =>
+    zipSync({
+      'manifest.json': encode({ ...manifest, selection: { ...manifest.selection, settings: true } }),
+      'resources.jsonl': new Uint8Array(),
+      ...Object.fromEntries(Object.entries(files).map(([path, value]) => [path, encode(value)])),
+      'sessions/v3.jsonl': new TextEncoder().encode(
+        backupRecords(fixture('v3'))
+          .map((row) => JSON.stringify(row))
+          .join('\n') + '\n'
+      ),
+      'complete.json': encode({ archiveId: manifest.archiveId }),
+    })
+  const v2 = (settings: unknown, sourceConfigVersion = 15, session: unknown = legacySession) =>
+    zipSync({
+      'settings.json': encode(settings),
+      'sessions/legacy/session.json': encode(session),
+      'manifest.json': encode({
+        format: 'chatbox-backup',
+        formatVersion: 2,
+        sourceConfigVersion,
+        data: { settings: { path: 'settings.json' } },
+        sessions: [{ id: 'legacy', path: 'sessions/legacy/session.json', meta: { id: 'legacy', name: 'Legacy' } }],
+        resources: [],
+      }),
+    })
+  // Pre-provider settings whose custom providers cannot be migrated.
+  const unmigratable = { aiProvider: 'custom', customProviders: 'broken' }
+  const backups = [
+    ...(
+      [
+        ['invalid fields', invalidSettings],
+        ['a string', 'x'],
+        ['an array', []],
+        ['null', null],
+      ] as const
+    ).flatMap(([label, settings]) => [
+      ['V1', label, () => encode({ settings, 'chat-sessions': [legacySession] })] as const,
+      ['V2', label, () => v2(settings)] as const,
+      ['V3', label, () => v3({ 'settings.json': settings })] as const,
+    ]),
+    [
+      'V1',
+      'unmigratable providers',
+      () => encode({ configVersion: 9, settings: unmigratable, 'chat-sessions': [legacySession] }),
+    ] as const,
+    ['V2', 'unmigratable providers', () => v2(unmigratable, 9)] as const,
+  ]
+  const run = async (f: ReturnType<typeof setup>, bytes: Uint8Array) =>
+    importBackup({
+      archiveId: 'invalid-settings',
+      source: { size: bytes.length, readBytes: async (offset, length) => bytes.slice(offset, offset + length) },
+      workspace: f.workspace,
+      target: createBackupImportTarget(f.options),
+    })
+
+  it.each(backups)('imports %s conversations and skips settings that are %s', async (format, _label, backup) => {
+    const f = setup()
+    const current = { language: 'zh-Hans', fontSize: 16 }
+    await f.storage.set(GLOBAL_KEYS.settings, current)
+    const set = vi.spyOn(f.storage, 'set')
+    const result = await run(f, backup())
+    const sessionId = format === 'V3' ? 'v3' : 'legacy'
+    expect(result.importReport).toMatchObject({ importedSessions: 1, settingsSkipped: true, skippedRecords: 1 })
+    expect(result.importReport?.issues).toContainEqual(
+      expect.objectContaining({ code: 'invalid-settings', objectId: 'settings' })
+    )
+    expect(await f.metadata.getById(sessionId)).toMatchObject({ id: sessionId })
+    expect(set).not.toHaveBeenCalledWith(GLOBAL_KEYS.settings, expect.anything())
+    expect(await f.storage.get(GLOBAL_KEYS.settings)).toEqual(current)
+  })
+
+  it.each([invalidSettings, 'x'])(
+    'imports global memories and only renews the memory state of the current settings (%j)',
+    async (settings) => {
+      const f = setup()
+      await f.storage.set(GLOBAL_KEYS.settings, { language: 'zh-Hans', memoryStateToken: 'local' })
+      const memory = { id: 'memory', content: 'Remember', createdAt: 1 }
+      const result = await run(
+        f,
+        v3({ 'settings.json': settings, 'session-settings.json': { 'agent-memories': [memory] } })
+      )
+      expect(result.importReport).toMatchObject({ importedSessions: 1, settingsSkipped: true })
+      expect(await f.storage.get(GLOBAL_KEYS.memories)).toEqual([memory])
+      const stored = await f.storage.get(GLOBAL_KEYS.settings)
+      expect(stored).toEqual({ language: 'zh-Hans', memoryStateToken: expect.any(String) })
+      expect(stored).not.toMatchObject({ memoryStateToken: 'local' })
+    }
+  )
+
+  // A pre-provider conversation that takes its custom provider from the global settings.
+  const customSession = { ...legacySession, settings: { aiProvider: 'custom' } }
+  const legacyBackups = (settings: unknown) =>
+    [
+      ['V1', () => encode({ configVersion: 9, settings, 'chat-sessions': [customSession] })],
+      ['V2', () => v2(settings, 9, customSession)],
+    ] as const
+
+  it.each(
+    // Converts as legacy settings, but its custom provider list fails settings validation.
+    legacyBackups({ providers: {}, aiProvider: 'custom', customProviders: [null] })
+  )('imports %s conversations without provider hints from skipped settings', async (_format, backup) => {
+    const f = setup()
+    const result = await run(f, backup())
+    expect(result.importReport).toMatchObject({ importedSessions: 1, skippedRecords: 1, settingsSkipped: true })
+    expect((await f.rows.readCommit('legacy'))?.record.settings?.provider).toBeUndefined()
+  })
+
+  it.each(
+    legacyBackups({
+      aiProvider: 'custom',
+      selectedCustomProviderId: 'local',
+      customProviders: [{ id: 'local', name: 'Local', host: 'https://example.test', model: 'local-model' }],
+    })
+  )('keeps legacy custom provider mapping for %s conversations with valid settings', async (_format, backup) => {
+    const f = setup()
+    const result = await run(f, backup())
+    expect(result.importReport).toMatchObject({ importedSessions: 1, skippedRecords: 0 })
+    expect(result.importReport?.settingsSkipped).toBeUndefined()
+    expect((await f.rows.readCommit('legacy'))?.record.settings).toMatchObject({
+      provider: 'custom-provider-invalid-settings-0',
+      modelId: 'local-model',
+    })
+  })
+
+  it.each([
+    ['V1', () => encode({ settings: {}, 'chat-session-settings': 'x', 'chat-sessions': [legacySession] })],
+    ['V3', () => v3({ 'settings.json': {}, 'session-settings.json': 'x' })],
+  ] as const)(
+    'still rejects the whole %s import when another configuration is not an object',
+    async (format, backup) => {
+      const f = setup()
+      const error = await run(f, backup()).catch((error: unknown) => error)
+      expect(error).toBeInstanceOf(Error)
+      expect(await f.metadata.getById(format === 'V3' ? 'v3' : 'legacy')).toBeNull()
+      expect(await f.storage.get(GLOBAL_KEYS.settings)).toBeNull()
+    }
+  )
+
+  it('still rejects the whole import when another global record is invalid', async () => {
+    const f = setup()
+    const error = await run(
+      f,
+      v3({ 'settings.json': { language: 'en' }, 'session-settings.json': { 'chat-session-settings': { modelId: 42 } } })
+    ).catch((error: unknown) => error)
+    expect(getBackupImportPartialResult(error)?.importReport).toMatchObject({ importedSessions: 0 })
+    expect(await f.metadata.getById('v3')).toBeNull()
+    expect(await f.storage.get(GLOBAL_KEYS.settings)).toBeNull()
+  })
+})

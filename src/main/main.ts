@@ -9,6 +9,7 @@ import { CHATBOX_QA_PREFLIGHT } from './qa-preflight'
 // solve electron breaking changes, see https://www.electronjs.org/docs/latest/breaking-changes#behavior-changed-directory-databases-in-userdata-will-be-deleted
 // since 1.21.0, and this NEEDS to be the first import that initializes Electron's app module.
 import './legacy-database-migration'
+import { registerFileTransferIpc } from './file-transfer-ipc'
 
 /* eslint global-require: off, no-console: off, promise/always-return: off */
 
@@ -22,7 +23,19 @@ import './legacy-database-migration'
  */
 
 import fs from 'node:fs'
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeTheme, session, shell, Tray } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  globalShortcut,
+  ipcMain,
+  Menu,
+  nativeTheme,
+  screen,
+  session,
+  shell,
+  Tray,
+} from 'electron'
 import electronDebug from 'electron-debug'
 import log from 'electron-log/main'
 import os from 'os'
@@ -30,6 +43,8 @@ import path from 'path'
 // @ts-expect-error - source-map-support doesn't have type definitions
 import * as sourceMapSupport from 'source-map-support'
 import type { ShortcutSetting } from 'src/shared/types'
+import { applyDevLaunchHashToUrl, buildDevLaunchHash, parseDevLaunchOptions } from '../shared/dev-launch'
+import type { FileEditRequest } from '../shared/file-edits'
 import { KNOWN_LOCAL_PARSER_ERROR_CODES } from '../shared/file-parse-errors'
 import { VIEW_IMAGE_MAX_READ_BYTES } from '../shared/tools/view-image'
 import { flushSentry, sentry } from './adapters/sentry'
@@ -38,8 +53,10 @@ import * as analystic from './analystic-node'
 import { AppUpdater } from './app-updater'
 import * as autoLauncher from './autoLauncher'
 import { formatTooLargeFileRead, readRegularFileBytesBounded } from './bounded-file-read'
+import { registerBuiltInBrowserHandlers } from './built-in-browser'
 import { handleDeepLink } from './deeplinks'
 import { registerDesktopDirectRequestHandlers } from './desktop-direct-request'
+import { editTextFile, writeTextFile } from './file-mutations'
 import { parseFile } from './file-parser'
 import { isQuitForInstallRequested } from './installer-command'
 import Locale from './locales'
@@ -48,8 +65,9 @@ import MenuBuilder from './menu'
 import { registerOAuthHandlers } from './oauth'
 import * as proxy from './proxy'
 import { getMainRuntimePolicy } from './qa-runtime'
+import { getQaWindowPlacementMode, resolveQaWindowBounds } from './qa-window'
 import { runRipgrepSearch } from './ripgrep-search'
-import { registerSandboxHandlers } from './sandbox'
+import { cleanupSandboxResources, registerSandboxHandlers } from './sandbox'
 import { bufferToArrayBuffer } from './sandbox/read-file-base64'
 import { registerSkillsHandlers } from './skills'
 import {
@@ -70,8 +88,23 @@ const MAIN_RUNTIME_POLICY = getMainRuntimePolicy(process.env, {
   isHarmonyBuild: IS_HARMONY_BUILD,
   isPackaged: app.isPackaged,
 })
+if (process.platform === 'darwin' && MAIN_RUNTIME_POLICY.isQa) {
+  // Must run before ready. Accessory keeps a new Electron process from
+  // becoming the frontmost app; showInactive() alone is not enough on macOS.
+  app.setActivationPolicy('accessory')
+}
 const QA_RUNTIME_PATHS = CHATBOX_QA_PREFLIGHT.paths
 const QA_LAUNCH_ARGUMENTS = CHATBOX_QA_PREFLIGHT.launchArguments
+const DEV_LAUNCH_OPTIONS = parseDevLaunchOptions({
+  argv: process.argv,
+  env: process.env,
+})
+const DEV_LAUNCH_HASH = buildDevLaunchHash(DEV_LAUNCH_OPTIONS)
+
+function exitHarmonyApp(): void {
+  cleanupSandboxResources()
+  app.exit(0)
+}
 
 if (QA_RUNTIME_PATHS && QA_LAUNCH_ARGUMENTS && MAIN_RUNTIME_POLICY.qaTaskId) {
   for (const directory of [
@@ -258,6 +291,8 @@ let mainWindow: BrowserWindow | null = null
 // it is held here and opened once startup has created the window.
 let startupWindowCreated = false
 let startupDeepLink: string | undefined
+let taskCloseProtected = false
+let taskQuitRequested = false
 let tray: Tray | null = null
 
 // --------- 快捷键 ---------
@@ -440,6 +475,17 @@ async function createWindow() {
   }
 
   const [state] = windowState.getState()
+  if (MAIN_RUNTIME_POLICY.isQa) {
+    const bounds = resolveQaWindowBounds({
+      displays: screen.getAllDisplays().map((display) => ({ id: display.id, workArea: display.workArea })),
+      cursor: screen.getCursorScreenPoint(),
+      mode: getQaWindowPlacementMode({ CHATBOX_QA_WINDOW: process.env.CHATBOX_QA_WINDOW }),
+    })
+    state.x = bounds.x
+    state.y = bounds.y
+    state.width = bounds.width
+    state.height = bounds.height
+  }
 
   const qaWindowTitle = MAIN_RUNTIME_POLICY.qaTaskId ? `[QA:${MAIN_RUNTIME_POLICY.qaTaskId}] Chatbox` : undefined
 
@@ -450,7 +496,7 @@ async function createWindow() {
     titleBarStyle: 'hidden',
     // expose window controlls in Windows/Linux
     frame: false,
-    trafficLightPosition: { x: 10, y: 16 },
+    trafficLightPosition: { x: 10, y: 13 },
     width: state.width,
     height: state.height,
     x: state.x,
@@ -479,6 +525,13 @@ async function createWindow() {
   }
 
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    taskCloseProtected = false
+    taskQuitRequested = false
+    // The OS or the user ended the process; nothing in the renderer failed.
+    if (details.reason === 'killed' || details.reason === 'clean-exit') {
+      log.warn(`Renderer process exited: ${details.reason} (exit code ${details.exitCode})`)
+      return
+    }
     reportMainProcessError(new Error(`Renderer process exited unexpectedly: ${details.reason}`), {
       domain: 'renderer-process',
       extras: {
@@ -500,6 +553,13 @@ async function createWindow() {
     mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
       log.error(`[Harmony renderer] did-fail-load ${errorCode}: ${errorDescription}`)
     })
+    const harmonyWindow = mainWindow as BrowserWindow & { setUseNativeFrame?: (visible: boolean) => void }
+    if (typeof harmonyWindow.setUseNativeFrame === 'function') {
+      harmonyWindow.setUseNativeFrame(false)
+    }
+    if (typeof mainWindow.setWindowButtonVisibility === 'function') {
+      mainWindow.setWindowButtonVisibility(false)
+    }
   }
 
   let hasShownMainWindow = false
@@ -513,6 +573,9 @@ async function createWindow() {
     hasShownMainWindow = true
     if (process.env.START_MINIMIZED) {
       mainWindow.minimize()
+    } else if (MAIN_RUNTIME_POLICY.isQa) {
+      // Map the window for Playwright without activating the app.
+      mainWindow.showInactive()
     } else {
       if (state.mode === windowState.WindowMode.Maximized) {
         mainWindow.maximize()
@@ -529,24 +592,33 @@ async function createWindow() {
   // Load the local URL for development or the local
   // html file for production
   if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    mainWindow.loadURL(applyDevLaunchHashToUrl(process.env['ELECTRON_RENDERER_URL'], DEV_LAUNCH_HASH))
     // Vite can spend a while re-optimizing dependencies during development,
     // especially under x64 emulation on Windows ARM64. Show the window while
     // navigation is in progress instead of leaving it accessible only through
     // the tray until the renderer has finished its first paint.
     showMainWindow()
+  } else if (DEV_LAUNCH_HASH) {
+    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'), { hash: DEV_LAUNCH_HASH })
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
 
   // 窗口关闭时保存窗口大小与位置
-  mainWindow.on('close', () => {
+  mainWindow.on('close', (event) => {
+    if (taskCloseProtected) {
+      event.preventDefault()
+      mainWindow?.webContents.send('task-operation:close-requested')
+      return
+    }
     if (mainWindow) {
       windowState.saveState(mainWindow)
     }
   })
 
   mainWindow.on('closed', () => {
+    taskCloseProtected = false
+    taskQuitRequested = false
     mainWindow = null
   })
 
@@ -674,11 +746,9 @@ if (quitForInstallRequested) {
   })
 
   app.on('window-all-closed', () => {
-    // Respect the OSX convention of having the application in memory even
-    // after all windows have been closed
-    // if (process.platform !== 'darwin') {
-    //     app.quit()
-    // }
+    if (IS_HARMONY_BUILD) {
+      exitHarmonyApp()
+    }
   })
 
   app
@@ -743,7 +813,13 @@ if (quitForInstallRequested) {
         mcpIpc.closeAllTransports()
         destroyTray()
       })
-      app.on('before-quit', () => {
+      app.on('before-quit', (event) => {
+        if (taskCloseProtected) {
+          event.preventDefault()
+          taskQuitRequested = true
+          mainWindow?.webContents.send('task-operation:close-requested')
+          return
+        }
         destroyTray()
       })
     })
@@ -790,6 +866,8 @@ app.on('open-url', async (_event, url) => {
 })
 
 // --------- IPC 监听 ---------
+
+registerFileTransferIpc()
 
 ipcMain.handle('getStoreValue', (event, key) => {
   return store.get(key)
@@ -876,7 +954,7 @@ ipcMain.handle('shouldUseDarkColors', () => nativeTheme.shouldUseDarkColors)
 
 ipcMain.handle('ensureProxy', (event, json) => {
   const config: { proxy?: string } = JSON.parse(json)
-  proxy.ensure(config.proxy)
+  return proxy.ensure(config.proxy)
 })
 
 ipcMain.handle('relaunch', () => {
@@ -995,6 +1073,7 @@ ipcMain.handle('fs:read', async (_event, params: { filePath: string; offset?: nu
     const limit = Math.min(FS_READ_MAX_LINES, Math.max(1, Math.floor(params.limit ?? FS_READ_DEFAULT_LINES)))
     const selected = lines.slice(startLine - 1, startLine - 1 + limit)
     const content = selected.map(truncateFsLine).join('\n')
+    const truncatedLineCount = selected.filter((line) => line.length > FS_MAX_LINE_LENGTH).length
     const endLine = selected.length > 0 ? startLine + selected.length - 1 : startLine
 
     return {
@@ -1003,6 +1082,7 @@ ipcMain.handle('fs:read', async (_event, params: { filePath: string; offset?: nu
       startLine,
       endLine,
       totalLines: lines.length,
+      ...(truncatedLineCount > 0 ? { truncatedLineCount } : {}),
     }
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) }
@@ -1067,54 +1147,14 @@ ipcMain.handle(
 ipcMain.handle('fs:write', async (_event, params: { filePath: string; content: string }) => {
   try {
     const resolved = path.resolve(params.filePath)
-    await fs.promises.mkdir(path.dirname(resolved), { recursive: true })
-    await fs.promises.writeFile(resolved, params.content, 'utf8')
+    await writeTextFile(resolved, params.content)
     return { success: true }
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) }
   }
 })
 
-ipcMain.handle(
-  'fs:edit',
-  async (
-    _event,
-    params: {
-      filePath: string
-      search?: string
-      replace?: string
-      edits?: Array<{ search: string; replace: string }>
-    }
-  ) => {
-    try {
-      const edits = params.edits?.length
-        ? params.edits
-        : params.search !== undefined && params.replace !== undefined
-          ? [{ search: params.search, replace: params.replace }]
-          : []
-      if (edits.length === 0) {
-        return { success: false, error: 'No edits provided' }
-      }
-      const resolved = path.resolve(params.filePath)
-      let text = await fs.promises.readFile(resolved, 'utf8')
-      for (let index = 0; index < edits.length; index++) {
-        const edit = edits[index]
-        const first = text.indexOf(edit.search)
-        if (first === -1) {
-          return { success: false, error: `Edit ${index + 1}: search text not found` }
-        }
-        if (text.indexOf(edit.search, first + edit.search.length) !== -1) {
-          return { success: false, error: `Edit ${index + 1}: search text is not unique` }
-        }
-        text = text.slice(0, first) + edit.replace + text.slice(first + edit.search.length)
-      }
-      await fs.promises.writeFile(resolved, text, 'utf8')
-      return { success: true }
-    } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : String(error) }
-    }
-  }
-)
+ipcMain.handle('fs:edit', async (_event, params: FileEditRequest) => editTextFile(params))
 
 ipcMain.handle('parseUrl', async (event, url: string) => {
   // const result = await readability(url, { maxLength: 1000 })
@@ -1176,8 +1216,40 @@ ipcMain.handle('window:unmaximize', () => {
   mainWindow?.unmaximize()
 })
 
-ipcMain.handle('window:close', () => {
+function closeMainWindow() {
+  if (IS_HARMONY_BUILD) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      windowState.saveState(mainWindow)
+    }
+    setImmediate(() => {
+      exitHarmonyApp()
+    })
+    return
+  }
   mainWindow?.close()
+}
+
+ipcMain.handle('window:close', () => {
+  if (taskCloseProtected) {
+    mainWindow?.webContents.send('task-operation:close-requested')
+    return
+  }
+  closeMainWindow()
+})
+
+ipcMain.handle('task-operation:set-active', (event, active: unknown) => {
+  if (event.sender !== mainWindow?.webContents || typeof active !== 'boolean') return
+  taskCloseProtected = active
+})
+
+ipcMain.handle('task-operation:finish-close', (event, confirmed: unknown) => {
+  if (event.sender !== mainWindow?.webContents || typeof confirmed !== 'boolean') return
+  const quit = taskQuitRequested
+  taskQuitRequested = false
+  if (!confirmed) return
+  taskCloseProtected = false
+  if (quit) app.quit()
+  else closeMainWindow()
 })
 
 ipcMain.handle('window:is-maximized', () => {
@@ -1190,4 +1262,5 @@ registerOAuthHandlers()
 registerAgentPersonaHandlers()
 if (!IS_HARMONY_BUILD) {
   registerDesktopDirectRequestHandlers()
+  registerBuiltInBrowserHandlers()
 }

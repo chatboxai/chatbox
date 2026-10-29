@@ -1,11 +1,14 @@
 import { enrichModelFromRegistry } from '../model-registry/enrich'
+import { ModelProviderNotFoundError } from '../models/errors'
 import type { ModelInterface } from '../models/types'
-import { mergeSharedOAuthProviderSettings, resolveEffectiveApiKey } from '../oauth'
+import { isUsingOAuth, mergeSharedOAuthProviderSettings, resolveEffectiveApiKey } from '../oauth'
+import type { PlatformType } from '../platform'
 import type { Config, ProviderModelInfo, SessionSettings, Settings } from '../types'
 import type { ModelDependencies } from '../types/adapters'
 import { withResolvedModelApiStyle } from './api-style'
 import './builtin-registration'
 import { mergeProviderModelCapabilities } from './model-config'
+import { bindReasoningReplaySource } from './reasoning-replay-source'
 import {
   clearProviderRegistry,
   defineProvider,
@@ -17,6 +20,8 @@ import {
 } from './registry'
 import type { CreateModelConfig, ProviderDefinition, ProviderDefinitionInput } from './types'
 import { createCustomProviderModel } from './utils'
+
+export { type ProviderCatalogProjection, projectProviderCatalog } from './catalog'
 
 export {
   clearProviderRegistry,
@@ -41,7 +46,11 @@ export function getBuiltinProviderIds(): string[] {
  * Get provider settings from session and global settings.
  * This is a helper function that extracts and formats provider-related settings.
  */
-export function getProviderSettings(setting: SessionSettings, globalSettings: Settings) {
+export function getProviderSettings(
+  setting: SessionSettings,
+  globalSettings: Settings,
+  platformType: PlatformType = 'desktop'
+) {
   console.debug('getProviderSettings', setting.provider, setting.modelId)
   const provider = setting.provider
   if (!provider) {
@@ -54,11 +63,11 @@ export function getProviderSettings(setting: SessionSettings, globalSettings: Se
   )
 
   if (!providerBaseInfo) {
-    throw new Error(`Cannot find model with provider: ${setting.provider}`)
+    throw new ModelProviderNotFoundError(provider)
   }
   const providerSetting = mergeSharedOAuthProviderSettings(provider, globalSettings.providers)
   // When OAuth is active, use the provider's default API host (OAuth tokens are issued for specific endpoints)
-  const isOAuthActive = providerSetting.activeAuthMode === 'oauth' && !!providerSetting.oauth?.accessToken
+  const isOAuthActive = isUsingOAuth(providerSetting, platformType)
   const formattedApiHost = (
     (isOAuthActive ? '' : providerSetting.apiHost) ||
     providerBaseInfo.defaultSettings?.apiHost ||
@@ -137,7 +146,11 @@ export function getModel(
 
   if (providerDefinition) {
     // Provider is registered - use the new registry-based approach
-    const { providerSetting, formattedApiHost, providerBaseInfo } = getProviderSettings(settings, globalSettings)
+    const { providerSetting, formattedApiHost, providerBaseInfo } = getProviderSettings(
+      settings,
+      globalSettings,
+      dependencies.platformType || 'desktop'
+    )
     const model = withReasoningApiStyle(
       getModelConfig(settings, globalSettings, provider),
       providerBaseInfo.type,
@@ -158,11 +171,15 @@ export function getModel(
       effectiveApiKey,
     }
 
-    return providerDefinition.createModel(createConfig)
+    return bindReasoningReplaySource(providerDefinition.createModel(createConfig), createConfig)
   }
 
   // Provider not registered - check if it's a custom provider
-  const { providerSetting, formattedApiHost, providerBaseInfo } = getProviderSettings(settings, globalSettings)
+  const { providerSetting, formattedApiHost, providerBaseInfo } = getProviderSettings(
+    settings,
+    globalSettings,
+    dependencies.platformType || 'desktop'
+  )
   const model = withReasoningApiStyle(
     getModelConfig(settings, globalSettings, provider),
     providerBaseInfo.type,
@@ -172,22 +189,22 @@ export function getModel(
   if (providerBaseInfo.isCustom) {
     const formattedApiPath = providerSetting.apiPath || providerBaseInfo.defaultSettings?.apiPath || ''
     const effectiveApiKey = resolveEffectiveApiKey(providerSetting, dependencies.platformType || 'desktop')
-    return createCustomProviderModel(
-      {
-        settings,
-        globalSettings,
-        config,
-        dependencies,
-        providerSetting,
-        formattedApiHost,
-        formattedApiPath,
-        model,
-        effectiveApiKey,
-      },
-      providerBaseInfo.type,
-      dependencies
+    const createConfig: CreateModelConfig = {
+      settings,
+      globalSettings,
+      config,
+      dependencies,
+      providerSetting,
+      formattedApiHost,
+      formattedApiPath,
+      model,
+      effectiveApiKey,
+    }
+    return bindReasoningReplaySource(
+      createCustomProviderModel(createConfig, providerBaseInfo.type, dependencies),
+      createConfig
     )
   }
 
-  throw new Error(`Cannot find model with provider: ${settings.provider}`)
+  throw new ModelProviderNotFoundError(provider)
 }

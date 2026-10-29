@@ -7,8 +7,11 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./copilots": "./src/copilots/index.ts",
     "./query": "./src/query/index.ts",
-    "./stores": "./src/stores/index.ts"
+    "./retry": "./src/retry.ts",
+    "./stores": "./src/stores/index.ts",
+    "./token-estimation": "./src/use-row-token-history.ts"
   },
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.json"
@@ -25,6 +28,7 @@
   "devDependencies": {
     "@tanstack/react-query": "^5.74.4",
     "@types/react": "^18.3.31",
+    "abort-controller": "3.0.0",
     "react": "^18.2.0",
     "typescript": "^5.8.3",
     "zustand": "^5.0.6"

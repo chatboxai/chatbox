@@ -1,55 +1,53 @@
-import type { ExportChatFormat, Message, Session } from '@shared/types'
+import { InMemorySessionRepository } from '@chatbox/core/testing'
+import type { ExportableThread, SessionChatExport } from '@chatbox/core/utils/chat-export'
+import type { ExportChatFormat, Session } from '@shared/types'
 import { createMessage } from '@shared/types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-type ExportedThread = { name: string; messages: Message[] }
-
-const {
-  mockGetSession,
-  mockExportTextFile,
-  mockFormatHtml,
-  mockFormatInteractiveHtml,
-  mockFormatMarkdown,
-  mockFormatTxt,
-} = vi.hoisted(() => ({
-  mockGetSession: vi.fn(),
-  mockExportTextFile: vi.fn(),
-  // Typed like the real formatters so `mock.calls[0][1]` keeps the thread type.
-  mockFormatHtml: vi.fn(async (_sessionName: string, _threads: ExportedThread[]) => '<html></html>'),
-  mockFormatInteractiveHtml: vi.fn(
-    async (_sessionName: string, _threads: ExportedThread[]) => '<html>interactive</html>'
-  ),
-  mockFormatMarkdown: vi.fn((_sessionName: string, _threads: ExportedThread[]) => '# export'),
-  mockFormatTxt: vi.fn((_sessionName: string, _threads: ExportedThread[]) => 'export'),
+const mocks = vi.hoisted(() => ({
+  getHeader: vi.fn(),
+  forks: vi.fn(),
+  rows: vi.fn(),
+  exportFile: vi.fn(),
+  formatted: vi.fn(async (_name: string, threads: AsyncIterable<ExportableThread> | Iterable<ExportableThread>) => {
+    const result: string[][] = []
+    for await (const thread of threads) {
+      const texts: string[] = []
+      for await (const message of thread.messages)
+        texts.push(message.contentParts.find((part) => part.type === 'text')?.text ?? '')
+      result.push(texts)
+    }
+    return JSON.stringify(result)
+  }),
+  interactive: vi.fn(async (_source: SessionChatExport, _archived: boolean) => '<html>interactive</html>'),
 }))
-
 vi.mock('@/app/renderer-application', () => ({
-  rendererApplication: { sessionQueryBridge: { getSession: mockGetSession } },
-}))
-
-vi.mock('@/platform', () => ({
-  default: {
-    exporter: {
-      exportTextFile: mockExportTextFile,
+  rendererApplication: {
+    sessions: {
+      getSessionHeader: mocks.getHeader,
+      readSessionForkOptionsPage: mocks.forks,
     },
   },
 }))
-
-vi.mock('@/lib/format-chat', () => ({
-  formatChatAsHtml: mockFormatHtml,
-  formatChatAsInteractiveHtml: mockFormatInteractiveHtml,
-  formatChatAsMarkdown: mockFormatMarkdown,
-  formatChatAsTxt: mockFormatTxt,
+vi.mock('@/platform', () => ({
+  default: { getSessionRowStore: mocks.rows, exporter: { exportTextFile: mocks.exportFile } },
 }))
-
-import { exportSessionChat } from './export'
+vi.mock('@/lib/format-chat', () => ({
+  formatChatAsHtml: mocks.formatted,
+  formatChatAsMarkdown: mocks.formatted,
+  formatChatAsTxt: mocks.formatted,
+  formatChatAsInteractiveHtml: mocks.interactive,
+}))
+import { exportSessionChat, exportSessionJson } from './export'
 
 function createBranchedSession(): Session {
   const pivot = createMessage('user', 'question')
   pivot.id = 'pivot'
+  pivot.timestamp = 1
   const replies = ['branch-one', 'branch-two', 'branch-active'].map((text) => {
     const reply = createMessage('assistant', text)
     reply.id = text
+    reply.timestamp = 1
     return reply
   })
   return {
@@ -71,53 +69,49 @@ function createBranchedSession(): Session {
   }
 }
 
-describe('exportSessionChat', () => {
-  beforeEach(() => {
+describe('row session export', () => {
+  beforeEach(async () => {
     vi.clearAllMocks()
-    mockGetSession.mockResolvedValue(createBranchedSession())
+    const repository = new InMemorySessionRepository()
+    await repository.seedSession(createBranchedSession())
+    mocks.getHeader.mockImplementation(repository.getSessionHeader)
+    mocks.forks.mockImplementation(repository.readSessionForkOptionsPage)
+    mocks.rows.mockReturnValue(repository.rowStore)
   })
 
-  it.each<ExportChatFormat>(['HTML', 'Markdown', 'TXT'])(
-    'exports only the active branch as %s by default',
-    async (format) => {
-      await exportSessionChat('session-1', 'current_thread', format)
-
-      const formatter = format === 'HTML' ? mockFormatHtml : format === 'Markdown' ? mockFormatMarkdown : mockFormatTxt
-      const exportedThreads = formatter.mock.calls[0]?.[1] ?? []
-      const exportedReplies = exportedThreads.map((thread) => {
-        const reply = thread.messages.at(-1)
-        return reply?.contentParts.find((part) => part.type === 'text')?.text
-      })
-      expect(exportedReplies).toEqual(['branch-active'])
-      expect(mockExportTextFile).toHaveBeenCalledOnce()
-    }
-  )
-
-  it('preserves the fork tree for interactive HTML when every branch is requested', async () => {
-    const session = createBranchedSession()
-    mockGetSession.mockResolvedValue(session)
-
-    await exportSessionChat('session-1', 'current_thread', 'HTML', true)
-
-    expect(mockFormatHtml).not.toHaveBeenCalled()
-    expect(mockFormatInteractiveHtml).toHaveBeenCalledWith(
-      session.name,
-      [{ name: session.threadName, messages: session.messages }],
-      session.messageForksHash
-    )
-    expect(mockExportTextFile).toHaveBeenCalledWith(`${session.name}.html`, '<html>interactive</html>')
+  it.each<ExportChatFormat>(['HTML', 'Markdown', 'TXT'])('exports the active branch as %s', async (format) => {
+    await exportSessionChat('session-1', 'current_thread', format)
+    expect(mocks.exportFile.mock.calls[0]?.[1]).toBe(JSON.stringify([['question', 'branch-active']]))
   })
 
-  it.each<ExportChatFormat>(['Markdown', 'TXT'])('flattens every branch for %s when requested', async (format) => {
+  it('passes the independent row source to interactive HTML', async () => {
+    await exportSessionChat('session-1', 'all_threads', 'HTML', true)
+    expect(mocks.interactive.mock.calls[0]?.[0].header.name).toBe('Branched session')
+    expect(mocks.interactive.mock.calls[0]?.[1]).toBe(true)
+    expect(mocks.exportFile).toHaveBeenCalledWith('Branched session.html', '<html>interactive</html>')
+  })
+
+  it.each<ExportChatFormat>(['Markdown', 'TXT'])('exports all branches as %s', async (format) => {
     await exportSessionChat('session-1', 'current_thread', format, true)
+    expect(mocks.exportFile.mock.calls[0]?.[1]).toBe(
+      JSON.stringify([
+        ['question', 'branch-one'],
+        ['question', 'branch-two'],
+        ['question', 'branch-active'],
+      ])
+    )
+  })
 
-    const formatter = format === 'Markdown' ? mockFormatMarkdown : mockFormatTxt
-    const exportedThreads = formatter.mock.calls[0]?.[1] ?? []
-    const exportedReplies = exportedThreads.map((thread) => {
-      const reply = thread.messages.at(-1)
-      return reply?.contentParts.find((part) => part.type === 'text')?.text
-    })
-    expect(exportedReplies).toEqual(['branch-one', 'branch-two', 'branch-active'])
-    expect(mockExportTextFile).toHaveBeenCalledOnce()
+  it('provides JSON to the separate viewer', async () => {
+    const json = await exportSessionJson('session-1')
+    expect(JSON.parse(json ?? 'null')).toMatchObject(createBranchedSession())
+    expect(mocks.exportFile).not.toHaveBeenCalled()
+  })
+
+  it('does not publish a file for a missing session', async () => {
+    mocks.getHeader.mockResolvedValue(null)
+    expect(await exportSessionJson('missing')).toBeNull()
+    await exportSessionChat('missing', 'all_threads', 'TXT')
+    expect(mocks.exportFile).not.toHaveBeenCalled()
   })
 })

@@ -129,6 +129,18 @@ export const MessageInputField = memo(
         [commitValue]
       )
 
+      const handleKeyDown = useCallback(
+        (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+          // IME owns candidate navigation, confirmation and cancellation.
+          if (isComposingRef.current || event.nativeEvent.isComposing || event.keyCode === 229) {
+            event.stopPropagation()
+            return
+          }
+          onKeyDown(event)
+        },
+        [onKeyDown]
+      )
+
       const handlePaste = useCallback(
         (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
           if (isComposingRef.current) {
@@ -163,7 +175,7 @@ export const MessageInputField = memo(
             root: 'flex-1',
             wrapper: 'flex-1',
             input:
-              'block w-full outline-none border-none px-2 py-1 resize-none bg-transparent text-chatbox-tint-primary leading-6',
+              'block w-full outline-none border-none px-2 py-1 resize-none bg-transparent text-chatbox-tint-primary leading-5',
           }}
           size="sm"
           id={dom.messageInputID}
@@ -172,15 +184,16 @@ export const MessageInputField = memo(
           aria-label={ariaLabel}
           bg="transparent"
           autosize={true}
-          minRows={2}
-          maxRows={Math.max(4, Math.floor(viewportHeight / 100))}
+          minRows={1}
+          // Grows with the draft up to 12 lines (240px), fewer on short viewports.
+          maxRows={Math.min(12, Math.max(4, Math.floor(viewportHeight / 60)))}
           value={editValue}
           autoFocus={autoFocus}
           readOnly={isReadOnly}
           onChange={onChange}
           onCompositionStart={onCompositionStart}
           onCompositionEnd={onCompositionEnd}
-          onKeyDown={onKeyDown}
+          onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           data-testid={TestId.chat.messageInput}
         />

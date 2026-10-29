@@ -1,3 +1,4 @@
+import { WHOLE_DOCUMENT_READ_GUIDANCE } from '@shared/context/attachment-guidance'
 import { isTextFilePath } from '@shared/file-extensions'
 import {
   type SandboxSeedAttachment,
@@ -5,8 +6,16 @@ import {
   sandboxAttachmentParsedRelPath,
   sandboxAttachmentRelPath,
 } from '@shared/sandbox/attachment-path'
-import { DEFAULT_EXEC_TIMEOUT, type SandboxExecLanguage, type SandboxProvider } from '@shared/sandbox-provider'
-import { jsonSchema, type ToolSet } from 'ai'
+import {
+  DEFAULT_EXEC_TIMEOUT,
+  type SandboxExecLanguage,
+  type SandboxProvider,
+  type SandboxReadResult,
+} from '@shared/sandbox-provider'
+import { isReadFileImagePath } from '@shared/tools/view-image'
+import { isUploadedFilePath, READ_FILE_DEFAULT_LINES, readFileSchema } from '@shared/uploaded-file-tools'
+import { validatedToolSchema } from '@shared/validated-tool-schema'
+import type { ToolSet } from 'ai'
 import { getLogger } from '@/lib/utils'
 import platform from '@/platform'
 import { asRecord, contentOrErrorText, numberField, stringField, toTextModelOutput } from './model-output'
@@ -21,6 +30,16 @@ interface CodeExecutionContext {
   sessionId: string
   files: SandboxSeedAttachment[]
   provider: SandboxProvider
+  /**
+   * Tool the model uses for scripts. `run_command` means code_execution is not
+   * exposed, so read_file guidance must point at a Node.js script run through
+   * run_command instead.
+   */
+  scriptTool?: 'code_execution' | 'run_command'
+}
+
+function chunkedReadInstruction(scriptTool: CodeExecutionContext['scriptTool']): string {
+  return scriptTool === 'run_command' ? 'a Node.js script run through run_command' : 'code_execution'
 }
 
 type SeedCopyTask = { blobKey: string; targetName: string; label: string }
@@ -104,12 +123,59 @@ function formatReadFileOutput(output: unknown): string {
   const content = stringField(record, 'content') ?? ''
   const startLine = numberField(record, 'startLine')
   const endLine = numberField(record, 'endLine')
+  const totalLines = numberField(record, 'totalLines')
+  if (totalLines === 0) return 'File is empty.'
   const hint = stringField(record, 'hint')
   const displayContent =
     content.trim() === '' && startLine !== undefined && endLine !== undefined && endLine >= startLine
       ? '[Selected lines are blank.]'
       : content
-  return hint ? `${displayContent}\n\n${hint}` : displayContent
+  const range =
+    startLine !== undefined && endLine !== undefined && totalLines !== undefined
+      ? `[Showing lines ${startLine}-${endLine} of ${totalLines}.]`
+      : undefined
+  return [displayContent, range, hint].filter(Boolean).join('\n\n')
+}
+
+function buildReadFileOutput(filePath: string, result: SandboxReadResult, chunkReader: string) {
+  if (result.totalLines === 0) return { file_path: filePath, content: '', totalLines: 0 }
+  const content = result.content ?? ''
+  const truncatedLineCount = result.truncatedLineCount ?? 0
+  const contentTruncated = content.length > MAX_STDOUT_LENGTH
+  const hints: string[] = []
+  if (truncatedLineCount > 0) {
+    hints.push(
+      `${truncatedLineCount} returned line(s) were shortened. Line-number coverage does not mean their text was fully read. ` +
+        `Reducing limit cannot recover those characters. Use ${chunkReader} to read the same text file in bounded character chunks ` +
+        '(for example, with Node.js fs and Array.from(text).slice(offset, offset + size).join("")), recording and advancing the character offset until each chunk is complete. ' +
+        'Keep each printed chunk small enough to avoid output truncation. Do not re-OCR the source document.'
+    )
+  }
+  if (contentTruncated) {
+    hints.push(
+      `Output was shortened. Reread offset=${result.startLine ?? 1} with a smaller limit before advancing. ` +
+        `If a single line still exceeds the output budget, use ${chunkReader} to read bounded character chunks of the same text file.`
+    )
+  }
+  if (
+    !truncatedLineCount &&
+    !contentTruncated &&
+    result.endLine &&
+    result.totalLines &&
+    result.endLine < result.totalLines
+  ) {
+    hints.push(`Use offset=${result.endLine + 1} to continue.`)
+  }
+  return {
+    file_path: filePath,
+    content: truncateOutput(content, MAX_STDOUT_LENGTH),
+    startLine: result.startLine,
+    endLine: result.endLine,
+    totalLines: result.totalLines,
+    ...(truncatedLineCount > 0 ? { truncatedLineCount } : {}),
+    ...(contentTruncated ? { contentTruncated: true } : {}),
+    ...(hints.length ? { hint: hints.join(' ') } : {}),
+  }
 }
 
 function formatDownloadOutput(output: unknown): string {
@@ -132,6 +198,7 @@ export function buildCodeExecutionTools(context: CodeExecutionContext): {
   ensureSandbox: () => Promise<{ success: boolean; error?: string }>
 } {
   const { provider, files } = context
+  const chunkReader = chunkedReadInstruction(context.scriptTool)
   let sandboxInitialized = false
   let filesSeeded = false
   let initPromise: Promise<{ success: boolean; error?: string }> | null = null
@@ -206,7 +273,7 @@ export function buildCodeExecutionTools(context: CodeExecutionContext): {
       'that and the task cannot be completed with the available runtime. To create or modify files, prefer ' +
       'the write_file/edit_file tools rather than writing through code here. Use relative paths (they resolve ' +
       'to the working directory); do not use /home/user. Generated files can be made downloadable via create_download.',
-    inputSchema: jsonSchema({
+    inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
         code: {
@@ -271,40 +338,28 @@ export function buildCodeExecutionTools(context: CodeExecutionContext): {
     toModelOutput: toTextModelOutput(formatCodeExecutionOutput),
   }
 
-  const READ_FILE_MAX_LINES = 2000
-  const READ_FILE_DEFAULT_LINES = 500
-
   const read_file: ToolSet[string] = {
     description:
-      'Read the content of a file in the sandbox working directory, or an absolute user filesystem path when explicitly provided. ' +
-      'For document files (PDF, DOCX, etc.), read the path from <PARSED_SANDBOX_PATH> instead of the binary. ' +
-      'Output is truncated to fit context. Use offset to continue reading large files.',
-    inputSchema: jsonSchema({
-      type: 'object',
-      properties: {
-        file_path: {
-          type: 'string',
-          description: 'Path to file in the sandbox working directory, or an absolute user filesystem path',
-        },
-        offset: {
-          type: 'integer',
-          minimum: 1,
-          description: 'Line number to start reading from (1-indexed). Defaults to 1.',
-        },
-        limit: {
-          type: 'integer',
-          minimum: 1,
-          maximum: READ_FILE_MAX_LINES,
-          description: `Max number of lines to read. Defaults to ${READ_FILE_DEFAULT_LINES}, max ${READ_FILE_MAX_LINES}.`,
-        },
-      },
-      required: ['file_path'],
-      additionalProperties: false,
-    }),
+      'Read a file in the sandbox working directory, or an absolute user filesystem path when explicitly provided. ' +
+      'For documents (PDF, DOCX, etc.), read <PARSED_SANDBOX_PATH> instead of the binary. ' +
+      'For whole-document tasks, read sequentially with offset and limit; retrieval hits do not establish full coverage. ' +
+      `Lowering limit cannot recover shortened lines; read them in character chunks with ${chunkReader}.`,
+    inputSchema: validatedToolSchema(readFileSchema),
     execute: async (input) => {
       const readInput = input as { file_path: string; offset?: number; limit?: number }
+      if (isUploadedFilePath(readInput.file_path))
+        return {
+          error:
+            'This virtual path requires the uploaded-file read_file tool. Use a filesystem path for this operation.',
+        }
       if (isSoulVirtualPath(readInput.file_path)) {
         return readSoulVirtualFile()
+      }
+      if (isReadFileImagePath(readInput.file_path)) {
+        return {
+          error:
+            'This is an image file, and image files cannot be viewed in this session. For uploaded images, read <PARSED_SANDBOX_PATH> for extracted text when it is available.',
+        }
       }
       readInput.file_path = await remapPhantomHomePathForProvider(readInput.file_path, provider)
       if (isAbsolutePath(readInput.file_path)) {
@@ -317,19 +372,7 @@ export function buildCodeExecutionTools(context: CodeExecutionContext): {
             limit: readInput.limit,
           })
           if (!result.success) return { error: result.error || `File not found: ${readInput.file_path}` }
-          const hasMore = !!result.endLine && !!result.totalLines && result.endLine < result.totalLines
-          return {
-            file_path: readInput.file_path,
-            content: truncateOutput(result.content ?? '', MAX_STDOUT_LENGTH),
-            startLine: result.startLine,
-            endLine: result.endLine,
-            totalLines: result.totalLines,
-            ...(hasMore
-              ? {
-                  hint: `[Showing lines ${result.startLine}-${result.endLine} of ${result.totalLines}. Use offset=${(result.endLine ?? 0) + 1} to continue.]`,
-                }
-              : {}),
-          }
+          return buildReadFileOutput(readInput.file_path, result, chunkReader)
         }
       }
 
@@ -352,45 +395,27 @@ export function buildCodeExecutionTools(context: CodeExecutionContext): {
         }
       }
 
-      const content = result.content ?? ''
-      const totalLines = result.totalLines ?? 0
-      const endLine = result.endLine ?? 0
-      if (totalLines === 0) {
-        return { file_path: readInput.file_path, content: '', totalLines: 0 }
-      }
-      const hasMore = endLine < totalLines
-
-      return {
-        file_path: readInput.file_path,
-        content: truncateOutput(content, MAX_STDOUT_LENGTH),
-        startLine: result.startLine ?? safeStart,
-        endLine,
-        totalLines,
-        ...(hasMore
-          ? { hint: `[Showing lines ${safeStart}-${endLine} of ${totalLines}. Use offset=${endLine + 1} to continue.]` }
-          : {}),
-      }
+      return buildReadFileOutput(
+        readInput.file_path,
+        { ...result, startLine: result.startLine ?? safeStart },
+        chunkReader
+      )
     },
     toModelOutput: toTextModelOutput(formatReadFileOutput, { emptyFallback: 'File is empty.' }),
   }
 
   const create_download: ToolSet[string] = {
     description:
-      'Persist a sandbox-generated file to durable storage and mark it downloadable. The app renders a ' +
-      'download card in the chat. This is the ONLY way to deliver a file to the user — writing a file alone ' +
-      'does not make it accessible. Use after creating a file by any means (write_file, edit_file, or ' +
-      'code_execution). The file must be inside the sandbox — the working directory (relative paths), or on ' +
-      'macOS/Linux a sandbox-writable temp dir such as /tmp. If the file cannot be persisted, this returns an ' +
-      'error instead of a download; write the file inside the sandbox and try again. Never present sandbox ' +
-      'paths as download links in your reply text.',
-    inputSchema: jsonSchema({
+      'Deliver a sandbox file to the user: copies it to durable storage and shows a download card in the chat. ' +
+      'This is the only way to deliver a file. The file must be in the working directory (relative paths) or, on ' +
+      'macOS/Linux, a sandbox-writable temp dir such as /tmp. On error, write the file inside the sandbox and try again. ' +
+      'Never present sandbox paths as download links in your reply.',
+    inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
         file_path: {
           type: 'string',
-          description:
-            'Path to the file the sandbox generated, in the working directory (relative paths preferred) or a ' +
-            'sandbox-writable temp dir such as /tmp on macOS/Linux',
+          description: 'Relative path in the working directory, or a sandbox-writable temp dir such as /tmp',
         },
         display_name: {
           type: 'string',
@@ -402,6 +427,11 @@ export function buildCodeExecutionTools(context: CodeExecutionContext): {
     }),
     execute: async (input) => {
       const downloadInput = input as { file_path: string; display_name: string }
+      if (isUploadedFilePath(downloadInput.file_path))
+        return {
+          error:
+            'This virtual path requires the uploaded-file read_file tool. Use a filesystem path for this operation.',
+        }
       // Downloads must originate inside the sandbox, so phantom-home paths always map
       // there even when the host's real home happens to be /home/user.
       downloadInput.file_path = remapPhantomHomePath(downloadInput.file_path)
@@ -470,25 +500,26 @@ process.stdout.write(fs.realpathSync(filePath))
     toModelOutput: toTextModelOutput(formatDownloadOutput),
   }
 
+  const runtimeList = '- Bash\n- Node.js\n- PowerShell (Windows only; PowerShell 7 preferred, Windows PowerShell fallback)'
+  const runtimeNames = 'Node.js, PowerShell, or Bash'
+  const scriptLanguageGuidance = '- Use Node.js for most file-processing tasks.'
   const description = `
 ## Code Execution
 You have access to a sandboxed environment for lightweight code execution and file processing. Use it primarily for concrete tasks such as calculating spreadsheet data, cleaning CSV/JSON files, extracting document information, creating simple charts, converting files, and producing downloadable outputs.
 Uploaded files are described in <ATTACHMENT_FILE> tags. In sandbox mode, those tags include <SANDBOX_PATH> for the original file and, when available, <PARSED_SANDBOX_PATH> for extracted document text.
 
 ### Available Runtime
-- Bash
-- Node.js
-- PowerShell (Windows only; PowerShell 7 preferred, Windows PowerShell fallback)
+${runtimeList}
 
 Use the preinstalled runtime first:
 - CSV/TSV/JSON/table calculations: use Node.js built-ins such as fs, path, stream, readline, URL, TextDecoder, Intl, crypto, zlib, and child_process when needed.
 - XLSX, DOCX, PPTX, PDF, and image files: prefer <PARSED_SANDBOX_PATH> for extracted text. If direct binary manipulation requires unavailable libraries, explain the limitation or produce a text/CSV/HTML alternative.
 - Charts and visual outputs: generate standalone HTML with inline SVG or Canvas. Keep JavaScript, CSS, and small data inline in the HTML instead of referencing sibling .js/.css/data files. Save the HTML file, then call create_download when the user needs the result. Do not rely on Python plotting libraries.
-- File outputs: prefer CSV, JSON, Markdown, HTML, or other text-based formats that can be generated with Node.js, PowerShell, or Bash.
-- Python is not available in this code_execution tool; choose Node.js, PowerShell on Windows, or Bash.
+- File outputs: prefer CSV, JSON, Markdown, HTML, or other text-based formats that can be generated with ${runtimeNames}.
+- Python is not available in this code_execution tool; choose ${'Node.js, PowerShell on Windows, or Bash'}.
 
 ### Package Installation
-Avoid installing packages. Most simple file-processing tasks should be completed with Node.js built-ins and shell tools.
+Avoid installing packages. Most simple file-processing tasks should be completed with Node.js built-ins${' and shell tools'}.
 If a package install seems necessary:
 - First try an approach using the preinstalled runtime.
 - Do not use sudo, apt, brew, or other system package managers.
@@ -496,27 +527,18 @@ If a package install seems necessary:
 - Installed packages, if any, are session-local and may be lost after the session.
 - Explain the limitation to the user instead of spending tool calls on setup when the task is simple.
 
-### read_file
-Read file content from the sandbox with line-based pagination.
-- Use \`offset\` (1-indexed line number) and \`limit\` (number of lines) to read large files in chunks.
-- **Text files** (code, markdown, CSV, etc.): read the path in <SANDBOX_PATH> directly.
-- **Document files** (PDF, DOCX, XLSX, PPTX, etc.): when <PARSED_SANDBOX_PATH> is present, read that file to get extracted text. The original binary at <SANDBOX_PATH> is also present if you need to process it with code_execution.
-- Absolute paths outside the sandbox may read user filesystem files when the user provided or clearly requested that path. Use write_file/edit_file for modifications so the user can approve real filesystem changes.
+### Reading Whole Documents
+${WHOLE_DOCUMENT_READ_GUIDANCE}
 
 ### code_execution
-Execute focused Node.js, PowerShell, or Bash snippets. Keep scripts small and task-oriented:
-- Use Node.js for most file-processing tasks.
-- On Windows, prefer PowerShell for terminal commands and native filesystem operations. Use Bash only for POSIX-specific scripts.
+Execute focused ${runtimeNames} snippets. Keep scripts small and task-oriented:
+${scriptLanguageGuidance}
 - Read uploaded files from <SANDBOX_PATH> or <PARSED_SANDBOX_PATH>; use those paths exactly and do not guess alternate filenames. Uploads that share a filename are stored in distinct subdirectories.
 - Prefer producing explicit result files for transformed data, reports, charts, or exports.
 - Avoid long-running services, project scaffolding, dependency installation, and broad environment exploration.
 
 ### create_download
-After creating a file the user should receive — whether via write_file, edit_file, or code_execution — call create_download to make it downloadable. The app renders a download card in the chat. This is the ONLY way the user can download a file.
-- Write downloadable outputs into the working directory (use relative paths, which resolve to the sandbox working directory). On macOS/Linux, a sandbox-writable temp dir such as \`/tmp\` also works; on Windows, keep outputs in the working directory.
-- create_download copies the file into durable storage, so it stays downloadable after the session's temporary files are cleaned up.
-- If it returns an error (e.g. the file is not inside the sandbox-writable area), re-create the file in the working directory and call create_download again — do not assume the download succeeded.
-- NEVER hand-write download links in your reply. Links like \`[download](sandbox:/mnt/data/file.py)\`, \`sandbox:\` URLs, or raw file paths are NOT clickable for the user. After a successful create_download, refer the user to the download card shown in the chat.
+After a successful create_download, refer the user to the download card shown in the chat. Links like \`[download](sandbox:/mnt/data/file.py)\`, \`sandbox:\` URLs, or raw file paths are not clickable.
 `
 
   return {

@@ -1,3 +1,4 @@
+import { throwIfAborted } from '@chatbox/core/utils/abort'
 import * as base64 from '@/packages/base64'
 import type { Exporter, StreamingExportResult } from './interfaces'
 
@@ -89,23 +90,14 @@ export default class WebExporter implements Exporter {
     return Promise.resolve()
   }
 
-  async exportStreamingJson(filename: string, dataCallback: () => AsyncGenerator<string, void, unknown>) {
-    const encoder = new TextEncoder()
-    await this.exportStreamingFile(
-      filename,
-      async function* () {
-        for await (const chunk of dataCallback()) yield encoder.encode(chunk)
-      },
-      'application/json'
-    )
-  }
-
   async exportStreamingFile(
     filename: string,
     dataCallback: () => AsyncGenerator<Uint8Array, void, unknown>,
     mimeType: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    requirements?: { requiresStreaming: boolean; estimatedBytes?: number }
   ): Promise<StreamingExportResult> {
+    throwIfAborted(signal)
     const pickerWindow = window as Window & {
       showSaveFilePicker?: (options: {
         suggestedName: string
@@ -121,7 +113,7 @@ export default class WebExporter implements Exporter {
       try {
         const handle = await pickerWindow.showSaveFilePicker({
           suggestedName: filename,
-          types: [{ description: 'Chatbox backup', accept: { [mimeType]: extension ? [extension] : [] } }],
+          types: [{ description: 'File', accept: { [mimeType]: extension ? [extension] : [] } }],
         })
         writable = await handle.createWritable()
       } catch (error) {
@@ -138,6 +130,7 @@ export default class WebExporter implements Exporter {
             if (signal?.aborted) throw signal.reason ?? new DOMException('Operation canceled', 'AbortError')
             await writable.write(Uint8Array.from(chunk).buffer)
           }
+          if (signal?.aborted) throw signal.reason ?? new DOMException('Operation canceled', 'AbortError')
           await writable.close()
           return { boundedMemory: true }
         } catch (error) {
@@ -150,11 +143,19 @@ export default class WebExporter implements Exporter {
     // Browsers without File System Access cannot stream a download to disk. Keep
     // chunks as Blob parts so we avoid a second concatenated byte array, and report
     // the capability downgrade to the caller.
+    const maxBufferedBytes = 64 * 1024 * 1024
+    if (requirements?.requiresStreaming || (requirements?.estimatedBytes ?? 0) > maxBufferedBytes)
+      throw new Error('This browser cannot save this file safely. Use the desktop app.')
+    let bufferedBytes = 0
     const parts: BlobPart[] = []
     for await (const chunk of dataCallback()) {
       if (signal?.aborted) throw signal.reason ?? new DOMException('Operation canceled', 'AbortError')
+      bufferedBytes += chunk.byteLength
+      if (bufferedBytes > maxBufferedBytes)
+        throw new Error('File exceeds this browser’s 64 MiB download limit. Use the desktop app.')
       parts.push(chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.byteLength) as ArrayBuffer)
     }
+    throwIfAborted(signal)
     return {
       boundedMemory: false,
       pendingDownload: {

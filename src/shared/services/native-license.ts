@@ -1,4 +1,8 @@
+import type { AbortSignalLike } from '../types/adapters'
 import type { ChatboxAILicenseDetail } from '../types/settings'
+
+type NativeFetchInit = NonNullable<Parameters<typeof fetch>[1]>
+type NativeFetch = (input: string, init?: NativeFetchInit) => Promise<Response>
 
 /**
  * Chatbox license client (`/api/license/*`) with injectable origin/fetch/headers.
@@ -14,8 +18,8 @@ export interface NativeLicenseActivationResult {
 
 export interface NativeLicenseRequestOptions {
   apiOrigin?: string
-  fetchFn?: typeof fetch
-  signal?: AbortSignal
+  fetchFn?: NativeFetch
+  signal?: AbortSignalLike
   headers?: Record<string, string>
 }
 
@@ -35,8 +39,8 @@ async function postLicense(
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options.headers },
     body: JSON.stringify(body),
-    signal: options.signal,
-  })
+    signal: options.signal as NativeFetchInit['signal'],
+  } as NativeFetchInit)
   let payload: unknown = null
   try {
     payload = await response.json()
@@ -111,11 +115,24 @@ export async function fetchNativeLicenseDetail(
   licenseKey: string,
   options: NativeLicenseRequestOptions = {}
 ): Promise<NativeLicenseDetailResult> {
+  return fetchLicenseDetail(licenseKey, options, 'realtime')
+}
+
+/** Read-only account details; this result must not activate credentials. */
+export function fetchNativeLicenseInspection(licenseKey: string, options: NativeLicenseRequestOptions = {}) {
+  return fetchLicenseDetail(licenseKey, options, 'all_status')
+}
+
+async function fetchLicenseDetail(
+  licenseKey: string,
+  options: NativeLicenseRequestOptions,
+  endpoint: 'realtime' | 'all_status'
+): Promise<NativeLicenseDetailResult> {
   const fetchFn = options.fetchFn ?? fetch
-  const response = await fetchFn(`${resolveOrigin(options.apiOrigin)}/api/license/detail/realtime`, {
+  const response = await fetchFn(`${resolveOrigin(options.apiOrigin)}/api/license/detail/${endpoint}`, {
     headers: { Authorization: licenseKey, ...options.headers },
-    signal: options.signal,
-  })
+    signal: options.signal as NativeFetchInit['signal'],
+  } as NativeFetchInit)
   let payload: NativeLicenseDetailPayload | null = null
   try {
     payload = (await response.json()) as NativeLicenseDetailPayload

@@ -3,24 +3,42 @@
  *
  * IDs describe user-facing semantics rather than component libraries, copy, or layout.
  * Dynamic domain identity belongs in adjacent data-* attributes (see
- * AutomationAdjacentAttr), never in a generated test ID.
+ * AutomationAdjacentAttr), never in a generated test ID. Removing or renaming
+ * those attributes is a contract change, same as renaming a TestId.
  */
 
 export const AUTOMATION_CONTRACT_ID = 'chatbox-ui'
-export const AUTOMATION_CONTRACT_VERSION = '1.7.6'
+export const AUTOMATION_CONTRACT_VERSION = '1.15.0'
 export const AUTOMATION_CONTRACT_VERSION_ATTRIBUTE = 'data-automation-contract-version'
 
 /** Adjacent identity attributes hosted on TestId elements. */
 export const AutomationAdjacentAttr = {
   sessionId: 'data-session-id',
+  folderId: 'data-folder-id',
   modelId: 'data-model-id',
   providerId: 'data-provider-id',
+  shortcutName: 'data-shortcut-name',
+  shortcutValue: 'data-shortcut-value',
+  browserTabId: 'data-browser-tab-id',
+} as const
+
+/** Dynamic state attributes hosted on stable TestId elements. */
+export const AutomationStateAttr = {
+  actionBarArmed: 'data-automation-armed',
+  sessionPinned: 'data-session-pinned',
+  transcriptMessageCount: 'data-transcript-message-count',
+  transcriptPageCount: 'data-transcript-page-count',
+  transcriptFirstMessageId: 'data-transcript-first-message-id',
+  transcriptLastMessageId: 'data-transcript-last-message-id',
+  transcriptWindowEpoch: 'data-transcript-window-epoch',
+  navigationEntryCount: 'data-navigation-entry-count',
 } as const
 
 export type AutomationReasoningLevel = 'default' | 'off' | 'low' | 'medium' | 'high'
 
 export const TestId = {
   chat: {
+    transcript: 'session-transcript',
     messageInput: 'message-input',
     send: 'message-send',
     stop: 'message-stop',
@@ -29,6 +47,7 @@ export const TestId = {
     attachmentSelectFile: 'attachment-select-file',
     attachmentImageInput: 'attachment-image-input',
     attachmentFileInput: 'attachment-file-input',
+    attachmentImagePreview: 'attachment-image-preview',
     webSearchToggle: 'web-search-toggle',
     queuedMessageEnqueue: 'queued-message-enqueue',
     queuedMessageBar: 'queued-message-bar',
@@ -38,6 +57,11 @@ export const TestId = {
     queuedMessageEdit: 'queued-message-edit',
     queuedMessageSendNow: 'queued-message-send-now',
     queuedMessageClear: 'queued-message-clear',
+    queuedCompactionItem: 'queued-compaction-item',
+    queuedCompactionRemove: 'queued-compaction-remove',
+    contextMenuTrigger: 'context-menu-trigger',
+    compressConversation: 'compress-conversation',
+    compressConfirm: 'compress-confirm',
     newThread: 'new-thread-button',
     rollbackThread: 'rollback-thread-button',
     sessionSettings: 'session-settings-trigger',
@@ -46,6 +70,7 @@ export const TestId = {
     selectorTrigger: 'model-selector-trigger',
     selectorPanel: 'model-selector-panel',
     searchInput: 'model-search-input',
+    /** Hosts AutomationAdjacentAttr.modelId. */
     option: 'model-option',
     optionName: 'model-option-name',
   },
@@ -65,26 +90,43 @@ export const TestId = {
     menu: 'reasoning-control-menu',
     level: (level: AutomationReasoningLevel) => `reasoning-level-${level}`,
   },
+  layout: {
+    titleBar: 'app-title-bar',
+    expandSidebar: 'sidebar-expand',
+  },
   sidebar: {
     root: 'sidebar',
+    scrollDivider: 'sidebar-scroll-divider',
+    clearSessionList: 'clear-session-list-button',
+    chatsSectionMenu: 'sidebar-chats-section-menu',
     newChat: 'new-chat-button',
+    search: 'sidebar-search',
     newImage: 'new-image-button',
+    downloadApp: 'download-app-button',
     settingsTrigger: 'settings-trigger',
+    about: 'sidebar-about',
+    /** Hosts AutomationAdjacentAttr.sessionId. */
     sessionItem: 'session-item',
     sessionTitle: 'session-title',
     sessionPin: 'session-pin',
     sessionArchive: 'session-archive',
+    sessionSwitchHint: 'session-switch-hint',
+    pinnedSection: 'sidebar-pinned-section',
+    projectsSection: 'sidebar-projects-section',
+    chatsSection: 'sidebar-chats-section',
+    createProject: 'sidebar-create-project',
+    /** Hosts AutomationAdjacentAttr.folderId. */
+    projectHeader: 'sidebar-project-header',
     collapse: 'sidebar-collapse',
   },
   session: {
-    searchTrigger: 'session-search-trigger',
     searchInput: 'session-search-input',
     searchCurrent: 'session-search-current',
     searchAll: 'session-search-all',
     headerMenu: 'session-header-menu',
     headerMenuTrigger: 'session-header-menu-trigger',
     threadHistory: 'session-thread-history',
-    threadHistoryDrawer: 'session-thread-history-drawer',
+    threadHistoryList: 'session-thread-history-list',
     export: 'session-export',
     duplicate: 'session-duplicate',
     widthToggle: 'session-width-toggle',
@@ -92,6 +134,22 @@ export const TestId = {
     clearMessagesConfirm: 'session-clear-messages-confirm',
     delete: 'session-delete',
     deleteConfirm: 'session-delete-confirm',
+  },
+  sessionPanel: {
+    root: 'session-panel',
+    toggle: 'session-panel-toggle',
+    close: 'session-panel-close',
+    sheet: 'session-panel-sheet',
+    tabSettings: 'session-panel-tab-settings',
+    tabThreads: 'session-panel-tab-threads',
+    tabWeb: 'session-panel-tab-web',
+    newWebTab: 'session-panel-new-web-tab',
+    settings: 'session-panel-settings',
+    inheritMaxContext: 'session-panel-inherit-max-context',
+    inheritTemperature: 'session-panel-inherit-temperature',
+    overrideSummary: 'session-panel-override-summary',
+    restoreAll: 'session-panel-restore-all',
+    undoRestore: 'session-panel-undo-restore',
   },
   message: {
     item: 'message-item',
@@ -131,6 +189,7 @@ export const TestId = {
     actionBar: 'tool-call-action-bar',
     actionBarView: 'tool-call-action-bar-view',
     actionBarProgress: 'tool-call-action-bar-progress',
+    actionBarCountdown: 'tool-call-action-bar-countdown',
   },
   settings: {
     pauseOnToolCallLimitSwitch: 'settings-pause-on-tool-call-limit',
@@ -159,21 +218,39 @@ export const TestId = {
     providerModelItem: 'settings-provider-model-item',
     providerModelEdit: 'settings-provider-model-edit',
     providerModelDelete: 'settings-provider-model-delete',
+    providerModelEditor: 'settings-provider-model-editor',
+    providerModelEditorId: 'settings-provider-model-editor-id',
+    providerModelEditorNickname: 'settings-provider-model-editor-nickname',
+    providerModelEditorToolUse: 'settings-provider-model-editor-tool-use',
+    providerModelEditorSave: 'settings-provider-model-editor-save',
     close: 'settings-close',
     navChat: 'settings-nav-chat',
-    navGeneral: 'settings-nav-general',
+    navContext: 'settings-nav-context',
+    navAppearance: 'settings-nav-appearance',
+    navData: 'settings-nav-data',
+    navAdvanced: 'settings-nav-advanced',
+    navAbout: 'settings-nav-about',
     navDefaultModels: 'settings-nav-default-models',
+    search: 'settings-search',
+    searchResults: 'settings-search-results',
+    theme: 'settings-theme',
     defaultPrompt: 'settings-default-prompt',
     temperature: 'settings-temperature',
     topP: 'settings-top-p',
     maxContext: 'settings-max-context',
+    maxContextCustom: 'settings-max-context-custom',
     defaultChatModel: 'settings-default-chat-model',
+    modelRigApplyPresets: 'settings-model-rig-apply-presets',
+    modelRigTestAll: 'settings-model-rig-test-all',
+    shortcutRow: 'settings-shortcut-row',
+    shortcutSelect: 'settings-shortcut-select',
     sessionName: 'session-settings-name',
     sessionPrompt: 'session-settings-prompt',
     sessionTemperature: 'session-settings-temperature',
     sessionTopP: 'session-settings-top-p',
     sessionMaxTokens: 'session-settings-max-tokens',
     sessionMaxContext: 'session-settings-max-context',
+    sessionMaxContextCustom: 'session-settings-max-context-custom',
     sessionClaudePromptCacheTTL: 'session-settings-claude-prompt-cache-ttl',
     sessionSave: 'session-settings-save',
     clearSessionListKeep: 'clear-session-list-keep-count',

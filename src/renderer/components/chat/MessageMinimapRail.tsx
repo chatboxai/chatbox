@@ -6,6 +6,7 @@ import {
   type UIEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react'
@@ -23,7 +24,6 @@ const DEFAULT_VIEWPORT_HEIGHT = 360
 
 export type MessageMinimapAnchor = {
   messageId: string
-  itemIndex: number
   text: string
   assistantText?: string
 }
@@ -32,6 +32,14 @@ export type MessageMinimapRailProps = {
   anchors: MessageMinimapAnchor[]
   className?: string
   onJump?: (anchor: MessageMinimapAnchor) => void
+  hasOlder?: boolean
+  hasNewer?: boolean
+  onLoadOlder?: () => void
+  onLoadNewer?: () => void
+  onEdge?: (edge: 'head' | 'tail') => void
+  loading?: boolean
+  error?: unknown
+  onRetry?: () => void
 }
 
 type HoveredAnchor = {
@@ -75,13 +83,29 @@ const edgeFadeBlurStyle: CSSProperties = {
   backdropFilter: 'blur(1px)',
 }
 
-const MessageMinimapRail = ({ anchors, className, onJump }: MessageMinimapRailProps) => {
+const MessageMinimapRail = ({
+  anchors,
+  className,
+  onJump,
+  hasOlder,
+  hasNewer,
+  onLoadOlder,
+  onLoadNewer,
+  onEdge,
+  loading,
+  error,
+  onRetry,
+}: MessageMinimapRailProps) => {
   const { t } = useTranslation()
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const anchorButtonRefs = useRef(new Map<number, HTMLButtonElement>())
   const pendingFocusIndexRef = useRef<number | null>(null)
   const hasScrolledToInitialEndRef = useRef(false)
   const contentHeight = anchors.length * ITEM_HEIGHT
+  const previousAnchors = useRef(anchors)
+  const edgeIntent = useRef<'head' | 'tail' | null>(null)
+  const wasLoading = useRef(!!loading)
+  const paginationFocus = useRef<{ messageId: string; delta: number } | null>(null)
 
   const [pointerContentY, setPointerContentY] = useState<number | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
@@ -213,6 +237,56 @@ const MessageMinimapRail = ({ anchors, className, onJump }: MessageMinimapRailPr
     }
   }, [contentHeight])
 
+  useLayoutEffect(() => {
+    const previous = previousAnchors.current
+    previousAnchors.current = anchors
+    const finishedLoading = wasLoading.current && !loading
+    wasLoading.current = !!loading
+    if (previous === anchors || !scrollAreaRef.current) {
+      if (finishedLoading) edgeIntent.current = null
+      return
+    }
+    if (
+      previous.length === anchors.length &&
+      previous.every((anchor, index) => anchor.messageId === anchors[index].messageId)
+    ) {
+      setHoveredAnchor((hovered) => (hovered ? { ...hovered, anchor: anchors[hovered.index] } : null))
+      if (finishedLoading) edgeIntent.current = null
+      return
+    }
+    const area = scrollAreaRef.current
+    const oldIndex = Math.min(previous.length - 1, Math.max(0, Math.floor(area.scrollTop / ITEM_HEIGHT)))
+    const anchorId = previous[oldIndex]?.messageId
+    const nextIndex = anchors.findIndex((anchor) => anchor.messageId === anchorId)
+    const edge = edgeIntent.current
+    if (edge) {
+      area.scrollTop = edge === 'head' ? 0 : area.scrollHeight
+      edgeIntent.current = null
+    } else if (nextIndex >= 0) {
+      area.scrollTop += (nextIndex - oldIndex) * ITEM_HEIGHT
+    }
+    setScrollTop(area.scrollTop)
+    setHoveredAnchor(null)
+    setPointerContentY(null)
+    const pending = paginationFocus.current
+    const currentFocusId = pending?.messageId ?? previous[keyboardAnchorIndex]?.messageId
+    const focusIndex = edge
+      ? edge === 'head'
+        ? 0
+        : anchors.length - 1
+      : anchors.findIndex((anchor) => anchor.messageId === currentFocusId)
+    if (focusIndex >= 0) {
+      const desired = Math.max(0, Math.min(anchors.length - 1, focusIndex + (edge ? 0 : (pending?.delta ?? 0))))
+      setKeyboardAnchorIndex(desired)
+      if (pending || edge) {
+        pendingFocusIndexRef.current = desired
+        area.scrollTop = desired * ITEM_HEIGHT
+        setScrollTop(area.scrollTop)
+        paginationFocus.current = null
+      }
+    }
+  }, [anchors, loading, keyboardAnchorIndex])
+
   const renderRange = getMinimapRenderRange(anchors.length, scrollTop, viewportHeight)
 
   useEffect(() => {
@@ -268,6 +342,11 @@ const MessageMinimapRail = ({ anchors, className, onJump }: MessageMinimapRailPr
 
   const handleAnchorKeyDown = useCallback(
     (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+      if (error && ['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) {
+        event.preventDefault()
+        if (!loading) onRetry?.()
+        return
+      }
       let nextIndex: number | null = null
       switch (event.key) {
         case 'ArrowUp':
@@ -277,21 +356,35 @@ const MessageMinimapRail = ({ anchors, className, onJump }: MessageMinimapRailPr
           nextIndex = index + 1
           break
         case 'Home':
+          if (hasOlder) {
+            edgeIntent.current = 'head'
+            onEdge?.('head')
+          }
           nextIndex = 0
           break
         case 'End':
+          if (hasNewer) {
+            edgeIntent.current = 'tail'
+            onEdge?.('tail')
+          }
           nextIndex = anchors.length - 1
           break
       }
 
       if (nextIndex === null) return
       event.preventDefault()
-      focusAnchorAtIndex(nextIndex)
+      if (nextIndex < 0 && hasOlder && !loading) {
+        paginationFocus.current = { messageId: anchors[index].messageId, delta: -1 }
+        onLoadOlder?.()
+      } else if (nextIndex >= anchors.length && hasNewer && !loading) {
+        paginationFocus.current = { messageId: anchors[index].messageId, delta: 1 }
+        onLoadNewer?.()
+      } else focusAnchorAtIndex(nextIndex)
     },
-    [anchors.length, focusAnchorAtIndex]
+    [anchors, focusAnchorAtIndex, hasOlder, hasNewer, onLoadOlder, onLoadNewer, onEdge, loading, error, onRetry]
   )
 
-  if (anchors.length === 0) {
+  if (anchors.length === 0 && !hasOlder && !hasNewer && !error && !loading) {
     return null
   }
 
@@ -321,9 +414,19 @@ const MessageMinimapRail = ({ anchors, className, onJump }: MessageMinimapRailPr
         className
       )}
       data-testid="message-minimap-rail"
+      data-navigation-entry-count={anchors.length}
     >
       <div
         ref={scrollAreaRef}
+        tabIndex={error && anchors.length === 0 ? 0 : undefined}
+        role={error && anchors.length === 0 ? 'group' : undefined}
+        aria-label={error && anchors.length === 0 ? String(t('Try Again')) : undefined}
+        onKeyDown={(event) => {
+          if (error && anchors.length === 0 && ['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) {
+            event.preventDefault()
+            if (!loading) onRetry?.()
+          }
+        }}
         className={cn(
           'pointer-events-auto mr-auto h-full w-5 overflow-y-auto overflow-x-visible py-1',
           '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
@@ -332,6 +435,17 @@ const MessageMinimapRail = ({ anchors, className, onJump }: MessageMinimapRailPr
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
         onScroll={handleScroll}
+        onWheel={(event) => {
+          if (loading || event.deltaY === 0) return
+          if (error) {
+            onRetry?.()
+            return
+          }
+          const area = event.currentTarget
+          if (event.deltaY < 0 && area.scrollTop < ITEM_HEIGHT * 4 && hasOlder) onLoadOlder?.()
+          if (event.deltaY > 0 && area.scrollHeight - area.clientHeight - area.scrollTop < ITEM_HEIGHT * 4 && hasNewer)
+            onLoadNewer?.()
+        }}
       >
         <div className="relative" style={{ height: contentHeight, transform: `translateY(${contentOffset}px)` }}>
           {renderedAnchors.map((anchor, visibleIndex) => {

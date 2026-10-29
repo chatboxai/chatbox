@@ -104,6 +104,8 @@ export function ChatboxProviderRows({
       }).length,
     0
   )
+  if (modelCount === 0) return null
+
   const renderGroups = favoriteOnly
     ? catalog.groups.map((group) => ({
         id: group.id,

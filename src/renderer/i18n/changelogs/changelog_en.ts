@@ -1,4 +1,18 @@
 const changelog = `
+## v1.24.0 - 2026.10.29
+1. Added Projects: group chats into projects, with Work Mode chats grouped by working directory
+2. Added a built-in browser to Work Mode on desktop: the AI can use web pages, and you can take over at any time
+3. Consecutive tool calls in Work Mode are shown as one line
+4. Settings are regrouped and searchable; helper models are merged into one Fast model
+5. Image generation supports reference images; added OpenRouter and custom OpenAI-compatible image models
+6. Choose which conversations to back up
+7. Requests retry automatically on network or provider errors
+8. Work Mode approval requests are denied after 45 seconds without a response
+9. Added Auto wrap for code blocks; knowledge bases support DashScope rerank
+10. Sending a message keeps your reading position; deleting a message keeps other branches
+11. Improved context compaction for long Work Mode tasks
+12. Fixed AGENTS.md not loading on Windows and other issues
+
 ## v1.23.5 - 2026.09.24
 1. Fixed external one-click MCP setup links failing to open the prefilled server dialog when the app was not running
 

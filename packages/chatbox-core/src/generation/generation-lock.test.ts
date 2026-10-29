@@ -1,7 +1,62 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { resetSessionGenerationLocksForTests, withSessionGenerationLock } from './generation-lock'
+import {
+  hasPendingSessionGeneration,
+  resetSessionGenerationLocksForTests,
+  waitForSessionGenerations,
+  withSessionGenerationLock,
+} from './generation-lock'
 
 describe('session generation lock', () => {
+  it('cancels waiting while accepted submission work keeps running', async () => {
+    let finish = () => {}
+    const active = withSessionGenerationLock(
+      'active',
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve
+        })
+    )
+    await Promise.resolve()
+    const controller = new AbortController()
+    const waiting = waitForSessionGenerations(controller.signal)
+    controller.abort()
+    try {
+      await expect(waiting).rejects.toMatchObject({ name: 'AbortError' })
+    } finally {
+      finish()
+      await active
+    }
+  }, 1000)
+
+  it('waits for accepted generation preparation and queued submissions across sessions', async () => {
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const events: string[] = []
+    const first = withSessionGenerationLock('first', async () => {
+      await gate
+      events.push('first')
+    })
+    const next = withSessionGenerationLock('first', async () => {
+      events.push('queued')
+    })
+    const other = withSessionGenerationLock('second', async () => {
+      await gate
+      events.push('second')
+    })
+    const waiting = waitForSessionGenerations().then(() => {
+      events.push('idle')
+    })
+    await Promise.resolve()
+    expect(events).toEqual([])
+    release()
+    await Promise.all([first, next, other, waiting])
+    expect(events.at(-1)).toBe('idle')
+    expect(events).toContain('queued')
+    expect(events).toContain('second')
+  })
+
   afterEach(() => {
     resetSessionGenerationLocksForTests()
   })
@@ -54,5 +109,29 @@ describe('session generation lock', () => {
     await expect(second).resolves.toBe('second')
     releaseFirst()
     await first
+  })
+
+  it('reports a pending generation turn until the last task releases it', async () => {
+    expect(hasPendingSessionGeneration('session-1')).toBe(false)
+
+    let releaseTask = () => {}
+    const taskGate = new Promise<void>((resolve) => {
+      releaseTask = resolve
+    })
+    const first = withSessionGenerationLock('session-1', () => taskGate)
+    // A submission that has not produced a generating message yet still owns the turn.
+    expect(hasPendingSessionGeneration('session-1')).toBe(true)
+    expect(hasPendingSessionGeneration('session-2')).toBe(false)
+
+    const secondTask = vi.fn(() => Promise.resolve('second'))
+    const second = withSessionGenerationLock('session-1', secondTask)
+    expect(hasPendingSessionGeneration('session-1')).toBe(true)
+
+    releaseTask()
+    await first
+    // The queued task keeps the turn until it finishes too.
+    expect(hasPendingSessionGeneration('session-1')).toBe(true)
+    await expect(second).resolves.toBe('second')
+    expect(hasPendingSessionGeneration('session-1')).toBe(false)
   })
 })

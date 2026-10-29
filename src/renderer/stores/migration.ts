@@ -1,3 +1,4 @@
+import type { SessionTranscriptCursor } from '@chatbox/core/ports'
 import {
   LEGACY_PROVIDER_MODEL_KEYS,
   type LegacyFlatSettings,
@@ -5,17 +6,21 @@ import {
 } from '@shared/migration/legacy-provider-settings'
 import {
   type ImageGeneration,
-  type ModelProvider,
+  type Message,
   ModelProviderEnum,
   type Session,
+  type SessionHeader,
   type SessionMeta,
+  type SessionSettings,
   type Settings,
 } from '@shared/types'
+import { SessionSettingsSchema } from '@shared/types/settings'
 import dayjs from 'dayjs'
 import { getDefaultStore } from 'jotai'
-import { difference, intersection, keyBy, uniq } from 'lodash'
+import { difference, intersection, uniq } from 'lodash'
 import oldStore from 'store'
-import { v4 as uuidv4 } from 'uuid'
+import { v5 as uuidv5 } from 'uuid'
+import { sessionRepository } from '@/app/renderer-application'
 import {
   artifactSessionCN,
   artifactSessionEN,
@@ -32,7 +37,6 @@ import { getOldVersionStorages } from '@/platform/storages'
 import WebPlatform from '@/platform/web_platform'
 import { initData } from '@/setup/init_data'
 import storage, { StorageKey } from '@/storage'
-import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import { createSessionMetaRecordsFromLegacyList } from '@/utils/session-utils'
 import * as defaults from '../../shared/defaults'
 import { getLogger } from '../lib/utils'
@@ -49,6 +53,10 @@ export async function migrate() {
       getData: storage.getItem.bind(storage),
       setData: storage.setItemNow.bind(storage),
       setAll: storage.setAll.bind(storage),
+      getSessionHeader: (id) => sessionRepository.readUpgradeSessionHeader(id),
+      importSession: (session) => sessionRepository.storeLegacyUpgradeInput(session),
+      updateSessionSettings: (id, settings) => sessionRepository.upgradeLegacySessionSettings(id, settings),
+      openMessages: openUpgradeMessages,
       setBlob: storage.setBlob.bind(storage),
     },
     true
@@ -59,10 +67,52 @@ type MigrateStore = {
   getData: <T>(key: StorageKey | string, defaultValue: T) => Promise<T>
   setData: <T>(key: StorageKey | string, value: T) => Promise<void>
   setAll: (data: { [key: string]: unknown }) => Promise<void>
+  getSessionHeader: (id: string) => Promise<SessionHeader | null>
+  importSession: (source: Session) => Promise<void>
+  updateSessionSettings: (id: string, settings: SessionSettings) => Promise<void>
+  openMessages: (id: string) => Promise<UpgradeMessages>
   setBlob?: (key: string, value: string) => Promise<void>
 }
 
 export const CurrentVersion = 15
+
+type UpgradeMessages = {
+  messages: AsyncIterable<Message>
+  read: (messageId: string) => Promise<Message | undefined>
+}
+
+async function openUpgradeMessages(sessionId: string): Promise<UpgradeMessages> {
+  const read = await sessionRepository.getSessionHeader(sessionId)
+  if (!read) throw new Error(`Missing conversation ${sessionId} during upgrade`)
+  return {
+    messages: (async function* () {
+      let cursor: SessionTranscriptCursor | undefined
+      do {
+        const page = await sessionRepository.readSessionTranscriptWindow({
+          sessionId,
+          limit: 50,
+          origin: { threadId: read.activeThreadId, edge: 'head' },
+          expectedRevision: read.revision,
+          cursor,
+        })
+        if (!page) throw new Error('Conversation disappeared during upgrade')
+        for (const row of page.messages) {
+          if (row.threadId !== read.activeThreadId) return
+          yield row.message
+        }
+        cursor = page.newer ?? undefined
+      } while (cursor)
+    })(),
+    read: async (messageId) =>
+      (
+        await sessionRepository.readSessionMessages({
+          sessionId,
+          messageIds: [messageId],
+          expectedRevision: read.revision,
+        })
+      )?.messages[0],
+  }
+}
 
 async function doMigrateStorage(oldStorage: Storage) {
   // 找到老版本的数据，说明是升级，执行数据迁移操作
@@ -350,9 +400,9 @@ async function migrate_7_to_8(dataStore: MigrateStore): Promise<boolean> {
   await dataStore.setData(StorageKey.ChatSessionsList, sessionList)
   log.info(`migrate_7_to_8, sessionList: ${sessionList.length}`)
 
-  // 一次写入所有 session， 提升性能
-  const sessionMap = keyBy(sessions, (session) => StorageKeyGenerator.session(session.id))
-  await dataStore.setAll(sessionMap)
+  for (const session of sessions) {
+    await dataStore.importSession(session)
+  }
   log.info(`migrate_7_to_8, done`)
   return true
 }
@@ -395,8 +445,9 @@ async function migrate_8_to_9(dataStore: MigrateStore): Promise<boolean> {
 
   // 写入 chat-sessions-list
   await dataStore.setData(StorageKey.ChatSessionsList, [...sessionList, ...missedSessionList])
-  const missedSessionMap = keyBy(missedSessions, (session) => StorageKeyGenerator.session(session.id))
-  await dataStore.setAll(missedSessionMap)
+  for (const session of missedSessions) {
+    await dataStore.importSession(session)
+  }
   log.info(`migrate_8_to_9 done`)
 
   return true
@@ -409,10 +460,10 @@ function setInitProcess(process: string) {
 
 // 迁移provider settings，session settings
 async function migrate_9_to_10(dataStore: MigrateStore): Promise<boolean> {
-  const oldSettings = (await dataStore.getData(StorageKey.Settings, null)) as any
+  const oldSettings = await dataStore.getData<LegacyFlatSettings | null>(StorageKey.Settings, null)
   if (oldSettings) {
     // 迁移provider相关的配置（纯数据变换已下沉到 shared，web/native 共用）
-    const { providers, customProviders } = migrateLegacyProviderSettings(oldSettings as LegacyFlatSettings)
+    const { providers, customProviders } = migrateLegacyProviderSettings(oldSettings)
 
     try {
       await dataStore.setData(StorageKey.Settings, {
@@ -423,6 +474,7 @@ async function migrate_9_to_10(dataStore: MigrateStore): Promise<boolean> {
       log.info('migrate settings done')
     } catch (e) {
       log.info('save new settings to store failed.')
+      throw e
     }
   }
 
@@ -430,50 +482,48 @@ async function migrate_9_to_10(dataStore: MigrateStore): Promise<boolean> {
   const chatSessionList = await dataStore.getData<SessionMeta[]>(StorageKey.ChatSessionsList, [])
   log.info(`migrate_9_to_10, chatSessionList: ${chatSessionList.length}`)
 
-  const sessionMap: { [key: string]: Session } = {}
   for (let i = 0; i < chatSessionList.length; i++) {
     const sessionMeta = chatSessionList[i]
     try {
-      const session: Session = await dataStore.getData(StorageKeyGenerator.session(sessionMeta.id) as any, {} as any)
+      const session = await dataStore.getSessionHeader(sessionMeta.id)
 
-      if (session.id) {
-        const oldSessionSettings = (session.settings || {}) as any
-        const sessionProvider: ModelProvider = oldSessionSettings.aiProvider ?? oldSettings.aiProvider
+      if (session?.id) {
+        const oldSessionSettings: LegacyFlatSettings = session.settings || {}
+        if (typeof oldSessionSettings.provider === 'string') continue
+        const sessionProvider = oldSessionSettings.aiProvider ?? oldSettings?.aiProvider ?? ModelProviderEnum.ChatboxAI
         const modelKey = LEGACY_PROVIDER_MODEL_KEYS[sessionProvider]
-        const modelId: string = oldSessionSettings[modelKey!] ?? oldSettings[modelKey!]
-        session.settings =
+        const modelId = modelKey ? (oldSessionSettings[modelKey] ?? oldSettings?.[modelKey]) : undefined
+        const settings = SessionSettingsSchema.parse(
           session.type === 'chat'
             ? {
                 provider: sessionProvider,
                 modelId,
-                maxContextMessageCount: oldSessionSettings.maxContextMessageCount ?? oldSettings.maxContextMessageCount,
-                temperature: oldSessionSettings.temperature ?? oldSettings.temperature,
-                topP: oldSessionSettings.topP ?? oldSettings.topP,
+                maxContextMessageCount:
+                  oldSessionSettings.maxContextMessageCount ?? oldSettings?.maxContextMessageCount,
+                temperature: oldSessionSettings.temperature ?? oldSettings?.temperature,
+                topP: oldSessionSettings.topP ?? oldSettings?.topP,
               }
             : {
-                provider: [ModelProviderEnum.ChatboxAI, ModelProviderEnum.OpenAI, ModelProviderEnum.Azure].includes(
-                  oldSettings.aiProvider
-                )
-                  ? oldSettings.aiProvider
+                provider: new Set<string>([
+                  ModelProviderEnum.ChatboxAI,
+                  ModelProviderEnum.OpenAI,
+                  ModelProviderEnum.Azure,
+                ]).has(oldSettings?.aiProvider ?? '')
+                  ? oldSettings?.aiProvider
                   : ModelProviderEnum.ChatboxAI,
                 modelId: 'DALL-E-3',
                 imageGenerateNum: oldSessionSettings.imageGenerateNum ?? 3,
                 dalleStyle: oldSessionSettings.dalleStyle ?? 'vivid',
               }
+        )
 
-        sessionMap[StorageKeyGenerator.session(session.id)] = session
+        await dataStore.updateSessionSettings(session.id, settings)
       }
       log.info(`migrate session [${i + 1}/${chatSessionList.length}] settings done`)
     } catch (e) {
       log.info(`migrate session [${i + 1}/${chatSessionList.length}] settings failed, ${sessionMeta.name}`)
+      throw e
     }
-  }
-
-  try {
-    await dataStore.setAll(sessionMap)
-    log.info('migrate sessions settings done')
-  } catch (e) {
-    log.info('save sessions settings to store failed.')
   }
 
   log.info(`migrate_9_to_10, done`)
@@ -527,63 +577,68 @@ async function migrate_13_to_14(dataStore: MigrateStore) {
 
   for (const sessionMeta of pictureSessions) {
     try {
-      const sessionKey = StorageKeyGenerator.session(sessionMeta.id)
-      const session = (await dataStore.getData(sessionKey, null)) as Session | null
-
-      if (!session || !session.messages) {
-        continue
-      }
+      const session = await dataStore.getSessionHeader(sessionMeta.id)
+      if (!session) throw new Error(`Missing picture conversation ${sessionMeta.id}`)
+      const source = await dataStore.openMessages(session.id)
 
       let parentId: string | undefined
-      for (let i = 0; i < session.messages.length; i++) {
-        const msg = session.messages[i]
-        if (msg.role !== 'user') continue
-
-        const assistantMsg = session.messages.slice(i + 1).find((m) => m.role === 'assistant')
-        if (!assistantMsg) continue
-
-        const prompt = msg.contentParts?.find((p) => p.type === 'text')?.text || ''
-        if (!prompt) continue
-
-        const referenceImages = (msg.contentParts || [])
-          .filter(
-            (p): p is { type: 'image'; storageKey: string } =>
-              p.type === 'image' && !!p.storageKey && p.storageKey.length > 0
-          )
-          .map((p) => p.storageKey)
-
-        const generatedImages = (assistantMsg.contentParts || [])
-          .filter(
-            (p): p is { type: 'image'; storageKey: string } =>
-              p.type === 'image' && !!p.storageKey && p.storageKey.length > 0
-          )
-          .map((p) => p.storageKey)
-
-        if (generatedImages.length === 0) continue
-
-        const recordId = uuidv4()
-        const record: ImageGeneration = {
-          id: recordId,
-          prompt,
-          referenceImages,
-          generatedImages,
-          createdAt: assistantMsg.timestamp || Date.now(),
-          model: {
-            provider: session.settings?.provider || ModelProviderEnum.ChatboxAI,
-            modelId: session.settings?.modelId || 'DALL-E-3',
-          },
-          dalleStyle: session.settings?.dalleStyle,
-          imageGenerateNum: session.settings?.imageGenerateNum,
-          status: 'done',
-          parentIds: parentId ? [parentId] : undefined,
+      const pendingUserIds: string[] = []
+      for await (const assistantMsg of source.messages) {
+        if (assistantMsg.role === 'user') {
+          pendingUserIds.push(assistantMsg.id)
+          continue
         }
+        if (assistantMsg.role !== 'assistant') continue
+        for (const messageId of pendingUserIds) {
+          const msg = await source.read(messageId)
+          if (!msg) throw new Error(`Picture message ${messageId} disappeared during upgrade`)
+          const prompt = msg.contentParts?.find((p) => p.type === 'text')?.text || ''
+          if (!prompt) continue
 
-        await imageGenerationStorage.create(record)
-        migratedCount++
-        parentId = recordId
+          const referenceImages = (msg.contentParts || [])
+            .filter(
+              (p): p is { type: 'image'; storageKey: string } =>
+                p.type === 'image' && !!p.storageKey && p.storageKey.length > 0
+            )
+            .map((p) => p.storageKey)
+
+          const generatedImages = (assistantMsg.contentParts || [])
+            .filter(
+              (p): p is { type: 'image'; storageKey: string } =>
+                p.type === 'image' && !!p.storageKey && p.storageKey.length > 0
+            )
+            .map((p) => p.storageKey)
+
+          if (generatedImages.length === 0) continue
+
+          const recordId = uuidv5(JSON.stringify(['picture-upgrade', session.id, msg.id]), uuidv5.URL)
+          const existing = await imageGenerationStorage.getById(recordId)
+          const record: ImageGeneration = {
+            id: recordId,
+            prompt,
+            referenceImages,
+            generatedImages,
+            createdAt: assistantMsg.timestamp || existing?.createdAt || Date.now(),
+            model: {
+              provider: session.settings?.provider || ModelProviderEnum.ChatboxAI,
+              modelId: session.settings?.modelId || 'DALL-E-3',
+            },
+            dalleStyle: session.settings?.dalleStyle,
+            imageGenerateNum: session.settings?.imageGenerateNum,
+            status: 'done',
+            parentIds: parentId ? [parentId] : undefined,
+          }
+
+          if (existing) await imageGenerationStorage.update(recordId, record)
+          else await imageGenerationStorage.create(record)
+          migratedCount++
+          parentId = recordId
+        }
+        pendingUserIds.length = 0
       }
     } catch (e) {
       log.info(`migrate_13_to_14, failed to migrate session: ${sessionMeta.id}`, e)
+      throw e
     }
   }
 

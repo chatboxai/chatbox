@@ -1,3 +1,4 @@
+import { QueryKeys } from '@chatbox/react/query'
 import NiceModal from '@ebay/nice-modal-react'
 import { Box, Paper, Stack, Text } from '@mantine/core'
 import type { Message, Session, SessionMeta, SessionMetaRecord } from '@shared/types'
@@ -7,13 +8,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider } from '@tanstack/react-router'
 import { getDefaultStore } from 'jotai'
 import { createContext, type MutableRefObject, type ReactNode, useContext, useEffect, useRef } from 'react'
-import { currentSessionIdAtom, showThreadHistoryDrawerAtom } from '@/stores/atoms'
-import { QueryKeys } from '@chatbox/react/query'
 import { rendererApplication } from '@/app/renderer-application'
+import { currentSessionIdAtom } from '@/stores/atoms'
 import { resetSessionActivityStore, sessionActivityStore } from '@/stores/sessionActivityStore'
 import SessionItem from '../session/SessionItem'
 import SessionList from '../session/SessionList'
-import ThreadHistoryDrawer from '../session/ThreadHistoryDrawer'
+import ThreadHistoryList from '../session/ThreadHistoryList'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -130,7 +130,7 @@ function SessionItemStatesFixture() {
   useEffect(() => {
     const runtime = rendererApplication.generationRuntime.start(sessionMetas[1].id, 'story-reply')
     sessionActivityStore.setState({
-      unreadCompletedSessionIds: { [sessionMetas[2].id]: true },
+      unreadSessionIds: { [sessionMetas[2].id]: 'completed' },
     })
     return () => {
       rendererApplication.generationRuntime.finishActive(sessionMetas[1].id, runtime.messageId, runtime)
@@ -155,12 +155,12 @@ function SessionItemStatesFixture() {
   )
 }
 
-export const ThreadHistoryDrawerStates: StoryObj = {
+export const ThreadHistoryListStates: StoryObj = {
   name: 'Thread history drawer with current and archived threads',
   parameters: {
-    uiInventoryTargets: ['src/renderer/components/session/ThreadHistoryDrawer'],
+    uiInventoryTargets: ['src/renderer/components/session/ThreadHistoryList'],
   },
-  render: () => <ThreadHistoryDrawerFixture />,
+  render: () => <ThreadHistoryListFixture />,
 }
 
 export const SessionListStates: StoryObj = {
@@ -175,26 +175,18 @@ export const SessionListStates: StoryObj = {
   ),
 }
 
-function ThreadHistoryDrawerFixture() {
+function ThreadHistoryListFixture() {
   useEffect(() => {
-    const store = getDefaultStore()
-    store.set(currentSessionIdAtom, threadedSession.id)
-    store.set(showThreadHistoryDrawerAtom, true)
-    return () => {
-      store.set(showThreadHistoryDrawerAtom, false)
-    }
+    getDefaultStore().set(currentSessionIdAtom, threadedSession.id)
   }, [])
 
   return (
     <Paper withBorder radius="md" p="md" h={320} pos="relative" style={{ overflow: 'hidden' }}>
       <SurfaceLabel
-        title="ThreadHistoryDrawer"
-        description="Actual thread history drawer populated from a real Session object with historical threads."
+        title="ThreadHistoryList"
+        description="Thread history list from the conversation side panel, populated from a real Session object with historical threads."
       />
-      <Text size="sm" c="dimmed" mt="md">
-        The drawer is opened through the same Jotai UI state used by the app.
-      </Text>
-      <ThreadHistoryDrawer session={threadedSession} />
+      <ThreadHistoryList session={threadedSession} />
     </Paper>
   )
 }

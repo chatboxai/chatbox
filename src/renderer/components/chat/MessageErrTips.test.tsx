@@ -1,20 +1,26 @@
 // @vitest-environment jsdom
 
+import type { SessionHeader } from '@chatbox/core/ports'
 import { MantineProvider } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
-import { MESSAGE_ERROR_CODES } from '@shared/models/errors'
-import type { ChatboxAILicenseDetail, ChatboxAIPlanType, Message, Session } from '@shared/types'
+import { ChatboxAIAPIError, MESSAGE_ERROR_CODES } from '@shared/models/errors'
+import type { ChatboxAILicenseDetail, ChatboxAIPlanType, Message } from '@shared/types'
 import { afterEach, expect, test, vi } from 'vitest'
 import { settingsStore } from '@/stores/settingsStore'
-import { fireEvent, render, screen } from '@/test-utils'
+import { fireEvent, render, screen, waitFor } from '@/test-utils'
 import MessageErrTips from './MessageErrTips'
+
+const translationMocks = vi.hoisted(() => ({ translateTexts: vi.fn<() => Promise<string[]>>() }))
+vi.mock('@/packages/translation', () => translationMocks)
 
 const platformMocks = vi.hoisted(() => ({
   openLink: vi.fn(),
 }))
 const trackingMocks = vi.hoisted(() => ({
   trackTokenExhaustedCard: vi.fn(),
-  useSession: vi.fn<(sessionId: string | null) => { session?: Pick<Session, 'settings'>; isFetched: boolean }>(() => ({
+  useSessionHeader: vi.fn<
+    (sessionId: string | null) => { session?: Pick<SessionHeader, 'settings'>; isFetched: boolean }
+  >(() => ({
     session: undefined,
     isFetched: false,
   })),
@@ -39,7 +45,7 @@ vi.mock('@/app/renderer-application', async (importOriginal) => {
       ...actual.rendererApplication,
       sessionHooks: {
         ...actual.rendererApplication.sessionHooks,
-        useSession: trackingMocks.useSession,
+        useSessionHeader: trackingMocks.useSessionHeader,
       },
     },
   }
@@ -87,11 +93,41 @@ const proPlusLicenseDetail: ChatboxAILicenseDetail = {
 }
 
 afterEach(() => {
+  translationMocks.translateTexts.mockReset()
   platformMocks.openLink.mockReset()
   trackingMocks.trackTokenExhaustedCard.mockReset()
-  trackingMocks.useSession.mockReset()
-  trackingMocks.useSession.mockReturnValue({ session: undefined, isFetched: false })
+  trackingMocks.useSessionHeader.mockReset()
+  trackingMocks.useSessionHeader.mockReturnValue({ session: undefined, isFetched: false })
   settingsStore.setState(initialSettings)
+})
+
+test('shows the Free plan downgrade and license refresh guidance for a backend downgrade error', () => {
+  const error = ChatboxAIAPIError.fromCodeName('Plan Downgraded', 'license_downgraded')
+  expect(error).not.toBeNull()
+
+  const msg = {
+    id: 'assistant-downgraded',
+    role: 'assistant',
+    contentParts: [],
+    error: error?.message,
+    errorCode: error?.code,
+    aiProvider: 'chatbox-ai',
+  } as Message
+
+  render(
+    <MantineProvider>
+      <MessageErrTips msg={msg} />
+    </MantineProvider>
+  )
+
+  expect(
+    screen.getByText(
+      'Your plan has expired and has been automatically downgraded to the Free plan. Please refresh your license information and try again.'
+    )
+  ).not.toBeNull()
+  expect(
+    screen.queryByText('Your license has expired. Please check your subscription or purchase a new one.')
+  ).toBeNull()
 })
 
 test.each([
@@ -133,7 +169,7 @@ test.each([
             plan: plan as ChatboxAIPlanType,
           },
   }))
-  trackingMocks.useSession.mockReturnValue({
+  trackingMocks.useSessionHeader.mockReturnValue({
     session: { settings: { agentMode: { value: agentMode ? 'on' : 'off', locked: false, lockReason: null } } },
     isFetched: true,
   })
@@ -200,8 +236,8 @@ test('renders file preprocessing errors as generic backend errors instead of OCR
   expect(trackingMocks.trackTokenExhaustedCard).not.toHaveBeenCalled()
 })
 
-test('resolves a missing generation mode from the cached session before tracking', () => {
-  trackingMocks.useSession.mockReturnValue({
+test('resolves a missing generation mode from the cached session header before tracking', () => {
+  trackingMocks.useSessionHeader.mockReturnValue({
     session: { settings: { agentMode: { value: 'on', locked: false, lockReason: null } } },
     isFetched: true,
   })
@@ -227,7 +263,7 @@ test('resolves a missing generation mode from the cached session before tracking
     </MantineProvider>
   )
 
-  expect(trackingMocks.useSession).toHaveBeenCalledWith('session-123')
+  expect(trackingMocks.useSessionHeader).toHaveBeenCalledWith('session-123')
   expect(trackingMocks.trackTokenExhaustedCard).toHaveBeenCalledWith('exposure', {
     sessionId: 'session-123',
     mode: 'work_mode',
@@ -236,4 +272,95 @@ test('resolves a missing generation mode from the cached session before tracking
     action: 'upgrade-plan',
     plan: 'pro',
   })
+})
+
+test('keeps raw details copyable while collapsed and supports expanding them without retrying', () => {
+  settingsStore.setState((state) => ({ ...state, language: 'en', licenseKey: 'test-license' }))
+  const onRetry = vi.fn()
+  const execCommand = vi.fn(() => true)
+  Object.defineProperty(document, 'execCommand', { configurable: true, value: execCommand })
+  const writeText = vi.fn().mockResolvedValue(undefined)
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+  const raw = `Invalid API key. ${'The provider returned diagnostic details. '.repeat(10)}`
+  const msg = {
+    id: 'detail-error',
+    role: 'assistant',
+    contentParts: [],
+    error: 'API Error',
+    errorCode: 10001,
+    errorExtra: { httpStatusCode: 401, responseBody: raw, requestId: 'request-123' },
+  } as Message
+  render(
+    <MantineProvider>
+      <MessageErrTips msg={msg} onRetry={onRetry} />
+    </MantineProvider>
+  )
+  expect(screen.queryByText(raw)).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: /^Copy$/ }))
+  expect(writeText).toHaveBeenCalledWith(raw)
+  fireEvent.click(screen.getByRole('button', { name: 'Show more' }))
+  expect(screen.getByRole('alert').textContent).toContain(raw)
+  expect(screen.getByRole('button', { name: 'Show less' }).getAttribute('aria-expanded')).toBe('true')
+  fireEvent.click(screen.getByRole('button', { name: 'Show less' }))
+  expect(screen.queryByText(raw)).toBeNull()
+  expect(onRetry).not.toHaveBeenCalled()
+  expect(screen.queryByRole('button', { name: 'Close' })).toBeNull()
+  Reflect.deleteProperty(navigator, 'clipboard')
+  Reflect.deleteProperty(document, 'execCommand')
+})
+
+test('disables retry until the pending retry completes', async () => {
+  let finishRetry: (() => void) | undefined
+  const onRetry = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        finishRetry = resolve
+      })
+  )
+  const msg = { id: 'retry-error', role: 'assistant', contentParts: [], error: 'Expired', errorCode: 20002 } as Message
+  render(
+    <MantineProvider>
+      <MessageErrTips msg={msg} onRetry={onRetry} />
+    </MantineProvider>
+  )
+  const retry = screen.getByRole('button', { name: 'Retry' }) as HTMLButtonElement
+  fireEvent.click(retry)
+  expect(retry.disabled).toBe(true)
+  fireEvent.click(retry)
+  expect(onRetry).toHaveBeenCalledOnce()
+  finishRetry?.()
+  await waitFor(() => expect(retry.disabled).toBe(false))
+})
+
+test('shows translation progress and lets the user return to the original error', async () => {
+  settingsStore.setState((state) => ({ ...state, language: 'zh-Hans', licenseKey: 'test-license' }))
+  let finishTranslation: ((texts: string[]) => void) | undefined
+  translationMocks.translateTexts.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finishTranslation = resolve
+      })
+  )
+  const msg = {
+    id: 'translate-error',
+    role: 'assistant',
+    contentParts: [],
+    error: 'API Error',
+    errorCode: 10001,
+    errorExtra: { httpStatusCode: 401, responseBody: 'Provider authentication failed.' },
+  } as Message
+  render(
+    <MantineProvider>
+      <MessageErrTips msg={msg} />
+    </MantineProvider>
+  )
+  const translate = screen.getByRole('button', { name: 'Translate' }) as HTMLButtonElement
+  fireEvent.click(translate)
+  await waitFor(() =>
+    expect((screen.getByRole('button', { name: 'Translate' }) as HTMLButtonElement).disabled).toBe(true)
+  )
+  finishTranslation?.(['服务商身份验证失败。'])
+  await waitFor(() => expect(screen.getByText('服务商身份验证失败。')).not.toBeNull())
+  fireEvent.click(screen.getByRole('button', { name: 'Show original' }))
+  expect(screen.getByText('Provider authentication failed.')).not.toBeNull()
 })

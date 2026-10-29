@@ -7,6 +7,7 @@
  * - 可导出会话结果到文件
  */
 
+import { InMemorySessionRowStore } from '@chatbox/core/testing'
 import type { AnalyticsEventParams } from '@shared/analytics'
 import * as defaults from '@shared/defaults'
 import type { Config, Language, Settings, ShortcutSetting } from '@shared/types'
@@ -86,38 +87,26 @@ class TestExporter implements Exporter {
     this.exports.set(filename, url)
   }
 
-  async exportStreamingJson(
-    filename: string,
-    dataCallback: () => AsyncGenerator<string, void, unknown>
-  ): Promise<void> {
-    let content = ''
-    for await (const chunk of dataCallback()) {
-      content += chunk
-    }
-    this.exports.set(filename, content)
-  }
-
   async exportStreamingFile(
     filename: string,
     dataCallback: () => AsyncGenerator<Uint8Array, void, unknown>,
     _mimeType: string,
     signal?: AbortSignal
-  ): Promise<{ boundedMemory: boolean }> {
-    const chunks: Uint8Array[] = []
-    let total = 0
-    for await (const chunk of dataCallback()) {
-      if (signal?.aborted) throw signal.reason ?? new DOMException('Operation canceled', 'AbortError')
-      chunks.push(chunk)
-      total += chunk.length
+  ) {
+    const parts: Uint8Array[] = []
+    for await (const part of dataCallback()) {
+      signal?.throwIfAborted()
+      parts.push(part.slice())
     }
-    const output = new Uint8Array(total)
+    signal?.throwIfAborted()
+    const result = new Uint8Array(parts.reduce((size, part) => size + part.length, 0))
     let offset = 0
-    for (const chunk of chunks) {
-      output.set(chunk, offset)
-      offset += chunk.length
+    for (const part of parts) {
+      result.set(part, offset)
+      offset += part.length
     }
-    this.exports.set(filename, output)
-    return { boundedMemory: true }
+    this.exports.set(filename, result)
+    return { boundedMemory: false }
   }
 
   getExport(filename: string): any {
@@ -143,6 +132,7 @@ export default class TestPlatform implements Platform {
 
   private storage = new InMemoryStorage()
   private _sessionMetaStorage: SessionMetaStorage | null = null
+  private _sessionRowStore: InMemorySessionRowStore | null = null
   private _imageGenerationStorage: ImageGenerationStorage | null = null
   private blobs = new Map<string, string>()
   private configs: Config | null = null
@@ -366,6 +356,13 @@ export default class TestPlatform implements Platform {
     return this._sessionMetaStorage
   }
 
+  public getSessionRowStore(): InMemorySessionRowStore {
+    if (!this._sessionRowStore) {
+      this._sessionRowStore = new InMemorySessionRowStore()
+    }
+    return this._sessionRowStore
+  }
+
   public async minimize(): Promise<void> {
     // no-op
   }
@@ -432,6 +429,8 @@ export default class TestPlatform implements Platform {
     this.configs = null
     this.settings = null
     this._sessionMetaStorage = null
+    this._sessionRowStore?.clear()
+    this._sessionRowStore = null
     this._imageGenerationStorage = null
   }
 

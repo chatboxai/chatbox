@@ -3,6 +3,7 @@ import { qwenPortalOAuthProvider } from './qwen'
 
 describe('qwenPortalOAuthProvider', () => {
   afterEach(() => {
+    vi.useRealTimers()
     vi.restoreAllMocks()
   })
 
@@ -27,6 +28,7 @@ describe('qwenPortalOAuthProvider', () => {
   })
 
   it('polls for a token after authorization_pending responses', async () => {
+    vi.useFakeTimers()
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(
         new Response(
@@ -57,7 +59,10 @@ describe('qwenPortalOAuthProvider', () => {
       )
 
     await qwenPortalOAuthProvider.startDeviceFlow()
-    const credentials = await qwenPortalOAuthProvider.waitForToken()
+    const pending = qwenPortalOAuthProvider.waitForToken()
+    // Two poll intervals of the 2s default the provider falls back to.
+    await vi.advanceTimersByTimeAsync(4000)
+    const credentials = await pending
 
     expect(credentials.accessToken).toBe('access-token')
     expect(credentials.refreshToken).toBe('refresh-token')

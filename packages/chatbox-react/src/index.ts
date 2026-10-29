@@ -8,11 +8,27 @@ export {
 export { useChatboxAuthInfo, useChatboxLastUsedModel, useChatboxSettings } from './application-hooks'
 export { ChatboxProvider, type ChatboxProviderProps } from './ChatboxProvider'
 export {
+  createCopilotQueryDefinitions,
+  FEATURED_COPILOTS_PAGE_SIZE,
+  useCopilotPreferences,
+  useCopilots,
+  useCopilotTags,
+  useFeaturedCopilots,
+} from './copilots'
+export {
   type ChatApplication,
   type CreateChatApplicationOptions,
   createChatApplication,
 } from './createChatApplication'
 export { createGenerationHooks } from './generation-hooks'
+export {
+  createImageGenerationHooks,
+  getImageGenerationQueryBridge,
+  ImageGenerationQueryBridge,
+  ImageGenerationQueryKeys,
+  type InfiniteImageGenerationData,
+  updateImageGenerationHistory,
+} from './image-generation-hooks'
 export {
   ApplicationQueryBridge,
   bindReactQueryHostLifecycle,
@@ -21,7 +37,6 @@ export {
   createSessionQueryDefinitions,
   type HostBooleanStateSource,
   type InfiniteSessionData,
-  mergeCachedGeneratingMessages,
   QueryKeys,
   type ReactQueryHostLifecycle,
   SessionQueryBridge,

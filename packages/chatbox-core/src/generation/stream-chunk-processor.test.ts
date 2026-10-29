@@ -125,7 +125,7 @@ describe('processStreamChunk', () => {
     const result = await processStreamChunk(chunk('text-delta', { text: 'Hello' }), state, callbacks)
     expect(result.skipUpdate).toBe(false)
     expect(result.state.contentParts).toHaveLength(1)
-    expect(result.state.contentParts[0]).toEqual({ type: 'text', text: 'Hello' })
+    expect(result.state.contentParts[0]).toEqual({ type: 'text', text: 'Hello', stepIndex: 0 })
   })
 
   it('handles consecutive text-delta by concatenating', async () => {
@@ -133,7 +133,7 @@ describe('processStreamChunk', () => {
     const r1 = await processStreamChunk(chunk('text-delta', { text: 'Hello' }), state, callbacks)
     const r2 = await processStreamChunk(chunk('text-delta', { text: ' world' }), r1.state, callbacks)
     expect(r2.state.contentParts).toHaveLength(1)
-    expect(r2.state.contentParts[0]).toEqual({ type: 'text', text: 'Hello world' })
+    expect(r2.state.contentParts[0]).toEqual({ type: 'text', text: 'Hello world', stepIndex: 0 })
   })
 
   it('handles reasoning-delta', async () => {
@@ -213,7 +213,7 @@ describe('processStreamChunk', () => {
     ])
   })
 
-  it('does not persist non-whitelisted provider metadata or create parts for it', async () => {
+  it('persists OpenAI Responses encrypted reasoning metadata for replay', async () => {
     const chunks = [
       chunk('reasoning-start', {
         id: 'reasoning-0',
@@ -221,14 +221,103 @@ describe('processStreamChunk', () => {
       }),
       chunk('reasoning-delta', {
         id: 'reasoning-0',
-        text: '',
+        text: 'visible thought',
         providerMetadata: { openai: { itemId: 'rs_1' } },
       }),
       chunk('reasoning-end', { id: 'reasoning-0', providerMetadata: { openai: { itemId: 'rs_1' } } }),
+    ]
+
+    let state = createInitialState()
+    for (const streamChunk of chunks) {
+      state = (await processStreamChunk(streamChunk, state, callbacks)).state
+    }
+
+    expect(state.contentParts).toHaveLength(1)
+    expect(state.contentParts[0]).toMatchObject({
+      type: 'reasoning',
+      text: 'visible thought',
+      providerMetadata: { openai: { itemId: 'rs_1', reasoningEncryptedContent: 'encrypted' } },
+    })
+  })
+
+  it('persists Gemini thought signatures on reasoning and text parts', async () => {
+    const chunks = [
+      chunk('reasoning-start', {
+        id: 'reasoning-0',
+        providerMetadata: { google: { thoughtSignature: 'thought-sig' } },
+      }),
+      chunk('reasoning-delta', {
+        id: 'reasoning-0',
+        text: 'weighing options',
+        providerMetadata: { google: { thoughtSignature: 'thought-sig' } },
+      }),
+      chunk('reasoning-end', { id: 'reasoning-0' }),
+      chunk('text-delta', {
+        id: 'text-0',
+        text: 'Final answer',
+        providerMetadata: { google: { thoughtSignature: 'answer-sig' } },
+      }),
+      chunk('text-end', { id: 'text-0' }),
+    ]
+
+    let state = createInitialState()
+    for (const streamChunk of chunks) {
+      state = (await processStreamChunk(streamChunk, state, callbacks)).state
+    }
+
+    expect(state.contentParts).toMatchObject([
+      {
+        type: 'reasoning',
+        text: 'weighing options',
+        providerMetadata: { google: { thoughtSignature: 'thought-sig' } },
+      },
+      {
+        type: 'text',
+        text: 'Final answer',
+        providerMetadata: { google: { thoughtSignature: 'answer-sig' } },
+      },
+    ])
+  })
+
+  it('keeps a text part signature that arrives as an empty trailing delta', async () => {
+    // Gemini signs the response's last part and streams the signature as a delta
+    // with no text, so it has to land on the open text block.
+    const chunks = [
+      chunk('text-delta', { id: 'text-0', text: 'Final answer' }),
+      chunk('text-delta', {
+        id: 'text-0',
+        text: '',
+        providerMetadata: { google: { thoughtSignature: 'trailing-sig' } },
+      }),
+      chunk('text-end', { id: 'text-0' }),
+    ]
+
+    let state = createInitialState()
+    for (const streamChunk of chunks) {
+      state = (await processStreamChunk(streamChunk, state, callbacks)).state
+    }
+
+    expect(state.contentParts).toMatchObject([
+      { type: 'text', text: 'Final answer', providerMetadata: { google: { thoughtSignature: 'trailing-sig' } } },
+    ])
+  })
+
+  it('does not persist non-whitelisted provider metadata or create parts for it', async () => {
+    const chunks = [
+      chunk('reasoning-start', {
+        id: 'reasoning-0',
+        providerMetadata: { mistral: { usage: { promptTokens: 10 } } },
+      }),
+      chunk('reasoning-delta', {
+        id: 'reasoning-0',
+        text: '',
+        providerMetadata: { mistral: { usage: { promptTokens: 10 } } },
+      }),
+      chunk('reasoning-end', { id: 'reasoning-0', providerMetadata: { mistral: { usage: { promptTokens: 10 } } } }),
       chunk('reasoning-delta', {
         id: 'reasoning-1',
         text: 'visible thought',
-        providerMetadata: { openai: { itemId: 'rs_2' } },
+        providerMetadata: { mistral: { usage: { promptTokens: 20 } } },
       }),
       chunk('reasoning-end', { id: 'reasoning-1' }),
     ]
@@ -949,7 +1038,7 @@ describe('processStreamChunk', () => {
     )
     expect(mockCallback.onFileReceived).toHaveBeenCalledWith('image/png', 'abc123')
     expect(result.state.contentParts).toHaveLength(1)
-    expect(result.state.contentParts[0]).toEqual({ type: 'image', storageKey: 'stored-key' })
+    expect(result.state.contentParts[0]).toEqual({ type: 'image', storageKey: 'stored-key', stepIndex: 0 })
   })
 
   it('handles status chunk by returning skipUpdate=true with statusChunk', async () => {
@@ -963,12 +1052,22 @@ describe('processStreamChunk', () => {
   it('handles finish chunk with totalUsage and finishReason', async () => {
     const state = createInitialState()
     const result = await processStreamChunk(
-      chunk('finish', { finishReason: 'stop', totalUsage: { promptTokens: 10, completionTokens: 20 } }),
+      chunk('finish', {
+        finishReason: 'stop',
+        totalUsage: {
+          inputTokens: 10,
+          inputTokenDetails: { noCacheTokens: 10, cacheReadTokens: undefined, cacheWriteTokens: undefined },
+          outputTokens: 20,
+          outputTokenDetails: { textTokens: 15, reasoningTokens: 5 },
+          totalTokens: 30,
+          raw: { prompt_tokens: 10, completion_tokens: 20 },
+        },
+      }),
       state,
       callbacks
     )
     expect(result.state.finishReason).toBe('stop')
-    expect(result.state.usage).toEqual({ promptTokens: 10, completionTokens: 20 })
+    expect(result.state.usage).toStrictEqual({ inputTokens: 10, outputTokens: 20, totalTokens: 30, reasoningTokens: 5 })
   })
 
   it('handles error chunk without crashing', async () => {
@@ -1064,5 +1163,43 @@ describe('processStreamChunk', () => {
       result: { success: true, file_path: 'chart.png', media_type: 'image/webp' },
     })
     expect((r2.state.contentParts[0] as MessageToolCallPart).result).not.toHaveProperty('image_storage_key')
+  })
+})
+
+describe('assistant part step identity', () => {
+  it.each(['text', 'reasoning'] as const)(
+    'separates %s emitted before and after a tool-step boundary',
+    async (type) => {
+      let state = createInitialState()
+      for (const event of [
+        chunk('tool-call', { toolCallId: 'view', toolName: 'view_image', args: { file_path: 'page.png' } }),
+        chunk(`${type}-delta`, { text: 'Inspecting.' }),
+        chunk('finish-step'),
+        chunk(`${type}-delta`, { text: 'Inspected.' }),
+      ]) {
+        state = (await processStreamChunk(event, state, callbacks)).state
+      }
+      expect(state.contentParts).toMatchObject([
+        { type: 'tool-call', stepIndex: 0 },
+        { type, text: 'Inspecting.', stepIndex: 0 },
+        { type, text: 'Inspected.', stepIndex: 1 },
+      ])
+      expect(createInitialState(state.contentParts).stepIndex).toBe(2)
+    }
+  )
+
+  it('persists the step identity of provider-generated images and signed empty reasoning', async () => {
+    let state = createInitialState()
+    for (const event of [
+      chunk('reasoning-start', { providerMetadata: { anthropic: { redactedData: 'opaque' } } }),
+      chunk('file', { file: { mediaType: 'image/png', base64: 'aW1hZ2U=' } }),
+    ]) {
+      state = (await processStreamChunk(event, state, callbacks)).state
+    }
+    expect(state.contentParts).toMatchObject([
+      { type: 'reasoning', stepIndex: 0 },
+      { type: 'image', stepIndex: 0 },
+    ])
+    expect(createInitialState(state.contentParts).stepIndex).toBe(1)
   })
 })

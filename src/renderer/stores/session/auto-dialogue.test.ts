@@ -9,16 +9,33 @@ const { getSessionMock, insertMessageMock, orchestrateGenerationMock } = vi.hois
 
 vi.mock('@/app/renderer-application', async () => {
   const { GenerationRuntimeStore } = await import('@chatbox/core/generation')
+  const { createRowSessionFixtureReads } = await import('./testing/row-session-fixture')
+  const reads = createRowSessionFixtureReads(getSessionMock)
   return {
     rendererApplication: {
       generationRuntime: new GenerationRuntimeStore(),
-      sessionQueryBridge: { getSession: getSessionMock },
+      sessions: {
+        ...reads,
+        // Reading the header first re-seeds the in-memory repository from the mutated fixture.
+        getSessionContextSource: async (request: { sessionId: string }) => {
+          await reads.getSessionHeader(request.sessionId)
+          return reads.repository.getSessionContextSource(request)
+        },
+      },
     },
   }
 })
-vi.mock('./session-settings', () => ({ getSessionSettings: vi.fn(), getSessionTokenModel: () => undefined }))
+vi.mock('./session-settings', async () => {
+  const { createRowSessionFixtureReads } = await import('./testing/row-session-fixture')
+  const reads = createRowSessionFixtureReads(getSessionMock)
+  return {
+    getSessionHeader: async (sessionId: string) => (await reads.getSessionHeader(sessionId))?.header ?? null,
+    getSessionSettings: vi.fn(),
+    getSessionTokenModel: () => undefined,
+  }
+})
 vi.mock('./attachment-resolver', () => ({ createAttachmentResolver: vi.fn() }))
-vi.mock('./forks', () => ({ createNewFork: vi.fn(), createSaveAndResendFork: vi.fn(), findMessageLocation: vi.fn() }))
+vi.mock('./forks', () => ({ createNewFork: vi.fn(), createSaveAndResendFork: vi.fn() }))
 vi.mock('./messages', () => ({
   insertMessage: insertMessageMock,
   insertMessageAfter: vi.fn(),

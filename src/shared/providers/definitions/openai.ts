@@ -1,4 +1,4 @@
-import { createOAuthCredentialManager, createOpenAIOAuthFetch } from '../../oauth'
+import { createOAuthCredentialManager, createOpenAIOAuthFetch, isUsingOAuth } from '../../oauth'
 import { ModelProviderEnum, ModelProviderType } from '../../types'
 import { defineProvider } from '../registry'
 import OpenAI from './models/openai'
@@ -136,7 +136,7 @@ export const openaiProvider = defineProvider({
     ],
   },
   createModel: (config) => {
-    const isOAuth = config.providerSetting.activeAuthMode === 'oauth' && !!config.providerSetting.oauth?.accessToken
+    const isOAuth = isUsingOAuth(config.providerSetting, config.dependencies.platformType || 'desktop')
     const credentialManager = createOAuthCredentialManager(
       ModelProviderEnum.OpenAI,
       config.providerSetting,
@@ -151,7 +151,7 @@ export const openaiProvider = defineProvider({
           apiKey: 'oauth-placeholder',
           apiHost: config.formattedApiHost,
           apiPath: '/responses',
-          model: config.model,
+          model: { ...config.model, apiStyle: 'openai-responses' },
           temperature: config.settings.temperature,
           topP: config.settings.topP,
           maxOutputTokens: config.settings.maxTokens,

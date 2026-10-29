@@ -95,11 +95,11 @@ describe('Chatbox CLI settings allowlist', () => {
       readOnly: true,
       key: 'appearance.theme',
       value: 'system',
-      location: 'Settings > General Settings',
+      location: 'Settings > Appearance',
       changeGuidance: expect.stringContaining('change this setting manually'),
     })
     expect(await command('get').execute(context(['appearance.spell-check']))).toMatchObject({
-      location: 'Settings > Chat Settings',
+      location: 'Settings > Chat',
     })
   })
 

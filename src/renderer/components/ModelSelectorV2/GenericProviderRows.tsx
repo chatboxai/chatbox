@@ -30,6 +30,7 @@ function ByokSectionDivider({ mobile }: { mobile: boolean }) {
 
 export function GenericProviderRows({
   favoriteOnly,
+  hasChatboxCatalog,
   favoritedModels,
   genericProviders,
   collapsedProviders,
@@ -49,6 +50,7 @@ export function GenericProviderRows({
   onDisabledSelect,
 }: {
   favoriteOnly: boolean
+  hasChatboxCatalog: boolean
   favoritedModels?: FavoriteModel[]
   genericProviders: FilteredProvider[]
   collapsedProviders: Record<string, boolean>
@@ -70,9 +72,10 @@ export function GenericProviderRows({
   const source = favoriteOnly
     ? Object.entries(groupFavorites(favoritedModels))
     : genericProviders.map((p) => [p.id, { provider: p, models: [] }] as const)
+  let byokDividerShown = false
   const rows = source.map(([_providerId, group]) => {
     const provider = favoriteOnly ? group.provider : (group.provider as FilteredProvider)
-    if (!provider || provider.id === ModelProviderEnum.ChatboxAI) return null
+    if (!provider || (hasChatboxCatalog && provider.id === ModelProviderEnum.ChatboxAI)) return null
     const collapsed = collapsedProviders[provider.id] || false
     const models = favoriteOnly
       ? group.models
@@ -86,8 +89,11 @@ export function GenericProviderRows({
           })
       : (provider as FilteredProvider).models || []
     if (models.length === 0) return null
+    const showByokDivider = !favoriteOnly && provider.id !== ModelProviderEnum.ChatboxAI && !byokDividerShown
+    if (showByokDivider) byokDividerShown = true
     return (
       <div key={provider.id}>
+        {showByokDivider && <ByokSectionDivider mobile={isMobile} />}
         <ProviderRowHeader
           provider={provider}
           modelCount={models.length}
@@ -129,10 +135,5 @@ export function GenericProviderRows({
 
   if (!rows.some(Boolean)) return null
 
-  return (
-    <>
-      {!favoriteOnly && <ByokSectionDivider mobile={isMobile} />}
-      {rows}
-    </>
-  )
+  return <>{rows}</>
 }

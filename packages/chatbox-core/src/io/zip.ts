@@ -244,7 +244,10 @@ export async function* createZipStream(
     signal?.removeEventListener('abort', onAbort)
     zip.terminate()
     notifyProducer(true)
-    await producer
+    // An entry source may be waiting for its caller to release it after observing
+    // cancellation. Do not make the abort result wait on that source. The producer
+    // catches its own errors and sees `closed` before publishing further output.
+    if (!signal?.aborted) await producer
   }
 }
 

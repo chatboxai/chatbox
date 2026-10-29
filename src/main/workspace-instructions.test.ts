@@ -1,6 +1,5 @@
 import { lstatSync, mkdirSync, mkdtempSync, rmSync, type Stats, symlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { WORKSPACE_INSTRUCTIONS_MAX_CHARS } from '../shared/types/workspace-instructions'
 import { isSameFileIdentity, loadWorkspaceInstructions } from './workspace-instructions'
@@ -32,10 +31,11 @@ afterEach(() => {
 })
 
 describe('loadWorkspaceInstructions', () => {
-  test('loads this repository canonical AGENTS.md as a regular file', async () => {
-    const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
+  test('loads a workspace AGENTS.md as a regular file', async () => {
+    const repositoryRoot = createTemporaryRoot()
     const instructionPath = path.join(repositoryRoot, 'AGENTS.md')
 
+    writeFileSync(instructionPath, 'Workspace instruction fixture')
     const instructionStat = lstatSync(instructionPath)
     const result = await loadWorkspaceInstructions([repositoryRoot])
 
@@ -43,7 +43,7 @@ describe('loadWorkspaceInstructions', () => {
     expect(instructionStat.isSymbolicLink()).toBe(false)
     expect(result.files).toHaveLength(1)
     expect(result.files[0].filePath).toBe(instructionPath)
-    expect(result.files[0].content).toContain('canonical instruction entrypoint')
+    expect(result.files[0].content).toBe('Workspace instruction fixture')
   })
 
   test('reads a lowercase agents.md without truncating a long line', async () => {

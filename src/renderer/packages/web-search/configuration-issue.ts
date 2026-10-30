@@ -6,6 +6,7 @@ type WebSearchConfiguration = {
   bochaApiKey?: string
   queritApiKey?: string
   searxngBaseUrl?: string
+  firecrawlApiKey?: string
 }
 
 export type WebSearchConfigurationIssue =
@@ -14,6 +15,7 @@ export type WebSearchConfigurationIssue =
   | 'bocha-api-key'
   | 'querit-api-key'
   | 'searxng-instance'
+  | 'firecrawl-api-key'
 
 export function getWebSearchConfigurationIssue(
   configuration: WebSearchConfiguration,
@@ -30,6 +32,8 @@ export function getWebSearchConfigurationIssue(
       return configuration.queritApiKey ? null : 'querit-api-key'
     case 'searxng':
       return configuration.searxngBaseUrl?.trim() ? null : 'searxng-instance'
+    case 'firecrawl':
+      return configuration.firecrawlApiKey ? null : 'firecrawl-api-key'
     case 'bing':
       return null
   }

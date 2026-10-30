@@ -178,6 +178,8 @@
 
 -   [常见问题](./FAQ-CN.md)
 
+- [通过自定义 HTTP MCP 连接百智云浏览器](./mcp-baizhi-cloud-browser.zh-CN.md)
+
 ## 如何贡献
 
 欢迎任何形式的贡献，包括但不限于：

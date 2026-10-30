@@ -2062,5 +2062,14 @@
   "DeepSeek": "DeepSeek",
   "DeepSeek API Key": "DeepSeek API Anahtarı",
   "DeepSeek API key is missing": "DeepSeek API anahtarı eksik",
-  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "Web Araması ayarlarında veya DeepSeek model sağlayıcısı ayarlarında bir DeepSeek API anahtarı ekleyin. İkisi aynı anahtarı paylaşır."
+  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "Web Araması ayarlarında veya DeepSeek model sağlayıcısı ayarlarında bir DeepSeek API anahtarı ekleyin. İkisi aynı anahtarı paylaşır.",
+  "Free trial for a limited time": "Sınırlı süreli ücretsiz deneme",
+  "On trial: ends {{time}}": "Denemede: {{time}} tarihinde bitiyor",
+  "Try advanced models for free": "Gelişmiş modelleri ücretsiz deneyin",
+  "Unlock advanced models and get an extra {{points}} compute points to use with them. The trial lasts 7 days and ends automatically.": "Gelişmiş modellerin kilidini açın ve bunlarla kullanmak için ek {{points}} işlem puanı kazanın. Deneme 7 gün sürer ve otomatik olarak sona erer.",
+  "Claim trial and bonus points": "Denemeyi ve bonus puanları al",
+  "Failed to claim the trial. Please try again later.": "Deneme alınamadı. Lütfen daha sonra tekrar deneyin.",
+  "Congratulations, your trial is unlocked": "Tebrikler, denemeniz etkinleştirildi",
+  "Claimed successfully. Go try the advanced models!": "Başarıyla alındı. Gelişmiş modelleri hemen deneyin!",
+  "Advanced models are unlocked, and the bonus points have been added to your account.": "Gelişmiş modellerin kilidi açıldı ve bonus puanlar hesabınıza eklendi."
 }

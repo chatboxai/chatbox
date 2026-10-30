@@ -736,6 +736,13 @@ const ChatboxAIModelListResponseSchema = z.object({
       license: z
         .object({
           plan: z.string().optional().default('unknown'),
+          proTrial: z
+            .object({
+              canClaim: z.boolean().optional().default(false),
+              startsAt: z.string().nullish(),
+              expiresAt: z.string().nullish(),
+            })
+            .optional(),
         })
         .optional()
         .default({ plan: 'unknown' }),
@@ -793,6 +800,26 @@ export async function getChatboxAIModelList(params: { licenseKey?: string; langu
     throw error
   }
   return data.data
+}
+
+export async function recordAdvancedModelListClick(params: { licenseKey: string; modelId?: string }) {
+  const afetch = await getAfetch()
+  await afetch(
+    `${getAPIOrigin()}/api/user/behavior_events/record`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(await getChatboxHeaders()),
+      },
+      body: JSON.stringify({
+        event: 'advanced_model_list_clicked',
+        license_key: params.licenseKey,
+        metadata: params.modelId ? { model_id: params.modelId } : undefined,
+      }),
+    },
+    { parseChatboxRemoteError: true }
+  )
 }
 
 export async function reportContent(params: { id: string; type: string; details: string }) {
@@ -1172,6 +1199,22 @@ export async function listLicensesByUser(): Promise<UserLicense[]> {
   )
   const json: Response = await res.json()
   return json.data
+}
+
+export async function claimProTrial(licenseKey: string) {
+  const afetch = await getAuthenticatedAfetch()
+  await afetch(
+    `${getAPIOrigin()}/api/license/claim_pro_trial`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(await getChatboxHeaders()),
+      },
+      body: JSON.stringify({ license_key: licenseKey }),
+    },
+    { parseChatboxRemoteError: true }
+  )
 }
 
 export async function claimFreeAgentModeReward(licenseKey: string): Promise<ClaimedAgentModeReward> {

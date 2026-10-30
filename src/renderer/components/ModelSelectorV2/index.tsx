@@ -1,3 +1,4 @@
+import NiceModal from '@ebay/nice-modal-react'
 import { Combobox, Flex, SegmentedControl, Stack, Text, TextInput, useCombobox } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import { ModelProviderEnum } from '@shared/types'
@@ -19,7 +20,12 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Drawer } from 'vaul'
-import { trackListModelClick, trackSelectModelClick, trackUpgradeModelClick } from '@/analytics/model-selection'
+import {
+  trackListModelClick,
+  trackProTrialClaimClick,
+  trackSelectModelClick,
+  trackUpgradeModelClick,
+} from '@/analytics/model-selection'
 import useChatboxAIModels from '@/hooks/useChatboxAIModels'
 import { useProviders } from '@/hooks/useProviders'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
@@ -48,6 +54,7 @@ import { filterModelsForSelector } from './filterModels'
 import { GenericProviderRows } from './GenericProviderRows'
 import { searchGenericModel, toProviderModelInfo } from './helpers'
 import type { ChatboxAIModel, DesktopDetailState, DetailModel, ModelSelectorV2Props } from './types'
+import { useChatboxAIProTrial } from './useChatboxAIProTrial'
 
 export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
   (
@@ -71,6 +78,7 @@ export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
     const isMobile = useIsSmallScreen()
     const { providers, favoritedModels, favoriteModel, unfavoriteModel, isFavoritedModel } = useProviders()
     const { chatboxAIModelList, chatboxAIModels } = useChatboxAIModels()
+    const proTrial = useChatboxAIProTrial(chatboxAIModelList?.license)
     const favoritedModelsSetting = useSettingsStore((state) => state.favoritedModels)
     const chatboxAIExcludedModels = useSettingsStore(
       (state) => state.providers?.[ModelProviderEnum.ChatboxAI]?.excludedModels || EMPTY_MODEL_IDS
@@ -246,6 +254,17 @@ export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
         trackSelectModelClick(pageName, modelId, 'success')
       }
       onSelect?.(providerId, modelId)
+    }
+
+    const claimProTrial = (position: 'list_model' | 'upgrade_modal', modelId?: string) => {
+      // The claim dialog must not open underneath the selector dropdown or drawer.
+      clearDesktopDetailCloseTimer()
+      setDesktopDetail(null)
+      combobox.closeDropdown()
+      setMobileOpen(false)
+      setMobileDetail(null)
+      if (pageName) trackProTrialClaimClick(pageName, position, modelId)
+      void NiceModal.show('pro-trial-claim').catch(() => undefined)
     }
 
     const handleDisabledSelect = (modelId: string) => {
@@ -490,6 +509,7 @@ export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
                   onDesktopDetailOpen={openDesktopDetail}
                   onDesktopDetailClose={scheduleDesktopDetailClose}
                   onDisabledSelect={handleDisabledSelect}
+                  onClaimProTrial={() => claimProTrial('list_model', selectedModelId)}
                   pageName={pageName}
                 />
               )}
@@ -543,6 +563,7 @@ export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
                   onDesktopDetailOpen={openDesktopDetail}
                   onDesktopDetailClose={scheduleDesktopDetailClose}
                   onDisabledSelect={handleDisabledSelect}
+                  onClaimProTrial={() => claimProTrial('list_model', selectedModelId)}
                   pageName={pageName}
                 />
               )}
@@ -623,8 +644,12 @@ export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
                       pricingLink={chatboxAIModelList?.links?.modelPricing}
                       upgradeLink={chatboxAIModelList?.links?.upgrade}
                       onClose={() => setMobileDetail(null)}
-                      onUpgradeClick={() =>
-                        pageName && trackUpgradeModelClick(pageName, 'upgrade_modal', mobileDetail.modelId)
+                      onUpgradeClick={() => {
+                        if (pageName) trackUpgradeModelClick(pageName, 'upgrade_modal', mobileDetail.modelId)
+                        proTrial.reportUpgradeClick(mobileDetail.modelId)
+                      }}
+                      onClaimProTrial={
+                        proTrial.canClaim ? () => claimProTrial('upgrade_modal', mobileDetail.modelId) : undefined
                       }
                       mobile
                     />
@@ -685,8 +710,12 @@ export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
                 model={desktopDetail.model}
                 pricingLink={desktopDetail.pricingLink}
                 upgradeLink={desktopDetail.upgradeLink}
-                onUpgradeClick={() =>
-                  pageName && trackUpgradeModelClick(pageName, 'upgrade_modal', desktopDetail.model.modelId)
+                onUpgradeClick={() => {
+                  if (pageName) trackUpgradeModelClick(pageName, 'upgrade_modal', desktopDetail.model.modelId)
+                  proTrial.reportUpgradeClick(desktopDetail.model.modelId)
+                }}
+                onClaimProTrial={
+                  proTrial.canClaim ? () => claimProTrial('upgrade_modal', desktopDetail.model.modelId) : undefined
                 }
               />
             </div>

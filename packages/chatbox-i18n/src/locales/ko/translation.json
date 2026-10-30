@@ -2062,5 +2062,14 @@
   "DeepSeek": "DeepSeek",
   "DeepSeek API Key": "DeepSeek API 키",
   "DeepSeek API key is missing": "DeepSeek API 키가 없습니다",
-  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "웹 검색 설정 또는 DeepSeek 모델 제공자 설정에서 DeepSeek API 키를 추가하세요. 두 곳은 같은 키를 공유합니다."
+  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "웹 검색 설정 또는 DeepSeek 모델 제공자 설정에서 DeepSeek API 키를 추가하세요. 두 곳은 같은 키를 공유합니다.",
+  "Free trial for a limited time": "기간 한정 무료 체험",
+  "On trial: ends {{time}}": "체험 중: {{time}} 종료",
+  "Try advanced models for free": "고급 모델 무료 체험",
+  "Unlock advanced models and get an extra {{points}} compute points to use with them. The trial lasts 7 days and ends automatically.": "고급 모델을 잠금 해제하고, 고급 모델에 사용할 {{points}} 포인트를 추가로 드립니다. 체험 기간은 7일이며 기간이 지나면 자동으로 종료됩니다.",
+  "Claim trial and bonus points": "체험 및 보너스 포인트 받기",
+  "Failed to claim the trial. Please try again later.": "체험을 받지 못했습니다. 잠시 후 다시 시도해 주세요.",
+  "Congratulations, your trial is unlocked": "축하합니다! 체험이 활성화되었습니다",
+  "Claimed successfully. Go try the advanced models!": "받기 완료! 지금 고급 모델을 사용해 보세요",
+  "Advanced models are unlocked, and the bonus points have been added to your account.": "고급 모델이 잠금 해제되었고 보너스 포인트가 계정에 추가되었습니다."
 }

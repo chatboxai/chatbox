@@ -288,6 +288,7 @@ export function DetailCard({
   upgradeLink,
   onClose,
   onUpgradeClick,
+  onClaimProTrial,
   mobile,
 }: {
   model: DetailModel
@@ -295,6 +296,8 @@ export function DetailCard({
   upgradeLink?: string
   onClose?: () => void
   onUpgradeClick?: () => void
+  /** Replaces the upgrade action while the license can claim a Pro trial. */
+  onClaimProTrial?: () => void
   mobile?: boolean
 }) {
   const { t, i18n } = useTranslation()
@@ -372,11 +375,15 @@ export function DetailCard({
               leftSection={<ScalableIcon icon={IconSparkles} size={16} />}
               className="font-semibold"
               onClick={() => {
+                if (onClaimProTrial) {
+                  onClaimProTrial()
+                  return
+                }
                 onUpgradeClick?.()
                 platform.openLink(upgradeLink || FALLBACK_UPGRADE_URL)
               }}
             >
-              {t('Upgrade to Pro')}
+              {onClaimProTrial ? t('Free trial for a limited time') : t('Upgrade to Pro')}
             </Button>
           )}
         </Flex>

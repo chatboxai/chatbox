@@ -2062,5 +2062,14 @@
   "DeepSeek": "DeepSeek",
   "DeepSeek API Key": "DeepSeek API 密钥",
   "DeepSeek API key is missing": "尚未填写 DeepSeek API 密钥",
-  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "请在网页搜索设置或 DeepSeek 模型提供方设置中填写 DeepSeek API 密钥，两处共用同一个密钥。"
+  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "请在网页搜索设置或 DeepSeek 模型提供方设置中填写 DeepSeek API 密钥，两处共用同一个密钥。",
+  "Free trial for a limited time": "限时免费试用",
+  "On trial: ends {{time}}": "试用中：{{time}} 到期",
+  "Try advanced models for free": "免费试用高级模型",
+  "Unlock advanced models and get an extra {{points}} compute points to use with them. The trial lasts 7 days and ends automatically.": "解锁高级模型，并额外赠送 {{points}} 计算点数，用于高级模型消耗。限时 7 天，到期后自动结束。",
+  "Claim trial and bonus points": "领取试用和奖励点数",
+  "Failed to claim the trial. Please try again later.": "领取失败，请稍后再试。",
+  "Congratulations, your trial is unlocked": "恭喜，已解锁试用",
+  "Claimed successfully. Go try the advanced models!": "领取成功，快去试用高级模型吧",
+  "Advanced models are unlocked, and the bonus points have been added to your account.": "高级模型已解锁，奖励点数已计入你的账户"
 }

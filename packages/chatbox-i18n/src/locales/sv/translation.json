@@ -2062,5 +2062,14 @@
   "DeepSeek": "DeepSeek",
   "DeepSeek API Key": "DeepSeek API-nyckel",
   "DeepSeek API key is missing": "DeepSeek API-nyckel saknas",
-  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "Lägg till en DeepSeek API-nyckel i inställningarna för webbsökning eller för DeepSeek-modelleverantören. Båda delar samma nyckel."
+  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "Lägg till en DeepSeek API-nyckel i inställningarna för webbsökning eller för DeepSeek-modelleverantören. Båda delar samma nyckel.",
+  "Free trial for a limited time": "Gratis testperiod under begränsad tid",
+  "On trial: ends {{time}}": "Testperiod: slutar {{time}}",
+  "Try advanced models for free": "Testa avancerade modeller gratis",
+  "Unlock advanced models and get an extra {{points}} compute points to use with them. The trial lasts 7 days and ends automatically.": "Lås upp avancerade modeller och få {{points}} extra poäng att använda med dem. Testperioden varar i 7 dagar och avslutas automatiskt.",
+  "Claim trial and bonus points": "Hämta testperiod och bonuspoäng",
+  "Failed to claim the trial. Please try again later.": "Det gick inte att hämta testperioden. Försök igen senare.",
+  "Congratulations, your trial is unlocked": "Grattis, din testperiod är aktiverad",
+  "Claimed successfully. Go try the advanced models!": "Klart! Testa de avancerade modellerna nu",
+  "Advanced models are unlocked, and the bonus points have been added to your account.": "De avancerade modellerna är upplåsta och bonuspoängen har lagts till på ditt konto."
 }

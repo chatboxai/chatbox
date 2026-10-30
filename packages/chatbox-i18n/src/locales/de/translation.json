@@ -2062,5 +2062,14 @@
   "DeepSeek": "DeepSeek",
   "DeepSeek API Key": "DeepSeek-API-Schlüssel",
   "DeepSeek API key is missing": "DeepSeek-API-Schlüssel fehlt",
-  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "Fügen Sie in den Websuche-Einstellungen oder in den Einstellungen des DeepSeek-Modellanbieters einen DeepSeek-API-Schlüssel hinzu. Beide verwenden denselben Schlüssel."
+  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "Fügen Sie in den Websuche-Einstellungen oder in den Einstellungen des DeepSeek-Modellanbieters einen DeepSeek-API-Schlüssel hinzu. Beide verwenden denselben Schlüssel.",
+  "Free trial for a limited time": "Zeitlich begrenzt kostenlos testen",
+  "On trial: ends {{time}}": "Testphase: endet {{time}}",
+  "Try advanced models for free": "Fortgeschrittene Modelle kostenlos testen",
+  "Unlock advanced models and get an extra {{points}} compute points to use with them. The trial lasts 7 days and ends automatically.": "Schalte fortgeschrittene Modelle frei und erhalte zusätzlich {{points}} Punkte für ihre Nutzung. Die Testphase dauert 7 Tage und endet automatisch.",
+  "Claim trial and bonus points": "Testphase und Bonuspunkte einlösen",
+  "Failed to claim the trial. Please try again later.": "Die Testphase konnte nicht eingelöst werden. Bitte versuche es später erneut.",
+  "Congratulations, your trial is unlocked": "Glückwunsch, deine Testphase ist freigeschaltet",
+  "Claimed successfully. Go try the advanced models!": "Erfolgreich eingelöst. Probiere jetzt die fortgeschrittenen Modelle aus!",
+  "Advanced models are unlocked, and the bonus points have been added to your account.": "Fortgeschrittene Modelle sind freigeschaltet, und die Bonuspunkte wurden deinem Konto gutgeschrieben."
 }

@@ -2062,5 +2062,14 @@
   "DeepSeek": "DeepSeek",
   "DeepSeek API Key": "DeepSeek API キー",
   "DeepSeek API key is missing": "DeepSeek API キーが未入力です",
-  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "Web 検索設定または DeepSeek モデルプロバイダー設定で DeepSeek API キーを入力してください。どちらも同じキーを共有します。"
+  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "Web 検索設定または DeepSeek モデルプロバイダー設定で DeepSeek API キーを入力してください。どちらも同じキーを共有します。",
+  "Free trial for a limited time": "期間限定の無料トライアル",
+  "On trial: ends {{time}}": "トライアル中：{{time}} に終了",
+  "Try advanced models for free": "高度なモデルを無料で試す",
+  "Unlock advanced models and get an extra {{points}} compute points to use with them. The trial lasts 7 days and ends automatically.": "高度なモデルが使えるようになり、高度なモデル用の {{points}} ポイントも追加でプレゼントします。トライアル期間は 7 日間で、期間が過ぎると自動的に終了します。",
+  "Claim trial and bonus points": "トライアルとボーナスポイントを受け取る",
+  "Failed to claim the trial. Please try again later.": "トライアルを受け取れませんでした。しばらくしてからもう一度お試しください。",
+  "Congratulations, your trial is unlocked": "おめでとうございます！トライアルが有効になりました",
+  "Claimed successfully. Go try the advanced models!": "受け取りが完了しました。高度なモデルを試してみましょう！",
+  "Advanced models are unlocked, and the bonus points have been added to your account.": "高度なモデルが使えるようになり、ボーナスポイントがアカウントに追加されました。"
 }

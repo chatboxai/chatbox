@@ -2062,5 +2062,14 @@
   "DeepSeek": "DeepSeek",
   "DeepSeek API Key": "مفتاح DeepSeek API",
   "DeepSeek API key is missing": "مفتاح DeepSeek API مفقود",
-  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "أضف مفتاح DeepSeek API في إعدادات البحث على الويب أو إعدادات مزود نماذج DeepSeek. يستخدم كلاهما المفتاح نفسه."
+  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "أضف مفتاح DeepSeek API في إعدادات البحث على الويب أو إعدادات مزود نماذج DeepSeek. يستخدم كلاهما المفتاح نفسه.",
+  "Free trial for a limited time": "تجربة مجانية لفترة محدودة",
+  "On trial: ends {{time}}": "قيد التجربة: تنتهي في {{time}}",
+  "Try advanced models for free": "جرّب النماذج المتقدمة مجانًا",
+  "Unlock advanced models and get an extra {{points}} compute points to use with them. The trial lasts 7 days and ends automatically.": "افتح النماذج المتقدمة واحصل على {{points}} نقطة إضافية لاستخدامها معها. تستمر التجربة 7 أيام وتنتهي تلقائيًا.",
+  "Claim trial and bonus points": "احصل على التجربة والنقاط الإضافية",
+  "Failed to claim the trial. Please try again later.": "تعذّر الحصول على التجربة. يُرجى المحاولة مرة أخرى لاحقًا.",
+  "Congratulations, your trial is unlocked": "تهانينا، تم تفعيل تجربتك",
+  "Claimed successfully. Go try the advanced models!": "تم بنجاح! جرّب النماذج المتقدمة الآن",
+  "Advanced models are unlocked, and the bonus points have been added to your account.": "تم فتح النماذج المتقدمة وإضافة النقاط الإضافية إلى حسابك."
 }

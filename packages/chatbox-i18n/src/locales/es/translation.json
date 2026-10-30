@@ -2062,5 +2062,14 @@
   "DeepSeek": "DeepSeek",
   "DeepSeek API Key": "Clave API de DeepSeek",
   "DeepSeek API key is missing": "Falta la clave API de DeepSeek",
-  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "Añade una clave API de DeepSeek en la configuración de búsqueda web o del proveedor de modelos DeepSeek. Ambas comparten la misma clave."
+  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "Añade una clave API de DeepSeek en la configuración de búsqueda web o del proveedor de modelos DeepSeek. Ambas comparten la misma clave.",
+  "Free trial for a limited time": "Prueba gratuita por tiempo limitado",
+  "On trial: ends {{time}}": "En prueba: termina el {{time}}",
+  "Try advanced models for free": "Prueba gratis los modelos avanzados",
+  "Unlock advanced models and get an extra {{points}} compute points to use with them. The trial lasts 7 days and ends automatically.": "Desbloquea los modelos avanzados y recibe {{points}} puntos extra para usarlos. La prueba dura 7 días y termina automáticamente.",
+  "Claim trial and bonus points": "Obtener la prueba y los puntos extra",
+  "Failed to claim the trial. Please try again later.": "No se pudo obtener la prueba. Inténtalo de nuevo más tarde.",
+  "Congratulations, your trial is unlocked": "¡Enhorabuena, tu prueba está activada!",
+  "Claimed successfully. Go try the advanced models!": "¡Listo! Prueba ya los modelos avanzados",
+  "Advanced models are unlocked, and the bonus points have been added to your account.": "Los modelos avanzados están desbloqueados y los puntos extra se han añadido a tu cuenta."
 }

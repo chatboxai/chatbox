@@ -2062,5 +2062,14 @@
   "DeepSeek": "DeepSeek",
   "DeepSeek API Key": "DeepSeek API-nøkkel",
   "DeepSeek API key is missing": "DeepSeek API-nøkkel mangler",
-  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "Legg til en DeepSeek API-nøkkel i innstillingene for nettsøk eller for DeepSeek-modelleverandøren. Begge bruker samme nøkkel."
+  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "Legg til en DeepSeek API-nøkkel i innstillingene for nettsøk eller for DeepSeek-modelleverandøren. Begge bruker samme nøkkel.",
+  "Free trial for a limited time": "Gratis prøveperiode i en begrenset periode",
+  "On trial: ends {{time}}": "Prøveperiode: slutter {{time}}",
+  "Try advanced models for free": "Prøv avanserte modeller gratis",
+  "Unlock advanced models and get an extra {{points}} compute points to use with them. The trial lasts 7 days and ends automatically.": "Lås opp avanserte modeller og få {{points}} ekstra poeng til å bruke med dem. Prøveperioden varer i 7 dager og avsluttes automatisk.",
+  "Claim trial and bonus points": "Hent prøveperiode og bonuspoeng",
+  "Failed to claim the trial. Please try again later.": "Kunne ikke hente prøveperioden. Prøv igjen senere.",
+  "Congratulations, your trial is unlocked": "Gratulerer, prøveperioden er aktivert",
+  "Claimed successfully. Go try the advanced models!": "Ferdig! Prøv de avanserte modellene nå",
+  "Advanced models are unlocked, and the bonus points have been added to your account.": "De avanserte modellene er låst opp, og bonuspoengene er lagt til kontoen din."
 }

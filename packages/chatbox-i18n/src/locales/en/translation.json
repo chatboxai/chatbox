@@ -2062,5 +2062,14 @@
   "DeepSeek": "DeepSeek",
   "DeepSeek API Key": "DeepSeek API Key",
   "DeepSeek API key is missing": "DeepSeek API key is missing",
-  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key."
+  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.",
+  "Free trial for a limited time": "Free trial for a limited time",
+  "On trial: ends {{time}}": "On trial: ends {{time}}",
+  "Try advanced models for free": "Try advanced models for free",
+  "Unlock advanced models and get an extra {{points}} compute points to use with them. The trial lasts 7 days and ends automatically.": "Unlock advanced models and get an extra {{points}} compute points to use with them. The trial lasts 7 days and ends automatically.",
+  "Claim trial and bonus points": "Claim trial and bonus points",
+  "Failed to claim the trial. Please try again later.": "Failed to claim the trial. Please try again later.",
+  "Congratulations, your trial is unlocked": "Congratulations, your trial is unlocked",
+  "Claimed successfully. Go try the advanced models!": "Claimed successfully. Go try the advanced models!",
+  "Advanced models are unlocked, and the bonus points have been added to your account.": "Advanced models are unlocked, and the bonus points have been added to your account."
 }

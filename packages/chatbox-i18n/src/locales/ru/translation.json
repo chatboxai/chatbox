@@ -2062,5 +2062,14 @@
   "DeepSeek": "DeepSeek",
   "DeepSeek API Key": "API-ключ DeepSeek",
   "DeepSeek API key is missing": "Отсутствует API-ключ DeepSeek",
-  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "Добавьте API-ключ DeepSeek в настройках веб-поиска или провайдера моделей DeepSeek. Они используют один и тот же ключ."
+  "Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.": "Добавьте API-ключ DeepSeek в настройках веб-поиска или провайдера моделей DeepSeek. Они используют один и тот же ключ.",
+  "Free trial for a limited time": "Бесплатная пробная версия на ограниченное время",
+  "On trial: ends {{time}}": "Пробный период: до {{time}}",
+  "Try advanced models for free": "Попробуйте продвинутые модели бесплатно",
+  "Unlock advanced models and get an extra {{points}} compute points to use with them. The trial lasts 7 days and ends automatically.": "Откройте доступ к продвинутым моделям и получите дополнительно {{points}} баллов для работы с ними. Пробный период длится 7 дней и завершается автоматически.",
+  "Claim trial and bonus points": "Получить пробный период и бонусные баллы",
+  "Failed to claim the trial. Please try again later.": "Не удалось получить пробный период. Повторите попытку позже.",
+  "Congratulations, your trial is unlocked": "Поздравляем, пробный период активирован",
+  "Claimed successfully. Go try the advanced models!": "Готово! Попробуйте продвинутые модели",
+  "Advanced models are unlocked, and the bonus points have been added to your account.": "Продвинутые модели открыты, бонусные баллы начислены на ваш аккаунт."
 }

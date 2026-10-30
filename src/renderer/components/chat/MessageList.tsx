@@ -394,6 +394,9 @@ const MessageList = forwardRef<
     let previousAnchorHeight = -1
     let stableTailFrames = 0
     let previousTailHeight = -1
+    // The list clamps scroll requests with its own rounded viewport size, so its reachable bottom can fall short of
+    // scrollHeight - clientHeight. A bottom request that leaves scrollTop unmoved marks where the tail rests.
+    let tailRequest: { top: number; maxTop: number } | null = null
     // The deadline counts frame time, capping each gap, so a long render on a slow device does not consume it.
     let layoutTime = 0
     let previousFrame: number | null = null
@@ -477,13 +480,19 @@ const MessageList = forwardRef<
         const tailVisible =
           !currentItems.length ||
           (tailBounds && tailBounds.bottom > bounds.top && tailBounds.bottom <= bounds.bottom + 2)
-        const settled = viewport.clientHeight > 0 && tailVisible && Math.abs(viewport.scrollTop - maxTop) <= 2
+        const atReachableBottom =
+          Math.abs(viewport.scrollTop - maxTop) <= 2 ||
+          (tailRequest?.maxTop === maxTop && tailRequest.top === viewport.scrollTop)
+        const settled = viewport.clientHeight > 0 && tailVisible && atReachableBottom
         stableTailFrames = settled && previousTailHeight === viewport.scrollHeight ? stableTailFrames + 1 : 0
         previousTailHeight = viewport.scrollHeight
         if (stableTailFrames < 2) {
           if (!settled) {
             if (!tail && currentItems.length) scrollToItem(currentItems.length - 1, 'end', 'auto', isCurrent)
-            else scrollToPosition({ top: maxTop, behavior: 'auto' })
+            else {
+              tailRequest = { top: viewport.scrollTop, maxTop }
+              scrollToPosition({ top: maxTop, behavior: 'auto' })
+            }
           }
           nextFrame(!!tail || !currentItems.length)
           return

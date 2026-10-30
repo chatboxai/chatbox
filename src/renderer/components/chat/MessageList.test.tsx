@@ -944,16 +944,41 @@ describe('row transcript host', () => {
       vi.useRealTimers()
     }
   })
-  test('shows a mounted tail that cannot reach the measured bottom once the deadline passes', async () => {
+  test('settles a tail that rests at a reachable bottom short of the measured bottom', async () => {
     vi.useFakeTimers()
     try {
-      // The list clamps scrolling short of scrollHeight - clientHeight, as device rounding can.
+      // The list clamps scrolling a few pixels short of scrollHeight - clientHeight, as device rounding can.
       h.scrollTo.mockImplementation(({ top }: { top: number }) => {
-        if (h.currentScroller) h.currentScroller.scrollTop = Math.min(top, h.measuredHeight - 600 - 40)
+        if (h.currentScroller) h.currentScroller.scrollTop = Math.min(top, h.measuredHeight - 600 - 4)
       })
       const view = render(<Host />)
       await act(async () => {
         await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(h.firstReady).toBe(false)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(200)
+      })
+      expect(view.queryByText('Try Again')).toBeNull()
+      expect(h.firstReady).toBe(true)
+      expect(getComputedStyle(view.getByTestId('virtuoso')).visibility).toBe('visible')
+      expect(h.currentScroller?.scrollTop).toBe(396)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+  test('keeps a tail that is still moving hidden until the deadline, then shows it where it rests', async () => {
+    vi.useFakeTimers()
+    try {
+      // Each request lands at a different position short of the bottom, so the tail never comes to rest.
+      let requests = 0
+      h.scrollTo.mockImplementation(({ top }: { top: number }) => {
+        if (h.currentScroller)
+          h.currentScroller.scrollTop = Math.min(top, h.measuredHeight - 600 - 40 - (requests++ % 2))
+      })
+      const view = render(<Host />)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000)
       })
       expect(h.firstReady).toBe(false)
       await act(async () => {
@@ -962,7 +987,22 @@ describe('row transcript host', () => {
       expect(view.queryByText('Try Again')).toBeNull()
       expect(h.firstReady).toBe(true)
       expect(getComputedStyle(view.getByTestId('virtuoso')).visibility).toBe('visible')
-      expect(h.currentScroller?.scrollTop).toBe(360)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+  test('does not settle a tail below the viewport even when scrolling stops', async () => {
+    vi.useFakeTimers()
+    try {
+      h.rowTop = 700
+      h.scrollTo.mockImplementation(({ top }: { top: number }) => {
+        if (h.currentScroller) h.currentScroller.scrollTop = Math.min(top, h.measuredHeight - 600 - 4)
+      })
+      render(<Host />)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000)
+      })
+      expect(h.firstReady).toBe(false)
     } finally {
       vi.useRealTimers()
     }

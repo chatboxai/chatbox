@@ -33,6 +33,7 @@ import type {
 } from '../types'
 import type { ModelDependencies } from '../types/adapters'
 import { getReasoningControlCapabilities, stripReasoningProviderOptions } from '../utils/reasoning-control'
+import { withCacheReadUsage } from './cache-read-usage'
 import { normalizeCompletedResponse } from './completed-response-normalizer'
 import {
   accumulateReasoningChunk,
@@ -165,10 +166,11 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
   protected abstract getChatModel(options: CallChatCompletionOptions): LanguageModelV4
 
   private prepareChatModel(baseModel: LanguageModelV4): LanguageModelV4 {
+    const usageModel = withCacheReadUsage(baseModel)
     const model =
       this.apiStyle === 'openai-responses'
-        ? wrapLanguageModel({ model: baseModel, middleware: openAIResponsesToolStrictMiddleware })
-        : baseModel
+        ? wrapLanguageModel({ model: usageModel, middleware: openAIResponsesToolStrictMiddleware })
+        : usageModel
     if (this.apiStyle === 'google') {
       return wrapLanguageModel({
         model,

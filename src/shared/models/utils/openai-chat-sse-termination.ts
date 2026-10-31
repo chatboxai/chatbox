@@ -1,3 +1,5 @@
+import { normalizeChatCompletionCacheUsage } from './openai-cache-usage'
+
 interface ByteTransformController {
   enqueue(chunk: Uint8Array): void
   terminate(): void
@@ -93,11 +95,28 @@ export function wrapOpenAIChatCompletionSse<TStream>(body: TStream): TStream {
           const frame = buffer.slice(0, boundary.index)
           const separator = buffer.slice(boundary.index, boundary.index + boundary.length)
           buffer = buffer.slice(boundary.index + boundary.length)
-          if (getSseEventData(frame) === '[DONE]') {
+          const data = getSseEventData(frame)
+          if (data === '[DONE]') {
             controller.terminate()
             return
           }
-          controller.enqueue(encoder.encode(frame + separator))
+          let normalized = frame
+          // A backslash may hide an escaped `usage` key, so parse those frames too.
+          if (data && (data.includes('"usage"') || data.includes('\\'))) {
+            try {
+              const value: unknown = JSON.parse(data)
+              if (normalizeChatCompletionCacheUsage(value)) {
+                normalized = frame
+                  .split(/\r?\n/)
+                  .filter((line) => line !== 'data' && !line.startsWith('data:'))
+                  .concat(`data: ${JSON.stringify(value)}`)
+                  .join('\n')
+              }
+            } catch {
+              // Preserve non-JSON events for the provider parser.
+            }
+          }
+          controller.enqueue(encoder.encode(normalized + separator))
           boundary = findSseFrameBoundary(buffer)
         }
       },
@@ -136,6 +155,23 @@ export function maybeWrapOpenAIChatCompletionSseResponse(
 export function createOpenAIChatCompletionSseFetch(fetchFunction?: typeof globalThis.fetch): typeof globalThis.fetch {
   return async (input, init) => {
     const response = await (fetchFunction ?? globalThis.fetch)(input, init)
+    if (
+      response.ok &&
+      isChatCompletionsUrl(input) &&
+      !hasStreamingRequestBody(init) &&
+      response.headers.get('content-type')?.includes('application/json')
+    ) {
+      const value: unknown = await response
+        .clone()
+        .json()
+        .catch(() => undefined)
+      if (normalizeChatCompletionCacheUsage(value))
+        return new Response(JSON.stringify(value), {
+          status: response.status,
+          statusText: response.statusText,
+          headers: response.headers,
+        })
+    }
     return maybeWrapOpenAIChatCompletionSseResponse(input, init, response)
   }
 }

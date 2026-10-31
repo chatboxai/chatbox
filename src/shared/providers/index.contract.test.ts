@@ -38,6 +38,7 @@ describe('provider control-plane contracts', () => {
       'xiaomi-mimo',
       'longcat',
       'zhipu-glm-coding-plan',
+      'mizumi',
     ])
   })
 

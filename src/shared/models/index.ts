@@ -28,6 +28,7 @@ export const aiProviderNameHash: Record<ModelProviderEnum, string> = {
   [ModelProviderEnum.Perplexity]: 'Perplexity API',
   [ModelProviderEnum.XAI]: 'xAI API',
   [ModelProviderEnum.OpenRouter]: 'OpenRouter API',
+  [ModelProviderEnum.ApiRoute]: 'API Route',
   [ModelProviderEnum.Bedrock]: 'AWS Bedrock',
   [ModelProviderEnum.VercelAIGateway]: 'Vercel AI Gateway',
   [ModelProviderEnum.OpenCodeGo]: 'OpenCode Go',

@@ -301,6 +301,8 @@
   "Compacting...": "Komprimerar...",
   "Compaction failed": "Komprimering misslyckades",
   "Compaction Threshold": "Tröskelvärde för komprimering",
+  "Recent History Budget": "Utrymme för senaste meddelanden",
+  "Target share of the input window kept as recent messages during automatic or manual compaction. Whole messages are preserved when space allows. Set to 0% to summarize all history. Unknown model windows use an estimate.": "Målandel av inmatningsfönstret som används för att behålla de senaste meddelandena vid automatisk eller manuell komprimering. Hela meddelanden behålls när utrymmet räcker. Vid 0% sammanfattas hela historiken. Om modellens fönsterstorlek är okänd används en uppskattning.",
   "Completed": "Slutförd",
   "Compress Conversation": "Komprimera konversation",
   "Compute point exchange": "Utbyte av beräkningspoäng",

@@ -301,6 +301,8 @@
   "Compacting...": "Sıkıştırılıyor...",
   "Compaction failed": "Sıkıştırma başarısız",
   "Compaction Threshold": "Sıkıştırma Eşiği",
+  "Recent History Budget": "Son Mesajlar İçin Ayrılan Alan",
+  "Target share of the input window kept as recent messages during automatic or manual compaction. Whole messages are preserved when space allows. Set to 0% to summarize all history. Unknown model windows use an estimate.": "Otomatik veya manuel sıkıştırma sırasında son mesajları korumak için giriş penceresinde ayrılan hedef oran. Alan yeterliyse mesajlar bütün olarak korunur. %0 olarak ayarlandığında tüm geçmiş özetlenir. Modelin pencere boyutu bilinmiyorsa tahmini değer kullanılır.",
   "Completed": "Tamamlandı",
   "Compress Conversation": "Konuşmayı Sıkıştır",
   "Compute point exchange": "İşlem puanı dönüşümü",

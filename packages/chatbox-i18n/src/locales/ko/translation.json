@@ -301,6 +301,8 @@
   "Compacting...": "압축 중...",
   "Compaction failed": "압축 실패",
   "Compaction Threshold": "압축 임계값",
+  "Recent History Budget": "최근 메시지 보존 용량",
+  "Target share of the input window kept as recent messages during automatic or manual compaction. Whole messages are preserved when space allows. Set to 0% to summarize all history. Unknown model windows use an estimate.": "자동 또는 수동 압축 시 최근 메시지를 보존하는 데 사용할 입력 창의 목표 비율입니다. 공간이 허용되면 메시지 전체를 보존합니다. 0%로 설정하면 모든 기록을 요약합니다. 모델의 창 크기를 알 수 없으면 추정값을 사용합니다.",
   "Completed": "완료됨",
   "Compress Conversation": "대화 압축",
   "Compute point exchange": "Compute point 교환",

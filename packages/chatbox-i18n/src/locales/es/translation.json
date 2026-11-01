@@ -301,6 +301,8 @@
   "Compacting...": "Compactando...",
   "Compaction failed": "Error al compactar",
   "Compaction Threshold": "Umbral de compactación",
+  "Recent History Budget": "Presupuesto para mensajes recientes",
+  "Target share of the input window kept as recent messages during automatic or manual compaction. Whole messages are preserved when space allows. Set to 0% to summarize all history. Unknown model windows use an estimate.": "Proporción objetivo de la ventana de entrada reservada para mensajes recientes durante la compactación automática o manual. Los mensajes se conservan completos si hay espacio. Con 0%, se resume todo el historial. Si se desconoce la ventana del modelo, se usa una estimación.",
   "Completed": "Completado",
   "Compress Conversation": "Comprimir conversación",
   "Compute point exchange": "Intercambio de puntos de cómputo",

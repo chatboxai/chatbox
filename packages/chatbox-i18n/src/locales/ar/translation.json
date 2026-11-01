@@ -301,6 +301,8 @@
   "Compacting...": "جاري الضغط...",
   "Compaction failed": "فشل الضغط",
   "Compaction Threshold": "حد الضغط",
+  "Recent History Budget": "المساحة المخصصة للرسائل الحديثة",
+  "Target share of the input window kept as recent messages during automatic or manual compaction. Whole messages are preserved when space allows. Set to 0% to summarize all history. Unknown model windows use an estimate.": "النسبة المستهدفة من نافذة الإدخال للاحتفاظ بالرسائل الحديثة أثناء الضغط التلقائي أو اليدوي. تُحفظ الرسائل كاملة عندما تسمح المساحة. اضبطها على 0% لتلخيص السجل بالكامل. يُستخدم تقدير عندما يكون حجم نافذة النموذج غير معروف.",
   "Completed": "مكتمل",
   "Compress Conversation": "ضغط المحادثة",
   "Compute point exchange": "تبادل نقاط الحوسبة",

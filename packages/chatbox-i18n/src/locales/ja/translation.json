@@ -301,6 +301,8 @@
   "Compacting...": "圧縮中...",
   "Compaction failed": "圧縮に失敗しました",
   "Compaction Threshold": "圧縮の閾値",
+  "Recent History Budget": "最近のメッセージの保持容量",
+  "Target share of the input window kept as recent messages during automatic or manual compaction. Whole messages are preserved when space allows. Set to 0% to summarize all history. Unknown model windows use an estimate.": "自動または手動圧縮時に最近のメッセージを保持するための入力ウィンドウの目標割合です。容量が許す限りメッセージ全体を保持します。0% にすると履歴全体を要約します。モデルのウィンドウサイズが不明な場合は推定値を使用します。",
   "Completed": "完了",
   "Compress Conversation": "会話を圧縮",
   "Compute point exchange": "Compute point交換",

@@ -301,6 +301,8 @@
   "Compacting...": "Komprimerer...",
   "Compaction failed": "Komprimering mislyktes",
   "Compaction Threshold": "Komprimeringsterskel",
+  "Recent History Budget": "Plass til nylige meldinger",
+  "Target share of the input window kept as recent messages during automatic or manual compaction. Whole messages are preserved when space allows. Set to 0% to summarize all history. Unknown model windows use an estimate.": "Ønsket andel av inndatavinduet som brukes til å beholde nylige meldinger ved automatisk eller manuell komprimering. Hele meldinger beholdes når det er plass. Ved 0% oppsummeres hele historikken. Hvis modellens vindusstørrelse er ukjent, brukes et anslag.",
   "Completed": "Fullført",
   "Compress Conversation": "Komprimer samtale",
   "Compute point exchange": "Utveksling av beregningspoeng",

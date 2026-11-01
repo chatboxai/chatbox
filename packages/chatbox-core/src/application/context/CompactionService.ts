@@ -1,5 +1,5 @@
 import { collectCompactedAttachments } from '@shared/context/attachments'
-import { projectContextMessagesForModel } from '@shared/context/model-projection'
+import { getContextProjectionText, projectContextMessagesForModel } from '@shared/context/model-projection'
 import { flattenToolCallPartsToText } from '@shared/context/tool-flatten'
 import type { LoggerPort, SettingsRepositoryPort } from '../../ports'
 import type { Message, SessionHeader, SessionSettings, Settings } from '../../types'
@@ -10,6 +10,7 @@ import { getTokenizerType } from '@shared/token-estimation/tokenizer'
 import { type CompactionBudget, estimateTokensBySampling, shouldCompactAtTokens } from '../token-estimation/math'
 import type { TokenEstimationModel } from '../token-estimation/TokenEstimationService'
 import { createCompactionPlan } from './compaction-plan'
+import type { CompactionRetention } from './compaction-retention'
 import type {
   CompactionFailureCode,
   CompactionRequest,
@@ -77,6 +78,11 @@ export interface CompactionPolicyPort {
     sessionSettings: SessionSettings,
     pendingMessage?: Message
   ): Message[] | Promise<Message[]>
+  /** Resolve estimation once per compaction. Hosts without this retain the existing compaction policy. */
+  createTokenCounter?(input: {
+    sessionId: string
+    sessionSettings: SessionSettings
+  }): Promise<(messages: Message[]) => Promise<number>>
 }
 
 export interface CompactionSummaryPort {
@@ -156,15 +162,22 @@ export class CompactionService {
   }
 
   async needsCompaction(sessionId: string, pendingMessage?: Message): Promise<boolean> {
+    return (await this.getAutomaticCompactionPressure(sessionId, pendingMessage)) !== null
+  }
+
+  private async getAutomaticCompactionPressure(
+    sessionId: string,
+    pendingMessage?: Message
+  ): Promise<CompactionPressure | null> {
     const read = await this.options.sessions.getSessionHeader(sessionId)
     const session = read?.header
-    if (!session) return false
+    if (!session) return null
 
     const globalSettings = this.options.settings.getSettings()
-    if (!isAutoCompactionEnabled(session.settings, globalSettings)) return false
+    if (!isAutoCompactionEnabled(session.settings, globalSettings)) return null
 
     const pressure = await this.measure(sessionId, session, globalSettings, pendingMessage)
-    if (!pressure) return false
+    if (!pressure) return null
     // Another thread or fork, or a different model window, starts without the earlier baseline.
     const compacted = this.compactedSizes.get(sessionId)
     const baseline =
@@ -174,7 +187,7 @@ export class CompactionService {
       compacted.usableTokens === pressure.budget.usableTokens
         ? compacted.tokens
         : undefined
-    return shouldCompactAtTokens(pressure.budget, pressure.tokens, baseline)
+    return shouldCompactAtTokens(pressure.budget, pressure.tokens, baseline) ? pressure : null
   }
 
   private async measure(
@@ -232,8 +245,10 @@ export class CompactionService {
       return { status: 'skipped', reason: 'busy' }
     }
     if (options.abortSignal?.aborted) return { status: 'cancelled' }
-    if (request.kind === 'automatic' && !(await this.needsCompaction(sessionId, request.pendingMessage))) {
-      return { status: 'skipped', reason: 'not_needed' }
+    let pressure: CompactionPressure | null = null
+    if (request.kind === 'automatic') {
+      pressure = await this.getAutomaticCompactionPressure(sessionId, request.pendingMessage)
+      if (!pressure) return { status: 'skipped', reason: 'not_needed' }
     }
     if (this.ongoing.has(sessionId)) {
       return { status: 'skipped', reason: 'busy' }
@@ -259,12 +274,31 @@ export class CompactionService {
       })
       if (!source) return this.failure('session_not_found', 'Session not found')
 
-      const planned = await createCompactionPlan(source, request, (context, pendingMessage) =>
-        this.options.policy.getCompactionContext(context, sessionSettings, pendingMessage)
+      if (request.kind === 'manual' && this.options.policy.createTokenCounter) {
+        pressure = await this.measure(sessionId, session, globalSettings)
+        if (options.abortSignal?.aborted) return { status: 'cancelled' }
+        if (!pressure) return this.failure('summary_failed', 'Failed to estimate the conversation for compaction')
+      }
+      let retention: CompactionRetention | undefined
+      if (pressure && this.options.policy.createTokenCounter) {
+        const countTokens = await this.options.policy.createTokenCounter({ sessionId, sessionSettings })
+        const requestOverhead = this.requestOverhead.get(sessionId) ?? NO_REQUEST_OVERHEAD
+        retention = {
+          budget: pressure.budget,
+          ratio: globalSettings.compactionRetainRatio ?? 0,
+          requestOverheadTokens: getRequestOverheadBeyond(requestOverhead),
+          countTokens,
+        }
+      }
+      const planned = await createCompactionPlan(
+        source,
+        request,
+        (context, pendingMessage) => this.options.policy.getCompactionContext(context, sessionSettings, pendingMessage),
+        retention
       )
+      if (options.abortSignal?.aborted) return { status: 'cancelled' }
       if (planned.status !== 'ready') return planned
       const { plan } = planned
-      if (options.abortSignal?.aborted) return { status: 'cancelled' }
       const summaryResult = await this.options.summaries.generate({
         sessionId,
         messages: flattenToolCallPartsToText(
@@ -295,6 +329,33 @@ export class CompactionService {
         timestamp: this.now(),
         isSummary: true,
         ...attachments,
+      }
+
+      if (retention) {
+        const { budget, countTokens, requestOverheadTokens } = retention
+        const pendingMessage = request.kind === 'automatic' ? request.pendingMessage : undefined
+        const pending = pendingMessage ? [pendingMessage] : []
+        const retained = plan.contextMessages.slice(plan.messages.length)
+        const systems = plan.messages.filter((message) => message.role === 'system')
+        const model = sessionSettings.provider ? { provider: sessionSettings.provider, modelId } : undefined
+        const tokenizerType = getTokenizerType(model)
+        // Count attachments before projection merges a summary into a user turn,
+        // then add the handoff wording just as the send estimator does.
+        const countRequestTokens = async (messages: Message[]) => {
+          const messageTokens = await countTokens(messages)
+          const handoffText = getContextProjectionText(messages, { language: globalSettings.language })
+          const handoffTokens = estimateTokensBySampling(handoffText, tokenizerType)
+          return messageTokens + handoffTokens
+        }
+        const [beforeTokens, afterTokens] = await Promise.all([
+          countRequestTokens([...plan.contextMessages, ...pending]),
+          countRequestTokens([...systems, summaryMessage, ...retained, ...pending]),
+        ])
+        if (options.abortSignal?.aborted) return { status: 'cancelled' }
+        if (afterTokens >= beforeTokens) return { status: 'skipped', reason: 'not_needed' }
+        if (afterTokens + requestOverheadTokens > budget.usableTokens) {
+          return this.failure('summary_failed', 'The compacted conversation still exceeds the available context window')
+        }
       }
 
       let committedRevision: number

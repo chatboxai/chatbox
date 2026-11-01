@@ -301,6 +301,8 @@
   "Compacting...": "正在压缩...",
   "Compaction failed": "压缩失败",
   "Compaction Threshold": "压缩阈值",
+  "Recent History Budget": "近期消息保留预算",
+  "Target share of the input window kept as recent messages during automatic or manual compaction. Whole messages are preserved when space allows. Set to 0% to summarize all history. Unknown model windows use an estimate.": "自动或手动压缩时，为近期原始消息预留的输入窗口比例。空间允许时保留完整消息。设为 0% 则总结全部历史。模型窗口未知时使用估算值。",
   "Completed": "已完成",
   "Compress Conversation": "压缩对话",
   "Compute point exchange": "每个计算点数可兑换的token数",

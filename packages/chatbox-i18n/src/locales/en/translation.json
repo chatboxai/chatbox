@@ -301,6 +301,8 @@
   "Compacting...": "Compacting...",
   "Compaction failed": "Compaction failed",
   "Compaction Threshold": "Compaction Threshold",
+  "Recent History Budget": "Recent History Budget",
+  "Target share of the input window kept as recent messages during automatic or manual compaction. Whole messages are preserved when space allows. Set to 0% to summarize all history. Unknown model windows use an estimate.": "Target share of the input window kept as recent messages during automatic or manual compaction. Whole messages are preserved when space allows. Set to 0% to summarize all history. Unknown model windows use an estimate.",
   "Completed": "Completed",
   "Compress Conversation": "Compress Conversation",
   "Compute point exchange": "Compute point exchange",

@@ -301,6 +301,8 @@
   "Compacting...": "Сжатие...",
   "Compaction failed": "Сжатие не удалось",
   "Compaction Threshold": "Порог сжатия",
+  "Recent History Budget": "Объём для недавних сообщений",
+  "Target share of the input window kept as recent messages during automatic or manual compaction. Whole messages are preserved when space allows. Set to 0% to summarize all history. Unknown model windows use an estimate.": "Целевая доля входного окна для сохранения недавних сообщений при автоматическом или ручном сжатии. Сообщения сохраняются целиком, если хватает места. При 0% вся история заменяется сводкой. Если размер окна модели неизвестен, используется оценка.",
   "Completed": "Завершено",
   "Compress Conversation": "Сжать диалог",
   "Compute point exchange": "Обмен вычислительных баллов",

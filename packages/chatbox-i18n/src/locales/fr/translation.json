@@ -301,6 +301,8 @@
   "Compacting...": "Compactage en cours...",
   "Compaction failed": "Le compactage a échoué",
   "Compaction Threshold": "Seuil de compression",
+  "Recent History Budget": "Budget des messages récents",
+  "Target share of the input window kept as recent messages during automatic or manual compaction. Whole messages are preserved when space allows. Set to 0% to summarize all history. Unknown model windows use an estimate.": "Part cible de la fenêtre d’entrée réservée aux messages récents lors de la compression automatique ou manuelle. Les messages sont conservés intégralement si l’espace le permet. À 0%, tout l’historique est résumé. La taille des fenêtres de modèle inconnues est estimée.",
   "Completed": "Terminé",
   "Compress Conversation": "Compresser la conversation",
   "Compute point exchange": "Échange de points de calcul",

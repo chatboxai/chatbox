@@ -1,5 +1,6 @@
+import { validatedToolSchema } from '@shared/validated-tool-schema'
 import type { Message, MessageContentToolCallPart, SessionSettings } from '@shared/types'
-import { jsonSchema, type ToolSet } from 'ai'
+import type { ToolSet } from 'ai'
 import { z } from 'zod'
 import { createModel } from '@/adapters'
 import { languageNameMap } from '@/i18n/locales'
@@ -26,7 +27,7 @@ export interface CommandExplanationResult {
 const commandAssessmentTools: ToolSet = {
   [COMMAND_ASSESSMENT_TOOL_NAME]: {
     description: 'Submit the required safety assessment for the shell command. This is the only valid way to answer.',
-    inputSchema: jsonSchema({
+    inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
         decision: {

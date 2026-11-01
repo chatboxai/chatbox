@@ -96,9 +96,9 @@ describe('applyLegacyToolFallback', () => {
     expect(result.fallbackToolCallPart).toMatchObject({
       type: 'tool-call',
       state: 'result',
-      toolCallId: 'query_knowledge_base_1',
-      toolName: 'query_knowledge_base',
-      args: { query: 'document' },
+      toolCallId: 'knowledge_base_1',
+      toolName: 'knowledge_base',
+      args: { command: 'search', query: 'document' },
     })
     expect(dependencies.combinedSearchByPromptEngineering).toHaveBeenCalledWith(
       expect.anything(),
@@ -139,7 +139,7 @@ describe('applyLegacyToolFallback', () => {
     )
 
     expect(result.promptMsgs).toBe(transformed)
-    expect(result.fallbackToolCallPart?.toolName).toBe('query_knowledge_base')
+    expect(result.fallbackToolCallPart?.toolName).toBe('knowledge_base')
     expect(dependencies.knowledgeBaseSearchByPromptEngineering).toHaveBeenCalledWith(
       expect.anything(),
       promptMsgs,

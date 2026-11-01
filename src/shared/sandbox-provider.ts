@@ -44,6 +44,8 @@ export interface SandboxReadResult extends SandboxOperationResult {
   startLine?: number
   endLine?: number
   totalLines?: number
+  /** Number of returned lines whose text was shortened by the reader. */
+  truncatedLineCount?: number
 }
 
 export interface SandboxSearchParams {

@@ -1,10 +1,12 @@
-import type { LanguageModelV3 } from '@ai-sdk/provider'
+import type { LanguageModelV4 } from '@ai-sdk/provider'
 import {
   APICallError,
   type EmbeddingModel,
   type FinishReason,
-  experimental_generateImage as generateImage,
+  generateImage,
   type ImageModel,
+  type ImageModelProviderMetadata,
+  isStepCount,
   type LanguageModelUsage,
   type ModelMessage,
   type PrepareStepFunction,
@@ -12,7 +14,6 @@ import {
   type ProviderMetadata,
   RetryError,
   simulateStreamingMiddleware,
-  stepCountIs,
   streamText,
   type TextStreamPart,
   type ToolCallRepairFunction,
@@ -22,7 +23,6 @@ import {
   type TypedToolResult,
   wrapLanguageModel,
 } from 'ai'
-import { createRetryable, isErrorAttempt, type RetryContext } from 'ai-retry'
 import type {
   MessageContentParts,
   MessageReasoningPart,
@@ -34,12 +34,20 @@ import type {
 import type { ModelDependencies } from '../types/adapters'
 import { getReasoningControlCapabilities, stripReasoningProviderOptions } from '../utils/reasoning-control'
 import { normalizeCompletedResponse } from './completed-response-normalizer'
-import { createMidRunToolResultRelief } from './context-pressure-relief'
+import {
+  accumulateReasoningChunk,
+  accumulateTextChunk,
+  type ContentPartAccumulator,
+  finalizeReasoningDuration,
+} from './content-part-accumulator'
 import { isExpectedGenerationError } from './error-classification'
-import { ApiError, BaseError, ChatboxAIAPIError, MidStreamApiError } from './errors'
+import { ApiError, BaseError, ChatboxAIAPIError, NetworkError } from './errors'
+import { toMessageUsage } from './message-usage'
 import { wrapOpenAICompatibleNonStreamingModel } from './openai-compatible-non-streaming'
 import { stopWhenPersistentToolCallPause } from './persistent-tool-call-pause'
-import { mergeProviderMetadata, pickPersistableProviderMetadata } from './provider-part-metadata'
+import { bindReplaySource } from './provider-part-metadata'
+import { createRetryableChatModel } from './retryable-chat-model'
+import { simulateStreamingWithTextReplayMetadataMiddleware, textReplayMetadataMiddleware } from './text-replay-metadata'
 import { repairToolCallJson } from './tool-call-json-repair'
 import type {
   CallChatCompletionOptions,
@@ -50,15 +58,9 @@ import type {
   ModelStreamPart,
 } from './types'
 import { isKimiFixedSamplingModel } from './utils/kimi'
-import { extractStreamErrorMessage } from './utils/stream-error-message'
+import { extractStreamErrorMessage, extractStreamErrorStatusCode } from './utils/stream-error-message'
 
 export type { CallSettings } from './types'
-
-const RETRY_CONFIG = {
-  MAX_ATTEMPTS: 5,
-  INITIAL_DELAY_MS: 1000,
-  BACKOFF_FACTOR: 2,
-} as const
 
 function sanitizeCallSettings(callSettings: CallSettings): CallSettings {
   const maxOutputTokens = callSettings.maxOutputTokens
@@ -71,39 +73,7 @@ function sanitizeCallSettings(callSettings: CallSettings): CallSettings {
   return sanitized
 }
 
-/**
- * Retryable from a billing-safety perspective: upstream rejected or crashed
- * before running the model, so retrying will not cause duplicate charges.
- * Covers 5xx (server-side failure) and 429 (rate-limited before processing).
- */
-function isRetryableStatusCode(code: number): boolean {
-  return code === 429 || (code >= 500 && code < 600)
-}
-
-export function isRetryableStatusError(error: unknown): boolean {
-  // A failure after part of the response streamed is never billing-safe to
-  // retry, regardless of status code: the partial generation may already be
-  // billed, and a silent re-run would append a fresh response after the
-  // already-rendered partial text.
-  if (error instanceof MidStreamApiError) {
-    return false
-  }
-  if (APICallError.isInstance(error)) {
-    const statusCode = error.statusCode
-    return statusCode !== undefined && isRetryableStatusCode(statusCode)
-  }
-  if (error && typeof error === 'object' && 'statusCode' in error) {
-    const statusCode = (error as { statusCode: unknown }).statusCode
-    return typeof statusCode === 'number' && isRetryableStatusCode(statusCode)
-  }
-  if (error instanceof ApiError && error.message) {
-    const match = error.message.match(/Status Code (\d+)/)
-    if (match) {
-      return isRetryableStatusCode(parseInt(match[1], 10))
-    }
-  }
-  return false
-}
+export { isRetryableStatusError } from './retryable-chat-model'
 
 class StatusQueue {
   private queue: ModelStatus[] = []
@@ -160,6 +130,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
   public name = 'AI SDK Model'
   public injectDefaultMetadata = true
   public modelId = ''
+  public reasoningReplaySource?: string
 
   public get apiStyle(): ProviderModelInfo['apiStyle'] {
     return this.options.model.apiStyle
@@ -190,9 +161,18 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     options: CallChatCompletionOptions
   ): Pick<Provider, 'languageModel'> & Partial<Pick<Provider, 'embeddingModel' | 'imageModel'>>
 
-  protected abstract getChatModel(options: CallChatCompletionOptions): LanguageModelV3
+  protected abstract getChatModel(options: CallChatCompletionOptions): LanguageModelV4
 
-  private prepareChatModel(model: LanguageModelV3): LanguageModelV3 {
+  private prepareChatModel(model: LanguageModelV4): LanguageModelV4 {
+    if (this.apiStyle === 'google') {
+      return wrapLanguageModel({
+        model,
+        middleware:
+          this.options.stream === false
+            ? simulateStreamingWithTextReplayMetadataMiddleware
+            : textReplayMetadataMiddleware,
+      })
+    }
     if (this.options.stream !== false) return model
 
     if (this.apiStyle === 'openai') {
@@ -207,6 +187,33 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
 
   protected getImageModel(): ImageModel | null {
     return null
+  }
+
+  protected getImageGenerationOptions(aspectRatio?: string): {
+    size?: `${number}x${number}`
+    aspectRatio?: `${number}:${number}`
+  } {
+    if (!aspectRatio || aspectRatio === 'auto') return {}
+    return { aspectRatio: aspectRatio as `${number}:${number}` }
+  }
+
+  protected getImageGenerationPrompt(params: {
+    prompt: string
+    images?: { imageUrl: string }[]
+  }): string | { text: string; images: string[] } {
+    return params.prompt
+  }
+
+  protected getMaxImagesPerGenerationRequest(): number | undefined {
+    return undefined
+  }
+
+  protected getGeneratedImageMediaType(
+    defaultMediaType: string,
+    _index: number,
+    _providerMetadata: ImageModelProviderMetadata
+  ): string {
+    return defaultMediaType
   }
 
   protected getTextEmbeddingModel(options: CallChatCompletionOptions): EmbeddingModel | null {
@@ -314,20 +321,14 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     const callSettings = this.resolveCallSettings(options)
     const basePrepareStep = options.prepareStep as PrepareStepFunction<T> | undefined
     const onRequestResolved = options.onRequestResolved
-    const midRunRelief = options.contextPressure
-      ? createMidRunToolResultRelief({ thresholdTokens: options.contextPressure.thresholdTokens })
-      : undefined
     const prepareStep: PrepareStepFunction<T> | undefined =
-      onRequestResolved || midRunRelief
+      basePrepareStep || onRequestResolved
         ? async (stepOptions) => {
-            const prepared = await basePrepareStep?.(stepOptions)
-            // Relief runs on the final composed messages, and the request
-            // snapshot below must observe exactly what is dispatched.
-            let stepMessages = prepared?.messages ?? stepOptions.messages
-            const relieved = midRunRelief?.(stepMessages)
-            if (relieved) {
-              stepMessages = relieved
-            }
+            // Each preparation starts from the full transcript so temporary step
+            // messages, such as image injections, do not accumulate across steps.
+            const messages = [...stepOptions.initialMessages, ...stepOptions.responseMessages]
+            const prepared = await basePrepareStep?.({ ...stepOptions, messages })
+            const stepMessages = prepared?.messages ?? messages
             const allTools = (options.tools ?? {}) as T
             const activeToolNames = prepared?.activeTools ? new Set(prepared.activeTools.map(String)) : undefined
             const effectiveTools = activeToolNames
@@ -341,79 +342,41 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
               tools: effectiveTools,
               stream: this.options.stream !== false,
             })
-            if (!relieved) {
-              return prepared
-            }
             return { ...(prepared ?? {}), messages: stepMessages }
           }
-        : basePrepareStep
+        : undefined
 
     const statusQueue = new StatusQueue()
 
-    const retryableStatusAttempt = (context: RetryContext<LanguageModelV3>) => {
-      if (isErrorAttempt(context.current)) {
-        const { error } = context.current
-        if (isRetryableStatusError(error)) {
-          return {
-            model: baseModel,
-            maxAttempts: RETRY_CONFIG.MAX_ATTEMPTS,
-            delay: RETRY_CONFIG.INITIAL_DELAY_MS,
-            backoffFactor: RETRY_CONFIG.BACKOFF_FACTOR,
-          }
-        }
-      }
-      return undefined
-    }
-    const model = createRetryable({
-      model: baseModel,
-      retries: [retryableStatusAttempt],
-      onError: (context) => {
-        if (isErrorAttempt(context.current)) {
-          const { error } = context.current
-          const errorMessage = error instanceof Error ? error.message : String(error)
-          console.debug(`[ai-retry] Error on attempt ${context.attempts.length}:`, errorMessage)
-        }
-      },
-      onRetry: (context) => {
-        const attemptNumber = context.attempts.length + 1
-        const lastError = context.attempts[context.attempts.length - 1]
-        const errorMessage =
-          lastError && 'error' in lastError
-            ? lastError.error instanceof Error
-              ? lastError.error.message
-              : String(lastError.error)
-            : 'Unknown error'
-
-        console.debug(`[ai-retry] Retrying attempt ${attemptNumber}/${RETRY_CONFIG.MAX_ATTEMPTS}`)
-
-        statusQueue.push({
-          type: 'retrying',
-          attempt: attemptNumber,
-          maxAttempts: RETRY_CONFIG.MAX_ATTEMPTS,
-          error: errorMessage,
-        })
-      },
-    })
+    const model = createRetryableChatModel(baseModel, (status) => statusQueue.push(status))
 
     const result = streamText({
       model,
       messages,
-      stopWhen: [stepCountIs(options.maxSteps || Number.MAX_SAFE_INTEGER), stopWhenPersistentToolCallPause<T>()],
+      // Chatbox lets users author system prompts and preserves their position in chat history.
+      allowSystemInMessages: true,
+      stopWhen: [isStepCount(options.maxSteps || Number.MAX_SAFE_INTEGER), stopWhenPersistentToolCallPause<T>()],
       tools: options.tools as T | undefined,
       prepareStep,
       experimental_repairToolCall: repairToolCallJson as ToolCallRepairFunction<T>,
       abortSignal: options.signal,
       ...callSettings,
-      // Billable POST retries are handled explicitly by the `ai-retry` wrapper above
-      // (covers 5xx and 429, which are safe because upstream hasn't processed the request).
-      // AI SDK's default retry (2x) would also fire on arbitrary network errors, which
-      // could double-charge if the server processed the request before the connection died.
-      // Kept last so provider `callSettings` cannot accidentally re-enable retries.
+      // Chatbox owns request diagnostics; SDK tracing result promises need a Node consumer.
+      telemetry: { isEnabled: false },
+      // The model wrapper owns retry limits, backoff and UI status for HTTP and
+      // network failures. Keep SDK retries disabled to avoid multiplying attempts.
       maxRetries: 0,
     })
 
-    const streamIterator = result.fullStream[Symbol.asyncIterator]()
-    let nextChunk = streamIterator.next()
+    const streamIterator = result.stream[Symbol.asyncIterator]()
+    const readNextChunk = () => {
+      const nextChunk = streamIterator.next()
+      // A consumer can pause at yield while the prefetched read rejects on abort.
+      // Observe it immediately and keep the original promise for the next read.
+      void nextChunk.catch(() => {})
+      return nextChunk
+    }
+    let nextChunk = readNextChunk()
 
     try {
       while (true) {
@@ -447,12 +410,12 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
         }
 
         const chunk = next.iteration.value
-        nextChunk = streamIterator.next()
+        nextChunk = readNextChunk()
         if (chunk.type === 'error') {
           this.handleError(chunk.error)
         }
 
-        yield chunk
+        yield this.scopeReasoningReplayMetadata(chunk)
       }
 
       let status = statusQueue.shift()
@@ -463,12 +426,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     } finally {
       // Consumers may close this generator early (Stop drain, chunk-processing failure).
       // Propagate the closure to the SDK stream, otherwise the prefetched read keeps
-      // provider/tool work alive after the message was already finalized. Swallow the
-      // abandoned prefetch too, so its late settlement can't become an unhandled rejection.
-      nextChunk.then(
-        () => {},
-        () => {}
-      )
+      // provider/tool work alive after the message was already finalized.
       await streamIterator.return?.().catch(() => {})
     }
   }
@@ -487,18 +445,31 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     if (!imageModel) {
       throw new ApiError('Provider doesnt support image generation')
     }
-    const result = await generateImage({
-      model: imageModel,
-      prompt: params.prompt,
-      // images 暂时不支持
-      n: params.num,
-      abortSignal: signal,
-      // Image generation is billable; network-error retries could double-charge.
-      maxRetries: 0,
-    })
-    const dataUrls = result.images.map((image) => `data:${image.mediaType};base64,${image.base64}`)
-    for (const dataUrl of dataUrls) {
-      await callback?.(dataUrl)
+
+    const maxImagesPerRequest = this.getMaxImagesPerGenerationRequest()
+    const requestSizes = maxImagesPerRequest
+      ? Array.from({ length: Math.ceil(params.num / maxImagesPerRequest) }, (_, index) =>
+          Math.min(maxImagesPerRequest, params.num - index * maxImagesPerRequest)
+        )
+      : [params.num]
+    const dataUrls: string[] = []
+
+    for (const requestSize of requestSizes) {
+      const result = await generateImage({
+        model: imageModel,
+        prompt: this.getImageGenerationPrompt(params),
+        n: requestSize,
+        ...this.getImageGenerationOptions(params.aspectRatio),
+        abortSignal: signal,
+        // Image generation is billable; network-error retries could double-charge.
+        maxRetries: 0,
+      })
+      for (const [index, image] of result.images.entries()) {
+        const mediaType = this.getGeneratedImageMediaType(image.mediaType, index, result.providerMetadata ?? {})
+        const dataUrl = `data:${mediaType};base64,${image.base64}`
+        await callback?.(dataUrl)
+        dataUrls.push(dataUrl)
+      }
     }
     return dataUrls
   }
@@ -646,58 +617,11 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     }
   }
 
-  private createOrUpdateContentPart<T extends MessageTextPart | MessageReasoningPart>(
-    textDelta: string,
-    contentParts: MessageContentParts,
-    currentPart: T | undefined,
-    type: T['type']
-  ): T {
-    if (!currentPart) {
-      currentPart = { type, text: '' } as T
-      contentParts.push(currentPart)
+  private scopeReasoningReplayMetadata<T extends ToolSet>(chunk: TextStreamPart<T>): TextStreamPart<T> {
+    if (chunk.type !== 'reasoning-start' && chunk.type !== 'reasoning-delta' && chunk.type !== 'reasoning-end') {
+      return chunk
     }
-    currentPart.text += textDelta
-    return currentPart
-  }
-
-  private createOrUpdateTextPart(
-    textDelta: string,
-    contentParts: MessageContentParts,
-    currentTextPart: MessageTextPart | undefined
-  ): MessageTextPart {
-    return this.createOrUpdateContentPart(textDelta, contentParts, currentTextPart, 'text')
-  }
-
-  /**
-   * Creates or updates a reasoning part with timing information for streaming responses
-   * @param textDelta - New text to append to the reasoning content
-   * @param contentParts - Array of message content parts
-   * @param currentReasoningPart - Existing reasoning part to update, if any
-   * @returns The updated or newly created reasoning part
-   */
-  private createOrUpdateReasoningPart(
-    textDelta: string,
-    contentParts: MessageContentParts,
-    currentReasoningPart: MessageReasoningPart | undefined,
-    persistableProviderMetadata?: ProviderMetadata
-  ): MessageReasoningPart {
-    if (!currentReasoningPart) {
-      // Create new reasoning part with start time for timer tracking in streaming mode
-      currentReasoningPart = {
-        type: 'reasoning',
-        text: '',
-        startTime: Date.now(), // Capture when thinking begins
-      }
-      contentParts.push(currentReasoningPart)
-    }
-    currentReasoningPart.text += textDelta
-    if (persistableProviderMetadata) {
-      currentReasoningPart.providerMetadata = mergeProviderMetadata(
-        currentReasoningPart.providerMetadata,
-        persistableProviderMetadata
-      )
-    }
-    return currentReasoningPart
+    return { ...chunk, providerMetadata: bindReplaySource(chunk.providerMetadata, this.reasoningReplaySource) }
   }
 
   private async processImageFile(
@@ -727,109 +651,32 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
      */
     pendingReasoningText: string
   }> {
-    // Finalize reasoning duration when transitioning to other content types
-    const finalizeReasoningDuration = () => {
-      if (currentReasoningPart?.startTime && !currentReasoningPart.duration) {
-        currentReasoningPart.duration = Date.now() - currentReasoningPart.startTime
-      }
-    }
-
     switch (chunk.type) {
+      case 'text-end':
       case 'text-delta':
-        finalizeReasoningDuration()
-        // clear current reasoning part
-        return {
-          currentTextPart: this.createOrUpdateTextPart(chunk.text, contentParts, currentTextPart),
-          currentReasoningPart: undefined,
-          pendingReasoningText: '',
-        }
-
-      case 'reasoning-start': {
-        finalizeReasoningDuration()
-        // Anthropic delivers `redacted_thinking` payloads on the block-start chunk;
-        // metadata outside the persistable whitelist never creates a part (see
-        // the core stream-chunk-processor for the same rule).
-        const persistable = pickPersistableProviderMetadata(chunk.providerMetadata)
-        if (persistable) {
-          return {
-            currentTextPart: undefined,
-            currentReasoningPart: this.createOrUpdateReasoningPart('', contentParts, undefined, persistable),
-            pendingReasoningText: '',
-          }
-        }
-        return {
-          currentTextPart,
-          currentReasoningPart: undefined,
-          pendingReasoningText: '',
-        }
-      }
-
-      case 'reasoning-delta': {
-        // 部分提供方会随文本返回空的reasoning，防止分割正常的content。
-        // Anthropic signature_delta 是空文本 + provider metadata，需要照常落到 part 上。
-        const persistable = pickPersistableProviderMetadata(chunk.providerMetadata)
-        if (currentReasoningPart) {
-          // Signed thinking must round-trip byte-for-byte: once the block has a
-          // part, even whitespace-only deltas append verbatim.
-          return {
-            currentTextPart: undefined,
-            currentReasoningPart: this.createOrUpdateReasoningPart(
-              chunk.text,
-              contentParts,
-              currentReasoningPart,
-              persistable
-            ),
-            pendingReasoningText: '',
-          }
-        }
-        if (chunk.text.trim() || persistable) {
-          return {
-            currentTextPart: undefined,
-            currentReasoningPart: this.createOrUpdateReasoningPart(
-              pendingReasoningText + chunk.text,
-              contentParts,
-              undefined,
-              persistable
-            ),
-            pendingReasoningText: '',
-          }
-        }
-        // Whitespace before the block has produced a part: buffer it so a later
-        // signed part keeps the exact text; discarded if the block yields nothing.
-        return {
+      case 'reasoning-start':
+      case 'reasoning-delta':
+      case 'reasoning-end': {
+        const accumulator: ContentPartAccumulator = {
+          contentParts,
           currentTextPart,
           currentReasoningPart,
-          pendingReasoningText: pendingReasoningText + chunk.text,
+          pendingReasoningText,
         }
-      }
-
-      case 'reasoning-end': {
-        const persistable = pickPersistableProviderMetadata(chunk.providerMetadata)
-        if (persistable && !currentReasoningPart) {
-          currentReasoningPart = this.createOrUpdateReasoningPart(
-            pendingReasoningText,
-            contentParts,
-            undefined,
-            persistable
-          )
-        } else if (persistable) {
-          currentReasoningPart = this.createOrUpdateReasoningPart('', contentParts, currentReasoningPart, persistable)
+        if (chunk.type === 'text-delta' || chunk.type === 'text-end') {
+          accumulateTextChunk(accumulator, chunk)
+        } else {
+          accumulateReasoningChunk(accumulator, chunk)
         }
-        // A block that ends with replay metadata but no visible text exists only
-        // for protocol replay (redacted thinking, signed empty thinking block).
-        if (currentReasoningPart && !currentReasoningPart.text.trim() && currentReasoningPart.providerMetadata) {
-          currentReasoningPart.protocolOnly = true
-        }
-        finalizeReasoningDuration()
         return {
-          currentTextPart,
-          currentReasoningPart: undefined,
-          pendingReasoningText: '',
+          currentTextPart: accumulator.currentTextPart,
+          currentReasoningPart: accumulator.currentReasoningPart,
+          pendingReasoningText: accumulator.pendingReasoningText,
         }
       }
 
       case 'tool-call':
-        finalizeReasoningDuration()
+        finalizeReasoningDuration(currentReasoningPart)
         this.processToolCalls([chunk], contentParts, _options)
         return {
           currentTextPart: undefined,
@@ -841,7 +688,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
         this.processToolResults([chunk], contentParts, _options)
         break
       case 'tool-error':
-        finalizeReasoningDuration()
+        finalizeReasoningDuration(currentReasoningPart)
         this.processToolErrors([chunk], contentParts, _options)
         break
       case 'file':
@@ -874,7 +721,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     // ai-retry upgrades.)
     if (
       RetryError.isInstance(error) &&
-      (error.lastError instanceof ApiError || APICallError.isInstance(error.lastError))
+      (error.lastError instanceof Error || APICallError.isInstance(error.lastError))
     ) {
       return this.handleError(error.lastError, context)
     }
@@ -882,7 +729,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
       const responseBody = this.sanitizeResponseBody(error.statusCode, error.responseBody)
       throw new ApiError(`Error from ${this.name}${context}`, responseBody, error.statusCode)
     }
-    if (error instanceof ApiError) {
+    if (error instanceof ApiError || error instanceof NetworkError) {
       throw error
     }
     if (error instanceof ChatboxAIAPIError) {
@@ -890,7 +737,11 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     }
     // Mid-stream provider errors are often plain objects ({ message, type, code });
     // interpolating them yields "[object Object]".
-    throw new ApiError(`Error from ${this.name}${context}: ${extractStreamErrorMessage(error)}`)
+    throw new ApiError(
+      `Error from ${this.name}${context}: ${extractStreamErrorMessage(error)}`,
+      undefined,
+      extractStreamErrorStatusCode(error)
+    )
   }
 
   /**
@@ -944,11 +795,15 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
       tokenCount: result.usage?.outputTokens,
       tokensUsed: result.usage?.totalTokens,
     })
-    return { contentParts: normalizedContentParts, usage: result.usage, finishReason: result.finishReason }
+    return {
+      contentParts: normalizedContentParts,
+      usage: result.usage ? toMessageUsage(result.usage) : undefined,
+      finishReason: result.finishReason,
+    }
   }
 
   private async handleStreamingCompletion<T extends ToolSet>(
-    model: LanguageModelV3,
+    model: LanguageModelV4,
     coreMessages: ModelMessage[],
     options: CallChatCompletionOptions<T>,
     callSettings: CallSettings
@@ -956,17 +811,15 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     const result = streamText({
       model,
       messages: coreMessages,
-      stopWhen: [stepCountIs(options.maxSteps || Number.MAX_SAFE_INTEGER), stopWhenPersistentToolCallPause<T>()],
+      allowSystemInMessages: true,
+      stopWhen: [isStepCount(options.maxSteps || Number.MAX_SAFE_INTEGER), stopWhenPersistentToolCallPause<T>()],
       tools: options.tools,
       experimental_repairToolCall: repairToolCallJson as ToolCallRepairFunction<T>,
       abortSignal: options.signal,
       ...callSettings,
-      // Billable POST retries are handled explicitly by the `ai-retry` wrapper in
-      // _callChatCompletion (covers 5xx and 429, which are safe because upstream
-      // hasn't processed the request). AI SDK's default retry (2x) would fire on
-      // arbitrary network errors too, which could double-charge if the server
-      // processed the request before the connection died.
-      // Kept last so provider `callSettings` cannot accidentally re-enable retries.
+      telemetry: { isEnabled: false },
+      // The model wrapper owns retry limits, backoff and UI status for HTTP and
+      // network failures. Keep SDK retries disabled to avoid multiplying attempts.
       maxRetries: 0,
     })
 
@@ -976,7 +829,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     let pendingReasoningText = ''
 
     try {
-      for await (const chunk of result.fullStream) {
+      for await (const chunk of result.stream) {
         // console.debug('stream chunk', chunk)
 
         // Handle error chunks
@@ -985,7 +838,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
         }
 
         const chunkResult = await this.processStreamChunk(
-          chunk,
+          this.scopeReasoningReplayMetadata(chunk),
           contentParts,
           currentTextPart,
           currentReasoningPart,
@@ -1023,51 +876,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     const baseModel = this.prepareChatModel(this.getChatModel(options))
     const callSettings = this.resolveCallSettings(options)
 
-    const retryableStatusAttempt = (context: RetryContext<LanguageModelV3>) => {
-      if (isErrorAttempt(context.current)) {
-        const { error } = context.current
-        if (isRetryableStatusError(error)) {
-          return {
-            model: baseModel,
-            maxAttempts: RETRY_CONFIG.MAX_ATTEMPTS,
-            delay: RETRY_CONFIG.INITIAL_DELAY_MS,
-            backoffFactor: RETRY_CONFIG.BACKOFF_FACTOR,
-          }
-        }
-      }
-      return undefined
-    }
-
-    const model = createRetryable({
-      model: baseModel,
-      retries: [retryableStatusAttempt],
-      onError: (context) => {
-        if (isErrorAttempt(context.current)) {
-          const { error } = context.current
-          const errorMessage = error instanceof Error ? error.message : String(error)
-          console.debug(`[ai-retry] Error on attempt ${context.attempts.length}:`, errorMessage)
-        }
-      },
-      onRetry: (context) => {
-        const attemptNumber = context.attempts.length + 1
-        const lastError = context.attempts[context.attempts.length - 1]
-        const errorMessage =
-          lastError && 'error' in lastError
-            ? lastError.error instanceof Error
-              ? lastError.error.message
-              : String(lastError.error)
-            : 'Unknown error'
-
-        console.debug(`[ai-retry] Retrying attempt ${attemptNumber}/${RETRY_CONFIG.MAX_ATTEMPTS}`)
-
-        options.onStatusChange?.({
-          type: 'retrying',
-          attempt: attemptNumber,
-          maxAttempts: RETRY_CONFIG.MAX_ATTEMPTS,
-          error: errorMessage,
-        })
-      },
-    })
+    const model = createRetryableChatModel(baseModel, (status) => options.onStatusChange?.(status))
 
     try {
       const result = await this.handleStreamingCompletion(model, coreMessages, options, callSettings)

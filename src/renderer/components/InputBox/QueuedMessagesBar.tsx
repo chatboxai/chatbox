@@ -2,7 +2,15 @@ import { isActionAvailableInMode, resolveSessionMode } from '@chatbox/core/sessi
 import { ActionIcon, Badge, Box, Button, Flex, Text, Textarea } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import type { Message } from '@shared/types'
-import { IconAlertCircle, IconArrowUp, IconClockHour4, IconPaperclip, IconPencil, IconX } from '@tabler/icons-react'
+import {
+  IconAlertCircle,
+  IconArrowUp,
+  IconClockHour4,
+  IconFileZip,
+  IconPaperclip,
+  IconPencil,
+  IconX,
+} from '@tabler/icons-react'
 import { memo, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useStore } from 'zustand'
@@ -14,6 +22,7 @@ import {
   isSteerableQueuedMessage,
   MAX_QUEUED_MESSAGES,
   messageQueueStore,
+  type QueuedCompactionRequest,
   type QueuedUserMessage,
   type QueuePausedReason,
   removeQueuedMessage,
@@ -224,6 +233,48 @@ function QueuedItemRow({ sessionId, item, order, paused, steeringEnabled }: Queu
   )
 }
 
+interface QueuedCompactionRowProps {
+  sessionId: string
+  item: QueuedCompactionRequest
+  order: number
+}
+
+/** A queued compression: context work, so it offers removal but no steering or editing. */
+function QueuedCompactionRow({ sessionId, item, order }: QueuedCompactionRowProps) {
+  const { t } = useTranslation()
+
+  return (
+    <Flex
+      data-testid={TestId.chat.queuedCompactionItem}
+      align="center"
+      gap={8}
+      className="group/queue-item rounded-md bg-chatbox-background-secondary px-2 py-1 min-h-[30px]"
+    >
+      <Text size="xs" c="chatbox-tertiary" className="w-3 text-center flex-shrink-0 tabular-nums">
+        {order}
+      </Text>
+      <ScalableIcon icon={IconFileZip} size={14} className="flex-shrink-0 text-chatbox-tint-brand" />
+      <Tooltip label={t('Runs when the session is idle')}>
+        <Text size="sm" c="chatbox-secondary" className="min-w-0 flex-1 truncate">
+          {t('Compress Conversation')}
+        </Text>
+      </Tooltip>
+      <Tooltip label={t('Remove')}>
+        <ActionIcon
+          data-testid={TestId.chat.queuedCompactionRemove}
+          size="sm"
+          variant="subtle"
+          color="gray"
+          aria-label={t('Remove') || ''}
+          onClick={() => removeQueuedMessage(sessionId, item.id)}
+        >
+          <IconX size={13} />
+        </ActionIcon>
+      </Tooltip>
+    </Flex>
+  )
+}
+
 interface QueuedMessagesBarProps {
   sessionId: string
 }
@@ -250,6 +301,10 @@ export const QueuedMessagesBar = memo(function QueuedMessagesBar({ sessionId }: 
   // showing them as "will send later" would be misleading.
   const visibleQueue = queue?.filter((item) => !item.inFlight)
   const visibleCount = visibleQueue?.length ?? 0
+  // A queue that holds only compression work is not "sending" anything, and its
+  // wait can be a pending decision or another summary as well as a reply, so the
+  // header describes the session state instead.
+  const onlyCompaction = visibleQueue?.every((item) => item.kind === 'compaction') ?? false
   const tailId = visibleQueue?.at(-1)?.id
 
   // A longer list ending on a new id is the shape a local append takes, and
@@ -284,7 +339,11 @@ export const QueuedMessagesBar = memo(function QueuedMessagesBar({ sessionId }: 
             className={pausedReason ? 'text-orange-500 flex-shrink-0' : 'text-chatbox-tertiary flex-shrink-0'}
           />
           <Text size="xs" c={pausedReason ? 'orange' : 'chatbox-tertiary'} className="truncate">
-            {pausedReason ? getPausedLabel(pausedReason, t) : t('Will send after the current response finishes')}
+            {pausedReason
+              ? getPausedLabel(pausedReason, t)
+              : onlyCompaction
+                ? t('Runs when the session is idle')
+                : t('Will send after the current response finishes')}
           </Text>
           {!pausedReason && (
             <Badge size="xs" variant="light" color="gray" className="flex-shrink-0 normal-case font-normal">
@@ -323,16 +382,20 @@ export const QueuedMessagesBar = memo(function QueuedMessagesBar({ sessionId }: 
         // conversation, and cut the last visible row to hint at the overflow.
         className="max-h-[min(30vh,180px)] overflow-y-auto"
       >
-        {visibleQueue.map((item, index) => (
-          <QueuedItemRow
-            key={item.id}
-            sessionId={sessionId}
-            item={item}
-            order={index + 1}
-            paused={Boolean(pausedReason)}
-            steeringEnabled={steeringEnabled}
-          />
-        ))}
+        {visibleQueue.map((item, index) =>
+          item.kind === 'compaction' ? (
+            <QueuedCompactionRow key={item.id} sessionId={sessionId} item={item} order={index + 1} />
+          ) : (
+            <QueuedItemRow
+              key={item.id}
+              sessionId={sessionId}
+              item={item}
+              order={index + 1}
+              paused={Boolean(pausedReason)}
+              steeringEnabled={steeringEnabled}
+            />
+          )
+        )}
       </Flex>
     </Box>
   )

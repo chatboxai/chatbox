@@ -1,6 +1,12 @@
+import {
+  accumulateReasoningChunk,
+  accumulateTextChunk,
+  type ContentPartAccumulator,
+  finalizeReasoningDuration,
+} from '@shared/models/content-part-accumulator'
 import { BaseError } from '@shared/models/errors'
+import { toMessageUsage } from '@shared/models/message-usage'
 import { isPersistentToolCallPauseError } from '@shared/models/persistent-tool-call-pause'
-import { mergeProviderMetadata, pickPersistableProviderMetadata } from '@shared/models/provider-part-metadata'
 import type { ModelStreamPart } from '@shared/models/types'
 import { extractToolResultImage } from '@shared/tool-result-image'
 import type {
@@ -12,7 +18,10 @@ import type {
   MessageTextPart,
   MessageToolCallPart,
 } from '@shared/types'
+import type { MemoryToolContext } from '@shared/types/agent-persona'
 import { type ProviderMetadata, parsePartialJson, type ToolSet } from 'ai'
+
+export { finalizeReasoningDuration }
 
 /** Maximum serialized size (in characters) before a tool result is offloaded to blob storage. */
 export const TOOL_RESULT_SIZE_LIMIT = 30_000
@@ -23,6 +32,7 @@ const PREPARING_PROGRESS_MIN_SIZE_KB = 1
 const PREPARING_PROGRESS_MIN_LINES = 10
 
 export interface StreamProcessorCallbacks {
+  memoryToolContext?: MemoryToolContext
   onFileReceived: (mediaType: string, base64: string) => Promise<string>
   /**
    * Called when a tool result exceeds TOOL_RESULT_SIZE_LIMIT.
@@ -71,7 +81,7 @@ type PreparingToolCallProgress = Extract<
 export function createInitialState(initialParts?: MessageContentParts): StreamProcessorState {
   let stepIndex = 0
   for (const part of initialParts ?? []) {
-    if (part.type === 'tool-call' && part.stepIndex !== undefined && part.stepIndex >= stepIndex) {
+    if ('stepIndex' in part && part.stepIndex !== undefined && part.stepIndex >= stepIndex) {
       stepIndex = part.stepIndex + 1
     }
   }
@@ -85,12 +95,6 @@ export function createInitialState(initialParts?: MessageContentParts): StreamPr
     finishReason: undefined,
     stepIndex,
     pendingReasoningText: '',
-  }
-}
-
-export function finalizeReasoningDuration(part: MessageReasoningPart | undefined): void {
-  if (part?.startTime && !part.duration) {
-    part.duration = Date.now() - part.startTime
   }
 }
 
@@ -127,6 +131,21 @@ export async function processStreamChunk(
     pendingReasoningText,
   })
 
+  const accumulate = <T>(apply: (accumulator: ContentPartAccumulator) => T): T => {
+    const accumulator: ContentPartAccumulator = {
+      contentParts,
+      currentTextPart,
+      currentReasoningPart,
+      pendingReasoningText,
+      stepIndex,
+    }
+    const result = apply(accumulator)
+    currentTextPart = accumulator.currentTextPart
+    currentReasoningPart = accumulator.currentReasoningPart
+    pendingReasoningText = accumulator.pendingReasoningText
+    return result
+  }
+
   // Buffered whitespace belongs to a reasoning block still in progress; any
   // chunk other than that block's own deltas/end (or a side-channel status)
   // means the block yielded nothing and the buffer is stale.
@@ -135,93 +154,18 @@ export async function processStreamChunk(
   }
 
   switch (chunk.type) {
+    case 'text-end':
     case 'text-delta': {
-      finalizeReasoningDuration(currentReasoningPart)
-      currentReasoningPart = undefined
-      preparingToolInput = undefined
-      if (currentTextPart) {
-        currentTextPart.text += chunk.text
-      } else {
-        currentTextPart = { type: 'text', text: chunk.text }
-        contentParts.push(currentTextPart)
-      }
+      if (accumulate((accumulator) => accumulateTextChunk(accumulator, chunk))) preparingToolInput = undefined
       break
     }
-    case 'reasoning-start': {
-      finalizeReasoningDuration(currentReasoningPart)
-      currentReasoningPart = undefined
-      // Anthropic delivers `redacted_thinking` payloads on the block-start chunk.
-      // Metadata outside the persistable whitelist (e.g. OpenAI Responses item
-      // ids) must not create a part — the block stays lazily created on its
-      // first non-empty delta, so spurious empty reasoning blocks that some
-      // providers interleave with text never split the current text part.
-      const persistable = pickPersistableProviderMetadata(chunk.providerMetadata)
-      if (persistable) {
-        currentTextPart = undefined
-        currentReasoningPart = {
-          type: 'reasoning',
-          text: '',
-          providerMetadata: persistable,
-          startTime: Date.now(),
-        }
-        contentParts.push(currentReasoningPart)
-      }
-      break
-    }
+    case 'reasoning-start':
     case 'reasoning-delta': {
-      // Anthropic signature_delta arrives as an empty-text delta carrying only
-      // provider metadata; it must still create/annotate the reasoning part.
-      const persistable = pickPersistableProviderMetadata(chunk.providerMetadata)
-      if (currentReasoningPart) {
-        // Signed thinking must round-trip byte-for-byte: once the block has a
-        // part, even whitespace-only deltas append verbatim.
-        currentReasoningPart.text += chunk.text
-      } else if (chunk.text.trim() || persistable) {
-        currentTextPart = undefined
-        currentReasoningPart = {
-          type: 'reasoning',
-          text: pendingReasoningText + chunk.text,
-          startTime: Date.now(),
-        }
-        pendingReasoningText = ''
-        contentParts.push(currentReasoningPart)
-      } else {
-        // Whitespace before the block has produced a part: buffer it so a later
-        // signed part keeps the exact text (see StreamProcessorState).
-        pendingReasoningText += chunk.text
-      }
-      if (currentReasoningPart && persistable) {
-        currentReasoningPart.providerMetadata = mergeProviderMetadata(
-          currentReasoningPart.providerMetadata,
-          persistable
-        )
-      }
+      accumulate((accumulator) => accumulateReasoningChunk(accumulator, chunk))
       break
     }
     case 'reasoning-end': {
-      const persistable = pickPersistableProviderMetadata(chunk.providerMetadata)
-      if (persistable) {
-        if (!currentReasoningPart) {
-          currentReasoningPart = {
-            type: 'reasoning',
-            text: pendingReasoningText,
-            startTime: Date.now(),
-          }
-          contentParts.push(currentReasoningPart)
-        }
-        currentReasoningPart.providerMetadata = mergeProviderMetadata(
-          currentReasoningPart.providerMetadata,
-          persistable
-        )
-      }
-      pendingReasoningText = ''
-      // A block that ends with replay metadata but no visible text exists only
-      // for protocol replay (redacted thinking, signed empty thinking block).
-      if (currentReasoningPart && !currentReasoningPart.text.trim() && currentReasoningPart.providerMetadata) {
-        currentReasoningPart.protocolOnly = true
-      }
-      finalizeReasoningDuration(currentReasoningPart)
-      currentReasoningPart = undefined
+      accumulate((accumulator) => accumulateReasoningChunk(accumulator, chunk))
       preparingToolInput = { inputText: '', startedAt: Date.now() }
       return {
         state: nextState(),
@@ -323,6 +267,7 @@ export async function processStreamChunk(
         state: 'call',
         toolCallId: chunk.toolCallId,
         toolName: chunk.toolName,
+        ...memoryContextForTool(chunk.toolName, callbacks),
         args,
         providerMetadata,
         providerExecuted: 'providerExecuted' in chunk ? chunk.providerExecuted : undefined,
@@ -409,6 +354,7 @@ export async function processStreamChunk(
           state: 'call',
           toolCallId: chunk.toolCallId,
           toolName: chunk.toolName,
+          ...memoryContextForTool(chunk.toolName, callbacks),
           args: chunk.input,
           providerMetadata: chunk.providerMetadata ?? preparedProviderMetadata,
           providerExecuted: 'providerExecuted' in chunk ? chunk.providerExecuted : undefined,
@@ -448,7 +394,7 @@ export async function processStreamChunk(
         finalizeReasoningDuration(currentReasoningPart)
         preparingToolInput = undefined
         const storageKey = await callbacks.onFileReceived(chunk.file.mediaType, chunk.file.base64)
-        contentParts.push({ type: 'image', storageKey })
+        contentParts.push({ type: 'image', storageKey, stepIndex })
         currentTextPart = undefined
         currentReasoningPart = undefined
       }
@@ -462,6 +408,9 @@ export async function processStreamChunk(
       }
     }
     case 'finish-step': {
+      finalizeReasoningDuration(currentReasoningPart)
+      currentTextPart = undefined
+      currentReasoningPart = undefined
       stepIndex += 1
       return {
         state: nextState(),
@@ -472,7 +421,7 @@ export async function processStreamChunk(
       finishReason = 'finishReason' in chunk ? chunk.finishReason : finishReason
       preparingToolInput = undefined
       if ('totalUsage' in chunk && chunk.totalUsage) {
-        usage = chunk.totalUsage as Message['usage']
+        usage = toMessageUsage(chunk.totalUsage)
       }
       break
     }
@@ -487,6 +436,16 @@ export async function processStreamChunk(
     state: nextState(),
     skipUpdate: false,
   }
+}
+
+function memoryContextForTool(
+  toolName: string,
+  callbacks: StreamProcessorCallbacks
+): { memoryToolContext?: MemoryToolContext } {
+  const context = callbacks.memoryToolContext
+  return context && (toolName === 'save_memory' || toolName === 'delete_memory')
+    ? { memoryToolContext: { ...context, scope: { ...context.scope } } }
+    : {}
 }
 
 function getToolInputId(chunk: ModelStreamPart<ToolSet>): string | undefined {

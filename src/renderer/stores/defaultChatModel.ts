@@ -1,4 +1,4 @@
-import { type ChatboxAILicenseDetail, ModelProviderEnum, type Session } from '@shared/types'
+import { type ChatboxAILicenseDetail, ModelProviderEnum, type SessionHeader } from '@shared/types'
 import { isChatboxAILowTierPlan } from './licensePlan'
 
 export type ChatboxLicenseDefaultModelId = NonNullable<ChatboxAILicenseDetail['defaultModel']>
@@ -49,7 +49,7 @@ export function resolveChatboxLicenseDefaultModel(
   }
 }
 
-export function applyChatboxLicenseDefaultModelToSession<T extends Pick<Session, 'type' | 'settings'>>(
+export function applyChatboxLicenseDefaultModelToSession<T extends Pick<SessionHeader, 'type' | 'settings'>>(
   session: T,
   settings: ChatboxDefaultModelSettings
 ): T {

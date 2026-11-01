@@ -19,6 +19,24 @@ const { discoverSkillsMock, getSettingsMock, mcpToolsMock, sandboxProviderMock, 
   })
 )
 
+const storageMock = vi.hoisted(() => {
+  const values = new Map<string, unknown>()
+  return {
+    getBlob: vi.fn().mockResolvedValue(null),
+    setBlob: vi.fn().mockResolvedValue(undefined),
+    getItemRaw: vi.fn((key: string) => Promise.resolve(values.get(key) ?? null)),
+    getItem: vi.fn((key: string, initialValue: unknown) => Promise.resolve(values.get(key) ?? initialValue)),
+    setItem: vi.fn((key: string, value: unknown) => {
+      values.set(key, value)
+      return Promise.resolve()
+    }),
+    setItemNow: vi.fn((key: string, value: unknown) => {
+      values.set(key, value)
+      return Promise.resolve()
+    }),
+  }
+})
+
 vi.hoisted(() => {
   const storage = {
     getItem: () => null,
@@ -46,21 +64,8 @@ vi.mock('@/platform', () => ({
 vi.mock('@/storage', () => {
   // In-memory store: agentPersonaStore reads soul/memories through it when
   // capturing the agent persona snapshot.
-  const values = new Map<string, unknown>()
   return {
-    default: {
-      getBlob: vi.fn().mockResolvedValue(null),
-      setBlob: vi.fn().mockResolvedValue(undefined),
-      getItem: vi.fn((key: string, initialValue: unknown) => Promise.resolve(values.get(key) ?? initialValue)),
-      setItem: vi.fn((key: string, value: unknown) => {
-        values.set(key, value)
-        return Promise.resolve()
-      }),
-      setItemNow: vi.fn((key: string, value: unknown) => {
-        values.set(key, value)
-        return Promise.resolve()
-      }),
-    },
+    default: storageMock,
     StorageKey: { MyCopilots: 'myCopilots' },
   }
 })
@@ -126,8 +131,20 @@ import { getMessageText } from '@shared/utils/message'
 import { formatTimestampWithZone, TIME_REMINDER_MIN_GAP_MS } from '@shared/utils/system-reminder'
 import type { ModelMessage } from 'ai'
 import { convertToLanguageModelPrompt, standardizePrompt } from 'ai/internal'
-import { addOrUpdateMyCopilot, disableCopilotMemory, enableCopilotMemory, removeMyCopilot } from '@/stores/copilotStore'
-import { computeEffectiveAgentMode, prepareAgentGenerationHarness } from './agent-harness'
+import {
+  addOrUpdateMyCopilot,
+  disableCopilotMemory,
+  enableCopilotMemory,
+  getCopilotMemorySelection,
+  removeMyCopilot,
+} from '@/stores/copilotStore'
+import platform from '@/platform'
+import {
+  computeEffectiveAgentMode,
+  prepareAgentGenerationHarness,
+  refreshSessionAttachmentStatuses,
+} from './agent-harness'
+import * as toolsBuilder from './tools-builder'
 
 function createMockModel(overrides?: Partial<ModelInterface>): ModelInterface {
   return {
@@ -193,7 +210,7 @@ beforeEach(() => {
 /** Runs the same prompt conversion `streamText` performs before a provider call. */
 async function toUpstreamMessages(coreMessages: ModelMessage[]) {
   const prompt = await convertToLanguageModelPrompt({
-    prompt: await standardizePrompt({ messages: coreMessages }),
+    prompt: await standardizePrompt({ messages: coreMessages, allowSystemInMessages: true }),
     supportedUrls: {},
     download: undefined,
   })
@@ -217,7 +234,81 @@ describe('computeEffectiveAgentMode', () => {
   })
 })
 
+describe('refreshSessionAttachmentStatuses', () => {
+  test('refreshes the index state of retrieval files a compaction summary references', async () => {
+    const file = {
+      id: 'pdf',
+      name: 'large.pdf',
+      fileType: 'application/pdf',
+      storageKey: 'parsed-pdf',
+      ragMode: 'session-retrieval' as const,
+      sessionAttachmentId: 7,
+      sessionAttachmentIndexStatus: 'pending' as const,
+      sessionAttachmentStatus: 'pending' as const,
+    }
+    const getAttachments = vi.fn(async () => [{ id: 7, availability: 'allowed', indexStatus: 'ready', chunkCount: 4 }])
+    Object.assign(platform, { isDesktopLike: true, getSessionAttachmentRagController: () => ({ getAttachments }) })
+    try {
+      const [summary] = await refreshSessionAttachmentStatuses([
+        { id: 'summary', role: 'assistant', isSummary: true, contentParts: [], compactedFiles: [file] },
+      ])
+
+      expect(getAttachments).toHaveBeenCalledWith([7])
+      expect(summary.compactedFiles?.[0]).toMatchObject({
+        sessionAttachmentIndexStatus: 'ready',
+        sessionAttachmentStatus: 'ready',
+        sessionAttachmentChunkCount: 4,
+      })
+    } finally {
+      Object.assign(platform, { isDesktopLike: undefined, getSessionAttachmentRagController: undefined })
+    }
+  })
+})
+
 describe('prepareAgentGenerationHarness', () => {
+  test('builds compacted prompts while retaining sandbox seeds from the original path', async () => {
+    const buildTools = vi.spyOn(toolsBuilder, 'buildToolsForSession')
+    const seed = { id: 'old-file', name: 'history.csv', storageKey: 'parsed-history', rawStorageKey: 'raw-history' }
+    const messages: Message[] = [
+      { id: 'boundary', role: 'assistant', contentParts: [{ type: 'text', text: 'Old boundary' }] },
+      { id: 'summary', role: 'assistant', isSummary: true, contentParts: [{ type: 'text', text: 'Stored summary' }] },
+      { id: 'question', role: 'user', contentParts: [{ type: 'text', text: 'Inspect the previous upload.' }] },
+    ]
+    try {
+      const prepared = await prepareAgentGenerationHarness({
+        session: { id: 'session-1', name: 'Session', type: 'chat' },
+        settings: { provider: ModelProviderEnum.ChatboxAI, modelId: 'test-model' } as SessionSettings,
+        globalSettings: {} as Settings,
+        configs: { uuid: 'config-1' } as Config,
+        messages,
+        targetMsgIx: messages.length,
+        history: {
+          firstMessageTimestamp: 123,
+          userMessageCount: 10,
+          hasAssistantMessage: true,
+          hasLegacyCommandHistory: false,
+          fileResourceKeys: [],
+          sandboxSeedAttachments: [seed],
+        },
+        compactionPoints: [{ boundaryMessageId: 'boundary', summaryMessageId: 'summary', createdAt: 10 }],
+        model: createMockModel(),
+        dependencies: createModelDependencies(),
+        webBrowsing: false,
+        agentModeValue: 'on',
+        agentModeLocked: true,
+        agentModeSupported: true,
+        signal: new AbortController().signal,
+        sandboxProviderFactory: () => sandboxProviderMock as unknown as SandboxProvider,
+        isPro: () => true,
+      })
+      expect(buildTools.mock.calls.at(-1)?.[1].codeExecution?.files).toEqual([seed])
+      expect(JSON.stringify(prepared.coreMessages)).toContain('Stored summary')
+      expect(JSON.stringify(prepared.coreMessages)).not.toContain('Old boundary')
+    } finally {
+      buildTools.mockRestore()
+    }
+  })
+
   test('prepares the real context, system prompt, tools, and sandbox gating for an uploaded file', async () => {
     const userMessage: Message = {
       id: 'msg-1',
@@ -696,6 +787,7 @@ describe('prepareAgentGenerationHarness', () => {
     // Only the mode-independent memory tools remain in chat mode.
     expect(prepared.tools.save_memory).toBeDefined()
     expect(prepared.tools.delete_memory).toBeDefined()
+    expect(prepared.memoryToolContext).toEqual({ version: 1, enabled: true, scope: { type: 'global' } })
     expect(JSON.stringify(prepared.coreMessages)).not.toContain('SANDBOX_MODE')
   })
 
@@ -1632,7 +1724,13 @@ describe('session prompt context snapshot', () => {
 })
 
 describe('chat mode memories', () => {
-  function chatPrepare(settings: SessionSettings, messages: Message[], sideEffects = {}, session = createSession()) {
+  function chatPrepare(
+    settings: SessionSettings,
+    messages: Message[],
+    sideEffects = {},
+    session = createSession(),
+    agentModeValue: 'off' | 'on' = 'off'
+  ) {
     return prepareAgentGenerationHarness({
       session,
       settings,
@@ -1643,7 +1741,7 @@ describe('chat mode memories', () => {
       model: createMockModel(),
       dependencies: createModelDependencies(),
       webBrowsing: false,
-      agentModeValue: 'off',
+      agentModeValue,
       agentModeLocked: false,
       agentModeSupported: true,
       signal: new AbortController().signal,
@@ -1696,8 +1794,9 @@ describe('chat mode memories', () => {
   })
 
   test('captures a memories snapshot on first chat generation when memories exist', async () => {
-    const storage = (await import('@/storage')).default
-    await storage.setItemNow('agent-memories', [{ id: 'm2', content: 'Timezone is UTC+8', createdAt: 1700000000000 }])
+    await storageMock.setItemNow('agent-memories', [
+      { id: 'm2', content: 'Timezone is UTC+8', createdAt: 1700000000000 },
+    ])
     const persistSessionPromptContextSnapshot = vi.fn()
     const prepared = await chatPrepare(
       { provider: ModelProviderEnum.ChatboxAI, modelId: 'test-model' } as SessionSettings,
@@ -1746,6 +1845,7 @@ describe('chat mode memories', () => {
 
     expect(prepared.tools.save_memory).toBeUndefined()
     expect(prepared.tools.delete_memory).toBeUndefined()
+    expect(prepared.memoryToolContext).toEqual({ version: 1, enabled: false, scope: { type: 'global' } })
     const serialized = JSON.stringify(prepared.coreMessages)
     expect(serialized).not.toContain('Should not appear')
     expect(serialized).not.toContain('## Memories')
@@ -1754,8 +1854,7 @@ describe('chat mode memories', () => {
   })
 
   test('does not capture mid-conversation even when memories appear', async () => {
-    const storage = (await import('@/storage')).default
-    await storage.setItemNow('agent-memories', [
+    await storageMock.setItemNow('agent-memories', [
       { id: 'm3', content: 'Appeared mid-conversation', createdAt: 1700000000000 },
     ])
     const persistSessionPromptContextSnapshot = vi.fn()
@@ -1772,12 +1871,11 @@ describe('chat mode memories', () => {
     )
     expect(persistSessionPromptContextSnapshot).not.toHaveBeenCalled()
     expect(JSON.stringify(prepared.coreMessages)).not.toContain('Appeared mid-conversation')
-    await storage.setItemNow('agent-memories', [])
+    await storageMock.setItemNow('agent-memories', [])
   })
 
   test('skips snapshot capture entirely when no memories exist', async () => {
-    const storage = (await import('@/storage')).default
-    await storage.setItemNow('agent-memories', [])
+    await storageMock.setItemNow('agent-memories', [])
     const persistSessionPromptContextSnapshot = vi.fn()
     const prepared = await chatPrepare(
       { provider: ModelProviderEnum.ChatboxAI, modelId: 'test-model' } as SessionSettings,
@@ -1786,15 +1884,60 @@ describe('chat mode memories', () => {
     )
     expect(persistSessionPromptContextSnapshot).not.toHaveBeenCalled()
     expect(JSON.stringify(prepared.coreMessages)).not.toContain('## Memories')
+    expect(prepared.memoryToolContext).toEqual({ version: 1, enabled: true, scope: { type: 'global' } })
   })
 
+  test.each(['off', 'on'] as const)(
+    'binds prepared memory tools to their Copilot lifecycle in mode %s',
+    async (mode) => {
+      const copilotId = `captured-tools-${mode}`
+      await removeMyCopilot(copilotId)
+      await enableCopilotMemory({ id: copilotId, name: 'Captured tutor' })
+      const captured = await getCopilotMemorySelection(copilotId)
+      if (captured.scope.type !== 'copilot') throw new Error('Expected Copilot memory')
+      const prepared = await chatPrepare(
+        { provider: ModelProviderEnum.ChatboxAI, modelId: 'test-model' },
+        [userMessage],
+        {},
+        createSession(copilotId),
+        mode
+      )
+      const expectedContext = {
+        version: 1,
+        enabled: true,
+        scope: { type: 'copilot', copilotId, lifecycleToken: captured.scope.lifecycleToken },
+      }
+      expect(prepared.memoryToolContext).toEqual(expectedContext)
+
+      await removeMyCopilot(copilotId)
+      await enableCopilotMemory({ id: copilotId, name: 'Recreated tutor' })
+      const recreated = await getCopilotMemorySelection(copilotId)
+      expect(recreated.scope).not.toEqual(captured.scope)
+      expect(prepared.memoryToolContext).toEqual(expectedContext)
+      const execute = prepared.tools.save_memory?.execute
+      if (!execute) throw new Error('Missing save_memory tool')
+      await expect(
+        execute(
+          { content: 'Retired generation fact' },
+          { toolCallId: 'captured-save', messages: [], context: undefined }
+        )
+      ).resolves.toMatchObject({
+        error: expect.any(String),
+      })
+      const memories = await storageMock.getItem('copilot-memories', {})
+      expect(memories).not.toHaveProperty(copilotId)
+      await disableCopilotMemory(copilotId)
+    }
+  )
+
   test('copilot memory replaces the global store even when the global switch is off', async () => {
-    const storage = (await import('@/storage')).default
     await enableCopilotMemory({ id: 'cp1', name: 'Tutor' })
-    await storage.setItemNow('copilot-memories', {
+    await storageMock.setItemNow('copilot-memories', {
       cp1: [{ id: 'cm1', content: 'Copilot-only fact', createdAt: 1700000000000 }],
     })
-    await storage.setItemNow('agent-memories', [{ id: 'gm1', content: 'Global-only fact', createdAt: 1700000000000 }])
+    await storageMock.setItemNow('agent-memories', [
+      { id: 'gm1', content: 'Global-only fact', createdAt: 1700000000000 },
+    ])
     getSettingsMock.mockReturnValue({ skills: { enabledSkillNames: [] }, memoryEnabled: false })
     const persistSessionPromptContextSnapshot = vi.fn()
     const prepared = await prepareAgentGenerationHarness({
@@ -1822,19 +1965,25 @@ describe('chat mode memories', () => {
     expect(serialized).toContain('[cm1] Copilot-only fact')
     expect(serialized).not.toContain('Global-only fact')
     expect(prepared.tools.save_memory).toBeDefined()
+    expect(prepared.memoryToolContext).toMatchObject({
+      version: 1,
+      enabled: true,
+      scope: { type: 'copilot', copilotId: 'cp1' },
+    })
 
     await disableCopilotMemory('cp1')
-    await storage.setItemNow('copilot-memories', {})
-    await storage.setItemNow('agent-memories', [])
+    await storageMock.setItemNow('copilot-memories', {})
+    await storageMock.setItemNow('agent-memories', [])
   })
 
   test('a copilot without its own memory keeps the session on the global store', async () => {
-    const storage = (await import('@/storage')).default
     await addOrUpdateMyCopilot({ id: 'cp1', name: 'Tutor', prompt: 'persona' })
-    await storage.setItemNow('copilot-memories', {
+    await storageMock.setItemNow('copilot-memories', {
       cp1: [{ id: 'cm1', content: 'Copilot-only fact', createdAt: 1700000000000 }],
     })
-    await storage.setItemNow('agent-memories', [{ id: 'gm1', content: 'Global-only fact', createdAt: 1700000000000 }])
+    await storageMock.setItemNow('agent-memories', [
+      { id: 'gm1', content: 'Global-only fact', createdAt: 1700000000000 },
+    ])
     const persistSessionPromptContextSnapshot = vi.fn()
     const prepared = await chatPrepare(
       { provider: ModelProviderEnum.ChatboxAI, modelId: 'test-model' } as SessionSettings,
@@ -1850,16 +1999,15 @@ describe('chat mode memories', () => {
     expect(serialized).not.toContain('Copilot-only fact')
 
     await removeMyCopilot('cp1')
-    await storage.setItemNow('copilot-memories', {})
-    await storage.setItemNow('agent-memories', [])
+    await storageMock.setItemNow('copilot-memories', {})
+    await storageMock.setItemNow('agent-memories', [])
   })
 
   test('reloads global memory after a copilot memory round trip', async () => {
-    const storage = (await import('@/storage')).default
     const copilotId = 'cp-memory-round-trip'
     await enableCopilotMemory({ id: copilotId, name: 'Tutor' })
     await disableCopilotMemory(copilotId)
-    await storage.setItemNow('agent-memories', [
+    await storageMock.setItemNow('agent-memories', [
       { id: 'gm-latest', content: 'Latest global fact', createdAt: 1700000000000 },
     ])
     const persistSessionPromptContextSnapshot = vi.fn()
@@ -1900,6 +2048,6 @@ describe('chat mode memories', () => {
     expect(serialized).toContain('[gm-latest] Latest global fact')
     expect(serialized).not.toContain('Stale global fact')
 
-    await storage.setItemNow('agent-memories', [])
+    await storageMock.setItemNow('agent-memories', [])
   })
 })

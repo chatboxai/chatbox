@@ -2,11 +2,9 @@
 
 import { ChatboxAIAPIError, MESSAGE_ERROR_CODES, OCRError } from '@shared/models/errors'
 import type { Message, Session, SessionSettings, Settings } from '@shared/types'
+import { InMemorySessionRepository } from '@chatbox/core/testing'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
-import {
-  isMessageReminderPresentation,
-  resolveMessageErrorPresentation,
-} from '@/components/chat/message-error-presentation'
+import { resolveMessageErrorPresentation } from '@/components/chat/message-error-presentation'
 
 const { reportErrorMock, trackEventMock } = vi.hoisted(() => ({
   reportErrorMock: vi.fn(),
@@ -24,12 +22,7 @@ vi.mock('@/app/renderer-application', () => ({
 }))
 
 import { uiStore } from '../uiStore'
-import {
-  getCompactionPointsForTarget,
-  handleGenerationError,
-  initializeTargetMessage,
-  trackGenerateEvent,
-} from './utils'
+import { handleGenerationError, initializeTargetMessage, trackGenerateEvent } from './utils'
 
 describe('trackGenerateEvent', () => {
   beforeEach(() => {
@@ -112,18 +105,10 @@ describe('trackGenerateEvent', () => {
       const presentation = resolveMessageErrorPresentation(result)
 
       expect(presentation.kind).toBe('known-chatbox-api')
-      expect(isMessageReminderPresentation(presentation)).toBe(false)
     }
   )
 
-  test.each([
-    ['primitive', 'quota exceeded', 'quota exceeded'],
-    [
-      'provider object',
-      { message: 'provider unavailable, please retry', type: 'server_error', apiKey: 'sk-private-secret' },
-      'provider unavailable, please retry',
-    ],
-  ])('keeps %s details local while sending only normalized telemetry', (_label, thrown, expectedMessage) => {
+  test('keeps primitive details local while sending only normalized telemetry', () => {
     const message = {
       id: 'message-1',
       role: 'assistant',
@@ -134,13 +119,35 @@ describe('trackGenerateEvent', () => {
       provider: 'custom-provider-private',
     } as SessionSettings
 
-    const result = handleGenerationError(thrown, message, settings, { operationType: 'send_message' })
+    const result = handleGenerationError('quota exceeded', message, settings, { operationType: 'send_message' })
 
-    expect(result.error).toBe(expectedMessage)
+    expect(result.error).toBe('quota exceeded')
     const reported = reportErrorMock.mock.calls.at(-1)?.[0]
     expect(reported).toBeInstanceOf(Error)
     expect(reported.message).toMatch(/^Non-Error exception/)
-    expect(reported.message).not.toMatch(/quota exceeded|provider unavailable|private-secret/)
+    expect(reported.message).not.toMatch(/quota exceeded/)
+  })
+
+  test('shows provider error payloads to the user without reporting them', () => {
+    const message = {
+      id: 'message-1',
+      role: 'assistant',
+      contentParts: [],
+    } as Message
+    const settings = {
+      modelId: 'private-model-name',
+      provider: 'custom-provider-private',
+    } as SessionSettings
+
+    const result = handleGenerationError(
+      { message: 'provider unavailable, please retry', type: 'server_error', apiKey: 'sk-private-secret' },
+      message,
+      settings,
+      { operationType: 'send_message' }
+    )
+
+    expect(result.error).toBe('provider unavailable, please retry')
+    expect(reportErrorMock).not.toHaveBeenCalled()
   })
 
   test('persists Chatbox AI OCR quota exhaustion separately from main-model quota exhaustion', () => {
@@ -202,7 +209,7 @@ describe('trackGenerateEvent', () => {
   })
 })
 
-describe('getCompactionPointsForTarget', () => {
+describe('row context compaction ownership', () => {
   const sessionPoint = { summaryMessageId: 'active-summary', boundaryMessageId: 'active-a1', createdAt: 2000 }
   const threadPoint = { summaryMessageId: 'thread-summary', boundaryMessageId: 'thread-a1', createdAt: 1000 }
 
@@ -240,20 +247,26 @@ describe('getCompactionPointsForTarget', () => {
     }
   }
 
-  test('uses session points for active-conversation messages', () => {
-    expect(getCompactionPointsForTarget(makeSessionWithThread(), 'active-a1')).toEqual([sessionPoint])
+  async function readTargetContext(targetMessageId: string) {
+    const repository = new InMemorySessionRepository()
+    await repository.seedSession(makeSessionWithThread())
+    return repository.getSessionContextSource({ sessionId: 'session-1', targetMessageId })
+  }
+
+  test('uses the active thread points for active-conversation messages', async () => {
+    expect((await readTargetContext('active-a1'))?.compactionPoints).toEqual([sessionPoint])
   })
 
-  test('uses the archived thread points when retrying from a thread', () => {
-    expect(getCompactionPointsForTarget(makeSessionWithThread(), 'thread-a1')).toEqual([threadPoint])
+  test('uses the archived thread points when retrying from a thread', async () => {
+    expect((await readTargetContext('thread-a1'))?.compactionPoints).toEqual([threadPoint])
   })
 
-  test('uses the thread points for fork branches reachable from the thread', () => {
-    expect(getCompactionPointsForTarget(makeSessionWithThread(), 'thread-fork-alt')).toEqual([threadPoint])
+  test('uses the owning thread points for its inactive branch', async () => {
+    expect((await readTargetContext('thread-fork-alt'))?.compactionPoints).toEqual([threadPoint])
   })
 
-  test('falls back to session points for unknown messages', () => {
-    expect(getCompactionPointsForTarget(makeSessionWithThread(), 'missing')).toEqual([sessionPoint])
+  test('rejects an unknown message target', async () => {
+    await expect(readTargetContext('missing')).rejects.toThrow('Context target is missing')
   })
 })
 

@@ -1,4 +1,5 @@
 import type { Message, Session, SessionMetaRecord } from '@shared/types'
+import { InMemorySessionRepository } from '@chatbox/core/testing'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/packages/initial_data', () => ({
@@ -6,21 +7,19 @@ vi.mock('@/packages/initial_data', () => ({
   defaultSessionsForEN: [{ id: 'builtin-en' }],
 }))
 
-const { getSessionMock, listAllSessionsMetaMock } = vi.hoisted(() => ({
-  getSessionMock: vi.fn(),
+const { readWindowMock, listAllSessionsMetaMock } = vi.hoisted(() => ({
+  readWindowMock: vi.fn(),
   listAllSessionsMetaMock: vi.fn(),
 }))
 
 vi.mock('@/app/renderer-application', () => ({
   rendererApplication: {
-    sessions: { listAllSessionsMeta: listAllSessionsMetaMock },
-    sessionQueryBridge: { getSession: getSessionMock },
+    sessions: { listAllSessionsMeta: listAllSessionsMetaMock, readSessionTranscriptWindow: readWindowMock },
   },
 }))
 import {
   FIRST_SUCCESSFUL_CHAT_KEY,
   getHasCompletedFirstSuccessfulChat,
-  hasSuccessfulConversation,
   markFirstSuccessfulChatCompleted,
   resetFirstSuccessfulChatForDebug,
 } from './firstSuccessfulChat'
@@ -65,7 +64,7 @@ class ThrowingStorage extends MemoryStorage {
 }
 
 const listAllSessionsMeta = listAllSessionsMetaMock
-const getSession = getSessionMock
+let repository: InMemorySessionRepository
 
 function installLocalStorage(storage: Storage = new MemoryStorage()) {
   Object.defineProperty(globalThis, 'localStorage', {
@@ -125,6 +124,8 @@ describe('firstSuccessfulChat', () => {
   beforeEach(() => {
     installLocalStorage()
     vi.clearAllMocks()
+    repository = new InMemorySessionRepository()
+    readWindowMock.mockImplementation(repository.readSessionTranscriptWindow)
   })
 
   afterEach(() => {
@@ -157,7 +158,7 @@ describe('firstSuccessfulChat', () => {
     listAllSessionsMeta.mockResolvedValue([meta('builtin-en'), meta('builtin-cn')])
 
     await expect(getHasCompletedFirstSuccessfulChat()).resolves.toBe(false)
-    expect(getSession).not.toHaveBeenCalled()
+    expect(readWindowMock).not.toHaveBeenCalled()
     expect(localStorage.getItem(FIRST_SUCCESSFUL_CHAT_KEY)).toBe('0')
   })
 
@@ -168,10 +169,10 @@ describe('firstSuccessfulChat', () => {
       textMessage('assistant', 'hi'),
     ])
     listAllSessionsMeta.mockResolvedValue([meta('builtin-en'), meta('user-session')])
-    getSession.mockResolvedValue(userSession)
+    await repository.seedSession(userSession)
 
     await expect(getHasCompletedFirstSuccessfulChat()).resolves.toBe(true)
-    expect(getSession).toHaveBeenCalledWith('user-session')
+    expect(readWindowMock).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'user-session', limit: 50 }))
     expect(localStorage.getItem(FIRST_SUCCESSFUL_CHAT_KEY)).toBe('1')
   })
 
@@ -182,7 +183,7 @@ describe('firstSuccessfulChat', () => {
     ])
 
     await expect(getHasCompletedFirstSuccessfulChat()).resolves.toBe(false)
-    expect(getSession).not.toHaveBeenCalled()
+    expect(readWindowMock).not.toHaveBeenCalled()
     expect(localStorage.getItem(FIRST_SUCCESSFUL_CHAT_KEY)).toBe('0')
   })
 
@@ -295,23 +296,37 @@ describe('firstSuccessfulChat', () => {
     ).toBe(false)
   })
 
-  it('checks current session messages and thread messages', () => {
-    expect(
-      hasSuccessfulConversation(session('current', [textMessage('user', 'hello'), textMessage('assistant', 'hi')]))
-    ).toBe(true)
-    expect(
-      hasSuccessfulConversation(
-        session('threaded', [], {
-          threads: [
-            {
-              id: 'thread-1',
-              name: 'Thread',
-              createdAt: 1,
-              messages: [textMessage('user', 'hello'), textMessage('assistant', 'hi')],
-            },
-          ],
-        })
-      )
-    ).toBe(true)
+  it('checks archived thread messages through bounded pages', async () => {
+    await repository.seedSession(
+      session('threaded', [], {
+        threads: [
+          {
+            id: 'thread-1',
+            name: 'Thread',
+            createdAt: 1,
+            messages: [textMessage('user', 'hello'), textMessage('assistant', 'hi')],
+          },
+        ],
+      })
+    )
+    listAllSessionsMeta.mockResolvedValue([meta('threaded')])
+    await expect(getHasCompletedFirstSuccessfulChat()).resolves.toBe(true)
+  })
+
+  it('finds a turn spanning pages without pairing messages across threads', async () => {
+    const filler = Array.from({ length: 50 }, (_, index) => textMessage('system', `rules-${index}`))
+    await repository.seedSession(
+      session('paged', [textMessage('user', 'hello'), ...filler, textMessage('assistant', 'hi')])
+    )
+    listAllSessionsMeta.mockResolvedValue([meta('paged')])
+    await expect(getHasCompletedFirstSuccessfulChat()).resolves.toBe(true)
+    expect(readWindowMock).toHaveBeenCalledTimes(2)
+    localStorage.removeItem(FIRST_SUCCESSFUL_CHAT_KEY)
+    await repository.seedSession(
+      session('paged', [textMessage('assistant', 'hi')], {
+        threads: [{ id: 'earlier', name: 'Earlier', createdAt: 1, messages: [textMessage('user', 'hello')] }],
+      })
+    )
+    await expect(getHasCompletedFirstSuccessfulChat()).resolves.toBe(false)
   })
 })

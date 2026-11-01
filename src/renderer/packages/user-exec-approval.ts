@@ -53,7 +53,8 @@ export class FileMutationApprovalPausedError extends Error {
     readonly toolCallId: string,
     readonly title: string,
     readonly preview: string,
-    readonly stats?: FileMutationApprovalStats
+    readonly stats?: FileMutationApprovalStats,
+    readonly editPreview?: { version: string; diffTruncated?: boolean }
   ) {
     super(`User approval required before mutating file: ${title}`)
     this.name = 'FileMutationApprovalPausedError'
@@ -115,7 +116,8 @@ export function requestFileMutationApproval(
   toolCallId: string,
   title: string,
   preview: string,
-  stats?: FileMutationApprovalStats
+  stats?: FileMutationApprovalStats,
+  editPreview?: { version: string; diffTruncated?: boolean }
 ): Promise<boolean> {
-  throw new FileMutationApprovalPausedError(toolCallId, title, preview, stats)
+  throw new FileMutationApprovalPausedError(toolCallId, title, preview, stats, editPreview)
 }

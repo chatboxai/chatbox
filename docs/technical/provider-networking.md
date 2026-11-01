@@ -48,7 +48,7 @@ Desktop 主进程请求不经过 renderer 的页面请求上下文，不执行 r
 
 ## 重试、错误和全局代理
 
-- 宿主传输层的 Provider POST 保持 `retry: 0`，不会因切换进程或未知网络错误自动重放。上层 `AbstractAISDKModel` 仍按既有策略重试开始阶段返回的 429/5xx；一旦已输出流式内容则不重试。
+- 宿主传输层的 Provider POST 保持 `retry: 0`，重试次数与 UI 状态由上层 `retryable-chat-model` 统一管理。开始阶段的 429/5xx 和 fetch 失败、连接重置、连接超时等网络错误最多自动重试 4 次，按 2/4/8/16 秒退避，并遵循更长的 `Retry-After`。主动取消、鉴权失败和已输出内容后的流中断不自动重试。
 - HTTP 非成功状态仍由 Renderer 转换为既有 `ApiError`；取得 `Response` 前的请求 / IPC 失败由请求层转换为 `NetworkError`。响应返回后的 IPC 读取失败通过 `ReadableStream` error 继续交给 Provider / AI SDK 处理，不会重新进入请求层重试。
 - AbortSignal 不跨 IPC 序列化。Renderer 发送 request ID，Main 使用自己持有的 `AbortController` 取消 session 请求。
 - Desktop 直连使用 Electron 默认 session 的 `net.fetch`，继承 `session.defaultSession.setProxy()` 配置的“网络代理”，但不会经过 Chatbox relay。

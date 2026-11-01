@@ -5,6 +5,7 @@ import type { UIElementData } from 'photoswipe'
 import { type ReactNode, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Gallery, Item as GalleryItem } from 'react-photoswipe-gallery'
+import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
 import platform from '@/platform'
 
 const DOWNLOAD_ICON = {
@@ -22,9 +23,8 @@ const REPORT_ICON = {
 
 export type FetchPictureBlob = (storageKey: string) => Promise<string | null>
 
-const fetchPictureBlob: FetchPictureBlob = async (storageKey) => {
-  const { default: storage } = await import('@/storage')
-  return storage.getBlob(storageKey).catch(() => null)
+const fetchPictureBlob: FetchPictureBlob = (storageKey) => {
+  return currentBlobStorage.get(storageKey).catch(() => null)
 }
 
 export async function downloadPicture(

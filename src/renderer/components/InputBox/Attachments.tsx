@@ -1,3 +1,4 @@
+import { TestId } from '@shared/automation/testids'
 import NiceModal from '@ebay/nice-modal-react'
 import { Typography } from '@mui/material'
 import { CHATBOX_AI_PARSER_LICENSE_KEY_REQUIRED_ERROR } from '@shared/file-parse-errors'
@@ -88,6 +89,7 @@ export function ImageMiniCard(props: { storageKey: string; onDelete: () => void 
   return (
     <div
       key={storageKey}
+      data-testid={TestId.chat.attachmentImagePreview}
       className="w-[100px] h-[100px] p-1 m-1 inline-flex items-center justify-center
                                 bg-white shadow-sm rounded-lg border-solid border-gray-400/20
                                 hover:shadow-lg hover:cursor-pointer hover:scale-105 transition-all duration-200

@@ -18,6 +18,8 @@ export interface ModelInterface {
    * type (builtin/custom providers) or the per-model remote config (ChatboxAI).
    */
   readonly apiStyle?: ProviderModelInfo['apiStyle']
+  /** Opaque provider/model/endpoint/auth binding for encrypted reasoning replay. */
+  reasoningReplaySource?: string
   isSupportVision(): boolean
   isSupportToolUse(scope?: ToolUseScope): boolean
   isSupportSystemMessage(): boolean
@@ -108,12 +110,6 @@ export interface ChatStreamOptions {
    * failures.
    */
   onRequestResolved?: (request: ResolvedChatRequest) => void | Promise<void>
-  /**
-   * Enables mid-run tool-result relief for long tool loops: when the estimated
-   * step payload approaches `thresholdTokens` (the compaction threshold), old
-   * tool-result outputs are stubbed between steps. See context-pressure-relief.
-   */
-  contextPressure?: { thresholdTokens: number }
 }
 
 export type ModelStatus = MessageStatus

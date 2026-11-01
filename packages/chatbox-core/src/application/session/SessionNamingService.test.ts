@@ -1,10 +1,11 @@
 import type { ModelMessage } from 'ai'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { ModelInterface } from '../../models/types'
-import { buildNameGenerationAttemptKey, getCurrentThreadNamingIdentity } from '../../session/auto-title'
-import type { Message, Session, Settings, Updater } from '../../types'
+import { buildNameGenerationAttemptKey } from '../../session/auto-title'
+import type { Message, Session, Settings } from '../../types'
 import { type ScheduledNameGeneration, SessionNamingService } from './SessionNamingService'
-import type { SessionMetadataUpdate } from './session-metadata'
+import { rowChatFixture } from '../chat/testing/row-chat-fixture'
+import type { SessionHeaderRead } from '../../ports/session-row-repository'
 import { SessionNotFoundError } from './SessionWriteCoordinator'
 
 function createSession(overrides: Partial<Session> = {}): Session {
@@ -23,6 +24,7 @@ function createSession(overrides: Partial<Session> = {}): Session {
 
 function createHarness() {
   let session: Session | null = createSession()
+  const fixture = rowChatFixture(() => 'unused', session)
   const settings = {
     language: 'en',
     threadNamingModel: { provider: 'openai', model: 'fast-model' },
@@ -44,19 +46,26 @@ function createHarness() {
     paint: () => Promise.resolve([]),
   } satisfies ModelInterface
   const scheduled: Array<{ callback: () => void; cancelled: boolean }> = []
-  const getSession = vi.fn(() => Promise.resolve(session))
-  const updateSession = vi.fn((_sessionId: string, updater: Updater<SessionMetadataUpdate>) => {
-    if (!session) return Promise.reject(new SessionNotFoundError('session-1'))
-    const update = typeof updater === 'function' ? updater(session) : updater
-    session = { ...session, ...update }
-    return Promise.resolve(session)
+  const getSession = vi.fn(async () => {
+    if (!session) return null
+    fixture.sessions.set(session.id, session)
+    return fixture.useCases.getSessionHeader(session.id)
   })
-  const updateSessionWithMessages = vi.fn((_sessionId: string, updater: Updater<Session>) => {
-    if (!session) return Promise.reject(new SessionNotFoundError('session-1'))
-    const next = typeof updater === 'function' ? updater(session) : { ...session, ...updater }
-    session = next
-    return Promise.resolve(next)
+  const updateSession = vi.fn(async (...args: Parameters<typeof fixture.useCases.updateSessionHeader>) => {
+    if (!session) throw new SessionNotFoundError('session-1')
+    fixture.sessions.set(session.id, session)
+    const result = await fixture.useCases.updateSessionHeader(...args)
+    session = fixture.sessions.get(session.id)!
+    return result
   })
+  const execute = async (...args: Parameters<typeof fixture.useCases.executeStructureCommand>) => {
+    if (!session) throw new SessionNotFoundError('session-1')
+    fixture.sessions.set(session.id, session)
+    const result = await fixture.useCases.executeStructureCommand(...args)
+    session = fixture.sessions.get(session.id)!
+    return result
+  }
+  const executeStructureCommand = vi.fn(execute)
   const toModelMessages = vi.fn((messages: Message[]) => {
     const textPart = messages[0]?.contentParts[0]
     return Promise.resolve([
@@ -64,7 +73,12 @@ function createHarness() {
     ] as ModelMessage[])
   })
   const service = new SessionNamingService({
-    sessions: { getSession, updateSession, updateSessionWithMessages },
+    sessions: {
+      getSessionHeader: getSession,
+      updateSessionHeader: updateSession,
+      executeStructureCommand,
+      readSessionNamingMessages: fixture.useCases.readSessionNamingMessages,
+    },
     settings: { getSettings: () => settings },
     models: { createModel: vi.fn(() => Promise.resolve(model)) },
     scheduler: {
@@ -88,7 +102,8 @@ function createHarness() {
     chat,
     getSession,
     updateSession,
-    updateSessionWithMessages,
+    executeStructureCommand,
+    execute,
     toModelMessages,
     settings,
     get session() {
@@ -157,7 +172,7 @@ describe('SessionNamingService', () => {
 
   test('allows a replacement schedule while the previous eligibility read is in flight', async () => {
     const harness = createHarness()
-    let resolveFirstRead: ((session: Session | null) => void) | undefined
+    let resolveFirstRead: ((session: SessionHeaderRead | null) => void) | undefined
     harness.getSession.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
@@ -187,19 +202,19 @@ describe('SessionNamingService', () => {
     harness.setSession(streaming)
     harness.chat.mockRejectedValueOnce(new Error('model unavailable'))
 
-    harness.service.scheduleNameAndThreadName('session-1', { messages: streaming.messages })
+    harness.service.scheduleNameAndThreadName('session-1', { generating: true })
     harness.scheduled[0].callback()
     await vi.waitFor(() => expect(harness.chat).toHaveBeenCalledOnce())
     await vi.waitFor(() =>
       expect(harness.service.isActive(buildNameGenerationAttemptKey('name', 'session-1'))).toBe(false)
     )
 
-    harness.service.scheduleNameAndThreadName('session-1', { messages: streaming.messages })
+    harness.service.scheduleNameAndThreadName('session-1', { generating: true })
     expect(harness.scheduled).toHaveLength(1)
 
     const settled = createSession()
     harness.setSession(settled)
-    harness.service.scheduleNameAndThreadName('session-1', { messages: settled.messages })
+    harness.service.scheduleNameAndThreadName('session-1', { generating: false })
     expect(harness.scheduled).toHaveLength(2)
     harness.scheduled[1].callback()
     await vi.waitFor(() => expect(harness.session?.name).toBe('北京旅行计划'))
@@ -222,7 +237,7 @@ describe('SessionNamingService', () => {
 
     expect(harness.session).toBeNull()
     expect(harness.updateSession).not.toHaveBeenCalled()
-    expect(harness.updateSessionWithMessages).toHaveBeenCalledOnce()
+    expect(harness.executeStructureCommand).not.toHaveBeenCalled()
     harness.service.scheduleNameAndThreadName('session-1')
     expect(harness.scheduled).toHaveLength(2)
   })
@@ -241,10 +256,10 @@ describe('SessionNamingService', () => {
     const harness = createHarness()
     harness.setSession(createSession({ name: '北京旅行计划', threadName: undefined }))
 
-    harness.service.syncAutoTitle(harness.session!)
-    harness.service.syncAutoTitle(harness.session!)
+    await harness.service.syncAutoTitle('session-1')
+    await harness.service.syncAutoTitle('session-1')
     await vi.waitFor(() => expect(harness.session?.threadName).toBe('北京旅行计划'))
-    expect(harness.updateSession).toHaveBeenCalledOnce()
+    expect(harness.executeStructureCommand).toHaveBeenCalledOnce()
     expect(harness.chat).not.toHaveBeenCalled()
     expect(harness.scheduled).toHaveLength(0)
   })
@@ -259,7 +274,7 @@ describe('SessionNamingService', () => {
       })
     )
 
-    harness.service.syncAutoTitle(harness.session!)
+    await harness.service.syncAutoTitle('session-1')
     await vi.waitFor(() => expect(harness.session?.threadName).toBe(''))
     expect(harness.chat).not.toHaveBeenCalled()
   })
@@ -269,31 +284,31 @@ describe('SessionNamingService', () => {
     harness.settings.autoGenerateTitle = false
     harness.setSession(createSession({ name: '北京旅行计划', threadName: undefined }))
 
-    harness.service.syncAutoTitle(harness.session!)
+    await harness.service.syncAutoTitle('session-1')
     await vi.waitFor(() => expect(harness.session?.threadName).toBe('北京旅行计划'))
     expect(harness.scheduled).toHaveLength(0)
     expect(harness.chat).not.toHaveBeenCalled()
   })
 
-  test('syncAutoTitle schedules thread naming for a newly named pending session', () => {
+  test('syncAutoTitle schedules thread naming for a newly named pending session', async () => {
     const harness = createHarness()
     harness.setSession(createSession({ name: 'Travel planner', threadName: '' }))
 
-    harness.service.syncAutoTitle(harness.session!)
+    await harness.service.syncAutoTitle('session-1')
 
     expect(harness.scheduled).toHaveLength(1)
     expect(harness.session?.threadName).toBe('')
     expect(harness.chat).not.toHaveBeenCalled()
   })
 
-  test('syncAutoTitle schedules Untitled naming and skips when the setting is off', () => {
+  test('syncAutoTitle schedules Untitled naming and skips when the setting is off', async () => {
     const harness = createHarness()
-    harness.service.syncAutoTitle(harness.session!)
+    await harness.service.syncAutoTitle('session-1')
     expect(harness.scheduled).toHaveLength(1)
 
     const disabled = createHarness()
     disabled.settings.autoGenerateTitle = false
-    disabled.service.syncAutoTitle(disabled.session!)
+    await disabled.service.syncAutoTitle('session-1')
     expect(disabled.scheduled).toHaveLength(0)
   })
 
@@ -404,7 +419,7 @@ describe('SessionNamingService', () => {
         })
     )
 
-    harness.service.syncAutoTitle(original)
+    await harness.service.syncAutoTitle('session-1')
     expect(harness.scheduled).toHaveLength(1)
     harness.scheduled[0].callback()
     await vi.waitFor(() => expect(harness.chat).toHaveBeenCalledOnce())
@@ -427,12 +442,16 @@ describe('SessionNamingService', () => {
       ],
     })
     harness.setSession(next)
-    harness.service.syncAutoTitle(next)
+    await harness.service.syncAutoTitle('session-1')
 
     expect(harness.scheduled).toHaveLength(2)
     expect(
       harness.service.isActive(
-        buildNameGenerationAttemptKey('thread', 'session-1', getCurrentThreadNamingIdentity(original))
+        buildNameGenerationAttemptKey(
+          'thread',
+          'session-1',
+          `${original.id}:${original.messages.find((message) => message.role === 'user')?.id ?? ''}`
+        )
       )
     ).toBe(true)
 
@@ -440,7 +459,11 @@ describe('SessionNamingService', () => {
     await vi.waitFor(() =>
       expect(
         harness.service.isActive(
-          buildNameGenerationAttemptKey('thread', 'session-1', getCurrentThreadNamingIdentity(original))
+          buildNameGenerationAttemptKey(
+            'thread',
+            'session-1',
+            `${original.id}:${original.messages.find((message) => message.role === 'user')?.id ?? ''}`
+          )
         )
       ).toBe(false)
     )
@@ -450,18 +473,22 @@ describe('SessionNamingService', () => {
     await vi.waitFor(() => expect(harness.session?.threadName).toBe('北京旅行计划'))
   })
 
-  test('clears identity-scoped pending keys when a Session is deleted', () => {
+  test('clears identity-scoped pending keys when a Session is deleted', async () => {
     const harness = createHarness()
     const original = createSession({ name: 'Travel planner', threadName: '' })
     harness.setSession(original)
-    harness.service.syncAutoTitle(original)
+    await harness.service.syncAutoTitle('session-1')
 
     harness.service.clearSessionState('session-1')
 
     expect(harness.scheduled[0].cancelled).toBe(true)
     expect(
       harness.service.isPending(
-        buildNameGenerationAttemptKey('thread', 'session-1', getCurrentThreadNamingIdentity(original))
+        buildNameGenerationAttemptKey(
+          'thread',
+          'session-1',
+          `${original.id}:${original.messages.find((message) => message.role === 'user')?.id ?? ''}`
+        )
       )
     ).toBe(false)
   })
@@ -471,7 +498,7 @@ describe('SessionNamingService', () => {
     const original = createSession({ name: 'Travel planner', threadName: '' })
     harness.setSession(original)
 
-    harness.updateSessionWithMessages.mockImplementation((_sessionId, updater) => {
+    harness.executeStructureCommand.mockImplementation((...args) => {
       const switched = createSession({
         name: 'Travel planner',
         threadName: '',
@@ -485,9 +512,8 @@ describe('SessionNamingService', () => {
           },
         ],
       })
-      const next = typeof updater === 'function' ? updater(switched) : { ...switched, ...updater }
-      harness.setSession(next)
-      return Promise.resolve(next)
+      harness.setSession(switched)
+      return harness.execute(...args)
     })
 
     await expect(harness.service.generateThreadName('session-1')).resolves.toBe(false)

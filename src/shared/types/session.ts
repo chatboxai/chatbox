@@ -1,7 +1,7 @@
-import type { JSONValue, LanguageModelUsage, ProviderMetadata } from 'ai'
+import type { JSONValue, ProviderMetadata } from 'ai'
 import { z } from 'zod'
 import { SessionSettingsSchema } from '../types/settings'
-import { SessionPromptContextSnapshotSchema } from './agent-persona'
+import { MemoryToolContextSchema, SessionPromptContextSnapshotSchema } from './agent-persona'
 import { ModelProviderEnum } from './provider'
 
 // Re-export for backward compatibility
@@ -123,6 +123,10 @@ const MessageProviderMetadataSchema: z.ZodType<ProviderMetadata> = z.record(
 export const MessageTextPartSchema = z.object({
   type: z.literal('text'),
   text: z.string(),
+  /** Provider metadata required to replay signed text, including Gemini thought signatures. */
+  providerMetadata: MessageProviderMetadataSchema.optional(),
+  /** Provider step that emitted this assistant part; absent on user and legacy parts. */
+  stepIndex: z.number().optional().catch(undefined),
   /**
    * The part exists only to keep the provider's block structure intact for
    * request replay (e.g. an empty Anthropic text block between thinking
@@ -133,7 +137,11 @@ export const MessageTextPartSchema = z.object({
 
 export const MessageImagePartSchema = z.object({
   type: z.literal('image'),
-  storageKey: z.string(),
+  /** Empty for remote pictures migrated from legacy `pictures`, which carry only `url`. */
+  storageKey: z.string().catch(''),
+  url: z.string().optional(),
+  /** Provider step that emitted this assistant part; absent on user and legacy parts. */
+  stepIndex: z.number().optional().catch(undefined),
   ocrResult: z.string().optional(),
 })
 
@@ -151,6 +159,8 @@ export const MessageAgentModeSuggestionPartSchema = z.object({
 export const MessageReasoningPartSchema = z.object({
   type: z.literal('reasoning'),
   text: z.string(),
+  /** Provider step that emitted this assistant part; absent on user and legacy parts. */
+  stepIndex: z.number().optional().catch(undefined),
   /**
    * Replay-critical provider metadata (whitelisted in
    * `models/provider-part-metadata.ts`), e.g. Anthropic thinking signatures and
@@ -168,6 +178,7 @@ export const MessageReasoningPartSchema = z.object({
 })
 
 export const ImageGenerationApprovalDetailsSchema = z.object({
+  referenceImages: z.array(z.string()).optional(),
   type: z.literal('image_generation'),
   provider: z.string(),
   modelId: z.string(),
@@ -187,7 +198,17 @@ export const ImageGenerationApprovalDetailsSchema = z.object({
   computePointsRemaining: z.number().optional(),
 })
 
-export const AppActionApprovalDetailsSchema = z.discriminatedUnion('type', [ImageGenerationApprovalDetailsSchema])
+/** Binds an approved built-in browser upload to the files the user reviewed. */
+export const BrowserUploadApprovalDetailsSchema = z.object({
+  type: z.literal('browser_upload'),
+  /** Identity of the approved files: canonical paths, sizes and modification times. */
+  version: z.string(),
+})
+
+export const AppActionApprovalDetailsSchema = z.discriminatedUnion('type', [
+  ImageGenerationApprovalDetailsSchema,
+  BrowserUploadApprovalDetailsSchema,
+])
 
 /**
  * Line counts for a pending file mutation. `mode` tells the UI whether to show
@@ -199,6 +220,7 @@ export const FileMutationApprovalStatsSchema = z.object({
   edits: z.number().optional(),
   addedLines: z.number(),
   removedLines: z.number(),
+  approximate: z.boolean().optional(),
 })
 
 export const MessageToolCallPartSchema = z.object({
@@ -207,6 +229,7 @@ export const MessageToolCallPartSchema = z.object({
   toolCallId: z.string(),
   toolName: z.string(),
   args: z.unknown().optional(),
+  memoryToolContext: MemoryToolContextSchema.optional().catch(undefined),
   providerMetadata: MessageProviderMetadataSchema.optional().catch(undefined),
   resultProviderMetadata: MessageProviderMetadataSchema.optional().catch(undefined),
   providerExecuted: z.boolean().optional(),
@@ -250,6 +273,10 @@ export const MessageToolCallPartSchema = z.object({
          * Absent on approvals paused by builds before this existed.
          */
         stats: FileMutationApprovalStatsSchema.optional().catch(undefined),
+        editPreview: z
+          .object({ version: z.string(), diffTruncated: z.boolean().optional() })
+          .optional()
+          .catch(undefined),
       }),
       z.object({
         type: z.literal('app_action_approval'),
@@ -281,7 +308,7 @@ export const MessageContentPartsSchema = z.array(MessageContentPartSchema)
 export const StreamTextResultSchema = z.object({
   contentParts: MessageContentPartsSchema,
   reasoningContent: z.string().optional(),
-  usage: z.custom<LanguageModelUsage>().optional(),
+  usage: z.custom<MessageUsage>().optional(),
   finishReason: z.string().optional(),
 })
 
@@ -305,6 +332,8 @@ export const MessageStatusSchema = z.discriminatedUnion('type', [
     attempt: z.number(),
     maxAttempts: z.number(),
     error: z.string().optional(),
+    retryAt: z.number().optional(),
+    statusCode: z.number().optional(),
   }),
   z.object({
     type: z.literal('preparing_tool_call'),
@@ -328,6 +357,8 @@ export const MessageBackgroundTaskSchema = z.object({
   elapsedMs: z.number(),
   summary: z.string(),
 })
+
+export type MessageUsage = z.infer<typeof MessageUsageSchema>
 
 const MessageUsageSchema = z.object({
   inputTokens: z.number().optional().catch(undefined),
@@ -393,6 +424,9 @@ export const MessageSchema = z.object({
   tokenCountApproximate: TokenCountApproximateSchema,
   updatedAt: z.number().optional(),
   isSummary: z.boolean().optional(), // Marks message as a compaction summary
+  /** On a compaction summary: attachments of the messages it covers, sent as references without their content. */
+  compactedFiles: z.array(MessageFileSchema).optional(),
+  compactedLinks: z.array(MessageLinkSchema).optional(),
   isForkMarker: z.boolean().optional(), // Marks a UI-only fork boundary message
   forkedFromSessionId: z.string().optional(),
 })
@@ -436,12 +470,12 @@ export const ImageSourceSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('storage-key'), storageKey: z.string() }),
 ])
 
-export const SessionSchema = z.object({
+export const SessionHeaderSchema = z.object({
   id: z.string(),
   type: SessionTypeSchema.optional(),
   name: z.string(),
+  folderId: z.string().optional(),
   picUrl: z.string().optional(),
-  messages: z.array(MessageSchema),
   starred: z.boolean().optional(),
   hidden: z.boolean().optional(), // Hidden from session list (e.g., migrated picture sessions)
   archivedAt: z.number().optional(),
@@ -449,15 +483,20 @@ export const SessionSchema = z.object({
   assistantAvatarKey: z.string().optional(),
   backgroundImage: ImageSourceSchema.optional(),
   settings: SessionSettingsSchema.optional(),
-  threads: z.array(SessionThreadSchema).optional(),
   threadName: z.string().optional(),
+})
+
+export const SessionSchema = SessionHeaderSchema.extend({
+  messages: z.array(MessageSchema),
+  threads: z.array(SessionThreadSchema).optional(),
   messageForksHash: z.record(z.string(), MessageForkSchema).optional(),
   compactionPoints: z.array(CompactionPointSchema).optional(),
 })
 
-export const SessionMetaSchema = SessionSchema.pick({
+export const SessionMetaSchema = SessionHeaderSchema.pick({
   id: true,
   name: true,
+  folderId: true,
   starred: true,
   hidden: true,
   archivedAt: true,
@@ -466,12 +505,23 @@ export const SessionMetaSchema = SessionSchema.pick({
   backgroundImage: true,
   type: true,
 }).extend({
+  hasPausedToolCall: z.boolean().optional(),
   recoveryArchived: z.boolean().optional(),
 })
 
 export const SessionMetaRecordSchema = SessionMetaSchema.extend({
   sortOrder: z.number(),
   createdAt: z.number(),
+})
+
+export const SessionFolderSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  // Work Mode directory this folder collects; the folder's identity for
+  // automatic filing, independent of its editable name.
+  workingDirectory: z.string().optional(),
+  // Stable copilot identity, independent of the editable folder name.
+  copilotId: z.string().optional(),
 })
 
 export const SessionMetaPageSchema = z.object({
@@ -525,8 +575,10 @@ export type Message = z.infer<typeof MessageSchema>
 export type SessionType = z.infer<typeof SessionTypeSchema>
 export type CompactionPoint = z.infer<typeof CompactionPointSchema>
 export type Session = z.infer<typeof SessionSchema>
+export type SessionHeader = z.infer<typeof SessionHeaderSchema>
 export type SessionMeta = z.infer<typeof SessionMetaSchema>
 export type SessionMetaRecord = z.infer<typeof SessionMetaRecordSchema>
 export type SessionMetaPage = z.infer<typeof SessionMetaPageSchema>
+export type SessionFolder = z.infer<typeof SessionFolderSchema>
 export type SessionThread = z.infer<typeof SessionThreadSchema>
 export type SessionThreadBrief = z.infer<typeof SessionThreadBriefSchema>

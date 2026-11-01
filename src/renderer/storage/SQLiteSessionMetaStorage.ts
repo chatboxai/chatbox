@@ -1,9 +1,14 @@
 import {
   CapacitorSQLite,
-  SQLiteConnection,
   type capSQLiteSet,
+  SQLiteConnection,
   type SQLiteDBConnection,
 } from '@capacitor-community/sqlite'
+import {
+  CAPACITOR_SESSION_META_LIST_INDEX_SQL,
+  CAPACITOR_SESSION_META_SCHEMA_SQL,
+  capacitorSessionListOrderBy,
+} from '@chatbox/core'
 import type { SessionMetaPage, SessionMetaRecord } from '@shared/types'
 import { type SessionMetaStorage, sortSessionRecords } from './SessionMetaStorage'
 
@@ -62,42 +67,33 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
     this.database = await this.sqlite.createConnection(DB_NAME, false, 'no-encryption', 1, false)
     await this.database.open()
 
-    await this.database.execute(`
-      CREATE TABLE IF NOT EXISTS session_meta (
-        id TEXT PRIMARY KEY NOT NULL,
-        name TEXT NOT NULL DEFAULT '',
-        starred INTEGER NOT NULL DEFAULT 0,
-        hidden INTEGER NOT NULL DEFAULT 0,
-        archived_at INTEGER,
-        assistant_avatar_key TEXT,
-        pic_url TEXT,
-        background_image TEXT,
-        type TEXT,
-        sort_order REAL NOT NULL,
-        created_at INTEGER NOT NULL
-      )
-    `)
-
-    await this.database.execute(`
-      CREATE INDEX IF NOT EXISTS idx_session_meta_sort_order
-      ON session_meta(sort_order DESC)
-    `)
+    await this.database.execute(CAPACITOR_SESSION_META_SCHEMA_SQL)
 
     const columns = await this.database.query('PRAGMA table_info(session_meta)')
     const hasArchivedAt = columns.values?.some((column) => column.name === 'archived_at')
     if (!hasArchivedAt) {
       await this.database.execute('ALTER TABLE session_meta ADD COLUMN archived_at INTEGER')
     }
+    const hasPausedToolCall = columns.values?.some((column) => column.name === 'has_paused_tool_call')
+    if (!hasPausedToolCall) {
+      await this.database.execute('ALTER TABLE session_meta ADD COLUMN has_paused_tool_call INTEGER NOT NULL DEFAULT 0')
+    }
+    const hasFolderId = columns.values?.some((column) => column.name === 'folder_id')
+    if (!hasFolderId) {
+      await this.database.execute('ALTER TABLE session_meta ADD COLUMN folder_id TEXT')
+    }
     const hasRecoveryArchived = columns.values?.some((column) => column.name === 'recovery_archived')
     if (!hasRecoveryArchived) {
       await this.database.execute('ALTER TABLE session_meta ADD COLUMN recovery_archived INTEGER NOT NULL DEFAULT 0')
     }
+    await this.database.execute(CAPACITOR_SESSION_META_LIST_INDEX_SQL)
   }
 
   private recordToRow(record: SessionMetaRecord): Record<string, unknown> {
     return {
       id: record.id,
       name: record.name,
+      folder_id: record.folderId || null,
       starred: record.starred ? 1 : 0,
       hidden: record.hidden ? 1 : 0,
       archived_at: record.archivedAt ?? null,
@@ -107,6 +103,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
       type: record.type || null,
       sort_order: record.sortOrder,
       created_at: record.createdAt,
+      has_paused_tool_call: record.hasPausedToolCall ? 1 : 0,
       recovery_archived: record.recoveryArchived ? 1 : 0,
     }
   }
@@ -115,6 +112,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
     return {
       id: row.id as string,
       name: row.name as string,
+      folderId: (row.folder_id as string) || undefined,
       starred: row.starred === 1 ? true : undefined,
       hidden: row.hidden === 1 ? true : undefined,
       archivedAt: row.archived_at === null || row.archived_at === undefined ? undefined : Number(row.archived_at),
@@ -122,6 +120,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
       picUrl: (row.pic_url as string) || undefined,
       backgroundImage: parseBackgroundImage(row.background_image as string),
       type: (row.type as SessionMetaRecord['type']) || undefined,
+      hasPausedToolCall: row.has_paused_tool_call === 1 ? true : undefined,
       recoveryArchived: row.recovery_archived === 1 ? true : undefined,
       sortOrder: row.sort_order as number,
       createdAt: row.created_at as number,
@@ -133,11 +132,12 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
     const row = this.recordToRow(record)
     await this.database.run(
       `INSERT INTO session_meta
-       (id, name, starred, hidden, archived_at, assistant_avatar_key, pic_url, background_image, type, sort_order, created_at, recovery_archived)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, name, folder_id, starred, hidden, archived_at, assistant_avatar_key, pic_url, background_image, type, sort_order, created_at, has_paused_tool_call, recovery_archived)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         row.id,
         row.name,
+        row.folder_id,
         row.starred,
         row.hidden,
         row.archived_at,
@@ -147,6 +147,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
         row.type,
         row.sort_order,
         row.created_at,
+        row.has_paused_tool_call,
         row.recovery_archived,
       ]
     )
@@ -157,8 +158,8 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
     if (records.length === 0) return
 
     const statement = `INSERT OR REPLACE INTO session_meta
-      (id, name, starred, hidden, archived_at, assistant_avatar_key, pic_url, background_image, type, sort_order, created_at, recovery_archived)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      (id, name, folder_id, starred, hidden, archived_at, assistant_avatar_key, pic_url, background_image, type, sort_order, created_at, has_paused_tool_call, recovery_archived)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     const set: capSQLiteSet[] = records.map((record) => {
       const row = this.recordToRow(record)
       return {
@@ -166,6 +167,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
         values: [
           row.id,
           row.name,
+          row.folder_id,
           row.starred,
           row.hidden,
           row.archived_at,
@@ -175,6 +177,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
           row.type,
           row.sort_order,
           row.created_at,
+          row.has_paused_tool_call,
           row.recovery_archived,
         ],
       }
@@ -193,11 +196,12 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
 
     await this.database.run(
       `UPDATE session_meta SET
-       name = ?, starred = ?, hidden = ?, archived_at = ?, assistant_avatar_key = ?, pic_url = ?,
-       background_image = ?, type = ?, sort_order = ?, created_at = ?, recovery_archived = ?
+       name = ?, folder_id = ?, starred = ?, hidden = ?, archived_at = ?, assistant_avatar_key = ?, pic_url = ?,
+       background_image = ?, type = ?, sort_order = ?, created_at = ?, has_paused_tool_call = ?, recovery_archived = ?
        WHERE id = ?`,
       [
         row.name,
+        row.folder_id,
         row.starred,
         row.hidden,
         row.archived_at,
@@ -207,6 +211,7 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
         row.type,
         row.sort_order,
         row.created_at,
+        row.has_paused_tool_call,
         row.recovery_archived,
         id,
       ]
@@ -250,6 +255,26 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
     return (result.values || []).map((row) => this.rowToRecord(row))
   }
 
+  async *iterateIds(): AsyncGenerator<string> {
+    await this.initialize()
+    let after: string | undefined
+    for (;;) {
+      const result = await this.database.query(
+        after === undefined
+          ? 'SELECT id FROM session_meta ORDER BY id LIMIT 128'
+          : 'SELECT id FROM session_meta WHERE id > ? ORDER BY id LIMIT 128',
+        after === undefined ? [] : [after]
+      )
+      const rows = result.values ?? []
+      if (!rows.length) return
+      for (const row of rows) {
+        if (typeof row.id !== 'string') throw new Error('Invalid stored session identity')
+        yield row.id
+      }
+      after = rows[rows.length - 1].id
+    }
+  }
+
   async getArchived(): Promise<SessionMetaRecord[]> {
     await this.initialize()
     const result = await this.database.query(
@@ -273,15 +298,16 @@ export class SQLiteSessionMetaStorage implements SessionMetaStorage {
     return { items, nextCursor, total }
   }
 
-  async getPage(cursor: number = 0, limit: number = 50): Promise<SessionMetaPage> {
+  async getPage(cursor: number = 0, limit: number = 50, folderIds: readonly string[] = []): Promise<SessionMetaPage> {
     await this.initialize()
+    const orderBy = capacitorSessionListOrderBy(folderIds)
     const result = await this.database.query(
-      'SELECT * FROM session_meta WHERE hidden = 0 ORDER BY starred DESC, sort_order DESC LIMIT ? OFFSET ?',
-      [limit, cursor]
+      `SELECT * FROM session_meta WHERE hidden = 0 ORDER BY ${orderBy.sql} LIMIT ? OFFSET ?`,
+      [...orderBy.params, limit, cursor]
     )
     const items = (result.values || []).map((row) => this.rowToRecord(row))
     const total = await this.getTotal()
-    const nextCursor = items.length === limit ? cursor + items.length : null
+    const nextCursor = cursor + items.length < total ? cursor + items.length : null
     return { items, nextCursor, total }
   }
 

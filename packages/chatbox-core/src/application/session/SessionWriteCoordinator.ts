@@ -1,310 +1,236 @@
-import type { SessionRepositoryPort } from '../../ports'
-import type { Session, SessionMeta, SessionMetaRecord, Updater } from '../../types'
-import { projectSessionMetaUpdate } from './session-metadata'
+import type { SessionCopyRequest, SessionThreadCopyRequest } from '../../ports/session-row-repository'
+import { SessionStorageBusyError, type SessionHeaderRead, type SessionRepositoryPort } from '../../ports'
+import type { SessionCommand, SessionCommandDelta } from '../../ports/session-repository'
+import type { SessionMessageDerivedWriteResult } from '../../ports/session-message-source'
+import type { SessionTextTokenResult, SessionTextTokenWriteResult } from '../../ports/session-text-tokens'
+import type { Message, SessionHeader, SessionMeta, SessionMetaRecord } from '../../types'
+import type { SessionMessageDerivedPatch } from './message-derived-data'
+import { createSessionMetaRecord, projectSessionMetaUpdate } from './session-metadata'
 
-export interface SessionWriteResult {
-  session: Session
-  meta: SessionMeta | null
+export interface SessionMetaProjection {
+  meta: SessionMetaRecord | null
+  metaRevision: number | null
 }
 
-export interface SessionWriteOptions {
-  updateMeta?: boolean
-  /** Explicit restore/import paths may clear a metadata-only recovery archive. */
+export interface SessionCommandWriteResult extends SessionMetaProjection {
+  kind: 'rows'
+  delta: SessionCommandDelta
+  projectionError?: unknown
+}
+
+export interface SessionCommandWriteOptions {
+  expectedRevision?: number
+  onPersisted?: (header: SessionHeader) => void
   clearRecoveryArchive?: boolean
-}
-
-export interface SessionWriteCoordinatorOptions {
-  /**
-   * The current Renderer injects a React Query-backed reader so the first
-   * persisted write starts from cache-only streaming state when it exists.
-   * Other hosts can inject their own read model or use repository reads.
-   */
-  readCurrentSession?: (sessionId: string) => Promise<Session | null>
-  /**
-   * Evicts the external read model after a deletion fails. This must be
-   * synchronous so stale state cannot be read between eviction and reopening
-   * writes for the affected session.
-   */
-  discardCurrentSession?: (sessionId: string) => void
 }
 
 export class SessionNotFoundError extends Error {
   readonly name = 'SessionNotFoundError'
-
   constructor(readonly sessionId: string) {
     super(`Session ${sessionId} not found`)
   }
 }
 
-/**
- * Internal partial-success signal: full session data was persisted, but its
- * denormalized metadata projection was not. SessionService uses this to keep
- * external read models aligned before rethrowing the original metadata error.
- */
-export class SessionMetadataUpdateError extends Error {
-  readonly name = 'SessionMetadataUpdateError'
-
-  constructor(
-    readonly session: Session,
-    readonly metadataError: unknown
-  ) {
-    super(`Failed to update metadata for session ${session.id}`, { cause: metadataError })
-  }
-}
-
-/**
- * Serializes read-modify-write operations per session id.
- *
- * The in-memory state is updated only after the full session write succeeds.
- * A failed operation does not poison the tail: later writes can still run.
- * After the first read or `prime`, that snapshot remains the source for later
- * updates. Runtime full-session writes must therefore go through this coordinator.
- * Restore/import code that writes the repository directly must call `forget` for
- * every affected id before another update, or recreate/reload the runtime.
- */
+/** Application-operation fences; the repository owns the storage transaction queue. */
 export class SessionWriteCoordinator {
-  private readonly current = new Map<string, Session>()
+  private exclusiveAccess = false
   private readonly tails = new Map<string, Promise<void>>()
   private readonly unavailable = new Set<string>()
-  private readonly recoveryArchives = new Map<string, number>()
-  private readonly loadedRecoveryArchiveState = new Set<string>()
-  private readonly readCurrentSession: (sessionId: string) => Promise<Session | null>
-  private readonly discardCurrentSession: (sessionId: string) => void
+  private readonly pendingRecoveryClear = new Set<string>()
+  private readonly creationOrder = new Map<string, { sortOrder: number; createdAt: number }>()
 
-  constructor(
-    private readonly repository: SessionRepositoryPort,
-    options: SessionWriteCoordinatorOptions = {}
-  ) {
-    this.readCurrentSession = options.readCurrentSession ?? ((sessionId) => this.repository.getSession(sessionId))
-    this.discardCurrentSession = options.discardCurrentSession ?? (() => undefined)
+  constructor(private readonly repository: SessionRepositoryPort) {}
+
+  create(
+    header: SessionHeader,
+    messages: readonly Message[],
+    sortOrder: number,
+    createdAt: number
+  ): Promise<SessionCommandWriteResult> {
+    return this.enqueue(
+      header.id,
+      async () => {
+        const delta = await this.repository.createSessionRows(header, messages)
+        this.unavailable.delete(header.id)
+        this.creationOrder.set(header.id, { sortOrder, createdAt })
+        return this.projectCommit(delta)
+      },
+      true
+    )
   }
 
-  update(sessionId: string, updater: Updater<Session>, options: SessionWriteOptions = {}): Promise<SessionWriteResult> {
-    if (this.unavailable.has(sessionId)) {
-      return Promise.reject(new SessionNotFoundError(sessionId))
-    }
-    return this.enqueue(sessionId, () => this.performUpdate(sessionId, updater, options))
+  copyThread(request: SessionThreadCopyRequest, sortOrder: number): Promise<SessionCommandWriteResult> {
+    const { threadId, ...source } = request
+    return this.copy({ ...source, scope: { type: 'thread', threadId } }, sortOrder)
   }
 
-  /**
-   * Serialize a repair derived from a repository read without re-reading through
-   * an external cache that may currently be resolving that same request.
-   */
-  updateFromSnapshot(
-    snapshot: Session,
-    updater: Updater<Session>,
-    options: SessionWriteOptions = {}
-  ): Promise<SessionWriteResult> {
-    if (this.unavailable.has(snapshot.id)) {
-      return Promise.reject(new SessionNotFoundError(snapshot.id))
-    }
-    return this.enqueue(snapshot.id, () => this.performUpdate(snapshot.id, updater, options, snapshot))
+  copy(request: SessionCopyRequest, sortOrder: number): Promise<SessionCommandWriteResult> {
+    return this.enqueue(
+      request.targetSessionId,
+      async () => {
+        const delta = await this.repository.copySessionRows(request)
+        this.unavailable.delete(request.targetSessionId)
+        this.creationOrder.set(request.targetSessionId, { sortOrder, createdAt: request.createdAt })
+        return this.projectCommit(delta)
+      },
+      true
+    )
   }
 
-  /**
-   * Re-derives and persists the metadata projection from the retained snapshot,
-   * serialized behind already queued writes. Repairs a failed projection write
-   * after the full session itself was persisted; returns null when there is no
-   * snapshot to project (session deleted, fenced, or never written here).
-   */
-  reprojectMeta(sessionId: string): Promise<SessionWriteResult | null> {
-    if (this.unavailable.has(sessionId)) {
-      return Promise.resolve(null)
-    }
+  executeCommand(
+    sessionId: string,
+    command: SessionCommand,
+    options: SessionCommandWriteOptions = {}
+  ): Promise<SessionCommandWriteResult> {
     return this.enqueue(sessionId, async () => {
-      if (this.unavailable.has(sessionId)) return null
-      const current = this.current.get(sessionId)
-      if (!current) return null
-      const recoveryArchivedAt = await this.loadRecoveryArchive(sessionId)
-      const meta = this.projectMeta(current, recoveryArchivedAt)
-      await this.repository.meta.update(sessionId, meta)
-      return { session: current, meta }
+      const { delta } = await this.repository.executeSessionCommand(sessionId, command, options.expectedRevision)
+      if (options.clearRecoveryArchive) this.pendingRecoveryClear.add(sessionId)
+      return this.projectCommit(delta, options.clearRecoveryArchive)
     })
   }
 
-  /**
-   * Serializes a recovery archive behind pending full-session writes without
-   * reading the potentially corrupt session. The next successful full write
-   * converts it to an ordinary durable archive before clearing the marker.
-   */
+  private async projectCommit(
+    delta: SessionCommandDelta,
+    clearRecoveryArchive = false
+  ): Promise<SessionCommandWriteResult> {
+    try {
+      const projected = await this.projectMeta(delta.sessionId, clearRecoveryArchive)
+      return { kind: 'rows', delta, ...projected }
+    } catch (projectionError) {
+      return { kind: 'rows', delta, meta: null, metaRevision: null, projectionError }
+    }
+  }
+
+  private projectMeta(sessionId: string, clearRecoveryArchive = false): Promise<SessionMetaProjection> {
+    return this.repository.projectLatestSession(sessionId, async (read) => {
+      if (!read) return { meta: null, metaRevision: null }
+      const current = await this.repository.meta.getById(sessionId)
+      const meta = this.metadata(read, current, clearRecoveryArchive || this.pendingRecoveryClear.has(sessionId))
+      let updated: SessionMetaRecord | null
+      if (current) updated = await this.repository.meta.update(sessionId, meta)
+      else {
+        const order = this.creationOrder.get(sessionId) ?? { sortOrder: Date.now(), createdAt: Date.now() }
+        updated = {
+          ...createSessionMetaRecord(
+            read.header,
+            order.sortOrder,
+            order.createdAt,
+            read.summary.pausedMessageCount > 0
+          ),
+          ...meta,
+        }
+        await this.repository.meta.create(updated)
+      }
+      this.creationOrder.delete(sessionId)
+      this.pendingRecoveryClear.delete(sessionId)
+      return { meta: updated, metaRevision: read.revision }
+    })
+  }
+
+  private metadata(
+    read: SessionHeaderRead,
+    current: SessionMetaRecord | null,
+    clearRecoveryArchive: boolean
+  ): SessionMeta {
+    const meta = projectSessionMetaUpdate(read.header, read.summary.pausedMessageCount > 0)
+    return current?.recoveryArchived && !clearRecoveryArchive
+      ? { ...meta, hidden: true, archivedAt: current.archivedAt, recoveryArchived: true }
+      : meta
+  }
+
+  reprojectMeta(sessionId: string): Promise<SessionMetaProjection | null> {
+    if (this.unavailable.has(sessionId)) return Promise.resolve(null)
+    return this.enqueue(sessionId, () => this.projectMeta(sessionId))
+  }
+
+  updateSortOrder(sessionId: string, sortOrder: number): Promise<SessionMetaRecord | null> {
+    return this.enqueue(sessionId, () =>
+      this.repository.projectSessionMetadata(sessionId, () => this.repository.meta.update(sessionId, { sortOrder }))
+    )
+  }
+
   archiveMetadataOnly(sessionId: string, archivedAt: number): Promise<SessionMetaRecord | null> {
-    if (this.unavailable.has(sessionId)) {
-      return Promise.reject(new SessionNotFoundError(sessionId))
-    }
-    return this.enqueue(sessionId, async () => {
-      const updated = await this.repository.meta.update(sessionId, {
-        hidden: true,
-        archivedAt,
-        recoveryArchived: true,
-      })
-      if (updated) {
-        this.recoveryArchives.set(sessionId, archivedAt)
-        this.loadedRecoveryArchiveState.add(sessionId)
-      }
-      return updated
-    })
+    return this.enqueue(sessionId, () =>
+      this.repository.projectSessionMetadata(sessionId, () =>
+        this.repository.meta.update(sessionId, { hidden: true, archivedAt, recoveryArchived: true })
+      )
+    )
   }
 
-  /** Restores a metadata-only recovery archive without reading the full session. */
   restoreMetadataOnly(sessionId: string): Promise<SessionMetaRecord | null> {
-    if (this.unavailable.has(sessionId)) {
-      return Promise.reject(new SessionNotFoundError(sessionId))
-    }
-    return this.enqueue(sessionId, async () => {
-      const existing = await this.repository.meta.getById(sessionId)
-      if (!existing) return null
-      if (
-        (!existing.recoveryArchived && existing.archivedAt !== undefined) ||
-        this.current.get(sessionId)?.archivedAt !== undefined
-      ) {
-        await this.performUpdate(sessionId, { hidden: false, archivedAt: undefined }, { clearRecoveryArchive: true })
-        return this.repository.meta.getById(sessionId)
-      }
-      const updated = await this.repository.meta.update(sessionId, {
-        hidden: false,
-        archivedAt: undefined,
-        recoveryArchived: undefined,
-      })
-      if (updated) {
-        this.recoveryArchives.delete(sessionId)
-        this.loadedRecoveryArchiveState.add(sessionId)
-      }
-      return updated
-    })
+    return this.enqueue(sessionId, () =>
+      this.repository.projectSessionMetadata(sessionId, () =>
+        this.repository.meta.update(sessionId, { hidden: false, archivedAt: undefined, recoveryArchived: undefined })
+      )
+    )
+  }
+
+  patchMessageDerivedData(
+    sessionId: string,
+    patches: SessionMessageDerivedPatch[]
+  ): Promise<SessionMessageDerivedWriteResult> {
+    return this.enqueue(sessionId, () => this.repository.patchSessionMessageDerivedData(sessionId, patches))
+  }
+
+  acceptTextTokenResults(
+    sessionId: string,
+    results: readonly SessionTextTokenResult[]
+  ): Promise<SessionTextTokenWriteResult> {
+    if (this.unavailable.has(sessionId)) return Promise.resolve({ sessionId, results: [] })
+    return this.enqueue(sessionId, () => this.repository.acceptSessionTextTokenResults(sessionId, results))
   }
 
   delete(sessionId: string, operation: () => Promise<void>): Promise<void> {
     return this.deleteMany([sessionId], operation)
   }
 
-  /**
-   * Fence new writes immediately, drain writes already queued for every id, then
-   * run deletion once. Successful deletions stay fenced so stale caches cannot
-   * recreate the session after storage removal.
-   */
   deleteMany(sessionIds: string[], operation: () => Promise<void>): Promise<void> {
-    const uniqueIds = [...new Set(sessionIds)]
-    for (const sessionId of uniqueIds) {
-      this.unavailable.add(sessionId)
-    }
-
-    const previousTails = uniqueIds.map((sessionId) => this.tails.get(sessionId)?.catch(() => undefined))
-    const deletion = Promise.all(previousTails).then(async () => {
-      await operation()
-      for (const sessionId of uniqueIds) {
-        this.current.delete(sessionId)
-        this.recoveryArchives.delete(sessionId)
-        this.loadedRecoveryArchiveState.delete(sessionId)
-      }
-    })
-    const nextTail = deletion.then(
-      () => undefined,
-      () => undefined
+    if (this.exclusiveAccess) return Promise.reject(new SessionStorageBusyError())
+    const ids = [...new Set(sessionIds)]
+    for (const id of ids) this.unavailable.add(id)
+    const deletion = Promise.all(ids.map((id) => this.tails.get(id))).then(operation)
+    const tail = deletion.then(
+      () => {},
+      () => {}
     )
-    for (const sessionId of uniqueIds) {
-      this.tails.set(sessionId, nextTail)
-    }
-    void nextTail.then(() => {
-      for (const sessionId of uniqueIds) {
-        if (this.tails.get(sessionId) === nextTail) {
-          this.tails.delete(sessionId)
-        }
+    for (const id of ids) this.tails.set(id, tail)
+    void tail.then(() => {
+      for (const id of ids) {
+        if (this.tails.get(id) === tail) this.tails.delete(id)
+        this.creationOrder.delete(id)
+        this.pendingRecoveryClear.delete(id)
       }
     })
-
     return deletion.catch((error: unknown) => {
-      for (const sessionId of uniqueIds) {
-        // Deletion may have already removed some repository entries before a
-        // later step failed. Drop every cached snapshot before reopening writes
-        // so a surviving id is re-read and a removed id cannot be resurrected.
-        this.current.delete(sessionId)
-        this.recoveryArchives.delete(sessionId)
-        this.loadedRecoveryArchiveState.delete(sessionId)
-        this.discardCurrentSession(sessionId)
-        this.unavailable.delete(sessionId)
-      }
+      for (const id of ids) this.unavailable.delete(id)
       throw error
     })
   }
 
-  prime(session: Session): void {
-    this.unavailable.delete(session.id)
-    this.current.set(session.id, session)
-    this.recoveryArchives.delete(session.id)
-    this.loadedRecoveryArchiveState.add(session.id)
+  async withExclusiveAccess<T>(action: () => Promise<T>): Promise<T> {
+    if (this.exclusiveAccess) throw new SessionStorageBusyError()
+    this.exclusiveAccess = true
+    try {
+      await Promise.all(this.tails.values())
+      return await action()
+    } finally {
+      this.exclusiveAccess = false
+    }
   }
 
-  forget(sessionId: string): void {
-    this.unavailable.delete(sessionId)
-    this.current.delete(sessionId)
-    this.recoveryArchives.delete(sessionId)
-    this.loadedRecoveryArchiveState.delete(sessionId)
-  }
-
-  private enqueue<T>(sessionId: string, operation: () => Promise<T>): Promise<T> {
-    const previousTail = this.tails.get(sessionId) ?? Promise.resolve()
-    const result = previousTail.catch(() => undefined).then(operation)
-    const nextTail = result.then(
-      () => undefined,
-      () => undefined
+  private enqueue<T>(sessionId: string, operation: () => Promise<T>, creating = false): Promise<T> {
+    if (this.exclusiveAccess) return Promise.reject(new SessionStorageBusyError())
+    if (!creating && this.unavailable.has(sessionId)) return Promise.reject(new SessionNotFoundError(sessionId))
+    const previous = this.tails.get(sessionId) ?? Promise.resolve()
+    const result = previous.then(operation)
+    const tail = result.then(
+      () => {},
+      () => {}
     )
-    this.tails.set(sessionId, nextTail)
-    void nextTail.then(() => {
-      if (this.tails.get(sessionId) === nextTail) {
-        this.tails.delete(sessionId)
-      }
+    this.tails.set(sessionId, tail)
+    void tail.then(() => {
+      if (this.tails.get(sessionId) === tail) this.tails.delete(sessionId)
     })
     return result
-  }
-
-  private async performUpdate(
-    sessionId: string,
-    updater: Updater<Session>,
-    options: SessionWriteOptions,
-    fallbackSnapshot?: Session
-  ): Promise<SessionWriteResult> {
-    const recoveryArchivedAt = options.clearRecoveryArchive ? undefined : await this.loadRecoveryArchive(sessionId)
-    const previous = this.current.get(sessionId) ?? fallbackSnapshot ?? (await this.readCurrentSession(sessionId))
-    if (!previous) {
-      throw new SessionNotFoundError(sessionId)
-    }
-
-    const next = typeof updater === 'function' ? updater(previous) : { ...previous, ...updater }
-    const updated = recoveryArchivedAt === undefined ? next : { ...next, hidden: true, archivedAt: recoveryArchivedAt }
-    await this.repository.setSession(updated)
-    this.current.set(sessionId, updated)
-
-    if (recoveryArchivedAt !== undefined || options.clearRecoveryArchive) {
-      this.recoveryArchives.delete(sessionId)
-      this.loadedRecoveryArchiveState.add(sessionId)
-    }
-
-    const meta = options.updateMeta === false ? null : projectSessionMetaUpdate(updated)
-    if (meta) {
-      try {
-        await this.repository.meta.update(sessionId, meta)
-      } catch (error) {
-        throw new SessionMetadataUpdateError(updated, error)
-      }
-    }
-    return { session: updated, meta }
-  }
-
-  private async loadRecoveryArchive(sessionId: string): Promise<number | undefined> {
-    if (!this.loadedRecoveryArchiveState.has(sessionId)) {
-      const meta = await this.repository.meta.getById(sessionId)
-      if (meta?.recoveryArchived && meta.archivedAt !== undefined) {
-        this.recoveryArchives.set(sessionId, meta.archivedAt)
-      }
-      this.loadedRecoveryArchiveState.add(sessionId)
-    }
-    return this.recoveryArchives.get(sessionId)
-  }
-
-  private projectMeta(session: Session, recoveryArchivedAt?: number): SessionMeta {
-    const meta = projectSessionMetaUpdate(session)
-    return recoveryArchivedAt === undefined
-      ? meta
-      : { ...meta, hidden: true, archivedAt: recoveryArchivedAt, recoveryArchived: true }
   }
 }

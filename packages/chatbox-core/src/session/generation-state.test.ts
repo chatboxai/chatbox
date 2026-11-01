@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { Message, Session } from '../types'
+import { InMemorySessionRepository } from '../testing/InMemorySessionRepository'
+import { getReachableSessionMessages } from './session-tree/reachable.test-support'
 import {
   countCancellableGeneratingAssistantMessages,
-  getCurrentConversationMessages,
-  getGenerationControlMessages,
-  getReachableSessionMessages,
   isCancellableGeneratingAssistantMessage,
 } from './generation-state'
 
@@ -33,7 +32,7 @@ describe('generation state', () => {
     expect(isCancellableGeneratingAssistantMessage(messages[2], false)).toBe(false)
   })
 
-  it('includes reachable fork replies but excludes historical threads', () => {
+  it('includes reachable fork replies and historical input threads', () => {
     const pivot = message({ id: 'pivot', role: 'user' })
     const currentReply = message({ id: 'current' })
     const alternative = message({ id: 'alternative', generating: true })
@@ -65,16 +64,17 @@ describe('generation state', () => {
       },
     }
 
-    expect(getCurrentConversationMessages(session).map((item) => item.id)).toEqual([
+    expect(getReachableSessionMessages(session).map((item) => item.id)).toEqual([
       'pivot',
       'current',
+      'historical',
       'alternative',
       'nested-pivot',
       'nested-alternative',
     ])
   })
 
-  it('controls generation from runtime-cancellable historical threads and forks without reviving stale flags', () => {
+  it('reads runtime-cancellable historical rows and forks without reviving stale flags', async () => {
     const currentPivot = message({ id: 'current-pivot', role: 'user' })
     const currentPlaceholder = message({ id: 'current-placeholder', generating: true })
     const historicalPivot = message({ id: 'historical-pivot', role: 'user' })
@@ -107,17 +107,15 @@ describe('generation state', () => {
     }
 
     const activeIds = new Set(['historical-runtime', 'historical-finished', 'historical-fork-runtime'])
-    const controlledIds = getGenerationControlMessages(session, activeIds).map((item) => item.id)
-
-    expect(controlledIds).toEqual([
-      'current-pivot',
-      'current-placeholder',
-      'historical-runtime',
-      'historical-fork-runtime',
-    ])
-    expect(
-      countCancellableGeneratingAssistantMessages(getGenerationControlMessages(session, activeIds), activeIds)
-    ).toBe(2)
+    const repository = new InMemorySessionRepository()
+    await repository.seedSession(session)
+    const control = await repository.readSessionGenerationControl({
+      sessionId: session.id,
+      activeGenerationMessageIds: [...activeIds],
+    })
+    expect(control?.cancellableMessageIds).toEqual(['historical-runtime', 'historical-fork-runtime'])
+    expect(control?.generatingReplyCount).toBe(2)
+    expect(control?.anyReplyGenerating).toBe(true)
   })
 
   it('excludes nested fork data after its parent branch becomes unreachable', () => {

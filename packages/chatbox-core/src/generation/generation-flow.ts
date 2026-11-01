@@ -21,6 +21,7 @@ type ExecutableTool = {
       approved?: boolean
       approvalWorkdir?: string
       approvalRetryOf?: string
+      approvalFileVersion?: string
       approvalDetails?: AppActionApprovalDetails
       abortSignal?: AbortSignal
     }
@@ -36,6 +37,7 @@ export function createPausedToolCallExecutionContext(
   approved: boolean
   approvalWorkdir?: string
   approvalRetryOf?: string
+  approvalFileVersion?: string
   approvalDetails?: AppActionApprovalDetails
   abortSignal?: AbortSignal
 } {
@@ -45,6 +47,9 @@ export function createPausedToolCallExecutionContext(
   return {
     toolCallId: part.toolCallId,
     approved,
+    ...(approved && part.pauseReason?.type === 'file_mutation_approval' && part.pauseReason.editPreview
+      ? { approvalFileVersion: part.pauseReason.editPreview.version }
+      : {}),
     ...(abortSignal ? { abortSignal } : {}),
     ...(approved &&
     (part.pauseReason?.type === 'user_exec_approval' || part.pauseReason?.type === 'command_escalation_approval') &&
@@ -91,12 +96,13 @@ interface FileMutationPauseError {
   title: string
   preview: string
   stats?: unknown
+  editPreview?: { version: string; diffTruncated?: boolean }
 }
 
 /** Narrow the optional stats an older or third-party tool may omit or malform. */
 function toFileMutationStats(value: unknown): FileMutationApprovalStats | undefined {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
-  const { mode, edits, addedLines, removedLines } = value as Record<string, unknown>
+  const { mode, edits, addedLines, removedLines, approximate } = value as Record<string, unknown>
   if (mode !== 'write' && mode !== 'edit') return undefined
   if (typeof addedLines !== 'number' || typeof removedLines !== 'number') return undefined
   return {
@@ -104,6 +110,7 @@ function toFileMutationStats(value: unknown): FileMutationApprovalStats | undefi
     edits: typeof edits === 'number' ? edits : undefined,
     addedLines,
     removedLines,
+    ...(approximate === true ? { approximate: true } : {}),
   }
 }
 
@@ -217,6 +224,14 @@ export function getToolCallPause(error: unknown): {
         title: error.title,
         preview: error.preview,
         stats: toFileMutationStats(error.stats),
+        ...(typeof error.editPreview?.version === 'string'
+          ? {
+              editPreview: {
+                version: error.editPreview.version,
+                diffTruncated: error.editPreview.diffTruncated === true,
+              },
+            }
+          : {}),
       },
     }
   }

@@ -19,6 +19,9 @@ const {
   mockGetItem,
   mockReportError,
   mockCleanupOrphanedBlobs,
+  searchSource,
+  mockGetSessionAgentModeEntry,
+  sessionMetaStorage,
 } = vi.hoisted(() => {
   const blobs = new Map<string, string>()
   const license = { key: 'licensed-key' as string | undefined }
@@ -57,6 +60,13 @@ const {
     }),
     mockSetItem: vi.fn(async () => undefined),
     mockGetItem: vi.fn(async <T>(_key: string, initialValue: T) => initialValue),
+    searchSource: {
+      readSessionSearchCandidates: vi.fn(),
+      readSessionSearchWindow: vi.fn(),
+      listSessionsMetaPage: vi.fn(),
+    },
+    mockGetSessionAgentModeEntry: vi.fn(),
+    sessionMetaStorage: { getPage: vi.fn() },
     mockReportError: vi.fn(),
     mockCleanupOrphanedBlobs: vi.fn(async () => 0),
   }
@@ -154,12 +164,19 @@ vi.mock('@/i18n', () => ({
   default: {},
 }))
 
-vi.mock('@/app/renderer-application', () => ({
-  rendererApplication: {
-    sessions: { initialize: vi.fn(), repository: { meta: {} } },
-  },
-}))
+vi.mock('@/app/renderer-application', () => {
+  return {
+    rendererApplication: {
+      sessions: { initialize: vi.fn(), repository: { meta: sessionMetaStorage }, ...searchSource },
+    },
+  }
+})
 
+vi.mock('./session/agent-mode', () => ({ getSessionAgentModeEntry: mockGetSessionAgentModeEntry }))
+
+import type { SessionSearchResult } from '@chatbox/core/application/session'
+import { InMemorySessionRepository } from '@chatbox/core/testing'
+import type { Session } from '@shared/types'
 import {
   isSessionAttachmentRagAuthError,
   isSessionAttachmentRagIndexingError,
@@ -167,6 +184,7 @@ import {
   SESSION_ATTACHMENT_RAG_LARGE_ATTACHMENT_WARNING,
   SESSION_ATTACHMENT_RAG_MAX_PARSED_BYTE_LENGTH,
   SESSION_ATTACHMENT_RAG_REQUIRES_CHATBOX_AI_ERROR,
+  searchSessions,
 } from './sessionHelpers'
 
 function createFile(name: string, content = 'binary-content'): File {
@@ -203,6 +221,48 @@ describe('preprocessFile local parser fallback', () => {
     mockCleanupOrphanedBlobs.mockReset()
     mockCleanupOrphanedBlobs.mockResolvedValue(0)
   })
+
+  it.each(['local', 'chatbox-ai'] as const)(
+    'parses mobile Office uploads locally with %s selected and no license',
+    async (type) => {
+      const platform = (await import('@/platform')).default
+      const previous = { type: platform.type, isDesktopLike: platform.isDesktopLike }
+      Object.assign(platform, { type: 'mobile', isDesktopLike: false })
+      try {
+        parserState.type = type
+        licenseState.key = ''
+        blobStore.set('office-local', 'Local Office text')
+        mockParseFileLocally.mockResolvedValueOnce({ isSupported: true, key: 'office-local' })
+        const result = await prepareFileAttachment(createFile('report.docx'), { provider: '', modelId: '' })
+        expect(result.error).toBeUndefined()
+        expect(result.content).toBe('Local Office text')
+        expect(mockUploadAndCreateUserFile).not.toHaveBeenCalled()
+      } finally {
+        Object.assign(platform, previous)
+      }
+    }
+  )
+
+  it.each(['local', 'chatbox-ai'] as const)(
+    'falls back for a malformed mobile Office document with %s selected and a license',
+    async (type) => {
+      parserState.type = type
+      const platform = (await import('@/platform')).default
+      const previous = { type: platform.type, isDesktopLike: platform.isDesktopLike }
+      Object.assign(platform, { type: 'mobile', isDesktopLike: false })
+      try {
+        mockParseFileLocally.mockRejectedValueOnce(new Error('Invalid document archive'))
+        blobStore.set('office-remote', 'Cloud Office text')
+        mockUploadAndCreateUserFile.mockResolvedValueOnce('office-remote')
+        const result = await prepareFileAttachment(createFile('bad.docx'), { provider: '', modelId: '' })
+        expect(result.error).toBeUndefined()
+        expect(result.content).toBe('Cloud Office text')
+        expect(mockUploadAndCreateUserFile).toHaveBeenCalled()
+      } finally {
+        Object.assign(platform, previous)
+      }
+    }
+  )
 
   it('falls back to Chatbox AI when local parsing throws and a license is active', async () => {
     const file = createFile('report.pdf')
@@ -833,6 +893,30 @@ describe('preprocessFile local parser fallback', () => {
     expect(isSessionAttachmentRagIndexingError('local_parser_failed')).toBe(false)
   })
 
+  it.each(['data.xlsx', 'slides.pptx', 'index.html', 'report.pdf', 'report.doc', 'table.xls', 'deck.ppt'])(
+    'prepares mobile work attachment %s locally even when the cloud parser is selected',
+    async (name) => {
+      const { default: platform } = await import('@/platform')
+      const previousType = platform.type
+      const previousDesktop = platform.isDesktopLike
+      Object.assign(platform, { type: 'mobile', isDesktopLike: false })
+      try {
+        parserState.type = 'chatbox-ai'
+        licenseState.key = ''
+        const result = await prepareFileAttachment(createFile(name), { provider: '', modelId: '' }, { agentMode: true })
+        expect(result.error).toBeUndefined()
+        expect(result.parserType).toBe('local-workspace')
+        expect(result.rawStorageKey).toBeTruthy()
+        expect(blobStore.get(result.rawStorageKey!)).toMatch(/^data:[^,]*;base64,/)
+        expect(mockUploadAndCreateUserFile).not.toHaveBeenCalled()
+        expect(mockParseFileLocally).not.toHaveBeenCalled()
+        expect(mockGetSessionRagConfig).not.toHaveBeenCalled()
+      } finally {
+        Object.assign(platform, { type: previousType, isDesktopLike: previousDesktop })
+      }
+    }
+  )
+
   it('keeps documents inline with a warning when parsed text exceeds the session attachment limit', async () => {
     const file = createFile('dense.pdf')
     const parsedContent = 'a'.repeat(SESSION_ATTACHMENT_RAG_MAX_PARSED_BYTE_LENGTH + 1)
@@ -883,5 +967,66 @@ describe('preprocessFile local parser fallback', () => {
     expect(result.lineCount).toBeUndefined()
     expect(mockSetItem).not.toHaveBeenCalledWith(`${storageKey}_parserType`, 'sandbox-raw')
     expect(blobStore.get(rawStorageKey)).toMatch(/^data:application\/pdf;base64,/)
+  })
+})
+
+describe('searchSessions', () => {
+  beforeEach(() => {
+    mockGetItem.mockClear()
+    for (const method of Object.values(searchSource)) method.mockReset()
+    mockGetSessionAgentModeEntry.mockReset()
+    mockGetSessionAgentModeEntry.mockReturnValue({ value: 'off', locked: false, lockReason: null })
+  })
+
+  async function seed(value: Session) {
+    const repository = new InMemorySessionRepository()
+    await repository.seedSession(value)
+    searchSource.readSessionSearchCandidates.mockImplementation((request) =>
+      repository.readSessionSearchCandidates(request)
+    )
+    searchSource.readSessionSearchWindow.mockImplementation((request) => repository.readSessionSearchWindow(request))
+    searchSource.listSessionsMetaPage.mockResolvedValue({
+      items: [{ id: value.id, name: value.name, sortOrder: 1 }],
+      nextCursor: null,
+      total: 1,
+    })
+  }
+
+  it('returns light hits and progressive snapshots through bounded row reads', async () => {
+    await seed({
+      id: 'one',
+      name: 'Chat',
+      messages: [{ id: 'm', role: 'user', contentParts: [{ type: 'text', text: 'needle here' }] }],
+    })
+    const progress: SessionSearchResult[] = []
+    const controller = new AbortController()
+    const result = await searchSessions('needle', {
+      sessionId: 'one',
+      signal: controller.signal,
+      onProgress: (value) => progress.push(value),
+    })
+    expect(result.hits).toEqual([{ sessionId: 'one', sessionName: 'Chat', messageId: 'm', preview: 'needle here' }])
+    expect(progress.at(-1)).toEqual(result)
+    expect(searchSource.readSessionSearchWindow).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 'one', signal: controller.signal })
+    )
+    expect(mockGetItem).not.toHaveBeenCalled()
+  })
+
+  it('filters system hits using the effective mode from a light header', async () => {
+    await seed({
+      id: 'one',
+      name: 'Chat',
+      messages: [
+        { id: 'system', role: 'system', contentParts: [{ type: 'text', text: 'needle system' }] },
+        { id: 'user', role: 'user', contentParts: [{ type: 'text', text: 'needle user' }] },
+      ],
+    })
+    mockGetSessionAgentModeEntry.mockReturnValue({ value: 'on', locked: false, lockReason: null })
+    expect((await searchSessions('needle')).hits.map((hit) => hit.messageId)).toEqual(['user'])
+    expect(mockGetSessionAgentModeEntry).toHaveBeenCalledWith(
+      'one',
+      expect.not.objectContaining({ messages: expect.anything() })
+    )
   })
 })

@@ -92,6 +92,7 @@ describe('custom provider network compatibility', () => {
         apiKey: 'test-key',
         apiHost: 'http://192.168.1.10:8000/v1',
         model: { modelId: 'claude-test', type: 'chat' },
+        stream: false,
         useProxy: true,
       },
       dependencies
@@ -112,6 +113,56 @@ describe('custom provider network compatibility', () => {
       expect.objectContaining({
         method: 'GET',
         url: 'http://192.168.1.10:8000/v1/models?limit=990',
+        useProxy: true,
+      })
+    )
+  })
+
+  it('streams Custom Claude chat through useProxy', async () => {
+    const events = [
+      {
+        type: 'message_start',
+        message: {
+          id: 'msg_test',
+          type: 'message',
+          role: 'assistant',
+          model: 'claude-test',
+          content: [],
+          stop_reason: null,
+          stop_sequence: null,
+          usage: { input_tokens: 1, output_tokens: 0 },
+        },
+      },
+      { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'ok' } },
+      { type: 'content_block_stop', index: 0 },
+      { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 1 } },
+      { type: 'message_stop' },
+    ]
+    const apiRequest = vi.fn(() =>
+      Promise.resolve(
+        new Response(events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(''), {
+          headers: { 'content-type': 'text/event-stream' },
+        })
+      )
+    )
+    const model = new CustomClaude(
+      {
+        apiKey: 'test-key',
+        apiHost: 'http://192.168.1.10:8000/v1',
+        model: { modelId: 'claude-test', type: 'chat' },
+        useProxy: true,
+      },
+      createDependencies(apiRequest)
+    )
+
+    const result = await model.chat([{ role: 'user', content: 'hello' }], {})
+
+    expect(result.contentParts).toContainEqual({ type: 'text', text: 'ok' })
+    expect(apiRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'POST',
+        url: 'http://192.168.1.10:8000/v1/messages',
         useProxy: true,
       })
     )

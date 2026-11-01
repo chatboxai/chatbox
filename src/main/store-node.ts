@@ -67,7 +67,14 @@ async function autoBackup() {
 }
 
 export function getSettings(): Settings {
-  const settings = store.get<'settings'>('settings', defaults.settings())
+  const settings = store.get<'settings'>('settings')
+  if (settings === undefined) {
+    return defaults.settings()
+  }
+  if (settings === null || typeof settings !== 'object' || Array.isArray(settings)) {
+    // Keep the persisted value intact for recovery, and do not infer telemetry consent from invalid settings.
+    return { ...defaults.settings(), allowReportingAndTracking: false }
+  }
   return settings
 }
 

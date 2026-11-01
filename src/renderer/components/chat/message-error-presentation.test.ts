@@ -1,7 +1,7 @@
 import { ChatboxAIAPIError, MESSAGE_ERROR_CODES } from '@shared/models/errors'
 import type { Message } from '@shared/types'
 import { describe, expect, it } from 'vitest'
-import { isMessageReminderPresentation, resolveMessageErrorPresentation } from './message-error-presentation'
+import { resolveMessageErrorPresentation } from './message-error-presentation'
 
 function message(overrides: Partial<Message>): Message {
   return {
@@ -68,7 +68,6 @@ describe('resolveMessageErrorPresentation', () => {
       const presentation = resolveMessageErrorPresentation(message({ error: error?.message, errorCode: error?.code }))
 
       expect(presentation).toMatchObject({ kind: 'known-chatbox-api', errorCode: error?.code })
-      expect(isMessageReminderPresentation(presentation)).toBe(false)
     }
   )
 
@@ -86,10 +85,17 @@ describe('resolveMessageErrorPresentation', () => {
     })
   })
 
+  it('maps a removed provider to the provider-missing presentation', () => {
+    const presentation = resolveMessageErrorPresentation(
+      message({ errorCode: MESSAGE_ERROR_CODES.MODEL_PROVIDER_NOT_FOUND })
+    )
+
+    expect(presentation.kind).toBe('provider-missing')
+  })
+
   it('keeps unrelated failures in the unknown presentation', () => {
     const presentation = resolveMessageErrorPresentation(message({ errorCode: 99999 }))
 
     expect(presentation.kind).toBe('unknown')
-    expect(isMessageReminderPresentation(presentation)).toBe(false)
   })
 })

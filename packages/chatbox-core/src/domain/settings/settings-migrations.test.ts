@@ -67,6 +67,24 @@ describe('settings migrations', () => {
     expect(migrated.extension.documentParser).toEqual({ type: 'chatbox-ai' })
   })
 
+  test('moves the version 7 default compaction threshold to the current default and keeps chosen values', () => {
+    const defaults = createDefaultSettings()
+    expect(
+      migrateSettings({ ...defaults, compactionThreshold: 0.6 }, 7, { isDesktopLike: true }).compactionThreshold
+    ).toBe(defaults.compactionThreshold)
+    expect(
+      migrateSettings({ ...defaults, compactionThreshold: 0.6000000000000001 }, 7, { isDesktopLike: true })
+        .compactionThreshold
+    ).toBe(defaults.compactionThreshold)
+    for (const chosen of [0.4, 0.5, 0.85, 0.9]) {
+      expect(
+        migrateSettings({ ...defaults, compactionThreshold: chosen }, 7, { isDesktopLike: true }).compactionThreshold
+      ).toBe(chosen)
+    }
+    const { compactionThreshold: _omitted, ...withoutThreshold } = defaults
+    expect(migrateSettings(withoutThreshold, 7, { isDesktopLike: true }).compactionThreshold).toBe(0.75)
+  })
+
   test('uses the desktop parser default when an older snapshot has no parser', () => {
     const migrated = migrateSettings(createDefaultSettings(), 4, {
       isDesktopLike: true,
@@ -108,7 +126,31 @@ describe('settings migrations', () => {
     ])
   })
 
-  test.each([0, 1, 2, 3, 4, 5, 6])('keeps the complete version %i snapshot compatible', (version) => {
+  test.each([0, 5, 6])('removes built-in EdgeOne from version %i without changing custom servers', (version) => {
+    const defaults = createDefaultSettings()
+    const customServer = {
+      id: 'edgeone-pages',
+      name: 'Custom publishing server',
+      enabled: true,
+      transport: { type: 'http' as const, url: 'https://example.com/mcp' },
+    }
+    const migrated = migrateSettings(
+      {
+        ...defaults,
+        mcp: {
+          enabledBuiltinServers: ['fetch', 'edgeone-pages', 'arxiv', 'context7'],
+          servers: [customServer],
+        },
+      },
+      version,
+      { isDesktopLike: true }
+    )
+
+    expect(migrated.mcp.enabledBuiltinServers).toEqual(['fetch', 'arxiv', 'context7'])
+    expect(migrated.mcp.servers).toEqual([expect.objectContaining(customServer)])
+  })
+
+  test.each([0, 1, 2, 3, 4, 5, 6, 7])('keeps the complete version %i snapshot compatible', (version) => {
     const defaults = createDefaultSettings()
     const persisted = {
       ...defaults,

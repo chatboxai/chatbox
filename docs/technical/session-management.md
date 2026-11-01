@@ -1,241 +1,93 @@
-# 会话管理系统（Session Management）
+# 会话行模型与分页展示
 
-> Last updated: 2026-07
+会话的持久化和业务接口由独立 header、thread 关系、消息正文、控制投影及 revision 组成。每个 thread 有稳定身份、选中路径和自己的压缩边界；会话保存 activeThreadId。完整 `Session` 只出现在历史文件解析输入边界。
 
-本文档描述 Chatbox 的会话管理系统设计，涵盖数据模型、模块拆分、新会话机制、线程历史、消息分叉等核心功能。聚焦于**产品设计与架构决策**，具体实现请参阅源码 `src/renderer/stores/session/`。
+## 数据流
 
----
+| 层 | 入口 | 责任 |
+| --- | --- | --- |
+| 业务 | `SessionService`、Chat/Thread/Fork/Naming services | 将用户操作转换成局部行命令，发布提交事件 |
+| 一致性 | `SessionWriteCoordinator`、`SessionRowWriteQueue` | 串行化本宿主写入、维护生命周期；仓库 revision/CAS 处理外部并发 |
+| 存储 | `RowBackedSessionRepository`、SQL/IndexedDB/Memory row store | 局部关系与正文事务、元信息投影、迁移和恢复 |
+| React | `SessionQueryBridge`、`SessionTranscriptWindowController` | 分离查询、投影已提交 delta、分页正文与共用窗口的 minimap |
+| 宿主 | Renderer Virtuoso、RN FlatList | 用户输入、语义锚点、布局确认和错误反馈 |
 
-## 数据模型
+命令只读取目标消息、所需关系和相关控制信息。文本检查点更新目标正文及必要派生信息；thread 激活通过关系和 activeThreadId 完成，消息身份保持稳定。命令持久化成功后再发布事件，元信息投影失败不能重放已经成功的正文写入。
 
-Chatbox 的会话系统围绕四个核心实体构建：
+## 正文窗口
 
-### Session（会话）
+所有 thread 按历史顺序加当前 thread 组成连续列表；一次翻页可以跨 thread 边界。RN/Capacitor 每页20条，Electron/Web每页100条。连续翻页保留已加载分页，不设置正文页数上限；明确跳转可以替换当前窗口。
 
-会话是最顶层的容器，代表一次独立的对话上下文。关键属性包括：
+| 操作 | 加载与定位 |
+| --- | --- |
+| 普通打开 | 最新1页，定位底部 |
+| 向上/向下翻页 | 每次1页，连续保留已加载分页 |
+| 返回顶部/底部 | 已加载时直接定位；否则目标边缘1页替换窗口 |
+| 搜索打开 | 以目标消息为中心加载1页，并定位到目标；靠近边缘时向有数据的一侧补齐 |
+| 查看 thread | 以目标 thread 首条为中心加载1页并定位，发送目标不变 |
+| 切换/继续 thread | 提交激活后定位该 thread 末尾 |
+| 切分支 | 保留已加载公共前缀，用新分支的1页替换分叉点之后的数据 |
 
-- `id` — 唯一标识符（UUID），新会话创建前使用临时 ID `"new"`
-- `name` — 会话名称（支持自动生成）
-- `type` — 会话类型：`chat`（对话）或 `picture`（图片生成）
-- `messages` — 当前活跃线程的消息列表
-- `threads` — 历史线程数组（归档的对话分支）
-- `threadName` — 当前活跃线程的名称
-- `messageForksHash` — 消息分叉索引（记录每条消息的分支信息）
-- `settings` — 会话级模型设置（覆盖全局默认值）
-- `copilotId` — 关联的 Copilot 预设
+分页和布局变化保持当前阅读位置，跳转使用稳定 thread/message ID；RN 优先使用 FlatList 原生维持位置能力。重新打开会话仍按最新1页处理。
 
-### Message（消息）
+消息分组在真实 thread/路径边界处结束，key 不能依赖数组下标或当前窗口尾部。布局提交、远页回收与可见锚点恢复属于一次事务；宿主不得用全历史占位高度模拟位置。
 
-消息是对话的基本单元，每条消息包含角色（`user` / `assistant` / `system`）、内容、时间戳等。消息通过 `createMessage()` 工厂函数创建，确保格式统一。
+## 分支预览
 
-### Thread（线程）
+点击「展开」同时显示非空备选分支卡片，保留原分支编号并按较新分支在前排列。卡片展示首条有效消息；用户消息开头的分支还展示第一条有效助手回复，其他后续消息显示数量。生成中的备选消息立即展示，结束后保留到用户收起或切换分支。切换分支收起展开区域；预览消息只读，保留停止生成和切换操作。
 
-线程是会话内的对话分支。当用户在同一会话中开启新话题时，当前消息列表会被归档为一个 `SessionThread`（存入 `session.threads`），然后重新开始新的消息列表。每个线程包含：
+分支目录独立按轻量元数据分页读取并自动续页。`readSessionBranchPreview` 委托存储层统计分支局部选中路径，业务层只接收预览消息、已揭示生成消息的稳定 ID 和后续消息数量；正文按 ID 点读。SQLite 在查询内聚合，IndexedDB 在单个只读事务内沿路径累加。预览不构造完整 Session，不加载整条分支正文；预览与消息缓存通过提交 revision 更新。
 
-- `id` — 线程标识符
-- `name` — 线程名称
-- `messages` — 该线程的消息快照
+## 生成与独立数据
 
-线程机制允许用户在同一会话中管理多个独立话题，避免上下文混乱。
+生成以目标 thread 的选中因果路径和压缩边界构造请求，与展示窗口无关。运行态单消息缓冲、控制状态、待处理工具调用和队列身份也独立于列表。页外消息仍可流式更新、停止和完成。停止期间只对发生 revision 冲突的读取做有界重试，不重放终态写入。
 
-### Fork（分叉）
+发送和压缩先在关系及消息 facts 上应用实际设置的上下文条数限制，再读取选中的正文；当前输入、工具续写目标和压缩摘要边界按各自语义计入。无限上下文是显式设置，不能把先读取全部正文再截断作为有限上下文的实现。
 
-分叉是消息级别的分支机制。当用户对某条消息重新生成回复或手动创建分支时，系统会在该消息位置创建一个分叉点，存储多个可选的后续消息。通过 `messageForksHash` 索引管理，用户可以在不同分支之间切换浏览。
+Token 使用独立选择计划、缓存和分批任务，首窗可交互之后启动历史工作。Minimap 从正文窗口已加载消息生成最多300字符的预览，按用户消息及同 thread 首条有效助手回复组合；翻页、首尾跳转、加载和错误状态共用正文 controller。点击已加载的 minimap 消息直接定位；窗口翻页、裁剪或切换时同步更新预览，不额外持久化或查询导航数据。
 
-## Session 持久化与 React read model
+工作区附件检查读取选中路径的文件和图片引用 facts；附件归属清理读取所有 thread 与分支的归属 facts，完整扫描成功后才执行重新绑定和删除。Artifact 在打开预览或全屏时才读取目标祖先的 Markdown 流，只保留所需代码块和最终 HTML；关闭的预览卡片不加载历史正文。
 
-Session 生命周期已经拆成无 React 的 Application 层、宿主 Adapter、React Query bindings 和
-Renderer Presentation：
+## 历史数据与全局任务
 
-```text
-现有组件 / stores/session/*
-          │
-          ▼
-rendererApplication（组合根）/ stores/session/* 域模块
-          │
-          ├──────────────► SessionService ──► SessionWriteCoordinator
-          │                        │                    │
-          │                        ▼                    ▼
-          │                Session application events  CurrentSessionRepository
-          │                        │                    │
-          ▼                        ▼                    ▼
-共享 hooks ◄── SessionQueryBridge / Query definitions  当前 storage + Session meta
-                                   │
-                                   ▼
-                         Renderer Presentation effects
+- 初次升级解析旧 JSON，修复受支持的身份/分支/摘要关系后生成候选行；发布前验证，失败保留原始输入并报告阶段。
+- 未发布候选可以从原始输入重建；已发布行数据始终权威，外层旧记录不能覆盖它。
+- 本地升级与会话复制写入隔离候选，验证完成后原子发布。未知或损坏形状明确失败，不进入完整 Session 兼容运行时。
+- 单会话输出、复制、搜索和资源扫描消费行或轻量分页，不构造完整 Session/SessionTree。附件归属不确定时保留资源，避免误删。
+- Header、正文窗口、Token 和会话列表分别管理生命周期和缓存；minimap 跟随正文窗口；删除及重新创建同 ID 必须清除旧任务和写入栅栏。
+
+### 发布兼容性与存储结构
+
+正式版本兼容边界为 `v1.23.5`。旧整会话 JSON 通过兼容转换生成行候选并原子发布；备份 V1/V2 仍经过共享转换。已存在有效行提交时，`session:<id>` 旧记录保持不变；删除会话先删除旧记录，再删除行数据。行格式使用 `rowFormatVersion: 3` 与 `rowAuthority: 1`，显式未知版本报错并保留原数据。
+
+IndexedDB 的 `chatbox-messages` 使用两层消息存储：`messages` 保存完整正文，`messageTree` 保存关系及紧凑 facts，主键为 `[sessionId, threadId, messageId]`，`byMessage` 唯一索引为 `[sessionId, messageId]`。树和 facts 以 `messageTree` 为权威；正文记录中的结构副本不能用于恢复树。路径成员资格和深度在读取时计算。消息兄弟顺序使用 `siblingOrder`，线程顺序使用 `threadOrder`，SQL 与备份 V3 使用相同名称。
+
+数据库先不指定版本打开并验证形状；缺少最终布局时，在观测版本加一的单次升级事务内补齐缺失的表和索引，不复制或改写已有数据。失败整体回滚，遇到同名但形状错误的表或索引报错。新数据库直接创建最终布局；旧磁盘的 `messageMutationStage` 保留但不参与读写，新数据库不创建它。逻辑行版本、IDB 版本与会话 revision 相互独立。
+
+共享 `ThreadLinks` 计算路径、成员资格、兄弟顺序、计数和端点。每次操作共享一个线程图，缓存最多保留四个线程。正文翻页仍按边读取有限窗口。首窗完成布局后，以 2,000 行分批预取元数据，批间让出事件循环，每批增量建图并验证 revision；最终路径准备也分批进行。冷操作显示加载状态。SQL 关系分页结合有界查询与共享线程图；搜索命中按线程分组使用 CTE，避免逐命中查询。
+
+操作在私有写集中准备变更，持久化 CAS 成功后才推进缓存；失败不发布写集。遇到外部 revision、重导入、删除或替换会话时丢弃缓存。预取跨批读到不同 revision 时丢弃结果，后续读取按当前 revision 重载。
+
+```mermaid
+stateDiagram-v2
+    [*] --> Cold
+    Cold --> Loading: 首窗布局后预取或冷操作
+    Loading --> Ready: 批次与最终 revision 一致
+    Loading --> Cold: 取消、失败或 revision 改变
+    Ready --> Preparing: 本地操作私有写集
+    Preparing --> Ready: CAS 成功后发布图与 revision
+    Preparing --> Ready: 写入失败，保留已提交图
+    Ready --> Cold: 外部 revision 或替换/删除
 ```
 
-| 层 | 路径 | 职责 |
-|----|------|------|
-| Application | `packages/chatbox-core/src/application/session/` | Session 创建、更新、归档、恢复、删除、事件和串行写入 |
-| Adapter | `src/renderer/adapters/CurrentSessionRepository.ts` | 沿用当前 storage key、migration 和 Session meta 实现 |
-| React bindings | `packages/chatbox-react/src/query/` | Query keys/options/hooks、分页 read model 和应用事件投影 |
-| Presentation | `src/renderer/presentation/session/` | 删除确认、滚动缓存、UI/Jotai 状态和宿主资源清理 |
-| Composition | `src/renderer/app/renderer-application.ts`、`session-bootstrap.ts` | 组装应用图（`rendererApplication`）并在 Renderer 启动时注册 Presentation effects |
-| Session 域模块 | `src/renderer/stores/session/`（crud / messages / session-settings 等） | 调用方直接 import 域模块或 `rendererApplication`（chatStore 兼容 facade 已删除） |
+每个旧会话首次升级会全量读取其 thread 和消息行，在内存中转换并生成派生投影，然后按原 revision 做一次 CAS 原子行重写；外层 `session:<id>` 旧记录保持原样，供降级后的 v1.23 读取；新版附件清理不保护只被旧记录引用的附件。这次读写和临时内存随会话总数据量增长，涉及全部分支，不受正文窗口或 Token 分页大小限制；还需要候选数据及存储事务的临时空间。它可能增加大历史会话首次打开的耗时，不能用升级后的分页读取性能代表迁移成本。转换失败不发布候选；原子提交失败保留旧行。
 
-### 写入一致性
+整包备份导入、导出入口当前显示暂不可用；新 V3 和 V1/V2 文件适配见 [数据备份与恢复边界](data-backup.md)。Capacitor 与 RN 各自升级应用数据目录中的记录，不搬迁两个应用的数据目录。降级到 v1.23 后写入的内容在再次升级时不会合并，行数据仍为权威。
 
-`SessionWriteCoordinator` 按 Session id 串行执行 read-modify-write。当前 Renderer 为首次写入注入
-React Query-backed reader，因此流式生成期间只存在于 cache 的新消息不会被随后的元数据写入覆盖。
-完整 Session 写入成功后才更新协调器内存状态，再更新 Session meta。
+## 模块与验证
 
-`SessionService` 不 import QueryClient、React、Modal、Router 或组件。它在持久化操作完成后发布精确
-事件；`SessionQueryBridge` 使用传入的 QueryClient 和 `setQueryData` 更新 read model。批量删除会在
-storage/meta 操作完成后重新读取第一页，避免仅过滤已加载 pages 而留下错误的 `total` 或
-`nextCursor`。
+Renderer 入口位于 `src/renderer/stores/session/`；共享服务位于 `packages/chatbox-core/src/application/`；React 投影和窗口位于 `packages/chatbox-react/src/query/`。
 
-### 删除副作用
+回归范围包括命令/CAS正确性、正文和关系读取预算、跨thread分页、窗口回收、迟到请求、分支/摘要修复、空thread、消息格式升级及会话复制。真实宿主验证应记录页数、正文解码量、布局坐标、可见位置误差、首窗时间和Token任务开始顺序；存储测试不能代替FlashList或浏览器布局证据。
 
-删除确认保留在 `session-deletion-confirmation.ts`。SessionService 发布 `session-will-delete` 后，
-Renderer effects 先清理 Session attachment RAG；持久化删除完成后再通过 `session-deleted` 清理
-Web browsing、知识库、Agent Mode、Jotai atom、滚动位置和 Sandbox artifacts。
-
-`session-bootstrap.ts` 由 Renderer 入口初始化，使 session 数据依赖链不再反向 import
-`MessageList`。
-
----
-
-## 模块拆分决策
-
-> 关联决策：[#10 — Session 模块拆分](./key-decisions.md)
-> 详细方案：[`docs/session-module-split-plan.md`](../session-module-split-plan.md)
-
-### 问题背景
-
-原始的 `sessionActions.ts` 文件膨胀至 **1799 行**，承担了会话 CRUD、消息操作、线程管理、分叉逻辑、AI 生成编排、命名、导出等全部职责。文件过大导致代码可读性下降、维护困难、合并冲突频繁。
-
-### 拆分方案
-
-按领域职责将单一文件拆分为 **11 个专注模块**：
-
-| 文件 | 职责 | 导出函数数 |
-|------|------|-----------|
-| `crud.ts` | 会话生命周期 — 创建、切换、排序、删除 | 8 |
-| `messages.ts` | 消息 CRUD — 插入、修改、删除、提交用户消息 | 5 |
-| `threads.ts` | 线程管理 — 创建、切换、归档、压缩、提升为独立会话 | 9 |
-| `forks.ts` | 消息分叉 — 创建分支、切换分支、删除、展开 | 5 |
-| `generation.ts` | AI 生成编排 — 调用模型、构建上下文、流式响应 | 8 |
-| `naming.ts` | 自动命名 — 会话名称和线程名称的防抖生成 | 4 |
-| `export.ts` | 导出功能 — 将会话导出为文件 | 1 |
-| `state.ts` | 共享状态 — 命名防抖的 Map/Set | — |
-| `types.ts` | 内部类型 — `MessageForkEntry`、`MessageLocation` | — |
-| `utils.ts` | 共享工具 — 事件追踪、消息查找、错误处理 | 4 |
-| `index.ts` | 公共 API — 统一重导出全部 40+ 个函数 | 全部 |
-
-### 设计原则
-
-- **单向依赖**：模块间避免循环导入。`generation.ts` 导出 `generate`，`messages.ts` 导入它；反向不成立。
-- **内部函数不导出**：以 `_` 前缀标记的内部辅助函数（如 `_generateName`、`_copySession`）仅在模块内部使用。
-- **统一入口**：`index.ts` 作为唯一公共 API，外部模块统一从 `stores/session` 导入，无需关心内部文件结构。
-
----
-
-## 新会话机制
-
-> 关联决策：[#11 — 临时会话 ID 模式](./key-decisions.md)
-> 详细设计：[`docs/new-session-mechanism.md`](../new-session-mechanism.md)
-
-### 核心思路
-
-用户打开首页时，系统**不立即创建持久化会话**，而是使用临时 ID `"new"` 标识一个尚未持久化的会话状态。只有当用户发送第一条消息时，才真正创建会话并写入存储。
-
-### 工作流程
-
-```
-用户打开首页 → 临时会话 (id="new")
-    ↓ 选择模型、知识库、Copilot
-    ↓ 临时状态存储在 newSessionStateAtom
-    ↓
-用户发送消息 → 创建真正的会话 (id=UUID)
-    ↓ 转移临时状态到新会话
-    ↓ 清空 newSessionStateAtom
-    ↓ 切换路由到新会话
-```
-
-### 设计收益
-
-- **避免空会话污染**：未发送消息的会话不会出现在会话列表中。
-- **职责分离**：临时状态（`newSessionStateAtom`）与持久状态（`sessionKnowledgeBaseMap`）分开管理，互不干扰。
-- **无缝体验**：用户在发送消息前的所有设置（模型选择、知识库、网页浏览模式等）在会话创建后自动继承。
-
----
-
-## 线程历史管理
-
-线程系统为用户提供在同一会话中管理多个话题的能力，避免频繁创建新会话。
-
-### 核心操作
-
-- **开启新线程**（`startNewThread` / `refreshContextAndCreateNewThread`）：将当前消息归档为历史线程，清空消息列表，开始新话题。
-- **切换线程**（`switchThread`）：将当前上下文存入历史，恢复目标线程的消息和名称。
-- **压缩并创建线程**（`compressAndCreateThread`）：对当前对话进行摘要压缩后归档，适用于长对话场景。
-- **提升为独立会话**（`moveThreadToConversations` / `moveCurrentThreadToConversations`）：将线程从当前会话中提取出来，创建为独立的顶级会话。
-- **编辑与删除**（`editThread` / `removeThread` / `removeCurrentThread`）：修改线程名称或删除线程。
-
-### 数据流
-
-线程切换时，系统执行一次"存-取"操作：
-
-1. 将当前 `messages` + `threadName` 快照存入 `session.threads`
-2. 从 `session.threads` 中取出目标线程的消息
-3. 替换当前 `messages` 和 `threadName`
-
-这确保了线程间的上下文完全隔离，切换不会丢失任何对话内容。
-
----
-
-## 消息分叉（Branching）
-
-分叉机制让用户可以对同一条消息探索不同的回复方向，类似版本控制中的分支。
-
-### 操作说明
-
-| 操作 | 函数 | 行为 |
-|------|------|------|
-| 创建分叉 | `createNewFork` | 在指定消息处创建新分支，复制当前消息到新分支 |
-| 切换分叉 | `switchFork` | 在同一分叉点的不同分支间前后切换 |
-| 删除分叉 | `deleteFork` | 移除当前分支，回退到相邻分支 |
-| 展开分叉 | `expandFork` | 将所有分支内容平铺展开 |
-| 定位消息 | `findMessageLocation` | 在根消息列表和线程消息中查找目标消息的位置 |
-
-### 数据结构
-
-分叉信息通过 `session.messageForksHash` 索引存储，键为分叉点消息的 ID，值包含该位置所有分支的消息及当前活跃分支索引。内部使用 `applyForkTransform` 统一处理分叉变换，`computeNextMessageForksHash` 计算变换后的索引状态。
-
----
-
-## AI 生成编排
-
-`generation.ts` 是系统中最复杂的模块（约 450 行），负责协调 AI 模型调用：
-
-- **上下文构建**（`genMessageContext`）：收集当前消息、线程历史、系统提示词、知识库检索结果等，构建发送给模型的完整上下文。
-- **流式生成**（`generate`）：调用 AI 模型生成回复，支持流式响应、工具调用、图片生成等多种模式。
-- **继续生成**（`generateMore`）：在当前消息后继续生成新回复。
-- **分叉生成**（`regenerateInNewFork` / `saveAndResendMessage`）：以前驱消息为 pivot 把旧回复存入分支后生成；编辑重发（Save & Resend）会把原始提问连同旧回复一起留在分支里，编辑后的内容以新消息进入活跃路径。
-
----
-
-## 自动命名
-
-`naming.ts` 负责会话和线程的自动命名，采用防抖策略避免高频调用：
-
-- **触发时机**：用户发送消息后，系统根据对话内容自动生成描述性名称。
-- **防抖控制**：通过 `state.ts` 中的 `pendingNameGenerations`（Map）和 `activeNameGenerations`（Set）管理待执行和正在执行的命名请求，避免重复调用。
-- **双层命名**：`scheduleGenerateNameAndThreadName` 同时生成会话名称和线程名称；`scheduleGenerateThreadName` 仅生成线程名称。
-
----
-
-## 会话导出
-
-`export.ts` 提供 `exportSessionChat` 函数，将会话内容（包括消息历史和元信息）导出为文件，方便用户备份或分享对话内容。
-
----
-
-## 参考资料
-
-- 模块拆分方案：[`docs/session-module-split-plan.md`](../session-module-split-plan.md)
-- 新会话机制设计：[`docs/new-session-mechanism.md`](../new-session-mechanism.md)
-- 关键决策记录：[`./key-decisions.md`](./key-decisions.md)（决策 #10、#11）
-- Session 模块源码：[`src/renderer/stores/session/`](../../src/renderer/stores/session/)
-- 公共 API 定义：[`src/renderer/stores/session/index.ts`](../../src/renderer/stores/session/index.ts)
+相关：[Token 数据流](../token-estimation.md)、[备份功能边界](data-backup.md)。

@@ -1,43 +1,49 @@
-import { SessionNotFoundError } from '@chatbox/core'
+import { finishAbortedGeneration } from '@chatbox/core/generation'
+import { SessionActionBlockedError } from '@chatbox/core/session/action-gates'
+import { t } from 'i18next'
+import { notifySessionLockBlocked } from '@/utils/session-lock-copy'
+import { getCompactionUIState } from '../atoms/compactionAtoms'
+import { compactionFailureError, SessionNotFoundError } from '@chatbox/core'
+import {
+  createGenerationSegmentSplitWriter,
+  type SessionService,
+  StreamingWriteCoordinator,
+  snapshotStreamingMessage,
+} from '@chatbox/core/application/session'
 import { withSessionGenerationLock } from '@chatbox/core/generation'
-import { getReachableSessionMessages } from '@chatbox/core/session/generation-state'
 import { isExpectedGenerationError } from '@shared/models/error-classification'
 import { BaseError, ChatboxAIAPIError } from '@shared/models/errors'
 import { extractStreamErrorMessage } from '@shared/models/utils/stream-error-message'
 import { supportsSessionGeneration } from '@shared/session/capabilities'
-import { findMessageLocation } from '@shared/session/message-forks'
-import { planAttachmentOwnershipTransfers } from '@shared/session-attachment-rag/ownership'
+import { cleanupSessionAttachments } from './attachment-cleanup'
 import { createMessage, type Message } from '@shared/types'
 import { countMessageWords } from '@shared/utils/message'
 import { normalizeErrorForSentry } from '@shared/utils/sentry_policy'
 import { createModel } from '@/adapters'
-import { rendererApplication } from '@/app/renderer-application'
+import { rendererApplication, sessionRepository } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
 import { runCompactionWithUIState } from '@/packages/context-management'
 import { getModelDisplayName } from '@/packages/model-setting-utils'
-import { estimateTokensFromMessages } from '@/packages/token'
+import { estimateTokensFromMessages, type TokenModel } from '@/packages/token'
 import platform from '@/platform'
 import { clearMessageGenerationStopOperation } from '@/stores/generationStopOperations'
 import { reportError } from '@/utils/sentry'
 import { SESSION_ATTACHMENT_RAG_LOG_PREFIX } from '../../../shared/session-attachment-rag/logging'
+import { markSessionReplyFailed } from '../sessionActivityStore'
 import { ensureMessageFileSessionAttachment } from '../sessionAttachmentRagIndexing'
 import * as settingActions from '../settingActions'
 import { settingsStore } from '../settingsStore'
 import { guardSessionAction } from './action-guard'
-import { getSessionSettings, getSessionTokenModel } from './session-settings'
-import { StreamingWriteCoordinator } from './streaming-write-coordinator'
+import { getSessionHeader, getSessionSettings, getSessionTokenModel } from './session-settings'
 import { getSessionWebBrowsing } from './utils'
 
 const log = getLogger('session-messages')
 const streamingWriteCoordinator = new StreamingWriteCoordinator()
 
-function snapshotStreamingMessage(message: Message): Message {
-  return {
-    ...message,
-    contentParts: message.contentParts.map((part) => ({ ...part })),
-    status: message.status?.map((status) => ({ ...status })),
-  }
-}
+export const splitStreamingMessage = createGenerationSegmentSplitWriter({
+  sessions: rendererApplication.sessions,
+  streamingWrites: streamingWriteCoordinator,
+})
 
 export async function attachLargeFileRagMetadata(sessionId: string, message: Message): Promise<Message> {
   if (!platform.isDesktopLike || !message.files?.length) {
@@ -83,19 +89,36 @@ export async function attachLargeFileRagMetadata(sessionId: string, message: Mes
 }
 
 /**
+ * Refreshes a message's word and token counts. `dropTokenCaches` clears cached
+ * token entries first, because the estimate trusts a carried map entry that new
+ * text invalidates.
+ */
+function applyMessageCounts(
+  message: Message,
+  tokenModel: TokenModel | undefined,
+  options: { dropTokenCaches?: boolean } = {}
+) {
+  message.wordCount = countMessageWords(message)
+  if (options.dropTokenCaches) {
+    message.tokenCountMap = undefined
+    message.tokenCountApproximate = undefined
+  }
+  message.tokenCount = estimateTokensFromMessages([message], 'output', tokenModel)
+}
+
+/**
  * 在当前主题的最后插入一条消息。
  * @param sessionId
  * @param msg
  */
 export async function insertMessage(sessionId: string, msg: Message) {
-  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
+  const session = await getSessionHeader(sessionId)
   if (!session) {
     return
   }
-  msg.wordCount = countMessageWords(msg)
   // The session model addresses both the tokenizer and the draft worker's
   // remembered exact count for a long draft being sent.
-  msg.tokenCount = estimateTokensFromMessages([msg], 'output', getSessionTokenModel(session))
+  applyMessageCounts(msg, getSessionTokenModel(session))
   return await rendererApplication.sessions.insertMessage(session.id, msg)
 }
 
@@ -109,16 +132,15 @@ export async function insertMessageAfter(
   sessionId: string,
   msg: Message,
   afterMsgId: string,
-  options: { requireAnchor?: boolean } = {}
+  options: Parameters<SessionService['insertMessage']>[3] = {}
 ) {
-  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
+  const session = await getSessionHeader(sessionId)
   if (!session) {
     // A caller that requires the anchor cannot treat a missing session as a
     // successful write; let insertMessage raise the same error it always does.
     if (!options.requireAnchor) return
   }
-  msg.wordCount = countMessageWords(msg)
-  msg.tokenCount = estimateTokensFromMessages([msg], 'output', session ? getSessionTokenModel(session) : undefined)
+  applyMessageCounts(msg, session ? getSessionTokenModel(session) : undefined)
 
   await rendererApplication.sessions.insertMessage(sessionId, msg, afterMsgId, options)
 }
@@ -135,17 +157,12 @@ export async function modifyMessage(
   refreshCounting?: boolean,
   updateOnlyCache?: boolean
 ) {
-  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
+  const session = await getSessionHeader(sessionId)
   if (!session) {
     return
   }
   if (refreshCounting) {
-    updated.wordCount = countMessageWords(updated)
-    // Cleared first: the estimate below trusts a carried map entry, and the
-    // edited text invalidates whatever the message carried.
-    updated.tokenCountMap = undefined
-    updated.tokenCountApproximate = undefined
-    updated.tokenCount = estimateTokensFromMessages([updated], 'output', getSessionTokenModel(session))
+    applyMessageCounts(updated, getSessionTokenModel(session), { dropTokenCaches: true })
   }
 
   // 更新消息时间戳
@@ -166,10 +183,10 @@ export function updateStreamingCache(sessionId: string, message: Message): void 
   const snapshot = snapshotStreamingMessage(message)
   const key = `${sessionId}\u0000${message.id}`
   streamingWriteCoordinator
-    .runCacheUpdate(key, () =>
-      rendererApplication.sessionQueryBridge.updateMessageCache(sessionId, snapshot.id, (current) =>
-        streamingWriteCoordinator.isTerminalRequested(key) ? (current ?? snapshot) : snapshot
-      )
+    .runCacheUpdate(key, (isCurrent) =>
+      rendererApplication.sessionQueryBridge.updateMessageCache(sessionId, snapshot.id, snapshot, {
+        shouldApply: isCurrent,
+      })
     )
     .catch((err) => {
       console.error('Failed to update streaming cache:', err)
@@ -183,19 +200,32 @@ export function updateStreamingCache(sessionId: string, message: Message): void 
 export async function persistStreamingMessage(
   sessionId: string,
   message: Message,
-  options?: { checkpoint?: boolean; refreshCounting?: boolean }
+  options?: { checkpoint?: boolean; refreshCounting?: boolean; onlyIfGenerating?: boolean }
 ): Promise<void> {
   if (options?.refreshCounting) {
-    message.wordCount = countMessageWords(message)
-    // Cleared first: the estimate below trusts a carried map entry, and the
-    // streamed text invalidates whatever the message carried.
-    message.tokenCountMap = undefined
-    message.tokenCountApproximate = undefined
-    message.tokenCount = estimateTokensFromMessages([message])
+    applyMessageCounts(message, undefined, { dropTokenCaches: true })
   }
   message.timestamp = Date.now()
   const snapshot = snapshotStreamingMessage(message)
-  const write = () => rendererApplication.sessions.updateMessage(sessionId, snapshot.id, snapshot)
+  const write = () =>
+    rendererApplication.sessions.updateMessage(
+      sessionId,
+      snapshot.id,
+      options?.onlyIfGenerating
+        ? (current) => {
+            if (!current) throw new Error(`Message ${snapshot.id} not found`)
+            return current.generating
+              ? snapshot.generating === false
+                ? finishAbortedGeneration(
+                    { ...current, ...snapshot },
+                    snapshot.contentParts,
+                    snapshot.timestamp ?? Date.now()
+                  )
+                : snapshot
+              : current
+          }
+        : snapshot
+    )
   const key = `${sessionId}\u0000${message.id}`
 
   if (options?.checkpoint) {
@@ -220,62 +250,44 @@ export async function persistStreamingMessage(
  * @param messageId
  */
 export async function removeMessage(sessionId: string, messageId: string) {
-  // Deleting ordinary messages is always allowed (streaming targets are
-  // stopped by the caller first), but removing a compaction summary while
-  // replies stream would yank the compacted context out from under them.
-  // The fetched session is handed to the guard so the summary case doesn't
-  // read it twice.
-  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
-  const location = session ? findMessageLocation(session, messageId) : null
-  if (
-    location?.list[location.index]?.isSummary &&
-    !(await guardSessionAction(sessionId, 'delete-summary', {}, session))
-  ) {
-    return
-  }
-  if (platform.isDesktopLike) {
-    try {
-      const controller = platform.getSessionAttachmentRagController()
-      // Save & Resend versioning lets several messages share one indexed
-      // attachment row. Rebind shared rows to a surviving reference first so
-      // the delete-by-owner below (and later orphan maintenance) only takes
-      // down rows nobody references any more.
-      const removedMessage = location?.list[location.index]
-      if (session && removedMessage) {
-        for (const transfer of planAttachmentOwnershipTransfers(
-          [removedMessage],
-          getReachableSessionMessages(session)
-        )) {
-          await controller.rebindAttachment({
-            attachmentId: transfer.attachmentId,
-            sessionId,
-            messageId: transfer.messageId,
-          })
-        }
-      }
-      await controller.deleteMessageAttachments(messageId)
-    } catch (error) {
-      console.warn('Failed to cleanup session attachment RAG entries for message deletion:', error)
-    }
-  }
-  await rendererApplication.sessions.removeMessage(sessionId, messageId, () => {
-    // Runs once the full-session removal is durable, including the
-    // partial-success path where the metadata projection fails afterward. A
-    // paused reply keeps its generation runtime (generating: false, so the
-    // delete path skips handleStop); discard it so an orphaned paused runtime
-    // doesn't outlive the tool call it was waiting on.
-    if (rendererApplication.generationRuntime.get(sessionId, messageId)) {
+  let cleanup: Promise<void> | undefined
+  const onCommitted = (result: import('@chatbox/core/ports').SessionStructureResult) => {
+    if (!result.applied) return
+    if (result.cancelMessageIds.includes(messageId) || rendererApplication.generationRuntime.get(sessionId, messageId))
       rendererApplication.generationRuntime.discard(sessionId, messageId, 'message-deleted')
-    }
     clearMessageGenerationStopOperation(sessionId, messageId)
-  })
+    cleanup = cleanupSessionAttachments(sessionId, messageId)
+  }
+  try {
+    const result = await rendererApplication.sessions.executeStructureCommand(
+      sessionId,
+      {
+        action: 'message-remove',
+        messageId,
+        replacementPivotId: createMessage('system', '').id,
+        guard: {
+          action: 'delete-summary',
+          compactionRunning: getCompactionUIState(sessionId).status === 'running',
+          activeGenerationMessageIds: rendererApplication.generationRuntime.getActiveMessageIds(sessionId),
+        },
+      },
+      onCommitted
+    )
+    if (result) return
+  } catch (error) {
+    if (!(error instanceof SessionActionBlockedError)) throw error
+    await notifySessionLockBlocked(error.reason, t)
+    return
+  } finally {
+    await cleanup
+  }
 }
 
 /**
  * 在会话中发送新用户消息，并根据需要生成回复
  * @param params
  */
-export function submitNewUserMessage(
+export async function submitNewUserMessage(
   sessionId: string,
   params: { newUserMsg: Message; needGenerating: boolean; onUserMessageReady?: () => void }
 ) {
@@ -301,35 +313,59 @@ export async function submitNewUserMessageUnlocked(
   // avoid reacquiring the session lock already held by submitNewUserMessage().
   const { _generateWithoutSessionLock } = await import('./generation.js')
 
-  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
-  const settings = await getSessionSettings(sessionId)
-  if (!session || !settings) {
+  const session = await getSessionHeader(sessionId)
+  if (!session) {
     return
   }
+  const settings = await getSessionSettings(sessionId, session)
   if (!supportsSessionGeneration(session.type)) {
     return
+  }
+
+  if (platform.type === 'mobile') {
+    const { getSessionAgentModeEntry } = await import('./agent-mode')
+    if (getSessionAgentModeEntry(sessionId, session).value === 'on') {
+      const [{ capacitorWorkspace }, { currentBlobStorage }] = await Promise.all([
+        import('@/packages/mobile-work-mode/runtime'),
+        import('@/adapters/CurrentBlobStorage'),
+      ])
+      const attachments = async function* () {
+        for await (const row of sessionRepository.iterateSessionAttachmentFacts({ sessionId, scope: 'active-path' })) {
+          yield {
+            files: row.files,
+            contentParts: row.imageStorageKeys.map((storageKey) => ({ type: 'image' as const, storageKey })),
+          }
+        }
+        yield params.newUserMsg
+      }
+      await capacitorWorkspace.preflight(sessionId, attachments(), currentBlobStorage)
+    }
   }
 
   // Run compaction check before sending message (blocking)
   // Only for chat sessions with auto-compaction enabled
   if (session.type === 'chat' || session.type === undefined) {
-    const compactionResult = await runCompactionWithUIState(sessionId, { pendingMessage: params.newUserMsg })
-    if (!compactionResult.success) {
-      throw compactionResult.error ?? new Error('Compaction failed')
+    const compactionResult = await runCompactionWithUIState(sessionId, {
+      kind: 'automatic',
+      pendingMessage: params.newUserMsg,
+    })
+    if (compactionResult.status === 'failed') {
+      throw compactionFailureError(compactionResult.failure)
     }
   }
-
-  // Invoke callback after compaction succeeds, before user message is inserted
-  // This allows caller to clear draft at the right time
-  params.onUserMessageReady?.()
 
   let { newUserMsg } = params
   const { needGenerating } = params
   const webBrowsing = getSessionWebBrowsing(sessionId, settings.provider)
 
-  // 先在聊天列表中插入发送的用户消息
-  await insertMessage(sessionId, newUserMsg)
-  newUserMsg = await attachLargeFileRagMetadata(sessionId, newUserMsg)
+  const insertTogether = platform.type === 'mobile' && needGenerating
+  if (!insertTogether) {
+    // Invoke callback after compaction succeeds, before user message is inserted
+    // This allows caller to clear draft at the right time
+    params.onUserMessageReady?.()
+    await insertMessage(sessionId, newUserMsg)
+    newUserMsg = await attachLargeFileRagMetadata(sessionId, newUserMsg)
+  }
 
   const globalSettings = settingsStore.getState().getSettings()
   const isPro = settingActions.isPro()
@@ -357,7 +393,15 @@ export async function submitNewUserMessageUnlocked(
   }
   if (needGenerating) {
     newAssistantMsg.generating = true
-    await insertMessage(sessionId, newAssistantMsg)
+    if (insertTogether) {
+      const tokenModel = getSessionTokenModel(session)
+      for (const message of [newUserMsg, newAssistantMsg]) applyMessageCounts(message, tokenModel)
+      await rendererApplication.sessions.insertMessages(sessionId, [newUserMsg, newAssistantMsg])
+      // Both messages are saved together, so the draft is released only now.
+      params.onUserMessageReady?.()
+    } else {
+      await insertMessage(sessionId, newAssistantMsg)
+    }
   }
 
   try {
@@ -416,6 +460,7 @@ export async function submitNewUserMessageUnlocked(
     } else {
       await insertMessage(sessionId, newAssistantMsg)
     }
+    markSessionReplyFailed(sessionId, newAssistantMsg)
     return // 文件上传失败，不再继续生成回复
   }
   // 根据需要，生成这条回复消息

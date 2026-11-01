@@ -1,59 +1,45 @@
+import { resetSessionGenerationLocksForTests } from '@chatbox/core/generation'
+import type { InMemorySessionRepository } from '@chatbox/core/testing'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
-import type { Message, Session, SessionMetaRecord, SessionThread } from '../../shared/types'
 import { rendererApplication } from '@/app/renderer-application'
+import type {
+  Message,
+  Session,
+  SessionMetaRecord,
+  SessionPromptContextSnapshot,
+  SessionThread,
+} from '../../shared/types'
 import * as sessionActions from './session'
 import { sessionActivityStore } from './sessionActivityStore'
 
-const generationRuntimeStore = rendererApplication.generationRuntime
-
-const { uuidQueue, uuidv4Mock } = vi.hoisted(() => {
-  const queue: string[] = []
-  const mock = vi.fn(() => {
-    if (queue.length === 0) {
-      throw new Error('Mock uuid queue exhausted')
-    }
-    return queue.shift()!
-  })
-  return { uuidQueue: queue, uuidv4Mock: mock }
-})
-
 const {
-  updateSessionWithMessages,
-  updateSessionMock,
-  updateMessageMock,
-  insertMessageMock,
-  createSessionMock,
-  useSessionMock,
-  getSessionMock,
-  listAllSessionsMetaMock,
-  archiveSessionsMock,
-  deleteSessionsMock,
+  fixtureState,
+  uuidQueue,
+  uuidv4Mock,
   routerNavigateMock,
   sessionAgentModeMapMock,
   setSessionAgentModeMock,
   lockSessionAgentModeMock,
   toastMock,
-} = vi.hoisted(() => ({
-  updateSessionWithMessages: vi.fn(),
-  updateSessionMock: vi.fn(),
-  updateMessageMock: vi.fn(),
-  insertMessageMock: vi.fn(),
-  createSessionMock: vi.fn(),
-  useSessionMock: vi.fn(),
-  getSessionMock: vi.fn(),
-  listAllSessionsMetaMock: vi.fn(),
-  archiveSessionsMock: vi.fn(),
-  deleteSessionsMock: vi.fn(),
-  routerNavigateMock: vi.fn(),
-  sessionAgentModeMapMock: {} as Record<
-    string,
-    { value: 'auto' | 'on' | 'off'; locked: boolean; lockReason: string | null }
-  >,
-  setSessionAgentModeMock: vi.fn(),
-  lockSessionAgentModeMock: vi.fn(),
-  toastMock: vi.fn(),
-}))
-
+  orchestrateMock,
+} = vi.hoisted(() => {
+  const queue: string[] = []
+  let nextId = 0
+  return {
+    fixtureState: { repository: null as InMemorySessionRepository | null },
+    uuidQueue: queue,
+    uuidv4Mock: vi.fn(() => queue.shift() ?? `generated-${++nextId}`),
+    routerNavigateMock: vi.fn(),
+    sessionAgentModeMapMock: {} as Record<
+      string,
+      { value: 'auto' | 'on' | 'off'; locked: boolean; lockReason: string | null }
+    >,
+    setSessionAgentModeMock: vi.fn(),
+    lockSessionAgentModeMock: vi.fn(),
+    toastMock: vi.fn(),
+    orchestrateMock: vi.fn(async () => {}),
+  }
+})
 vi.hoisted(() => {
   const storage = {
     getItem: () => null,
@@ -83,38 +69,42 @@ vi.hoisted(() => {
   return {}
 })
 
-vi.mock('uuid', () => ({
+vi.mock('uuid', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('uuid')>()),
   v4: uuidv4Mock,
 }))
 
 vi.mock('i18next', () => ({ t: (key: string) => key }))
+vi.mock('@/i18n', () => ({ default: { t: (key: string) => key, language: 'en' } }))
 
 vi.mock('@/app/renderer-application', async () => {
+  const { SessionService, SessionWriteCoordinator, SessionEventBus } = await import('@chatbox/core/application/session')
+  const { InMemorySessionRepository } = await import('@chatbox/core/testing')
   const { GenerationRuntimeStore } = await import('@chatbox/core/generation')
   const { QueryClient } = await import('@tanstack/react-query')
+  const repository = new InMemorySessionRepository()
+  fixtureState.repository = repository
+  const events = new SessionEventBus()
+  const sessions = new SessionService(repository, new SessionWriteCoordinator(repository), events, {
+    createId: () => 'copied-session',
+    now: () => 100,
+  })
   return {
     rendererApplication: {
       generationRuntime: new GenerationRuntimeStore(),
       queryClient: new QueryClient(),
-      sessions: {
-        updateSessionWithMessages,
-        updateSession: updateSessionMock,
-        updateMessage: updateMessageMock,
-        insertMessage: insertMessageMock,
-        createSession: createSessionMock,
-        listAllSessionsMeta: listAllSessionsMetaMock,
-        archiveSessions: archiveSessionsMock,
-        deleteSessions: deleteSessionsMock,
-      },
+      sessions,
+      sessionEvents: events,
       sessionQueryBridge: {
-        getSession: getSessionMock,
         listSessionsMeta: vi.fn().mockResolvedValue([]),
         updateSessionListData: vi.fn(),
+        updateMessageCache: vi.fn(),
       },
-      sessionHooks: { useSession: useSessionMock },
+      sessionHooks: { useSessionHeader: () => ({ session: null }) },
     },
   }
 })
+vi.mock('@/adapters/CurrentGenerationService', () => ({ currentGenerationService: { orchestrate: orchestrateMock } }))
 
 vi.mock('./toastActions', () => ({ add: toastMock }))
 
@@ -179,7 +169,7 @@ vi.mock('@/stores/uiStore', () => ({
   uiStore: {
     getState: () => ({
       widthFull: false,
-      messageScrolling: null,
+      transcriptNavigation: null,
       sessionAgentModeMap: sessionAgentModeMapMock,
       setSessionAgentMode: setSessionAgentModeMock,
       lockSessionAgentMode: lockSessionAgentModeMock,
@@ -197,67 +187,63 @@ vi.mock('../components/settings/mcp/registries', () => ({
   MCP_ENTRIES_OFFICIAL: [],
 }))
 
-function makeMessage(id: string, role: Message['role'] = 'user'): Message {
-  return {
-    id,
-    role,
-    contentParts: [],
-  }
+const sessions = rendererApplication.sessions
+const generationRuntimeStore = rendererApplication.generationRuntime
+const repository = () => fixtureState.repository!
+const inspect = (id: string) => repository().inspectSession(id)!
+async function seed(value: Session) {
+  await repository().seedSession(value)
+  repository().records.set(value.id, { id: value.id, name: value.name, sortOrder: 1, createdAt: 1 })
 }
-
+function makeMessage(id: string, role: Message['role'] = 'user'): Message {
+  return { id, role, contentParts: [] }
+}
 function cloneSession(session: Session): Session {
   return JSON.parse(JSON.stringify(session)) as Session
 }
-
-function makeSessionMeta(id: string, sortOrder: number): SessionMetaRecord {
+function makePromptContextSnapshot(soul: string): SessionPromptContextSnapshot {
   return {
-    id,
-    name: id,
-    sortOrder,
-    createdAt: sortOrder,
+    version: 1,
+    soul,
+    memories: [],
+    workspaceInstructions: '',
+    workspaceDirectories: [],
+    capturedAt: 1,
+    scope: 'agent',
   }
 }
-
+function makeSessionMeta(id: string, sortOrder: number): SessionMetaRecord {
+  return { id, name: id, sortOrder, createdAt: sortOrder }
+}
 beforeEach(() => {
+  vi.restoreAllMocks()
+  vi.clearAllMocks()
   uuidQueue.length = 0
-  uuidv4Mock.mockClear()
-  updateSessionWithMessages.mockReset()
-  updateSessionMock.mockReset()
-  createSessionMock.mockReset()
-  useSessionMock.mockReset()
-  getSessionMock.mockReset()
-  listAllSessionsMetaMock.mockReset()
-  archiveSessionsMock.mockReset()
-  deleteSessionsMock.mockReset()
-  routerNavigateMock.mockReset()
-  for (const key of Object.keys(sessionAgentModeMapMock)) {
-    delete sessionAgentModeMapMock[key]
-  }
-  setSessionAgentModeMock.mockReset()
-  lockSessionAgentModeMock.mockReset()
-  toastMock.mockReset()
-  generationRuntimeStore.clear('session-clear')
-  sessionActivityStore.setState({ unreadCompletedSessionIds: {} }, true)
+  repository().rowStore.clear()
+  repository().recordStore.clear()
+  repository().records.clear()
+  rendererApplication.queryClient.clear()
+  generationRuntimeStore.dispose()
+  resetSessionGenerationLocksForTests()
+  for (const key of Object.keys(sessionAgentModeMapMock)) delete sessionAgentModeMapMock[key]
+  sessionActivityStore.setState({ unreadSessionIds: {} }, true)
 })
 
-describe('conversation list cleanup', () => {
+describe('row session actions', () => {
   test('archives sessions outside the kept range instead of deleting them', async () => {
-    listAllSessionsMetaMock.mockResolvedValue([
+    vi.spyOn(sessions, 'listAllSessionsMeta').mockResolvedValue([
       makeSessionMeta('keep-1', 300),
       makeSessionMeta('keep-2', 200),
       makeSessionMeta('archive-1', 100),
       makeSessionMeta('archive-2', 0),
     ])
-
+    const archive = vi.spyOn(sessions, 'archiveSessions').mockResolvedValue()
+    const remove = vi.spyOn(sessions, 'deleteSessions')
     await sessionActions.clearConversationList(2)
-
-    expect(archiveSessionsMock).toHaveBeenCalledTimes(1)
-    expect(archiveSessionsMock).toHaveBeenCalledWith(['archive-1', 'archive-2'])
-    expect(deleteSessionsMock).not.toHaveBeenCalled()
+    expect(archive).toHaveBeenCalledOnce()
+    expect(archive).toHaveBeenCalledWith(['archive-1', 'archive-2'])
+    expect(remove).not.toHaveBeenCalled()
   })
-})
-
-describe('session message cleanup', () => {
   test('aborts fork generation and clears persisted fork and unread state', async () => {
     const pivot = makeMessage('pivot')
     const forkReply = { ...makeMessage('fork-reply', 'assistant'), generating: true }
@@ -276,25 +262,15 @@ describe('session message cleanup', () => {
         },
       },
     }
-    getSessionMock.mockResolvedValue(session)
-    updateSessionWithMessages.mockResolvedValue({ ...session, messages: [], messageForksHash: undefined })
+    await seed(session)
     generationRuntimeStore.start(session.id, forkReply.id)
-    sessionActivityStore.setState({ unreadCompletedSessionIds: { [session.id]: true } })
-
+    sessionActivityStore.setState({ unreadSessionIds: { [session.id]: 'completed' } })
     await sessionActions.clear(session.id)
-
     expect(generationRuntimeStore.get(session.id, forkReply.id)).toBeUndefined()
-    expect(updateSessionWithMessages).toHaveBeenCalledWith(session.id, {
-      messages: [],
-      threads: undefined,
-      messageForksHash: undefined,
-      threadName: '',
-    })
-    expect(sessionActivityStore.getState().unreadCompletedSessionIds[session.id]).toBeUndefined()
+    expect(inspect(session.id).messages).toEqual([])
+    expect(inspect(session.id).messageForksHash ?? {}).toEqual({})
+    expect(sessionActivityStore.getState().unreadSessionIds[session.id]).toBeUndefined()
   })
-})
-
-describe('fork actions', () => {
   test('createNewFork moves trailing messages into a new branch', async () => {
     uuidQueue.push('id-1', 'id-2', 'id-3')
     const pivot = makeMessage('pivot', 'user')
@@ -306,17 +282,11 @@ describe('fork actions', () => {
     }
     const snapshot = cloneSession(session)
 
-    let updated: Session | undefined
-    updateSessionWithMessages.mockImplementation(async (sessionId, updater) => {
-      expect(sessionId).toBe(session.id)
-      const result = updater(session)
-      updated = result as Session
-      return result
-    })
+    await seed(session)
 
     await sessionActions.createNewFork(session.id, pivot.id)
+    const updated = inspect(session.id)
 
-    expect(updateSessionWithMessages).toHaveBeenCalledTimes(1)
     expect(session).toEqual(snapshot)
     expect(updated).toBeDefined()
     expect(updated!.messages).toEqual([pivot])
@@ -328,9 +298,8 @@ describe('fork actions', () => {
     expect(fork!.lists[0].messages).toEqual([trailing])
     expect(fork!.lists[1].messages).toEqual([])
   })
-
-  test('createNewFork skips update when no trailing messages', async () => {
-    uuidQueue.push('id-1')
+  test('createNewFork keeps a lone pivot unchanged', async () => {
+    uuidQueue.push('seed-list', 'stored-list', 'active-list')
     const pivot = makeMessage('pivot', 'user')
     const session: Session = {
       id: 'session-2',
@@ -338,23 +307,15 @@ describe('fork actions', () => {
       messages: [pivot],
     }
     const snapshot = cloneSession(session)
-    let updated: Session | undefined
-
-    updateSessionWithMessages.mockImplementation(async (sessionId, updater) => {
-      expect(sessionId).toBe(session.id)
-      const result = updater(session)
-      updated = result as Session
-      return result
-    })
+    await seed(session)
 
     await sessionActions.createNewFork(session.id, pivot.id)
+    const updated = inspect(session.id)
 
-    expect(updateSessionWithMessages).toHaveBeenCalledTimes(1)
     expect(session).toEqual(snapshot)
-    expect(updated).toBe(session)
-    expect(updated?.messageForksHash).toBeUndefined()
+    expect(updated.messages).toEqual(session.messages)
+    expect(updated.messageForksHash ?? {}).toEqual({})
   })
-
   test('switchFork rotates branch contents for root messages', async () => {
     const pivot = makeMessage('pivot', 'user')
     const current = makeMessage('current', 'assistant')
@@ -375,15 +336,10 @@ describe('fork actions', () => {
       },
     }
     const snapshot = cloneSession(session)
-    let updated: Session | undefined
-
-    updateSessionWithMessages.mockImplementation(async (_, updater) => {
-      const result = updater(session)
-      updated = result as Session
-      return result
-    })
+    await seed(session)
 
     await sessionActions.switchFork(session.id, pivot.id, 'next')
+    const updated = inspect(session.id)
 
     expect(session).toEqual(snapshot)
     expect(updated).toBeDefined()
@@ -396,7 +352,6 @@ describe('fork actions', () => {
     expect(fork!.lists[1].messages).toEqual([])
     expect(snapshot.messageForksHash?.[pivot.id].lists[0].messages).toEqual([])
   })
-
   test('switchFork updates forked thread messages', async () => {
     const pivot = makeMessage('pivot', 'user')
     const current = makeMessage('current', 'assistant')
@@ -424,15 +379,10 @@ describe('fork actions', () => {
       },
     }
     const snapshot = cloneSession(session)
-    let updated: Session | undefined
-
-    updateSessionWithMessages.mockImplementation(async (_, updater) => {
-      const result = updater(session)
-      updated = result as Session
-      return result
-    })
+    await seed(session)
 
     await sessionActions.switchFork(session.id, pivot.id, 'next')
+    const updated = inspect(session.id)
 
     expect(session).toEqual(snapshot)
     expect(updated?.threads?.[0].messages).toEqual([pivot, alternative])
@@ -440,7 +390,6 @@ describe('fork actions', () => {
     expect(fork?.position).toBe(1)
     expect(fork?.lists[0].messages).toEqual([current])
   })
-
   test('deleteFork promotes the next saved branch', async () => {
     const pivot = makeMessage('pivot', 'user')
     const current = makeMessage('current', 'assistant')
@@ -461,25 +410,15 @@ describe('fork actions', () => {
       },
     }
     const snapshot = cloneSession(session)
-    let updated: Session | undefined
-
-    updateSessionWithMessages.mockImplementation(async (_, updater) => {
-      const result = updater(session)
-      updated = result as Session
-      return result
-    })
+    await seed(session)
 
     await sessionActions.deleteFork(session.id, pivot.id)
+    const updated = inspect(session.id)
 
     expect(session).toEqual(snapshot)
     expect(updated!.messages).toEqual([pivot, nextBranch])
-    const fork = updated!.messageForksHash?.[pivot.id]
-    expect(fork).toBeDefined()
-    expect(fork!.position).toBe(0)
-    expect(fork!.lists).toHaveLength(1)
-    expect(fork!.lists[0].messages).toEqual([])
+    expect(updated.messageForksHash?.[pivot.id]).toBeUndefined()
   })
-
   test('deleteFork removes entry when no branches remain', async () => {
     const pivot = makeMessage('pivot', 'user')
     const session: Session = {
@@ -495,21 +434,15 @@ describe('fork actions', () => {
       },
     }
     const snapshot = cloneSession(session)
-    let updated: Session | undefined
-
-    updateSessionWithMessages.mockImplementation(async (_, updater) => {
-      const result = updater(session)
-      updated = result as Session
-      return result
-    })
+    await seed(session)
 
     await sessionActions.deleteFork(session.id, pivot.id)
+    const updated = inspect(session.id)
 
     expect(session).toEqual(snapshot)
     expect(updated!.messages).toEqual([pivot])
-    expect(updated!.messageForksHash).toBeUndefined()
+    expect(updated!.messageForksHash ?? {}).toEqual({})
   })
-
   test('expandFork appends all stored branches and clears fork data', async () => {
     const pivot = makeMessage('pivot', 'user')
     const current = makeMessage('current', 'assistant')
@@ -532,23 +465,16 @@ describe('fork actions', () => {
       },
     }
     const snapshot = cloneSession(session)
-    let updated: Session | undefined
-
-    updateSessionWithMessages.mockImplementation(async (_, updater) => {
-      const result = updater(session)
-      updated = result as Session
-      return result
-    })
+    await seed(session)
 
     await sessionActions.expandFork(session.id, pivot.id)
+    const updated = inspect(session.id)
 
     expect(session).toEqual(snapshot)
     expect(updated!.messages).toEqual([pivot, current, altA, altB])
-    expect(updated!.messageForksHash).toBeUndefined()
+    expect(updated!.messageForksHash ?? {}).toEqual({})
   })
-
   test('regenerateInNewFork creates a new fork for thread messages', async () => {
-    uuidQueue.push('fork-1', 'fork-2', 'fork-3', 'fork-4')
     const pivot = makeMessage('pivot', 'user')
     const target = makeMessage('target', 'assistant')
     const thread: SessionThread = {
@@ -565,33 +491,22 @@ describe('fork actions', () => {
     }
     const snapshot = cloneSession(session)
 
-    getSessionMock.mockResolvedValue(session)
-
-    let updated: Session | undefined
-    updateSessionWithMessages.mockImplementation(async (_, updater) => {
-      const result = updater(session)
-      updated = result as Session
-      return result
-    })
-
-    const runGenerateMore = vi.fn().mockResolvedValue(undefined)
-
-    await sessionActions.regenerateInNewFork(session.id, target, { runGenerateMore })
-
-    expect(getSessionMock).toHaveBeenCalledWith(session.id)
-    expect(updateSessionWithMessages).toHaveBeenCalledTimes(1)
+    await seed(session)
+    await sessionActions.regenerateInNewFork(session.id, target)
+    const updated = inspect(session.id)
+    const fork = updated.messageForksHash?.[pivot.id]
+    expect(fork?.lists).toHaveLength(2)
+    expect(fork?.lists[0].messages).toEqual([target])
+    expect(orchestrateMock).toHaveBeenCalledWith(
+      session.id,
+      expect.objectContaining({ role: 'assistant', generating: true }),
+      { operationType: 'regenerate' }
+    )
     expect(session).toEqual(snapshot)
-
-    expect(updated).toBeDefined()
-    const fork = updated!.messageForksHash?.[pivot.id]
-    expect(fork).toBeDefined()
-    expect(fork!.lists).toHaveLength(2)
-    expect(fork!.lists[0].messages).toEqual([target])
-    expect(runGenerateMore).toHaveBeenCalledWith(session.id, pivot.id)
+    expect(updated.threads?.[0].messages.map((message) => message.id).slice(0, 1)).toEqual([pivot.id])
+    expect(updated.threads?.[0].messages.at(-1)?.generating).toBe(true)
   })
-
   test('regenerateInNewFork skips an anchored summary when picking the fork pivot', async () => {
-    uuidQueue.push('fork-1', 'fork-2', 'fork-3', 'fork-4')
     const pivot = makeMessage('pivot', 'user')
     // Manual compaction during generation anchors the summary right after the
     // boundary (pivot), before the reply.
@@ -603,31 +518,22 @@ describe('fork actions', () => {
       messages: [pivot, anchoredSummary, target],
     }
 
-    getSessionMock.mockResolvedValue(session)
-
-    let updated: Session | undefined
-    updateSessionWithMessages.mockImplementation(async (_, updater) => {
-      const result = updater(session)
-      updated = result as Session
-      return result
-    })
-
-    const runGenerateMore = vi.fn().mockResolvedValue(undefined)
-
-    await sessionActions.regenerateInNewFork(session.id, target, { runGenerateMore })
-
-    // The fork must be keyed on the real conversation message, not the
-    // summary (fork UI attaches to the pivot; summaries are deletable).
-    expect(updated?.messageForksHash?.[pivot.id]).toBeDefined()
-    expect(updated?.messageForksHash?.[anchoredSummary.id]).toBeUndefined()
-    // The anchored summary stays in the shared prefix, not in the fork tail.
-    expect(updated?.messages.map((m) => m.id)).toEqual([pivot.id, anchoredSummary.id])
-    expect(runGenerateMore).toHaveBeenCalledWith(session.id, pivot.id)
+    await seed(session)
+    await sessionActions.regenerateInNewFork(session.id, target)
+    const updated = inspect(session.id)
+    const fork = updated.messageForksHash?.[pivot.id]
+    expect(fork?.lists).toHaveLength(2)
+    expect(fork?.lists[0].messages).toEqual([target])
+    expect(orchestrateMock).toHaveBeenCalledWith(
+      session.id,
+      expect.objectContaining({ role: 'assistant', generating: true }),
+      { operationType: 'regenerate' }
+    )
+    expect(updated.messageForksHash?.[anchoredSummary.id]).toBeUndefined()
+    expect(updated.messages.slice(0, 2)).toEqual([pivot, anchoredSummary])
+    expect(updated.messages.at(-1)?.generating).toBe(true)
   })
-
   test('saveAndResendMessage versions the prompt under its predecessor', async () => {
-    // replacement id + seed/stored/new-active fork list ids.
-    uuidQueue.push('replacement-id', 'seed-list', 'stored-list', 'new-active-list')
     const before = [makeMessage('u1', 'user'), makeMessage('a1', 'assistant')]
     const original = makeMessage('u2', 'user')
     const oldReply = makeMessage('a2', 'assistant')
@@ -637,28 +543,22 @@ describe('fork actions', () => {
       messages: [...before, original, oldReply],
     }
 
-    getSessionMock.mockResolvedValue(session)
-    let updated: Session | undefined
-    updateSessionWithMessages.mockImplementation(async (_, updater) => {
-      updated = updater(session) as Session
-      return updated
-    })
+    await seed(session)
+    uuidQueue.push('replacement-id', 'seed-list', 'stored-list', 'new-active-list')
+    const update = vi.spyOn(sessions, 'updateMessage')
     const runGenerateMore = vi.fn().mockResolvedValue(undefined)
-
     const edited = { ...original, contentParts: [{ type: 'text' as const, text: 'edited prompt' }] }
     await sessionActions.saveAndResendMessage(session.id, edited, { runGenerateMore })
-
-    // The edited copy replaces the tail under a new id; the original prompt
-    // and its replies survive as a branch keyed on the predecessor.
-    expect(updated?.messages.map((m) => m.id)).toEqual(['u1', 'a1', 'replacement-id'])
-    expect(updated?.messages.at(-1)?.contentParts).toEqual(edited.contentParts)
-    const fork = updated?.messageForksHash?.['a1']
-    expect(fork?.position).toBe(1)
-    expect(fork?.lists.map((list) => list.messages.map((m) => m.id))).toEqual([['u2', 'a2'], []])
-    expect(updateMessageMock).not.toHaveBeenCalled()
+    const updated = inspect(session.id)
+    expect(updated.messages.map((message) => message.id)).toEqual(['u1', 'a1', 'replacement-id'])
+    expect(updated.messages.at(-1)?.contentParts).toEqual(edited.contentParts)
+    expect(updated.messageForksHash?.a1.lists.map((list) => list.messages.map((message) => message.id))).toEqual([
+      ['u2', 'a2'],
+      [],
+    ])
+    expect(update).not.toHaveBeenCalled()
     expect(runGenerateMore).toHaveBeenCalledWith(session.id, 'replacement-id')
   })
-
   test('saveAndResendMessage blocks the resend when the target is in the pre-controller streaming window', async () => {
     const pivot = makeMessage('pivot', 'user')
     const target = { ...makeMessage('target', 'assistant'), generating: true }
@@ -668,19 +568,14 @@ describe('fork actions', () => {
       messages: [pivot, target],
     }
 
-    getSessionMock.mockResolvedValue(session)
-
+    await seed(session)
+    const structure = vi.spyOn(sessions, 'executeStructureCommand')
+    const update = vi.spyOn(sessions, 'updateMessage')
     await sessionActions.saveAndResendMessage(session.id, target)
-
-    // The edit is still saved in place (user text survives); only the fork
-    // and the resend are blocked. The extra session read belongs to that
-    // in-place save.
-    expect(getSessionMock).toHaveBeenCalledTimes(2)
-    expect(updateSessionWithMessages).not.toHaveBeenCalled()
-    expect(updateMessageMock).toHaveBeenCalledWith(session.id, target.id, expect.objectContaining({ id: target.id }))
+    expect(structure).not.toHaveBeenCalled()
+    expect(update).toHaveBeenCalledWith(session.id, target.id, expect.objectContaining({ id: target.id }))
     expect(toastMock).toHaveBeenCalledWith('Wait for the current replies to finish', 2500)
   })
-
   test('saveAndResendMessage stops when the target no longer exists', async () => {
     const session: Session = {
       id: 'session-save-resend-missing',
@@ -688,65 +583,67 @@ describe('fork actions', () => {
       messages: [makeMessage('other', 'user')],
     }
 
-    getSessionMock.mockResolvedValue(session)
-
-    await sessionActions.saveAndResendMessage(session.id, makeMessage('deleted-target', 'user'))
-
-    expect(getSessionMock).toHaveBeenCalledTimes(1)
-    expect(updateSessionWithMessages).not.toHaveBeenCalled()
+    await seed(session)
+    const structure = vi.spyOn(sessions, 'executeStructureCommand')
+    const update = vi.spyOn(sessions, 'updateMessage')
+    await sessionActions.saveAndResendMessage(session.id, makeMessage('deleted-target'))
+    expect(structure).not.toHaveBeenCalled()
+    expect(update).not.toHaveBeenCalled()
     expect(toastMock).not.toHaveBeenCalled()
   })
-
-  test('saveAndResendMessage still saves the edit when the session read fails', async () => {
+  test('saveAndResendMessage still saves the edit when the header read fails', async () => {
     const session: Session = {
-      id: 'session-save-resend-read-error',
+      id: 'read-error',
       name: 'Test',
-      messages: [makeMessage('target', 'user'), makeMessage('reply', 'assistant')],
+      messages: [makeMessage('target'), makeMessage('reply', 'assistant')],
     }
-    getSessionMock.mockRejectedValueOnce(new Error('session read failed'))
-    getSessionMock.mockResolvedValue(session)
-    const edited = { ...makeMessage('target', 'user'), contentParts: [{ type: 'text' as const, text: 'edited' }] }
-
+    await seed(session)
+    vi.spyOn(sessions, 'getSessionHeader').mockRejectedValueOnce(new Error('header read failed'))
+    const structure = vi.spyOn(sessions, 'executeStructureCommand')
+    const edited = { ...makeMessage('target'), contentParts: [{ type: 'text' as const, text: 'edited' }] }
     await expect(sessionActions.saveAndResendMessage(session.id, edited)).resolves.toBeUndefined()
-
-    // The failed guarded read falls back to a plain in-place save of the edit.
-    expect(updateMessageMock).toHaveBeenCalledWith(
-      session.id,
-      'target',
-      expect.objectContaining({ id: 'target', contentParts: [{ type: 'text', text: 'edited' }] })
-    )
-    expect(updateSessionWithMessages).not.toHaveBeenCalled()
+    expect(inspect(session.id).messages[0].contentParts).toEqual(edited.contentParts)
+    expect(structure).not.toHaveBeenCalled()
     expect(toastMock).not.toHaveBeenCalled()
   })
-
-  test('saveAndResendMessage stays rejection-free when every session read fails', async () => {
-    getSessionMock.mockRejectedValue(new Error('session read failed'))
-
-    await expect(
-      sessionActions.saveAndResendMessage('session-save-resend-read-error', makeMessage('target', 'user'))
-    ).resolves.toBeUndefined()
-
-    expect(updateSessionWithMessages).not.toHaveBeenCalled()
+  test('saveAndResendMessage stays rejection-free when every read fails', async () => {
+    vi.spyOn(sessions, 'getSessionHeader').mockRejectedValue(new Error('header read failed'))
+    vi.spyOn(sessions, 'readSessionMessages').mockRejectedValue(new Error('message read failed'))
+    const structure = vi.spyOn(sessions, 'executeStructureCommand')
+    await expect(sessionActions.saveAndResendMessage('read-error', makeMessage('target'))).resolves.toBeUndefined()
+    expect(structure).not.toHaveBeenCalled()
     expect(toastMock).not.toHaveBeenCalled()
   })
-
   test('moveThreadToConversations preserves thread forks and drops unrelated ones', async () => {
-    uuidQueue.push('copied-thread-pivot', 'copied-thread-reply', 'copied-list-0', 'copied-thread-alt', 'copied-list-1')
     const currentPivot = makeMessage('current-pivot', 'user')
     const currentReply = makeMessage('current-reply', 'assistant')
     const threadPivot = makeMessage('thread-pivot', 'user')
     const threadReply = makeMessage('thread-reply', 'assistant')
-    const threadAlternative = makeMessage('thread-alt', 'assistant')
+    const threadAlternative = { ...makeMessage('thread-alt', 'assistant'), isSummary: true }
+    const currentPromptContext = makePromptContextSnapshot('Current Soul')
+    const threadPromptContext = makePromptContextSnapshot('Moved Thread Soul')
+    const threadCompactionPoint = {
+      summaryMessageId: threadAlternative.id,
+      boundaryMessageId: threadPivot.id,
+      createdAt: 3,
+    }
     const thread: SessionThread = {
       id: 'thread-1',
       name: 'Moved Thread',
       createdAt: 1,
       messages: [threadPivot, threadReply],
+      compactionPoints: [threadCompactionPoint],
+      sessionPromptContextSnapshot: threadPromptContext,
     }
     const session: Session = {
       id: 'session-move-thread',
       name: 'Source Session',
       messages: [currentPivot, currentReply],
+      settings: {
+        provider: 'openai',
+        temperature: 0.25,
+        sessionPromptContextSnapshot: currentPromptContext,
+      },
       threads: [thread],
       messageForksHash: {
         [currentPivot.id]: {
@@ -767,34 +664,54 @@ describe('fork actions', () => {
         },
       },
     }
-
-    getSessionMock.mockResolvedValue(session)
-    createSessionMock.mockImplementation(async (newSession: Omit<Session, 'id'>) => ({
-      ...newSession,
-      id: 'new-session-thread',
-    }))
-
+    await seed(session)
     await sessionActions.moveThreadToConversations(session.id, thread.id)
-
-    expect(createSessionMock).toHaveBeenCalledTimes(1)
-    const newSession = createSessionMock.mock.calls[0][0] as Omit<Session, 'id'>
+    const newSession = inspect('copied-session')
+    const updatedSource = inspect(session.id)
     expect(newSession.name).toBe(thread.name)
-    expect(newSession.threads).toEqual([])
+    expect(newSession.threads).toBeUndefined()
     expect(newSession.messages).toHaveLength(2)
     expect(newSession.messages[0].id).not.toBe(threadPivot.id)
-    expect(newSession.messageForksHash).toBeDefined()
     expect(Object.keys(newSession.messageForksHash ?? {})).toHaveLength(1)
-
     const copiedPivotId = newSession.messages[0].id
     const copiedFork = newSession.messageForksHash?.[copiedPivotId]
-    expect(copiedFork).toBeDefined()
-    expect(copiedFork?.lists[1].messages[0].id).not.toBe(threadAlternative.id)
-    expect(updateSessionWithMessages).toHaveBeenCalledWith(session.id, { threads: [] })
-    expect(routerNavigateMock).toHaveBeenCalledWith({ to: '/session/new-session-thread' })
+    const copiedAlternativeId = copiedFork?.lists[1].messages[0].id
+    expect(copiedAlternativeId).not.toBe(threadAlternative.id)
+    expect(newSession.compactionPoints).toEqual([
+      { ...threadCompactionPoint, boundaryMessageId: copiedPivotId, summaryMessageId: copiedAlternativeId },
+    ])
+    expect(newSession.settings).toEqual({
+      provider: 'openai',
+      temperature: 0.25,
+      sessionPromptContextSnapshot: threadPromptContext,
+    })
+    expect(updatedSource.threads).toBeUndefined()
+    expect(updatedSource.settings).toEqual(session.settings)
+    expect(updatedSource.messageForksHash?.[currentPivot.id]).toBeDefined()
+    expect(routerNavigateMock).toHaveBeenCalledWith({ to: '/session/copied-session' })
   })
-
+  test('retains the published copy and concurrent source edits when removal loses its revision fence', async () => {
+    const moved: SessionThread = { id: 'moved', name: 'Moved', createdAt: 1, messages: [makeMessage('old')] }
+    const concurrent: SessionThread = {
+      id: 'concurrent',
+      name: 'Concurrent',
+      createdAt: 2,
+      messages: [makeMessage('new')],
+    }
+    const original: Session = { id: 'source', name: 'Source', messages: [makeMessage('current')], threads: [moved] }
+    await seed(original)
+    const copy = sessions.copySessionThread.bind(sessions)
+    vi.spyOn(sessions, 'copySessionThread').mockImplementationOnce(async (request) => {
+      const result = await copy(request)
+      await repository().seedSession({ ...original, threads: [moved, concurrent] })
+      return result
+    })
+    await expect(sessionActions.moveThreadToConversations(original.id, moved.id)).rejects.toThrow()
+    expect(inspect(original.id).threads).toEqual([moved, concurrent])
+    expect(inspect('copied-session').messages).toHaveLength(1)
+    expect(routerNavigateMock).not.toHaveBeenCalled()
+  })
   test('moveCurrentThreadToConversations preserves current thread forks', async () => {
-    uuidQueue.push('copied-pivot', 'copied-reply', 'copied-current-list-0', 'copied-alt', 'copied-current-list-1')
     const pivot = makeMessage('pivot', 'user')
     const reply = makeMessage('reply', 'assistant')
     const alternative = makeMessage('alt', 'assistant')
@@ -825,52 +742,19 @@ describe('fork actions', () => {
       },
     }
 
-    getSessionMock.mockResolvedValue(session)
-    createSessionMock.mockImplementation(async (newSession: Omit<Session, 'id'>) => ({
-      ...newSession,
-      id: 'new-session-current',
-    }))
-
+    await seed(session)
     await sessionActions.moveCurrentThreadToConversations(session.id)
-
-    expect(createSessionMock).toHaveBeenCalledTimes(1)
-    const newSession = createSessionMock.mock.calls[0][0] as Omit<Session, 'id'>
+    const newSession = inspect('copied-session')
     expect(newSession.name).toBe('Current Topic')
-    expect(newSession.threads).toEqual([])
-    expect(newSession.messageForksHash).toBeDefined()
-
-    const copiedPivotId = newSession.messages[0].id
-    const copiedFork = newSession.messageForksHash?.[copiedPivotId]
-    expect(copiedFork).toBeDefined()
+    expect(newSession.threads).toBeUndefined()
+    const copiedFork = newSession.messageForksHash?.[newSession.messages[0].id]
     expect(copiedFork?.lists[1].messages[0].id).not.toBe(alternative.id)
-
-    expect(updateSessionWithMessages).toHaveBeenCalledTimes(1)
-    // removeCurrentThread uses a functional updater to read the queue's
-    // current session; apply it to verify the restored thread state.
-    const [updatedSessionId, updater] = updateSessionWithMessages.mock.calls[0] as [string, (s: Session) => Session]
-    expect(updatedSessionId).toBe(session.id)
-    expect(typeof updater).toBe('function')
-    const restored = updater(session)
+    const restored = inspect(session.id)
     expect(restored.messages).toEqual([historyPivot, historyReply])
     expect(restored.threadName).toBe('History')
-    expect(routerNavigateMock).toHaveBeenCalledWith({ to: '/session/new-session-current' })
+    expect(routerNavigateMock).toHaveBeenCalledWith({ to: '/session/copied-session' })
   })
-
   test('copyAndSwitchSession preserves current and historical thread forks', async () => {
-    uuidQueue.push(
-      'copied-root-pivot',
-      'copied-root-reply',
-      'copied-thread-pivot',
-      'copied-thread-reply',
-      'copied-root-list-0',
-      'copied-root-alt',
-      'copied-root-list-1',
-      'copied-thread-list-0',
-      'copied-thread-alt',
-      'copied-thread-list-1',
-      'copied-thread-id',
-      'copied-fork-marker'
-    )
     const rootPivot = makeMessage('root-pivot', 'user')
     const rootReply = makeMessage('root-reply', 'assistant')
     const existingForkMarker = {
@@ -917,19 +801,9 @@ describe('fork actions', () => {
       },
     }
 
-    getSessionMock.mockResolvedValue(session)
-    createSessionMock.mockImplementation(async (newSession: Omit<Session, 'id'>) => ({
-      ...newSession,
-      id: 'new-session-copy',
-    }))
-
-    await sessionActions.copyAndSwitchSession({
-      id: session.id,
-      name: session.name,
-    })
-
-    expect(createSessionMock).toHaveBeenCalledTimes(1)
-    const newSession = createSessionMock.mock.calls[0][0] as Omit<Session, 'id'>
+    await seed(session)
+    await sessionActions.copyAndSwitchSession(session.id)
+    const newSession = inspect('copied-session')
     expect(newSession.messageForksHash).toBeDefined()
     expect(Object.keys(newSession.messageForksHash ?? {})).toHaveLength(2)
 
@@ -940,25 +814,15 @@ describe('fork actions', () => {
     expect(copiedThreadPivotId).toBeDefined()
     expect(newSession.messageForksHash?.[copiedThreadPivotId!]).toBeDefined()
     expect(newSession.messages.filter((message) => message.isForkMarker)).toHaveLength(1)
-    expect(newSession.messages.at(-1)?.id).toBe('copied-fork-marker')
+    expect(newSession.messages.at(-1)?.id).not.toBe(existingForkMarker.id)
     expect(newSession.messages.at(-1)?.isForkMarker).toBe(true)
     expect(newSession.messages.at(-1)?.forkedFromSessionId).toBe(session.id)
     expect(newSession.settings?.agentMode).toEqual({ value: 'on', locked: true, lockReason: 'message_sent' })
     expect(setSessionAgentModeMock).not.toHaveBeenCalled()
     expect(lockSessionAgentModeMock).not.toHaveBeenCalled()
-    expect(routerNavigateMock).toHaveBeenCalledWith({ to: '/session/new-session-copy' })
+    expect(routerNavigateMock).toHaveBeenCalledWith({ to: '/session/copied-session' })
   })
-
   test('copyAndSwitchSession remaps compaction points anchored in inactive fork branches', async () => {
-    uuidQueue.push(
-      'copied-pivot',
-      'copied-active-reply',
-      'copied-list-0',
-      'copied-inactive-boundary',
-      'copied-inactive-summary',
-      'copied-list-1',
-      'copied-fork-marker'
-    )
     const pivot = makeMessage('pivot', 'user')
     const activeReply = makeMessage('active-reply', 'assistant')
     const inactiveBoundary = makeMessage('inactive-boundary', 'assistant')
@@ -984,15 +848,9 @@ describe('fork actions', () => {
       ],
     }
 
-    getSessionMock.mockResolvedValue(session)
-    createSessionMock.mockImplementation(async (newSession: Omit<Session, 'id'>) => ({
-      ...newSession,
-      id: 'new-session-compacted-fork',
-    }))
-
-    await sessionActions.copyAndSwitchSession({ id: session.id, name: session.name })
-
-    const newSession = createSessionMock.mock.calls[0][0] as Omit<Session, 'id'>
+    await seed(session)
+    await sessionActions.copyAndSwitchSession(session.id)
+    const newSession = inspect('copied-session')
     const copiedPivotId = newSession.messages[0].id
     const copiedBranch = newSession.messageForksHash?.[copiedPivotId]?.lists[1].messages
     expect(copiedBranch).toBeDefined()
@@ -1006,19 +864,7 @@ describe('fork actions', () => {
       },
     ])
   })
-
   test('copyAndSwitchSession remaps archived-thread points anchored in inactive fork branches', async () => {
-    uuidQueue.push(
-      'copied-active', // active message
-      'copied-thread-pivot', // thread messages
-      'copied-thread-reply',
-      'copied-thread-id',
-      'copied-list-0', // fork lists (reachable from the thread pivot)
-      'copied-fork-boundary',
-      'copied-fork-summary',
-      'copied-list-1',
-      'copied-fork-marker'
-    )
     const active = makeMessage('active', 'user')
     const threadPivot = makeMessage('thread-pivot', 'user')
     const threadReply = makeMessage('thread-reply', 'assistant')
@@ -1052,15 +898,9 @@ describe('fork actions', () => {
       },
     }
 
-    getSessionMock.mockResolvedValue(session)
-    createSessionMock.mockImplementation(async (newSession: Omit<Session, 'id'>) => ({
-      ...newSession,
-      id: 'new-session-thread-fork',
-    }))
-
-    await sessionActions.copyAndSwitchSession({ id: session.id, name: session.name })
-
-    const newSession = createSessionMock.mock.calls[0][0] as Omit<Session, 'id'>
+    await seed(session)
+    await sessionActions.copyAndSwitchSession(session.id)
+    const newSession = inspect('copied-session')
     const copiedThreadPivotId = newSession.threads?.[0].messages[0].id
     const copiedBranch = newSession.messageForksHash?.[copiedThreadPivotId!]?.lists[1].messages
     expect(copiedBranch).toBeDefined()

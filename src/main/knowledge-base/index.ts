@@ -1,4 +1,3 @@
-import { sentry } from '../adapters/sentry'
 import { getLogger } from '../util'
 import { initializeDatabase } from './db'
 import { startWorkerLoop } from './file-loaders'
@@ -30,16 +29,6 @@ async function initializeKnowledgeBase() {
   } catch (error) {
     const duration = Date.now() - startTime
     log.error(`[KB] Failed to initialize knowledge base system after ${duration}ms:`, error)
-
-    // Report critical initialization errors to Sentry
-    sentry.withScope((scope) => {
-      scope.setTag('component', 'knowledge-base')
-      scope.setTag('operation', 'initialization')
-      scope.setExtra('duration', duration)
-      scope.setExtra('error_type', 'initialization_failure')
-      sentry.captureException(error)
-    })
-
     throw error
   }
 }

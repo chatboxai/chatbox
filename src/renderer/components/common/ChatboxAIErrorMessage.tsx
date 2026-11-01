@@ -1,6 +1,6 @@
 import { Link } from '@mui/material'
 import { ChatboxAIAPIError } from '@shared/models/errors'
-import type { FC } from 'react'
+import type { CSSProperties, FC } from 'react'
 import { Trans } from 'react-i18next'
 import LinkTargetBlank from '@/components/common/Link'
 import { navigateToSettings } from '@/modals/settings-navigation'
@@ -15,6 +15,7 @@ interface ChatboxAIErrorMessageProps {
   model?: string
   /** Tracking source label appended to upgrade-link analytics events. */
   trackingSource?: string
+  linkStyle?: CSSProperties
 }
 
 const SUPPORTED_WEB_BROWSING_MODELS = 'gemini-2.0-flash(API), perplexity API'
@@ -28,6 +29,7 @@ export const ChatboxAIErrorMessage: FC<ChatboxAIErrorMessageProps> = ({
   errorCode,
   model,
   trackingSource = 'msg_upgrade_required',
+  linkStyle,
 }) => {
   const detail = ChatboxAIAPIError.getDetail(errorCode)
   if (!detail) return null
@@ -44,7 +46,8 @@ export const ChatboxAIErrorMessage: FC<ChatboxAIErrorMessageProps> = ({
           <Link
             component="button"
             type="button"
-            className="cursor-pointer italic"
+            className={linkStyle ? 'cursor-pointer' : 'cursor-pointer italic'}
+            style={linkStyle}
             onClick={() => {
               navigateToSettings()
             }}
@@ -54,7 +57,8 @@ export const ChatboxAIErrorMessage: FC<ChatboxAIErrorMessageProps> = ({
           <Link
             component="button"
             type="button"
-            className="cursor-pointer italic"
+            className={linkStyle ? 'cursor-pointer' : 'cursor-pointer italic'}
+            style={linkStyle}
             onClick={() => {
               navigateToSettings('/web-search')
             }}
@@ -64,7 +68,8 @@ export const ChatboxAIErrorMessage: FC<ChatboxAIErrorMessageProps> = ({
           <Link
             component="button"
             type="button"
-            className="cursor-pointer italic"
+            className={linkStyle ? 'cursor-pointer' : 'cursor-pointer italic'}
+            style={linkStyle}
             onClick={() => {
               platform.openLink(
                 buildChatboxUrl(
@@ -77,9 +82,10 @@ export const ChatboxAIErrorMessage: FC<ChatboxAIErrorMessageProps> = ({
             }}
           />
         ),
-        LinkToHomePage: <LinkTargetBlank href="https://chatboxai.app" />,
+        LinkToHomePage: <LinkTargetBlank style={linkStyle} href="https://chatboxai.app" />,
         LinkToAdvancedFileProcessing: (
           <LinkTargetBlank
+            style={linkStyle}
             href={buildChatboxUrl(
               `/redirect_app/advanced_file_processing/${settingActions.getLanguage()}?utm_source=app&utm_content=${trackingSource}`
             )}
@@ -87,6 +93,7 @@ export const ChatboxAIErrorMessage: FC<ChatboxAIErrorMessageProps> = ({
         ),
         LinkToAdvancedUrlProcessing: (
           <LinkTargetBlank
+            style={linkStyle}
             href={buildChatboxUrl(
               `/redirect_app/advanced_url_processing/${settingActions.getLanguage()}?utm_source=app&utm_content=${trackingSource}`
             )}
@@ -96,7 +103,8 @@ export const ChatboxAIErrorMessage: FC<ChatboxAIErrorMessageProps> = ({
           <Link
             component="button"
             type="button"
-            className="cursor-pointer italic"
+            className={linkStyle ? 'cursor-pointer' : 'cursor-pointer italic'}
+            style={linkStyle}
             onClick={() => {
               navigateToSettings('/document-parser')
             }}

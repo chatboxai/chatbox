@@ -83,6 +83,22 @@ describe('TokenCountMenu', () => {
     expect(getMenuRow('Context').textContent).toContain('Context:~1K(2/3)')
   })
 
+  it('labels a loaded-message estimate and hides complete-context counts and compression', () => {
+    renderMenu({
+      isCalculating: true,
+      isContextCalculating: true,
+      isContextLoading: true,
+      pendingContextMessages: 1,
+      currentMessageCount: 3,
+      maxContextMessageCount: 100,
+      onCompressClick: vi.fn(),
+    })
+    expect(screen.getByRole('status', { hidden: true }).textContent).toContain('Loading context...')
+    expect(getMenuRow('Context').textContent).not.toContain('(2/3)')
+    expect(screen.queryByText('Context messages:')).toBeNull()
+    expect(screen.queryByText('Compress Conversation')).toBeNull()
+  })
+
   it('keeps failed draft estimates marked approximate without showing a loader', () => {
     renderMenu({
       isCalculating: false,

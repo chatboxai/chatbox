@@ -1,3 +1,4 @@
+import type { LocalWorkCapabilityId } from '@shared/mobile-work/capabilities'
 import type {
   AgentModeEntry,
   AgentModeValue,
@@ -7,12 +8,42 @@ import type {
   Toast,
 } from '@shared/types'
 import type { RefObject } from 'react'
-import type { VirtuosoHandle } from 'react-virtuoso'
 import { v4 as uuidv4 } from 'uuid'
 import { createStore, useStore } from 'zustand'
 import { combine, persist } from 'zustand/middleware'
 import platform from '@/platform'
 import { safeStorage } from './safeStorage'
+
+export interface TranscriptNavigation {
+  readonly owner: symbol
+  readonly sessionId: string
+  navigateMessage(messageId: string): Promise<boolean>
+  openSearch(messageId: string): Promise<boolean>
+  viewThread(threadId: string): Promise<boolean>
+  scrollToIndex(location: {
+    index: number | 'LAST'
+    align: 'start' | 'center' | 'end'
+    behavior: 'auto' | 'smooth'
+  }): boolean
+}
+
+/** Tabs of the conversation side panel: pinned tools first, then the built-in browser's pages. */
+export type SessionPanelTab = 'settings' | 'threads' | 'web'
+
+export interface SessionPanelState {
+  open: boolean
+  tab: SessionPanelTab
+  /** Browser tab shown while `tab` is `web`. */
+  webTab?: string
+  /** Browser tabs the model read while another tab was showing. */
+  unseenWebTabs: string[]
+}
+
+export const DEFAULT_SESSION_PANEL: SessionPanelState = {
+  open: false,
+  tab: 'settings',
+  unseenWebTabs: [],
+}
 
 const isSmallScreenViewport = () => {
   return (
@@ -44,7 +75,7 @@ export const uiStore = createStore(
         quote: '',
         realTheme: localStorage.getItem('initial-theme') === 'dark' ? 'dark' : ('light' as 'light' | 'dark'),
         messageListElement: null as RefObject<HTMLDivElement> | null,
-        messageScrolling: null as RefObject<VirtuosoHandle> | null,
+        transcriptNavigation: null as TranscriptNavigation | null,
         messageScrollingAtTop: false,
         messageScrollingAtBottom: false,
         showSidebar: platform.type !== 'mobile' && !isSmallScreenViewport(),
@@ -62,6 +93,7 @@ export const uiStore = createStore(
         newSessionState: {} as {
           knowledgeBase?: Pick<KnowledgeBase, 'id' | 'name'>
           webBrowsing?: boolean
+          localWorkCapabilities?: LocalWorkCapabilityId[]
           // Working directories bound before the session is persisted; transferred into the
           // created session's settings on first submit (see routes/index.tsx).
           workingDirectories?: string[]
@@ -82,14 +114,21 @@ export const uiStore = createStore(
           onSave?: () => void
         } | null,
         widthFull: false, // Stored UI preference
+        modelSelectorTab: 'all' as 'all' | 'favorite',
         showCopilotsInNewSession: false,
         sidebarWidth: null as number | null, // Custom sidebar width, null means use default
+        collapsedSessionFolderIds: [] as string[],
         agentModeSmartSwitchingDefault: true,
         // Last mode the user explicitly picked in the mode panel; new chats start in this
         // mode so users don't have to re-select Work Mode for every conversation.
         agentModeLastSelected: 'off' as Extract<AgentModeValue, 'on' | 'off'>,
         sessionAgentModeMap: {} as Record<string, AgentModeEntry>,
         promptCacheBreakConfirmDismissed: {} as Record<string, boolean>,
+        // License + quota period whose low-points reminder the user closed.
+        lowQuotaReminderDismissedPeriod: null as string | null,
+        sessionPanels: {} as Record<string, SessionPanelState | undefined>,
+        // Width of the conversation side panel in px; null uses min(560px, 45%).
+        sessionPanelWidth: null as number | null,
       },
       (set, get) => ({
         addToast: (content: string, duration?: number, action?: Toast['action']) => {
@@ -112,6 +151,98 @@ export const uiStore = createStore(
 
         setShowSidebar: (showSidebar: boolean) => {
           set({ showSidebar })
+        },
+
+        clearSessionPanel: (sessionId: string) => {
+          set((state) => {
+            const sessionPanels = { ...state.sessionPanels }
+            delete sessionPanels[sessionId]
+            return { sessionPanels }
+          })
+        },
+
+        /**
+         * Opens the conversation side panel (a bottom sheet on small screens), on `tab` when given;
+         * `webTab` picks the browser tab of the `web` tab.
+         */
+        openSessionPanel: (sessionId: string, tab?: SessionPanelTab, webTab?: string) => {
+          set((state) => {
+            const current = state.sessionPanels[sessionId] ?? DEFAULT_SESSION_PANEL
+            const nextTab = tab ?? current.tab
+            const nextWebTab = webTab ?? current.webTab
+            return {
+              sessionPanels: {
+                ...state.sessionPanels,
+                [sessionId]: {
+                  ...current,
+                  open: true,
+                  tab: nextTab,
+                  webTab: nextWebTab,
+                  unseenWebTabs:
+                    nextTab === 'web' ? current.unseenWebTabs.filter((id) => id !== nextWebTab) : current.unseenWebTabs,
+                },
+              },
+            }
+          })
+        },
+
+        closeSessionPanel: (sessionId: string) => {
+          set((state) => {
+            const current = state.sessionPanels[sessionId]
+            if (!current?.open) return {}
+            return { sessionPanels: { ...state.sessionPanels, [sessionId]: { ...current, open: false } } }
+          })
+        },
+
+        /**
+         * A browser tab the model is reading: brought forward when the panel is closed, marked
+         * unseen when the panel shows something else.
+         */
+        revealSessionWebTab: (sessionId: string, webTab: string) => {
+          set((state) => {
+            const current = state.sessionPanels[sessionId] ?? DEFAULT_SESSION_PANEL
+            if (!current.open) {
+              const unseenWebTabs = current.unseenWebTabs.filter((id) => id !== webTab)
+              return {
+                sessionPanels: {
+                  ...state.sessionPanels,
+                  [sessionId]: { ...current, open: true, tab: 'web', webTab, unseenWebTabs },
+                },
+              }
+            }
+            const showing = current.tab === 'web' && current.webTab === webTab
+            if (showing || current.unseenWebTabs.includes(webTab)) return {}
+            return {
+              sessionPanels: {
+                ...state.sessionPanels,
+                [sessionId]: { ...current, unseenWebTabs: [...current.unseenWebTabs, webTab] },
+              },
+            }
+          })
+        },
+
+        /** Forgets a browser tab that closed; the panel moves to a neighbour or back to settings. */
+        forgetSessionWebTab: (sessionId: string, webTab: string, neighbour?: string) => {
+          set((state) => {
+            const current = state.sessionPanels[sessionId]
+            if (!current) return {}
+            const showing = current.tab === 'web' && current.webTab === webTab
+            return {
+              sessionPanels: {
+                ...state.sessionPanels,
+                [sessionId]: {
+                  ...current,
+                  // The neighbour that comes into view is seen.
+                  unseenWebTabs: current.unseenWebTabs.filter((id) => id !== webTab && !(showing && id === neighbour)),
+                  ...(showing ? (neighbour ? { webTab: neighbour } : { tab: 'settings', webTab: undefined }) : {}),
+                },
+              },
+            }
+          })
+        },
+
+        setSessionPanelWidth: (sessionPanelWidth: number | null) => {
+          set({ sessionPanelWidth })
         },
 
         setOpenSearchDialog: (openSearchDialog: boolean, globalOnly = false) => {
@@ -138,8 +269,8 @@ export const uiStore = createStore(
           set({ messageListElement })
         },
 
-        setMessageScrolling: (messageScrolling: RefObject<VirtuosoHandle> | null) => {
-          set({ messageScrolling })
+        setTranscriptNavigation: (transcriptNavigation: TranscriptNavigation | null) => {
+          set({ transcriptNavigation })
         },
 
         setMessageScrollingAtTop: (messageScrollingAtTop: boolean) => {
@@ -248,6 +379,19 @@ export const uiStore = createStore(
           set({ sidebarWidth })
         },
 
+        setSessionFolderCollapsed: (folderId: string, collapsed: boolean) => {
+          set((state) => {
+            const others = state.collapsedSessionFolderIds.filter((id) => id !== folderId)
+            return { collapsedSessionFolderIds: collapsed ? [...others, folderId] : others }
+          })
+        },
+
+        setModelSelectorTab: (tab: string | null) => {
+          if (tab === 'all' || tab === 'favorite') {
+            set({ modelSelectorTab: tab })
+          }
+        },
+
         setAgentModeSmartSwitchingDefault: (enabled: boolean) => {
           set({ agentModeSmartSwitchingDefault: enabled })
         },
@@ -274,8 +418,10 @@ export const uiStore = createStore(
       version: 0,
       partialize: (state) => ({
         widthFull: state.widthFull,
+        modelSelectorTab: state.modelSelectorTab,
         showCopilotsInNewSession: state.showCopilotsInNewSession,
         sidebarWidth: state.sidebarWidth,
+        collapsedSessionFolderIds: state.collapsedSessionFolderIds,
         agentModeSmartSwitchingDefault: state.agentModeSmartSwitchingDefault,
         agentModeLastSelected: state.agentModeLastSelected,
         newSessionWebBrowsingDefault: state.newSessionWebBrowsingDefault,
@@ -284,6 +430,8 @@ export const uiStore = createStore(
         sessionWebBrowsingMap: state.sessionWebBrowsingMap,
         sessionKnowledgeBaseMap: state.sessionKnowledgeBaseMap,
         promptCacheBreakConfirmDismissed: state.promptCacheBreakConfirmDismissed,
+        lowQuotaReminderDismissedPeriod: state.lowQuotaReminderDismissedPeriod,
+        sessionPanelWidth: state.sessionPanelWidth,
       }),
       storage: safeStorage,
     }

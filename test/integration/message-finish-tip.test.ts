@@ -1,5 +1,5 @@
 import { createAnthropic } from '@ai-sdk/anthropic'
-import { createGoogleGenerativeAI } from '@ai-sdk/google'
+import { createGoogle } from '@ai-sdk/google'
 import { createOpenAI } from '@ai-sdk/openai'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { getMessageFinishTip } from '@chatbox/core/session/message-finish-tip'
@@ -48,7 +48,7 @@ describe('provider stop reasons reach the message length tip', () => {
   })
 
   it('Gemini MAX_TOKENS', async () => {
-    const provider = createGoogleGenerativeAI({
+    const provider = createGoogle({
       apiKey: 'test',
       fetch: responseFetch({
         candidates: [

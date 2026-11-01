@@ -1,7 +1,9 @@
-import { Button, Modal, Radio, Stack, Text } from '@mantine/core'
-import { useState } from 'react'
+import { Button, Flex, Modal, Radio, Stack, Text } from '@mantine/core'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { UserLicense } from '@/packages/remote'
+import { LicenseOptionContent } from './LicenseOptionContent'
+import { getAccountLicenseStatus, sortAccountLicensesByStatus } from './licenseStatus'
 
 interface LicenseSelectionModalProps {
   opened: boolean
@@ -12,28 +14,21 @@ interface LicenseSelectionModalProps {
 
 export function LicenseSelectionModal({ opened, licenses, onConfirm, onCancel }: LicenseSelectionModalProps) {
   const { t } = useTranslation()
-  const [selectedKey, setSelectedKey] = useState(licenses[0]?.key || '')
-
-  const handleClose = () => {
-    // 目前无法阻止ESC关闭，fallback到第一个
-    onCancel?.()
-  }
-
-  // 格式化数字为 K/M 格式
-  const formatTokens = (num: number): string => {
-    if (num >= 1_000_000) {
-      return `${(num / 1_000_000).toFixed(1)}M`
-    }
-    if (num >= 1_000) {
-      return `${(num / 1_000).toFixed(1)}K`
-    }
-    return num.toString()
-  }
+  const options = useMemo(() => {
+    const now = Date.now()
+    return sortAccountLicensesByStatus(licenses, now).map((license) => ({
+      license,
+      status: getAccountLicenseStatus(license, now),
+    }))
+  }, [licenses])
+  const defaultKey = (options.find((option) => option.status.usable) ?? options[0])?.license.key ?? ''
+  const [pickedKey, setPickedKey] = useState<string | null>(null)
+  const selectedKey = pickedKey && options.some((option) => option.license.key === pickedKey) ? pickedKey : defaultKey
 
   return (
     <Modal
       opened={opened}
-      onClose={handleClose}
+      onClose={() => onCancel?.()}
       closeOnClickOutside={false}
       closeOnEscape={false}
       withCloseButton={false}
@@ -46,49 +41,34 @@ export function LicenseSelectionModal({ opened, licenses, onConfirm, onCancel }:
           {t('You have multiple licenses. Please select one to use:')}
         </Text>
 
-        <Radio.Group value={selectedKey} onChange={setSelectedKey}>
-          <Stack gap="xs" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
-            {licenses.map((license) => {
-              const remaining = license.unified_token_limit - license.unified_token_usage
-              const expiryDate = license.expires_at ? new Date(license.expires_at).toLocaleDateString() : null
-              const isExpired = license.expires_at ? new Date(license.expires_at) < new Date() : false
-
+        <Radio.Group value={selectedKey} onChange={setPickedKey}>
+          <Stack gap="xs" p={2} style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+            {options.map(({ license, status }) => {
+              const checked = license.key === selectedKey
               return (
-                <Radio
+                <Radio.Card
                   key={license.key}
                   value={license.key}
-                  label={
-                    <Stack gap={2}>
-                      <Text fw={500}>{license.product_name}</Text>
-                      <Text size="xs" c="chatbox-tertiary" className="font-mono">
-                        {license.key.substring(0, 8)}
-                        {'*'.repeat(12)}
-                      </Text>
-                      {isExpired ? (
-                        <Text size="xs" c="chatbox-tertiary">
-                          {t('Total Quota')}: {formatTokens(license.unified_token_limit)}
-                        </Text>
-                      ) : (
-                        <Text size="xs" c="chatbox-tertiary">
-                          {t('Remaining/Total Quota')}: {formatTokens(remaining)}/
-                          {formatTokens(license.unified_token_limit)}
-                        </Text>
-                      )}
-                      {expiryDate && (
-                        <Text size="xs" c="chatbox-tertiary">
-                          {t('Expires')}: {expiryDate}
-                          {isExpired && ` (${t('Expired')})`}
-                        </Text>
-                      )}
-                    </Stack>
-                  }
-                />
+                  radius="md"
+                  p="sm"
+                  data-license-key={license.key}
+                  className="transition-colors"
+                  style={{
+                    borderColor: checked ? 'var(--chatbox-border-brand)' : undefined,
+                    backgroundColor: checked ? 'var(--chatbox-background-brand-secondary)' : undefined,
+                  }}
+                >
+                  <Flex gap="sm" align="flex-start">
+                    <Radio.Indicator mt={2} />
+                    <LicenseOptionContent license={license} status={status} />
+                  </Flex>
+                </Radio.Card>
               )
             })}
           </Stack>
         </Radio.Group>
 
-        <Button fullWidth onClick={() => onConfirm(selectedKey)} disabled={!selectedKey}>
+        <Button fullWidth data-autofocus onClick={() => onConfirm(selectedKey)} disabled={!selectedKey}>
           {t('Confirm')}
         </Button>
       </Stack>

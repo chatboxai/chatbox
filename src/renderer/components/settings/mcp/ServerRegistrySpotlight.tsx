@@ -4,6 +4,7 @@ import { IconJson, IconSearch, IconSquareRoundedPlusFilled } from '@tabler/icons
 import { type FC, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
+import platform from '@/platform'
 import { MCP_ENTRIES_COMMUNITY, MCP_ENTRIES_OFFICIAL, type MCPRegistryEntry } from './registries'
 
 const ServerRegistrySpotlight: FC<{
@@ -36,7 +37,7 @@ const ServerRegistrySpotlight: FC<{
       },
       {
         group: t('Explore (official)')!,
-        actions: MCP_ENTRIES_OFFICIAL.map((entry) => ({
+        actions: (platform.type === 'mobile' ? [] : MCP_ENTRIES_OFFICIAL).map((entry) => ({
           id: entry.name,
           label: entry.title,
           description: entry.description,
@@ -46,7 +47,7 @@ const ServerRegistrySpotlight: FC<{
       },
       {
         group: t('Explore (community)')!,
-        actions: MCP_ENTRIES_COMMUNITY.map((entry) => ({
+        actions: (platform.type === 'mobile' ? [] : MCP_ENTRIES_COMMUNITY).map((entry) => ({
           id: entry.name,
           label: entry.title,
           description: entry.description,

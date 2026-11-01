@@ -1,5 +1,6 @@
 import NiceModal, { useModal } from '@ebay/nice-modal-react'
 import { Button, Checkbox, Flex, Loader, NumberInput, Stack, Text, TextInput, UnstyledButton } from '@mantine/core'
+import { TestId } from '@shared/automation/testids'
 import type { ProviderModelInfo } from '@shared/types'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -95,7 +96,7 @@ const ModelEdit = NiceModal.create((props: { model?: ProviderModelInfo; provider
       centered={true}
       w={456}
     >
-      <Stack gap="md">
+      <Stack data-testid={TestId.settings.providerModelEditor} gap="md">
         {/* Model ID & NickName */}
         <Stack gap="xs">
           <Flex align="center" gap="lg">
@@ -103,7 +104,13 @@ const ModelEdit = NiceModal.create((props: { model?: ProviderModelInfo; provider
               <Text>{t('Model ID')}</Text>
               <Text className="select-none h-0 overflow-hidden opacity-0">{t('Nickname')}</Text>
             </Stack>
-            <TextInput disabled={!isNew} flex={1} value={modelId} onChange={(e) => setModelId(e.currentTarget.value)} />
+            <TextInput
+              data-testid={TestId.settings.providerModelEditorId}
+              disabled={!isNew}
+              flex={1}
+              value={modelId}
+              onChange={(e) => setModelId(e.currentTarget.value)}
+            />
           </Flex>
           <Flex align="center" gap="lg">
             <Stack gap={0}>
@@ -111,6 +118,7 @@ const ModelEdit = NiceModal.create((props: { model?: ProviderModelInfo; provider
               <Text>{t('Nickname')}</Text>
             </Stack>
             <TextInput
+              data-testid={TestId.settings.providerModelEditorNickname}
               placeholder={String(t('optional') ?? 'optional')}
               flex={1}
               value={nickname}
@@ -169,6 +177,7 @@ const ModelEdit = NiceModal.create((props: { model?: ProviderModelInfo; provider
                 }}
               />
               <Checkbox
+                data-testid={TestId.settings.providerModelEditorToolUse}
                 flex={1}
                 label={t('Tool use')}
                 checked={capabilities?.includes('tool_use')}
@@ -239,7 +248,9 @@ const ModelEdit = NiceModal.create((props: { model?: ProviderModelInfo; provider
           <Button variant="light" onClick={handleTestModel}>
             {testState.testing ? <Loader size="xs" /> : t('Test Model')}
           </Button>
-          <Button onClick={handleSave}>{t('Save')}</Button>
+          <Button data-testid={TestId.settings.providerModelEditorSave} onClick={handleSave}>
+            {t('Save')}
+          </Button>
         </AdaptiveModal.Actions>
       </Stack>
     </AdaptiveModal>

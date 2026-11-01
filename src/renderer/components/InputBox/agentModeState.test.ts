@@ -1,7 +1,7 @@
 import type { AgentModeEntry } from '@shared/types'
 import { describe, expect, test, vi } from 'vitest'
 
-const platformMock = vi.hoisted(() => ({ type: 'desktop' as string }))
+const platformMock = vi.hoisted(() => ({ type: 'desktop' as string, isDesktopLike: true }))
 vi.mock('@/platform', () => ({ default: platformMock }))
 
 import { getAgentModeUIState } from './agentModeState'
@@ -61,18 +61,31 @@ describe('getAgentModeUIState', () => {
     })
   })
 
-  test('forces off and inactive on mobile even when model supports agent mode', () => {
+  test('treats HarmonyOS as an Electron-backed platform', () => {
+    platformMock.type = 'harmony'
+    platformMock.isDesktopLike = true
+    expect(getAgentModeUIState(createEntry('on'), true)).toEqual({
+      displayValue: 'on',
+      isActive: true,
+      capabilitiesDisabled: false,
+      modelUnsupported: false,
+    })
+  })
+
+  test('enables selected work mode on mobile with a capable model', () => {
     platformMock.type = 'mobile'
-    expect(getAgentModeUIState(createEntry('auto'), true)).toEqual({
-      displayValue: 'off',
-      isActive: false,
-      capabilitiesDisabled: true,
+    platformMock.isDesktopLike = false
+    expect(getAgentModeUIState(createEntry('on'), true)).toEqual({
+      displayValue: 'on',
+      isActive: true,
+      capabilitiesDisabled: false,
       modelUnsupported: false,
     })
   })
 
   test('forces off and inactive on web even when agent mode is on', () => {
     platformMock.type = 'web'
+    platformMock.isDesktopLike = false
     expect(getAgentModeUIState(createEntry('on'), true)).toEqual({
       displayValue: 'off',
       isActive: false,

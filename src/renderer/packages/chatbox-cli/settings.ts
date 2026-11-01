@@ -4,7 +4,7 @@ import { ChatboxCliUsageError } from './parser'
 import type { ChatboxCliCommandDefinition } from './types'
 
 type SafeSettingValue = string | number | boolean
-type SettingsPage = 'General Settings' | 'Chat Settings'
+type SettingsPage = 'Appearance' | 'Chat' | 'Context & Compaction' | 'About & Updates'
 
 interface SafeSettingSpec {
   key: string
@@ -27,61 +27,61 @@ const safeSettings: SafeSettingSpec[] = [
   {
     key: 'appearance.theme',
     description: 'App color theme.',
-    page: 'General Settings',
+    page: 'Appearance',
     read: () => themeName(settingsStore.getState().theme),
   },
   {
     key: 'appearance.language',
     description: 'App display language.',
-    page: 'General Settings',
+    page: 'Appearance',
     read: () => settingsStore.getState().language,
   },
   {
     key: 'appearance.font-size',
     description: 'Base UI font size.',
-    page: 'General Settings',
+    page: 'Appearance',
     read: () => settingsStore.getState().fontSize,
   },
   {
     key: 'appearance.spell-check',
     description: 'Enable spell checking.',
-    page: 'Chat Settings',
+    page: 'Chat',
     read: () => Boolean(settingsStore.getState().spellCheck),
   },
   {
     key: 'chat.stream',
     description: 'Stream model responses.',
-    page: 'Chat Settings',
+    page: 'Chat',
     read: () => settingsStore.getState().stream !== false,
   },
   {
     key: 'chat.temperature',
     description: 'Default model temperature.',
-    page: 'Chat Settings',
+    page: 'Chat',
     read: () => settingsStore.getState().temperature ?? 0.7,
   },
   {
     key: 'chat.max-context-messages',
     description: 'Default maximum context message count.',
-    page: 'Chat Settings',
+    page: 'Chat',
     read: () => settingsStore.getState().maxContextMessageCount ?? Number.MAX_SAFE_INTEGER,
   },
   ...(
     [
-      ['chat.show-word-count', 'Show message word counts.', 'showWordCount', 'Chat Settings'],
-      ['chat.show-token-count', 'Show estimated message token counts.', 'showTokenCount', 'Chat Settings'],
-      ['chat.show-token-used', 'Show model token usage.', 'showTokenUsed', 'Chat Settings'],
-      ['chat.show-model-name', 'Show model names on messages.', 'showModelName', 'Chat Settings'],
-      ['chat.show-message-timestamp', 'Show message timestamps.', 'showMessageTimestamp', 'Chat Settings'],
-      ['chat.show-avatar', 'Show chat avatars.', 'showAvatar', 'Chat Settings'],
-      ['chat.markdown', 'Render Markdown.', 'enableMarkdownRendering', 'Chat Settings'],
-      ['chat.latex', 'Render LaTeX.', 'enableLaTeXRendering', 'Chat Settings'],
-      ['chat.mermaid', 'Render Mermaid diagrams.', 'enableMermaidRendering', 'Chat Settings'],
-      ['chat.auto-generate-title', 'Automatically name new chats.', 'autoGenerateTitle', 'Chat Settings'],
-      ['chat.auto-compaction', 'Automatically compact long contexts.', 'autoCompaction', 'Chat Settings'],
-      ['app.auto-launch', 'Launch Chatbox at system startup.', 'autoLaunch', 'General Settings'],
-      ['app.auto-update', 'Automatically check for stable updates.', 'autoUpdate', 'General Settings'],
-      ['app.beta-update', 'Include beta updates.', 'betaUpdate', 'General Settings'],
+      ['chat.show-word-count', 'Show message word counts.', 'showWordCount', 'Chat'],
+      ['chat.show-token-count', 'Show estimated message token counts.', 'showTokenCount', 'Chat'],
+      ['chat.show-token-used', 'Show model token usage.', 'showTokenUsed', 'Chat'],
+      ['chat.show-model-name', 'Show model names on messages.', 'showModelName', 'Chat'],
+      ['chat.show-message-timestamp', 'Show message timestamps.', 'showMessageTimestamp', 'Chat'],
+      ['chat.show-avatar', 'Show chat avatars.', 'showAvatar', 'Chat'],
+      ['chat.markdown', 'Render Markdown.', 'enableMarkdownRendering', 'Chat'],
+      ['chat.latex', 'Render LaTeX.', 'enableLaTeXRendering', 'Chat'],
+      ['chat.mermaid', 'Render Mermaid diagrams.', 'enableMermaidRendering', 'Chat'],
+      ['chat.auto-generate-title', 'Automatically name new chats.', 'autoGenerateTitle', 'Chat'],
+      ['chat.auto-compaction', 'Automatically compact long contexts.', 'autoCompaction', 'Context & Compaction'],
+      ['app.auto-launch', 'Launch Chatbox at system startup.', 'autoLaunch', 'About & Updates'],
+      ['app.auto-update', 'Automatically check for stable updates.', 'autoUpdate', 'About & Updates'],
+      ['app.beta-update', 'Include beta updates.', 'betaUpdate', 'About & Updates'],
     ] as const
   ).map(
     ([key, description, field, page]): SafeSettingSpec => ({
@@ -94,19 +94,19 @@ const safeSettings: SafeSettingSpec[] = [
   {
     key: 'chat.message-layout',
     description: 'Message layout style.',
-    page: 'Chat Settings',
+    page: 'Chat',
     read: () => settingsStore.getState().messageLayout ?? 'bubble',
   },
   {
     key: 'chat.compaction-threshold',
     description: 'Context compaction threshold.',
-    page: 'Chat Settings',
+    page: 'Context & Compaction',
     read: () => settingsStore.getState().compactionThreshold,
   },
   {
     key: 'app.startup-page',
     description: 'Page shown at startup.',
-    page: 'General Settings',
+    page: 'Appearance',
     read: () => settingsStore.getState().startupPage ?? 'home',
   },
 ]

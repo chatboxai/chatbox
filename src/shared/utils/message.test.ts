@@ -6,10 +6,12 @@ vi.mock('./word_count', () => ({
 
 import type { Message, MessageContentParts, MessagePicture } from '../types'
 import {
+  applyLastOutputTextEdit,
   cloneMessage,
   countMessageWords,
   finalizeStaleGeneratingMessage,
   fixMessageRoleSequence,
+  getEditableTextPartIndexes,
   getMessageText,
   isEmptyMessage,
   isStaleGeneratingMessage,
@@ -999,6 +1001,90 @@ describe('finalizeStaleGeneratingMessage', () => {
     })
 
     expect(finalizeStaleGeneratingMessage(message, bootTime)).toBe(message)
+  })
+})
+
+describe('getEditableTextPartIndexes', () => {
+  const toolCall = {
+    type: 'tool-call' as const,
+    state: 'result' as const,
+    toolCallId: 'tool-1',
+    toolName: 'search',
+    args: {},
+    result: 'done',
+  }
+
+  it('returns every visible text part by default', () => {
+    expect(
+      getEditableTextPartIndexes([
+        { type: 'text', text: 'first' },
+        toolCall,
+        { type: 'text', text: 'second' },
+        { type: 'text', text: '', protocolOnly: true },
+      ])
+    ).toEqual([0, 2])
+  })
+
+  it('keeps only the last visible text when lastOutputTextOnly is set', () => {
+    expect(
+      getEditableTextPartIndexes(
+        [
+          { type: 'reasoning', text: 'thinking' },
+          { type: 'text', text: 'step note' },
+          toolCall,
+          { type: 'text', text: 'final answer' },
+        ],
+        { lastOutputTextOnly: true }
+      )
+    ).toEqual([3])
+  })
+})
+
+describe('applyLastOutputTextEdit', () => {
+  const toolCall = {
+    type: 'tool-call' as const,
+    state: 'result' as const,
+    toolCallId: 'tool-1',
+    toolName: 'search',
+    args: {},
+    result: 'done',
+  }
+
+  it('rewrites only the last visible text and keeps earlier steps', () => {
+    const original: MessageContentParts = [
+      { type: 'text', text: 'step note' },
+      toolCall,
+      { type: 'text', text: 'final answer' },
+    ]
+    const edited: MessageContentParts = [
+      { type: 'text', text: 'should not apply' },
+      toolCall,
+      { type: 'text', text: 'corrected answer' },
+    ]
+
+    expect(applyLastOutputTextEdit(original, edited)).toEqual([
+      { type: 'text', text: 'step note' },
+      toolCall,
+      { type: 'text', text: 'corrected answer' },
+    ])
+  })
+
+  it('appends a trailing text part when a multi-step message has no visible text', () => {
+    const original: MessageContentParts = [{ type: 'reasoning', text: 'thinking' }, toolCall]
+    const edited: MessageContentParts = [...original, { type: 'text', text: 'final answer' }]
+
+    expect(applyLastOutputTextEdit(original, edited)).toEqual([
+      { type: 'reasoning', text: 'thinking' },
+      toolCall,
+      { type: 'text', text: 'final answer' },
+    ])
+  })
+
+  it('recovers when the editor replaced a tool history with a single text part', () => {
+    const original: MessageContentParts = [toolCall]
+    const edited: MessageContentParts = [{ type: 'text', text: 'final answer' }]
+
+    expect(applyLastOutputTextEdit(original, edited)).toEqual([toolCall, { type: 'text', text: 'final answer' }])
   })
 })
 

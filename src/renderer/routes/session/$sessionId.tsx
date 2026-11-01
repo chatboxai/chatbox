@@ -1,8 +1,9 @@
-import NiceModal from '@ebay/nice-modal-react'
-import { Box, Button } from '@mantine/core'
+import { getSessionSearchTarget, clearSessionSearchTarget } from '@/stores/session-search-target'
+import { resolveSessionMode } from '@chatbox/core/session/mode-policy'
+import { Box, Button, Loader } from '@mantine/core'
 import type { ModelProvider } from '@shared/types'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useStore } from 'zustand'
 import { JK_PAGE_NAMES } from '@/analytics/jk-events'
@@ -11,12 +12,15 @@ import MessageList, { type MessageListRef } from '@/components/chat/MessageList'
 import { ChatboxWelcomeCard } from '@/components/common/ChatboxWelcomeCard'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import InputBox, { type InputBoxPayload } from '@/components/InputBox/InputBox'
+import { paddedContentColumnClassName } from '@/components/layout/contentColumn'
 import Header from '@/components/layout/Header'
 import Page from '@/components/layout/Page'
-import ThreadHistoryDrawer from '@/components/session/ThreadHistoryDrawer'
+import { SessionSheet } from '@/components/session/SessionSheet'
+import { closeSessionPanel, SessionSidePanel } from '@/components/session/SessionSidePanel'
 import { useGenerationStop } from '@/hooks/useGenerationStop'
 import { useProviders } from '@/hooks/useProviders'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
+import { useSessionPresentation, useSessionTranscript } from '@/hooks/useSessionPresentation'
 import useVersion from '@/hooks/useVersion'
 import { defaultSessionsForCN, defaultSessionsForEN } from '@/packages/initial_data'
 import * as remote from '@/packages/remote'
@@ -26,21 +30,20 @@ import {
   useSessionStartupLoadTarget,
   useSessionStartupQueryFailure,
 } from '@/packages/session-startup-recovery'
+import platform from '@/platform'
 import { showSessionArchiveUndo } from '@/presentation/session/session-archive-notification'
 import { useAuthInfoStore } from '@/stores/authInfoStore'
 import { applyChatboxLicenseDefaultModelToSession } from '@/stores/defaultChatModel'
 import { lastUsedModelStore } from '@/stores/lastUsedModelStore'
-import * as scrollActions from '@/stores/scrollActions'
+import { useSessionAgentMode } from '@/stores/session/agent-mode'
 import { switchCurrentSession } from '@/stores/session/crud'
 import { submitNewUserMessage } from '@/stores/session/messages'
-import { removeCurrentThread, startNewThread } from '@/stores/session/threads'
-import { clearSessionActivity } from '@/stores/sessionActivityStore'
+import { startNewThread } from '@/stores/session/threads'
+import { clearSessionActivity, setOnScreenSession } from '@/stores/sessionActivityStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { add as addToast } from '@/stores/toastActions'
-import { useUIStore } from '@/stores/uiStore'
+import { uiStore, useUIStore } from '@/stores/uiStore'
 import { getHomeWelcomeCardMode } from '@/utils/homeWelcomeCard'
-
-const useSession = (sessionId: string | null) => rendererApplication.sessionHooks.useSession(sessionId)
 
 export const Route = createFileRoute('/session/$sessionId')({
   component: SessionRouteWithErrorBoundary,
@@ -65,10 +68,21 @@ function RouteComponent() {
   const navigate = useNavigate()
   const sessionLoadTarget = useSessionStartupLoadTarget(currentSessionId)
   const recovering = sessionLoadTarget === null
-  const { session: currentSession, isFetching, isError } = useSession(sessionLoadTarget)
+  const { header: currentSession, read: headerRead, isFetching, isError } = useSessionPresentation(sessionLoadTarget)
   useSessionStartupQueryFailure(currentSessionId, sessionLoadTarget, isError && !currentSession)
   const sessionLoadSettled = currentSession?.id === currentSessionId || (!isFetching && !isError)
   useSessionStartupGuard(currentSessionId, sessionLoadSettled, recovering)
+  const messageListRef = useRef<MessageListRef>(null)
+  const [searchTarget] = useState(() => getSessionSearchTarget(currentSessionId))
+  const initialOrigin = useMemo(
+    () => (searchTarget ? { messageId: searchTarget.messageId } : ('tail' as const)),
+    [searchTarget]
+  )
+  const captureAnchor = useCallback(() => messageListRef.current?.captureAnchor() ?? null, [])
+  const transcript = useSessionTranscript(sessionLoadTarget, initialOrigin, captureAnchor)
+  useEffect(() => {
+    if (searchTarget) clearSessionSearchTarget(searchTarget)
+  }, [searchTarget])
   const { providers } = useProviders()
   const licenseKey = useSettingsStore((s) => s.licenseKey)
   const hasLicense = Boolean(licenseKey)
@@ -81,9 +95,16 @@ function RouteComponent() {
   const widthFull = useUIStore((s) => s.widthFull)
   const isSmallScreen = useIsSmallScreen()
   const setLastUsedChatModel = useStore(lastUsedModelStore, (state) => state.setChatModel)
+  const isWorkMode = resolveSessionMode(useSessionAgentMode(currentSessionId).value) === 'work'
+  const builtInBrowser = useMemo(
+    () => (!isSmallScreen && isWorkMode ? platform.builtInBrowser?.forSession(currentSessionId) : undefined),
+    [isSmallScreen, isWorkMode, currentSessionId]
+  )
 
   useEffect(() => {
+    setOnScreenSession(currentSessionId)
     clearSessionActivity(currentSessionId)
+    return () => setOnScreenSession(null)
   }, [currentSessionId])
 
   const welcomeCardMode = useMemo(
@@ -113,18 +134,9 @@ function RouteComponent() {
       licensePlanName,
     })
   }, [currentSession, hasExpiredLicense, licenseDetail, licenseKey, licensePlanName])
-  const messageListRef = useRef<MessageListRef>(null)
-
   const goHome = useCallback(() => {
     navigate({ to: '/', replace: true })
   }, [navigate])
-
-  useEffect(() => {
-    if (recovering) return
-    setTimeout(() => {
-      scrollActions.scrollToBottom('auto') // 每次启动时自动滚动到底部
-    }, 200)
-  }, [recovering])
 
   // currentSession变化时（包括session settings变化），存下当前的settings作为新Session的默认值
   useEffect(() => {
@@ -142,7 +154,7 @@ function RouteComponent() {
     if (!currentSession || !currentSessionWithDefaultModel || currentSessionWithDefaultModel === currentSession) {
       return
     }
-    void rendererApplication.sessions.updateSession(currentSession.id, {
+    void rendererApplication.sessions.updateSessionHeader(currentSession.id, {
       settings: currentSessionWithDefaultModel.settings,
     })
   }, [currentSession, currentSessionWithDefaultModel])
@@ -152,7 +164,7 @@ function RouteComponent() {
       if (!currentSession) {
         return
       }
-      void rendererApplication.sessions.updateSession(currentSession.id, {
+      void rendererApplication.sessions.updateSessionHeader(currentSession.id, {
         settings: {
           ...(currentSession.settings || {}),
           provider,
@@ -163,25 +175,16 @@ function RouteComponent() {
     [currentSession]
   )
 
-  const onStartNewThread = useCallback(() => {
-    if (!currentSession) {
-      return false
-    }
-    void startNewThread(currentSession.id)
+  const onStartNewThread = useCallback(async () => {
+    if (!currentSession) return
+    const rollback = await startNewThread(currentSession.id)
+    if (!rollback) return
     if (currentSession.copilotId) {
       void remote
         .recordCopilotUsage({ id: currentSession.copilotId, action: 'create_thread' })
         .catch((error) => console.warn('[recordCopilotUsage] failed', error))
     }
-    return true
-  }, [currentSession])
-
-  const onRollbackThread = useCallback(() => {
-    if (!currentSession) {
-      return false
-    }
-    void removeCurrentThread(currentSession.id)
-    return true
+    return rollback
   }, [currentSession])
 
   const onSubmit = useCallback(
@@ -192,11 +195,10 @@ function RouteComponent() {
         return
       }
       if (currentSessionWithDefaultModel && currentSessionWithDefaultModel !== currentSession) {
-        await rendererApplication.sessions.updateSession(currentSession.id, {
+        await rendererApplication.sessions.updateSessionHeader(currentSession.id, {
           settings: currentSessionWithDefaultModel.settings,
         })
       }
-      messageListRef.current?.scrollToBottom('instant')
 
       if (currentSession.copilotId) {
         void remote
@@ -217,9 +219,10 @@ function RouteComponent() {
     if (!currentSession) {
       return false
     }
-    void NiceModal.show('session-settings', {
-      session: currentSession,
-    })
+    const state = uiStore.getState()
+    const current = state.sessionPanels[currentSession.id]
+    if (current?.open && current.tab === 'settings') closeSessionPanel(currentSession.id)
+    else state.openSessionPanel(currentSession.id, 'settings')
     return true
   }, [currentSession])
 
@@ -280,51 +283,56 @@ function RouteComponent() {
   }
 
   return currentSession ? (
-    <div className={`flex flex-col h-full ${!isSmallScreen ? 'relative' : ''}`}>
-      <Header session={currentSession} />
+    <div className="flex h-full">
+      <div className={`flex min-w-0 flex-1 flex-col h-full ${!isSmallScreen ? 'relative' : ''}`}>
+        <Header session={currentSession} />
+        <MessageList
+          ref={messageListRef}
+          key={`message-list${currentSessionId}`}
+          headerRead={headerRead!}
+          transcript={transcript}
+          className={!isSmallScreen ? 'pt-[2px]' : undefined}
+        />
 
-      {/* MessageList 设置 key，确保每个 session 对应新的 MessageList 实例 */}
-      <MessageList
-        ref={messageListRef}
-        key={`message-list${currentSessionId}`}
-        currentSession={currentSession}
-        className={!isSmallScreen ? 'pt-[2px]' : undefined}
-      />
-
-      <Box className="relative">
-        {shouldShowTemplateWelcomeCard && (
-          // absolute — taken out of flow, doesn't affect layout of siblings
-          // bottom: '100%' — positioned right above the parent box's top edge (like a tooltip anchoring upward)
-          <Box className="pointer-events-none absolute left-0 right-0 z-10" style={{ bottom: '100%' }} px="sm" mb="sm">
-            <Box className={widthFull ? 'w-full' : 'max-w-4xl mx-auto'}>
-              <ChatboxWelcomeCard
-                mode={welcomeCardMode}
-                pageName={JK_PAGE_NAMES.CHAT_PAGE}
-                className="pointer-events-auto w-full"
-              />
+        <Box className="relative">
+          {shouldShowTemplateWelcomeCard && (
+            // absolute — taken out of flow, doesn't affect layout of siblings
+            // bottom: '100%' — positioned right above the parent box's top edge (like a tooltip anchoring upward)
+            <Box className="pointer-events-none absolute left-0 right-0 z-10" style={{ bottom: '100%' }} mb="sm">
+              <Box className={paddedContentColumnClassName(widthFull)}>
+                <ChatboxWelcomeCard
+                  mode={welcomeCardMode}
+                  pageName={JK_PAGE_NAMES.CHAT_PAGE}
+                  className="pointer-events-auto w-full"
+                />
+              </Box>
             </Box>
-          </Box>
-        )}
+          )}
 
-        {/* <ScrollButtons /> */}
-        <ErrorBoundary name="session-inputbox">
-          <InputBox
-            key={`input-box${currentSession.id}`}
-            sessionId={currentSession.id}
-            sessionType={currentSession.type}
-            model={model}
-            onStartNewThread={onStartNewThread}
-            onRollbackThread={onRollbackThread}
-            onSelectModel={onSelectModel}
-            onClickSessionSettings={onClickSessionSettings}
-            onSubmit={onSubmit}
-            onStopGenerating={onStopGenerating}
-            stopGenerationStatus={stopGenerationStatus}
-            onViewCompactionSummary={onViewCompactionSummary}
-          />
-        </ErrorBoundary>
-      </Box>
-      <ThreadHistoryDrawer session={currentSession} />
+          {/* <ScrollButtons /> */}
+          <ErrorBoundary name="session-inputbox">
+            <InputBox
+              key={`input-box${currentSession.id}`}
+              sessionId={currentSession.id}
+              sessionType={currentSession.type}
+              tokenEstimationEnabled={transcript.firstWindowReady}
+              model={model}
+              onStartNewThread={onStartNewThread}
+              onSelectModel={onSelectModel}
+              onClickSessionSettings={onClickSessionSettings}
+              onSubmit={onSubmit}
+              onStopGenerating={onStopGenerating}
+              stopGenerationStatus={stopGenerationStatus}
+              onViewCompactionSummary={onViewCompactionSummary}
+            />
+          </ErrorBoundary>
+        </Box>
+      </div>
+      {isSmallScreen ? (
+        <SessionSheet session={currentSession} sessionId={currentSessionId} />
+      ) : (
+        <SessionSidePanel key={currentSessionId} session={currentSession} builtInBrowser={builtInBrowser} />
+      )}
     </div>
   ) : (
     !isFetching && (

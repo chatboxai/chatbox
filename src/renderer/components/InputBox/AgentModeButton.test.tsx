@@ -66,6 +66,10 @@ vi.mock('./AgentModePanel', () => ({
   ),
 }))
 
+vi.mock('./MobileAgentModePanel', () => ({
+  default: () => <div>Agent mode menu</div>,
+}))
+
 import AgentModeButton from './AgentModeButton'
 
 function renderButton({
@@ -186,7 +190,7 @@ describe('AgentModeButton', () => {
     )
     renderButton({ layout: 'touch' })
 
-    const trigger = screen.getByRole('button', { name: 'Chat Mode' })
+    const trigger = screen.getByRole('button', { name: 'Work Mode' })
     fireEvent.click(trigger)
     await waitFor(() => expect(mocks.addBackButtonListener).toHaveBeenCalledOnce())
     fireEvent.click(trigger)

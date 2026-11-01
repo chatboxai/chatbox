@@ -36,9 +36,25 @@ export function bucketPlausibleCount(count: number): PlausibleCountBucket {
   return '6_plus'
 }
 
+// 正式版只保留 major.minor；预发布版保留完整版本号（如 1.24.0-beta.1），方便区分具体的 beta。
 export function normalizePlausibleVersion(version: string): string {
-  const match = version.match(/^(\d+)\.(\d+)/)
-  return match ? `${match[1]}.${match[2]}` : 'unknown'
+  const prerelease = version.match(/^(\d+\.\d+\.\d+)-(alpha|beta|rc)\.?(\d+)?/i)
+  if (prerelease) {
+    const label = prerelease[2].toLowerCase()
+    return prerelease[3] ? `${prerelease[1]}-${label}.${prerelease[3]}` : `${prerelease[1]}-${label}`
+  }
+  const match = version.match(/^(\d+)\.(\d+)(?:\.(\d+))?(-)?/)
+  if (!match) return 'unknown'
+  const base = `${match[1]}.${match[2]}`
+  return match[4] ? `${base}-pre` : base
+}
+
+// iOS 的 MARKETING_VERSION 不能带预发布后缀，用构建时注入的完整版本补回来。
+export function resolvePlausibleVersion(platformVersion: string, buildVersion: string | undefined): string {
+  if (buildVersion && buildVersion.split('-')[0] === platformVersion) {
+    return buildVersion
+  }
+  return platformVersion
 }
 
 export function normalizePlausibleProvider(providerId: string | undefined): string {

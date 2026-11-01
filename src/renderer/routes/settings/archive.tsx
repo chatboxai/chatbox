@@ -1,15 +1,16 @@
 import NiceModal from '@ebay/nice-modal-react'
 import { ActionIcon, Button, Flex, Group, Loader, Stack, Text, Title } from '@mantine/core'
 import type { SessionMetaRecord } from '@shared/types'
-import { IconArchiveOff, IconTrash } from '@tabler/icons-react'
-import { createFileRoute } from '@tanstack/react-router'
+import { IconArchiveOff, IconChevronLeft, IconTrash } from '@tabler/icons-react'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { rendererApplication } from '@/app/renderer-application'
 import { AssistantAvatar } from '@/components/common/Avatar'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
+import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { confirmSessionDeletion } from '@/presentation/session/session-deletion-confirmation'
-import { rendererApplication } from '@/app/renderer-application'
 import { deleteAllArchivedSessions, deleteSession } from '@/stores/session/crud'
 
 const useArchivedSessionList = () => rendererApplication.sessionHooks.useArchivedSessionList()
@@ -25,6 +26,7 @@ export function RouteComponent() {
   const [busySessionIds, setBusySessionIds] = useState<Set<string>>(() => new Set())
   const [deletingAll, setDeletingAll] = useState(false)
   const hasArchivedSessions = Boolean(archivedSessionMetaList?.length)
+  const isSmallScreen = useIsSmallScreen()
 
   const setSessionBusy = (sessionId: string, busy: boolean) => {
     setBusySessionIds((current) => {
@@ -40,6 +42,19 @@ export function RouteComponent() {
 
   return (
     <Stack p="md" gap="xl">
+      {!isSmallScreen && (
+        <Button
+          component={Link}
+          to="/settings/data"
+          variant="subtle"
+          color="chatbox-gray"
+          size="compact-sm"
+          leftSection={<IconChevronLeft size={16} />}
+          w="fit-content"
+        >
+          {t('Data & Backup')}
+        </Button>
+      )}
       <Stack gap="xxs">
         <Group justify="space-between" align="center" gap="sm" wrap="nowrap">
           <Title order={5}>{t('Archived Chats')}</Title>

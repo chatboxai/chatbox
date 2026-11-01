@@ -1,9 +1,10 @@
+import type { MessageRow } from '@chatbox/core/session/session-tree'
 import type { Message } from '@shared/types'
 import { describe, expect, test } from 'vitest'
 import type { MessageMinimapAnchor } from './MessageMinimapRail'
 import {
   areMinimapAnchorsEqual,
-  canReuseMinimapAnchorsDuringGeneration,
+  buildMessageMinimapAnchors,
   getMessagePreviewText,
   MINIMAP_PREVIEW_MAX_LENGTH,
 } from './message-navigation-utils'
@@ -57,7 +58,6 @@ describe('getMessagePreviewText', () => {
 describe('areMinimapAnchorsEqual', () => {
   const anchor = (overrides?: Partial<MessageMinimapAnchor>): MessageMinimapAnchor => ({
     messageId: 'user-1',
-    itemIndex: 0,
     text: 'question',
     assistantText: 'answer',
     ...overrides,
@@ -71,47 +71,72 @@ describe('areMinimapAnchorsEqual', () => {
   test('detects differences in any field or length', () => {
     expect(areMinimapAnchorsEqual([anchor()], [])).toBe(false)
     expect(areMinimapAnchorsEqual([anchor()], [anchor({ messageId: 'user-2' })])).toBe(false)
-    expect(areMinimapAnchorsEqual([anchor()], [anchor({ itemIndex: 1 })])).toBe(false)
     expect(areMinimapAnchorsEqual([anchor()], [anchor({ text: 'changed' })])).toBe(false)
     expect(areMinimapAnchorsEqual([anchor()], [anchor({ assistantText: undefined })])).toBe(false)
   })
 })
 
-describe('canReuseMinimapAnchorsDuringGeneration', () => {
-  const user = { id: 'user-1', role: 'user', contentParts: [] } satisfies Message
-  const assistant = {
-    id: 'assistant-1',
-    role: 'assistant',
-    contentParts: [{ type: 'text', text: 'partial' }],
-    generating: true,
-  } satisfies Message
-
-  test('allows only same-id generating assistant replacements', () => {
-    expect(canReuseMinimapAnchorsDuringGeneration([user, assistant], [user, assistant])).toBe(true)
-    expect(
-      canReuseMinimapAnchorsDuringGeneration(
-        [user, assistant],
-        [user, { ...assistant, contentParts: [{ type: 'text', text: 'next chunk' }] }]
-      )
-    ).toBe(true)
+describe('buildMessageMinimapAnchors', () => {
+  const row = (id: string, role: Message['role'], threadId = 't', extra: Partial<Message> = {}): MessageRow => ({
+    sessionId: 's',
+    threadId,
+    messageId: id,
+    parentMessageId: null,
+    activeChildId: null,
+    siblingOrder: 0,
+    kind: 'message',
+    status: 'settled',
+    createdAt: 1,
+    updatedAt: 1,
+    branchId: null,
+    message: { id, role, contentParts: [{ type: 'text', text: id }], ...extra },
   })
 
-  test('rejects edits, completion, insertion, and message replacement', () => {
-    expect(canReuseMinimapAnchorsDuringGeneration([user, assistant], [{ ...user }, assistant])).toBe(false)
-    expect(canReuseMinimapAnchorsDuringGeneration([user, assistant], [user, { ...assistant, generating: false }])).toBe(
-      false
-    )
+  test('pairs each loaded user with its first eligible assistant in the same thread', () => {
+    const rows = [
+      row('leading', 'assistant'),
+      row('u1', 'user'),
+      row('summary', 'user', 't', { isSummary: true }),
+      row('a1', 'assistant'),
+      row('a2', 'assistant'),
+      row('u2', 'user'),
+      row('other-thread', 'assistant', 'next'),
+      row('u3', 'user', 'next'),
+      row('a3', 'assistant', 'next'),
+    ]
+    expect(buildMessageMinimapAnchors(rows)).toEqual([
+      { messageId: 'u1', text: 'u1', assistantText: 'a1' },
+      { messageId: 'u2', text: 'u2' },
+      { messageId: 'u3', text: 'u3', assistantText: 'a3' },
+    ])
+  })
+
+  test('follows loaded-window replacement and streaming message updates', () => {
+    const user = row('user', 'user')
+    const reply = row('reply', 'assistant', 't', {
+      generating: true,
+      contentParts: [{ type: 'text', text: 'partial' }],
+    })
+    expect(buildMessageMinimapAnchors([user, reply])[0].assistantText).toBe('partial')
+    const completed = {
+      ...reply,
+      message: { ...reply.message, generating: false, contentParts: [{ type: 'text' as const, text: 'finished' }] },
+    }
+    expect(buildMessageMinimapAnchors([user, completed])[0].assistantText).toBe('finished')
+    expect(buildMessageMinimapAnchors([completed, row('next', 'user')])).toEqual([{ messageId: 'next', text: 'next' }])
+    expect(buildMessageMinimapAnchors([])).toEqual([])
+  })
+
+  test('bounds multipart previews including separators', () => {
+    const parts: Message['contentParts'] = Array.from({ length: 400 }, () => ({ type: 'text', text: 'x' }))
+    expect(getMessagePreviewText(message(parts))).toHaveLength(299)
     expect(
-      canReuseMinimapAnchorsDuringGeneration([user, assistant], [user, assistant, { ...user, id: 'user-2' }])
-    ).toBe(false)
-    expect(canReuseMinimapAnchorsDuringGeneration([user, assistant], [user, { ...assistant, id: 'assistant-2' }])).toBe(
-      false
-    )
-    expect(
-      canReuseMinimapAnchorsDuringGeneration(
-        [user, { ...assistant, generating: false }],
-        [user, { ...assistant, contentParts: [{ type: 'text', text: 'new generation' }] }]
+      getMessagePreviewText(
+        message([
+          { type: 'text', text: 'a'.repeat(299) },
+          { type: 'text', text: 'b' },
+        ])
       )
-    ).toBe(false)
+    ).toHaveLength(299)
   })
 })

@@ -1,4 +1,9 @@
-import type { Session, SessionMetaPage, SessionMetaRecord } from '../types/session'
+import type { SessionRowRepositoryPort } from './session-row-repository'
+import type { SessionStructureOperation, SessionStructureResult } from './session-structure-command'
+import type { SessionRowCommit, SessionRowsDiff } from './session-row-store'
+import type { Message, SessionFolder, SessionMetaPage, SessionMetaRecord } from '../types/session'
+import type { Updater } from '../types'
+import type { SessionHeader } from './session-read-model'
 
 export type SessionRepositoryOperation =
   | 'initialize'
@@ -34,17 +39,44 @@ export class SessionRepositoryError extends Error {
   }
 }
 
-export interface SessionDataRepositoryPort {
-  initialize(): Promise<void>
-  getSession(id: string): Promise<Session | null>
-  setSession(session: Session): Promise<void>
-  deleteSession(id: string): Promise<void>
-  getAllSessionIds(): Promise<string[]>
+export class SessionWriteConflictError extends Error {
+  readonly name = 'SessionWriteConflictError'
+
+  constructor(
+    readonly sessionId: string,
+    readonly expectedRevision: number | null,
+    readonly actualRevision: number | null
+  ) {
+    super(`Session ${sessionId} changed before the write could be committed`)
+  }
 }
+
+export type SessionCommand =
+  | { type: 'structure'; operation: SessionStructureOperation }
+  | { type: 'append'; messages: readonly Message[] }
+  | { type: 'update'; messageId: string; updater: Updater<Message> }
+  | { type: 'header'; updater: Updater<SessionHeader> }
+
+/** Durable row changes and their independent header projection. */
+export interface SessionCommandDelta extends SessionRowCommit {
+  structureResult?: SessionStructureResult
+  sessionId: string
+  previousRevision: number | null
+  header: SessionHeader
+  previousHeader?: SessionHeader
+  diff: SessionRowsDiff
+  /** The newly appended active-path rows, excluding the previous tail link update. */
+  appendedMessageIds: string[]
+}
+
+export type SessionCommandResult = { kind: 'rows'; delta: SessionCommandDelta }
+
+export interface SessionDataRepositoryPort extends SessionRowRepositoryPort {}
 
 export interface SessionMetaRepositoryPort {
   initialize(): Promise<void>
   create(record: SessionMetaRecord): Promise<void>
+  /** Inserts new records and replaces existing records with matching IDs. */
   createMany(records: SessionMetaRecord[]): Promise<void>
   update(id: string, updates: Partial<SessionMetaRecord>): Promise<SessionMetaRecord | null>
   getById(id: string): Promise<SessionMetaRecord | null>
@@ -52,13 +84,25 @@ export interface SessionMetaRepositoryPort {
   deleteMany(ids: string[]): Promise<void>
   getAll(): Promise<SessionMetaRecord[]>
   getAllIncludingHidden(): Promise<SessionMetaRecord[]>
+  /** Bounded identities for visible, hidden, and archived sessions. Callers own snapshot isolation. */
+  iterateIds?(): AsyncIterable<string>
   getArchived(): Promise<SessionMetaRecord[]>
   getArchivedPage(cursor: number, limit?: number): Promise<SessionMetaPage>
-  getPage(cursor: number, limit?: number): Promise<SessionMetaPage>
+  /**
+   * Visible sessions in display order (see `sortSessionRecords`): pinned, then
+   * each folder of `folderIds` in order, then unfiled.
+   */
+  getPage(cursor: number, limit?: number, folderIds?: readonly string[]): Promise<SessionMetaPage>
   getTotal(): Promise<number>
   getAllTotal(): Promise<number>
   getArchivedTotal(): Promise<number>
   clear(): Promise<void>
+}
+
+/** Folder definitions of the session list; array order is display order. */
+export interface SessionFolderStorePort {
+  load(): Promise<SessionFolder[]>
+  save(folders: SessionFolder[]): Promise<void>
 }
 
 export interface SessionRepositoryPort extends SessionDataRepositoryPort {

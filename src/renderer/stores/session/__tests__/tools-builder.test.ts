@@ -19,7 +19,12 @@ const {
   userExecMock,
   readWorkspaceInstructionsMock,
   platformName,
+  builtInBrowser,
+  buildFileToolsMock,
 } = vi.hoisted(() => ({
+  buildFileToolsMock: vi.fn((_messages: unknown, filesystemRead?: unknown, _fileResourceKeys?: unknown) => ({
+    tools: { read_file: filesystemRead ?? { execute: async () => ({}) } },
+  })),
   discoverSkillsMock: vi.fn(),
   installFromSandboxMock: vi.fn(),
   loadSkillMock: vi.fn(),
@@ -42,7 +47,31 @@ const {
   userExecMock: vi.fn(),
   readWorkspaceInstructionsMock: vi.fn(),
   platformName: { current: 'darwin' },
+  builtInBrowser: {
+    current: undefined as { request: () => Promise<unknown> } | undefined,
+    sessionIds: [] as string[],
+  },
 }))
+
+const memoryValues = vi.hoisted(() => new Map<string, unknown>())
+
+vi.mock('@/stores/agentPersonaStore', async () => {
+  const { MemoryService } = await import('@chatbox/core/application/memory')
+  const rendererMemoryService = new MemoryService({
+    storage: {
+      get: <T>(key: string) => Promise.resolve((memoryValues.get(key) ?? null) as T | null),
+      set: async <T>(key: string, value: T) => {
+        memoryValues.set(key, value)
+      },
+    },
+  })
+  return {
+    rendererMemoryService,
+    addMemoryForScope: rendererMemoryService.addMemoryForScope.bind(rendererMemoryService),
+    deleteMemoryForScope: rendererMemoryService.deleteMemoryForScope.bind(rendererMemoryService),
+    copilotMemoryEpoch: rendererMemoryService.copilotMemoryEpoch.bind(rendererMemoryService),
+  }
+})
 
 vi.hoisted(() => {
   const storage = {
@@ -67,6 +96,16 @@ vi.mock('@/platform', () => ({
     readWorkspaceInstructions: readWorkspaceInstructionsMock,
     // Presence enables view_image registration (isViewImageAvailable).
     fsReadImage: vi.fn(),
+    get builtInBrowser() {
+      return builtInBrowser.current
+        ? {
+            forSession: (sessionId: string) => {
+              builtInBrowser.sessionIds.push(sessionId)
+              return builtInBrowser.current
+            },
+          }
+        : undefined
+    },
   },
 }))
 
@@ -150,19 +189,14 @@ vi.mock('@/packages/model-calls/toolsets/web-search', () => {
   const { tool } = require('ai')
   const { z } = require('zod')
   return {
-    default: { description: 'web search toolset' },
-    getToolSetDescription: ({ includeParseLink }: { includeParseLink: boolean }) =>
-      includeParseLink ? 'web search toolset\n## parse_link' : 'web search toolset',
     webSearchTool: tool({ description: 'web_search', inputSchema: z.object({}), execute: async () => ({}) }),
     parseLinkTool: tool({ description: 'parse_link', inputSchema: z.object({}), execute: async () => ({}) }),
   }
 })
 
 vi.mock('@/packages/model-calls/toolsets/file', () => ({
-  default: {
-    description: 'file toolset',
-    tools: { read_file: { execute: async () => ({}) } },
-  },
+  fileToolSetDescription: 'file toolset',
+  buildFileTools: buildFileToolsMock,
 }))
 
 vi.mock('@/packages/model-calls/toolsets/filesystem', () => ({
@@ -179,8 +213,7 @@ vi.mock('@/packages/model-calls/toolsets/filesystem', () => ({
 
 vi.mock('@/packages/model-calls/toolsets/knowledge-base', () => ({
   getToolSet: async () => ({
-    description: 'kb toolset',
-    tools: { kb_search: { execute: async () => ({}) } },
+    tools: { knowledge_base: { execute: async () => ({}) } },
   }),
 }))
 
@@ -188,9 +221,13 @@ vi.mock('@/packages/model-calls/toolsets/session-attachment-rag', () => ({
   getToolSet: getSessionAttachmentRagToolSetMock,
 }))
 
+import { buildContext } from '@shared/context'
 import type { ModelInterface } from '@shared/models/types'
 import type { SandboxProvider } from '@shared/sandbox-provider'
 import type { Message } from '@shared/types'
+import type { MemoryToolContext } from '@shared/types/agent-persona'
+import type { ToolSet } from 'ai'
+import { rendererMemoryService } from '@/stores/agentPersonaStore'
 import { type BuildToolsOptions, buildToolsForSession } from '../tools-builder'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -233,8 +270,12 @@ const sandboxToolNames = [
   'sandbox_find',
 ]
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.clearAllMocks()
+  builtInBrowser.current = undefined
+  builtInBrowser.sessionIds.length = 0
+  memoryValues.clear()
+  await rendererMemoryService.reload()
   for (const listener of skillsChangedListeners) {
     listener()
   }
@@ -345,6 +386,210 @@ describe('buildToolsForSession', () => {
     expect(withCopilotScope.instructions).toContain('## Persistent Memory')
   })
 
+  function pausedMemoryMessage(
+    contexts: Array<{ id: string; context?: MemoryToolContext; name?: 'save_memory' | 'delete_memory' }>
+  ): Message {
+    return {
+      id: 'paused-message',
+      role: 'assistant',
+      contentParts: contexts.map(({ id, context, name }) => ({
+        type: 'tool-call',
+        toolCallId: id,
+        toolName: name ?? 'save_memory',
+        state: 'paused',
+        pauseReason: { type: 'tool_call_limit', maxToolCalls: 1 },
+        ...(context ? { memoryToolContext: context } : {}),
+      })),
+    }
+  }
+
+  async function executeMemoryTool(tools: ToolSet, name: string, toolCallId: string, input: unknown) {
+    const execute = tools[name]?.execute
+    if (!execute) throw new Error(`Missing executable ${name}`)
+    return execute(input, { toolCallId, messages: [], context: undefined })
+  }
+
+  test('paused global memory executes its captured context after the switch is disabled', async () => {
+    const targetMessage = pausedMemoryMessage([
+      { id: 'global-save', context: { version: 1, enabled: true, scope: { type: 'global' } } },
+    ])
+    const options: BuildToolsOptions = {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'off',
+      globalSettings: { memoryEnabled: false, language: 'en' },
+      memoryScope: { type: 'copilot', copilotId: 'new-scope', epoch: 0 },
+    }
+    const resumed = await buildToolsForSession(createMockModel({ isSupportToolUse: () => false }), {
+      ...options,
+      pausedMemoryContext: { targetMessage },
+    })
+    await expect(
+      executeMemoryTool(resumed.tools, 'save_memory', 'global-save', { content: 'Global fact' })
+    ).resolves.toMatchObject({
+      message: expect.any(String),
+    })
+    expect((await rendererMemoryService.listMemories()).map((entry) => entry.content)).toEqual(['Global fact'])
+    expect(await rendererMemoryService.listCopilotMemories('new-scope')).toEqual([])
+
+    const nextGeneration = await buildToolsForSession(createMockModel(), {
+      ...options,
+      memoryScope: { type: 'global' },
+    })
+    expect(nextGeneration.tools.save_memory).toBeUndefined()
+    expect(nextGeneration.tools.delete_memory).toBeUndefined()
+  })
+
+  test('each call in an appended message retains its own global or Copilot destination', async () => {
+    await rendererMemoryService.enableCopilotMemory({ id: 'cp-mixed', name: 'Tutor' })
+    const selection = await rendererMemoryService.getCopilotMemorySelection('cp-mixed')
+    if (selection.scope.type !== 'copilot') throw new Error('Expected Copilot memory')
+    const globalEntry = await rendererMemoryService.addMemory('Global old')
+    const copilotEntry = await rendererMemoryService.addCopilotMemory('cp-mixed', 'Copilot old')
+    if (!globalEntry.ok || !copilotEntry.ok) throw new Error('Memory setup failed')
+    const globalContext: MemoryToolContext = { version: 1, enabled: true, scope: { type: 'global' } }
+    const copilotContext: MemoryToolContext = {
+      version: 1,
+      enabled: true,
+      scope: { type: 'copilot', copilotId: 'cp-mixed', lifecycleToken: selection.scope.lifecycleToken },
+    }
+    const targetMessage = pausedMemoryMessage([
+      { id: 'global-save', context: globalContext },
+      { id: 'copilot-save', context: copilotContext },
+      { id: 'global-delete', context: globalContext, name: 'delete_memory' },
+      { id: 'copilot-delete', context: copilotContext, name: 'delete_memory' },
+    ])
+    const { tools } = await buildToolsForSession(createMockModel(), {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'off',
+      memoryScope: { type: 'copilot', copilotId: 'another-branch', epoch: 0, lifecycleToken: 'another-life' },
+      pausedMemoryContext: { targetMessage },
+    })
+    await executeMemoryTool(tools, 'save_memory', 'global-save', { content: 'Global new' })
+    await executeMemoryTool(tools, 'save_memory', 'copilot-save', { content: 'Copilot new' })
+    await executeMemoryTool(tools, 'delete_memory', 'global-delete', { id: globalEntry.entry.id })
+    await executeMemoryTool(tools, 'delete_memory', 'copilot-delete', { id: copilotEntry.entry.id })
+
+    expect((await rendererMemoryService.listMemories()).map((entry) => entry.content)).toEqual(['Global new'])
+    expect((await rendererMemoryService.listCopilotMemories('cp-mixed')).map((entry) => entry.content)).toEqual([
+      'Copilot new',
+    ])
+    expect(await rendererMemoryService.listCopilotMemories('another-branch')).toEqual([])
+  })
+
+  test('an older branch cannot borrow a recreated Copilot lifecycle from the current scope', async () => {
+    await rendererMemoryService.enableCopilotMemory({ id: 'cp-recreated', name: 'Original' })
+    const initial = await rendererMemoryService.getCopilotMemorySelection('cp-recreated')
+    if (initial.scope.type !== 'copilot') throw new Error('Expected Copilot memory')
+    const oldBranch = pausedMemoryMessage([
+      {
+        id: 'old-save',
+        context: {
+          version: 1,
+          enabled: true,
+          scope: { type: 'copilot', copilotId: 'cp-recreated', lifecycleToken: initial.scope.lifecycleToken },
+        },
+      },
+      {
+        id: 'old-delete',
+        name: 'delete_memory',
+        context: {
+          version: 1,
+          enabled: true,
+          scope: { type: 'copilot', copilotId: 'cp-recreated', lifecycleToken: initial.scope.lifecycleToken },
+        },
+      },
+    ])
+    await rendererMemoryService.retireCopilot('cp-recreated')
+    await rendererMemoryService.enableCopilotMemory({ id: 'cp-recreated', name: 'Recreated' })
+    const selection = await rendererMemoryService.getCopilotMemorySelection('cp-recreated')
+    if (selection.scope.type !== 'copilot') throw new Error('Expected Copilot memory')
+    const newBranch = pausedMemoryMessage([
+      {
+        id: 'new-save',
+        context: {
+          version: 1,
+          enabled: true,
+          scope: { type: 'copilot', copilotId: 'cp-recreated', lifecycleToken: selection.scope.lifecycleToken },
+        },
+      },
+    ])
+    const options: BuildToolsOptions = {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'off',
+      memoryScope: selection.scope,
+    }
+    const oldTools = await buildToolsForSession(createMockModel(), {
+      ...options,
+      pausedMemoryContext: { targetMessage: oldBranch },
+    })
+    const newTools = await buildToolsForSession(createMockModel(), {
+      ...options,
+      pausedMemoryContext: { targetMessage: newBranch },
+    })
+
+    await expect(
+      executeMemoryTool(oldTools.tools, 'save_memory', 'old-save', { content: 'Retired fact' })
+    ).resolves.toMatchObject({ error: expect.any(String) })
+    await expect(
+      executeMemoryTool(newTools.tools, 'save_memory', 'new-save', { content: 'Current fact' })
+    ).resolves.toMatchObject({ message: expect.any(String) })
+    const currentEntry = (await rendererMemoryService.listCopilotMemories('cp-recreated'))[0]
+    await expect(
+      executeMemoryTool(oldTools.tools, 'delete_memory', 'old-delete', { id: currentEntry.id })
+    ).resolves.toEqual({
+      error: 'The memory context for this call is no longer available. Start a new generation.',
+    })
+    expect((await rendererMemoryService.listCopilotMemories('cp-recreated')).map((entry) => entry.content)).toEqual([
+      'Current fact',
+    ])
+    expect(await rendererMemoryService.listMemories()).toEqual([])
+  })
+
+  test.each(['global', 'copilot'] as const)(
+    'legacy calls reject a %s scope inferred from the current topic',
+    async (scopeType) => {
+      const existing = await rendererMemoryService.addMemory('Preserve this')
+      if (!existing.ok) throw new Error('Memory setup failed')
+      const targetMessage = pausedMemoryMessage([{ id: 'legacy-save' }, { id: 'legacy-delete', name: 'delete_memory' }])
+      const { tools } = await buildToolsForSession(createMockModel(), {
+        webBrowsing: false,
+        messages: [],
+        agentMode: 'off',
+        memoryScope:
+          scopeType === 'global' ? { type: 'global' } : { type: 'copilot', copilotId: 'cp-legacy', epoch: 0 },
+        pausedMemoryContext: { targetMessage },
+      })
+      await expect(
+        executeMemoryTool(tools, 'save_memory', 'legacy-save', { content: 'Unknown destination' })
+      ).resolves.toMatchObject({ error: expect.any(String) })
+      await expect(
+        executeMemoryTool(tools, 'delete_memory', 'legacy-delete', { id: existing.entry.id })
+      ).resolves.toMatchObject({ error: expect.any(String) })
+      expect((await rendererMemoryService.listMemories()).map((entry) => entry.content)).toEqual(['Preserve this'])
+      expect(await rendererMemoryService.listCopilotMemories('cp-legacy')).toEqual([])
+    }
+  )
+
+  test('disabled captured memory cannot be enabled by the current settings', async () => {
+    const targetMessage = pausedMemoryMessage([
+      { id: 'disabled-save', context: { version: 1, enabled: false, scope: { type: 'global' } } },
+    ])
+    const { tools } = await buildToolsForSession(createMockModel(), {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'off',
+      globalSettings: { memoryEnabled: true, language: 'en' },
+      pausedMemoryContext: { targetMessage },
+    })
+    await expect(
+      executeMemoryTool(tools, 'save_memory', 'disabled-save', { content: 'Must not save' })
+    ).resolves.toMatchObject({ error: expect.any(String) })
+    expect(await rendererMemoryService.listMemories()).toEqual([])
+  })
+
   test('agentMode="off" exposes selected Knowledge Base without Work Mode tools', async () => {
     const model = createMockModel()
     const result = await buildToolsForSession(model, {
@@ -354,8 +599,7 @@ describe('buildToolsForSession', () => {
       agentMode: 'off',
     })
 
-    expect(result.tools.kb_search).toBeDefined()
-    expect(result.instructions).toContain('kb toolset')
+    expect(result.tools.knowledge_base).toBeDefined()
     expect(result.tools.mcp_tool).toBeUndefined()
     expect(result.tools.load_skill).toBeUndefined()
     expect(result.tools.user_exec).toBeUndefined()
@@ -374,7 +618,7 @@ describe('buildToolsForSession', () => {
     })
 
     expect(result.tools.web_search).toBeDefined()
-    expect(result.tools.kb_search).toBeDefined()
+    expect(result.tools.knowledge_base).toBeDefined()
     expect(result.tools.mcp_tool).toBeUndefined()
     expect(result.tools.load_skill).toBeUndefined()
   })
@@ -397,7 +641,7 @@ describe('buildToolsForSession', () => {
 
     expect(result.tools.load_skill).toBeDefined()
     expect(result.tools.mcp_tool).toBeDefined()
-    expect(result.tools.kb_search).toBeUndefined()
+    expect(result.tools.knowledge_base).toBeUndefined()
     // Sandbox tools NOT present when code_execution is active
     for (const name of sandboxToolNames) {
       expect(result.tools[name]).toBeUndefined()
@@ -427,7 +671,8 @@ describe('buildToolsForSession', () => {
     expect(result.tools.parse_file).toBeDefined()
     expect(result.instructions).toContain('run_command')
     expect(result.instructions).toContain('workdir set to /sandbox/session-1')
-    expect(result.tools.install_skill.description).toContain('Set run_command workdir to /sandbox/session-1')
+    expect(result.instructions).toContain('Use run_command with workdir set to /sandbox/session-1')
+    expect(result.tools.install_skill.description).toContain('Installing Skills')
     expect(buildRunCommandToolMock).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: 'session-1',
@@ -454,13 +699,13 @@ describe('buildToolsForSession', () => {
     expect(result.tools.code_execution).toBeDefined()
     expect(result.tools.run_command).toBeUndefined()
     expect(result.tools.user_exec).toBeUndefined()
-    expect(result.tools.install_skill.description).toContain('code_execution (sandbox)')
+    expect(result.instructions).toContain('Use code_execution to download and unpack skill files')
     expect(result.instructions).toContain('HarmonyOS currently supports sandboxed Node.js through code_execution')
     expect(result.instructions).not.toContain('Use run_command')
     expect(buildRunCommandToolMock).not.toHaveBeenCalled()
   })
 
-  test('v2 Windows command instructions describe PowerShell host execution without Bash claims', async () => {
+  test('v2 Windows instructions leave the execution contract to run_command', async () => {
     platformName.current = 'win32'
     const provider = createMockSandboxProvider()
     vi.mocked(provider.resolveWorkingDirectory).mockResolvedValue('C:\\sandbox\\session-1')
@@ -474,10 +719,31 @@ describe('buildToolsForSession', () => {
       commandExecution: { sessionId: 'session-1', provider },
     })
 
-    expect(result.instructions).toContain('run_command executes PowerShell on the host')
-    expect(result.instructions).toContain('session approval policy')
-    expect(result.instructions).toContain('Bash is unavailable')
+    expect(buildRunCommandToolMock).toHaveBeenCalledWith(expect.objectContaining({ platform: 'win32' }))
+    expect(result.instructions).toContain('run command toolset')
+    expect(result.instructions).toContain('Sandbox working directory: C:/sandbox/session-1')
+    expect(result.instructions).not.toContain('Bash')
     expect(result.instructions).not.toContain('sandboxed environment for lightweight code execution')
+  })
+
+  test('v2 Full Access instructions describe execution only through run_command', async () => {
+    const provider = createMockSandboxProvider()
+    vi.mocked(provider.resolveWorkingDirectory).mockResolvedValue('/sandbox/session-1')
+    const result = await buildToolsForSession(createMockModel(), {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+      agentToolContractVersion: 2,
+      sessionSettings: { commandApprovalMode: 'full_access', workingDirectories: ['/workspace/project'] },
+      codeExecution: { sessionId: 'session-1', provider, files: [] },
+      commandExecution: { sessionId: 'session-1', provider },
+    })
+
+    expect(buildRunCommandToolMock).toHaveBeenCalledWith(expect.objectContaining({ approvalMode: 'full_access' }))
+    expect(result.instructions).toContain('Keep the prepared skill directory beneath that sandbox root')
+    expect(result.instructions).not.toContain('file sandbox first')
+    expect(result.instructions).not.toContain('sandbox-first')
+    expect(result.instructions).not.toContain('### Running Commands')
   })
 
   test.each(['web', 'ios', 'android'])('v2 command contract does not expose Electron commands on %s', async (name) => {
@@ -542,7 +808,7 @@ describe('buildToolsForSession', () => {
       agentMode: 'on',
     })
 
-    expect(result.tools.kb_search).toBeDefined()
+    expect(result.tools.knowledge_base).toBeDefined()
     expect(result.tools.mcp_tool).toBeDefined()
     expect(result.tools.load_skill).toBeDefined()
     expect(result.tools.list_files).toBeDefined()
@@ -609,6 +875,7 @@ describe('buildToolsForSession', () => {
   })
 
   test('normalizes Windows paths and prefers PowerShell without redundant directory changes', async () => {
+    platformName.current = 'win32'
     const model = createMockModel()
     const provider = createMockSandboxProvider()
     vi.mocked(provider.resolveWorkingDirectory).mockResolvedValue('C:\\Users\\themez\\workspace\\chatbox-pro')
@@ -658,9 +925,10 @@ describe('buildToolsForSession', () => {
     expect(result.tools.parse_link).toBeDefined()
     expect(result.instructions).toContain('## Tool-use Communication')
     expect(result.instructions).toContain('one short visible sentence')
-    expect(result.instructions).toContain("Use the user's language for this sentence.")
-    expect(result.instructions).toContain('trivial single-tool lookups')
-    expect(result.instructions).toContain('## parse_link')
+    expect(result.instructions).toContain("in the user's language")
+    expect(result.instructions).toContain('trivial single lookups')
+    expect(result.instructions).not.toContain('## parse_link')
+    expect(result.instructions).not.toContain('## web_search')
   })
 
   test('webBrowsing=true does not expose parse_link when configured search provider does not support it', async () => {
@@ -676,6 +944,110 @@ describe('buildToolsForSession', () => {
     expect(result.tools.web_search).toBeDefined()
     expect(result.tools.parse_link).toBeUndefined()
     expect(result.instructions).not.toContain('## parse_link')
+  })
+
+  function commandsOf(tool: ToolSet[string] | undefined) {
+    return (tool?.inputSchema as unknown as { jsonSchema: { properties: { command: { enum: string[] } } } }).jsonSchema
+      .properties.command.enum
+  }
+
+  test('Work Mode offers the built-in browser as one tool without a standing instruction section', async () => {
+    builtInBrowser.current = { request: vi.fn() }
+    const model = createMockModel()
+
+    const result = await buildToolsForSession(model, {
+      sessionId: 'browser-session',
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+    })
+
+    expect(Object.keys(result.tools).filter((name) => /browse|script|screenshot|browser/.test(name))).toEqual([
+      'browser',
+    ])
+    expect(result.instructions).not.toContain('## Built-in browser')
+    expect(builtInBrowser.sessionIds).toEqual(['browser-session'])
+  })
+
+  test('the built-in-browser skill is listed and loadable only alongside the built-in browser', async () => {
+    const model = createMockModel()
+    const withoutBrowser = await buildToolsForSession(model, {
+      sessionId: 'browser-session',
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+    })
+    expect(withoutBrowser.instructions).not.toContain('**built-in-browser**')
+
+    builtInBrowser.current = { request: vi.fn() }
+    const result = await buildToolsForSession(model, {
+      sessionId: 'browser-session',
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+    })
+    expect(result.instructions).toContain('**built-in-browser**')
+    const loadSkillTool = result.tools.load_skill
+    if (!loadSkillTool?.execute) throw new Error('load_skill execute missing')
+    const loaded = await loadSkillTool.execute({ name: 'built-in-browser' }, {} as never)
+    expect(loaded).toEqual({ instructions: expect.stringContaining('browser.click(target)') })
+    expect(loadSkillMock).not.toHaveBeenCalled()
+  })
+
+  test('the screenshot command and its skill section exist only for vision models', async () => {
+    builtInBrowser.current = { request: vi.fn() }
+
+    const vision = await buildToolsForSession(createMockModel(), {
+      sessionId: 'browser-session',
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+    })
+    expect(commandsOf(vision.tools.browser)).toEqual(['read', 'snapshot', 'run', 'upload', 'screenshot'])
+    expect(vision.prepareStepMessages).toBeDefined()
+    const visionSkill = await vision.tools.load_skill.execute?.({ name: 'built-in-browser' }, {} as never)
+    expect(JSON.stringify(visionSkill)).toContain('## Screenshots')
+
+    const textOnly = createMockModel()
+    vi.mocked(textOnly.isSupportVision).mockReturnValue(false)
+    const withoutVision = await buildToolsForSession(textOnly, {
+      sessionId: 'browser-session',
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+    })
+    expect(commandsOf(withoutVision.tools.browser)).toEqual(['read', 'snapshot', 'run', 'upload'])
+    const textSkill = await withoutVision.tools.load_skill.execute?.({ name: 'built-in-browser' }, {} as never)
+    expect(JSON.stringify(textSkill)).not.toContain('Screenshots')
+  })
+
+  test('the browser stays off in chat mode and without a built-in browser', async () => {
+    const model = createMockModel()
+    const withoutBrowser = await buildToolsForSession(model, {
+      sessionId: 'browser-session',
+      webBrowsing: true,
+      messages: [],
+      agentMode: 'on',
+    })
+    expect(withoutBrowser.tools.browser).toBeUndefined()
+    expect(withoutBrowser.instructions).not.toContain('built-in-browser')
+
+    builtInBrowser.current = { request: vi.fn() }
+    const chatMode = await buildToolsForSession(model, {
+      sessionId: 'browser-session',
+      webBrowsing: true,
+      messages: [],
+      agentMode: 'off',
+    })
+    expect(chatMode.tools.browser).toBeUndefined()
+    expect(chatMode.instructions).not.toContain('built-in-browser')
+  })
+
+  test('the browser is unavailable without a conversation identity', async () => {
+    builtInBrowser.current = { request: vi.fn() }
+    const result = await buildToolsForSession(createMockModel(), { webBrowsing: false, messages: [], agentMode: 'on' })
+    expect(result.tools.browser).toBeUndefined()
+    expect(builtInBrowser.sessionIds).toEqual([])
   })
 
   test('agentMode="on" without codeExecution — load_skill only, no code-exec tools', async () => {
@@ -1194,6 +1566,60 @@ describe('session attachment RAG tools', () => {
     expect(result.tools.query_session_attachment).toBeDefined()
   })
 
+  describe('after compaction covers the retrieval upload', () => {
+    function compactedSession(): Message[] {
+      const upload = retrievalMessage()
+      return [
+        upload,
+        { id: 'a1', role: 'assistant', contentParts: [{ type: 'text', text: 'It covers setup.' }] },
+        {
+          id: 'summary',
+          role: 'assistant',
+          isSummary: true,
+          contentParts: [{ type: 'text', text: 'The user uploaded a manual.' }],
+          compactedFiles: upload.files,
+        },
+        { id: 'u2', role: 'user', contentParts: [{ type: 'text', text: 'What about chapter 3?' }] },
+      ]
+    }
+    const compactionPoints = [{ boundaryMessageId: 'a1', summaryMessageId: 'summary', createdAt: 1 }]
+    const promptText = (messages: Message[]) => JSON.stringify(messages.map((message) => message.contentParts))
+
+    test('registers the retrieval tools for the file the summary references', async () => {
+      const prompt = await buildContext(compactedSession(), {
+        attachmentResolver: { read: async () => null },
+        compactionPoints,
+        modelSupportToolUseForFile: true,
+      })
+      const result = await buildToolsForSession(createMockModel(), {
+        webBrowsing: false,
+        messages: prompt,
+        agentMode: 'off',
+      })
+
+      expect(prompt.map((message) => message.id)).toEqual(['u2'])
+      expect(promptText(prompt)).toContain('session-attachment:42')
+      expect(getSessionAttachmentRagToolSetMock).toHaveBeenCalledWith([42])
+      expect(result.tools.query_session_attachment).toBeDefined()
+    })
+
+    test('names the file without retrieval guidance when the request has no retrieval tools', async () => {
+      const prompt = await buildContext(compactedSession(), {
+        attachmentResolver: { read: async () => null },
+        compactionPoints,
+      })
+      const model = createMockModel({ isSupportToolUse: vi.fn().mockReturnValue(false) })
+      const result = await buildToolsForSession(model, { webBrowsing: false, messages: prompt, agentMode: 'off' })
+
+      const text = promptText(prompt)
+      expect(text).toContain('manual.md')
+      expect(text).toContain('cannot be reopened')
+      expect(text).not.toContain('session-attachment:42')
+      expect(text).not.toContain('RETRIEVAL_MODE')
+      expect(result.tools.query_session_attachment).toBeUndefined()
+    })
+  })
+
   test('does not add retrieval tools when the model cannot use tools', async () => {
     const model = createMockModel({ isSupportToolUse: vi.fn().mockReturnValue(false) })
     const result = await buildToolsForSession(model, {
@@ -1475,5 +1901,116 @@ describe('buildToolsForSession — view_image gating', () => {
       agentMode: 'off',
     })
     expect(result.tools.view_image).toBeUndefined()
+  })
+})
+
+test('registers file tools from branch history after prompt compaction', async () => {
+  const result = await buildToolsForSession(createMockModel(), {
+    webBrowsing: false,
+    agentMode: 'off',
+    messages: [
+      { id: 'summary', role: 'user', contentParts: [{ type: 'text', text: 'Continue reading the uploaded report.' }] },
+    ],
+    fileMessages: [
+      {
+        id: 'original',
+        role: 'user',
+        contentParts: [],
+        files: [{ id: 'report', name: 'report.txt', fileType: 'text/plain', storageKey: 'report' }],
+      },
+    ],
+  })
+  expect(result.tools.read_file).toBeDefined()
+  expect(result.instructions).toContain('file toolset')
+  expect(buildFileToolsMock.mock.lastCall?.[0]).toEqual([
+    expect.objectContaining({ id: 'original', files: expect.any(Array) }),
+  ])
+})
+
+test('keeps the virtual reader available for compacted resource lookups', async () => {
+  const fileResourceKeys = ['older-file']
+  const result = await buildToolsForSession(createMockModel(), {
+    webBrowsing: false,
+    agentMode: 'off',
+    messages: [],
+    fileResourceKeys,
+  })
+  expect(result.tools.read_file).toBeDefined()
+  expect(buildFileToolsMock.mock.lastCall?.[2]).toBe(fileResourceKeys)
+})
+
+describe('buildToolsForSession script tool and sandbox guidance', () => {
+  const buildAgentTools = (overrides: Partial<BuildToolsOptions>) =>
+    buildToolsForSession(createMockModel(), {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+      sessionSettings: { commandApprovalMode: 'smart' },
+      ...overrides,
+    })
+
+  test.each([
+    { name: 'v2 desktop', platform: 'darwin', version: 2, commandExecution: true, scriptTool: 'run_command' },
+    { name: 'v1 desktop', platform: 'darwin', version: 1, commandExecution: true, scriptTool: 'code_execution' },
+    { name: 'v2 HarmonyOS', platform: 'harmony', version: 2, commandExecution: true, scriptTool: 'code_execution' },
+    {
+      name: 'v2 desktop without commandExecution',
+      platform: 'darwin',
+      version: 2,
+      commandExecution: false,
+      scriptTool: 'code_execution',
+    },
+  ] as const)('$name names the registered script tool', async ({ platform, version, commandExecution, scriptTool }) => {
+    platformName.current = platform
+    const provider = { ...createMockSandboxProvider(), type: 'local' } as SandboxProvider
+    const result = await buildAgentTools({
+      agentToolContractVersion: version,
+      codeExecution: { sessionId: 'session-1', provider, files: [] },
+      ...(commandExecution ? { commandExecution: { sessionId: 'session-1', provider } } : {}),
+    })
+
+    expect(buildCodeExecutionToolsMock).toHaveBeenCalledWith(expect.objectContaining({ scriptTool }))
+    expect(result.tools.view_image.description).toContain('Relative paths resolve in the session sandbox')
+    if (version === 1) expect(result.tools.user_exec.description).toContain('Prefer code_execution (sandbox)')
+    if (scriptTool === 'run_command') {
+      expect(result.tools.run_command).toBeDefined()
+      expect(result.tools.code_execution).toBeUndefined()
+    } else {
+      expect(result.tools.code_execution).toBeDefined()
+      expect(result.tools.run_command).toBeUndefined()
+    }
+  })
+
+  test.each([1, 2] as const)('v%s without a sandbox omits skill installation steps', async (version) => {
+    const result = await buildAgentTools({
+      agentToolContractVersion: version,
+      commandExecution: { sessionId: 'session-1' },
+    })
+
+    expect(result.tools.install_skill).toBeUndefined()
+    expect(result.instructions).toContain('Installing skills requires the session sandbox')
+    expect(result.instructions).not.toContain('call install_skill')
+    expect(result.instructions).not.toContain('Call install_skill')
+    expect(result.instructions).not.toContain('Prefer code_execution (sandbox)')
+    if (version === 1) expect(result.tools.user_exec.description).not.toContain('code_execution')
+    expect(result.tools.view_image.description).toContain('Use absolute paths')
+    expect(result.tools.view_image.description).not.toContain('Relative paths resolve')
+  })
+
+  test.each([
+    { platform: 'darwin', windows: false, bashHome: true },
+    { platform: 'win32', windows: true, bashHome: true },
+    { platform: 'harmony', windows: false, bashHome: false },
+  ])('working-directory guidance on $platform covers only its shells', async ({ platform, windows, bashHome }) => {
+    platformName.current = platform
+    const provider = createMockSandboxProvider()
+    const result = await buildAgentTools({
+      agentToolContractVersion: platform === 'harmony' ? 2 : 1,
+      codeExecution: { sessionId: 'session-1', provider, files: [] },
+      commandExecution: { sessionId: 'session-1', provider },
+    })
+
+    expect(result.instructions.includes('On Windows, prefer PowerShell')).toBe(windows)
+    expect(result.instructions.includes('In Bash, `~` and `$HOME` point to the working directory')).toBe(bashHome)
   })
 })

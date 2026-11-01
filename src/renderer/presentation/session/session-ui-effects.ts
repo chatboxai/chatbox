@@ -1,10 +1,9 @@
 import type { SessionApplicationEvent, SessionEventBus } from '@chatbox/core/application/session'
+import { registerWorkspaceCleanup } from '@shared/mobile-work/workspace-cleanup'
 import { rendererApplication } from '@/app/renderer-application'
-import { clearScrollPositionCache } from '@/components/chat/MessageList'
 import { sessionStartupRecovery } from '@/packages/session-startup-recovery'
 import platform from '@/platform'
-import { cleanupSessionAtomCache } from '@/stores/atoms/throttleWriteSessionAtom'
-import { clearSessionNameGenerationState, syncSessionAutoTitle } from '@/stores/session/naming'
+import { clearSessionNameGenerationState, syncSessionAutoTitleOnOpen } from '@/stores/session/naming'
 import { clearSessionActivity } from '@/stores/sessionActivityStore'
 import { uiStore } from '@/stores/uiStore'
 
@@ -29,8 +28,13 @@ function cleanupDeletedSessionRuntimeState(sessionId: string): void {
   uiStore.getState().clearSessionWebBrowsing(sessionId)
   uiStore.getState().removeSessionKnowledgeBase(sessionId)
   uiStore.getState().clearSessionAgentMode(sessionId)
-  cleanupSessionAtomCache(sessionId)
-  clearScrollPositionCache(sessionId)
+  uiStore.getState().clearSessionPanel(sessionId)
+  platform.builtInBrowser
+    ?.forSession(sessionId)
+    .dispose()
+    .catch((error: unknown) => {
+      console.warn('Failed to release the deleted conversation browser:', error)
+    })
   clearSessionNameGenerationState(sessionId)
   clearSessionActivity(sessionId)
   platform.sandboxReset?.({ sessionId }).catch(() => {})
@@ -42,7 +46,15 @@ function cleanupDeletedSessionRuntimeState(sessionId: string): void {
  * the Renderer composition root and is not part of the portable SessionService.
  */
 export function registerSessionUiEffects(events: SessionEventBus): () => void {
-  return events.subscribe(async (event) => {
+  const unregisterWorkspaceCleanup =
+    platform.type === 'mobile'
+      ? registerWorkspaceCleanup(
+          events,
+          async () => (await import('@/packages/mobile-work-mode/runtime')).capacitorWorkspace,
+          (sessionId) => rendererApplication.generationRuntime.abort(sessionId, undefined, 'session-deleted')
+        )
+      : undefined
+  const unsubscribe = events.subscribe(async (event) => {
     if (event.type === 'session-will-delete') {
       for (const sessionId of event.ids) {
         rendererApplication.generationRuntime.abort(sessionId, undefined, 'session-deleted')
@@ -50,14 +62,11 @@ export function registerSessionUiEffects(events: SessionEventBus): () => void {
       await cleanupAttachmentRagEntries(event)
       return
     }
-    if (event.type === 'session-updated' && event.session) {
-      // Naming reacts to persisted user/message writes only. Read-repair
-      // publishes (meta: null) must not re-enter naming — bulk readers like
-      // the startup RAG maintenance sweep and recoverSessionList touch every
-      // session — and hidden/archived sessions (bulk archive fan-out) must
-      // not trigger backfill writes or naming model calls either.
-      if (event.meta && !event.session.hidden) {
-        syncSessionAutoTitle(event.session)
+    if (event.type === 'session-command-committed') {
+      if (event.meta && !event.delta.header.hidden) {
+        void syncSessionAutoTitleOnOpen(event.delta.header, () => true).catch((error: unknown) => {
+          console.warn('Failed to synchronize session title:', error)
+        })
       }
       return
     }
@@ -68,4 +77,8 @@ export function registerSessionUiEffects(events: SessionEventBus): () => void {
       }
     }
   })
+  return () => {
+    unregisterWorkspaceCleanup?.()
+    unsubscribe()
+  }
 }

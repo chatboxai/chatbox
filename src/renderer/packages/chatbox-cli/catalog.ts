@@ -76,9 +76,9 @@ export const chatboxCliCommandCatalog: ChatboxCliCommandCatalogEntry[] = [
     domain: 'image',
     path: ['image', 'generate'],
     description:
-      'Request approval, then start a callback-driven image background task. Never poll for completion. When the user names a model, pass --model (model id or display name); without --model the first catalog model is used.',
+      'Request approval, then start a callback-driven image background task. Never poll for completion. When the user names a model, pass --model (model id or display name); without --model the first compatible catalog model is used. Pass --reference-images as a JSON array of picture storage keys (available via chats read) or HTTP(S) image URLs. Never pass base64 image data.',
     usage:
-      'chatbox image generate --prompt <text> [--provider <id>] [--model <id-or-name>] [--count 1] [--aspect-ratio <ratio>]',
+      'chatbox image generate --prompt <text> [--provider <id>] [--model <id-or-name>] [--count 1] [--aspect-ratio <ratio>] [--reference-images <json-array>]',
   },
   {
     domain: 'image',

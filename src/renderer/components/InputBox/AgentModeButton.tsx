@@ -16,6 +16,7 @@ import AgentModeStatusIcon from './AgentModeStatusIcon'
 import { getAgentModeUIState } from './agentModeState'
 import { useComposerMenuStore } from './composerMenuStore'
 import { type ComposerMenuLayout, resolveComposerMenuLayout, useComposerTouchLayout } from './composerTouchLayout'
+import MobileAgentModePanel from './MobileAgentModePanel'
 
 interface AgentModeButtonProps {
   sessionId: string
@@ -24,6 +25,7 @@ interface AgentModeButtonProps {
   iconSize?: number
   /** Small screens render the mode as an icon status badge instead of a text label. */
   compact?: boolean
+  hasDraftAttachments?: boolean
   modelSupportsAgentMode?: boolean
   webBrowsingMode: boolean
   onWebBrowsingChange: (enabled: boolean) => void
@@ -52,6 +54,7 @@ const AgentModeButton: FC<AgentModeButtonProps> = ({
   iconSize = 18,
   compact = false,
   modelSupportsAgentMode = true,
+  hasDraftAttachments = false,
   webBrowsingMode,
   onWebBrowsingChange,
   currentKnowledgeBaseId,
@@ -191,13 +194,15 @@ const AgentModeButton: FC<AgentModeButtonProps> = ({
     [isTouchLayout, onWebBrowsingChange]
   )
 
+  const ModePanel = platform.type === 'mobile' ? MobileAgentModePanel : AgentModePanel
   const panel = opened ? (
-    <AgentModePanel
+    <ModePanel
       ref={panelRef}
       sessionId={sessionId}
       providerId={providerId}
       modelId={modelId}
       modelSupportsAgentMode={modelSupportsAgentMode}
+      hasDraftAttachments={hasDraftAttachments}
       webBrowsingMode={webBrowsingMode}
       onWebBrowsingChange={handleWebBrowsingChange}
       currentKnowledgeBaseId={currentKnowledgeBaseId}

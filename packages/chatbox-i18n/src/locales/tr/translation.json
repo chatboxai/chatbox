@@ -1981,5 +1981,8 @@
   "Select Text": "Metni seç",
   "Me": "Ben",
   "{{author}}: {{preview}}": "{{author}}: {{preview}}",
-  "Long press a message to reply again, edit, copy, or select text": "Yeniden yanıtlamak, düzenlemek, kopyalamak veya metin seçmek için bir mesaja uzun basın"
+  "Long press a message to reply again, edit, copy, or select text": "Yeniden yanıtlamak, düzenlemek, kopyalamak veya metin seçmek için bir mesaja uzun basın",
+  "Not enough points": "Yetersiz puan",
+  "License expired": "Lisans süresi doldu",
+  "Uses built-in document parsing feature, supports common file types, and consumes no compute points. If local parsing fails, Chatbox AI cloud parsing will be used when a license is available and compute points will be consumed.": "Yerleşik belge ayrıştırma özelliğini kullanır, yaygın dosya türlerini destekler ve işlem puanı tüketmez. Yerel ayrıştırma başarısız olursa, lisans varsa Chatbox AI bulut ayrıştırması kullanılır ve işlem puanı harcanır."
 }

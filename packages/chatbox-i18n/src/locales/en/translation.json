@@ -1981,5 +1981,8 @@
   "Select Text": "Select Text",
   "Me": "Me",
   "{{author}}: {{preview}}": "{{author}}: {{preview}}",
-  "Long press a message to reply again, edit, copy, or select text": "Long press a message to reply again, edit, copy, or select text"
+  "Long press a message to reply again, edit, copy, or select text": "Long press a message to reply again, edit, copy, or select text",
+  "Not enough points": "Not enough points",
+  "License expired": "License expired",
+  "Uses built-in document parsing feature, supports common file types, and consumes no compute points. If local parsing fails, Chatbox AI cloud parsing will be used when a license is available and compute points will be consumed.": "Uses built-in document parsing feature, supports common file types, and consumes no compute points. If local parsing fails, Chatbox AI cloud parsing will be used when a license is available and compute points will be consumed."
 }

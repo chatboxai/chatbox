@@ -1981,5 +1981,8 @@
   "Select Text": "Markera text",
   "Me": "Jag",
   "{{author}}: {{preview}}": "{{author}}: {{preview}}",
-  "Long press a message to reply again, edit, copy, or select text": "Tryck länge på ett meddelande för att svara igen, redigera, kopiera eller markera text"
+  "Long press a message to reply again, edit, copy, or select text": "Tryck länge på ett meddelande för att svara igen, redigera, kopiera eller markera text",
+  "Not enough points": "Inte tillräckligt med poäng",
+  "License expired": "Licensen har gått ut",
+  "Uses built-in document parsing feature, supports common file types, and consumes no compute points. If local parsing fails, Chatbox AI cloud parsing will be used when a license is available and compute points will be consumed.": "Använder inbyggd dokumenttolkningsfunktion, stöder vanliga filtyper och förbrukar inga beräkningspoäng. Om den lokala tolkningen misslyckas används Chatbox AI:s molntolkning när en licens finns, vilket förbrukar beräkningspoäng."
 }

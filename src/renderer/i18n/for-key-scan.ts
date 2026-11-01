@@ -222,6 +222,9 @@ function _otherI18nKeys(t: (key: string) => string) {
     'Uses built-in document parsing feature, supports common file types. Free usage, no compute points will be consumed.'
   )
   t(
+    'Uses built-in document parsing feature, supports common file types, and consumes no compute points. If local parsing fails, Chatbox AI cloud parsing will be used when a license is available and compute points will be consumed.'
+  )
+  t(
     'Cloud-based document parsing service, supports PDF, Office files, EPUB and many other file types. Consumes compute points.'
   )
   t(

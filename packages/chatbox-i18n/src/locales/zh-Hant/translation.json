@@ -1981,5 +1981,8 @@
   "Select Text": "選取文字",
   "Me": "我",
   "{{author}}: {{preview}}": "{{author}}：{{preview}}",
-  "Long press a message to reply again, edit, copy, or select text": "長按訊息可重新回答、編輯、複製和選取文字"
+  "Long press a message to reply again, edit, copy, or select text": "長按訊息可重新回答、編輯、複製和選取文字",
+  "Not enough points": "點數不足",
+  "License expired": "許可證已過期",
+  "Uses built-in document parsing feature, supports common file types, and consumes no compute points. If local parsing fails, Chatbox AI cloud parsing will be used when a license is available and compute points will be consumed.": "使用內建文件解析功能，支援常見檔案類型，不會消耗點數。若本機解析失敗且有可用許可證，將使用 Chatbox AI 雲端解析並消耗點數。"
 }

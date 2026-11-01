@@ -20,7 +20,7 @@ const ALL_PARSER_OPTIONS: {
 const PARSER_DESCRIPTIONS: Record<DocumentParserType, string> = {
   none: 'Only supports basic text files (.txt, .md, .json, code files, etc.). For PDF and Office files, please switch to Chatbox AI.',
   local:
-    'Uses built-in document parsing feature, supports common file types. Free usage, no compute points will be consumed.',
+    'Uses built-in document parsing feature, supports common file types, and consumes no compute points. If local parsing fails, Chatbox AI cloud parsing will be used when a license is available and compute points will be consumed.',
   'chatbox-ai':
     'Tries local parsing first without consuming compute points. If local parsing fails, Chatbox AI cloud parsing will be used and compute points will be consumed.',
   mineru: 'Third-party cloud parsing service, supports PDF and most Office files. Requires API token.',

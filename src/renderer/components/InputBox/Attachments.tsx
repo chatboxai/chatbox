@@ -16,7 +16,7 @@ import {
   SESSION_ATTACHMENT_RAG_REQUIRES_KNOWLEDGE_BASE_ERROR,
   SESSION_ATTACHMENT_RAG_REQUIRES_TOOL_USE_MODEL_ERROR,
 } from '@/stores/sessionHelpers'
-import { getFileParseErrorI18nKey } from '@/utils/file-parse-error'
+import { getChatboxAIParserAccountErrorLabel, getFileParseErrorI18nKey } from '@/utils/file-parse-error'
 import MiniButton from '../common/MiniButton'
 import FileIcon from '../FileIcon'
 import { ImageInStorage } from '../Image'
@@ -81,7 +81,7 @@ function getErrorStatusLabel(errorCode: string | undefined, t: (key: string) => 
   if (errorCode === 'license_key_required') {
     return t('License needed')
   }
-  return t('Processing failed')
+  return getChatboxAIParserAccountErrorLabel(errorCode, t) ?? t('Processing failed')
 }
 
 export function ImageMiniCard(props: { storageKey: string; onDelete: () => void }) {

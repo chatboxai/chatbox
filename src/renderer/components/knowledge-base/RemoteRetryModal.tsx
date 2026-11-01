@@ -12,8 +12,8 @@ import platform from '@/platform'
 import { KnowledgeBaseFileErrorButton } from './KnowledgeBaseFileErrorButton'
 import {
   canRetryKnowledgeBaseFileWithServer,
-  getKnowledgeBaseFileErrorLabel,
-  isChatboxAIParserLicenseRequired,
+  getKnowledgeBaseFileErrorStatusLabel,
+  getKnowledgeBaseFileErrorTooltip,
 } from './knowledge-base-file-error'
 
 interface RemoteRetryModalProps {
@@ -93,7 +93,7 @@ export function RemoteRetryModal({ opened, onClose, failedFiles, onSuccess }: Re
           <Stack gap="xs">
             {failedFiles.map((file) => {
               const isRetryable = canRetryKnowledgeBaseFileWithServer(file)
-              const isLicenseError = isChatboxAIParserLicenseRequired(file.error)
+              const actionLabel = getKnowledgeBaseFileErrorStatusLabel(file.error, t)
               return (
                 <Flex
                   key={file.id}
@@ -114,23 +114,17 @@ export function RemoteRetryModal({ opened, onClose, failedFiles, onSuccess }: Re
                     {/* Error info tooltip */}
                     {file.error && (
                       <Tooltip
-                        label={
-                          isLicenseError
-                            ? t('Sign in needed')
-                            : getKnowledgeBaseFileErrorLabel(file.error, (key, options) =>
-                                String(options ? t(key, { limit: options.limit }) : t(key))
-                              )
-                        }
+                        label={getKnowledgeBaseFileErrorTooltip(file.error, t)}
                         multiline
                         w={300}
                         withArrow
                         position="top"
                       >
-                        {isLicenseError ? (
+                        {actionLabel ? (
                           <KnowledgeBaseFileErrorButton
                             errorCode={file.error}
                             fileName={file.filename}
-                            label={t('Sign in needed')}
+                            label={actionLabel}
                           >
                             <IconInfoCircle size={14} color="var(--mantine-color-red-6)" />
                           </KnowledgeBaseFileErrorButton>

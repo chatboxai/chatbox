@@ -1981,5 +1981,8 @@
   "Select Text": "Sélectionner le texte",
   "Me": "Moi",
   "{{author}}: {{preview}}": "{{author}} : {{preview}}",
-  "Long press a message to reply again, edit, copy, or select text": "Appuyez longuement sur un message pour relancer la réponse, le modifier, le copier ou sélectionner du texte"
+  "Long press a message to reply again, edit, copy, or select text": "Appuyez longuement sur un message pour relancer la réponse, le modifier, le copier ou sélectionner du texte",
+  "Not enough points": "Points insuffisants",
+  "License expired": "Licence expirée",
+  "Uses built-in document parsing feature, supports common file types, and consumes no compute points. If local parsing fails, Chatbox AI cloud parsing will be used when a license is available and compute points will be consumed.": "Utilise la fonctionnalité intégrée d'analyse de documents, prend en charge les types de fichiers courants et ne consomme aucun point de calcul. Si l'analyse locale échoue, l'analyse cloud de Chatbox AI est utilisée lorsqu'une licence est disponible, ce qui consomme des points de calcul."
 }

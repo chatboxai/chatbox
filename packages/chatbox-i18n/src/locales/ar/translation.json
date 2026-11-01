@@ -1981,5 +1981,8 @@
   "Select Text": "تحديد النص",
   "Me": "أنا",
   "{{author}}: {{preview}}": "{{author}}: {{preview}}",
-  "Long press a message to reply again, edit, copy, or select text": "اضغط مطولاً على رسالة لإعادة الرد أو التعديل أو النسخ أو تحديد النص"
+  "Long press a message to reply again, edit, copy, or select text": "اضغط مطولاً على رسالة لإعادة الرد أو التعديل أو النسخ أو تحديد النص",
+  "Not enough points": "نقاط غير كافية",
+  "License expired": "انتهت صلاحية الترخيص",
+  "Uses built-in document parsing feature, supports common file types, and consumes no compute points. If local parsing fails, Chatbox AI cloud parsing will be used when a license is available and compute points will be consumed.": "يستخدم ميزة تحليل المستندات المدمجة، ويدعم أنواع الملفات الشائعة، ولا يستهلك نقاط الحوسبة. إذا فشل التحليل المحلي، فسيُستخدم التحليل السحابي من Chatbox AI عند توفر ترخيص، مع استهلاك نقاط الحوسبة."
 }

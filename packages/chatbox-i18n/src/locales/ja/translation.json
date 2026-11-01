@@ -1981,5 +1981,8 @@
   "Select Text": "テキストを選択",
   "Me": "自分",
   "{{author}}: {{preview}}": "{{author}}：{{preview}}",
-  "Long press a message to reply again, edit, copy, or select text": "メッセージを長押しすると、再回答・編集・コピー・テキスト選択ができます"
+  "Long press a message to reply again, edit, copy, or select text": "メッセージを長押しすると、再回答・編集・コピー・テキスト選択ができます",
+  "Not enough points": "ポイント不足",
+  "License expired": "ライセンス期限切れ",
+  "Uses built-in document parsing feature, supports common file types, and consumes no compute points. If local parsing fails, Chatbox AI cloud parsing will be used when a license is available and compute points will be consumed.": "内蔵のドキュメント解析機能を使用し、一般的なファイル形式をサポートしています。コンピューティングポイントは消費されません。ローカル解析に失敗した場合、ライセンスがあれば Chatbox AI のクラウド解析を使用し、ポイントを消費します。"
 }

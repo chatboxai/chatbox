@@ -27,7 +27,7 @@
 //             settings.openaiMaxContextTokens = 128_000
 //             settings.openaiMaxContextMessageCount = 8
 //             break
-//         case ModelProviderEnum.ChatGLM6B:
+//         case ModelProviderEnum.GLM:
 //             settings.openaiMaxTokens = 0
 //             settings.openaiMaxContextTokens = 2000
 //             settings.openaiMaxContextMessageCount = 4

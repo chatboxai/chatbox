@@ -1,7 +1,81 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { Message } from '../types'
 import { GenerationRuntimeStore } from './runtime-store'
 
 describe('GenerationRuntimeStore', () => {
+  it('lists generating conversations once while excluding paused runtimes and pending storage work', () => {
+    const store = new GenerationRuntimeStore()
+    store.start('active', 'one')
+    store.start('active', 'two')
+    store.start('paused', 'three')
+    store.setPhase('paused', 'three', 'paused')
+    store.start('stopping', 'four')
+    store.setPhase('stopping', 'four', 'stopping')
+    store.acquireGenerationPreparationLease('attachments')
+    store.registerUnsettledStreamDrain('draining', new Promise<void>(() => {}))
+    expect(store.getGeneratingSessionIds()).toEqual(['active', 'stopping'])
+    expect(() => store.start('new', 'five')).not.toThrow()
+    store.dispose()
+  })
+
+  it('keeps only the current runtime stream and freezes it when stopping', () => {
+    const store = new GenerationRuntimeStore()
+    const first = store.start('s', 'a')
+    const message: Message = {
+      id: 'a',
+      role: 'assistant',
+      generating: true,
+      contentParts: [{ type: 'text', text: 'before stop' }],
+    }
+    store.setLiveMessage('s', message)
+    store.beginStop('s', 'a', 1, first)
+    store.setLiveMessage('s', { ...message, contentParts: [{ type: 'text', text: 'late chunk' }] })
+    expect(store.getLiveMessage('s', 'a')).toBe(message)
+    store.clear('s', 'a')
+    expect(store.getLiveMessage('s', 'a')).toBeUndefined()
+    store.start('s', 'a')
+    expect(store.getLiveMessage('s', 'a')).toBeUndefined()
+    store.dispose()
+  })
+
+  it('cancels an idle wait without cancelling the existing generation', async () => {
+    const store = new GenerationRuntimeStore()
+    const runtime = store.start('active', 'reply')
+    const controller = new AbortController()
+    const waiting = store.waitForIdle(controller.signal)
+    controller.abort()
+    await expect(waiting).rejects.toMatchObject({ name: 'AbortError' })
+    expect(runtime.abortController.signal.aborted).toBe(false)
+    expect(store.get('active', 'reply')).toBe(runtime)
+    store.dispose()
+  })
+
+  it('waits for generation, preparation, and stream drains without stopping replies', async () => {
+    const store = new GenerationRuntimeStore()
+    const runtime = store.start('active', 'reply')
+    const preparation = store.acquireGenerationPreparationLease('preparing')!
+    let finishDrain = () => {}
+    store.registerUnsettledStreamDrain(
+      'draining',
+      new Promise<void>((resolve) => {
+        finishDrain = resolve
+      })
+    )
+    let idle = false
+    const waiting = store.waitForIdle().then(() => {
+      idle = true
+    })
+    store.finishActive('active', 'reply', runtime)
+    store.releaseGenerationPreparationLease(preparation)
+    await Promise.resolve()
+    expect(idle).toBe(false)
+    expect(runtime.abortController.signal.aborted).toBe(false)
+    finishDrain()
+    await waiting
+    expect(idle).toBe(true)
+    store.dispose()
+  })
+
   const stores: GenerationRuntimeStore[] = []
 
   function createStore(): GenerationRuntimeStore {
@@ -88,6 +162,71 @@ describe('GenerationRuntimeStore', () => {
     expect(cancelled.abortController.signal.aborted).toBe(true)
     expect(cancelled.abortController.signal.reason).toBe(123_456)
     expect(retry.abortController.signal.aborted).toBe(false)
+  })
+
+  it('aborts every runtime registered while a Session Stop gate is active', () => {
+    const store = createStore()
+    const gate = store.beginSessionStop('session-1', 123_456)
+
+    const first = store.start('session-1', 'message-1')
+    const second = store.start('session-1', 'message-2')
+
+    expect(first.abortController.signal).toMatchObject({ aborted: true, reason: 123_456 })
+    expect(second.abortController.signal).toMatchObject({ aborted: true, reason: 123_456 })
+    expect(store.list('session-1')).toEqual([])
+    expect(store.isSessionStopRequested('session-1')).toBe(true)
+    expect(store.clearSessionStop('session-1', gate)).toBe(true)
+    expect(store.start('session-1', 'message-3').abortController.signal.aborted).toBe(false)
+  })
+
+  it('lets only the latest Stop-all owner release the Session gate', () => {
+    const store = createStore()
+    const first = store.beginSessionStop('session-1', 'first')
+    const latest = store.beginSessionStop('session-1', 'latest')
+
+    expect(store.clearSessionStop('session-1', first)).toBe(false)
+    expect(store.start('session-1', 'late-message').abortController.signal).toMatchObject({
+      aborted: true,
+      reason: 'latest',
+    })
+    expect(store.clearSessionStop('session-1', latest)).toBe(true)
+  })
+
+  it('force-clears a retained Session Stop gate when its Session is deleted', () => {
+    const store = createStore()
+    store.beginSessionStop('session-1', 'stopped')
+
+    expect(store.clearSessionStop('session-1')).toBe(true)
+    expect(store.isSessionStopRequested('session-1')).toBe(false)
+    expect(store.clearSessionStop('session-1')).toBe(false)
+  })
+
+  it('blocks new preparation leases behind a Session Stop gate', () => {
+    const store = createStore()
+    store.beginSessionStop('session-1', 'stopped')
+
+    expect(store.acquireGenerationPreparationLease('session-1')).toBeUndefined()
+  })
+
+  it('waits for preparation leases acquired before the Session Stop gate', async () => {
+    const store = createStore()
+    const first = store.acquireGenerationPreparationLease('session-1')
+    const second = store.acquireGenerationPreparationLease('session-1')
+    expect(first).toBeDefined()
+    expect(second).toBeDefined()
+    store.beginSessionStop('session-1', 'stopped')
+    const barrier = store.waitForGenerationPreparationLeases('session-1')
+    const settled = vi.fn()
+    void barrier?.then(settled)
+
+    expect(store.releaseGenerationPreparationLease(first!)).toBe(true)
+    await Promise.resolve()
+    expect(settled).not.toHaveBeenCalled()
+
+    expect(store.releaseGenerationPreparationLease(second!)).toBe(true)
+    await barrier
+    expect(settled).toHaveBeenCalledOnce()
+    expect(store.releaseGenerationPreparationLease(second!)).toBe(false)
   })
 
   it('clears pending abort requests with the rest of a Session runtime', () => {

@@ -84,7 +84,7 @@ export const LEGACY_PROVIDER_MODEL_KEYS: Record<string, string> = {
   [ModelProviderEnum.XAI]: 'xAIModel',
   [ModelProviderEnum.Perplexity]: 'perplexityModel',
   [ModelProviderEnum.Groq]: 'groqModel',
-  [ModelProviderEnum.ChatGLM6B]: 'chatglmModel',
+  [ModelProviderEnum.GLM]: 'chatglmModel',
   [ModelProviderEnum.Custom]: 'model',
 }
 
@@ -211,7 +211,7 @@ export function migrateLegacyProviderSettings(oldSettings: LegacyFlatSettings): 
     }
   }
   if (chatglmApiKey) {
-    providers[ModelProviderEnum.ChatGLM6B] = {
+    providers[ModelProviderEnum.GLM] = {
       apiKey: chatglmApiKey,
     }
   }

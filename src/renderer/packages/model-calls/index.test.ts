@@ -20,9 +20,9 @@ describe('generateText', () => {
       chat: chatMock,
     } as unknown as ModelInterface
 
-    await generateText(model, messages)
+    await generateText(model, messages, { sessionId: 'session-1' })
 
     expect(convertToModelMessagesMock).toHaveBeenCalledWith(messages, { modelSupportVision: false })
-    expect(chatMock).toHaveBeenCalledTimes(1)
+    expect(chatMock).toHaveBeenCalledWith(expect.any(Array), { sessionId: 'session-1' })
   })
 })

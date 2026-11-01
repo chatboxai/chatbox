@@ -1,4 +1,4 @@
-import { createBearerOAuthFetch, createOAuthCredentialManager } from '../../oauth'
+import { createBearerOAuthFetch, createOAuthCredentialManager, isUsingOAuth } from '../../oauth'
 import { ModelProviderEnum, ModelProviderType } from '../../types'
 import { defineProvider } from '../registry'
 import Qwen from './models/qwen'
@@ -36,7 +36,7 @@ export const qwenPortalProvider = defineProvider({
     ],
   },
   createModel: (config) => {
-    const isOAuth = config.providerSetting.activeAuthMode === 'oauth' && !!config.providerSetting.oauth?.accessToken
+    const isOAuth = isUsingOAuth(config.providerSetting, config.dependencies.platformType || 'desktop')
     const credentialManager = createOAuthCredentialManager(
       ModelProviderEnum.QwenPortal,
       config.providerSetting,

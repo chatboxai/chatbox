@@ -16,6 +16,50 @@ export function visibleContentParts(parts: MessageContentParts): MessageContentP
   return parts.some(isProtocolOnlyPart) ? parts.filter((part) => !isProtocolOnlyPart(part)) : parts
 }
 
+export function isVisibleTextPart(part: MessageContentParts[number]): boolean {
+  return part.type === 'text' && !isProtocolOnlyPart(part)
+}
+
+export function getVisibleTextPartIndexes(contentParts: MessageContentParts): number[] {
+  return contentParts.flatMap((part, index) => (isVisibleTextPart(part) ? [index] : []))
+}
+
+export function getEditableTextPartIndexes(
+  contentParts: MessageContentParts,
+  options?: { lastOutputTextOnly?: boolean }
+): number[] {
+  const indexes = getVisibleTextPartIndexes(contentParts)
+  if (!options?.lastOutputTextOnly || indexes.length === 0) return indexes
+  return indexes.slice(-1)
+}
+
+/**
+ * Rewrite only the last visible text part. Tool calls, reasoning, and earlier
+ * step text stay as they were, including when the editor accidentally dropped them.
+ */
+export function applyLastOutputTextEdit(
+  original: MessageContentParts,
+  edited: MessageContentParts
+): MessageContentParts {
+  const lastIndex = getVisibleTextPartIndexes(original).at(-1)
+  if (lastIndex === undefined) {
+    const appended = edited[original.length]
+    if (appended?.type === 'text') {
+      return [...original, { type: 'text', text: appended.text }]
+    }
+    const onlyText = edited.length === 1 && edited[0]?.type === 'text' ? edited[0] : undefined
+    if (onlyText && getVisibleTextPartIndexes(original).length === 0) {
+      return [...original, { type: 'text', text: onlyText.text }]
+    }
+    return original
+  }
+  const editedPart = edited[lastIndex]
+  if (editedPart?.type !== 'text') return original
+  return original.map((part, index) =>
+    index === lastIndex && part.type === 'text' ? { type: 'text', text: editedPart.text } : part
+  )
+}
+
 export function getMessageText(message: Message, includeImagePlaceHolder = true, includeReasoning = false): string {
   if (message.contentParts && message.contentParts.length > 0) {
     return message.contentParts
@@ -299,7 +343,9 @@ export function sequenceMessages(msgs: Message[]): Message[] {
  * transform is idempotent, which lets both context construction (before message
  * limits/compaction) and final request sequencing apply it safely.
  */
-export function orderSteeredMessagesForModel(messages: Message[]): Message[] {
+export function orderSteeredMessagesForModel<
+  T extends Pick<Message, 'role' | 'steered' | 'isSummary' | 'finishReason'>,
+>(messages: T[]): T[] {
   const ordered = [...messages]
   for (let index = 1; index < ordered.length; index += 1) {
     const message = ordered[index]

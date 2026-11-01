@@ -16,31 +16,46 @@ const LEGACY_TRUNCATION_MARKER = '... [truncated]'
 const LEGACY_EDIT_PATTERN =
   /(?:^|\n\n)# Edit \d+\n--- old\n([\s\S]*?)\n\+\+\+ new\n([\s\S]*?)(?=\n\n# Edit \d+\n--- old\n|$)/g
 
-function countEditLines(oldText: string, newText: string): { addedLines: number; removedLines: number } {
-  const patch = structuredPatch('', '', oldText, newText)
-  let addedLines = 0
-  let removedLines = 0
-
-  for (const hunk of patch.hunks) {
-    for (const line of hunk.lines) {
-      if (line.startsWith('+')) addedLines++
-      else if (line.startsWith('-')) removedLines++
-    }
-  }
-
-  return { addedLines, removedLines }
+function countLines(text: string): number {
+  if (!text) return 0
+  let lines = 1
+  for (let i = 0; i + 1 < text.length; i++) if (text.charCodeAt(i) === 10) lines++
+  return lines
 }
 
-/** Exact changed-line totals across all search-and-replace edits. */
+/** Changed-line totals for the supplied edits; approximation is explicit when the budget is exhausted. */
 export function buildEditStats(edits: EditStatsInput[]): FileMutationApprovalStats {
   let addedLines = 0
   let removedLines = 0
+  let approximate = false
+  let remainingCharacters = 100_000
+  const deadline = Date.now() + 50
   for (const edit of edits) {
-    const counts = countEditLines(edit.old_text, edit.new_text)
-    addedLines += counts.addedLines
-    removedLines += counts.removedLines
+    if (edit.old_text === edit.new_text) continue
+    const oldLines = countLines(edit.old_text)
+    const newLines = countLines(edit.new_text)
+    remainingCharacters -= edit.old_text.length + edit.new_text.length
+    const remainingTime = deadline - Date.now()
+    const patch =
+      remainingCharacters >= 0 && remainingTime > 0 && oldLines + newLines <= 10_000
+        ? structuredPatch('', '', edit.old_text, edit.new_text, undefined, undefined, {
+            timeout: remainingTime,
+            maxEditLength: 4000,
+          })
+        : undefined
+    if (!patch) {
+      approximate = true
+      addedLines += newLines
+      removedLines += oldLines
+      continue
+    }
+    for (const hunk of patch.hunks)
+      for (const line of hunk.lines) {
+        if (line.startsWith('+')) addedLines++
+        else if (line.startsWith('-')) removedLines++
+      }
   }
-  return { mode: 'edit', edits: edits.length, addedLines, removedLines }
+  return { mode: 'edit', edits: edits.length, addedLines, removedLines, ...(approximate ? { approximate: true } : {}) }
 }
 
 /** Whole-file writes have no before-image, so every output line is new. */

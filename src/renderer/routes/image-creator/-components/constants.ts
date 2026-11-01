@@ -60,16 +60,36 @@ export function getBase64ImageSize(base64: string): Promise<{ width: number; hei
   })
 }
 
-export function getImageSizeFromUrl(url: string): Promise<{ width: number; height: number }> {
+export const GENERATED_IMAGE_LOAD_TIMEOUT_MS = 30_000
+
+export function getImageSizeFromUrl(url: string, signal?: AbortSignal): Promise<{ width: number; height: number }> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Image loading aborted', 'AbortError'))
+      return
+    }
+
     const img = new window.Image()
+    const cleanup = () => {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', abort)
+      img.onload = null
+      img.onerror = null
+    }
+    const fail = (error: Error) => {
+      cleanup()
+      img.removeAttribute('src')
+      reject(error)
+    }
+    const abort = () => fail(new DOMException('Image loading aborted', 'AbortError'))
+    const timer = setTimeout(() => fail(new Error('Image loading timed out')), GENERATED_IMAGE_LOAD_TIMEOUT_MS)
+    signal?.addEventListener('abort', abort, { once: true })
     img.crossOrigin = 'anonymous'
     img.onload = () => {
-      resolve({ width: img.width, height: img.height })
+      cleanup()
+      resolve({ width: img.naturalWidth, height: img.naturalHeight })
     }
-    img.onerror = (err) => {
-      reject(err)
-    }
+    img.onerror = () => fail(new Error('Failed to load image'))
     img.src = url
   })
 }

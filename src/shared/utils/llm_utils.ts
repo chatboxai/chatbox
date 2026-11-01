@@ -140,7 +140,7 @@ export function isOpenAICompatible(providerId: string, _modelId: string) {
       ModelProviderEnum.SiliconFlow,
       ModelProviderEnum.OpenRouter,
       ModelProviderEnum.Ollama,
-      ModelProviderEnum.ChatGLM6B,
+      ModelProviderEnum.GLM,
       ModelProviderEnum.XAI,
       ModelProviderEnum.Groq,
       ModelProviderEnum.DeepSeek,

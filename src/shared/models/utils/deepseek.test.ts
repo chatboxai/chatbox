@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { MessageContentParts } from '../../types'
-import { isDeepSeekReasoningModel, isDeepSeekWeakToolUse, normalizeDeepSeekCompletedResponse } from './deepseek'
+import {
+  isDeepSeekReasoningEffortModel,
+  isDeepSeekReasoningModel,
+  isDeepSeekWeakToolUse,
+  normalizeDeepSeekCompletedResponse,
+  normalizeDeepSeekReasoningEffort,
+} from './deepseek'
 
 describe('isDeepSeekWeakToolUse', () => {
   const scopes = ['agent', 'web-browsing', 'read-file'] as const
@@ -76,6 +82,9 @@ describe('isDeepSeekReasoningModel', () => {
   // Reasoning/thinking-capable model ids per DeepSeek docs (V4-Flash/V4-Pro support a
   // thinking toggle; deepseek-reasoner is the legacy thinking alias) and provider variants.
   const reasoningModels = [
+    'deepseek-flash',
+    'deepseek/deepseek-flash',
+    'deepseek-ai/DeepSeek-Flash',
     'deepseek-reasoner',
     'deepseek-r1',
     'deepseek-v3.2',
@@ -90,7 +99,7 @@ describe('isDeepSeekReasoningModel', () => {
   ]
 
   // Non-reasoning ids: deepseek-chat is the legacy non-thinking alias; VL is a different family.
-  const nonReasoningModels = ['deepseek-chat', 'deepseek-ai/deepseek-vl2', 'gpt-5.1']
+  const nonReasoningModels = ['deepseek-chat', 'deepseek-ai/deepseek-vl2', 'gpt-5.1', 'deepseek-flashlight']
 
   for (const model of reasoningModels) {
     it(`detects ${model} as a reasoning model`, () => {
@@ -103,6 +112,27 @@ describe('isDeepSeekReasoningModel', () => {
       expect(isDeepSeekReasoningModel(model)).toBe(false)
     })
   }
+})
+
+describe('DeepSeek Flash reasoning effort', () => {
+  it.each(['deepseek-flash', 'deepseek/deepseek-flash', 'deepseek-ai/DeepSeek-Flash', 'deepseek-v4.1-flash'])(
+    'preserves supported effort values for %s',
+    (modelId) => {
+      expect(isDeepSeekReasoningEffortModel(modelId)).toBe(true)
+      for (const effort of ['low', 'high', 'max', 'xhigh']) {
+        expect(normalizeDeepSeekReasoningEffort(modelId, effort)).toBe(effort)
+      }
+      expect(normalizeDeepSeekReasoningEffort(modelId, 'medium')).toBeUndefined()
+    }
+  )
+
+  it.each(['deepseek-flashlight', 'other-deepseek-flash', 'deepseek-chat', 'deepseek-v3.2'])(
+    'does not enable effort for %s',
+    (modelId) => {
+      expect(isDeepSeekReasoningEffortModel(modelId)).toBe(false)
+      expect(normalizeDeepSeekReasoningEffort(modelId, 'high')).toBeUndefined()
+    }
+  )
 })
 
 describe('normalizeDeepSeekCompletedResponse', () => {

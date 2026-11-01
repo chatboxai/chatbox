@@ -1,3 +1,8 @@
+import type { AbortSignalLike } from '../types/adapters'
+
+type NativeFetchInit = NonNullable<Parameters<typeof fetch>[1]>
+type NativeFetch = (input: string, init?: NativeFetchInit) => Promise<Response>
+
 /**
  * Native-safe web search for the RN mobile shell.
  *
@@ -13,7 +18,7 @@ export interface NativeWebSearchResultItem {
 }
 
 /** Same provider set the renderer's Web Search settings expose. */
-export type NativeWebSearchProvider = 'build-in' | 'bing' | 'tavily' | 'bocha' | 'querit' | 'keenable'
+export type NativeWebSearchProvider = 'build-in' | 'bing' | 'tavily' | 'bocha' | 'querit' | 'searxng' | 'keenable'
 
 export const nativeWebSearchProviderOptions: Array<{ id: NativeWebSearchProvider; label: string }> = [
   { id: 'build-in', label: 'Chatbox AI' },
@@ -21,6 +26,7 @@ export const nativeWebSearchProviderOptions: Array<{ id: NativeWebSearchProvider
   { id: 'tavily', label: 'Tavily' },
   { id: 'bocha', label: 'BoCha' },
   { id: 'querit', label: 'Querit' },
+  { id: 'searxng', label: 'SearXNG' },
   { id: 'keenable', label: 'Keenable' },
 ]
 
@@ -62,8 +68,8 @@ export interface NativeWebSearchOptions {
   licenseKey?: string
   /** Chatbox API origin override for the `build-in` provider. */
   chatboxApiOrigin?: string
-  signal?: AbortSignal
-  fetchFn?: typeof fetch
+  signal?: AbortSignalLike
+  fetchFn?: NativeFetch
   maxResults?: number
   /** Querit-only knobs (renderer settings webSearch.queritMaxResults / queritTimeRange). */
   queritTimeRange?: string | null
@@ -87,13 +93,14 @@ interface TavilyResponseItem {
 }
 
 export function hasNativeWebSearchConfiguration(
-  settings: Pick<NativeWebSearchSettings, 'provider' | 'apiKey'>,
+  settings: Pick<NativeWebSearchSettings, 'provider' | 'apiKey'> & Partial<Pick<NativeWebSearchSettings, 'apiHost'>>,
   licenseKey?: string
 ): boolean {
   if (settings.provider === 'tavily' || settings.provider === 'bocha' || settings.provider === 'querit') {
     return Boolean(settings.apiKey.trim())
   }
   if (settings.provider === 'build-in') return Boolean(licenseKey?.trim())
+  if (settings.provider === 'searxng') return Boolean(settings.apiHost?.trim())
   return true // bing and keenable need no credentials
 }
 
@@ -106,8 +113,52 @@ export async function searchNativeWeb(
   if (provider === 'build-in') return searchNativeChatbox(query, options)
   if (provider === 'bocha') return searchNativeBocha(query, options)
   if (provider === 'querit') return searchNativeQuerit(query, options)
+  if (provider === 'searxng') return searchNativeSearxng(query, options)
   if (provider === 'keenable') return searchNativeKeenable(query, options)
   return searchNativeTavily(query, options)
+}
+
+interface SearxngResponseItem {
+  title?: unknown
+  url?: unknown
+  content?: unknown
+  snippet?: unknown
+}
+
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+async function searchNativeSearxng(
+  query: string,
+  options: NativeWebSearchOptions
+): Promise<NativeWebSearchResultItem[]> {
+  const fetchFn = options.fetchFn ?? fetch
+  const host = (options.apiHost?.trim() ?? '').replace(/\/+$/, '')
+  if (!host) throw new Error('SearXNG instance URL is required')
+
+  const response = await fetchFn(`${host}/search?q=${encodeURIComponent(query)}&format=json`, {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+    signal: options.signal as NativeFetchInit['signal'],
+  } as NativeFetchInit)
+  if (!response.ok) throw new Error(`SearXNG search failed with status ${response.status}`)
+
+  const payload = (await response.json()) as { results?: unknown }
+  if (!Array.isArray(payload.results)) throw new Error('SearXNG returned an invalid JSON search response')
+  return payload.results
+    .filter((item): item is SearxngResponseItem => typeof item === 'object' && item !== null)
+    .map((item) => {
+      const title = nonEmptyString(item.title)
+      const link = nonEmptyString(item.url)
+      if (!title || !link) return null
+      return {
+        title,
+        link,
+        snippet: nonEmptyString(item.content) ?? nonEmptyString(item.snippet) ?? '',
+      }
+    })
+    .filter((item): item is NativeWebSearchResultItem => item !== null)
 }
 
 // BoCha and Querit are plain JSON APIs, shared verbatim with the renderer
@@ -137,8 +188,8 @@ async function searchNativeBocha(query: string, options: NativeWebSearchOptions)
           Authorization: `Bearer ${options.apiKey ?? ''}`,
         },
         body: JSON.stringify({ query, freshness: 'noLimit', summary: true, count: 10 }),
-        signal: options.signal,
-      })
+        signal: options.signal as NativeFetchInit['signal'],
+      } as NativeFetchInit)
       if (!response.ok) {
         lastError = new Error(`BoCha API error: ${response.status}`)
         continue
@@ -200,8 +251,8 @@ async function searchNativeQuerit(
       Authorization: `Bearer ${options.apiKey ?? ''}`,
     },
     body: JSON.stringify(body),
-    signal: options.signal,
-  })
+    signal: options.signal as NativeFetchInit['signal'],
+  } as NativeFetchInit)
   if (!response.ok) {
     throw new Error(`Querit search failed with status ${response.status}`)
   }
@@ -271,8 +322,8 @@ async function searchNativeKeenable(
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...keenableHeaders(apiKey) },
     body: JSON.stringify({ query, snippet_max_length: KEENABLE_SNIPPET_MAX_LENGTH }),
-    signal: options.signal,
-  })
+    signal: options.signal as NativeFetchInit['signal'],
+  } as NativeFetchInit)
   if (!response.ok) {
     throw new Error(`Keenable search failed with status ${response.status}`)
   }
@@ -321,8 +372,8 @@ async function searchNativeTavily(
       Authorization: `Bearer ${options.apiKey ?? ''}`,
     },
     body: JSON.stringify(body),
-    signal: options.signal,
-  })
+    signal: options.signal as NativeFetchInit['signal'],
+  } as NativeFetchInit)
   if (!response.ok) {
     throw new Error(`Web search failed with status ${response.status}`)
   }
@@ -360,8 +411,8 @@ async function searchNativeChatbox(
       ...options.headers,
     },
     body: JSON.stringify({ query }),
-    signal: options.signal,
-  })
+    signal: options.signal as NativeFetchInit['signal'],
+  } as NativeFetchInit)
   const payload = (await response.json().catch(() => null)) as {
     error?: unknown
     data?: { links?: Array<{ title?: string; url?: string; content?: string }> }
@@ -401,8 +452,8 @@ async function searchNativeBing(query: string, options: NativeWebSearchOptions):
       Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       'Accept-Language': 'en-US,en;q=0.9',
     },
-    signal: options.signal,
-  })
+    signal: options.signal as NativeFetchInit['signal'],
+  } as NativeFetchInit)
   if (!response.ok) {
     throw new Error(`Web search failed with status ${response.status}`)
   }

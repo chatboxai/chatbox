@@ -9,6 +9,9 @@ export const FEATURED_PROVIDER_IDS: string[] = [
   ModelProviderEnum.Gemini,
   ModelProviderEnum.SiliconFlow,
   ModelProviderEnum.DeepSeek,
+  ModelProviderEnum.XiaomiMiMo,
+  ModelProviderEnum.MiniMax,
+  ModelProviderEnum.GLM,
   ModelProviderEnum.OpenRouter,
   ModelProviderEnum.Ollama,
 ]

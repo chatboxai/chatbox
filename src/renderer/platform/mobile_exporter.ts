@@ -1,4 +1,4 @@
-import type { WriteFileOptions, WriteFileResult } from '@capacitor/filesystem'
+import { binaryChunks } from './binary-chunks'
 import { Toast } from '@capacitor/toast'
 import i18n from '@/i18n'
 import { getLogger } from '@/lib/utils'
@@ -12,7 +12,7 @@ import {
   isSaveCanceledError,
   serializeErrorForLog,
 } from './filter_writer'
-import type { Exporter } from './interfaces'
+import type { Exporter, StreamingExportResult } from './interfaces'
 
 const log = getLogger('mobile_exporter')
 
@@ -22,21 +22,6 @@ export default class MobileExporter implements Exporter {
   constructor() {
     const platform = CHATBOX_BUILD_PLATFORM
     this.writer = platform === 'ios' ? new IOSFilterWriter() : new AndroidFilterWriter()
-  }
-
-  async writeFileAutoRenameOnConflict(options: WriteFileOptions): Promise<WriteFileResult> {
-    log.info('writeFileAutoRenameOnConflict called', { path: options.path, directory: options.directory })
-    try {
-      const result = await this.writer.writeFileAutoRenameOnConflict(options)
-      log.info('writeFileAutoRenameOnConflict success', { uri: result.uri })
-      return result
-    } catch (error) {
-      log.error('writeFileAutoRenameOnConflict failed', {
-        path: options.path,
-        error: serializeErrorForLog(error),
-      })
-      throw error
-    }
   }
 
   async exportBlob(filename: string, blob: Blob, encoding?: 'utf8' | 'ascii' | 'utf16') {
@@ -136,96 +121,24 @@ export default class MobileExporter implements Exporter {
       throw error
     }
   }
-
-  async exportStreamingJson(filename: string, dataCallback: () => AsyncGenerator<string, void, unknown>) {
-    log.info('exportStreamingJson started', { filename })
-
-    if (this.writer instanceof AndroidFilterWriter) {
-      try {
-        await this.writeStreamingContent(filename, dataCallback)
-        log.info('exportStreamingJson completed via Android streaming path', { filename })
-        return
-      } catch (error) {
-        log.warn('exportStreamingJson:androidStreamingFailed', {
-          filename,
-          stage: 'documents-streaming-write',
-          error: serializeErrorForLog(error),
-        })
-        try {
-          log.warn('exportStreamingJson:fallbackCacheStream:start', {
-            filename,
-            stage: 'fallback-stream-to-cache',
-          })
-          await this.writer.exportStreamingFileWithSystemPicker(filename, dataCallback, 'application/json')
-          log.info('exportStreamingJson completed via Android streaming cache fallback', { filename })
-          return
-        } catch (fallbackError) {
-          if (isSaveCanceledError(fallbackError)) {
-            log.info('exportStreamingJson canceled during Android streaming cache fallback', {
-              filename,
-              stage: 'fallback-stream-to-cache',
-              error: serializeErrorForLog(fallbackError),
-            })
-            return
-          }
-          log.error('exportStreamingJson failed on Android streaming cache fallback', {
-            filename,
-            stage: 'fallback-stream-to-cache',
-            error: serializeErrorForLog(fallbackError),
-          })
-          await Toast.show({
-            text: i18n.t('Failed to export file: {{error}}', { error: fallbackError }),
-          })
-          throw fallbackError
-        }
-      }
-    }
-
-    try {
-      await this.writeStreamingContent(filename, dataCallback)
-      log.info('exportStreamingJson completed', { filename })
-    } catch (error) {
-      log.error('exportStreamingJson failed', {
-        filename,
-        stage: 'streaming-write',
-        error: serializeErrorForLog(error),
-      })
-      await Toast.show({
-        text: i18n.t('Failed to export file: {{error}}', { error: error }),
-      })
-      throw error
-    }
-  }
-
   async exportStreamingFile(
     filename: string,
     dataCallback: () => AsyncGenerator<Uint8Array, void, unknown>,
     mimeType: string,
     signal?: AbortSignal
-  ): Promise<{ boundedMemory: boolean }> {
+  ): Promise<StreamingExportResult> {
     try {
-      await this.writeStreamingBinaryContent(filename, dataCallback, signal)
-      return { boundedMemory: true }
-    } catch (error) {
-      if (signal?.aborted) {
-        throw signal.reason instanceof Error ? signal.reason : new DOMException('Operation canceled', 'AbortError')
+      if (this.writer instanceof AndroidFilterWriter) {
+        await this.writer.exportStreamingBinaryFileWithSystemPicker(filename, dataCallback, mimeType, signal)
+        return { boundedMemory: true }
       }
+      await this.writeStreamingBinaryContent(filename, dataCallback, signal)
+      return { boundedMemory: true, delivery: 'share-sheet' }
+    } catch (error) {
+      if (signal?.aborted)
+        throw signal.reason instanceof Error ? signal.reason : new DOMException('Operation canceled', 'AbortError')
       if (error instanceof DOMException && error.name === 'AbortError') throw error
       if (isSaveCanceledError(error)) throw new DOMException('Operation canceled', 'AbortError')
-      if (this.writer instanceof AndroidFilterWriter) {
-        try {
-          await this.writer.exportStreamingBinaryFileWithSystemPicker(filename, dataCallback, mimeType, signal)
-          return { boundedMemory: true }
-        } catch (fallbackError) {
-          if (signal?.aborted) {
-            throw signal.reason instanceof Error ? signal.reason : new DOMException('Operation canceled', 'AbortError')
-          }
-          if (fallbackError instanceof DOMException && fallbackError.name === 'AbortError') throw fallbackError
-          if (isSaveCanceledError(fallbackError)) throw new DOMException('Operation canceled', 'AbortError')
-          await Toast.show({ text: i18n.t('Failed to export file: {{error}}', { error: fallbackError }) })
-          throw fallbackError
-        }
-      }
       await Toast.show({ text: i18n.t('Failed to export file: {{error}}', { error }) })
       throw error
     }
@@ -236,183 +149,18 @@ export default class MobileExporter implements Exporter {
     dataCallback: () => AsyncGenerator<Uint8Array, void, unknown>,
     signal?: AbortSignal
   ) {
-    const chunkSize = 1024 * 1024
-    let bufferedChunks: Uint8Array[] = []
-    let bufferedBytes = 0
     let actualPath: string | undefined
-    let isFirstWrite = true
-
-    const flush = async (final: boolean) => {
-      if (bufferedBytes === 0 && !final) return
-      const content = new Uint8Array(bufferedBytes)
-      let offset = 0
-      for (const chunk of bufferedChunks) {
-        content.set(chunk, offset)
-        offset += chunk.length
-      }
-      bufferedChunks = []
-      bufferedBytes = 0
-      if (isFirstWrite) {
-        actualPath = await this.writer.writeFirstBinaryChunk(filename, content)
-        isFirstWrite = false
-        if (final) await this.writer.completeExport(filename, actualPath)
-      } else if (final) {
-        if (content.length === 0) await this.writer.completeExport(filename, actualPath)
-        else await this.writer.finishBinaryWriting(filename, content, actualPath)
-      } else {
-        await this.writer.appendBinaryChunk(filename, content, actualPath)
-      }
-    }
-
     try {
-      for await (const chunk of dataCallback()) {
-        if (signal?.aborted) throw signal.reason ?? new DOMException('Operation canceled', 'AbortError')
-        if (chunk.length === 0) continue
-        bufferedChunks.push(chunk)
-        bufferedBytes += chunk.length
-        if (bufferedBytes >= chunkSize) await flush(false)
+      for await (const chunk of binaryChunks(dataCallback(), signal)) {
+        if (actualPath === undefined) actualPath = await this.writer.writeFirstBinaryChunk(filename, chunk)
+        else await this.writer.appendBinaryChunk(filename, chunk, actualPath)
       }
-      await flush(true)
-      if (this.writer instanceof IOSFilterWriter) {
-        await this.writer.cleanupPartialExport(filename, actualPath)
-      }
-    } catch (error) {
-      if (!isFirstWrite || actualPath) await this.writer.cleanupPartialExport(filename, actualPath)
-      throw error
+      signal?.throwIfAborted()
+      if (actualPath === undefined) actualPath = await this.writer.writeFirstBinaryChunk(filename, new Uint8Array())
+      signal?.throwIfAborted()
+      await this.writer.completeExport(filename, actualPath)
+    } finally {
+      if (actualPath !== undefined) await this.writer.cleanupPartialExport(filename, actualPath)
     }
-  }
-
-  private async writeStreamingContent(filename: string, dataCallback: () => AsyncGenerator<string, void, unknown>) {
-    let tempContent = ''
-    let isFirstWrite = true
-    let chunkCount = 0
-    let totalBytesWritten = 0
-    let actualPath: string | undefined // Track the actual file path (may differ if renamed on conflict)
-    const generator = dataCallback()
-    const CHUNK_SIZE = 1024 * 1024 // 1MB chunks
-
-    log.debug('writeStreamingContent started', { filename, chunkSize: CHUNK_SIZE })
-
-    try {
-      for await (const chunk of generator) {
-        tempContent += chunk
-        // 如果内容太长，分批写入文件
-        if (tempContent.length > CHUNK_SIZE) {
-          chunkCount++
-          totalBytesWritten += tempContent.length
-          if (isFirstWrite) {
-            // 第一次写入创建文件，获取实际路径
-            log.info('writeStreamingContent:firstChunk:start', {
-              filename,
-              chunkIndex: chunkCount,
-              chunkLength: tempContent.length,
-            })
-            actualPath = await this.writeFirstChunk(filename, tempContent)
-            log.info('writeStreamingContent:firstChunk:success', {
-              filename,
-              chunkIndex: chunkCount,
-              chunkLength: tempContent.length,
-              actualPath,
-            })
-            isFirstWrite = false
-          } else {
-            // 后续写入追加内容，使用实际路径
-            log.info('writeStreamingContent:appendChunk:start', {
-              filename,
-              chunkIndex: chunkCount,
-              chunkLength: tempContent.length,
-              actualPath,
-            })
-            await this.appendChunk(filename, tempContent, actualPath)
-            log.info('writeStreamingContent:appendChunk:success', {
-              filename,
-              chunkIndex: chunkCount,
-              chunkLength: tempContent.length,
-              actualPath,
-            })
-          }
-          tempContent = ''
-        }
-      }
-
-      // 写入剩余内容
-      if (tempContent.length > 0) {
-        totalBytesWritten += tempContent.length
-        if (isFirstWrite) {
-          // 如果所有内容都小于1MB，直接创建完整文件
-          log.info('writeStreamingContent:writeCompleteFile:start', {
-            filename,
-            contentLength: tempContent.length,
-          })
-          await this.writeCompleteFile(filename, tempContent)
-          log.info('writeStreamingContent:writeCompleteFile:success', {
-            filename,
-            contentLength: tempContent.length,
-          })
-        } else {
-          // 追加最后一块内容并完成，使用实际路径
-          chunkCount++
-          log.info('writeStreamingContent:finishWriting:start', {
-            filename,
-            chunkIndex: chunkCount,
-            chunkLength: tempContent.length,
-            actualPath,
-          })
-          await this.finishWriting(filename, tempContent, actualPath)
-          log.info('writeStreamingContent:finishWriting:success', {
-            filename,
-            chunkIndex: chunkCount,
-            chunkLength: tempContent.length,
-            actualPath,
-          })
-        }
-      } else if (!isFirstWrite) {
-        // 没有剩余内容但之前已经写入过，需要完成操作
-        log.info('writeStreamingContent:completeExport:start', {
-          filename,
-          actualPath,
-        })
-        await this.completeExport(filename, actualPath)
-        log.info('writeStreamingContent:completeExport:success', {
-          filename,
-          actualPath,
-        })
-      }
-
-      log.info('writeStreamingContent finished', { filename, actualPath, totalChunks: chunkCount, totalBytesWritten })
-    } catch (error) {
-      log.warn('writeStreamingContent failed, cleaning up partial export if needed', {
-        filename,
-        actualPath,
-        isFirstWrite,
-        chunkCount,
-        totalBytesWritten,
-        error: serializeErrorForLog(error),
-      })
-      if (!isFirstWrite || actualPath) {
-        await this.writer.cleanupPartialExport(filename, actualPath)
-      }
-      throw error
-    }
-  }
-
-  private async writeFirstChunk(filename: string, content: string): Promise<string> {
-    return await this.writer.writeFirstChunk(filename, content)
-  }
-
-  private async appendChunk(filename: string, content: string, actualPath?: string) {
-    await this.writer.appendChunk(filename, content, actualPath)
-  }
-
-  private async writeCompleteFile(filename: string, content: string) {
-    await this.writer.writeCompleteFile(filename, content)
-  }
-
-  private async finishWriting(filename: string, content: string, actualPath?: string) {
-    await this.writer.finishWriting(filename, content, actualPath)
-  }
-
-  private async completeExport(filename: string, actualPath?: string) {
-    await this.writer.completeExport(filename, actualPath)
   }
 }

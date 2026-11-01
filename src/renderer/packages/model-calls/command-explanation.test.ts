@@ -55,7 +55,13 @@ describe('command safety assessment', () => {
     const onUpdate = vi.fn()
 
     await expect(
-      generateCommandExplanation({} as SessionSettings, 'touch /tmp/a', 'create a temporary file', onUpdate)
+      generateCommandExplanation(
+        {} as SessionSettings,
+        'session-1',
+        'touch /tmp/a',
+        'create a temporary file',
+        onUpdate
+      )
     ).resolves.toEqual({
       explanation: 'Creates the requested temporary file.\n✅ Safe and reversible.',
       safe: true,
@@ -64,6 +70,7 @@ describe('command safety assessment', () => {
     expect(chatMock).toHaveBeenCalledWith(
       expect.arrayContaining([expect.objectContaining({ role: 'system' }), expect.objectContaining({ role: 'user' })]),
       expect.objectContaining({
+        sessionId: 'session-1',
         maxSteps: 1,
         tools: expect.objectContaining({ submit_command_assessment: expect.any(Object) }),
       })
@@ -77,7 +84,7 @@ describe('command safety assessment', () => {
       chat: chatMock,
     })
 
-    await expect(generateCommandExplanation({} as SessionSettings, 'touch /tmp/a', '')).rejects.toThrow(
+    await expect(generateCommandExplanation({} as SessionSettings, 'session-1', 'touch /tmp/a', '')).rejects.toThrow(
       'requires system message support'
     )
     expect(chatMock).not.toHaveBeenCalled()
@@ -88,7 +95,7 @@ describe('command safety assessment', () => {
     controller.abort()
 
     await expect(
-      generateCommandExplanation({} as SessionSettings, 'touch /tmp/a', '', undefined, controller.signal)
+      generateCommandExplanation({} as SessionSettings, 'session-1', 'touch /tmp/a', '', undefined, controller.signal)
     ).rejects.toMatchObject({ name: 'AbortError' })
     expect(createModelMock).not.toHaveBeenCalled()
   })
@@ -107,7 +114,7 @@ describe('command safety assessment', () => {
 
   it('rejects missing, duplicate, or invalid assessment tool calls', async () => {
     chatMock.mockResolvedValueOnce({ contentParts: [{ type: 'text', text: 'Looks safe.' }] })
-    await expect(generateCommandExplanation({} as SessionSettings, 'touch /tmp/a', '')).rejects.toThrow(
+    await expect(generateCommandExplanation({} as SessionSettings, 'session-1', 'touch /tmp/a', '')).rejects.toThrow(
       'was not called exactly once'
     )
 
@@ -122,7 +129,7 @@ describe('command safety assessment', () => {
         },
       ],
     })
-    await expect(generateCommandExplanation({} as SessionSettings, 'touch /tmp/a', '')).rejects.toThrow(
+    await expect(generateCommandExplanation({} as SessionSettings, 'session-1', 'touch /tmp/a', '')).rejects.toThrow(
       'returned invalid input'
     )
 
@@ -154,7 +161,7 @@ describe('command safety assessment', () => {
         },
       ],
     })
-    await expect(generateCommandExplanation({} as SessionSettings, 'touch /tmp/a', '')).rejects.toThrow(
+    await expect(generateCommandExplanation({} as SessionSettings, 'session-1', 'touch /tmp/a', '')).rejects.toThrow(
       'was not called exactly once'
     )
   })

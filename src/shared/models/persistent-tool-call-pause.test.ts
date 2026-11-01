@@ -1,6 +1,6 @@
-import type { LanguageModelV3StreamPart } from '@ai-sdk/provider'
-import { jsonSchema, stepCountIs, streamText, tool } from 'ai'
-import { convertArrayToReadableStream, MockLanguageModelV3 } from 'ai/test'
+import type { LanguageModelV4StreamPart } from '@ai-sdk/provider'
+import { jsonSchema, isStepCount, streamText, tool } from 'ai'
+import { convertArrayToReadableStream, MockLanguageModelV4 } from 'ai/test'
 import { describe, expect, it } from 'vitest'
 import { stopWhenPersistentToolCallPause } from './persistent-tool-call-pause'
 
@@ -12,10 +12,10 @@ const usage = {
 describe('stopWhenPersistentToolCallPause', () => {
   it('stops before the SDK starts another model step after parallel approval pauses', async () => {
     let modelCalls = 0
-    const model = new MockLanguageModelV3({
+    const model = new MockLanguageModelV4({
       doStream: () => {
         modelCalls += 1
-        const chunks: LanguageModelV3StreamPart[] =
+        const chunks: LanguageModelV4StreamPart[] =
           modelCalls === 1
             ? [
                 { type: 'stream-start', warnings: [] },
@@ -62,11 +62,11 @@ describe('stopWhenPersistentToolCallPause', () => {
           },
         }),
       },
-      stopWhen: [stepCountIs(99), stopWhenPersistentToolCallPause()],
+      stopWhen: [isStepCount(99), stopWhenPersistentToolCallPause()],
     })
 
     const chunks = []
-    for await (const chunk of result.fullStream) chunks.push(chunk)
+    for await (const chunk of result.stream) chunks.push(chunk)
 
     expect(modelCalls).toBe(1)
     expect(chunks.filter((chunk) => chunk.type === 'tool-error')).toHaveLength(2)

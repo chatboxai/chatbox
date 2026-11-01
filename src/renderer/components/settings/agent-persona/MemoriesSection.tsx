@@ -1,10 +1,11 @@
-import { ActionIcon, Badge, Box, Button, Flex, Loader, Paper, Stack, Text, Title } from '@mantine/core'
+import { Badge, Button, Flex, Loader, Text } from '@mantine/core'
 import type { LocalMemoryCandidate } from '@shared/agent-persona/memory-import'
 import type { MemoryEntry } from '@shared/types/agent-persona'
 import { MEMORY_MAX_ENTRIES } from '@shared/types/agent-persona'
-import { IconRefresh, IconTrash } from '@tabler/icons-react'
+import { IconRefresh } from '@tabler/icons-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { SettingsListItem, SettingsSection } from '@/components/settings/SettingsLayout'
 import platform from '@/platform'
 import {
   deleteMemory,
@@ -14,6 +15,7 @@ import {
   markLocalMemoryAutoScanCompleted,
 } from '@/stores/agentPersonaStore'
 import { add as addToast } from '@/stores/toastActions'
+import { MemoryEntryItem } from './MemoryEntryItem'
 import { MemoryImportReviewModal } from './MemoryImportReviewModal'
 
 export function MemoriesSection() {
@@ -115,92 +117,78 @@ export function MemoriesSection() {
   }, [scanLocalMemories])
 
   return (
-    <Stack gap="sm">
-      <Flex align="center" gap="xs">
-        <Title order={6}>{t('Memories')}</Title>
-        <Badge size="sm" variant="light" color="chatbox-secondary">
-          {memories.length}/{MEMORY_MAX_ENTRIES}
-        </Badge>
-        <Box flex={1} />
-        {platform.scanLocalAgentMemories && (
-          <Button
-            size="xs"
-            variant="light"
-            leftSection={<IconRefresh size={14} />}
-            loading={scanning}
-            onClick={() => void handleRescan()}
-          >
-            {t('Scan again')}
-          </Button>
+    <>
+      <SettingsSection
+        title={t('Memories')}
+        description={
+          platform.scanLocalAgentMemories
+            ? `${t(
+                'Facts saved from your conversations. They are loaded into new conversations; deleting one only affects future ones.'
+              )} ${t(
+                'Local Claude and Codex memories are scanned automatically only once; use the scan button to check for new ones. Nothing is imported until you review and confirm it.'
+              )}`
+            : t(
+                'Facts saved from your conversations. They are loaded into new conversations; deleting one only affects future ones.'
+              )
+        }
+        action={
+          <Flex align="center" gap="xs">
+            <Badge size="sm" variant="light" color="chatbox-secondary">
+              {memories.length}/{MEMORY_MAX_ENTRIES}
+            </Badge>
+            {platform.scanLocalAgentMemories && (
+              <Button
+                size="compact-sm"
+                variant="subtle"
+                color="chatbox-gray"
+                leftSection={<IconRefresh size={14} />}
+                loading={scanning}
+                onClick={() => void handleRescan()}
+              >
+                {t('Scan again')}
+              </Button>
+            )}
+          </Flex>
+        }
+      >
+        {(loading || scanning) && (
+          <SettingsListItem>
+            <Loader size="xs" />
+            {scanning && (
+              <Text fz={14} c="chatbox-tertiary">
+                {t('Scanning local memories…')}
+              </Text>
+            )}
+          </SettingsListItem>
         )}
-      </Flex>
-      <Text size="sm" c="dimmed">
-        {t(
-          'Facts the agent saved from your conversations. They are loaded into new agent sessions; deleting one only affects future sessions.'
-        )}
-      </Text>
-      {platform.scanLocalAgentMemories && (
-        <Text size="xs" c="dimmed">
-          {t(
-            'Local Claude and Codex memories are scanned automatically only once; use the scan button to check for new ones. Nothing is imported until you review and confirm it.'
-          )}
-        </Text>
-      )}
-      {scanning && (
-        <Flex gap="xs" align="center">
-          <Loader size="xs" />
-          <Text size="sm" c="dimmed">
-            {t('Scanning local memories…')}
-          </Text>
-        </Flex>
-      )}
-      {!scanning && candidates.length > 0 && (
-        <Paper withBorder radius="md" p="sm">
-          <Flex gap="sm" align="center">
-            <Text size="sm" flex={1}>
+        {!scanning && candidates.length > 0 && (
+          <SettingsListItem tint="brand">
+            <Text fz={14} flex={1}>
               {t('Found {{count}} new local memories.', { count: candidates.length })}
             </Text>
-            <Button size="xs" variant="light" onClick={() => setReviewOpened(true)}>
+            <Button size="compact-sm" variant="light" onClick={() => setReviewOpened(true)}>
               {t('Review')}
             </Button>
-          </Flex>
-        </Paper>
-      )}
-      {!scanning && scanComplete && candidates.length === 0 && (
-        <Text size="xs" c="dimmed">
-          {t('No new local memories were found.')}
-        </Text>
-      )}
-      {!loading && memories.length === 0 && (
-        <Text size="sm" c="dimmed" fs="italic">
-          {t('No memories yet. The agent saves durable facts here as you work together.')}
-        </Text>
-      )}
-      <Stack gap={6}>
+          </SettingsListItem>
+        )}
+        {!scanning && scanComplete && candidates.length === 0 && (
+          <SettingsListItem>
+            <Text fz={14} c="chatbox-tertiary">
+              {t('No new local memories were found.')}
+            </Text>
+          </SettingsListItem>
+        )}
+        {!loading && memories.length === 0 && (
+          <SettingsListItem>
+            <Text fz={14} c="chatbox-tertiary">
+              {t('No memories yet. The agent saves durable facts here as you work together.')}
+            </Text>
+          </SettingsListItem>
+        )}
         {memories.map((entry) => (
-          <Paper key={entry.id} withBorder radius="md" p="xs">
-            <Flex align="flex-start" gap="xs">
-              <Box flex={1}>
-                <Text size="sm" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                  {entry.content}
-                </Text>
-                <Text size="xs" c="dimmed" mt={2}>
-                  {new Date(entry.createdAt).toLocaleDateString()}
-                </Text>
-              </Box>
-              <ActionIcon
-                variant="subtle"
-                color="chatbox-error"
-                size="sm"
-                aria-label={t('Delete')}
-                onClick={() => void handleDelete(entry.id)}
-              >
-                <IconTrash size={16} />
-              </ActionIcon>
-            </Flex>
-          </Paper>
+          <MemoryEntryItem key={entry.id} entry={entry} onDelete={() => void handleDelete(entry.id)} />
         ))}
-      </Stack>
+      </SettingsSection>
       <MemoryImportReviewModal
         opened={reviewOpened}
         candidates={candidates}
@@ -210,6 +198,6 @@ export function MemoriesSection() {
         onSelectedIdsChange={setSelectedCandidateIds}
         onImport={() => void handleImport()}
       />
-    </Stack>
+    </>
   )
 }

@@ -7,6 +7,7 @@ import { ApiError } from './errors'
 import type { CallChatCompletionOptions, ModelInterface } from './types'
 import { isDeepSeekWeakToolUse } from './utils/deepseek'
 import { createFetchWithProxy } from './utils/fetch-proxy'
+import { createOpenAIChatCompletionSseFetch } from './utils/openai-chat-sse-termination'
 
 export interface OpenAICompatibleSettings {
   apiKey: string
@@ -57,11 +58,12 @@ export default abstract class OpenAICompatible extends AbstractAISDKModel implem
   }
 
   protected getProvider() {
+    const fetch = this.options.customFetch || createFetchWithProxy(this.options.useProxy, this.dependencies)
     return createOpenAICompatible({
       name: this.name,
       apiKey: this.options.apiKey,
       baseURL: this.options.apiHost,
-      fetch: this.options.customFetch || createFetchWithProxy(this.options.useProxy, this.dependencies),
+      fetch: createOpenAIChatCompletionSseFetch(fetch),
     })
   }
 

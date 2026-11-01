@@ -45,6 +45,7 @@ function createDependencies(): LegacyToolFallbackDependencies {
 
 function createOptions(model: ModelInterface, promptMsgs: Message[]) {
   return {
+    sessionId: 'session-1',
     model,
     promptMsgs,
     knowledgeBase: { id: 7 },
@@ -95,10 +96,17 @@ describe('applyLegacyToolFallback', () => {
     expect(result.fallbackToolCallPart).toMatchObject({
       type: 'tool-call',
       state: 'result',
-      toolCallId: 'query_knowledge_base_1',
-      toolName: 'query_knowledge_base',
-      args: { query: 'document' },
+      toolCallId: 'knowledge_base_1',
+      toolName: 'knowledge_base',
+      args: { command: 'search', query: 'document' },
     })
+    expect(dependencies.combinedSearchByPromptEngineering).toHaveBeenCalledWith(
+      expect.anything(),
+      promptMsgs,
+      7,
+      'session-1',
+      expect.any(AbortSignal)
+    )
     expect(dependencies.constructMessagesWithKnowledgeBaseResults).toHaveBeenCalledWith(promptMsgs, [knowledgeResult])
   })
 
@@ -131,8 +139,13 @@ describe('applyLegacyToolFallback', () => {
     )
 
     expect(result.promptMsgs).toBe(transformed)
-    expect(result.fallbackToolCallPart?.toolName).toBe('query_knowledge_base')
-    expect(dependencies.knowledgeBaseSearchByPromptEngineering).toHaveBeenCalledOnce()
+    expect(result.fallbackToolCallPart?.toolName).toBe('knowledge_base')
+    expect(dependencies.knowledgeBaseSearchByPromptEngineering).toHaveBeenCalledWith(
+      expect.anything(),
+      promptMsgs,
+      7,
+      'session-1'
+    )
   })
 
   it('uses the web-only fallback when knowledge-base access is not requested', async () => {
@@ -164,6 +177,12 @@ describe('applyLegacyToolFallback', () => {
       toolName: 'web_search',
       args: { query: 'latest' },
     })
+    expect(dependencies.searchByPromptEngineering).toHaveBeenCalledWith(
+      expect.anything(),
+      promptMsgs,
+      'session-1',
+      expect.any(AbortSignal)
+    )
     expect(dependencies.constructMessagesWithSearchResults).toHaveBeenCalledWith(promptMsgs, [webResult])
   })
 })

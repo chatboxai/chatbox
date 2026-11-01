@@ -97,6 +97,47 @@ afterEach(() => {
   preloadLanguage.mockClear()
 })
 
+describe('Markdown code wrapping', () => {
+  const content = (source: string, generating = false, hiddenCodeActions = false) => (
+    <MantineProvider>
+      <BlockCodeCollapsedStateProvider>
+        <Markdown generating={generating} hiddenCodeActions={hiddenCodeActions}>
+          {source}
+        </Markdown>
+      </BlockCodeCollapsedStateProvider>
+    </MantineProvider>
+  )
+
+  it('toggles each code block independently without re-highlighting', () => {
+    render(content('```js\nconst first = 1\n```\n\n```js\nconst second = 2\n```'))
+    const buttons = screen.getAllByRole('button', { name: 'Auto wrap' })
+    const calls = highlightSync.mock.calls.length
+    expect(buttons[0].getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(buttons[0])
+    expect(buttons[0].getAttribute('aria-pressed')).toBe('true')
+    expect(buttons[0].closest('.code-block-container')?.getAttribute('data-wrap-code')).toBe('true')
+    expect(buttons[1].getAttribute('aria-pressed')).toBe('false')
+    expect(highlightSync.mock.calls.length).toBe(calls)
+    fireEvent.click(buttons[0])
+    expect(buttons[0].getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('keeps wrapping enabled as streaming code grows and becomes highlighted', () => {
+    const view = render(content('```js\nconst first = 1', true))
+    fireEvent.click(screen.getByRole('button', { name: 'Auto wrap' }))
+    view.rerender(content('```js\nconst first = 123456', true))
+    expect(screen.getByRole('button', { name: 'Auto wrap' }).getAttribute('aria-pressed')).toBe('true')
+    view.rerender(content('```js\nconst first = 123456\n```'))
+    expect(screen.getByRole('button', { name: 'Auto wrap' }).getAttribute('aria-pressed')).toBe('true')
+    expect(highlightSync).toHaveBeenCalledWith('const first = 123456\n', 'js', expect.any(String))
+  })
+
+  it('respects hidden code actions', () => {
+    render(content('```js\nconst first = 1\n```', false, true))
+    expect(screen.queryByRole('button', { name: 'Auto wrap' })).toBeNull()
+  })
+})
+
 describe('Markdown streaming code highlighting', () => {
   const renderStreamingMarkdown = (source: string) => (
     <MantineProvider forceColorScheme="dark">

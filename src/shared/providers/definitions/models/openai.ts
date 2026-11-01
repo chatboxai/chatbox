@@ -2,12 +2,14 @@ import { createOpenAI } from '@ai-sdk/openai'
 import { extractReasoningMiddleware, wrapLanguageModel } from 'ai'
 import AbstractAISDKModel from '../../../models/abstract-ai-sdk'
 import { fetchRemoteModels } from '../../../models/openai-compatible'
-import type { CallChatCompletionOptions } from '../../../models/types'
+import type { CallChatCompletionOptions, CallSettings } from '../../../models/types'
 import { createFetchWithProxy } from '../../../models/utils/fetch-proxy'
+import { createOpenAIChatCompletionSseFetch } from '../../../models/utils/openai-chat-sse-termination'
 import type { ProviderModelInfo } from '../../../types'
 import type { ModelDependencies } from '../../../types/adapters'
 import { normalizeOpenAIApiHostAndPath } from '../../../utils/llm_utils'
 import { normalizeOpenAIReasoningOptions } from '../../../utils/reasoning-control'
+import { getOpenAIImageGenerationOptions } from './openai-compatible-image'
 
 interface Options {
   apiKey: string
@@ -47,31 +49,36 @@ export default class OpenAI extends AbstractAISDKModel {
     return true
   }
 
-  protected getProvider() {
-    let headers: Record<string, string> | undefined
+  protected getRequestHeaders(_options?: CallChatCompletionOptions): Record<string, string> | undefined {
     if (this.options.extraHeaders && Object.keys(this.options.extraHeaders).length > 0) {
-      headers = this.options.extraHeaders
-    } else if (this.options.apiHost.includes('openrouter.ai')) {
-      headers = {
+      return this.options.extraHeaders
+    }
+    if (this.options.apiHost.includes('openrouter.ai')) {
+      return {
         'HTTP-Referer': 'https://chatboxai.app',
         'X-Title': 'Chatbox AI',
       }
-    } else if (this.options.apiHost.includes('aihubmix.com')) {
-      headers = {
+    }
+    if (this.options.apiHost.includes('aihubmix.com')) {
+      return {
         'APP-Code': 'VAFU9221',
       }
     }
+    return undefined
+  }
 
+  protected getProvider(options?: CallChatCompletionOptions) {
+    const fetch = this.options.customFetch || createFetchWithProxy(this.options.useProxy, this.dependencies)
     return createOpenAI({
       apiKey: this.options.apiKey,
       baseURL: this.options.apiHost,
-      fetch: this.options.customFetch || createFetchWithProxy(this.options.useProxy, this.dependencies),
-      headers,
+      fetch: createOpenAIChatCompletionSseFetch(fetch),
+      headers: this.getRequestHeaders(options),
     })
   }
 
-  protected getChatModel() {
-    const provider = this.getProvider()
+  protected getChatModel(options?: CallChatCompletionOptions) {
+    const provider = this.getProvider(options)
     return wrapLanguageModel({
       model: provider.chat(this.options.model.modelId),
       middleware: extractReasoningMiddleware({ tagName: 'think' }),
@@ -84,7 +91,11 @@ export default class OpenAI extends AbstractAISDKModel {
     return provider.image(imageModelId)
   }
 
-  protected getCallSettings(options: CallChatCompletionOptions) {
+  protected override getImageGenerationOptions(aspectRatio?: string) {
+    return getOpenAIImageGenerationOptions(this.options.model.modelId, aspectRatio)
+  }
+
+  protected getCallSettings(options: CallChatCompletionOptions): CallSettings {
     const openaiOptions = normalizeOpenAIReasoningOptions(this.options.model.modelId, options.providerOptions?.openai)
     const providerOptions = openaiOptions
       ? {

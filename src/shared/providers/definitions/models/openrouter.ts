@@ -1,8 +1,10 @@
 import { createOpenRouter } from '@openrouter/ai-sdk-provider'
+import type { ImageModelProviderMetadata } from 'ai'
 import { extractReasoningMiddleware, wrapLanguageModel } from 'ai'
 import AbstractAISDKModel from '../../../models/abstract-ai-sdk'
 import { fetchRemoteModels } from '../../../models/openai-compatible'
 import type { CallChatCompletionOptions } from '../../../models/types'
+import { createOpenAIChatCompletionSseFetch } from '../../../models/utils/openai-chat-sse-termination'
 import type { ProviderModelInfo } from '../../../types'
 import type { ModelDependencies } from '../../../types/adapters'
 
@@ -46,7 +48,7 @@ export default class OpenRouter extends AbstractAISDKModel {
         'HTTP-Referer': 'https://chatboxai.app',
         'X-Title': 'Chatbox AI',
       },
-      fetch: this.options.customFetch,
+      fetch: createOpenAIChatCompletionSseFetch(this.options.customFetch),
     })
   }
 
@@ -56,6 +58,40 @@ export default class OpenRouter extends AbstractAISDKModel {
       model: provider.languageModel(this.options.model.modelId),
       middleware: extractReasoningMiddleware({ tagName: 'think' }),
     })
+  }
+
+  protected getImageModel() {
+    const modelId = this.options.model.modelId
+    if (!modelId) return null
+    return this.getProvider().imageModel(modelId)
+  }
+
+  protected override getMaxImagesPerGenerationRequest() {
+    return 1
+  }
+
+  protected override getImageGenerationPrompt(params: {
+    prompt: string
+    images?: { imageUrl: string }[]
+  }): string | { text: string; images: string[] } {
+    if (!params.images?.length) return params.prompt
+    return {
+      text: params.prompt,
+      images: params.images.map((image) => image.imageUrl),
+    }
+  }
+
+  protected override getGeneratedImageMediaType(
+    defaultMediaType: string,
+    index: number,
+    providerMetadata: ImageModelProviderMetadata
+  ): string {
+    const imageMetadata = providerMetadata.openrouter?.images
+    if (!Array.isArray(imageMetadata)) return defaultMediaType
+    const metadata = imageMetadata[index]
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return defaultMediaType
+    const mediaType = metadata.mediaType
+    return typeof mediaType === 'string' && mediaType.startsWith('image/') ? mediaType : defaultMediaType
   }
 
   public listModels(): Promise<ProviderModelInfo[]> {

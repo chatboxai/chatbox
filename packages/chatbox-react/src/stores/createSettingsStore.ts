@@ -30,6 +30,18 @@ export type SettingsStore = Omit<StoreApi<SettingsStoreState>, 'setState'> & {
   setState(update: SettingsStoreSetStateUpdate, replace?: boolean): void
 }
 
+function replaceSettingsProjection(current: SettingsStoreState, settings: Settings): SettingsStoreState {
+  return {
+    ...settings,
+    hydrationStatus: current.hydrationStatus,
+    hydrationError: current.hydrationError,
+    setSettings: current.setSettings,
+    getSettings: current.getSettings,
+    hydrate: current.hydrate,
+    destroy: current.destroy,
+  }
+}
+
 function createSettingsUpdate(current: Settings, candidate: unknown): Partial<Settings> {
   const parsed = SettingsSchema.parse(candidate)
   const currentRecord = current as unknown as Record<string, unknown>
@@ -77,9 +89,9 @@ export function createSettingsStore(service: SettingsService): SettingsStore {
         set({ hydrationStatus: 'hydrating', hydrationError: null })
         hydrationPromise = service
           .hydrate()
-          .then((settings) => {
-            set({ ...settings, hydrationStatus: 'hydrated', hydrationError: null })
-            return settings
+          .then(() => {
+            set({ hydrationStatus: 'hydrated', hydrationError: null })
+            return service.getSettings()
           })
           .catch((error: unknown) => {
             set({
@@ -100,7 +112,7 @@ export function createSettingsStore(service: SettingsService): SettingsStore {
 
   const internalSetState = store.setState
   unsubscribeService = service.subscribe((settings) => {
-    internalSetState(settings)
+    internalSetState((current) => replaceSettingsProjection(current, settings), true)
   })
 
   store.setState = ((update, replace) => {

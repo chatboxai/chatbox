@@ -37,3 +37,29 @@
 .shiki-code-fallback pre code {
   background: transparent !important;
 }
+
+.code-block-container[data-wrap-code="true"] .shiki-code-wrapper pre,
+.code-block-container[data-wrap-code="true"] .shiki-code-wrapper pre code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.code-block-container[data-wrap-code="true"] .shiki-code-wrapper pre.shiki code .line {
+  display: inline-block;
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 1lh;
+  vertical-align: top;
+  padding-left: calc(var(--shiki-line-number-width, 2em) + 1rem);
+}
+
+.code-block-container[data-wrap-code="true"] .shiki-code-wrapper pre.shiki code .line::before {
+  position: absolute;
+  left: 0;
+}
+
+.code-block-container[data-wrap-code="true"] .shiki-code-wrapper pre.shiki code .line:last-child:empty {
+  display: none;
+}

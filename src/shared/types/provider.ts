@@ -6,7 +6,8 @@ export enum ModelProviderEnum {
   OpenAI = 'openai',
   OpenAIResponses = 'openai-responses',
   Azure = 'azure',
-  ChatGLM6B = 'chatglm-6b',
+  // Persisted provider ID used by saved settings, sessions, and backups.
+  GLM = 'chatglm-6b',
   Claude = 'claude',
   Gemini = 'gemini',
   Qwen = 'qwen',

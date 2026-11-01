@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionMetaRecord } from '@shared/types'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { SQLiteSessionMetaStorage } from '../SQLiteSessionMetaStorage'
 
 const mockDatabase = vi.hoisted(() => ({
@@ -45,6 +45,24 @@ describe('SQLiteSessionMetaStorage', () => {
     mockDatabase.query.mockResolvedValue({ values: [{ name: 'archived_at' }] })
   })
 
+  it('iterates identities using bounded keyset reads without loading metadata payloads', async () => {
+    const storage = new SQLiteSessionMetaStorage()
+    await storage.initialize()
+    const first = Array.from({ length: 128 }, (_, index) => ({ id: `id-${String(index).padStart(3, '0')}` }))
+    mockDatabase.query.mockReset()
+    mockDatabase.query
+      .mockResolvedValueOnce({ values: first })
+      .mockResolvedValueOnce({ values: [{ id: 'last' }] })
+      .mockResolvedValueOnce({ values: [] })
+    const ids: string[] = []
+    for await (const id of storage.iterateIds()) ids.push(id)
+    expect(ids).toEqual([...first.map((row) => row.id), 'last'])
+    expect(mockDatabase.query.mock.calls.every(([sql]) => /^SELECT id FROM session_meta .*LIMIT 128$/.test(sql))).toBe(
+      true
+    )
+    expect(mockDatabase.query.mock.calls.map(([, params]) => params)).toEqual([[], ['id-127'], ['last']])
+  })
+
   it('createMany delegates batch writes to the Capacitor SQLite transaction API', async () => {
     const storage = new SQLiteSessionMetaStorage()
     const records = [makeRecord({ id: 'a' }), makeRecord({ id: 'b', starred: true })]
@@ -56,11 +74,11 @@ describe('SQLiteSessionMetaStorage', () => {
       [
         {
           statement: expect.stringContaining('INSERT OR REPLACE INTO session_meta'),
-          values: ['a', 'Test Session', 0, 0, null, null, null, null, 'chat', 100, 100],
+          values: ['a', 'Test Session', null, 0, 0, null, null, null, null, 'chat', 100, 100, 0, 0],
         },
         {
           statement: expect.stringContaining('INSERT OR REPLACE INTO session_meta'),
-          values: ['b', 'Test Session', 1, 0, null, null, null, null, 'chat', 100, 100],
+          values: ['b', 'Test Session', null, 1, 0, null, null, null, null, 'chat', 100, 100, 0, 0],
         },
       ],
       true
@@ -104,13 +122,170 @@ describe('SQLiteSessionMetaStorage', () => {
     expect(mockDatabase.run).not.toHaveBeenCalledWith('ROLLBACK')
   })
 
-  it('adds archived_at column for existing mobile databases', async () => {
+  it('adds optional session metadata columns for existing mobile databases', async () => {
     const storage = new SQLiteSessionMetaStorage()
     mockDatabase.query.mockResolvedValueOnce({ values: [{ name: 'id' }, { name: 'hidden' }] })
 
     await storage.initialize()
 
     expect(mockDatabase.execute).toHaveBeenCalledWith('ALTER TABLE session_meta ADD COLUMN archived_at INTEGER')
+    expect(mockDatabase.execute).toHaveBeenCalledWith(
+      'ALTER TABLE session_meta ADD COLUMN has_paused_tool_call INTEGER NOT NULL DEFAULT 0'
+    )
+    expect(mockDatabase.execute).toHaveBeenCalledWith(
+      'ALTER TABLE session_meta ADD COLUMN recovery_archived INTEGER NOT NULL DEFAULT 0'
+    )
+    expect(mockDatabase.execute).toHaveBeenCalledWith('ALTER TABLE session_meta ADD COLUMN folder_id TEXT')
+  })
+
+  it('getPage orders rows by pin, folder order and sort order', async () => {
+    const storage = new SQLiteSessionMetaStorage()
+    mockDatabase.query
+      .mockResolvedValueOnce({ values: [{ name: 'archived_at' }, { name: 'folder_id' }] })
+      .mockResolvedValueOnce({
+        values: [{ id: 'filed', name: 'Filed', folder_id: 'f1', starred: 0, hidden: 0, sort_order: 1, created_at: 1 }],
+      })
+      .mockResolvedValueOnce({ values: [{ total: 1 }] })
+
+    const page = await storage.getPage(0, 50, ['f1', 'f2'])
+
+    expect(mockDatabase.query).toHaveBeenNthCalledWith(
+      2,
+      'SELECT * FROM session_meta WHERE hidden = 0 ORDER BY CASE WHEN starred = 1 THEN 0 WHEN folder_id = ? THEN 1 WHEN folder_id = ? THEN 2 ELSE 3 END, sort_order DESC LIMIT ? OFFSET ?',
+      ['f1', 'f2', 50, 0]
+    )
+    expect(page.items[0]).toMatchObject({ id: 'filed', folderId: 'f1' })
+  })
+
+  it('create persists hasPausedToolCall as an integer column', async () => {
+    const storage = new SQLiteSessionMetaStorage()
+
+    await storage.create(makeRecord({ id: 'paused', hasPausedToolCall: true }))
+
+    expect(mockDatabase.run).toHaveBeenCalledWith(expect.stringContaining('has_paused_tool_call'), [
+      'paused',
+      'Test Session',
+      null,
+      0,
+      0,
+      null,
+      null,
+      null,
+      null,
+      'chat',
+      100,
+      100,
+      1,
+      0,
+    ])
+  })
+
+  it('persists and restores the recovery archive marker', async () => {
+    const storage = new SQLiteSessionMetaStorage()
+
+    await storage.create(makeRecord({ id: 'recovery', hidden: true, archivedAt: 100, recoveryArchived: true }))
+
+    expect(mockDatabase.run).toHaveBeenCalledWith(expect.stringContaining('recovery_archived'), [
+      'recovery',
+      'Test Session',
+      null,
+      0,
+      1,
+      100,
+      null,
+      null,
+      null,
+      'chat',
+      100,
+      100,
+      0,
+      1,
+    ])
+
+    mockDatabase.query.mockResolvedValueOnce({
+      values: [
+        {
+          id: 'recovery',
+          name: 'Test Session',
+          hidden: 1,
+          archived_at: 100,
+          recovery_archived: 1,
+          sort_order: 100,
+          created_at: 100,
+        },
+      ],
+    })
+
+    await expect(storage.getById('recovery')).resolves.toMatchObject({
+      id: 'recovery',
+      recoveryArchived: true,
+    })
+  })
+
+  it('clears the recovery archive marker during a full metadata update', async () => {
+    const storage = new SQLiteSessionMetaStorage()
+    mockDatabase.query
+      .mockResolvedValueOnce({
+        values: [{ name: 'archived_at' }, { name: 'has_paused_tool_call' }, { name: 'recovery_archived' }],
+      })
+      .mockResolvedValueOnce({
+        values: [
+          {
+            id: 'recovery',
+            name: 'Test Session',
+            hidden: 1,
+            archived_at: 100,
+            recovery_archived: 1,
+            sort_order: 100,
+            created_at: 100,
+          },
+        ],
+      })
+
+    await storage.update('recovery', { hidden: false, archivedAt: undefined, recoveryArchived: undefined })
+
+    expect(mockDatabase.run).toHaveBeenLastCalledWith(expect.stringContaining('recovery_archived = ?'), [
+      'Test Session',
+      null,
+      0,
+      0,
+      null,
+      null,
+      null,
+      null,
+      null,
+      100,
+      100,
+      0,
+      0,
+      'recovery',
+    ])
+  })
+
+  it('getById maps the persisted paused-tool-call column back onto the record', async () => {
+    const storage = new SQLiteSessionMetaStorage()
+    mockDatabase.query
+      .mockResolvedValueOnce({ values: [{ name: 'archived_at' }, { name: 'has_paused_tool_call' }] })
+      .mockResolvedValueOnce({
+        values: [
+          {
+            id: 'paused',
+            name: 'Paused',
+            starred: 0,
+            hidden: 0,
+            archived_at: null,
+            type: 'chat',
+            sort_order: 100,
+            created_at: 100,
+            has_paused_tool_call: 1,
+          },
+        ],
+      })
+
+    await expect(storage.getById('paused')).resolves.toMatchObject({
+      id: 'paused',
+      hasPausedToolCall: true,
+    })
   })
 
   it('getArchivedPage queries archived rows with limit and offset', async () => {

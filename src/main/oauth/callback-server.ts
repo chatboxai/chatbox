@@ -4,6 +4,8 @@ import log from 'electron-log/main'
 export interface CallbackResult {
   code: string
   state?: string
+  /** RFC 9207 issuer identifier; the MCP SDK rejects the callback without it when the server advertises support */
+  iss?: string
 }
 
 const OAUTH_CALLBACK_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
@@ -47,6 +49,7 @@ export function createCallbackServer(
       if (ACCEPTED_PATHS.includes(url.pathname)) {
         const code = url.searchParams.get('code')
         const state = url.searchParams.get('state')
+        const iss = url.searchParams.get('iss')
         const error = url.searchParams.get('error')
         const errorDescription = url.searchParams.get('error_description')
 
@@ -64,7 +67,7 @@ export function createCallbackServer(
           )
           if (!resolved) {
             resolved = true
-            resolve({ code, state: state || undefined })
+            resolve({ code, state: state || undefined, iss: iss || undefined })
           }
         } else {
           res.writeHead(400, { 'Content-Type': 'text/html' })

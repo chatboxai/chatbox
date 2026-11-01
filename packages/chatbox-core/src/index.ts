@@ -1,12 +1,66 @@
 /** Public, host-neutral API for Chatbox application and generation logic. */
 
 export type { ChatStreamOptions, ModelInterface, ModelStreamPart } from '@shared/models/types'
+export { SessionHeaderSchema } from '@shared/types'
+export { getChatboxAPIOrigin } from '@shared/request/chatbox-api-origin'
+export {
+  licenseActivationSettings,
+  licenseDeactivationSettings,
+  prepareLicenseActivation,
+} from '@shared/services/license-activation'
+export {
+  fetchNativeAccountLicenses,
+  fetchNativeAccountProfile,
+  fetchNativeChatboxAIModelCatalog,
+  fetchNativeChatboxAIModels,
+  generateNativeWebAuthToken,
+  loginNativeEmailCode,
+  type NativeAccountLicense,
+  type NativeAccountProfile,
+  type NativeAccountRequestOptions,
+  type NativeAccountTokens,
+  type NativeChatboxAIModelCatalog,
+  type NativeChatboxAIModelDetail,
+  refreshNativeAccountTokens,
+  sendNativeEmailLoginCode,
+} from '@shared/services/native-account'
+export {
+  type NativeDocumentParserFile,
+  type NativeDocumentParserRequestOptions,
+  parseNativeChatboxAIDocument,
+} from '@shared/services/native-document-parser'
+export {
+  activateNativeLicense,
+  deactivateNativeLicense,
+  fetchNativeLicenseDetail,
+  fetchNativeLicenseInspection,
+  type NativeLicenseActivationResult,
+  type NativeLicenseDetailResult,
+  type NativeLicenseRequestOptions,
+  validateNativeLicense,
+} from '@shared/services/native-license'
+export {
+  type ReportNativeContentOptions,
+  reportNativeContent,
+} from '@shared/services/native-report'
+export {
+  hasNativeWebSearchConfiguration,
+  type NativeWebSearchOptions,
+  type NativeWebSearchProvider,
+  type NativeWebSearchResultItem,
+  nativeWebSearchProviderOptions,
+  normalizeNativeWebSearchSettings,
+  searchNativeWeb,
+} from '@shared/services/native-web-search'
 export type {
   CompactionPoint,
   Config,
+  ImageGeneration,
+  ImageGenerationPage,
   Language,
   Message,
   Session,
+  SessionFolder,
   SessionMeta,
   SessionMetaPage,
   SessionMetaRecord,
@@ -15,6 +69,24 @@ export type {
   Settings,
   Updater,
 } from '@shared/types'
+export type {
+  AccountLicenseStatus,
+  AccountLicenseStatusKind,
+  AccountLicenseSummary,
+} from '@shared/utils/account-license'
+export {
+  accountLicenseFromApi,
+  getAccountLicenseStatus,
+  isAccountLicenseOptionDisabled,
+  isAccountLicenseUsable,
+  selectAccountLicense,
+  selectAccountLicenseForInspection,
+  sortAccountLicensesByStatus,
+} from '@shared/utils/account-license'
+export {
+  createWebSearchTool,
+  type WebSearchToolResult,
+} from '@shared/web-search-tool'
 export {
   type AttachmentAnalysis,
   type AttachmentAnalysisPort,
@@ -29,33 +101,72 @@ export {
   type PreparedAttachment,
 } from './application/attachments'
 export {
-  buildCompactionCommitPatch,
+  type ChatGenerationPort,
+  type ChatMessageFiles,
+  type ChatMessageInput,
+  type ChatMessageLinks,
+  ChatMessageService,
+  type ChatMessageServiceDependencies,
+  type ChatMessageSessionPort,
+  type ChatMessageValidationCode,
+  ChatMessageValidationError,
+  ChatSendPreflightInvalidatedError,
+  type ChatSendResult,
+  type SendExistingSessionRequest,
+  type SendNewSessionRequest,
+} from './application/chat'
+export {
+  type CompactionCoverage,
   type CompactionFailure,
   type CompactionFailureCode,
   type CompactionPolicyPort,
+  type CompactionRequest,
+  type CompactionRunOptions,
   CompactionService,
   type CompactionServiceOptions,
   type CompactionServiceResult,
   type CompactionSessionPort,
   type CompactionSummaryPort,
+  compactionFailureError,
   findLastCompactionBoundaryMessage,
+  type GenerationCompactionRequest,
+  generateCompactionSummaryWithModel,
+  getRequestOverheadBeyond,
   isAutoCompactionEnabled,
+  type RequestOverheadTokens,
 } from './application/context'
+export {
+  COPILOT_PREFERENCES_STORAGE_KEY,
+  type CopilotDetail,
+  CopilotPreferences,
+  type CopilotPreferencesSnapshot,
+  CopilotService,
+  type CopilotServiceOptions,
+  type CopilotSnapshot,
+  type CopilotUsageAction,
+  FeaturedCopilotClient,
+  type FeaturedCopilotClientOptions,
+  type FeaturedCopilotFilters,
+  type FeaturedCopilotPage,
+  type ImageSource,
+  MY_COPILOTS_STORAGE_KEY,
+  searchCopilots,
+} from './application/copilots'
+export * from './application/memory'
 export { ModelFactory, type ModelFactoryOptions, type ModelResolver } from './application/model'
 export {
-  assertNoMessageDataUpdate,
   createSessionMetaRecord,
   ForkService,
-  getSessionMetadataSnapshot,
-  hasSessionMetaFields,
+  migrateSession,
   type NameGenerationSchedulerPort,
   projectSessionMeta,
+  recoverSessionOnLoad,
   type ScheduledNameGeneration,
   type SessionApplicationEvent,
   type SessionDeleteOperation,
   SessionEventBus,
   type SessionEventListener,
-  type SessionMetadataUpdate,
+  type SessionLoadRecovery,
   type SessionNameGenerationOptions,
   SessionNamingService,
   type SessionNamingServiceDependencies,
@@ -64,14 +175,28 @@ export {
   type SessionServiceOptions,
   type SessionUseCasePort,
   SessionWriteCoordinator,
-  type SessionWriteCoordinatorOptions,
-  type SessionWriteOptions,
-  type SessionWriteResult,
   ThreadService,
   type ThreadServiceDependencies,
   type UpdateSessionOptions,
 } from './application/session'
 export { type SettingsListener, SettingsService, type SettingsServiceOptions } from './application/settings'
+export {
+  type CompactionBudget,
+  DEFAULT_COMPACTION_THRESHOLD,
+  estimateDraftTokensImmediately,
+  FALLBACK_CONTEXT_WINDOW_TOKENS,
+  getCompactionBudget,
+  getCompactionBudgetForModel,
+  LONG_DRAFT_TOKENIZATION_THRESHOLD,
+  OUTPUT_RESERVE_TOKENS,
+  type PortableTokenEstimationResult,
+  resolveModelContextWindow,
+  selectTokenEstimationContext,
+  type TokenBreakdown,
+  type TokenEstimationModel,
+  type TokenEstimationRequest,
+  TokenEstimationService,
+} from './application/token-estimation'
 export {
   AgentModeEntrySchema,
   type BuiltinProviderBaseInfo,
@@ -103,12 +228,15 @@ export {
   type PersistedSettingsEnvelope,
   type ProviderBaseInfo,
   type ProviderInfo,
+  type ProviderModelGroup,
+  ProviderModelGroupSchema,
   type ProviderModelInfo,
   ProviderModelInfoSchema,
   type ProviderOptions,
   ProviderOptionsSchema,
   type ProviderSettings,
   ProviderSettingsSchema,
+  resolveWebBrowsing,
   SETTINGS_PERSIST_VERSION,
   SessionSettingsSchema,
   type SettingsHostDefaults,
@@ -124,10 +252,18 @@ export {
   type UnifiedTokenUsageDetail,
 } from './domain/settings'
 export {
+  getUnsupportedFileType,
+  isSupportedFile,
+  isTextFilePath,
+} from './file-extensions'
+export {
   AGENT_MODE_SUGGESTION_PROMPT,
   type AgentModeSuggestionDecision,
   applyLegacyToolFallback,
   applyPersistentToolCallPause,
+  BasicGenerationPreparation,
+  type BasicGenerationPreparationOptions,
+  type BasicGenerationToolPreparation,
   cancelRunningToolCallBatch,
   createInitialState,
   createPausedToolCallExecutionContext,
@@ -148,6 +284,7 @@ export {
   type GenerationModelFactoryPort,
   type GenerationOperationType,
   type GenerationOptions,
+  type GenerationRequestTiming,
   type GenerationPreparationPort,
   type GenerationPreparationRequest,
   type GenerationRuntimePhase,
@@ -162,6 +299,7 @@ export {
   getLastUserMessage,
   getToolCallPause,
   hasPausedToolCallPart,
+  hasPendingSessionGeneration,
   isFirstUserTurn,
   isRetryableToolCallStep,
   keepContentPartsThroughToolCall,
@@ -197,11 +335,41 @@ export {
   type PendingPauseInteraction,
 } from './message-approval'
 export {
+  ACTIVE_SESSION_THREAD_KEY,
+  CAPACITOR_IMAGE_GENERATION_DATABASE_FILE,
+  CAPACITOR_IMAGE_GENERATION_SCHEMA_SQL,
+  CAPACITOR_MAIN_DATABASE_FILE,
+  CAPACITOR_MAIN_KEY_VALUE_SCHEMA_SQL,
+  CAPACITOR_MESSAGE_ROWS_DATABASE_FILE,
+  CAPACITOR_MESSAGE_ROWS_SCHEMA_SQL,
+  CAPACITOR_SESSION_META_DATABASE_FILE,
+  CAPACITOR_SESSION_META_LIST_INDEX_SQL,
+  CAPACITOR_SESSION_META_SCHEMA_SQL,
+  capacitorSessionListOrderBy,
+  type PersistedForkBranchRow,
+  type PersistedForkMessageRow,
+  type PersistedForkRow,
+  type PersistedMessageRow,
+  type PersistedSessionGraph,
+  type PersistedSessionHeader,
+  type PersistedThreadRow,
+  SESSION_GRAPH_SCHEMA_VERSION,
+  SessionGraphCodec,
+  SessionGraphCodecError,
+  type SessionGraphCodecOptions,
+  type SessionRowSqlBatchOptions,
+  type SessionRowSqlBindValue,
+  type SessionRowSqlDatabase,
+  type SessionRowSqlStatement,
+  SqlSessionRowStore,
+} from './persistence'
+export {
   type AnalyticsEventValue,
   type AnalyticsPort,
   type AttachmentContentPort,
   type AttachmentDescriptor,
   type BlobStoragePort,
+  type ImageGenerationStoragePort,
   type KeyValueStoragePort,
   type LoggerPort,
   type LogLevel,
@@ -209,17 +377,21 @@ export {
   type PlatformCapabilitiesPort,
   type PlatformCapability,
   type SessionDataRepositoryPort,
+  type SessionCommand,
+  type SessionCommandDelta,
+  type SessionFolderStorePort,
   type SessionMetaRepositoryPort,
   SessionRepositoryError,
   type SessionRepositoryOperation,
   type SessionRepositoryPort,
+  SessionRowConflictError,
+  SessionWriteConflictError,
   type SettingsRepositoryPort,
   type SettingsStoragePort,
   type SettingsUpdate,
 } from './ports'
 export {
   assertSessionActionAllowed,
-  deriveSessionLockState,
   getSessionActionGate,
   getSubmitAvailability,
   IDLE_SESSION_LOCK_STATE,
@@ -235,32 +407,25 @@ export {
   shouldShowConcurrentReplyStop,
 } from './session/action-gates'
 export {
-  type AutoTitleAction,
-  type AutoTitleSession,
-  backfillMissingThreadName,
   buildNameGenerationAttemptKey,
   DEFAULT_INBOX_SESSION_ID,
   DEFAULT_INBOX_SESSION_NAME,
-  getCurrentThreadNamingIdentity,
   isDefaultInboxSession,
   isNameGenerationAttemptKeyForSession,
   type NameGenerationKind,
-  resolveAutoTitleAction,
   sanitizeGeneratedSessionName,
   shouldBackfillThreadName,
-  type ThreadNamingIdentitySession,
   UNTITLED_SESSION_NAME,
 } from './session/auto-title'
 export {
   countCancellableGeneratingAssistantMessages,
-  getConversationMessages,
-  getCurrentConversationMessages,
-  getGenerationControlMessages,
-  getReachableSessionMessages,
   isCancellableGeneratingAssistantMessage,
 } from './session/generation-state'
+export { type ForkIdentityPort } from './session/message-forks'
 export {
   hasContentForAutoTitle,
   hasSuccessfulUserAssistantTurn,
   isSuccessfulAssistantReply,
 } from './session/message-success'
+export { createMessage, isChatSession } from './types'
+export { applyLastOutputTextEdit, getEditableTextPartIndexes, getMessageText } from './utils/message'

@@ -40,6 +40,41 @@ function getRouteSessionId() {
   return sessionRouteMatch?.[1] ? decodeURIComponent(sessionRouteMatch[1]) : null
 }
 
+function isVisible(element: HTMLElement) {
+  for (let current: HTMLElement | null = element; current; current = current.parentElement) {
+    if (current.hidden || current.getAttribute('aria-hidden') === 'true') {
+      return false
+    }
+    const style = window.getComputedStyle(current)
+    if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') {
+      return false
+    }
+  }
+  return true
+}
+
+function hasVisibleDialog() {
+  return Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]')).some(isVisible)
+}
+
+function isEditableElement(element: Element) {
+  return (
+    element instanceof HTMLElement &&
+    (element.tagName === 'INPUT' ||
+      element.tagName === 'TEXTAREA' ||
+      element.tagName === 'SELECT' ||
+      element.isContentEditable)
+  )
+}
+
+function shouldAutoFocusMessageInput() {
+  if (hasVisibleDialog()) {
+    return false
+  }
+  const active = document.activeElement
+  return !active || active.id === dom.messageInputID || !isEditableElement(active)
+}
+
 export default function useShortcut() {
   const isSmallScreen = useIsSmallScreen()
 
@@ -49,7 +84,7 @@ export default function useShortcut() {
     }
     const focusMessageInput = () => {
       // 大屏幕下，窗口显示时自动聚焦输入框
-      if (!isSmallScreen) {
+      if (!isSmallScreen && shouldAutoFocusMessageInput()) {
         dom.focusMessageInput()
       }
     }

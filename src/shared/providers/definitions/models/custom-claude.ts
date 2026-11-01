@@ -1,5 +1,5 @@
 import { createAnthropic } from '@ai-sdk/anthropic'
-import type { LanguageModelV3 } from '@ai-sdk/provider'
+import type { LanguageModelV4 } from '@ai-sdk/provider'
 import type { ModelMessage, ToolSet } from 'ai'
 import AbstractAISDKModel, { type CallSettings } from '../../../models/abstract-ai-sdk'
 import { addAnthropicCacheControl } from '../../../models/anthropic-cache'
@@ -35,19 +35,23 @@ export default class CustomClaude extends AbstractAISDKModel {
     this.injectDefaultMetadata = false
   }
 
-  protected getProvider() {
+  protected getRequestHeaders(_options?: CallChatCompletionOptions): Record<string, string> {
+    return {
+      'anthropic-dangerous-direct-browser-access': 'true',
+    }
+  }
+
+  protected getProvider(options?: CallChatCompletionOptions) {
     return createAnthropic({
       baseURL: this.options.apiHost,
       apiKey: this.options.apiKey,
       fetch: createFetchWithProxy(this.options.useProxy, this.dependencies),
-      headers: {
-        'anthropic-dangerous-direct-browser-access': 'true',
-      },
+      headers: this.getRequestHeaders(options),
     })
   }
 
-  protected getChatModel(_options: CallChatCompletionOptions): LanguageModelV3 {
-    const provider = this.getProvider()
+  protected getChatModel(options: CallChatCompletionOptions): LanguageModelV4 {
+    const provider = this.getProvider(options)
     return provider.languageModel(this.options.model.modelId)
   }
 

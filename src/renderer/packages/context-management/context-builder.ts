@@ -1,5 +1,5 @@
 import { findLatestApplicableCompactionPoint, selectContextMessages } from '@shared/context'
-import type { CompactionPoint, Message, Session, SessionSettings, SessionThread, Settings } from '@shared/types'
+import type { CompactionPoint, Message, SessionSettings, Settings } from '@shared/types'
 
 export interface BuildContextOptions {
   messages: Message[]
@@ -58,59 +58,4 @@ export function computeContextAfterCompaction(messages: Message[], compactionPoi
   }
 
   return contextMessages
-}
-
-export function buildContextForSession(
-  session: Session,
-  options?: {
-    threadId?: string
-    settings?: Partial<Settings>
-  }
-): Message[] {
-  const { threadId, settings } = options ?? {}
-
-  if (threadId && session.threads) {
-    const thread = session.threads.find((t) => t.id === threadId)
-    if (thread) {
-      return buildContextForThread(thread, { sessionSettings: session.settings, settings })
-    }
-  }
-
-  return buildContextForAI({
-    messages: session.messages,
-    compactionPoints: session.compactionPoints,
-    sessionSettings: session.settings,
-    settings,
-  })
-}
-
-export function buildContextForThread(
-  thread: SessionThread,
-  options?: {
-    sessionSettings?: SessionSettings
-    settings?: Partial<Settings>
-  }
-): Message[] {
-  const { sessionSettings, settings } = options ?? {}
-
-  return buildContextForAI({
-    messages: thread.messages,
-    compactionPoints: thread.compactionPoints,
-    sessionSettings,
-    settings,
-  })
-}
-
-export function getContextMessageIds(session: Session, maxCount?: number): string[] {
-  const contextMessages = buildContextForSession(session)
-  const ids = contextMessages.map((m) => m.id)
-
-  if (maxCount !== undefined) {
-    if (maxCount <= 0) {
-      return []
-    }
-    return ids.slice(-maxCount)
-  }
-
-  return ids
 }

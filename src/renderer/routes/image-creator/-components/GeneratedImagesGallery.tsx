@@ -1,4 +1,4 @@
-import { ActionIcon, Flex, Image, Paper, Skeleton, Text } from '@mantine/core'
+import { ActionIcon, Button, Flex, Image, Paper, Skeleton, Text } from '@mantine/core'
 import { IconDownload, IconMaximize, IconMessageReport, IconPhoto, IconPhotoOff } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
 import type PhotoSwipe from 'photoswipe'
@@ -11,22 +11,18 @@ import { useFetchBlob } from '@/hooks/useBlob'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import platform from '@/platform'
 
-import {
-  blobToDataUrl,
-  getBase64ImageSize,
-  getImageSizeFromUrl,
-  isDirectImageSource,
-  isHttpImageSource,
-} from './constants'
+import { blobToDataUrl, getImageSizeFromUrl, isDirectImageSource, isHttpImageSource } from './constants'
 
 export interface GeneratedImagesGalleryProps {
   images: string[] // CDN URLs or local storage keys
+  thumbnails?: string[]
   onUseAsReference: (urlOrKey: string) => void
   onReport?: () => void
 }
 
 export const GeneratedImagesGallery = memo(function GeneratedImagesGallery({
   images,
+  thumbnails,
   onUseAsReference,
   onReport,
 }: GeneratedImagesGalleryProps) {
@@ -75,10 +71,11 @@ export const GeneratedImagesGallery = memo(function GeneratedImagesGallery({
   return (
     <Gallery uiElements={uiElements}>
       <Flex gap="md" wrap="wrap" justify="center" className="w-full">
-        {imageKeys.map((keyOrUrl) => (
+        {imageKeys.map((keyOrUrl, index) => (
           <GeneratedImageGalleryItem
             key={keyOrUrl}
             keyOrUrl={keyOrUrl}
+            thumbnailUrl={thumbnails?.[index]}
             onUseAsReference={() => onUseAsReference(keyOrUrl)}
             onReport={onReport}
             isSmallScreen={isSmallScreen}
@@ -91,6 +88,7 @@ export const GeneratedImagesGallery = memo(function GeneratedImagesGallery({
 
 interface GeneratedImageGalleryItemProps {
   keyOrUrl: string
+  thumbnailUrl?: string
   onUseAsReference: () => void
   onReport?: () => void
   isSmallScreen: boolean
@@ -127,25 +125,28 @@ function calculateDisplaySize(width: number, height: number): { displayWidth: nu
 
 function GeneratedImageGalleryItem({
   keyOrUrl,
+  thumbnailUrl,
   onUseAsReference,
   onReport,
   isSmallScreen,
 }: GeneratedImageGalleryItemProps) {
   const { t } = useTranslation()
   const [hovered, setHovered] = useState(false)
+  const [failedSources, setFailedSources] = useState<string[]>([])
   const isDirectSource = isDirectImageSource(keyOrUrl)
   const fetchBlob = useFetchBlob()
 
   const {
-    data: imageData,
+    data: originalData,
     isError,
+    isFetching,
     refetch,
   } = useQuery({
     queryKey: ['generated-image-gallery', keyOrUrl],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       if (isDirectSource) {
         // For URLs, we need to load the image to get dimensions
-        const size = await getImageSizeFromUrl(keyOrUrl)
+        const size = await getImageSizeFromUrl(keyOrUrl, signal)
         const displaySize = calculateDisplaySize(size.width, size.height)
         return {
           data: keyOrUrl,
@@ -157,15 +158,61 @@ function GeneratedImageGalleryItem({
       }
       // For storage keys, read from local storage
       const blob = await fetchBlob(keyOrUrl)
-      if (!blob) return null
+      if (!blob) throw new Error('Generated image is missing from storage')
       const base64 = blobToDataUrl(blob)
-      const size = await getBase64ImageSize(base64)
+      const size = await getImageSizeFromUrl(base64, signal)
       const displaySize = calculateDisplaySize(size.width, size.height)
       return { data: base64, ...size, ...displaySize, isDirectSource: false, isHttpSource: false }
     },
+    retry: false,
+    networkMode: 'always',
     staleTime: Infinity,
     gcTime: 60 * 1000,
   })
+
+  const thumbnail = useQuery({
+    queryKey: ['generated-image-thumbnail', thumbnailUrl],
+    enabled: !!thumbnailUrl && thumbnailUrl !== keyOrUrl && isHttpImageSource(thumbnailUrl),
+    queryFn: async ({ signal }) => {
+      if (!thumbnailUrl) throw new Error('Thumbnail URL is missing')
+      const size = await getImageSizeFromUrl(thumbnailUrl, signal)
+      return { data: thumbnailUrl, ...size, ...calculateDisplaySize(size.width, size.height) }
+    },
+    retry: false,
+    networkMode: 'always',
+    staleTime: Infinity,
+    gcTime: 60 * 1000,
+  })
+  const imageData =
+    originalData && !failedSources.includes(originalData.data)
+      ? originalData
+      : thumbnail.data && !failedSources.includes(thumbnail.data.data)
+        ? thumbnail.data
+        : undefined
+  const loadFailed = isError || (!!originalData && failedSources.includes(originalData.data))
+  const originalReady = !!originalData && !loadFailed
+  const reload = () => {
+    void refetch().then((result) => {
+      if (!result.isError) setFailedSources((sources) => sources.filter((source) => source !== result.data?.data))
+    })
+    if (thumbnail.isError || (thumbnail.data && failedSources.includes(thumbnail.data.data))) {
+      void thumbnail.refetch().then((result) => {
+        if (!result.isError) setFailedSources((sources) => sources.filter((source) => source !== result.data?.data))
+      })
+    }
+  }
+  const loadingNotice = (
+    <Flex direction="column" align="center" gap="xs" p="md" role={loadFailed ? 'alert' : 'status'}>
+      <Text size="sm" ta="center">
+        {loadFailed ? t('Image generated, but failed to load') : t('Loading full-size image...')}
+      </Text>
+      {loadFailed && (
+        <Button variant="light" size="xs" loading={isFetching} onClick={reload}>
+          {t('Reload image')}
+        </Button>
+      )}
+    </Flex>
+  )
 
   // Mobile: fixed 1:1 square with cover fit
   // Desktop: dynamic size based on actual aspect ratio with contain fit
@@ -176,15 +223,15 @@ function GeneratedImageGalleryItem({
   const handleDownload = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation()
-      if (!imageData) return
+      if (!originalData && !isHttpImageSource(keyOrUrl)) return
       const filename = `image_${Date.now()}`
-      if (imageData.isHttpSource) {
-        void platform.exporter.exportByUrl(`${filename}.png`, imageData.data)
-      } else {
-        void platform.exporter.exportImageFile(filename, imageData.data)
+      if (isHttpImageSource(keyOrUrl)) {
+        void platform.exporter.exportByUrl(`${filename}.png`, keyOrUrl)
+      } else if (originalData) {
+        void platform.exporter.exportImageFile(filename, originalData.data)
       }
     },
-    [imageData]
+    [keyOrUrl, originalData]
   )
 
   const handleUseRef = useCallback(
@@ -203,23 +250,17 @@ function GeneratedImageGalleryItem({
     [onReport]
   )
 
-  // Error state: show error placeholder with retry option
-  if (isError) {
+  if (loadFailed && !imageData) {
     return (
       <Paper
         radius="lg"
         h={displayHeight}
         w={displayWidth}
-        className="bg-[var(--chatbox-background-tertiary)] flex flex-col items-center justify-center gap-2 cursor-pointer hover:bg-[var(--chatbox-background-secondary)] transition-colors"
-        onClick={() => void refetch()}
+        maw="100%"
+        className="bg-[var(--chatbox-background-tertiary)] flex flex-col items-center justify-center"
       >
         <IconPhotoOff size={32} className="text-[var(--chatbox-tint-tertiary)]" />
-        <Text size="xs" c="dimmed">
-          {t('Failed to load')}
-        </Text>
-        <Text size="xs" c="dimmed" className="underline">
-          {t('Click to retry')}
-        </Text>
+        {loadingNotice}
       </Paper>
     )
   }
@@ -238,90 +279,101 @@ function GeneratedImageGalleryItem({
   }
 
   return (
-    <GalleryItem original={imageData.data} thumbnail={imageData.data} width={imageData.width} height={imageData.height}>
+    <GalleryItem
+      original={originalData?.data ?? keyOrUrl}
+      thumbnail={imageData.data}
+      width={imageData.width}
+      height={imageData.height}
+    >
       {({ ref, open }: { ref: React.RefCallback<HTMLImageElement>; open: (e: React.MouseEvent) => void }) => (
         <Paper
           radius="lg"
-          className="group relative overflow-hidden bg-[var(--chatbox-background-secondary)] shadow-sm hover:shadow-lg transition-shadow duration-300 cursor-pointer"
+          className="group overflow-hidden bg-[var(--chatbox-background-secondary)] shadow-sm hover:shadow-lg transition-shadow duration-300 cursor-pointer"
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
-          onClick={open}
+          onClick={originalReady ? open : undefined}
         >
-          <Image
-            src={imageData.data}
-            h={displayHeight}
-            w={displayWidth}
-            fit={imageFit}
-            radius="lg"
-            ref={ref}
-            styles={{
-              root: {
-                border: '1px solid var(--mantine-color-gray-3)',
-              },
-            }}
-          />
+          <div className="relative">
+            <Image
+              src={imageData.data}
+              alt={t('Generated image')}
+              onError={() => setFailedSources((sources) => [...sources, imageData.data])}
+              h={displayHeight}
+              w={displayWidth}
+              fit={imageFit}
+              radius="lg"
+              ref={ref}
+              styles={{
+                root: {
+                  border: '1px solid var(--mantine-color-gray-3)',
+                },
+              }}
+            />
 
-          {onReport && (
-            <Tooltip label={t('report')} withArrow disabled={isSmallScreen}>
-              <ActionIcon
-                aria-label={t('report')}
-                color="red"
-                variant="white"
-                size="sm"
-                radius="lg"
-                onClick={handleReport}
-                className="absolute right-3 bottom-3 z-[1] !bg-white/70 !text-red-500 shadow-sm opacity-65 transition-opacity hover:opacity-100 pointer-events-auto"
-              >
-                <IconMessageReport size={14} />
-              </ActionIcon>
-            </Tooltip>
-          )}
+            {onReport && (
+              <Tooltip label={t('report')} withArrow disabled={isSmallScreen}>
+                <ActionIcon
+                  aria-label={t('report')}
+                  color="red"
+                  variant="white"
+                  size="sm"
+                  radius="lg"
+                  onClick={handleReport}
+                  className="absolute right-3 bottom-3 z-[1] !bg-white/70 !text-red-500 shadow-sm opacity-65 transition-opacity hover:opacity-100 pointer-events-auto"
+                >
+                  <IconMessageReport size={14} />
+                </ActionIcon>
+              </Tooltip>
+            )}
 
-          {/* Hover Overlay (always visible on mobile) */}
-          <div
-            className={`
+            {/* Hover Overlay (always visible on mobile) */}
+            <div
+              className={`
               absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent
               flex items-end justify-center pb-4 gap-2
               transition-opacity duration-200 pointer-events-none
               ${isSmallScreen || hovered ? 'opacity-100' : 'opacity-0'}
             `}
-          >
-            <Tooltip label={t('View')} withArrow disabled={isSmallScreen}>
-              <ActionIcon
-                variant="white"
-                size="lg"
-                radius="lg"
-                onClick={open}
-                className="shadow-lg hover:scale-105 transition-transform pointer-events-auto"
-              >
-                <IconMaximize size={18} />
-              </ActionIcon>
-            </Tooltip>
+            >
+              <Tooltip label={t('View')} withArrow disabled={isSmallScreen}>
+                <ActionIcon
+                  variant="white"
+                  size="lg"
+                  radius="lg"
+                  disabled={!originalReady}
+                  onClick={originalReady ? open : undefined}
+                  className="shadow-lg hover:scale-105 transition-transform pointer-events-auto"
+                >
+                  <IconMaximize size={18} />
+                </ActionIcon>
+              </Tooltip>
 
-            <Tooltip label={t('Use as Reference')} withArrow disabled={isSmallScreen}>
-              <ActionIcon
-                variant="white"
-                size="lg"
-                radius="lg"
-                onClick={handleUseRef}
-                className="shadow-lg hover:scale-105 transition-transform pointer-events-auto"
-              >
-                <IconPhoto size={18} />
-              </ActionIcon>
-            </Tooltip>
+              <Tooltip label={t('Use as Reference')} withArrow disabled={isSmallScreen}>
+                <ActionIcon
+                  variant="white"
+                  size="lg"
+                  radius="lg"
+                  onClick={handleUseRef}
+                  className="shadow-lg hover:scale-105 transition-transform pointer-events-auto"
+                >
+                  <IconPhoto size={18} />
+                </ActionIcon>
+              </Tooltip>
 
-            <Tooltip label={t('Download')} withArrow disabled={isSmallScreen}>
-              <ActionIcon
-                variant="white"
-                size="lg"
-                radius="lg"
-                onClick={handleDownload}
-                className="shadow-lg hover:scale-105 transition-transform pointer-events-auto"
-              >
-                <IconDownload size={18} />
-              </ActionIcon>
-            </Tooltip>
+              <Tooltip label={t('Download')} withArrow disabled={isSmallScreen}>
+                <ActionIcon
+                  variant="white"
+                  size="lg"
+                  radius="lg"
+                  onClick={handleDownload}
+                  className="shadow-lg hover:scale-105 transition-transform pointer-events-auto"
+                >
+                  <IconDownload size={18} />
+                </ActionIcon>
+              </Tooltip>
+            </div>
           </div>
+          {!originalReady && loadingNotice}
         </Paper>
       )}
     </GalleryItem>

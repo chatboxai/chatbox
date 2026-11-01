@@ -1,7 +1,11 @@
-import { createGoogleGenerativeAI } from '@ai-sdk/google'
-import { fetchRemoteModels } from '../../models/openai-compatible'
-import type { ModelInterface } from '../../models/types'
+import { createGoogle } from '@ai-sdk/google'
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
+import { extractReasoningMiddleware, wrapLanguageModel } from 'ai'
+import { fetchRemoteModels, getOpenAICompatibleProviderOptionsKey } from '../../models/openai-compatible'
+import type { CallChatCompletionOptions, CallSettings, ModelInterface } from '../../models/types'
+import { isDeepSeekReasoningModel, normalizeDeepSeekReasoningEffort } from '../../models/utils/deepseek'
 import { createFetchWithProxy } from '../../models/utils/fetch-proxy'
+import { createOpenAIChatCompletionSseFetch } from '../../models/utils/openai-chat-sse-termination'
 import type { ProviderModelInfo } from '../../types'
 import type { ModelDependencies } from '../../types/adapters'
 import type { CreateModelConfig } from '../types'
@@ -9,6 +13,35 @@ import CustomClaude from './models/custom-claude'
 import CustomGemini from './models/custom-gemini'
 import OpenAI from './models/openai'
 import OpenAIResponses from './models/openai-responses'
+
+// OpenCode Go/Zen require a stable per-conversation id for sticky routing and
+// prompt-cache optimization. Requests without this header may be rejected.
+export const OPENCODE_SESSION_HEADER = 'x-opencode-session'
+
+const OPENCODE_SESSION_ID_MAX_LENGTH = 128
+const OPENCODE_SESSION_ID_FALLBACK = 'chatbox'
+const OPENCODE_SESSION_ID_UNSAFE = /[^\w.:-]/g
+
+export function resolveOpenCodeSessionId(sessionId?: string): string {
+  const sanitized = sessionId?.trim().replace(OPENCODE_SESSION_ID_UNSAFE, '-').slice(0, OPENCODE_SESSION_ID_MAX_LENGTH)
+  return sanitized || OPENCODE_SESSION_ID_FALLBACK
+}
+
+export function buildOpenCodeSessionHeaders(sessionId?: string): Record<string, string> {
+  return {
+    [OPENCODE_SESSION_HEADER]: resolveOpenCodeSessionId(sessionId),
+  }
+}
+
+export function mergeOpenCodeSessionHeaders(
+  headers: Record<string, string> | undefined,
+  sessionId?: string
+): Record<string, string> {
+  return {
+    ...headers,
+    ...buildOpenCodeSessionHeaders(sessionId),
+  }
+}
 
 // OpenCode runs two separate billed gateways off the same console:
 //   Zen — pay-as-you-go credits, full catalog, https://opencode.ai/zen/v1
@@ -76,6 +109,51 @@ export function defineOpenCodeModelClasses(
   class Chat extends OpenAI {
     public name = displayName
 
+    protected getRequestHeaders(options?: CallChatCompletionOptions): Record<string, string> {
+      return mergeOpenCodeSessionHeaders(super.getRequestHeaders(options), options?.sessionId)
+    }
+
+    protected getChatModel(options?: CallChatCompletionOptions) {
+      if (!isDeepSeekReasoningModel(this.options.model.modelId)) return super.getChatModel(options)
+
+      const fetch = this.options.customFetch || createFetchWithProxy(this.options.useProxy, this.dependencies)
+      const provider = createOpenAICompatible({
+        name: this.name,
+        apiKey: this.options.apiKey,
+        baseURL: this.options.apiHost,
+        fetch: createOpenAIChatCompletionSseFetch(fetch),
+        headers: this.getRequestHeaders(options),
+      })
+      return wrapLanguageModel({
+        model: provider.chatModel(this.options.model.modelId),
+        middleware: extractReasoningMiddleware({ tagName: 'think' }),
+      })
+    }
+
+    protected getCallSettings(options: CallChatCompletionOptions): CallSettings {
+      if (!isDeepSeekReasoningModel(this.options.model.modelId)) return super.getCallSettings(options)
+
+      const deepseekOptions = options.providerOptions?.deepseek
+      const thinkingType = deepseekOptions?.thinking?.type
+      const reasoningEffort = normalizeDeepSeekReasoningEffort(
+        this.options.model.modelId,
+        deepseekOptions?.reasoningEffort
+      )
+      const compatibleOptions = {
+        ...(thinkingType ? { thinking: { type: thinkingType } } : {}),
+        ...(reasoningEffort ? { reasoningEffort } : {}),
+      }
+      return {
+        temperature: this.options.temperature,
+        topP: this.options.topP,
+        maxOutputTokens: this.options.maxOutputTokens,
+        providerOptions:
+          thinkingType || reasoningEffort
+            ? { [getOpenAICompatibleProviderOptionsKey(this.name)]: compatibleOptions }
+            : undefined,
+      }
+    }
+
     public async listModels(): Promise<ProviderModelInfo[]> {
       return stampModels(await super.listModels())
     }
@@ -83,6 +161,10 @@ export function defineOpenCodeModelClasses(
 
   class Responses extends OpenAIResponses {
     public name = displayName
+
+    protected getRequestHeaders(options?: CallChatCompletionOptions): Record<string, string> {
+      return mergeOpenCodeSessionHeaders(super.getRequestHeaders(options), options?.sessionId)
+    }
 
     public async listModels(): Promise<ProviderModelInfo[]> {
       return stampModels(await super.listModels())
@@ -92,6 +174,10 @@ export function defineOpenCodeModelClasses(
   class Claude extends CustomClaude {
     public name = displayName
 
+    protected getRequestHeaders(options?: CallChatCompletionOptions): Record<string, string> {
+      return mergeOpenCodeSessionHeaders(super.getRequestHeaders(options), options?.sessionId)
+    }
+
     public async listModels(): Promise<ProviderModelInfo[]> {
       return stampModels(await fetchOpenCodeCatalog(this.options, this.dependencies))
     }
@@ -100,13 +186,18 @@ export function defineOpenCodeModelClasses(
   class Gemini extends CustomGemini {
     public name = displayName
 
-    protected getProvider() {
+    protected getRequestHeaders(options?: CallChatCompletionOptions): Record<string, string> {
+      return mergeOpenCodeSessionHeaders(super.getRequestHeaders(options), options?.sessionId)
+    }
+
+    protected getProvider(options?: CallChatCompletionOptions) {
       // CustomGemini appends `/v1beta` for the public Google endpoint. OpenCode serves
       // Gemini straight off `<host>/models/<id>`, so the host is used as-is.
-      return createGoogleGenerativeAI({
+      return createGoogle({
         apiKey: this.options.apiKey,
         baseURL: this.options.apiHost.replace(/\/+$/, ''),
         fetch: createFetchWithProxy(this.options.useProxy, this.dependencies),
+        headers: this.getRequestHeaders(options),
       })
     }
 
@@ -137,7 +228,7 @@ export function createOpenCodeModel(config: CreateModelConfig, gateway: OpenCode
     topP: config.settings.topP,
     maxOutputTokens: config.settings.maxTokens,
     stream: config.settings.stream,
-    useProxy: config.providerSetting.useProxy || false,
+    useProxy: config.dependencies.platformType === 'mobile' || (config.providerSetting.useProxy ?? false),
   }
 
   switch (model.apiStyle) {

@@ -1,0 +1,29 @@
+{
+  "format": "chatbox-backup",
+  "formatVersion": 2,
+  "exportedAt": "2026-10-20T00:00:00.000Z",
+  "application": { "name": "Chatbox", "version": "1.24.0-alpha.9", "platform": "test" },
+  "exportItems": ["conversations"],
+  "data": {},
+  "sessions": [
+    {
+      "path": "sessions/fixture-session/session.json",
+      "size": 175,
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "b4725e6a90987ce71c5569e307f22a49014fb7a46c37c7024884a12d64e614a7"
+      },
+      "id": "fixture-session",
+      "meta": {
+        "id": "fixture-session",
+        "name": "Fixture conversation",
+        "sortOrder": 1792485144339,
+        "createdAt": 1792485144339
+      },
+      "resourceIds": []
+    }
+  ],
+  "resources": [],
+  "warnings": [],
+  "stats": { "sessionCount": 1, "resourceCount": 0, "deduplicatedResourceCount": 0, "warningCount": 0 }
+}

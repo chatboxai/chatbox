@@ -62,6 +62,7 @@ export type Language =
   | 'it-IT'
   | 'sv'
   | 'nb-NO'
+  | 'tr'
 
 export interface Config {
   uuid: string
@@ -115,6 +116,7 @@ export interface Toast {
   action?: {
     label: string
     settingsPath?: string
+    onClick?: () => void
   }
   duration?: number
 }

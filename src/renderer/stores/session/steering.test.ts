@@ -2,17 +2,20 @@ import type { Message } from '@shared/types'
 import type { ModelMessage } from 'ai'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { getSessionMock } = vi.hoisted(() => ({ getSessionMock: vi.fn() }))
+const { readConversationStateMock, warnMock } = vi.hoisted(() => ({
+  readConversationStateMock: vi.fn(),
+  warnMock: vi.fn(),
+}))
 
 vi.mock('@/lib/utils', () => ({
-  getLogger: () => ({ error: vi.fn() }),
+  getLogger: () => ({ error: vi.fn(), warn: warnMock }),
 }))
 vi.mock('@/app/renderer-application', async () => {
   const { GenerationRuntimeStore } = await import('@chatbox/core/generation')
   return {
     rendererApplication: {
       generationRuntime: new GenerationRuntimeStore(),
-      sessionQueryBridge: { getSession: getSessionMock },
+      sessions: { readSessionConversationState: readConversationStateMock },
     },
   }
 })
@@ -20,10 +23,19 @@ vi.mock('@/app/renderer-application', async () => {
 import {
   enqueueUserMessage,
   messageQueueStore,
+  pauseQueue,
+  type QueuedUserMessage,
+  removeQueuedMessage,
   requestSteerQueuedMessage,
   resetMessageQueueForTests,
 } from './message-queue'
 import { registerSteeringConsumer, resetSteeringForTests } from './steering'
+
+/** The queue also holds compression requests, which steering never touches. */
+function queuedMessage(sessionId = 'session-1', index = 0): QueuedUserMessage | undefined {
+  const item = messageQueueStore.getState().queues[sessionId]?.[index]
+  return item?.kind === 'message' ? item : undefined
+}
 
 function userMessage(id: string, text = `text-${id}`): Message {
   return { id, role: 'user', contentParts: [{ type: 'text', text }] }
@@ -72,10 +84,12 @@ describe('steering consumer', () => {
     resetMessageQueueForTests()
     resetSteeringForTests()
     persistMock.mockResolvedValue(undefined)
-    getSessionMock.mockResolvedValue({
-      id: 'session-1',
-      name: 'Session',
-      messages: [
+    readConversationStateMock.mockResolvedValue({
+      header: { id: 'session-1', name: 'Session' },
+      revision: 1,
+      activeThreadId: 'thread-active',
+      matchedMessageIds: [],
+      tailMessages: [
         { id: 'prompt-1', role: 'user', contentParts: [{ type: 'text', text: 'do the task' }] },
         { id: 'anchor-live', role: 'assistant', contentParts: [], generating: true },
       ],
@@ -88,12 +102,88 @@ describe('steering consumer', () => {
     vi.useRealTimers()
   })
 
+  it('loads scope only for a requested anchored item and freezes it once', async () => {
+    const load = vi.fn(async () => conversationIds)
+    const consumer = registerSteeringConsumer('session-1', load, persistMock)
+    await consumer?.inject(baseMessages, 'a1')
+    await enqueueStamped('session-1', userMessage('m1'))
+    await consumer?.inject(baseMessages, 'a1')
+    expect(load).not.toHaveBeenCalled()
+    requestSteerQueuedMessage('session-1', 'm1')
+    await consumer?.inject(baseMessages, 'a1')
+    await enqueueRequested('session-1', userMessage('m2'))
+    await consumer?.inject(baseMessages, 'a1')
+    expect(load).toHaveBeenCalledTimes(1)
+    expect(persistMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps ordinary queued messages when the initial topology no longer matches', async () => {
+    await enqueueRequested('session-1', userMessage('m1'))
+    const consumer = registerSteeringConsumer('session-1', async () => null, persistMock)
+    await consumer?.inject(baseMessages, 'a1')
+    expect(persistMock).not.toHaveBeenCalled()
+    expect(messageQueueStore.getState().queues['session-1']?.[0]).toMatchObject({ id: 'm1' })
+    expect(queuedMessage()?.steerRequested).toBeUndefined()
+    expect(warnMock).toHaveBeenCalledWith(expect.any(String), { reason: 'scope-changed' })
+  })
+
+  it.each(['paused', 'replaced'] as const)('does not mutate a %s queue after awaiting scope', async (change) => {
+    let resolveScope: (scope: null) => void = () => undefined
+    const scope = new Promise<null>((resolve) => {
+      resolveScope = resolve
+    })
+    await enqueueRequested('session-1', userMessage('m1'))
+    const consumer = registerSteeringConsumer('session-1', () => scope, persistMock)
+    const pending = consumer?.inject(baseMessages, 'a1')
+    if (change === 'paused') pauseQueue('session-1', 'stopped')
+    else {
+      consumer?.release()
+      register()
+      requestSteerQueuedMessage('session-1', 'm1')
+    }
+    resolveScope(null)
+    await pending
+    expect(persistMock).not.toHaveBeenCalled()
+    expect(queuedMessage()?.steerRequested).toBe(true)
+    expect(warnMock).not.toHaveBeenCalled()
+  })
+
+  it('reselects the queue atomically after the scope read', async () => {
+    let resolveScope: (scope: ReadonlySet<string>) => void = () => undefined
+    const scope = new Promise<ReadonlySet<string>>((resolve) => {
+      resolveScope = resolve
+    })
+    await enqueueRequested('session-1', userMessage('m1'))
+    const consumer = registerSteeringConsumer('session-1', () => scope, persistMock)
+    const pending = consumer?.inject(baseMessages, 'a1')
+    removeQueuedMessage('session-1', 'm1')
+    await enqueueRequested('session-1', userMessage('m2'))
+    resolveScope(conversationIds)
+    await pending
+    expect(persistMock).toHaveBeenCalledTimes(1)
+    expect(persistMock.mock.calls[0][0].id).toBe('m2')
+  })
+
+  it('retains the request and retries a transient scope read failure', async () => {
+    await enqueueRequested('session-1', userMessage('m1'))
+    const load = vi
+      .fn<() => Promise<ReadonlySet<string>>>()
+      .mockRejectedValueOnce(new Error('read failed'))
+      .mockResolvedValue(conversationIds)
+    const consumer = registerSteeringConsumer('session-1', load, persistMock)
+    await consumer?.inject(baseMessages, 'a1')
+    expect(queuedMessage()?.steerRequested).toBe(true)
+    await consumer?.inject(baseMessages, 'a1')
+    expect(persistMock).toHaveBeenCalledTimes(1)
+    expect(load).toHaveBeenCalledTimes(2)
+  })
+
   it('release clears steer requests the generation never consumed', async () => {
     const consumer = register()
     await enqueueRequested('session-1', userMessage('m1'))
 
     consumer?.release()
-    const item = messageQueueStore.getState().queues['session-1']?.[0]
+    const item = queuedMessage()
     expect(item?.id).toBe('m1')
     expect(item?.steerRequested).toBeUndefined()
   })
@@ -149,10 +239,12 @@ describe('steering consumer', () => {
 
     // The generation finalized segment a1, created continuation a2, and passes
     // it as the anchor of the next boundary.
-    getSessionMock.mockResolvedValue({
-      id: 'session-1',
-      name: 'Session',
-      messages: [{ id: 'a2', role: 'assistant', contentParts: [], generating: true }],
+    readConversationStateMock.mockResolvedValue({
+      header: { id: 'session-1', name: 'Session' },
+      revision: 1,
+      activeThreadId: 'thread-active',
+      matchedMessageIds: [],
+      tailMessages: [{ id: 'a2', role: 'assistant', contentParts: [], generating: true }],
     })
     consumer.admitAnchor('a2')
     await enqueueRequested('session-1', userMessage('m2'))
@@ -233,10 +325,12 @@ describe('steering consumer', () => {
   it('does not steer a message queued for another conversation (fork switch)', async () => {
     // The user switched forks: the active conversation's newest message is not
     // part of this generation's conversation.
-    getSessionMock.mockResolvedValue({
-      id: 'session-1',
-      name: 'Session',
-      messages: [{ id: 'other-fork-tip', role: 'assistant', contentParts: [], generating: true }],
+    readConversationStateMock.mockResolvedValue({
+      header: { id: 'session-1', name: 'Session' },
+      revision: 1,
+      activeThreadId: 'thread-active',
+      matchedMessageIds: [],
+      tailMessages: [{ id: 'other-fork-tip', role: 'assistant', contentParts: [], generating: true }],
     })
     await enqueueStamped('session-1', userMessage('m1'))
     requestSteerQueuedMessage('session-1', 'm1')
@@ -268,10 +362,12 @@ describe('steering consumer', () => {
     await consumer.inject(baseMessages, 'a1')
 
     // A follow-up queued while the steered message is the newest conversation message.
-    getSessionMock.mockResolvedValue({
-      id: 'session-1',
-      name: 'Session',
-      messages: [{ id: 'm1', role: 'user', contentParts: [{ type: 'text', text: 'text-m1' }] }],
+    readConversationStateMock.mockResolvedValue({
+      header: { id: 'session-1', name: 'Session' },
+      revision: 1,
+      activeThreadId: 'thread-active',
+      matchedMessageIds: [],
+      tailMessages: [{ id: 'm1', role: 'user', contentParts: [{ type: 'text', text: 'text-m1' }] }],
     })
     await enqueueRequested('session-1', userMessage('m2'))
     const result = await consumer.inject([...baseMessages], 'a2')

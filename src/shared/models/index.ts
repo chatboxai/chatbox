@@ -8,7 +8,7 @@ export const aiProviderNameHash: Record<ModelProviderEnum, string> = {
   [ModelProviderEnum.OpenAI]: 'OpenAI API',
   [ModelProviderEnum.OpenAIResponses]: 'OpenAI Responses API',
   [ModelProviderEnum.Azure]: 'Azure OpenAI API',
-  [ModelProviderEnum.ChatGLM6B]: 'ChatGLM API',
+  [ModelProviderEnum.GLM]: 'GLM',
   [ModelProviderEnum.ChatboxAI]: 'Chatbox AI',
   [ModelProviderEnum.Claude]: 'Claude API',
   [ModelProviderEnum.Gemini]: 'Google Gemini API',
@@ -167,8 +167,8 @@ export const AIModelProviderMenuOptionList = [
     disabled: false,
   },
   {
-    value: ModelProviderEnum.ChatGLM6B,
-    label: aiProviderNameHash[ModelProviderEnum.ChatGLM6B],
+    value: ModelProviderEnum.GLM,
+    label: aiProviderNameHash[ModelProviderEnum.GLM],
     disabled: false,
   },
   {

@@ -35,6 +35,7 @@ export type LegacyCombinedSearchResult =
     }
 
 export interface LegacyToolFallbackOptions {
+  sessionId: string
   model: ModelInterface
   promptMsgs: Message[]
   knowledgeBase: { id: number } | undefined
@@ -47,12 +48,14 @@ export interface LegacyToolFallbackDependencies {
     model: ModelInterface,
     messages: Message[],
     knowledgeBaseId: number,
+    sessionId: string,
     signal: AbortSignal
   ) => Promise<LegacyCombinedSearchResult>
   knowledgeBaseSearchByPromptEngineering: (
     model: ModelInterface,
     messages: Message[],
-    knowledgeBaseId: number
+    knowledgeBaseId: number,
+    sessionId: string
   ) => Promise<{
     query: string
     searchResults: LegacyKnowledgeBaseSearchResult[]
@@ -60,6 +63,7 @@ export interface LegacyToolFallbackDependencies {
   searchByPromptEngineering: (
     model: ModelInterface,
     messages: Message[],
+    sessionId: string,
     signal: AbortSignal
   ) => Promise<{
     query: string
@@ -103,16 +107,18 @@ export async function applyLegacyToolFallback(
       model,
       promptMsgs,
       options.knowledgeBase.id,
+      options.sessionId,
       signal
     )
     if (callResult.searchResults.length && callResult.type !== 'none') {
-      const toolName = callResult.type === 'knowledge_base' ? 'query_knowledge_base' : 'web_search'
+      const isKnowledgeBase = callResult.type === 'knowledge_base'
+      const toolName = isKnowledgeBase ? 'knowledge_base' : 'web_search'
       fallbackToolCallPart = {
         type: 'tool-call',
         state: 'result',
         toolCallId: `${toolName}_${dependencies.createUniqueId()}`,
         toolName,
-        args: { query: callResult.query },
+        args: isKnowledgeBase ? { command: 'search', query: callResult.query } : { query: callResult.query },
         result: callResult,
       }
       promptMsgs =
@@ -124,21 +130,22 @@ export async function applyLegacyToolFallback(
     const callResult = await dependencies.knowledgeBaseSearchByPromptEngineering(
       model,
       promptMsgs,
-      options.knowledgeBase.id
+      options.knowledgeBase.id,
+      options.sessionId
     )
     if (callResult.searchResults.length) {
       fallbackToolCallPart = {
         type: 'tool-call',
         state: 'result',
-        toolCallId: `query_knowledge_base_${dependencies.createUniqueId()}`,
-        toolName: 'query_knowledge_base',
-        args: { query: callResult.query },
+        toolCallId: `knowledge_base_${dependencies.createUniqueId()}`,
+        toolName: 'knowledge_base',
+        args: { command: 'search', query: callResult.query },
         result: callResult,
       }
       promptMsgs = dependencies.constructMessagesWithKnowledgeBaseResults(promptMsgs, callResult.searchResults)
     }
   } else if (webNotSupported) {
-    const callResult = await dependencies.searchByPromptEngineering(model, promptMsgs, signal)
+    const callResult = await dependencies.searchByPromptEngineering(model, promptMsgs, options.sessionId, signal)
     if (callResult.searchResults.length) {
       fallbackToolCallPart = {
         type: 'tool-call',

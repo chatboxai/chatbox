@@ -26,6 +26,18 @@ function addMcpStdioTransportEventListener<Args extends unknown[]>(
   return () => ipcRenderer.removeListener(channel, listener)
 }
 
+// Deep links can arrive while the renderer is still bootstrapping. Hold the latest one until
+// the app subscribes so a link that launched the app is not dropped.
+let navigateCallback: ((path: string) => void) | undefined
+let pendingNavigation: string | undefined
+ipcRenderer.on('navigate-to', (_event, path: string) => {
+  if (navigateCallback) {
+    navigateCallback(path)
+  } else {
+    pendingNavigation = path
+  }
+})
+
 const electronHandler: ElectronIPC = {
   invoke: ipcRenderer.invoke,
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
@@ -41,6 +53,7 @@ const electronHandler: ElectronIPC = {
     ipcRenderer.on('window:focused', callback)
     return () => ipcRenderer.off('window:focused', callback)
   },
+  onTaskCloseRequest: createListener('task-operation:close-requested'),
   onWindowShow: (callback: () => void) => {
     ipcRenderer.on('window-show', callback)
     return () => ipcRenderer.off('window-show', callback)
@@ -51,13 +64,20 @@ const electronHandler: ElectronIPC = {
   },
   addMcpStdioTransportEventListener,
   onNavigate: (callback: (path: string) => void) => {
-    const listener = (_event: unknown, path: string) => {
+    navigateCallback = callback
+    if (pendingNavigation !== undefined) {
+      const path = pendingNavigation
+      pendingNavigation = undefined
       callback(path)
     }
-    ipcRenderer.on('navigate-to', listener)
-    return () => ipcRenderer.off('navigate-to', listener)
+    return () => {
+      if (navigateCallback === callback) {
+        navigateCallback = undefined
+      }
+    }
   },
   onSkillsBuiltinUpdated: createListener('skills:builtin-updated'),
+  onBuiltInBrowserTabs: createListener('built-in-browser:tabs'),
 
   // Auto-updater events
   onUpdaterChecking: createListener('updater:checking'),

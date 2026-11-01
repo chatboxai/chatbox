@@ -2,7 +2,7 @@ import copyToClipboardFallback from 'copy-to-clipboard'
 
 export function copyToClipboard(text: string) {
   try {
-    navigator?.clipboard?.writeText(text)
+    navigator?.clipboard?.writeText(text)?.catch(() => {})
   } catch {}
   try {
     copyToClipboardFallback(text)

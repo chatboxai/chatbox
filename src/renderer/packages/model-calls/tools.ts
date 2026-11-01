@@ -38,7 +38,12 @@ function extractSearchActionFromResult<T = any>(result: {
   return null
 }
 
-export async function searchByPromptEngineering(model: ModelInterface, messages: Message[], signal?: AbortSignal) {
+export async function searchByPromptEngineering(
+  model: ModelInterface,
+  messages: Message[],
+  sessionId: string,
+  signal?: AbortSignal
+) {
   const language = settingActions.getLanguage()
   const systemPrompt = promptFormat.contructSearchAction(language)
   const result = await generateText(
@@ -50,7 +55,8 @@ export async function searchByPromptEngineering(model: ModelInterface, messages:
         contentParts: [{ type: 'text', text: systemPrompt }],
       },
       ...messages,
-    ])
+    ]),
+    { sessionId }
   )
 
   const searchAction = extractSearchActionFromResult<{
@@ -69,7 +75,8 @@ export async function searchByPromptEngineering(model: ModelInterface, messages:
 export async function knowledgeBaseSearchByPromptEngineering(
   model: ModelInterface,
   messages: Message[],
-  knowledgeBaseId: number
+  knowledgeBaseId: number,
+  sessionId: string
 ) {
   const language = settingActions.getLanguage()
   const systemPrompt = promptFormat.constructKnowledgeBaseSearchAction(language)
@@ -82,7 +89,8 @@ export async function knowledgeBaseSearchByPromptEngineering(
         contentParts: [{ type: 'text', text: systemPrompt }],
       },
       ...messages,
-    ])
+    ]),
+    { sessionId }
   )
 
   const searchAction = await extractSearchActionFromResult<{
@@ -102,7 +110,8 @@ export async function knowledgeBaseSearchByPromptEngineering(
 export async function combinedSearchByPromptEngineering(
   model: ModelInterface,
   messages: Message[],
-  knowledgeBaseId?: number,
+  knowledgeBaseId: number,
+  sessionId: string,
   signal?: AbortSignal
 ) {
   const language = settingActions.getLanguage()
@@ -116,7 +125,8 @@ export async function combinedSearchByPromptEngineering(
         contentParts: [{ type: 'text', text: systemPrompt }],
       },
       ...messages,
-    ])
+    ]),
+    { sessionId }
   )
 
   const searchAction = await extractSearchActionFromResult<{

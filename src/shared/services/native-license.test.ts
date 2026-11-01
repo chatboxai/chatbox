@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
-import { activateNativeLicense, deactivateNativeLicense, validateNativeLicense } from './native-license'
+import {
+  fetchNativeLicenseInspection,
+  fetchNativeLicenseDetail,
+  activateNativeLicense,
+  deactivateNativeLicense,
+  validateNativeLicense,
+} from './native-license'
 
 function mockFetch(body: unknown, ok = true, status = 200) {
   return vi.fn(async () => ({
@@ -67,4 +73,16 @@ describe('native license client', () => {
     })) as unknown as typeof fetch
     await expect(validateNativeLicense('key', 'inst', { fetchFn: htmlBody })).rejects.toThrow()
   })
+})
+
+it('keeps read-only details on all_status and activation validation on realtime', async () => {
+  const fetchFn = mockFetch({ data: { status: 'expired' } })
+  await fetchNativeLicenseInspection('expired-key', { fetchFn })
+  await fetchNativeLicenseDetail('expired-key', { fetchFn })
+  expect(fetchFn).toHaveBeenNthCalledWith(
+    1,
+    'https://api.chatboxai.app/api/license/detail/all_status',
+    expect.objectContaining({ headers: { Authorization: 'expired-key' } })
+  )
+  expect(fetchFn).toHaveBeenNthCalledWith(2, 'https://api.chatboxai.app/api/license/detail/realtime', expect.anything())
 })

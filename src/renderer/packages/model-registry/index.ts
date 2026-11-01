@@ -10,6 +10,7 @@ import {
   getRegistrySync,
   getRegistryVersion,
   prefetchModelRegistry,
+  requestUnknownModelRegistryRefresh,
   subscribeRegistry,
 } from './fetch'
 
@@ -22,6 +23,7 @@ export {
   fetchAndUpdateRegistry,
   forceRefreshRegistry,
   prefetchModelRegistry,
+  requestUnknownModelRegistryRefresh,
   // Enrichment
   enrichModelsFromRegistry,
   getProviderModelsFromRegistry,
@@ -70,32 +72,53 @@ function getProviderContextWindow(modelId: string, providerId: string, registry:
   return meta && meta.contextWindow > 0 ? meta.contextWindow : null
 }
 
+async function resolveAfterUnknownModelRefresh(
+  current: number | null,
+  lookup: (registry: ModelRegistryData) => number | null
+): Promise<number | null> {
+  if (current !== null) return current
+  const refreshed = requestUnknownModelRegistryRefresh()
+  if (!refreshed) return current
+  return lookup(await refreshed)
+}
+
 /**
  * Get model context window synchronously.
  * Backward-compatible with the old model-context module.
+ * A cache miss kicks off a models.dev refresh without waiting for the 7-day TTL.
  */
 export function getModelContextWindowSync(modelId: string): number | null {
   if (!modelId) return null
-  return findContextWindow(modelId, extractContextWindows(getRegistrySync()))
+  const result = findContextWindow(modelId, extractContextWindows(getRegistrySync()))
+  if (result === null) {
+    void requestUnknownModelRegistryRefresh()
+  }
+  return result
 }
 
 export function getProviderModelContextWindowSync(providerId: string, modelId: string): number | null {
   if (!providerId || !modelId) return null
-  return getProviderContextWindow(modelId, providerId, getRegistrySync())
+  const result = getProviderContextWindow(modelId, providerId, getRegistrySync())
+  if (result === null) {
+    void requestUnknownModelRegistryRefresh()
+  }
+  return result
 }
 
 /**
- * Get model context window asynchronously (triggers fetch if cache stale).
+ * Get model context window asynchronously (triggers fetch if cache stale or the model is missing).
  * Backward-compatible with the old model-context module.
  */
 export async function getModelContextWindow(modelId: string): Promise<number | null> {
   if (!modelId) return null
-  return findContextWindow(modelId, extractContextWindows(await getRegistry()))
+  const lookup = (registry: ModelRegistryData) => findContextWindow(modelId, extractContextWindows(registry))
+  return resolveAfterUnknownModelRefresh(lookup(await getRegistry()), lookup)
 }
 
 export async function getProviderModelContextWindow(providerId: string, modelId: string): Promise<number | null> {
   if (!providerId || !modelId) return null
-  return getProviderContextWindow(modelId, providerId, await getRegistry())
+  const lookup = (registry: ModelRegistryData) => getProviderContextWindow(modelId, providerId, registry)
+  return resolveAfterUnknownModelRefresh(lookup(await getRegistry()), lookup)
 }
 
 /**

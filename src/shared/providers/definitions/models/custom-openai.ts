@@ -4,10 +4,16 @@ import AbstractAISDKModel from '../../../models/abstract-ai-sdk'
 import { fetchRemoteModels, getOpenAICompatibleProviderOptionsKey } from '../../../models/openai-compatible'
 import type { CallChatCompletionOptions } from '../../../models/types'
 import { createFetchWithProxy } from '../../../models/utils/fetch-proxy'
+import { createOpenAIChatCompletionSseFetch } from '../../../models/utils/openai-chat-sse-termination'
 import type { ProviderModelInfo } from '../../../types'
 import type { ModelDependencies } from '../../../types/adapters'
 import { normalizeOpenAIApiHostAndPath } from '../../../utils/llm_utils'
 import { pickOpenAICompatibleReasoningOptions } from '../../../utils/reasoning-control'
+import {
+  compatibleImageApiHeaders,
+  createOpenAICompatibleImageModel,
+  getOpenAIImageGenerationOptions,
+} from './openai-compatible-image'
 
 interface Options {
   apiKey: string
@@ -79,9 +85,10 @@ export default class CustomOpenAI extends AbstractAISDKModel {
 
   protected getChatModel(options: CallChatCompletionOptions) {
     const { apiHost, apiPath } = this.options
-    const provider = this.getProvider(options, async (_input, init) => {
-      return createFetchWithProxy(this.options.useProxy, this.dependencies)(`${apiHost}${apiPath}`, init)
-    })
+    const fetch = createOpenAIChatCompletionSseFetch(async (_input, init) =>
+      createFetchWithProxy(this.options.useProxy, this.dependencies)(`${apiHost}${apiPath}`, init)
+    )
+    const provider = this.getProvider(options, fetch)
     return wrapLanguageModel({
       model: provider.languageModel(this.options.model.modelId),
       middleware: extractReasoningMiddleware({ tagName: 'think' }),
@@ -100,7 +107,22 @@ export default class CustomOpenAI extends AbstractAISDKModel {
   }
 
   protected getImageModel() {
-    // Custom OpenAI providers typically don't support image generation
-    return null
+    const modelId = this.options.model.modelId
+    if (!modelId) return null
+    return createOpenAICompatibleImageModel({
+      apiKey: this.options.apiKey,
+      apiHost: this.options.apiHost,
+      modelId,
+      fetch: createFetchWithProxy(this.options.useProxy, this.dependencies),
+      headers: compatibleImageApiHeaders(this.options.apiHost),
+    })
+  }
+
+  protected override getImageGenerationOptions(aspectRatio?: string) {
+    return getOpenAIImageGenerationOptions(this.options.model.modelId, aspectRatio)
+  }
+
+  protected override getMaxImagesPerGenerationRequest() {
+    return 1
   }
 }

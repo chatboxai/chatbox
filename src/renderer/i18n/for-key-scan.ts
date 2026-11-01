@@ -22,9 +22,12 @@ function _errorI18nKeys(t: (key: string) => string) {
     'You have used up your daily Chatbox AI quota. Please <OpenSettingButton>go to Settings</OpenSettingButton> to view your quota usage or upgrade your plan.'
   )
   t(
-    'Your current License (Chatbox AI Free/Lite) does not support the {{model}} model. To use this model, please <OpenMorePlanButton>upgrade</OpenMorePlanButton> to Chatbox AI Pro or a higher-tier package. Alternatively, you can switch to a different model by <OpenSettingButton>accessing the settings</OpenSettingButton>.'
+    'Your current License (Chatbox AI Free/Lite) does not support the {{model}} model. To use this model, please <OpenMorePlanButton>upgrade</OpenMorePlanButton> to Chatbox AI Pro or a higher-tier package.'
   )
   t('Your license has expired. Please check your subscription or purchase a new one.')
+  t(
+    'Your plan has expired and has been automatically downgraded to the Free plan. Please refresh your license information and try again.'
+  )
   t(
     'You have selected Chatbox AI as the model provider, but a license key has not been entered yet. Please <OpenSettingButton>click here to open Settings</OpenSettingButton> and enter your license key, or choose a different model provider.'
   )
@@ -148,19 +151,56 @@ function _errorI18nKeys(t: (key: string) => string) {
 }
 
 function _otherI18nKeys(t: (key: string) => string) {
-  // src/renderer/routes/settings/route.tsx
+  // src/renderer/components/settings/settingsNav.tsx
+  t('Account')
+  t('Models')
+  t('Capabilities')
+  t('Chat')
+  t('App')
   t('Model Provider')
   t('Default Models')
   t('Web Search')
-  t('MCP')
   t('Knowledge Base')
-  t('Skills')
+  t('Agent & Memory')
+  t('Memory')
   t('Document Parser')
-  t('Chat Settings')
+  t('Context & Compaction')
+  t('Appearance')
   t('Keyboard Shortcuts')
-  t('General Settings')
+  t('Data & Backup')
+  t('Advanced')
+  t('About & Updates')
+  t('System prompt')
+  t('Context messages')
+  t('Message layout')
+  t('Show below messages')
+  t('LaTeX Rendering')
+  t('Theme color')
+  t('Recover Conversation List')
+  t('Import Backup')
+  t('Import and Restore')
+  t('Upon import, changes will take effect immediately and existing data will be overwritten')
+  t('Archived Chats')
+  t('Network Proxy')
+  t('Diagnostic Logs')
+  t('Error Reporting')
+  t('Launch at system startup')
+  t('Automatic updates')
+  t('Beta updates')
 
-  // src/shared/theme-colors.ts, rendered dynamically in settings/general.tsx
+  // src/renderer/routes/settings/chat.tsx
+  t('Model name')
+  t('Time')
+  t('Word count')
+  t('Token usage')
+  t('First token latency')
+
+  // src/renderer/components/settings/ParamControl.tsx
+  t('Precise')
+  t('Balanced')
+  t('Creative')
+
+  // src/shared/theme-colors.ts, rendered dynamically in settings/appearance.tsx
   t('Claude Classic')
   t('Mist Blue')
 
@@ -195,6 +235,84 @@ function _otherI18nKeys(t: (key: string) => string) {
 
   // src/renderer/components/knowledge-base/KnowledgeBaseForm.tsx
   t('Parser used to process uploaded documents')
+
+  // src/renderer/routes/settings/default-models.tsx
+  t('Conversations')
+  t('Default models for chats and everyday tasks.')
+  t('Images & documents')
+  t('Make attachments readable by your models.')
+  t('Knowledge & search')
+  t('Find relevant information in documents and on the web.')
+  t('Image creation')
+  t('Choose the model used in Image Creator.')
+  t('Default chat model')
+  t('Used for new chats. You can choose a different model in each chat.')
+  t('Fast model')
+  t('Used to automatically generate conversation titles. Choose a model with fast responses.')
+  t('Image text recognition (OCR)')
+  t('Extracts text from images when the chat model cannot read them directly.')
+  t('Document parsing')
+  t('Extracts content from uploaded files. Supported formats depend on the selected service.')
+  t('Speech recognition')
+  t('Convert speech to text.')
+  t('Knowledge search (Embedding)')
+  t('Converts text into vectors to find related content in your documents.')
+  t('Search ranking (Rerank)')
+  t('Ranks retrieved passages so the most relevant content is used in answers.')
+  t('Web search')
+  t('Searches the web when web search is enabled in a conversation.')
+  t('Image generation')
+  t('Used in Image Creator. Changing the model there also updates this selection.')
+  t('Speech synthesis')
+  t('Read replies aloud.')
+  t('Built-in parser')
+  t('Test connection')
+  t('Check configuration')
+  t('Connected')
+  t('Configuration checked')
+  t('Automatic selection follows the defaults for this feature.')
+  t('Search requests are sent to the selected service.')
+  t('Remote service')
+  t('Remote \u00b7 Chatbox AI')
+  t('Local service \u00b7 This device')
+  t('Provider-managed service')
+  t('On-device model')
+  t('Check provider endpoint')
+  t('Built-in parsing. Image recognition may use the selected OCR provider.')
+  t('Uses local parsing where supported, with Chatbox cloud parsing as a fallback.')
+
+  // Model configuration check messages
+  t('No OCR model is available')
+  t('Activate Chatbox AI, or pick a vision model of your own.')
+  t('Chatbox AI is not activated')
+  t('Activate Chatbox AI to use the built-in embedding model, or pick one from a provider you already configured.')
+  t('Activate Chatbox AI to use the built-in rerank model, or pick one from a provider you already configured.')
+  t('This provider is not configured')
+  t('Check the credentials in Model Provider settings, or choose another provider.')
+  t('Activate Chatbox AI for cloud parsing, or switch to local parsing on desktop.')
+  t('MinerU API token is missing')
+  t('Add a MinerU API token in Document Parser settings.')
+  t('Activate Chatbox AI, or pick another search provider.')
+  t('Tavily API key is missing')
+  t('Add a Tavily API key in Web Search settings.')
+  t('BoCha API key is missing')
+  t('Add a BoCha API key in Web Search settings.')
+  t('Querit API key is missing')
+  t('Add a Querit API key in Web Search settings.')
+  t('SearXNG URL is missing')
+  t('Add a SearXNG instance URL in Web Search settings.')
+  t('Activate Chatbox AI, or pick an image model from another provider.')
+  t('Authentication failed')
+  t('Check the API key in Model Provider settings, or choose another model.')
+  t('Connection timed out')
+  t('Check the network and the provider endpoint, or choose another model.')
+  t('Activate Chatbox AI in Chatbox AI settings, or use your own model.')
+  t('This configuration could not be verified')
+  t('Check the selected model and provider settings.')
+  t('Needs attention')
+  t('Suggested action')
+  t('This feature is not available yet')
+  t('No setup is needed.')
 
   // src/renderer/components/ModelList.tsx
   t('Embedding')

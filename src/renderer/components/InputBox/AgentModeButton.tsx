@@ -1,7 +1,7 @@
-import { ActionIcon, Popover, Text, UnstyledButton } from '@mantine/core'
+import { Popover, UnstyledButton } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import type { AgentModeValue, KnowledgeBase } from '@shared/types'
-import { IconRobot, IconX } from '@tabler/icons-react'
+import { IconRobot } from '@tabler/icons-react'
 import { useLocation } from '@tanstack/react-router'
 import { type FC, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -16,6 +16,7 @@ import AgentModeStatusIcon from './AgentModeStatusIcon'
 import { getAgentModeUIState } from './agentModeState'
 import { useComposerMenuStore } from './composerMenuStore'
 import { type ComposerMenuLayout, resolveComposerMenuLayout, useComposerTouchLayout } from './composerTouchLayout'
+import MobileAgentModePanel from './MobileAgentModePanel'
 
 interface AgentModeButtonProps {
   sessionId: string
@@ -24,6 +25,7 @@ interface AgentModeButtonProps {
   iconSize?: number
   /** Small screens render the mode as an icon status badge instead of a text label. */
   compact?: boolean
+  hasDraftAttachments?: boolean
   modelSupportsAgentMode?: boolean
   webBrowsingMode: boolean
   onWebBrowsingChange: (enabled: boolean) => void
@@ -45,16 +47,6 @@ const MODE_COLORS: Record<AgentModeValue, string> = {
 
 const OPEN_DELAY = 100
 const CLOSE_DELAY = 250
-const WEB_SEARCH_MOVED_TIP_DISMISSED_KEY = 'chatbox.web-search-moved-tip-dismissed.v1'
-
-function isWebSearchMovedTipDismissed() {
-  try {
-    return window.localStorage.getItem(WEB_SEARCH_MOVED_TIP_DISMISSED_KEY) === 'true'
-  } catch {
-    return false
-  }
-}
-
 const AgentModeButton: FC<AgentModeButtonProps> = ({
   sessionId,
   providerId,
@@ -62,6 +54,7 @@ const AgentModeButton: FC<AgentModeButtonProps> = ({
   iconSize = 18,
   compact = false,
   modelSupportsAgentMode = true,
+  hasDraftAttachments = false,
   webBrowsingMode,
   onWebBrowsingChange,
   currentKnowledgeBaseId,
@@ -78,7 +71,6 @@ const AgentModeButton: FC<AgentModeButtonProps> = ({
   const isTouchLayout = resolvedLayout === 'touch'
   const panelRef = useRef<AgentModePanelHandle>(null)
   const [opened, setOpened] = useState(false)
-  const [showWebSearchMovedTip, setShowWebSearchMovedTip] = useState(() => !isWebSearchMovedTipDismissed())
   const openTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const closeTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const entry = useSessionAgentMode(sessionId)
@@ -107,7 +99,7 @@ const AgentModeButton: FC<AgentModeButtonProps> = ({
   }, [agentModeUIState.displayValue, t])
 
   // The status-row chip menus overlap the same area above the composer; the shared
-  // slot keeps the hover panel (and the one-time tip) mutually exclusive with them.
+  // slot keeps the hover panel mutually exclusive with them.
   const suppressedByChipMenu = useComposerMenuStore((s) => s.activeMenu !== null && s.activeMenu !== 'work-mode-panel')
   const setPanelOpened = useCallback(
     (next: boolean) => {
@@ -149,16 +141,6 @@ const AgentModeButton: FC<AgentModeButtonProps> = ({
       handleClose()
     }
   }, [suppressedByChipMenu, handleClose])
-
-  const handleDismissWebSearchMovedTip = useCallback(() => {
-    setShowWebSearchMovedTip(false)
-    setPanelOpened(false)
-    try {
-      window.localStorage.setItem(WEB_SEARCH_MOVED_TIP_DISMISSED_KEY, 'true')
-    } catch {
-      // Keep the tip dismissed for this render even if persistent storage is unavailable.
-    }
-  }, [setPanelOpened])
 
   useEffect(() => {
     return () => {
@@ -212,13 +194,15 @@ const AgentModeButton: FC<AgentModeButtonProps> = ({
     [isTouchLayout, onWebBrowsingChange]
   )
 
+  const ModePanel = platform.type === 'mobile' ? MobileAgentModePanel : AgentModePanel
   const panel = opened ? (
-    <AgentModePanel
+    <ModePanel
       ref={panelRef}
       sessionId={sessionId}
       providerId={providerId}
       modelId={modelId}
       modelSupportsAgentMode={modelSupportsAgentMode}
+      hasDraftAttachments={hasDraftAttachments}
       webBrowsingMode={webBrowsingMode}
       onWebBrowsingChange={handleWebBrowsingChange}
       currentKnowledgeBaseId={currentKnowledgeBaseId}
@@ -235,15 +219,11 @@ const AgentModeButton: FC<AgentModeButtonProps> = ({
     <UnstyledButton
       data-testid={TestId.agent.modeTrigger}
       aria-label={modeLabel}
-      onMouseEnter={showWebSearchMovedTip || isTouchLayout ? undefined : handleMouseEnter}
-      onMouseLeave={showWebSearchMovedTip || isTouchLayout ? undefined : handleMouseLeave}
+      onMouseEnter={isTouchLayout ? undefined : handleMouseEnter}
+      onMouseLeave={isTouchLayout ? undefined : handleMouseLeave}
       onClick={() => {
         clearTimeout(openTimerRef.current)
         clearTimeout(closeTimerRef.current)
-        if (showWebSearchMovedTip) {
-          handleDismissWebSearchMovedTip()
-          return
-        }
         setPanelOpened(isTouchLayout ? !opened : true)
       }}
       className="relative flex items-center gap-1 px-2 py-1 rounded-lg transition-colors hover:bg-[var(--chatbox-background-tertiary)]"
@@ -267,7 +247,7 @@ const AgentModeButton: FC<AgentModeButtonProps> = ({
     </UnstyledButton>
   )
 
-  if (isTouchLayout && !showWebSearchMovedTip) {
+  if (isTouchLayout) {
     return (
       <>
         {triggerButton}
@@ -298,7 +278,7 @@ const AgentModeButton: FC<AgentModeButtonProps> = ({
     <Popover
       position="top-start"
       shadow="md"
-      opened={(showWebSearchMovedTip || opened) && !settingsOpened && !suppressedByChipMenu}
+      opened={opened && !settingsOpened && !suppressedByChipMenu}
       onChange={setPanelOpened}
       keepMounted
       transitionProps={{ transition: 'pop', duration: 200 }}
@@ -307,29 +287,12 @@ const AgentModeButton: FC<AgentModeButtonProps> = ({
         <span className="inline-flex">{triggerButton}</span>
       </Popover.Target>
       <Popover.Dropdown
-        p={showWebSearchMovedTip ? 'sm' : 0}
-        w={showWebSearchMovedTip ? 280 : undefined}
+        p={0}
         style={{ overflow: 'visible' }}
-        onMouseEnter={showWebSearchMovedTip ? undefined : handleMouseEnter}
-        onMouseLeave={showWebSearchMovedTip ? undefined : handleMouseLeave}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
       >
-        {showWebSearchMovedTip ? (
-          <div className="flex items-start gap-2" role="status">
-            <div className="min-w-0 flex-1">
-              <Text size="sm" fw={600}>
-                {t('Web Search has moved')}
-              </Text>
-              <Text size="xs" c="dimmed" mt={2}>
-                {t('Web Search is now available in the mode menu.')}
-              </Text>
-            </div>
-            <ActionIcon variant="subtle" size="sm" aria-label={t('Close')} onClick={handleDismissWebSearchMovedTip}>
-              <IconX size={14} />
-            </ActionIcon>
-          </div>
-        ) : (
-          panel
-        )}
+        {panel}
       </Popover.Dropdown>
     </Popover>
   )

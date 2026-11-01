@@ -46,6 +46,63 @@ describe('reasoning-control', () => {
     expect(getReasoningControlCapabilities(ModelProviderEnum.OpenAIResponses, model('gpt-5.1')).supported).toBe(true)
   })
 
+  it.each([
+    [ModelProviderEnum.OpenAI, 'gpt-6-astra', 'openai'],
+    [ModelProviderEnum.OpenAIResponses, 'gpt-6-astra', 'openai-responses'],
+    [ModelProviderEnum.ChatboxAI, 'gpt-6-astra', 'openai-responses'],
+    ['my-openai-proxy', 'openai/gpt-6-astra', 'openai'],
+    ['github-copilot', 'gpt-6-astra', 'openai-responses'],
+  ] as const)('supports Astra effort controls through %s', (provider, modelId, apiStyle) => {
+    const astra = model(modelId, apiStyle)
+
+    expect(getReasoningControlCapabilities(provider, astra)).toEqual({ supported: true, kind: 'openai-effort' })
+    expect(getReasoningControlOptions(provider, astra).map((option) => option.level)).toEqual([
+      'default',
+      'low',
+      'medium',
+      'high',
+    ])
+    for (const level of ['low', 'medium', 'high'] as const) {
+      const options = getReasoningProviderOptions(provider, astra, level)
+      expect(options?.openai?.reasoningEffort).toBe(level)
+      expect(getReasoningControlLevel(provider, astra, options)).toBe(level)
+    }
+    expect(normalizeOpenAIReasoningOptions(modelId, { reasoningEffort: 'minimal' })).toBeUndefined()
+    expect(normalizeOpenAIReasoningOptions(modelId, { reasoningEffort: 'none' })).toBeUndefined()
+  })
+
+  it('disables Astra controls for an incompatible API style', () => {
+    expect(getReasoningControlCapabilities('my-proxy', model('gpt-6-astra', 'anthropic'))).toEqual({
+      supported: false,
+      kind: 'toggle',
+      disabledReason: 'requires-openai-api-style',
+    })
+  })
+
+  it.each(['gpt-6', 'gpt-6-astra', 'gpt-6.1', 'gpt-6-mini', 'openai/gpt-6-astra', 'gpt-7', 'GPT-10.2-mini'])(
+    'offers effort controls for GPT generation model %s',
+    (modelId) => {
+      const info = model(modelId, 'openai-responses')
+      expect(getReasoningControlCapabilities(ModelProviderEnum.OpenAIResponses, info).supported).toBe(true)
+      expect(getReasoningControlCapabilities(ModelProviderEnum.OpenRouter, info).supported).toBe(true)
+      expect(
+        getReasoningProviderOptions(ModelProviderEnum.OpenAIResponses, info, 'medium')?.openai?.reasoningEffort
+      ).toBe('medium')
+      expect(
+        getReasoningControlOptions(ModelProviderEnum.OpenAIResponses, info).some((option) => option.level === 'off')
+      ).toBe(false)
+    }
+  )
+
+  it.each(['gpt-4.1', 'gpt-4o', 'gpt-6-chat-latest', 'openai/gpt-6.1-chat', 'gpt-10-chat', 'gpt-6astra'])(
+    'does not infer effort support for %s',
+    (modelId) => {
+      for (const provider of [ModelProviderEnum.OpenAIResponses, ModelProviderEnum.OpenRouter]) {
+        expect(getReasoningControlCapabilities(provider, model(modelId)).supported).toBe(false)
+      }
+    }
+  )
+
   it('writes Responses reasoning options for Copilot GPT-5.6 Luna once apiStyle is routed', () => {
     const luna = model('gpt-5.6-luna', 'openai-responses')
     luna.capabilities = ['reasoning']
@@ -391,6 +448,21 @@ describe('reasoning-control', () => {
     ).toBe('off')
   })
 
+  it.each([
+    [ModelProviderEnum.ChatboxAI, 'gemini-3.7-flash'],
+    [ModelProviderEnum.ChatboxAI, 'gemini-3.8-flash'],
+    [ModelProviderEnum.ChatboxAI, 'gemini-3.9-flash'],
+    [ModelProviderEnum.ChatboxAI, 'gemini-3.9-flash-lite'],
+    [ModelProviderEnum.Gemini, 'gemini-3.7-flash'],
+    [ModelProviderEnum.Gemini, 'gemini-3.8-flash'],
+    [ModelProviderEnum.Gemini, 'gemini-3.9-flash'],
+    [ModelProviderEnum.Gemini, 'gemini-3.9-flash-lite'],
+  ] as const)('uses low thinking for off through %s with %s', (provider, modelId) => {
+    expect(getReasoningProviderOptions(provider, model(modelId, 'google'), 'off')).toEqual({
+      google: { thinkingConfig: { thinkingLevel: 'low', includeThoughts: false } },
+    })
+  })
+
   it('maps off to explicit disable or minimum reasoning parameters per provider', () => {
     expect(getReasoningProviderOptions(ModelProviderEnum.Claude, model('claude-sonnet-4-6'), 'off')).toEqual({
       claude: { thinking: { type: 'disabled', budgetTokens: 0 } },
@@ -432,27 +504,41 @@ describe('reasoning-control', () => {
     )
   })
 
-  it('keeps native DeepSeek provider enabled even when UI fallback adds openai apiStyle', () => {
-    const reasoner = model('deepseek-reasoner', 'openai')
-    const v4 = model('deepseek-v4-pro', 'openai')
-    const options = getReasoningProviderOptions(ModelProviderEnum.DeepSeek, reasoner, 'high')
+  it.each(['deepseek-v4-pro', 'deepseek-flash'])(
+    'keeps native DeepSeek %s enabled even when UI fallback adds openai apiStyle',
+    (modelId) => {
+      const reasoner = model('deepseek-reasoner', 'openai')
+      const v4 = model(modelId, 'openai')
+      const options = getReasoningProviderOptions(ModelProviderEnum.DeepSeek, reasoner, 'high')
 
-    expect(getReasoningControlCapabilities(ModelProviderEnum.DeepSeek, reasoner)).toEqual({
-      supported: true,
-      kind: 'toggle',
-    })
-    expect(getReasoningControlCapabilities(ModelProviderEnum.DeepSeek, v4)).toEqual({
+      expect(getReasoningControlCapabilities(ModelProviderEnum.DeepSeek, reasoner)).toEqual({
+        supported: true,
+        kind: 'toggle',
+      })
+      expect(getReasoningControlCapabilities(ModelProviderEnum.DeepSeek, v4)).toEqual({
+        supported: true,
+        kind: 'deepseek-effort',
+      })
+      expect(getReasoningControlOptions(ModelProviderEnum.DeepSeek, v4)).toEqual([
+        { level: 'default', label: 'default' },
+        { level: 'off', label: 'off' },
+        { level: 'low', label: 'low' },
+        { level: 'medium', label: 'medium' },
+        { level: 'high', label: 'high' },
+      ])
+      expect(options?.deepseek).toEqual({ thinking: { type: 'enabled' } })
+    }
+  )
+
+  it('supports Flash effort through a custom OpenAI-compatible provider', () => {
+    const flash = model('deepseek-flash', 'openai')
+    expect(getReasoningControlCapabilities('custom-deepseek', flash)).toEqual({
       supported: true,
       kind: 'deepseek-effort',
     })
-    expect(getReasoningControlOptions(ModelProviderEnum.DeepSeek, v4)).toEqual([
-      { level: 'default', label: 'default' },
-      { level: 'off', label: 'off' },
-      { level: 'low', label: 'low' },
-      { level: 'medium', label: 'medium' },
-      { level: 'high', label: 'high' },
-    ])
-    expect(options?.deepseek).toEqual({ thinking: { type: 'enabled' } })
+    expect(getReasoningProviderOptions('custom-deepseek', flash, 'high')).toEqual({
+      deepseek: { thinking: { type: 'enabled' }, reasoningEffort: 'max' },
+    })
   })
 
   it.each([
@@ -478,31 +564,33 @@ describe('reasoning-control', () => {
       off: { openai: { reasoningEffort: 'none' as const, forceReasoning: true } },
     },
   ])('supports ChatboxAI DeepSeek effort through $apiStyle API style', ({ apiStyle, low, medium, high, off }) => {
-    const modelInfo: ProviderModelInfo = {
-      modelId: 'deepseek-v4-pro',
-      apiStyle,
-      capabilities: ['tool_use'],
-    }
+    for (const modelId of ['deepseek-v4-pro', 'deepseek-flash']) {
+      const modelInfo: ProviderModelInfo = {
+        modelId,
+        apiStyle,
+        capabilities: ['tool_use'],
+      }
 
-    expect(getReasoningControlCapabilities(ModelProviderEnum.ChatboxAI, modelInfo)).toEqual({
-      supported: true,
-      kind: 'deepseek-effort',
-    })
-    expect(getReasoningControlOptions(ModelProviderEnum.ChatboxAI, modelInfo).map((option) => option.level)).toEqual([
-      'default',
-      'off',
-      'low',
-      'medium',
-      'high',
-    ])
-    expect(getReasoningProviderOptions(ModelProviderEnum.ChatboxAI, modelInfo, 'low')).toEqual(low)
-    expect(getReasoningProviderOptions(ModelProviderEnum.ChatboxAI, modelInfo, 'medium')).toEqual(medium)
-    expect(getReasoningProviderOptions(ModelProviderEnum.ChatboxAI, modelInfo, 'high')).toEqual(high)
-    expect(getReasoningProviderOptions(ModelProviderEnum.ChatboxAI, modelInfo, 'off')).toEqual(off)
-    expect(getReasoningControlLevel(ModelProviderEnum.ChatboxAI, modelInfo, low)).toBe('low')
-    expect(getReasoningControlLevel(ModelProviderEnum.ChatboxAI, modelInfo, medium)).toBe('medium')
-    expect(getReasoningControlLevel(ModelProviderEnum.ChatboxAI, modelInfo, high)).toBe('high')
-    expect(getReasoningControlLevel(ModelProviderEnum.ChatboxAI, modelInfo, off)).toBe('off')
+      expect(getReasoningControlCapabilities(ModelProviderEnum.ChatboxAI, modelInfo)).toEqual({
+        supported: true,
+        kind: 'deepseek-effort',
+      })
+      expect(getReasoningControlOptions(ModelProviderEnum.ChatboxAI, modelInfo).map((option) => option.level)).toEqual([
+        'default',
+        'off',
+        'low',
+        'medium',
+        'high',
+      ])
+      expect(getReasoningProviderOptions(ModelProviderEnum.ChatboxAI, modelInfo, 'low')).toEqual(low)
+      expect(getReasoningProviderOptions(ModelProviderEnum.ChatboxAI, modelInfo, 'medium')).toEqual(medium)
+      expect(getReasoningProviderOptions(ModelProviderEnum.ChatboxAI, modelInfo, 'high')).toEqual(high)
+      expect(getReasoningProviderOptions(ModelProviderEnum.ChatboxAI, modelInfo, 'off')).toEqual(off)
+      expect(getReasoningControlLevel(ModelProviderEnum.ChatboxAI, modelInfo, low)).toBe('low')
+      expect(getReasoningControlLevel(ModelProviderEnum.ChatboxAI, modelInfo, medium)).toBe('medium')
+      expect(getReasoningControlLevel(ModelProviderEnum.ChatboxAI, modelInfo, high)).toBe('high')
+      expect(getReasoningControlLevel(ModelProviderEnum.ChatboxAI, modelInfo, off)).toBe('off')
+    }
   })
 
   it('reads missing or invalid V4 effort as default instead of inventing a level', () => {
@@ -935,6 +1023,21 @@ describe('reasoning-control', () => {
       ).toBeUndefined()
       expect(resolveReasoningProviderOptions(undefined, ModelProviderEnum.Claude, 'claude-sonnet-4-5')).toBeUndefined()
     })
+
+    it('does not clear the dedicated Claude prompt cache TTL when reasoning changes', () => {
+      const settings = {
+        claudePromptCacheTTL: '1h' as const,
+        providerOptions: claudeOptions,
+      }
+
+      const updated = {
+        ...settings,
+        ...setReasoningProviderOptionsForModel(settings, ModelProviderEnum.Claude, 'claude-sonnet-4-5', claudeOptions),
+      }
+
+      expect(updated.claudePromptCacheTTL).toBe('1h')
+      expect(updated.providerOptions).toBeUndefined()
+    })
   })
 
   describe('request-edge hardening for cross-model DeepSeek values', () => {
@@ -969,24 +1072,70 @@ describe('reasoning-control', () => {
       expect(resolveReasoningReplayPolicy(ModelProviderEnum.Claude, model('claude-sonnet-4-5', 'anthropic'))).toEqual({
         preserveReasoning: 'all-turns',
         signedReasoningOnly: true,
+        replayNamespaces: ['anthropic'],
       })
       expect(resolveReasoningReplayPolicy('acme-llm', model('claude-opus-4-8', 'anthropic'))).toEqual({
         preserveReasoning: 'all-turns',
         signedReasoningOnly: true,
+        replayNamespaces: ['anthropic'],
       })
       // Bedrock speaks the Converse protocol: same apiStyle, different wire format.
       expect(resolveReasoningReplayPolicy(ModelProviderEnum.Bedrock, model('claude-sonnet-4-5', 'anthropic'))).toEqual({
         preserveReasoning: false,
         signedReasoningOnly: false,
+        replayNamespaces: [],
       })
       // DeepSeek thinking mode keeps its plain-text all-turns channel.
       expect(resolveReasoningReplayPolicy(ModelProviderEnum.DeepSeek, model('deepseek-reasoner', 'openai'))).toEqual({
         preserveReasoning: 'all-turns',
         signedReasoningOnly: false,
+        replayNamespaces: [],
       })
       expect(resolveReasoningReplayPolicy(ModelProviderEnum.OpenAI, model('gpt-5.1', 'openai'))).toEqual({
         preserveReasoning: false,
         signedReasoningOnly: false,
+        replayNamespaces: [],
+      })
+    })
+
+    it('replays encrypted reasoning items on OpenAI Responses routes', () => {
+      // Chatbox forces store=false on this route, so the encrypted reasoning item
+      // is the only way to keep the model's reasoning across turns.
+      expect(
+        resolveReasoningReplayPolicy(ModelProviderEnum.OpenAIResponses, model('gpt-5.1', 'openai-responses'))
+      ).toEqual({
+        preserveReasoning: 'all-turns',
+        signedReasoningOnly: true,
+        replayNamespaces: ['openai'],
+      })
+      // ChatboxAI and custom providers can route Responses models over the same
+      // stateless wire protocol.
+      expect(
+        resolveReasoningReplayPolicy(ModelProviderEnum.ChatboxAI, model('gpt-6-astra', 'openai-responses'))
+      ).toEqual({
+        preserveReasoning: 'all-turns',
+        signedReasoningOnly: true,
+        replayNamespaces: ['openai'],
+      })
+      // Plain Chat Completions never returns replayable reasoning items.
+      expect(resolveReasoningReplayPolicy(ModelProviderEnum.OpenAIResponses, model('gpt-5.1', 'openai'))).toEqual({
+        preserveReasoning: false,
+        signedReasoningOnly: false,
+        replayNamespaces: [],
+      })
+    })
+
+    it('replays thought signatures on Gemini routes', () => {
+      expect(resolveReasoningReplayPolicy(ModelProviderEnum.Gemini, model('gemini-3-pro', 'google'))).toEqual({
+        preserveReasoning: 'all-turns',
+        signedReasoningOnly: true,
+        replayNamespaces: ['google'],
+      })
+      // ChatboxAI and custom providers route Gemini models over the same wire protocol.
+      expect(resolveReasoningReplayPolicy(ModelProviderEnum.ChatboxAI, model('gemini-3.1-pro', 'google'))).toEqual({
+        preserveReasoning: 'all-turns',
+        signedReasoningOnly: true,
+        replayNamespaces: ['google'],
       })
     })
   })
@@ -1019,6 +1168,24 @@ describe('reasoning-control', () => {
           'claude-haiku-4-5'
         )
       ).toBe(false)
+    })
+
+    it('does not treat a leftover OpenAI reasoning item as signed Anthropic thinking', () => {
+      // The Anthropic converter drops foreign-namespace metadata, so a block
+      // carrying only an OpenAI item never reaches the wire: the resumed turn is
+      // unsigned and must degrade instead of shipping a signature-less block.
+      const openaiOnly = {
+        type: 'reasoning' as const,
+        text: 'openai thought',
+        providerMetadata: { openai: { itemId: 'rs_1', reasoningEncryptedContent: 'encrypted' } },
+      }
+      expect(
+        shouldDisableClaudeThinkingForUnsignedResume(
+          { role: 'assistant', contentParts: [openaiOnly, tool('t1')] },
+          true,
+          'claude-haiku-4-5'
+        )
+      ).toBe(true)
     })
 
     it('keeps thinking on for non-interleaved multi-step turns where only the first step is signed', () => {

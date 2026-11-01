@@ -6,6 +6,7 @@ export { mergeSharedOAuthProviderSettings, toOAuthProviderId, toOAuthSettingsPro
 export { isOAuthExpired, isUsingOAuth, resolveEffectiveApiKey } from './resolve-auth'
 export type {
   DeviceFlowStartResult,
+  MCPAuthorizationCallback,
   OAuthCredentials,
   OAuthProviderInfo,
   OAuthResult,

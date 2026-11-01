@@ -164,8 +164,8 @@ vi.mock('@/stores/toastActions', () => ({ add: mocks.toastAddMock }))
 
 vi.mock('@/app/renderer-application', () => ({
   rendererApplication: {
-    sessions: { updateSession: vi.fn() },
-    sessionHooks: { useSession: () => ({ session: undefined }) },
+    sessions: { updateSessionHeader: vi.fn() },
+    sessionHooks: { useSessionHeader: () => ({ read: undefined, session: undefined }) },
   },
 }))
 vi.mock('@/stores/session/session-settings', () => ({
@@ -242,6 +242,40 @@ beforeEach(() => {
 })
 
 describe('AgentModePanel mode buttons', () => {
+  test('shows immediate pending feedback until a mode change is persisted', async () => {
+    let resolveSave: () => void = () => undefined
+    mocks.setSessionAgentModeMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSave = resolve
+        })
+    )
+    renderPanel()
+    fireEvent.click(screen.getByRole('button', { name: 'Chat Mode' }))
+
+    expect((screen.getByRole('button', { name: 'Chat Mode' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByRole('button', { name: 'Chat Mode' }).hasAttribute('data-loading')).toBe(true)
+    expect((screen.getByRole('button', { name: 'Work Mode' }) as HTMLButtonElement).disabled).toBe(true)
+
+    await act(async () => {
+      resolveSave()
+    })
+
+    expect(screen.getByRole('button', { name: 'Chat Mode' }).hasAttribute('data-loading')).toBe(false)
+  })
+
+  test('reports a failed mode save and releases the pending controls', async () => {
+    mocks.setSessionAgentModeMock.mockRejectedValueOnce(new Error('Disk unavailable'))
+    renderPanel()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Chat Mode' }))
+    })
+
+    expect(mocks.toastAddMock).toHaveBeenCalledWith('Failed to save settings')
+    expect((screen.getByRole('button', { name: 'Chat Mode' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
   test('label the chat and work mode buttons with the same status icons as the composer button', () => {
     const view = renderPanel()
 
@@ -495,7 +529,13 @@ describe('AgentModePanel memory', () => {
     fireEvent.mouseEnter(memoryRow)
 
     const globalSwitch = screen.getByRole('switch', { name: 'Global Memory' })
+    expect(
+      screen.getByText('You must create a copilot and use it in a conversation to use Copilot Memory.')
+    ).toBeTruthy()
+    expect(screen.getByRole('switch', { name: 'Copilot Memory' })).toHaveProperty('disabled', true)
+    expect(screen.getByRole('switch', { name: 'Copilot Memory' })).toHaveProperty('checked', false)
     expect(globalSwitch).toHaveProperty('checked', true)
+    expect(globalSwitch).toHaveProperty('disabled', false)
     fireEvent.click(globalSwitch)
 
     expect(mocks.settingsState.setSettings).toHaveBeenCalledWith({ memoryEnabled: false })
@@ -535,6 +575,10 @@ describe('AgentModePanel memory', () => {
     expect(memoryRow.textContent).toContain('Off')
     fireEvent.mouseEnter(memoryRow)
 
+    expect(
+      screen.getByText('You must create a copilot and use it in a conversation to use Copilot Memory.')
+    ).toBeTruthy()
+    expect(screen.getByRole('switch', { name: 'Copilot Memory' })).toHaveProperty('disabled', true)
     expect(screen.getByRole('switch', { name: 'Global Memory' })).toHaveProperty('checked', false)
     expect(screen.getByText("Shared by chats that don't use Copilot Memory.")).toBeTruthy()
   })
@@ -549,6 +593,10 @@ describe('AgentModePanel memory', () => {
 
     const copilotSwitch = screen.getByRole('switch', { name: 'Copilot Memory' })
     const globalSwitch = screen.getByRole('switch', { name: 'Global Memory' })
+    expect(
+      screen.queryByText('You must create a copilot and use it in a conversation to use Copilot Memory.')
+    ).toBeNull()
+    expect(copilotSwitch).toHaveProperty('disabled', false)
     expect(copilotSwitch).toHaveProperty('checked', false)
     expect(globalSwitch).toHaveProperty('checked', true)
 
@@ -575,6 +623,9 @@ describe('AgentModePanel memory', () => {
     expect(
       screen.getByText('All chats with this Copilot use its shared memory when on, or follow Global Memory when off.')
     ).toBeTruthy()
+    expect(
+      screen.queryByText('You must create a copilot and use it in a conversation to use Copilot Memory.')
+    ).toBeNull()
     expect(screen.getByRole('switch', { name: 'Copilot Memory' })).toHaveProperty('checked', true)
     expect(screen.queryByRole('switch', { name: 'Global Memory' })).toBeNull()
     await vi.waitFor(() => {

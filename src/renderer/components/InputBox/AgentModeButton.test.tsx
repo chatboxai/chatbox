@@ -66,6 +66,10 @@ vi.mock('./AgentModePanel', () => ({
   ),
 }))
 
+vi.mock('./MobileAgentModePanel', () => ({
+  default: () => <div>Agent mode menu</div>,
+}))
+
 import AgentModeButton from './AgentModeButton'
 
 function renderButton({
@@ -109,7 +113,6 @@ describe('AgentModeButton', () => {
   })
 
   test('keeps independent capabilities available when the selected model does not support agent tools', () => {
-    window.localStorage.setItem('chatbox.web-search-moved-tip-dismissed.v1', 'true')
     renderButton({ modelSupportsAgentMode: false })
 
     const button = screen.getByRole('button', { name: 'Chat Mode' })
@@ -138,7 +141,6 @@ describe('AgentModeButton', () => {
   })
 
   test('opens and closes the mode menu by click for touch input', () => {
-    window.localStorage.setItem('chatbox.web-search-moved-tip-dismissed.v1', 'true')
     renderButton({ layout: 'touch' })
 
     const button = screen.getByRole('button', { name: 'Work Mode' })
@@ -150,7 +152,6 @@ describe('AgentModeButton', () => {
   })
 
   test('keeps the desktop mode menu open when the trigger is clicked after hover', async () => {
-    window.localStorage.setItem('chatbox.web-search-moved-tip-dismissed.v1', 'true')
     renderButton({ layout: 'desktop' })
 
     const button = screen.getByRole('button', { name: 'Work Mode' })
@@ -162,7 +163,6 @@ describe('AgentModeButton', () => {
   })
 
   test('keeps the message input blurred after changing Web Search in the touch sheet', () => {
-    window.localStorage.setItem('chatbox.web-search-moved-tip-dismissed.v1', 'true')
     const input = document.createElement('textarea')
     input.id = 'message-input'
     document.body.append(input)
@@ -179,7 +179,6 @@ describe('AgentModeButton', () => {
   })
 
   test('removes an Android back listener that resolves after the touch sheet closes', async () => {
-    window.localStorage.setItem('chatbox.web-search-moved-tip-dismissed.v1', 'true')
     mocks.platform.type = 'mobile'
     mocks.platform.isDesktopLike = false
     const remove = vi.fn(async () => undefined)
@@ -191,7 +190,7 @@ describe('AgentModeButton', () => {
     )
     renderButton({ layout: 'touch' })
 
-    const trigger = screen.getByRole('button', { name: 'Chat Mode' })
+    const trigger = screen.getByRole('button', { name: 'Work Mode' })
     fireEvent.click(trigger)
     await waitFor(() => expect(mocks.addBackButtonListener).toHaveBeenCalledOnce())
     fireEvent.click(trigger)
@@ -223,18 +222,12 @@ describe('AgentModeButton', () => {
     expect(view.container.querySelector('[data-agent-mode-status="off"]')).toBeTruthy()
   })
 
-  test('shows the Web Search migration tip until the user dismisses it', () => {
-    const view = renderButton()
-
-    expect(screen.getByText('Web Search has moved')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+  test.each(['desktop', 'touch'] as const)('starts with the %s mode menu closed', (layout) => {
+    renderButton({ layout })
 
     expect(screen.queryByText('Web Search has moved')).toBeNull()
     expect(screen.queryByText('Agent mode menu')).toBeNull()
-    expect(window.localStorage.getItem('chatbox.web-search-moved-tip-dismissed.v1')).toBe('true')
-
-    view.unmount()
-    renderButton()
-    expect(screen.queryByText('Web Search has moved')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Work Mode' }))
+    expect(screen.getByText('Agent mode menu')).toBeTruthy()
   })
 })

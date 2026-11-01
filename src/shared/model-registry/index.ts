@@ -1,4 +1,11 @@
-export { enrichModelFromRegistry, findModelInRegistry, getRegistryModelMeta, setRuntimeRegistry } from './enrich'
+export {
+  enrichModelFromRegistry,
+  findModelInRegistry,
+  getAnyRegistryModelMeta,
+  getRegistryModelMeta,
+  getUnambiguousRegistryModelContextWindow,
+  setRuntimeRegistry,
+} from './enrich'
 
 export {
   getChatboxProviderIds,

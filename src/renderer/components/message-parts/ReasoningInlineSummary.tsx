@@ -1,5 +1,6 @@
 import { Text } from '@mantine/core'
 import { type FC, useEffect, useRef } from 'react'
+import { useIsSmallScreen } from '@/hooks/useScreenChange'
 
 export function getReasoningSummary(content: string, isThinking: boolean): string {
   const visibleContent = content.trimEnd()
@@ -23,10 +24,13 @@ export function getLogicalEndScrollLeft(direction: string, scrollWidth: number, 
 // line and keep its right edge in view; after completion, reset to a stable
 // first-line summary. The full reasoning remains available in the disclosure.
 export const ReasoningInlineSummary: FC<{ content: string; isThinking: boolean }> = ({ content, isThinking }) => {
+  const isSmallScreen = useIsSmallScreen()
   const summary = getReasoningSummary(content, isThinking)
   const summaryRef = useRef<HTMLSpanElement>(null)
 
   useEffect(() => {
+    if (isSmallScreen || !summary) return
+
     const animationFrame = requestAnimationFrame(() => {
       const element = summaryRef.current
       if (!element) return
@@ -36,9 +40,9 @@ export const ReasoningInlineSummary: FC<{ content: string; isThinking: boolean }
     })
 
     return () => cancelAnimationFrame(animationFrame)
-  }, [isThinking, summary])
+  }, [isSmallScreen, isThinking, summary])
 
-  if (!summary) return null
+  if (isSmallScreen || !summary) return null
 
   return (
     <Text

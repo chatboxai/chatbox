@@ -5,6 +5,22 @@ const PAGE_SIZE = 20
 const DB_NAME = 'chatbox-image-generation'
 const STORE_NAME = 'records'
 
+/**
+ * Records already on disk are not guaranteed to carry every field the schema declares.
+ * Reads must stay renderable, so fill the required fields consumers dereference. Writes
+ * stay strict, so a record that loses a field still surfaces as a bug at its source.
+ */
+function normalizeRecord(record: ImageGeneration): ImageGeneration {
+  if (record.model && record.prompt && record.referenceImages && record.generatedImages) return record
+  return {
+    ...record,
+    model: record.model ?? { provider: '', modelId: '' },
+    prompt: record.prompt ?? '',
+    referenceImages: record.referenceImages ?? [],
+    generatedImages: record.generatedImages ?? [],
+  }
+}
+
 export interface ImageGenerationStorage {
   initialize(): Promise<void>
   create(record: ImageGeneration): Promise<void>
@@ -94,7 +110,7 @@ export class IndexedDBImageGenerationStorage implements ImageGenerationStorage {
     return new Promise((resolve, reject) => {
       const store = this.getStore('readonly')
       const request = store.get(id)
-      request.onsuccess = () => resolve(request.result || null)
+      request.onsuccess = () => resolve(request.result ? normalizeRecord(request.result) : null)
       request.onerror = () => reject(request.error)
     })
   }
@@ -111,7 +127,7 @@ export class IndexedDBImageGenerationStorage implements ImageGenerationStorage {
 
   async getPage(cursor: number = 0, limit: number = PAGE_SIZE): Promise<ImageGenerationPage> {
     await this.initialize()
-    const total = await this.getTotal()
+    const total = await this.countListable()
 
     return new Promise((resolve, reject) => {
       const store = this.getStore('readonly')
@@ -124,8 +140,7 @@ export class IndexedDBImageGenerationStorage implements ImageGenerationStorage {
       request.onsuccess = (event) => {
         const cursor_ = (event.target as IDBRequest<IDBCursorWithValue>).result
         if (!cursor_) {
-          const nextCursor = cursor + items.length < total ? cursor + items.length : null
-          resolve({ items, nextCursor, total })
+          resolve({ items, nextCursor: null, total })
           return
         }
 
@@ -136,14 +151,26 @@ export class IndexedDBImageGenerationStorage implements ImageGenerationStorage {
         }
 
         if (items.length < limit) {
-          items.push(cursor_.value)
+          items.push(normalizeRecord(cursor_.value))
           cursor_.continue()
         } else {
-          const nextCursor = cursor + items.length < total ? cursor + items.length : null
-          resolve({ items, nextCursor, total })
+          resolve({ items, nextCursor: cursor + items.length, total })
         }
       }
 
+      request.onerror = () => reject(request.error)
+    })
+  }
+
+  /**
+   * A record is only listable once it is in the createdAt index, so paging counts and
+   * terminates on that index rather than on the store's full record count.
+   */
+  private async countListable(): Promise<number> {
+    await this.initialize()
+    return new Promise((resolve, reject) => {
+      const request = this.getStore('readonly').index('createdAt').count()
+      request.onsuccess = () => resolve(request.result)
       request.onerror = () => reject(request.error)
     })
   }

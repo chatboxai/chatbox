@@ -1,6 +1,7 @@
+import type { Toast } from '@shared/types'
 import { uiStore } from './uiStore'
 
-export function add(content: string, duration?: number, action?: { label: string; settingsPath?: string }) {
+export function add(content: string, duration?: number, action?: Toast['action']) {
   uiStore.getState().addToast(content, duration, action)
 }
 

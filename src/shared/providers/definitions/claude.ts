@@ -1,4 +1,4 @@
-import { createBearerOAuthFetch, createOAuthCredentialManager } from '../../oauth'
+import { createBearerOAuthFetch, createOAuthCredentialManager, isUsingOAuth } from '../../oauth'
 import { ModelProviderEnum, ModelProviderType } from '../../types'
 import { defineProvider } from '../registry'
 import Claude from './models/claude'
@@ -84,7 +84,7 @@ export const claudeProvider = defineProvider({
   },
   createModel: (config) => {
     // Anthropic OAuth tokens (sk-ant-oat-*) require Bearer auth + beta header + system passphrase
-    const isOAuth = config.providerSetting.activeAuthMode === 'oauth' && !!config.providerSetting.oauth?.accessToken
+    const isOAuth = isUsingOAuth(config.providerSetting, config.dependencies.platformType || 'desktop')
     const credentialManager = createOAuthCredentialManager(
       ModelProviderEnum.Claude,
       config.providerSetting,
@@ -105,6 +105,7 @@ export const claudeProvider = defineProvider({
         topP: config.settings.topP,
         maxOutputTokens: config.settings.maxTokens,
         stream: config.settings.stream,
+        promptCacheTTL: config.settings.claudePromptCacheTTL,
         extraHeaders: oauthHeaders,
         customFetch:
           isOAuth && credentialManager ? createBearerOAuthFetch(config.dependencies, credentialManager) : undefined,

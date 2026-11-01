@@ -71,14 +71,31 @@ export async function parseStreamResponse(
     })
   }
 
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
+  const cancelPendingUpdate = () => {
+    if (pendingUpdateRef.current !== null) {
+      cancelAnimationFrame(pendingUpdateRef.current)
+      pendingUpdateRef.current = null
+    }
+  }
 
-    buffer += decoder.decode(value, { stream: true })
+  while (true) {
+    let readResult: ReadableStreamReadResult<Uint8Array>
+    try {
+      readResult = await reader.read()
+    } catch (error) {
+      cancelPendingUpdate()
+      updateStreamingMessage()
+      throw error
+    }
+    const { done, value } = readResult
+    buffer += done ? decoder.decode() : decoder.decode(value, { stream: true })
     const lines = buffer.split('\n')
     // Keep the last incomplete line in buffer
     buffer = lines.pop() || ''
+    if (done && buffer) {
+      lines.push(buffer)
+      buffer = ''
+    }
 
     for (const line of lines) {
       const trimmedLine = line.trim()
@@ -116,11 +133,13 @@ export async function parseStreamResponse(
           }
 
           // Batch updates using requestAnimationFrame to reduce re-renders
-          if (!pendingUpdateRef.current) {
-            pendingUpdateRef.current = requestAnimationFrame(() => {
+          if (pendingUpdateRef.current === null) {
+            const frameId = requestAnimationFrame(() => {
+              if (pendingUpdateRef.current !== frameId) return
               pendingUpdateRef.current = null
               updateStreamingMessage()
             })
+            pendingUpdateRef.current = frameId
           }
         } else if (event.type === 'tool-input-start' && event.toolCallId && event.toolName) {
           // Tool call start - create the tool part
@@ -193,7 +212,11 @@ export async function parseStreamResponse(
         console.debug('Skipping non-JSON line:', trimmedLine)
       }
     }
+
+    if (done) break
   }
+
+  cancelPendingUpdate()
 
   // Mark streaming as complete
   setMessages((prev) => {
@@ -203,6 +226,8 @@ export async function parseStreamResponse(
         ...prev.slice(0, lastIdx),
         {
           ...prev[lastIdx],
+          content: accumulatedContent,
+          parts: [...accumulatedParts],
           isStreaming: false,
         },
       ]

@@ -13,6 +13,7 @@ export interface SummaryGeneratorOptions {
   messages: Message[]
   language?: Language
   sessionSettings?: SessionSettings
+  prompt?: string
 }
 
 export interface SummaryResult {
@@ -37,7 +38,7 @@ export async function generateSummary(options: SummaryGeneratorOptions): Promise
   try {
     const model = await createModel(settings)
 
-    const promptMessages = promptFormat.summarizeConversation(messages, languageName)
+    const promptMessages = promptFormat.summarizeConversation(messages, languageName, options.prompt)
     const result = await generateText(model, promptMessages)
 
     const summary =
@@ -120,11 +121,13 @@ export function isSummaryGenerationAvailable(): boolean {
 }
 
 export interface StreamingSummaryOptions extends SummaryGeneratorOptions {
+  sessionId: string
   onStreamUpdate?: (text: string) => void
+  abortSignal?: AbortSignal
 }
 
 export async function generateSummaryWithStream(options: StreamingSummaryOptions): Promise<SummaryResult> {
-  const { messages, sessionSettings, onStreamUpdate } = options
+  const { sessionId, messages, sessionSettings, onStreamUpdate } = options
 
   if (messages.length === 0) {
     return { success: true, summary: '' }
@@ -139,10 +142,12 @@ export async function generateSummaryWithStream(options: StreamingSummaryOptions
   try {
     const model = await createModel(settings)
 
-    const promptMessages = promptFormat.summarizeConversation(messages, languageName)
+    const promptMessages = promptFormat.summarizeConversation(messages, languageName, options.prompt)
     const coreMessages = await convertToModelMessages(promptMessages, { modelSupportVision: model.isSupportVision() })
 
     const result = await model.chat(coreMessages, {
+      sessionId,
+      signal: options.abortSignal,
       onResultChange: (data) => {
         if (data.contentParts && onStreamUpdate) {
           const newText = data.contentParts

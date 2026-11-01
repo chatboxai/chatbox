@@ -20,11 +20,11 @@ const WEAK_MODEL_PATTERN = /deepseek[-_]?(chat|reasoner|r1|v(?:0|1|2|3)(?:[._]\d
 // Models with improved tool use — excluded from the weak list
 const STRONG_MODEL_PATTERN = /distill|vl\d/i
 
-// Matches DeepSeek models that support reasoning/thinking (reasoner, R1, V-series).
-const REASONING_MODEL_PATTERN = /(?:^|\/)deepseek-(?:reasoner|r1|v[0-9.]+)/i
+// Matches DeepSeek models that support reasoning/thinking (Flash, reasoner, R1, V-series).
+const REASONING_MODEL_PATTERN = /(?:^|\/)deepseek-(?:flash(?:[._-]|$)|reasoner|r1|v[0-9.]+)/i
 
 // DeepSeek V4 is the first model family whose official APIs expose thinking effort.
-const REASONING_EFFORT_MODEL_PATTERN = /(?:^|\/)deepseek-v4(?:[._-]|$)/i
+const REASONING_EFFORT_MODEL_PATTERN = /(?:^|\/)deepseek-(?:flash|v4)(?:[._-]|$)/i
 
 const DEEPSEEK_REASONING_EFFORTS = new Set(['low', 'high', 'max', 'xhigh'])
 

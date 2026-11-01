@@ -7,6 +7,11 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 
 const { useBlobMock } = vi.hoisted(() => ({ useBlobMock: vi.fn() }))
 
+vi.mock('i18next', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('i18next')>()),
+  t: (key: string) => key,
+}))
+
 vi.mock('react-i18next', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react-i18next')>()),
   useTranslation: () => ({
@@ -47,7 +52,7 @@ vi.mock('@/stores/uiStore', () => ({
   useUIStore: (selector: (state: { setPictureShow: () => void }) => unknown) => selector({ setPictureShow: vi.fn() }),
 }))
 
-import { StepTimelineUI } from './ToolCallPartUI'
+import { StepTimelineUI } from './StepTimelineUI'
 
 function commandPart(overrides: Partial<MessageToolCallPart> = {}): MessageToolCallPart {
   return {
@@ -219,6 +224,32 @@ describe('command execution timeline', () => {
 
     expect(screen.getByText(/Stopped/)).toBeTruthy()
     expect(screen.queryByText(/Failed/)).toBeNull()
+  })
+
+  it('shows the error of a failed browser snapshot instead of an empty page', () => {
+    render(
+      <MantineProvider>
+        <StepTimelineUI
+          parts={[
+            commandPart({
+              toolName: 'browser',
+              args: { command: 'snapshot', scope: 'e9' },
+              state: 'result',
+              result: {
+                url: 'https://example.com/',
+                title: 'Example',
+                page: 'p-1',
+                error: 'Reference e9 is not on the page anymore.',
+              },
+              duration: 1_000,
+            }),
+          ]}
+        />
+      </MantineProvider>
+    )
+
+    fireEvent.click(screen.getByText(/Inspect Page Controls/).closest('button') as HTMLButtonElement)
+    expect(screen.getByText(/Reference e9 is not on the page anymore/)).toBeTruthy()
   })
 
   it('still renders a genuine non-command tool error as Failed', () => {

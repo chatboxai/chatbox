@@ -1,40 +1,53 @@
+import { SessionEventBus, SessionService, SessionWriteCoordinator } from '@chatbox/core/application/session'
+import { InMemorySessionRepository } from '@chatbox/core/testing'
 import type { Message, Session } from '@shared/types'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
+  updateMessageMock,
   getSessionMock,
   getSessionSettingsMock,
   createNewForkMock,
   createSaveAndResendForkMock,
-  findMessageLocationMock,
   insertMessageAfterMock,
   modifyMessageMock,
   orchestrateGenerationMock,
   guardSessionActionMock,
 } = vi.hoisted(() => ({
+  updateMessageMock: vi.fn(),
   getSessionMock: vi.fn(),
   getSessionSettingsMock: vi.fn(),
   createNewForkMock: vi.fn(),
   createSaveAndResendForkMock: vi.fn(),
-  findMessageLocationMock: vi.fn(),
   insertMessageAfterMock: vi.fn(),
   modifyMessageMock: vi.fn(),
   orchestrateGenerationMock: vi.fn(),
   guardSessionActionMock: vi.fn(),
 }))
 
-vi.mock('@/app/renderer-application', () => ({
-  rendererApplication: { sessionQueryBridge: { getSession: getSessionMock } },
-}))
-vi.mock('./session-settings', () => ({
-  getSessionSettings: getSessionSettingsMock,
-  getSessionTokenModel: () => undefined,
-}))
+vi.mock('@/app/renderer-application', async () => {
+  const { GenerationRuntimeStore } = await import('@chatbox/core/generation')
+  const { createRowSessionFixtureReads } = await import('./testing/row-session-fixture')
+  return {
+    rendererApplication: {
+      sessions: { ...createRowSessionFixtureReads(getSessionMock), updateMessage: updateMessageMock },
+      generationRuntime: new GenerationRuntimeStore(),
+    },
+  }
+})
+vi.mock('./session-settings', async () => {
+  const { createRowSessionFixtureReads } = await import('./testing/row-session-fixture')
+  const reads = createRowSessionFixtureReads(getSessionMock)
+  return {
+    getSessionHeader: async (sessionId: string) => (await reads.getSessionHeader(sessionId))?.header ?? null,
+    getSessionSettings: getSessionSettingsMock,
+    getSessionTokenModel: () => undefined,
+  }
+})
 vi.mock('./attachment-resolver', () => ({ createAttachmentResolver: vi.fn() }))
 vi.mock('./forks', () => ({
   createNewFork: createNewForkMock,
   createSaveAndResendFork: createSaveAndResendForkMock,
-  findMessageLocation: findMessageLocationMock,
 }))
 vi.mock('./messages', () => ({ insertMessageAfter: insertMessageAfterMock, modifyMessage: modifyMessageMock }))
 vi.mock('@/adapters/CurrentGenerationService', () => ({
@@ -45,7 +58,11 @@ vi.mock('./utils', () => ({ getSessionWebBrowsing: vi.fn() }))
 vi.mock('@/packages/token', () => ({ estimateTokensFromMessages: () => 0 }))
 
 import { resetSessionGenerationLocksForTests } from '@chatbox/core/generation'
+import { rendererApplication } from '@/app/renderer-application'
 import { generate, generateMore, regenerateInNewFork, saveAndResendMessage } from './generation'
+import { type GenerationCancellationDependencies, stopAllMessageGenerations } from './generation-cancellation'
+
+const generationRuntime = rendererApplication.generationRuntime
 
 function message(id: string): Message {
   return { id, role: 'assistant', contentParts: [], generating: true }
@@ -55,11 +72,26 @@ function userMessage(id: string): Message {
   return { id, role: 'user', contentParts: [{ type: 'text', text: 'edited text' }] }
 }
 
+function stopState(session: Session) {
+  return {
+    messages: session.messages,
+    generatingMessageIds: session.messages.filter((message) => message.generating).map((message) => message.id),
+    currentConversationGeneratingCount: session.messages.filter(
+      (message) => message.generating && message.role === 'assistant'
+    ).length,
+  }
+}
+
 describe('generation entry-point locking', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     resetSessionGenerationLocksForTests()
-    getSessionMock.mockResolvedValue({ id: 'session-1', name: 'Session', messages: [] })
+    generationRuntime.dispose()
+    getSessionMock
+      .mockReset()
+      .mockResolvedValue({ id: 'session-1', name: 'Session', messages: [userMessage('user-1')] })
+    createSaveAndResendForkMock.mockReset().mockResolvedValue(false)
+    updateMessageMock.mockReset()
     getSessionSettingsMock.mockResolvedValue({})
     guardSessionActionMock.mockResolvedValue(true)
     insertMessageAfterMock.mockResolvedValue(undefined)
@@ -85,6 +117,49 @@ describe('generation entry-point locking', () => {
 
     expect(orchestrateGenerationMock.mock.calls.map((call) => call[1].id)).toEqual(['assistant-1', 'assistant-2'])
   })
+
+  it.each(['body', 'metadata'] as const)(
+    'preserves durable Reply Below semantics when %s persistence fails',
+    async (failure) => {
+      vi.useFakeTimers()
+      const repository = new InMemorySessionRepository()
+      const session: Session = { id: 'session-1', name: 'Session', messages: [userMessage('user-1')] }
+      await repository.seedSession(session)
+      repository.records.set(session.id, { id: session.id, name: session.name, sortOrder: 1, createdAt: 1 })
+      const sessions = new SessionService(repository, new SessionWriteCoordinator(repository), new SessionEventBus(), {
+        createId: () => 'unused',
+        now: () => 1,
+      })
+      getSessionMock.mockImplementation(async () => repository.inspectSession(session.id))
+      insertMessageAfterMock.mockImplementation((...args: Parameters<SessionService['insertMessage']>) =>
+        sessions.insertMessage(...args)
+      )
+      updateMessageMock.mockImplementation((...args: Parameters<SessionService['updateMessage']>) =>
+        sessions.updateMessage(...args)
+      )
+      const error = new Error(`${failure} unavailable`)
+      const write = vi.spyOn(repository, 'executeSessionCommand')
+      if (failure === 'body') write.mockRejectedValueOnce(error)
+      else vi.spyOn(repository.meta, 'update').mockRejectedValueOnce(error)
+      try {
+        if (failure === 'body') {
+          await expect(generateMore(session.id, 'user-1')).rejects.toBe(error)
+          expect(repository.inspectSession(session.id)?.messages).toEqual(session.messages)
+          expect(orchestrateGenerationMock).not.toHaveBeenCalled()
+        } else {
+          await expect(generateMore(session.id, 'user-1')).resolves.toBeUndefined()
+          expect(repository.inspectSession(session.id)?.messages).toHaveLength(2)
+          expect(repository.inspectSession(session.id)?.messages[1]).toMatchObject({ generating: true })
+          expect(orchestrateGenerationMock).toHaveBeenCalledOnce()
+        }
+        expect(write).toHaveBeenCalledOnce()
+        expect(generationRuntime.waitForGenerationPreparationLeases(session.id)).toBeUndefined()
+      } finally {
+        vi.clearAllTimers()
+        vi.useRealTimers()
+      }
+    }
+  )
 
   it('starts multiple alternative replies for the same message concurrently', async () => {
     let finishFirst = () => {}
@@ -120,7 +195,8 @@ describe('generation entry-point locking', () => {
     expect(insertMessageAfterMock).toHaveBeenCalledWith(
       'session-1',
       expect.objectContaining({ role: 'assistant', generating: true }),
-      'user-1'
+      'user-1',
+      expect.objectContaining({ preserveCachedGeneratingMessages: true, onPersisted: expect.any(Function) })
     )
     expect(orchestrateGenerationMock).toHaveBeenCalledWith(
       'session-1',
@@ -143,9 +219,95 @@ describe('generation entry-point locking', () => {
     expect(orchestrateGenerationMock).not.toHaveBeenCalled()
   })
 
+  it('does not insert Reply Again Below while a Session Stop gate is active', async () => {
+    const gate = generationRuntime.beginSessionStop('session-1', 'stopped')
+
+    await expect(generateMore('session-1', 'user-1')).rejects.toMatchObject({ reason: 'generating' })
+
+    expect(insertMessageAfterMock).not.toHaveBeenCalled()
+    expect(orchestrateGenerationMock).not.toHaveBeenCalled()
+    generationRuntime.clearSessionStop('session-1', gate)
+  })
+
+  it('waits for a pending reply insertion before Stop-all captures its placeholder', async () => {
+    let releaseInsert!: () => void
+    const insertGate = new Promise<void>((resolve) => {
+      releaseInsert = resolve
+    })
+    let currentSession: Session = { id: 'session-1', name: 'Session', messages: [] }
+    getSessionMock.mockImplementation(() => Promise.resolve(currentSession))
+    insertMessageAfterMock.mockImplementationOnce(async (_sessionId, inserted: Message) => {
+      await insertGate
+      currentSession = { ...currentSession, messages: [inserted] }
+    })
+    const readStopState = vi.fn(async () => stopState(currentSession))
+    const removeMessage = vi.fn<GenerationCancellationDependencies['removeMessage']>(async (_sessionId, messageId) => {
+      currentSession = {
+        ...currentSession,
+        messages: currentSession.messages.filter((candidate) => candidate.id !== messageId),
+      }
+    })
+    const dependencies: GenerationCancellationDependencies = {
+      runtime: generationRuntime,
+      sessionEvents: new SessionEventBus(),
+      readState: readStopState,
+      removeMessage,
+      persistMessage: vi.fn().mockResolvedValue(undefined),
+    }
+
+    const generation = generateMore('session-1', 'user-1')
+    await vi.waitFor(() => expect(insertMessageAfterMock).toHaveBeenCalledOnce())
+    const stop = stopAllMessageGenerations('session-1', dependencies, 20_000)
+    await Promise.resolve()
+
+    expect(readStopState).not.toHaveBeenCalled()
+    releaseInsert()
+    await Promise.all([generation, stop])
+
+    const insertedMessageId = insertMessageAfterMock.mock.calls[0][1].id
+    expect(removeMessage).toHaveBeenCalledWith('session-1', insertedMessageId)
+    expect(currentSession.messages).toEqual([])
+    expect(generationRuntime.isSessionStopRequested('session-1')).toBe(false)
+  })
+
+  it('releases reply preparation after insertion fails so Stop-all can finish', async () => {
+    let releaseInsert!: () => void
+    const insertGate = new Promise<void>((resolve) => {
+      releaseInsert = resolve
+    })
+    const insertError = new Error('insert failed')
+    insertMessageAfterMock.mockImplementationOnce(async () => {
+      await insertGate
+      throw insertError
+    })
+    const session: Session = { id: 'session-1', name: 'Session', messages: [] }
+    const readStopState = vi.fn(async () => stopState(session))
+    const dependencies: GenerationCancellationDependencies = {
+      runtime: generationRuntime,
+      sessionEvents: new SessionEventBus(),
+      readState: readStopState,
+      removeMessage: vi.fn().mockResolvedValue(undefined),
+      persistMessage: vi.fn().mockResolvedValue(undefined),
+    }
+
+    const generation = generateMore('session-1', 'user-1')
+    const generationResult = expect(generation).rejects.toBe(insertError)
+    await vi.waitFor(() => expect(insertMessageAfterMock).toHaveBeenCalledOnce())
+    const stop = stopAllMessageGenerations('session-1', dependencies, 20_000)
+    await Promise.resolve()
+
+    expect(readStopState).not.toHaveBeenCalled()
+    releaseInsert()
+    await generationResult
+    await stop
+
+    expect(readStopState).toHaveBeenCalledOnce()
+    expect(generationRuntime.isSessionStopRequested('session-1')).toBe(false)
+    expect(orchestrateGenerationMock).not.toHaveBeenCalled()
+  })
+
   it('versions the prompt on Save & Resend and replies below the replacement', async () => {
     const edited = userMessage('user-1')
-    findMessageLocationMock.mockReturnValue({ list: [edited], index: 0 })
     createSaveAndResendForkMock.mockResolvedValue(true)
 
     await saveAndResendMessage('session-1', edited)
@@ -161,14 +323,14 @@ describe('generation entry-point locking', () => {
     expect(insertMessageAfterMock).toHaveBeenCalledWith(
       'session-1',
       expect.objectContaining({ role: 'assistant', generating: true }),
-      replacement.id
+      replacement.id,
+      expect.objectContaining({ preserveCachedGeneratingMessages: true, onPersisted: expect.any(Function) })
     )
     expect(orchestrateGenerationMock).toHaveBeenCalledOnce()
   })
 
-  it('falls back to the legacy overwrite shape when the target has no predecessor', async () => {
+  it('edits the root prompt in place when the target has no predecessor', async () => {
     const edited = userMessage('user-1')
-    findMessageLocationMock.mockReturnValue({ list: [edited], index: 0 })
     createSaveAndResendForkMock.mockResolvedValue(false)
 
     await saveAndResendMessage('session-1', edited)
@@ -178,13 +340,13 @@ describe('generation entry-point locking', () => {
     expect(insertMessageAfterMock).toHaveBeenCalledWith(
       'session-1',
       expect.objectContaining({ role: 'assistant', generating: true }),
-      'user-1'
+      'user-1',
+      expect.objectContaining({ preserveCachedGeneratingMessages: true, onPersisted: expect.any(Function) })
     )
   })
 
   it('saves the edit in place when the store-side guard blocks the resend', async () => {
     const edited = userMessage('user-1')
-    findMessageLocationMock.mockReturnValue({ list: [edited], index: 0 })
     guardSessionActionMock.mockResolvedValue(false)
 
     await saveAndResendMessage('session-1', edited)
@@ -215,7 +377,6 @@ describe('generation entry-point locking', () => {
 
   it('still saves the edit when the atomic fork write fails', async () => {
     const edited = userMessage('user-1')
-    findMessageLocationMock.mockReturnValue({ list: [edited], index: 0 })
     createSaveAndResendForkMock.mockRejectedValueOnce(new Error('storage write failed'))
 
     await saveAndResendMessage('session-1', edited)
@@ -228,7 +389,6 @@ describe('generation entry-point locking', () => {
 
   it('swallows a follow-up save failure after a failed fork write', async () => {
     const edited = userMessage('user-1')
-    findMessageLocationMock.mockReturnValue({ list: [edited], index: 0 })
     createSaveAndResendForkMock.mockRejectedValueOnce(new Error('storage write failed'))
     modifyMessageMock.mockRejectedValueOnce(new Error('write failed'))
 
@@ -255,7 +415,6 @@ describe('generation entry-point locking', () => {
     expect(createNewForkMock).not.toHaveBeenCalled()
     expect(createSaveAndResendForkMock).not.toHaveBeenCalled()
     expect(modifyMessageMock).not.toHaveBeenCalled()
-    expect(findMessageLocationMock).not.toHaveBeenCalled()
     expect(insertMessageAfterMock).not.toHaveBeenCalled()
   })
 })

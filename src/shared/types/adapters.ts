@@ -1,13 +1,18 @@
 import type { SentryAdapter } from '../utils/sentry_adapter'
 import type { OAuthCredentials } from '../oauth/types'
 
+/** Minimal cross-host shape used when a signal is only forwarded or inspected. */
+export interface AbortSignalLike {
+  readonly aborted: boolean
+}
+
 export interface ApiRequestOptions {
   url: string
   method?: string
   headers?: Record<string, string>
   body?: RequestInit['body']
   useProxy?: boolean
-  signal?: AbortSignal
+  signal?: AbortSignalLike
   retry?: number
 }
 

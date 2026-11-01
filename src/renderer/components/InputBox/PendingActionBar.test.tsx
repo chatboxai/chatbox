@@ -3,8 +3,19 @@
 import { MantineProvider } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import type { Message, MessageToolCallPart, Session } from '@shared/types'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const rowReads = vi.hoisted(() => ({ message: undefined as Message | undefined }))
+vi.mock('@/app/renderer-application', () => ({
+  rendererApplication: {
+    sessionHooks: {
+      useSessionMessage: (_sessionId: string, messageId: string | null) => ({
+        message: rowReads.message?.id === messageId ? rowReads.message : null,
+      }),
+    },
+  },
+}))
 
 vi.mock('react-i18next', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react-i18next')>()),
@@ -36,7 +47,8 @@ vi.mock('@/stores/toastActions', () => ({ add: vi.fn() }))
 
 import { currentGenerationService } from '@/adapters/CurrentGenerationService'
 import { pulsePendingActionBar } from '@/stores/approvalAttentionStore'
-import PendingActionBar, { PENDING_ACTION_ARMING_MS } from './PendingActionBar'
+import { APPROVAL_RESPONSE_TIMEOUT_MS } from '@chatbox/core/message-approval'
+import RowPendingActionBar, { PENDING_ACTION_ARMING_MS } from './PendingActionBar'
 
 Object.defineProperty(globalThis, 'ResizeObserver', {
   writable: true,
@@ -64,6 +76,17 @@ function makeSession(
 ): Session {
   const message = { id: messageId, role: 'assistant', contentParts: parts } as unknown as Message
   return { id: sessionId, type: 'chat', name: 'test', messages: [message] } as unknown as Session
+}
+
+function PendingActionBar({ session }: { session: Session }) {
+  rowReads.message = session.messages[0]
+  return (
+    <RowPendingActionBar
+      sessionId={session.id}
+      activeThreadId={session.messages[0]?.id ?? 'active'}
+      messageIds={session.messages.map((message) => message.id)}
+    />
+  )
 }
 
 function renderBar(session: Session) {
@@ -159,7 +182,9 @@ describe('PendingActionBar', () => {
     renderBar(makeSession([fileApproval]))
     armBar()
     fireEvent.click(screen.getAllByTestId(TestId.toolCall.deny)[1])
-    expect(currentGenerationService.stopPausedToolCall).toHaveBeenCalledWith('session-1', 'msg-1', 'tc-file')
+    expect(currentGenerationService.stopPausedToolCall).toHaveBeenCalledWith('session-1', 'msg-1', 'tc-file', {
+      denyReason: 'user',
+    })
   })
 
   it('swallows decision clicks until the decision has been visible for a beat', () => {
@@ -309,6 +334,33 @@ describe('PendingActionBar', () => {
     expect(screen.queryByText('- retries: 3,')).toBeNull()
   })
 
+  it('lets the user inspect the diff bound to a file approval', () => {
+    renderBar(
+      makeSession([
+        pausedPart({
+          toolCallId: 'preview-edit',
+          toolName: 'edit_file',
+          pauseReason: {
+            type: 'file_mutation_approval',
+            title: 'Edit config.ts',
+            preview: '-retries: 3\n+retries: 5',
+            stats: { mode: 'edit', edits: 1, addedLines: 1, removedLines: 1 },
+            editPreview: { version: 'current-version', diffTruncated: true },
+          },
+        }),
+      ])
+    )
+    const summary = screen.getByText('View changes')
+    expect(summary.closest('details')?.open).toBe(false)
+    expect(screen.queryByText(/retries: 5/)).toBeNull()
+    summary.closest('details')!.open = true
+    fireEvent(summary.closest('details')!, new Event('toggle'))
+    expect(screen.getByText(/retries: 5/)).toBeTruthy()
+    expect(
+      screen.getByText('Diff preview is incomplete. Review the file before approving, or request smaller edits.')
+    ).toBeTruthy()
+  })
+
   it('derives line counts from a legacy file preview without rendering it', () => {
     const legacyFileApproval = pausedPart({
       toolCallId: 'tc-legacy-file',
@@ -355,5 +407,56 @@ describe('PendingActionBar', () => {
     fireEvent.click(screen.getByTestId(TestId.toolCall.deny))
     // The first click is still pending, so the second action is ignored.
     expect(currentGenerationService.stopPausedToolCall).not.toHaveBeenCalled()
+  })
+
+  describe('approval countdown', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+    })
+
+    function elapse(ms: number) {
+      act(() => {
+        vi.advanceTimersByTime(ms)
+      })
+    }
+
+    it('stays quiet until the last seconds, then denies with the timeout reason', () => {
+      renderBar(makeSession([commandApproval]))
+
+      elapse(APPROVAL_RESPONSE_TIMEOUT_MS - 20_000)
+      expect(screen.queryByTestId(TestId.toolCall.actionBarCountdown)).toBeNull()
+
+      elapse(15_000)
+      expect(screen.getByTestId(TestId.toolCall.actionBarCountdown).textContent).toBe('Auto-deny in {{count}}s')
+      expect(currentGenerationService.stopPausedToolCall).not.toHaveBeenCalled()
+
+      elapse(5_000)
+      expect(currentGenerationService.stopPausedToolCall).toHaveBeenCalledTimes(1)
+      expect(currentGenerationService.stopPausedToolCall).toHaveBeenCalledWith('session-1', 'msg-1', 'tc-cmd', {
+        denyReason: 'timeout',
+      })
+    })
+
+    it('restarts the countdown for the next decision', () => {
+      const { rerender } = renderBar(makeSession([commandApproval, fileApproval]))
+
+      elapse(APPROVAL_RESPONSE_TIMEOUT_MS - 1_000)
+      rerender(<PendingActionBar session={makeSession([fileApproval])} />)
+      elapse(APPROVAL_RESPONSE_TIMEOUT_MS - 1_000)
+
+      expect(currentGenerationService.stopPausedToolCall).not.toHaveBeenCalled()
+      elapse(1_000)
+      expect(currentGenerationService.stopPausedToolCall).toHaveBeenCalledWith('session-1', 'msg-1', 'tc-file', {
+        denyReason: 'timeout',
+      })
+    })
+
+    it('never times out a tool-call-limit pause', () => {
+      renderBar(makeSession([limitPause]))
+
+      elapse(APPROVAL_RESPONSE_TIMEOUT_MS * 2)
+      expect(screen.queryByTestId(TestId.toolCall.actionBarCountdown)).toBeNull()
+      expect(currentGenerationService.stopPausedToolCall).not.toHaveBeenCalled()
+    })
   })
 })

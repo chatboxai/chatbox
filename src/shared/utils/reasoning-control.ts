@@ -141,14 +141,12 @@ const QWEN_THINKING_BUDGET_BY_LEVEL: Record<ReasoningEffortLevel, number> = {
   high: 8192,
 }
 
-const GPT_EFFORT_MODELS = [/(?:^|\/)gpt-5(?:[.-]|$)/i, /(?:^|\/)gpt-oss(?:[.-]|$)/i, /(?:^|\/)o[1-9](?:[.-]|$)/i]
-// o-series models only accept reasoning_effort low/medium/high — there is no
-// minimal/none, so reasoning cannot be turned off for them.
+const GPT_VERSION_PATTERN = /(?:^|\/)gpt-(\d+)(?=[.-]|$)/i
+const GPT_EFFORT_MODELS = [/(?:^|\/)gpt-oss(?:[.-]|$)/i, /(?:^|\/)o[1-9](?:[.-]|$)/i]
+// o-series models do not accept minimal/none to disable thinking.
 const OPENAI_NO_DISABLE_MODELS = [/(?:^|\/)o[1-9](?:[.-]|$)/i]
-// Chat-tuned gpt-5 variants (gpt-5-chat-latest, gpt-5.1-chat, gpt-5.2-chat-latest, ...)
-// are non-reasoning models; sending reasoning_effort to them is rejected upstream
-// ("Unrecognized request argument supplied: reasoning_effort").
-const GPT_NON_REASONING_CHAT_MODELS = [/(?:^|\/)gpt-5[\w.-]*[.-]chat(?:[.-]|$)/i]
+// Chat-tuned GPT variants are excluded from the generation-based effort fallback.
+const GPT_NON_REASONING_CHAT_MODELS = [/(?:^|\/)gpt-\d+[\w.-]*[.-]chat(?:[.-]|$)/i]
 // o1-preview and o1-mini predate the reasoning_effort parameter — the API rejects it
 // for them entirely, so they must not get effort controls at all.
 const OPENAI_NO_EFFORT_PARAM_MODELS = [/(?:^|\/)o1-(?:preview|mini)(?:[.-]|$)/i]
@@ -191,15 +189,25 @@ function supportsExplicitDisable(
   if (kind === 'anthropic-adaptive-effort' || kind === 'anthropic-effort') {
     return false
   }
-  if (isOpenAIStyleEffectiveProvider(effectiveProvider) && matchesAny(modelId, OPENAI_NO_DISABLE_MODELS)) {
+  if (isOpenAIStyleEffectiveProvider(effectiveProvider) && !supportsOpenAIThinkingDisable(modelId)) {
     return false
   }
   return true
 }
 
+function getGptMajorVersion(modelId: string): number {
+  return Number(GPT_VERSION_PATTERN.exec(modelId)?.[1] ?? 0)
+}
+
+function supportsOpenAIThinkingDisable(modelId: string): boolean {
+  // New GPT generations inherit effort controls, but an accepted off value must be
+  // established separately before offering minimal/none in the UI or request options.
+  return getGptMajorVersion(modelId) <= 5 && !matchesAny(modelId, OPENAI_NO_DISABLE_MODELS)
+}
+
 function isGptEffortModel(modelId: string): boolean {
   return (
-    matchesAny(modelId, GPT_EFFORT_MODELS) &&
+    (getGptMajorVersion(modelId) >= 5 || matchesAny(modelId, GPT_EFFORT_MODELS)) &&
     !matchesAny(modelId, GPT_NON_REASONING_CHAT_MODELS) &&
     !matchesAny(modelId, OPENAI_NO_EFFORT_PARAM_MODELS)
   )
@@ -256,7 +264,7 @@ export function isOpenAIReasoningEffortSupported(modelId: string, effort: string
   // Responses path branches off before this check, so it is never affected.
   if (effort === 'max') return false
   if (matchesAny(modelId, OPENAI_NO_EFFORT_PARAM_MODELS)) return false
-  if (matchesAny(modelId, OPENAI_NO_DISABLE_MODELS) && (effort === 'minimal' || effort === 'none')) return false
+  if (!supportsOpenAIThinkingDisable(modelId) && (effort === 'minimal' || effort === 'none')) return false
   return true
 }
 
@@ -409,6 +417,21 @@ export interface ReasoningReplayPolicy {
   preserveReasoning: false | 'all-turns'
   /** Whether only blocks carrying whitelisted replay metadata go on the wire. */
   signedReasoningOnly: boolean
+  /**
+   * Provider namespaces whose replay metadata may go on the wire for this
+   * route. Replay is per-route, not global: a session can switch providers
+   * between turns, so a stored block can carry another provider's metadata.
+   * Sending that foreign metadata would turn an otherwise-dropped unsigned
+   * block into a wire-visible one (Anthropic rejects thinking blocks without a
+   * valid signature; OpenAI Responses warns on reasoning parts it cannot
+   * reconstruct). Applies to text parts as well as reasoning ones, because
+   * Gemini's signature rides on the last text part of a response with no
+   * function call. Empty for the plain-text DeepSeek channel, which replays
+   * text only.
+   */
+  replayNamespaces: readonly string[]
+  /** Replay source of the target model; Responses ciphertext replays only to its own source. */
+  reasoningReplaySource?: string
 }
 
 /**
@@ -424,20 +447,49 @@ export interface ReasoningReplayPolicy {
  * expects the `bedrock` namespace and empty text blocks — it stays excluded
  * until that protocol is implemented.
  *
+ * OpenAI Responses is the other signed-replay route: Chatbox forces
+ * `store: false` and requests `reasoning.encrypted_content`, so replaying the
+ * encrypted reasoning item is the only way to keep the model's reasoning across
+ * turns (the API has no server-side state to fall back on). Only blocks that
+ * actually carry an item id / encrypted payload go out — a plain-text thought
+ * saved on another route cannot be reconstructed into an OpenAI reasoning item.
+ *
+ * Gemini is the third signed-replay route. Its `thoughtSignature` is mandatory on
+ * `functionCall` parts for Gemini 3 (the request 400s without it) and is also
+ * attached to the last `text` / `thought` part of a response with no function
+ * call, where Google documents that omitting it can degrade performance. Only
+ * blocks that actually carry a signature go out — unsigned thoughts from other
+ * providers are dropped rather than replayed as Gemini thought parts.
+ *
  * DeepSeek thinking mode keeps its existing all-turns plain-text behavior (see
  * `shouldPreserveDeepSeekReasoning`).
  */
 export function resolveReasoningReplayPolicy(
   provider: ModelProvider | undefined,
+  model: ProviderModelInfo | null | undefined,
+  reasoningReplaySource?: string
+): ReasoningReplayPolicy {
+  const policy = resolveReasoningReplayRoute(provider, model)
+  return reasoningReplaySource ? { ...policy, reasoningReplaySource } : policy
+}
+
+function resolveReasoningReplayRoute(
+  provider: ModelProvider | undefined,
   model: ProviderModelInfo | null | undefined
 ): ReasoningReplayPolicy {
   if (model?.apiStyle === 'anthropic' && !usesBedrockConverseProtocol(provider)) {
-    return { preserveReasoning: 'all-turns', signedReasoningOnly: true }
+    return { preserveReasoning: 'all-turns', signedReasoningOnly: true, replayNamespaces: ['anthropic'] }
+  }
+  if (model?.apiStyle === 'openai-responses') {
+    return { preserveReasoning: 'all-turns', signedReasoningOnly: true, replayNamespaces: ['openai'] }
+  }
+  if (model?.apiStyle === 'google') {
+    return { preserveReasoning: 'all-turns', signedReasoningOnly: true, replayNamespaces: ['google'] }
   }
   if (shouldPreserveDeepSeekReasoning(provider, model)) {
-    return { preserveReasoning: 'all-turns', signedReasoningOnly: false }
+    return { preserveReasoning: 'all-turns', signedReasoningOnly: false, replayNamespaces: [] }
   }
-  return { preserveReasoning: false, signedReasoningOnly: false }
+  return { preserveReasoning: false, signedReasoningOnly: false, replayNamespaces: [] }
 }
 
 /**
@@ -480,10 +532,17 @@ export function canSendClaudeThinkingDisabled(modelId: string | undefined): bool
  */
 export function shouldDisableClaudeThinkingForUnsignedResume(
   lastPromptMessage: { role: string; contentParts?: MessageContentParts } | undefined,
-  signedReasoningOnly: boolean,
+  /**
+   * Whether this request replays Anthropic signed thinking. Callers must pass
+   * the route's Anthropic-ness, not merely "signed replay is on": OpenAI
+   * Responses also replays signed metadata but has no turn-start rule, and
+   * degrading its thinking would silently drop the encrypted reasoning items
+   * this request exists to send.
+   */
+  anthropicSignedReplay: boolean,
   modelId: string
 ): boolean {
-  if (!signedReasoningOnly || !canSendClaudeThinkingDisabled(modelId)) return false
+  if (!anthropicSignedReplay || !canSendClaudeThinkingDisabled(modelId)) return false
   if (lastPromptMessage?.role !== 'assistant') return false
   const parts = lastPromptMessage.contentParts ?? []
   // Only completed tool calls reach the wire; without one the request does not
@@ -501,12 +560,16 @@ function isWireVisibleToolCall(part: MessageContentParts[number]): boolean {
  * parts that never reach the wire (unsigned reasoning, empty or protocol-only
  * text, unfinished tool calls, info parts) and reports whether the first
  * surviving block is signed thinking.
+ *
+ * Filtered to the `anthropic` namespace for the same reason the converter is:
+ * this only ever runs on Anthropic routes, where a leftover OpenAI reasoning
+ * item is dropped rather than emitted, so it must not count as signed thinking.
  */
 function turnStartsWithSignedThinking(parts: MessageContentParts): boolean {
   for (const part of parts) {
     switch (part.type) {
       case 'reasoning':
-        if (pickPersistableProviderMetadata(part.providerMetadata)) return true
+        if (pickPersistableProviderMetadata(part.providerMetadata, ['anthropic'])) return true
         break // unsigned reasoning is omitted from the wire; keep looking
       case 'text':
         if (part.text && !part.protocolOnly) return false

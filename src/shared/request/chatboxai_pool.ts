@@ -1,8 +1,9 @@
 import uniq from 'lodash/uniq'
 import { ofetch } from 'ofetch'
 import { cache } from '../utils/cache'
+import { getChatboxAPIOrigin, setDynamicChatboxAPIOrigin } from './chatbox-api-origin'
 
-let API_ORIGIN = 'https://api.chatboxai.app'
+export { getChatboxAPIOrigin } from './chatbox-api-origin'
 
 let POOL = [
   'https://api.chatboxai.app',
@@ -14,19 +15,6 @@ let POOL = [
 export function isChatboxAPI(input: RequestInfo | URL) {
   const url = typeof input === 'string' ? input : ((input as Request).url ?? input.toString())
   return POOL.some((o) => url.startsWith(o)) || url.startsWith(getChatboxAPIOrigin())
-}
-
-export function getChatboxAPIOrigin() {
-  if (process.env.USE_LOCAL_API) {
-    return 'http://localhost:8002'
-  }
-  if (process.env.USE_BETA_API) {
-    return 'https://api-beta.chatboxai.app'
-  }
-  if (process.env.USE_NEWDB_API) {
-    return 'https://beta-new-db.chatboxai.app'
-  }
-  return API_ORIGIN
 }
 
 /**
@@ -55,11 +43,11 @@ export async function testApiOrigins() {
             pool = uniq([...pool, ...res.data.api_origins])
           }
           // 如果当前 API 可用，则切换所有流量到该域名
-          API_ORIGIN = origin
+          setDynamicChatboxAPIOrigin(origin)
           pool = uniq([origin, ...pool]) // 将当前 API 域名添加到列表顶部
           POOL = pool
           return pool
-        } catch (e) {
+        } catch {
           i++
         }
       }

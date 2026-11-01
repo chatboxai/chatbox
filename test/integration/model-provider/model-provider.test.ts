@@ -39,7 +39,7 @@ const PROVIDER_TEST_MODELS: Record<ModelProvider, ProviderModelInfo[]> = {
     { modelId: 'o4-mini', capabilities: ['tool_use', 'reasoning'] },
   ],
   [ModelProviderEnum.Azure]: [],
-  [ModelProviderEnum.ChatGLM6B]: [],
+  [ModelProviderEnum.GLM]: [],
   [ModelProviderEnum.ChatboxAI]: [],
   [ModelProviderEnum.Claude]: [
     { modelId: 'claude-haiku-4-5', capabilities: ['tool_use', 'reasoning'] },

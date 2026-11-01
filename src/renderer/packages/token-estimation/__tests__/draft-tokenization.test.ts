@@ -10,8 +10,8 @@ import {
 } from '../draft-tokenization'
 import { estimateDeepSeekTokens, estimateTokensForTokenizerType } from '../tokenizer'
 
-vi.mock('../tokenizer', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../tokenizer')>()
+vi.mock('@shared/token-estimation/tokenizer', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@shared/token-estimation/tokenizer')>()
   return { ...actual, estimateTokensForTokenizerType: vi.fn(actual.estimateTokensForTokenizerType) }
 })
 

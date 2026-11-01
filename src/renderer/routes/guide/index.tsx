@@ -23,8 +23,6 @@ import {
   IconCheck,
   IconChevronRight,
   IconLanguage,
-  IconLayoutSidebarLeftExpand,
-  IconMenu2,
   IconPlayerSkipForward,
   IconPlayerStopFilled,
   IconRefresh,
@@ -33,17 +31,15 @@ import {
 import { createFileRoute, useBlocker } from '@tanstack/react-router'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import Divider from '@/components/common/Divider'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import Disclaimer from '@/components/Disclaimer'
+import { SEND_BUTTON_BLOCKED_CLASS } from '@/components/InputBox/inputSurface'
 import ProviderImageIcon from '@/components/icons/ProviderImageIcon'
-import WindowControls from '@/components/layout/WindowControls'
+import { PageHeader } from '@/components/layout/Page'
 import { getShowGuideDevButtonsFlag } from '@/dev/devToolsFlags'
-import useNeedRoomForWinControls from '@/hooks/useNeedRoomForWinControls'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { languageNameMap, languages } from '@/i18n/locales'
 import { useSettingsStore } from '@/stores/settingsStore'
-import { useUIStore } from '@/stores/uiStore'
 import { GuideMessage } from './-components/GuideMessage'
 import { useGuideSession } from './-hooks/useGuideSession'
 
@@ -79,11 +75,8 @@ function GuidePage() {
     isGuideInProgress,
   } = useGuideSession()
 
-  const { needRoomForMacWindowControls } = useNeedRoomForWinControls()
   const isSmallScreen = useIsSmallScreen()
   const showDebug = getShowGuideDevButtonsFlag()
-  const showSidebar = useUIStore((s) => s.showSidebar)
-  const setShowSidebar = useUIStore((s) => s.setShowSidebar)
 
   // Language switcher state
   const { i18n } = useTranslation()
@@ -239,69 +232,47 @@ function GuidePage() {
 
   return (
     <Stack h="100%" gap={0} className="bg-chatbox-background-primary">
-      {/* Header */}
-      <Flex h={48} align="center" px="md" className="flex-none title-bar">
-        {(!showSidebar || isSmallScreen) && (
-          <Flex align="center" className={needRoomForMacWindowControls ? 'pl-20' : ''}>
-            <ActionIcon
-              className="controls"
-              variant="subtle"
-              size={isSmallScreen ? 24 : 20}
-              color={isSmallScreen ? 'chatbox-secondary' : 'chatbox-tertiary'}
-              mr="xs"
-              onClick={() => setShowSidebar(!showSidebar)}
-            >
-              {isSmallScreen ? <IconMenu2 /> : <IconLayoutSidebarLeftExpand />}
-            </ActionIcon>
+      <PageHeader
+        title={t('Getting Started')}
+        right={
+          <Flex align="center" gap="xs" className="controls">
+            {languageSwitcher}
+            {showDebug && (
+              <Text size="xs" c="chatbox-tertiary">
+                debug info: {onboardingStep}
+              </Text>
+            )}
+            {showDebug && (
+              <Menu position="bottom-end" shadow="md">
+                <Menu.Target>
+                  <ActionIcon variant="subtle" size="sm" aria-label="Guide debug actions">
+                    <ScalableIcon icon={IconBug} size={16} />
+                  </ActionIcon>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <Menu.Label>Debug Actions</Menu.Label>
+                  <Menu.Item
+                    leftSection={<ScalableIcon icon={IconUserCheck} size={14} />}
+                    onClick={debugSkipToLoginSuccess}
+                  >
+                    Skip to Login Success
+                  </Menu.Item>
+                  <Menu.Item
+                    leftSection={<ScalableIcon icon={IconPlayerSkipForward} size={14} />}
+                    onClick={debugTriggerRoundLimit}
+                  >
+                    Trigger Round Limit
+                  </Menu.Item>
+                  <Menu.Divider />
+                  <Menu.Item leftSection={<ScalableIcon icon={IconRefresh} size={14} />} onClick={debugResetGuide}>
+                    Reset Guide
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
+            )}
           </Flex>
-        )}
-
-        <Flex align="center" gap="xxs" flex={1} {...(isSmallScreen ? { justify: 'center', pl: 28, pr: 8 } : {})}>
-          <Title order={4} fz={!isSmallScreen ? 20 : undefined} lineClamp={1}>
-            {t('Getting Started')}
-          </Title>
-        </Flex>
-
-        <Flex align="center" gap="xs" className="controls">
-          {languageSwitcher}
-          {showDebug && (
-            <Text size="xs" c="chatbox-tertiary">
-              debug info: {onboardingStep}
-            </Text>
-          )}
-          {showDebug && (
-            <Menu position="bottom-end" shadow="md">
-              <Menu.Target>
-                <ActionIcon variant="subtle" size="sm" aria-label="Guide debug actions">
-                  <ScalableIcon icon={IconBug} size={16} />
-                </ActionIcon>
-              </Menu.Target>
-              <Menu.Dropdown>
-                <Menu.Label>Debug Actions</Menu.Label>
-                <Menu.Item
-                  leftSection={<ScalableIcon icon={IconUserCheck} size={14} />}
-                  onClick={debugSkipToLoginSuccess}
-                >
-                  Skip to Login Success
-                </Menu.Item>
-                <Menu.Item
-                  leftSection={<ScalableIcon icon={IconPlayerSkipForward} size={14} />}
-                  onClick={debugTriggerRoundLimit}
-                >
-                  Trigger Round Limit
-                </Menu.Item>
-                <Menu.Divider />
-                <Menu.Item leftSection={<ScalableIcon icon={IconRefresh} size={14} />} onClick={debugResetGuide}>
-                  Reset Guide
-                </Menu.Item>
-              </Menu.Dropdown>
-            </Menu>
-          )}
-        </Flex>
-
-        <WindowControls className="-mr-3 ml-2" />
-      </Flex>
-      <Divider />
+        }
+      />
 
       {/* Messages */}
       <ScrollArea viewportRef={viewportRef} className="flex-1" type="scroll">
@@ -367,14 +338,9 @@ function GuidePage() {
                   size={32}
                   variant="filled"
                   color={isLoading ? 'dark' : 'chatbox-brand'}
-                  radius="lg"
+                  radius="xl"
                   onClick={isLoading ? stopGeneration : handleSend}
-                  className={`shrink-0 mb-1 ${(!inputValue.trim() || !canSendMessage) && !isLoading ? 'disabled:!opacity-100 !text-white' : ''}`}
-                  style={
-                    (!inputValue.trim() || !canSendMessage) && !isLoading
-                      ? { backgroundColor: 'rgba(222, 226, 230, 1)' }
-                      : undefined
-                  }
+                  className={`shrink-0 mb-1 ${(!inputValue.trim() || !canSendMessage) && !isLoading ? SEND_BUTTON_BLOCKED_CLASS : ''}`}
                 >
                   {isLoading ? (
                     <ScalableIcon icon={IconPlayerStopFilled} size={16} />

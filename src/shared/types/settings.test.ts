@@ -132,6 +132,27 @@ describe('SettingsSchema MCP protocol mode', () => {
   })
 })
 
+describe('SettingsSchema new message scroll behavior', () => {
+  test('defaults new message auto-scroll to top to disabled for existing settings', () => {
+    const { autoScrollNewMessagesToTop: _unset, ...legacySettings } = defaultSettings()
+
+    expect(SettingsSchema.parse(legacySettings).autoScrollNewMessagesToTop).toBe(false)
+  })
+})
+
+describe('SettingsSchema Web Search preference', () => {
+  test.each([true, false])('preserves explicit %s in global and session settings', (webBrowsing) => {
+    expect(SettingsSchema.parse({ ...defaultSettings(), webBrowsing }).webBrowsing).toBe(webBrowsing)
+    expect(SessionSettingsSchema.parse({ webBrowsing }).webBrowsing).toBe(webBrowsing)
+  })
+
+  test('keeps missing preferences unset and drops malformed values', () => {
+    expect(SettingsSchema.parse(defaultSettings()).webBrowsing).toBeUndefined()
+    expect(SessionSettingsSchema.parse({}).webBrowsing).toBeUndefined()
+    expect(SessionSettingsSchema.parse({ webBrowsing: 'enabled' }).webBrowsing).toBeUndefined()
+  })
+})
+
 describe('SettingsSchema background image opacity', () => {
   test('uses the original opacity for existing settings', () => {
     const legacySettings: Record<string, unknown> = { ...defaultSettings() }
@@ -254,6 +275,17 @@ describe('SessionSettingsSchema per-model provider options', () => {
   })
 })
 
+describe('SessionSettingsSchema Claude prompt cache TTL', () => {
+  test.each(['5m', '1h'] as const)('accepts %s', (claudePromptCacheTTL) => {
+    expect(SessionSettingsSchema.parse({ claudePromptCacheTTL }).claudePromptCacheTTL).toBe(claudePromptCacheTTL)
+  })
+
+  test('uses the provider default for missing or invalid values', () => {
+    expect(SessionSettingsSchema.parse({}).claudePromptCacheTTL).toBeUndefined()
+    expect(SessionSettingsSchema.parse({ claudePromptCacheTTL: 'auto' }).claudePromptCacheTTL).toBeUndefined()
+  })
+})
+
 describe('SessionSettingsSchema command approval mode', () => {
   test.each(['always_ask', 'smart', 'full_access'] as const)('accepts %s', (commandApprovalMode) => {
     expect(SessionSettingsSchema.parse({ commandApprovalMode }).commandApprovalMode).toBe(commandApprovalMode)
@@ -264,5 +296,37 @@ describe('SessionSettingsSchema command approval mode', () => {
 
     expect(parsed.commandApprovalMode).toBeUndefined()
     expect(parsed.agentFullAccess).toBe(true)
+  })
+})
+
+describe('SettingsSchema mcp servers', () => {
+  const validServer = {
+    id: 'srv-1',
+    name: 'Valid',
+    enabled: true,
+    transport: { type: 'http', url: 'https://example.com/mcp' },
+  }
+
+  test('drops malformed server entries and keeps valid ones', () => {
+    const parsed = SettingsSchema.parse({
+      ...defaultSettings(),
+      mcp: {
+        servers: [
+          { name: 'Missing id', enabled: true, transport: { type: 'stdio', command: 'x', args: [] } },
+          validServer,
+        ],
+        enabledBuiltinServers: [],
+      },
+    })
+    expect(parsed.mcp.servers).toEqual([validServer])
+  })
+
+  test('falls back to an empty list when servers is not an array', () => {
+    const parsed = SettingsSchema.parse({
+      ...defaultSettings(),
+      mcp: { servers: 'broken', enabledBuiltinServers: 'broken' },
+    })
+    expect(parsed.mcp.servers).toEqual([])
+    expect(parsed.mcp.enabledBuiltinServers).toEqual([])
   })
 })

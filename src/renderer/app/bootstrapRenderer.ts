@@ -1,6 +1,10 @@
+/// <reference types="vite/client" />
+
 import type { Settings } from '@shared/types'
+import { getDefaultStore } from 'jotai'
 import i18n from '@/i18n'
 import { getLogger } from '@/lib/utils'
+import { sessionStartupRecovery } from '@/packages/session-startup-recovery'
 import platform from '@/platform'
 import { router } from '@/router'
 import { initSessionPresentationBindings } from '@/session-bootstrap'
@@ -9,22 +13,38 @@ import { initJkTracking } from '@/setup/jk_analytics_init'
 import { initPlausibleTracking } from '@/setup/plausible_init'
 import { initSentry } from '@/setup/sentry_init'
 import { initSessionAttachmentRagMaintenance } from '@/setup/session_attachment_rag_maintenance'
+import { type SessionMigrationTrickleHandle, startSessionMigrationTrickle } from '@/setup/session-migration-trickle'
+import { currentSessionIdAtom } from '@/stores/atoms/sessionAtoms'
 import { initLastUsedModelStore } from '@/stores/lastUsedModelStore'
 import * as migration from '@/stores/migration'
 import { getMigrationErrorContext } from '@/stores/migration-error'
 import { initOnboardingStore } from '@/stores/onboardingStore'
 import { initLoginLicenseStateReconciliation } from '@/stores/premiumActions'
 import { initRecentDirectoriesStore } from '@/stores/recentDirectoriesStore'
+import { isSessionGenerating } from '@/stores/sessionActivityStore'
 import { initSettingsStore } from '@/stores/settingsStore'
 import { initUpdateListeners } from '@/stores/updateStore'
 import { reportError } from '@/utils/sentry'
 import type { RendererApplication } from './createRendererApplication'
+import { sessionRepository } from './renderer-application'
 
 const log = getLogger('index')
+
+let sessionMigrationTrickle: SessionMigrationTrickleHandle | null = null
+let stopStartupStorageCleanup: (() => void) | null = null
+
+/** Foreground row reads, commands and generation take priority over background migration. */
+function isSessionWorkInFlight(): boolean {
+  const currentSessionId = getDefaultStore().get(currentSessionIdAtom)
+  return (
+    sessionRepository.hasForegroundSessionWork() || (currentSessionId !== null && isSessionGenerating(currentSessionId))
+  )
+}
 
 /** Runs the pre-render migration and telemetry phase in its historical order. */
 export async function initializeRenderer(): Promise<void> {
   log.info('initializeApp')
+  await (await import('./renderer-backup')).rendererBackupService.cleanupBeforeBootstrap()
 
   let migrationError: unknown
   try {
@@ -54,8 +74,7 @@ export async function initializeRenderer(): Promise<void> {
     })
   }
 
-  // Preserve the non-blocking timing of cleanup and MCP startup.
-  void import('@/setup/storage_clear')
+  // Preserve the non-blocking timing of MCP startup.
   void import('@/setup/mcp_bootstrap')
 }
 
@@ -72,13 +91,48 @@ export async function bootstrapRenderer(application: RendererApplication): Promi
   void i18n.changeLanguage(settings.language)
   initLoginLicenseStateReconciliation()
 
+  const startMigration = () =>
+    startSessionMigrationTrickle({
+      repository: sessionRepository,
+      isBusy: isSessionWorkInFlight,
+      shouldSkipSession: async (id) => {
+        if (sessionStartupRecovery.isRecoveryRequired(id)) return true
+        const record = await sessionRepository.meta.getById(id)
+        return record?.recoveryArchived === true || sessionStartupRecovery.isRecoveryRequired(id)
+      },
+      log: getLogger('session-migration'),
+    })
+  const scheduleStorageCleanup = (trickle: SessionMigrationTrickleHandle) => {
+    if (platform.isDesktopLike) return
+    stopStartupStorageCleanup?.()
+    stopStartupStorageCleanup = null
+    void import('@/setup/storage_clear').then(({ startStartupStorageCleanup }) => {
+      if (sessionMigrationTrickle !== trickle) return
+      stopStartupStorageCleanup = startStartupStorageCleanup({
+        sessionMigrationReady: trickle.readyForFullScan,
+      }).stop
+    })
+  }
+  sessionMigrationTrickle ??= startMigration()
+
+  scheduleStorageCleanup(sessionMigrationTrickle)
+
   if (platform.type === 'desktop') {
     initUpdateListeners()
-    initSessionAttachmentRagMaintenance()
+    initSessionAttachmentRagMaintenance({ sessionMigrationDone: sessionMigrationTrickle.done })
   }
   initSessionPresentationBindings()
 
   return settings
+}
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    sessionMigrationTrickle?.stop()
+    sessionMigrationTrickle = null
+    stopStartupStorageCleanup?.()
+    stopStartupStorageCleanup = null
+  })
 }
 
 export function reportRendererInitializationError(error: unknown): void {

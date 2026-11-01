@@ -1,6 +1,7 @@
 import type { EmbeddingModel } from 'ai'
 import { CohereClient } from 'cohere-ai'
 import { getProviderSettings } from '../../shared/models'
+import { DashScopeRerankClient, isDashScopeHost } from '../knowledge-base/dashscope-rerank-client'
 import { getChatboxAPIOrigin } from '../../shared/request/chatboxai_pool'
 import { parseKnowledgeBaseModelString } from '../../shared/utils/knowledge-base-model-parser'
 import { sentry } from '../adapters/sentry'
@@ -103,10 +104,12 @@ export async function getSessionAttachmentRerankProvider(modelString?: string | 
           throw new Error(`Missing token for rerank provider: ${providerId}`)
         }
 
-        const client = new CohereClient({
-          environment: apiHost,
-          token,
-        })
+        const client = isDashScopeHost(apiHost)
+          ? new DashScopeRerankClient({ apiHost, token })
+          : new CohereClient({
+              environment: apiHost,
+              token,
+            })
         return { client, modelId }
       } catch (error) {
         log.error(`[MODEL] Failed to resolve session attachment rerank provider: ${modelString}`, error)

@@ -1,5 +1,11 @@
+import {
+  ATTACHMENT_INDEX_STATUS_GUIDANCE,
+  FOCUSED_ATTACHMENT_QUERY_GUIDANCE,
+  WHOLE_DOCUMENT_READ_GUIDANCE,
+} from '@shared/context/attachment-guidance'
 import type { SessionAttachmentQueryPlan } from '@shared/types'
-import { jsonSchema, type ToolSet } from 'ai'
+import { validatedToolSchema } from '@shared/validated-tool-schema'
+import type { ToolSet } from 'ai'
 import * as remote from '@/packages/remote'
 import platform from '@/platform'
 import * as settingActions from '@/stores/settingActions'
@@ -106,7 +112,7 @@ export async function getToolSet(attachmentIds: number[]) {
   const tools: ToolSet = {
     list_session_attachments: {
       description: 'List large uploaded attachments in the current session and show their readiness status.',
-      inputSchema: jsonSchema({
+      inputSchema: validatedToolSchema({
         type: 'object',
         properties: {},
         additionalProperties: false,
@@ -116,7 +122,7 @@ export async function getToolSet(attachmentIds: number[]) {
     },
     query_session_attachment: {
       description: 'Search across ready large uploaded attachments with a semantic query.',
-      inputSchema: jsonSchema({
+      inputSchema: validatedToolSchema({
         type: 'object',
         properties: {
           query: {
@@ -145,7 +151,7 @@ export async function getToolSet(attachmentIds: number[]) {
     },
     read_session_attachment_parents: {
       description: 'Read parent blocks for search hits from large uploaded attachments.',
-      inputSchema: jsonSchema({
+      inputSchema: validatedToolSchema({
         type: 'object',
         properties: {
           parentIds: {
@@ -172,7 +178,7 @@ export async function getToolSet(attachmentIds: number[]) {
 Large uploaded files are available through retrieval tools instead of full inline context.
 The conversation may contain <ATTACHMENT_FILE> tags with <RETRIEVAL_MODE>session_attachment_rag</RETRIEVAL_MODE>.
 Treat those tags as real uploaded files. Their full content is not in the prompt.
-When code execution is available, the same <ATTACHMENT_FILE> tags may also include <SANDBOX_PATH> and <PARSED_SANDBOX_PATH>; those fields describe sandbox file paths and do not replace retrieval for document-specific questions.
+When file tools are available, <SANDBOX_PATH> and <PARSED_SANDBOX_PATH> provide direct access for sequential document processing.
 
 ### Ready files
 ${readyList}
@@ -185,14 +191,13 @@ ${indexingList ? `### Still indexing\n${indexingList}\n` : ''}${failedList ? `##
 - **read_session_attachment_parents** - Read the larger parent blocks behind search hits.
 
 ### Usage guidance
-- Pay attention to <ATTACHMENT_FILE> tags. A tag with retrieval mode means the user uploaded a file whose content must be retrieved through these tools.
-- First consider whether the user's current question might be related to any ready uploaded file listed above.
-- If the question might be related to a ready uploaded file, use query_session_attachment before answering, even if you think you could answer from general knowledge alone.
-- Prefer querying first with **query_session_attachment**, then read the most relevant parent blocks with **read_session_attachment_parents**.
-- Rewrite the user's request into a focused semantic query. In multi-turn conversations, include the relevant previous topic or entity names when they are needed to make the query specific.
+- Choose the reading path from the user's task and the available <ATTACHMENT_FILE> paths.
+- ${FOCUSED_ATTACHMENT_QUERY_GUIDANCE}
+- When sandbox file tools and the corresponding text path are available: ${WHOLE_DOCUMENT_READ_GUIDANCE}
+- If direct full-text access is unavailable, retrieval can support focused answers but cannot establish exhaustive coverage. Explain this limitation for full-document requests.
+- When using query_session_attachment, rewrite the user's request into a focused semantic query. In multi-turn conversations, include the relevant previous topic or entity names when they are needed to make the query specific.
 - Do not use retrieval for questions that are clearly unrelated to the uploaded files, such as general chat, writing requests with no document dependency, or simple calculations.
-- If a file is still indexing, tell the user it is not ready yet instead of guessing.
-- If a file has failed, tell the user indexing failed and ask them to retry instead of guessing.
+- ${ATTACHMENT_INDEX_STATUS_GUIDANCE}
 `,
     tools,
   }

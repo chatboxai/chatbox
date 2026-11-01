@@ -5,7 +5,7 @@ export function handleDeepLink(mainWindow: BrowserWindow, link: string) {
   const normalizedLink = link.replace(/^chatbox-dev:\/\//, 'chatbox://')
   const url = new URL(normalizedLink)
 
-  log.info('🔗 Parsed URL:', { hostname: url.hostname, pathname: url.pathname, params: url.searchParams.toString() })
+  log.info('🔗 Parsed URL:', { hostname: url.hostname, pathname: url.pathname })
 
   // handle `chatbox://mcp/install?server=`
   if (url.hostname === 'mcp' && url.pathname === '/install') {

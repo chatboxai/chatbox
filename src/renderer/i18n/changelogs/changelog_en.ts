@@ -1,4 +1,45 @@
 const changelog = `
+## v1.24.0 - 2026.10.29
+1. Added Projects: group chats into projects, with Work Mode chats grouped by working directory
+2. Added a built-in browser to Work Mode on desktop: the AI can use web pages, and you can take over at any time
+3. Consecutive tool calls in Work Mode are shown as one line
+4. Settings are regrouped and searchable; helper models are merged into one Fast model
+5. Image generation supports reference images; added OpenRouter and custom OpenAI-compatible image models
+6. Choose which conversations to back up
+7. Requests retry automatically on network or provider errors
+8. Work Mode approval requests are denied after 45 seconds without a response
+9. Added Auto wrap for code blocks; knowledge bases support DashScope rerank
+10. Sending a message keeps your reading position; deleting a message keeps other branches
+11. Improved context compaction for long Work Mode tasks
+12. Fixed AGENTS.md not loading on Windows and other issues
+
+## v1.23.5 - 2026.09.24
+1. Fixed external one-click MCP setup links failing to open the prefilled server dialog when the app was not running
+
+## v1.23.4 - 2026.09.23
+1. You can now edit the last output of a Work Mode reply
+2. Fixed Image Creator history going blank or failing to finish loading when a record is incomplete
+3. Fixed undoing a new topic sometimes deleting the previous conversation
+4. Fixed leftover digits in the message input after pasting during nine-key typing
+
+## v1.23.3 - 2026.09.17
+1. When a reply is cut off, you'll see why and how to continue
+2. Fixed thinking controls for DeepSeek V4.1 Flash
+3. Added Turkish as an interface language
+4. Image generation model pickers now show model icons
+5. Improved OpenCode Go and Zen connectivity on mobile and the web
+
+## v1.23.2 - 2026.09.10
+1. Added OAuth authorization for remote MCP servers, with connection controls and a refreshable tool list in server settings
+2. Added custom conversation compaction prompts and one-time instructions, with improved compaction scope and trigger accuracy
+3. Added cached token usage to message statistics and configurable prompt cache duration for Claude
+4. Added support for more plain-text uploads, including Typst, Patch, and Diff files
+5. Added one-click undo for archived chats and improved recovery when a conversation fails to load at startup
+6. Fixed replies sometimes remaining in the generating state after completion
+7. Improved generated image loading, with an option to reload images that fail to display
+8. Added reasoning effort controls for GPT-6 and later models, and improved Kimi, OpenCode, and model catalog compatibility
+9. Fixed backup exports on HarmonyOS and improved window focus, small-screen layouts, and translations
+
 ## v1.23.1 - 2026.09.02
 1. In long conversations, you'll be asked to confirm before deleting older messages or switching models if that would reset the cached context
 2. Copilot prompts can now be up to 40,000 characters

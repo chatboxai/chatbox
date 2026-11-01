@@ -5,6 +5,7 @@ import OpenAI from 'src/shared/providers/definitions/models/openai'
 import OpenAIResponses from 'src/shared/providers/definitions/models/openai-responses'
 import Qwen from 'src/shared/providers/definitions/models/qwen'
 import TencentHunyuan from 'src/shared/providers/definitions/models/tencent-hunyuan'
+import VolcEngineCodingPlan from 'src/shared/providers/definitions/models/volcengine-coding-plan'
 import XiaomiMiMo from 'src/shared/providers/definitions/models/xiaomi-mimo'
 import ZhipuGLMCodingPlan from 'src/shared/providers/definitions/models/zhipu-glm-coding-plan'
 import { ModelProviderEnum, type SessionSettings, type Settings } from 'src/shared/types'
@@ -205,6 +206,12 @@ describe('getModel', () => {
       'glm-5.3',
       'https://open.bigmodel.cn/api/coding/paas/v4',
       ZhipuGLMCodingPlan,
+    ],
+    [
+      ModelProviderEnum.VolcEngineCodingPlan,
+      'ark-code-latest',
+      'https://ark.cn-beijing.volces.com/api/coding/v3',
+      VolcEngineCodingPlan,
     ],
   ])('returns OpenAI-compatible model instances for %s', (provider, modelId, apiHost, expectedModelClass) => {
     const sessionSettings: SessionSettings = {

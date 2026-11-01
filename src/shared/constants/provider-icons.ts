@@ -9,4 +9,5 @@ export const PROVIDER_ICON_ALIASES: Record<string, string> = {
   'moonshot-cn': 'moonshot',
   'xiaomi-mimo': 'xiaomi',
   'zhipu-glm-coding-plan': 'chatglm-6b',
+  'volcengine-coding-plan': 'volcengine',
 }

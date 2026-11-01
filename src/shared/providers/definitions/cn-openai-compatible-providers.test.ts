@@ -6,6 +6,7 @@ import { getProviderDefinition, getSystemProviders } from '../index'
 import { longCatProvider } from './longcat'
 import { tencentHunyuanProvider } from './tencent-hunyuan'
 import { xiaomiMiMoProvider } from './xiaomi-mimo'
+import { volcEngineCodingPlanProvider } from './volcengine-coding-plan'
 import { zhipuGLMCodingPlanProvider } from './zhipu-glm-coding-plan'
 
 describe('Tencent Hunyuan / Xiaomi MiMo / LongCat / GLM Coding Plan definitions', () => {
@@ -51,11 +52,37 @@ describe('Tencent Hunyuan / Xiaomi MiMo / LongCat / GLM Coding Plan definitions'
     expect(findModelInRegistry('glm-5-turbo', zhipuCatalog)?.modelId).toBe('glm-5')
   })
 
+  it('registers VolcEngine Coding Plan provider with correct default settings', () => {
+    expect(getProviderDefinition('volcengine-coding-plan')).toBeDefined()
+    expect(volcEngineCodingPlanProvider.id).toBe('volcengine-coding-plan')
+    // The Coding Plan endpoint is /api/coding/v3; the pay-as-you-go /api/v3
+    // endpoint rejects Coding Plan API keys.
+    expect(volcEngineCodingPlanProvider.defaultSettings?.apiHost).toBe(
+      'https://ark.cn-beijing.volces.com/api/coding/v3'
+    )
+    expect(volcEngineCodingPlanProvider.defaultSettings?.apiPath).toBe('/chat/completions')
+    expect(volcEngineCodingPlanProvider.defaultSettings?.models?.map((m) => m.modelId)).toContain(
+      'ark-code-latest'
+    )
+    expect(volcEngineCodingPlanProvider.defaultSettings?.models?.map((m) => m.modelId)).toContain(
+      'doubao-seed-2.1-pro'
+    )
+  })
+
+  it('keeps VolcEngine Coding Plan out of models.dev enrichment', () => {
+    // models.dev has no catalog for the Coding Plan model names, and
+    // findModelInRegistry() collapses suffixed ids onto unrelated entries, so
+    // this provider ships its own verified catalog instead of enrichment.
+    expect(volcEngineCodingPlanProvider.modelsDevProviderId).toBeUndefined()
+    expect(getModelsDevProviderId(volcEngineCodingPlanProvider.id)).toBeUndefined()
+  })
+
   it('includes all four new providers in system providers list', () => {
     const systemProviderIds = getSystemProviders().map((p) => p.id)
     expect(systemProviderIds).toContain('tencent-hunyuan')
     expect(systemProviderIds).toContain('xiaomi-mimo')
     expect(systemProviderIds).toContain('longcat')
     expect(systemProviderIds).toContain('zhipu-glm-coding-plan')
+    expect(systemProviderIds).toContain('volcengine-coding-plan')
   })
 })

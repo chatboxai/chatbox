@@ -108,6 +108,13 @@ export const textExts = [
   '.hpp', // C++ header file
   '.cc', // C++ source file (alternative extension)
   '.cxx', // C++ source file (alternative extension)
+  '.pas', // Pascal unit/program file
+  '.pp',  // Pascal unit file (alternative extension)
+  '.lpr', // Lazarus program file
+  '.dpr', // Delphi program file
+  '.lfm', // Lazarus form file
+  '.dfm', // Delphi form file
+  '.inc', // Pascal include file
   '.mjs', // JavaScript ES module file
   '.typ', // Typst source file
   '.patch', // Unified diff / patch file
@@ -248,6 +255,7 @@ export function getFileAcceptConfig(): Record<string, string[]> {
     'text/x-java': ['.java'],
     'text/x-c': ['.c', '.h'],
     'text/x-c++': ['.cpp', '.hpp', '.cc', '.cxx'],
+    'text/x-pascal': ['.pas', '.pp', '.inc', '.lpr', '.dpr'],
     'text/x-csharp': ['.cs'],
     'text/x-ruby': ['.rb'],
     'text/x-go': ['.go'],
@@ -320,6 +328,8 @@ export function getFileAcceptConfig(): Record<string, string[]> {
       '.gradle',
       '.jsp',
       '.aspx',
+      '.lfm',
+      '.dfm'
     ],
   }
 }

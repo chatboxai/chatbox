@@ -192,6 +192,14 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     })
   }
 
+  /**
+   * Final adjustment of the messages sent in each model request. It runs on the
+   * initial request and again on every step of an automatic tool loop, after the
+   * step messages are assembled, so per-request annotations such as prompt-cache
+   * breakpoints always describe the request actually sent.
+   */
+  protected prepareRequestMessages?(messages: ModelMessage[]): ModelMessage[]
+
   protected getImageModel(): ImageModel | null {
     return null
   }
@@ -328,14 +336,16 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     const callSettings = this.resolveCallSettings(options)
     const basePrepareStep = options.prepareStep as PrepareStepFunction<T> | undefined
     const onRequestResolved = options.onRequestResolved
+    const prepareRequestMessages = this.prepareRequestMessages?.bind(this)
     const prepareStep: PrepareStepFunction<T> | undefined =
-      basePrepareStep || onRequestResolved
+      basePrepareStep || onRequestResolved || prepareRequestMessages
         ? async (stepOptions) => {
             // Each preparation starts from the full transcript so temporary step
             // messages, such as image injections, do not accumulate across steps.
             const messages = [...stepOptions.initialMessages, ...stepOptions.responseMessages]
             const prepared = await basePrepareStep?.({ ...stepOptions, messages })
-            const stepMessages = prepared?.messages ?? messages
+            const preparedMessages = prepared?.messages ?? messages
+            const stepMessages = prepareRequestMessages ? prepareRequestMessages(preparedMessages) : preparedMessages
             const allTools = (options.tools ?? {}) as T
             const activeToolNames = prepared?.activeTools ? new Set(prepared.activeTools.map(String)) : undefined
             const effectiveTools = activeToolNames
@@ -359,7 +369,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
 
     const result = streamText({
       model,
-      messages,
+      messages: prepareRequestMessages ? prepareRequestMessages(messages) : messages,
       // Chatbox lets users author system prompts and preserves their position in chat history.
       allowSystemInMessages: true,
       stopWhen: [isStepCount(options.maxSteps || Number.MAX_SAFE_INTEGER), stopWhenPersistentToolCallPause<T>()],
@@ -815,12 +825,16 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     options: CallChatCompletionOptions<T>,
     callSettings: CallSettings
   ): Promise<StreamTextResult> {
+    const prepareRequestMessages = this.prepareRequestMessages?.bind(this)
     const result = streamText({
       model,
-      messages: coreMessages,
+      messages: prepareRequestMessages ? prepareRequestMessages(coreMessages) : coreMessages,
       allowSystemInMessages: true,
       stopWhen: [isStepCount(options.maxSteps || Number.MAX_SAFE_INTEGER), stopWhenPersistentToolCallPause<T>()],
       tools: options.tools,
+      prepareStep: prepareRequestMessages
+        ? ({ messages }) => ({ messages: prepareRequestMessages(messages) })
+        : undefined,
       experimental_repairToolCall: repairToolCallJson as ToolCallRepairFunction<T>,
       abortSignal: options.signal,
       ...callSettings,

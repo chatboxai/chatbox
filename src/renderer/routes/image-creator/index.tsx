@@ -12,6 +12,7 @@ import {
   Textarea,
   UnstyledButton,
 } from '@mantine/core'
+import { useElementSize } from '@mantine/hooks'
 import type { ImageGeneration, ImageGenerationModel } from '@shared/types'
 import { ModelProviderEnum } from '@shared/types'
 import {
@@ -99,6 +100,8 @@ interface InputToolbarProps {
   onNewCreation: () => void
 }
 
+const ACTION_LABELS_MIN_TOOLBAR_REM = 26
+
 function InputToolbar({
   isSmallScreen,
   modelGroups,
@@ -113,31 +116,35 @@ function InputToolbar({
   onNewCreation,
 }: InputToolbarProps) {
   const { t } = useTranslation()
+  const { ref: toolbarRef, width: toolbarWidth } = useElementSize()
+  const rootFontSize = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+  // Labelled upload and new-creation buttons only fit on one line when the toolbar is wide enough.
+  const showActionLabels = toolbarWidth / rootFontSize >= ACTION_LABELS_MIN_TOOLBAR_REM
 
   return (
-    <Flex align="center" gap={0} className="shrink-0 w-full" justify="space-between">
+    <Flex ref={toolbarRef} align="center" gap={0} className="shrink-0 w-full" justify="space-between">
       {/* Left Group: Model, Ratio, Reference */}
-      <Flex align="center" gap={0}>
+      <Flex align="center" gap={0} className="min-w-0 overflow-hidden">
         {/* Model Select */}
         {isSmallScreen ? (
           <UnstyledButton
             onClick={onModelDrawerOpen}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors"
+            className="flex min-w-0 items-center gap-1 overflow-hidden px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors"
           >
-            <IconSparkles size={16} className="text-[var(--chatbox-tint-secondary)]" />
-            <Text size="sm" className="text-[var(--chatbox-tint-secondary)] max-w-[120px] truncate">
+            <IconSparkles size={16} className="shrink-0 text-[var(--chatbox-tint-secondary)]" />
+            <Text size="sm" className="min-w-0 text-[var(--chatbox-tint-secondary)] max-w-[120px] truncate">
               {modelDisplayName}
             </Text>
-            <IconChevronRight size={14} className="text-[var(--chatbox-tint-tertiary)] rotate-90" />
+            <IconChevronRight size={14} className="shrink-0 text-[var(--chatbox-tint-tertiary)] rotate-90" />
           </UnstyledButton>
         ) : (
           <ImageModelSelect modelGroups={modelGroups} onSelect={onModelSelect}>
-            <UnstyledButton className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors">
-              <IconSparkles size={16} className="text-[var(--chatbox-tint-secondary)]" />
-              <Text size="sm" className="text-[var(--chatbox-tint-secondary)] max-w-[120px] truncate">
+            <UnstyledButton className="flex min-w-0 items-center gap-1 overflow-hidden px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors">
+              <IconSparkles size={16} className="shrink-0 text-[var(--chatbox-tint-secondary)]" />
+              <Text size="sm" className="min-w-0 text-[var(--chatbox-tint-secondary)] max-w-[120px] truncate">
                 {modelDisplayName}
               </Text>
-              <IconChevronRight size={14} className="text-[var(--chatbox-tint-tertiary)] rotate-90" />
+              <IconChevronRight size={14} className="shrink-0 text-[var(--chatbox-tint-tertiary)] rotate-90" />
             </UnstyledButton>
           </ImageModelSelect>
         )}
@@ -146,7 +153,7 @@ function InputToolbar({
         {isSmallScreen ? (
           <UnstyledButton
             onClick={onRatioDrawerOpen}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors"
+            className="flex shrink-0 items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors"
           >
             <IconAspectRatio size={16} className="text-[var(--chatbox-tint-secondary)]" />
             <Text size="sm" className="text-[var(--chatbox-tint-secondary)]">
@@ -157,7 +164,7 @@ function InputToolbar({
         ) : (
           <Menu position="top" withinPortal shadow="md" radius="lg">
             <Menu.Target>
-              <UnstyledButton className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors">
+              <UnstyledButton className="flex shrink-0 items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors">
                 <IconAspectRatio size={16} className="text-[var(--chatbox-tint-secondary)]" />
                 <Text size="sm" className="text-[var(--chatbox-tint-secondary)]">
                   {selectedRatio}
@@ -180,20 +187,24 @@ function InputToolbar({
         {/* Reference Image Button */}
         <UnstyledButton
           onClick={onAddReference}
-          className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors"
+          aria-label={t('Upload')}
+          title={t('Upload') || ''}
+          className="flex shrink-0 items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--chatbox-background-tertiary)] transition-colors"
         >
           <IconPhoto size={16} className="text-[var(--chatbox-tint-secondary)]" />
-          <Text size="sm" className="text-[var(--chatbox-tint-secondary)]">
-            {t('Upload')}
-          </Text>
+          {showActionLabels && (
+            <Text size="sm" className="whitespace-nowrap text-[var(--chatbox-tint-secondary)]">
+              {t('Upload')}
+            </Text>
+          )}
         </UnstyledButton>
       </Flex>
 
       {/* Right Group: New Creation */}
-      <Flex align="center" gap={4}>
+      <Flex align="center" gap={4} className="shrink-0">
         {/* New Creation Button */}
-        {isSmallScreen ? (
-          <ActionIcon variant="light" size="md" radius="lg" onClick={onNewCreation}>
+        {isSmallScreen || !showActionLabels ? (
+          <ActionIcon variant="light" size="md" radius="lg" onClick={onNewCreation} aria-label={t('New Creation')}>
             <IconPlus size={18} />
           </ActionIcon>
         ) : (

@@ -647,7 +647,7 @@ describe('SessionService', () => {
 
     await expect(harness.service.recoverSessionList()).resolves.toEqual({ recovered: 1, failed: 0 })
 
-    expect(harness.repository.records.get(session.id)).not.toHaveProperty('archivedAt')
+    expect(harness.repository.records.get(session.id)?.archivedAt).toBeUndefined()
     expect(harness.repository.records.get(session.id)?.recoveryArchived).toBeUndefined()
   })
 
@@ -677,7 +677,7 @@ describe('SessionService', () => {
     await expect(harness.service.recoverSessionList()).resolves.toEqual({ recovered: 1, failed: 0 })
 
     expect(harness.repository.records.get(session.id)).toMatchObject({ id: session.id })
-    expect(harness.repository.records.get(session.id)).not.toHaveProperty('archivedAt')
+    expect(harness.repository.records.get(session.id)?.archivedAt).toBeUndefined()
     expect(harness.log).toHaveBeenCalledWith(
       'warn',
       'Failed to preserve archived metadata during session-list recovery',

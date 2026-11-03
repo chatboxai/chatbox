@@ -15,10 +15,23 @@ export function projectSessionMeta(session: SessionMeta): SessionMeta {
   }
 }
 
-/** The full derived metadata patch a session write must project alongside itself. */
+/**
+ * The full derived metadata patch a session write must project alongside itself.
+ * Every header-owned field is listed explicitly: persisted headers drop cleared optional
+ * fields, and metadata storage merges the patch, so an omitted key would keep a stale value.
+ */
 export function projectSessionMetaUpdate(session: SessionHeader, paused: boolean): SessionMeta {
   return {
-    ...projectSessionMeta(session),
+    id: session.id,
+    name: session.name,
+    folderId: session.folderId,
+    starred: session.starred,
+    hidden: session.hidden,
+    archivedAt: session.archivedAt,
+    assistantAvatarKey: session.assistantAvatarKey,
+    picUrl: session.picUrl,
+    backgroundImage: session.backgroundImage,
+    type: session.type,
     hasPausedToolCall: paused,
     recoveryArchived: undefined,
   }

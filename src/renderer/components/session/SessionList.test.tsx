@@ -22,6 +22,7 @@ const {
   showModalMock,
   sortablePointerDownMock,
   useSortableMock,
+  virtuosoState,
 } = vi.hoisted(() => ({
   dndContextState: { handlers: null as DndContextHandlers | null },
   isSmallScreenMock: vi.fn(() => true),
@@ -34,9 +35,11 @@ const {
     isLoading: false,
     folders: [] as SessionFolder[],
     hasNextPage: false,
+    isFetchingNextPage: false,
     isFetchNextPageError: false,
     fetchNextPage: vi.fn(),
   },
+  virtuosoState: { atBottomStateChange: null as ((atBottom: boolean) => void) | null },
   showModalMock: vi.fn(),
   sortablePointerDownMock: vi.fn(),
   useSortableMock: vi.fn(),
@@ -107,9 +110,13 @@ vi.mock('react-virtuoso', async () => {
     groupCounts: number[]
     groupContent: (index: number) => React.ReactNode
     itemContent: (index: number, groupIndex: number) => React.ReactNode
+    atBottomStateChange?: (atBottom: boolean) => void
+    components?: { Footer?: React.ComponentType }
   }
   return {
-    GroupedVirtuoso: ({ groupCounts, groupContent, itemContent }: VirtuosoProps) => {
+    GroupedVirtuoso: ({ groupCounts, groupContent, itemContent, atBottomStateChange, components }: VirtuosoProps) => {
+      virtuosoState.atBottomStateChange = atBottomStateChange ?? null
+      const Footer = components?.Footer
       if (groupCounts.length > 0 && groupCounts.every((count) => count === 0)) {
         itemContent(0, 0)
       }
@@ -128,7 +135,8 @@ vi.mock('react-virtuoso', async () => {
               React.createElement(React.Fragment, { key: start + index }, itemContent(start + index, groupIndex))
             )
           )
-        })
+        }),
+        Footer ? React.createElement(Footer, { key: 'footer' }) : null
       )
     },
   }
@@ -143,7 +151,7 @@ vi.mock('@/app/renderer-application', () => ({
         sessionMetaList: sessionListState.sessions,
         fetchNextPage: sessionListState.fetchNextPage,
         hasNextPage: sessionListState.hasNextPage,
-        isFetchingNextPage: false,
+        isFetchingNextPage: sessionListState.isFetchingNextPage,
         isFetchNextPageError: sessionListState.isFetchNextPageError,
         isLoading: sessionListState.isLoading,
       }),
@@ -389,7 +397,9 @@ describe('SessionList folders', () => {
     sessionListState.sessions = filed
     sessionListState.folders = folders
     sessionListState.hasNextPage = false
+    sessionListState.isFetchingNextPage = false
     sessionListState.isFetchNextPageError = false
+    virtuosoState.atBottomStateChange = null
     uiStore.setState({ collapsedSessionFolderIds: [], newSessionState: {}, sessionAgentModeMap: {} })
   })
 
@@ -617,6 +627,47 @@ describe('SessionList folders', () => {
     renderList()
 
     expect(sessionListState.fetchNextPage).not.toHaveBeenCalled()
+  })
+
+  test('loads the next page when the list rests at its end without a new end report', () => {
+    // A reset back to the first page restores a row count whose end the
+    // virtualized list already reported, so it does not report it again.
+    sessionListState.hasNextPage = true
+    renderList()
+    expect(sessionListState.fetchNextPage).not.toHaveBeenCalled()
+
+    act(() => virtuosoState.atBottomStateChange?.(true))
+    expect(sessionListState.fetchNextPage).toHaveBeenCalledTimes(1)
+  })
+
+  test('resumes loading at the list end once a canceled page read settles', () => {
+    sessionListState.hasNextPage = true
+    sessionListState.isFetchingNextPage = true
+    const { rerender } = renderList()
+    act(() => virtuosoState.atBottomStateChange?.(true))
+    expect(sessionListState.fetchNextPage).not.toHaveBeenCalled()
+
+    sessionListState.isFetchingNextPage = false
+    rerender(
+      <MantineProvider>
+        <SessionList sessionListViewportRef={{ current: null }} />
+      </MantineProvider>
+    )
+    expect(sessionListState.fetchNextPage).toHaveBeenCalledTimes(1)
+  })
+
+  test('shows the page loading indicator only while a page is being read', () => {
+    sessionListState.hasNextPage = true
+    const { container, rerender } = renderList()
+    expect(container.querySelectorAll('.animate-spin')).toHaveLength(0)
+
+    sessionListState.isFetchingNextPage = true
+    rerender(
+      <MantineProvider>
+        <SessionList sessionListViewportRef={{ current: null }} />
+      </MantineProvider>
+    )
+    expect(container.querySelector('.animate-spin')).toBeTruthy()
   })
 
   test('marks a folder empty once loading has passed it', () => {

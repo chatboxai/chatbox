@@ -612,4 +612,16 @@ export const MCP_ENTRIES_COMMUNITY: MCPRegistryEntry[] = [
       },
     },
   },
+  {
+    name: 'lurkapi',
+    title: 'LurkAPI',
+    description:
+      'Live public social media data: posts, profiles, comments, video transcripts and ad library results from TikTok, Instagram, YouTube, Reddit, X, LinkedIn and 10 more platforms.',
+    icon: 'https://lurkapi.com/icon-512.png',
+    homepage: 'https://lurkapi.com/docs#claude',
+    configuration: {
+      command: 'npx',
+      args: ['-y', 'mcp-remote', 'https://api.lurkapi.com/mcp', '--header', 'x-api-key:YOUR_API_KEY_HERE'],
+    },
+  },
 ]

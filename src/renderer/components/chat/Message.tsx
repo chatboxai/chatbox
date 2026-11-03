@@ -1392,6 +1392,7 @@ const _Message: FC<Props> = (props) => {
             avatarKey={assistantAvatarKey}
             picUrl={sessionPicUrl}
             sessionType={props.sessionType}
+            aiProvider={msg.aiProvider}
             onClick={onClickAssistantAvatar}
           />
         )}

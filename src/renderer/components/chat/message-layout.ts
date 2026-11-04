@@ -14,16 +14,21 @@ export type ConversationRowLayout = {
   userBubbleMaxWidth: string
   /** Loader drawn around the avatar while a reply streams. */
   generatingLoaderSize: number
+  /** Top offset that centers the assistant name row's line box on the avatar. */
+  nameRowOffset: number
 }
 
+const NAME_ROW_LINE_HEIGHT = 20
+
 export function getConversationRowLayout(isSmallScreen: boolean, showAvatar: boolean): ConversationRowLayout {
-  const avatarSize = isSmallScreen ? 32 : 36
+  const avatarSize = isSmallScreen ? 24 : 28
   return {
     avatarSize,
-    avatarGap: isSmallScreen ? 8 : 12,
+    avatarGap: isSmallScreen ? 8 : 10,
     farSideSpace: showAvatar ? (isSmallScreen ? 24 : 64) : isSmallScreen ? 44 : 128,
     userBubbleMaxWidth: isSmallScreen ? '80%' : 'min(640px, 72%)',
     generatingLoaderSize: avatarSize + 4,
+    nameRowOffset: showAvatar ? (avatarSize - NAME_ROW_LINE_HEIGHT) / 2 : 0,
   }
 }
 

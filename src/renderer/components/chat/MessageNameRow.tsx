@@ -56,11 +56,14 @@ export function MessageNameRow({
   header,
   layout,
   isSmallScreen,
+  offsetTop = 0,
   generating,
 }: {
   header: AssistantMessageHeader
   layout: MessageLayout
   isSmallScreen: boolean
+  /** Pushes the row down so its line box centers on the avatar beside it. */
+  offsetTop?: number
   /** Spinner at the end of the row, for replies streaming without an avatar to carry the loader. */
   generating: boolean
 }) {
@@ -94,6 +97,7 @@ export function MessageNameRow({
     <div
       ref={rowRef}
       title={isSmallScreen ? undefined : getMessageHeaderTitle(header)}
+      style={offsetTop ? { marginTop: offsetTop } : undefined}
       className={cn(
         'flex w-full min-w-0 max-w-full items-baseline gap-1.5 whitespace-nowrap leading-5',
         layout === 'bubble' ? 'mb-1.5' : 'mb-1'

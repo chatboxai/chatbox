@@ -190,6 +190,14 @@ describe('MessageNameRow', () => {
     expect(screen.getByText('Assistant')).toBeTruthy()
   })
 
+  test('shifts down by the given offset to center on the avatar', () => {
+    renderRow()
+    expect((screen.getByText('DeepSeek').parentElement as HTMLElement).style.marginTop).toBe('')
+    cleanup()
+    renderRow({ offsetTop: 4 })
+    expect((screen.getByText('DeepSeek').parentElement as HTMLElement).style.marginTop).toBe('4px')
+  })
+
   test('adds a spinner only when asked to', () => {
     renderRow()
     expect(screen.queryByLabelText('Generating...')).toBeNull()

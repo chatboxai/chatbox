@@ -1452,6 +1452,7 @@ const _Message: FC<Props> = (props) => {
                 header={header}
                 layout={isBubbleLayout ? 'bubble' : 'classic'}
                 isSmallScreen={isSmallScreen}
+                offsetTop={rowLayout.nameRowOffset}
                 generating={Boolean(msg.generating) && !shouldShowAvatar}
               />
             )}

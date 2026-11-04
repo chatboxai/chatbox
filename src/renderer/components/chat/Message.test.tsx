@@ -27,24 +27,26 @@ describe('Message role classes', () => {
 describe('Conversation row layout', () => {
   test('uses the wide-screen avatar, gap and far-side space', () => {
     expect(getConversationRowLayout(false, true)).toEqual({
-      avatarSize: 36,
-      avatarGap: 12,
+      avatarSize: 28,
+      avatarGap: 10,
       farSideSpace: 64,
       userBubbleMaxWidth: 'min(640px, 72%)',
-      generatingLoaderSize: 40,
+      generatingLoaderSize: 32,
+      nameRowOffset: 4,
     })
-    expect(getConversationRowLayout(false, false).farSideSpace).toBe(128)
+    expect(getConversationRowLayout(false, false)).toMatchObject({ farSideSpace: 128, nameRowOffset: 0 })
   })
 
   test('uses the small-screen avatar, gap and far-side space', () => {
     expect(getConversationRowLayout(true, true)).toEqual({
-      avatarSize: 32,
+      avatarSize: 24,
       avatarGap: 8,
       farSideSpace: 24,
       userBubbleMaxWidth: '80%',
-      generatingLoaderSize: 36,
+      generatingLoaderSize: 28,
+      nameRowOffset: 2,
     })
-    expect(getConversationRowLayout(true, false).farSideSpace).toBe(44)
+    expect(getConversationRowLayout(true, false)).toMatchObject({ farSideSpace: 44, nameRowOffset: 0 })
   })
 })
 

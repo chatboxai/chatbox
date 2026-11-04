@@ -212,7 +212,7 @@ vi.mock('react-virtuoso', async () => {
             })
             element.current.getBoundingClientRect = () => ({ top: 0, bottom: 600, height: 600 }) as DOMRect
             for (const row of Array.from(
-              element.current.querySelectorAll<HTMLElement>('[data-transcript-message], .w-full')
+              element.current.querySelectorAll<HTMLElement>('[data-transcript-message], .w-full, .mx-auto')
             ))
               row.getBoundingClientRect = () => {
                 const top = h.rowTop + (h.rowOffsets.get(row.dataset.transcriptMessage ?? '') ?? 0)

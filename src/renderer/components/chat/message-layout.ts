@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 
 export type MessageLayout = 'classic' | 'bubble'
 
-/** Widest an assistant reply may grow, in either layout. */
+/** Widest an assistant reply may grow in the standard-width column, in either layout. */
 export const ASSISTANT_CONTENT_MAX_WIDTH = 840
 
 export type ConversationRowLayout = {
@@ -12,6 +12,10 @@ export type ConversationRowLayout = {
   /** Space kept clear on the side opposite the speaker: right of assistant replies, left of user bubbles. */
   farSideSpace: number
   userBubbleMaxWidth: string
+  /** The reply spans the full-width content column instead of stopping at ASSISTANT_CONTENT_MAX_WIDTH. */
+  spansColumn: boolean
+  /** Widest the assistant reply may grow; unset when the reply spans the content column. */
+  assistantContentMaxWidth?: number
   /** Loader drawn around the avatar while a reply streams. */
   generatingLoaderSize: number
   /** Top offset that centers the assistant name row's line box on the avatar. */
@@ -20,13 +24,24 @@ export type ConversationRowLayout = {
 
 const NAME_ROW_LINE_HEIGHT = 20
 
-export function getConversationRowLayout(isSmallScreen: boolean, showAvatar: boolean): ConversationRowLayout {
+/**
+ * Row metrics for one conversation message. `wideColumn` is the full-width content column on a wide screen: replies
+ * span the column and user bubbles sit at its right edge, so neither side keeps far-side space.
+ */
+export function getConversationRowLayout(
+  isSmallScreen: boolean,
+  showAvatar: boolean,
+  wideColumn = false
+): ConversationRowLayout {
   const avatarSize = isSmallScreen ? 24 : 28
+  const spansColumn = wideColumn && !isSmallScreen
   return {
     avatarSize,
     avatarGap: isSmallScreen ? 8 : 10,
-    farSideSpace: showAvatar ? (isSmallScreen ? 24 : 64) : isSmallScreen ? 44 : 128,
+    farSideSpace: spansColumn ? 0 : showAvatar ? (isSmallScreen ? 24 : 64) : isSmallScreen ? 44 : 128,
     userBubbleMaxWidth: isSmallScreen ? '80%' : 'min(640px, 72%)',
+    spansColumn,
+    assistantContentMaxWidth: spansColumn ? undefined : ASSISTANT_CONTENT_MAX_WIDTH,
     generatingLoaderSize: avatarSize + 4,
     nameRowOffset: showAvatar ? (avatarSize - NAME_ROW_LINE_HEIGHT) / 2 : 0,
   }
@@ -36,18 +51,21 @@ const BUBBLE_PADDING = { small: 'px-3.5 py-[9px]', wide: 'px-4 py-2.5' } as cons
 
 /**
  * Surface classes for user and assistant message content. The two layouts differ only in the assistant reply:
- * classic lays it flat on the page, bubble wraps it in a secondary-colored bubble.
+ * classic lays it flat on the page, bubble wraps it in a secondary-colored bubble. A classic reply spanning the
+ * full-width column fills it so code blocks and tables use the column; a bubble keeps fitting its content.
  */
 export function getConversationContentClassName({
   layout,
   role,
   isSmallScreen,
   errorOnly,
+  spansColumn = false,
 }: {
   layout: MessageLayout
   role: 'user' | 'assistant'
   isSmallScreen: boolean
   errorOnly: boolean
+  spansColumn?: boolean
 }): string {
   const padding = isSmallScreen ? BUBBLE_PADDING.small : BUBBLE_PADDING.wide
   if (role === 'user') {
@@ -57,7 +75,8 @@ export function getConversationContentClassName({
       padding
     )
   }
-  if (layout === 'classic' || errorOnly) return 'max-w-full min-w-0'
+  if (errorOnly) return 'max-w-full min-w-0'
+  if (layout === 'classic') return cn('max-w-full min-w-0', spansColumn && 'w-full')
   return cn('inline-block max-w-full min-w-0 rounded-2xl rounded-tl-[4px] bg-chatbox-background-secondary', padding)
 }
 

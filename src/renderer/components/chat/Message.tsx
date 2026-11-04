@@ -90,12 +90,7 @@ import MessageStatuses, { PreparingToolCallStatus } from './MessageLoading'
 import { formatMessageTimestamp, getMessageHeader, getMessageHeaderTitle, MessageNameRow } from './MessageNameRow'
 import { MessageSelectTextPage } from './MessageSelectTextPage'
 import { getMessageActionVisibilityClass, type MessageButtonGroup } from './message-action-state'
-import {
-  ASSISTANT_CONTENT_MAX_WIDTH,
-  getConversationContentClassName,
-  getConversationRowLayout,
-  isErrorOnlyMessage,
-} from './message-layout'
+import { getConversationContentClassName, getConversationRowLayout, isErrorOnlyMessage } from './message-layout'
 import { getMessagePreviewText } from './message-navigation-utils'
 import { getMessageRoleClass } from './message-role-class'
 import { createCollapsedDisplayGroups, createMessageTimelineLayout } from './message-timeline'
@@ -248,6 +243,7 @@ const _Message: FC<Props> = (props) => {
   const ref = useRef<HTMLDivElement>(null)
 
   const setQuote = useUIStore((state) => state.setQuote)
+  const widthFull = useUIStore((state) => state.widthFull)
 
   const quoteMsg = useCallback(() => {
     let input = getMessageText(msg)
@@ -880,7 +876,7 @@ const _Message: FC<Props> = (props) => {
   const isRightAlignedMessage = msg.role === 'user'
   const messageRoleClass = getMessageRoleClass(msg.role)
   const shouldShowAvatar = showAvatar ?? true
-  const rowLayout = getConversationRowLayout(isSmallScreen, shouldShowAvatar)
+  const rowLayout = getConversationRowLayout(isSmallScreen, shouldShowAvatar, widthFull)
   const statusElements = <MessageStatuses statuses={leadingStatuses} />
   const errorTipsElement = (
     <MessageErrTips
@@ -901,6 +897,7 @@ const _Message: FC<Props> = (props) => {
                 role: conversationRole,
                 isSmallScreen,
                 errorOnly: isErrorOnlyMessage(msg),
+                spansColumn: rowLayout.spansColumn,
               })
             : 'inline-block max-w-full min-w-0 bg-chatbox-background-secondary px-4 rounded-lg'
         }
@@ -1420,6 +1417,7 @@ const _Message: FC<Props> = (props) => {
           'msg-block',
           (isUser || isBubbleLayout) && 'bubble-msg',
           isUser && 'bubble-user-msg',
+          rowLayout.spansColumn && 'msg-spans-column',
           isSmallScreen ? 'pt-5' : 'pt-4 sm:pt-5',
           longPressSurfaceClass,
           msg.generating ? 'rendering' : 'render-done',
@@ -1445,7 +1443,7 @@ const _Message: FC<Props> = (props) => {
             direction="column"
             align={isUser ? 'flex-end' : 'flex-start'}
             className={cn('relative min-w-0', !isUser && 'flex-1')}
-            style={{ maxWidth: isUser ? rowLayout.userBubbleMaxWidth : ASSISTANT_CONTENT_MAX_WIDTH }}
+            style={{ maxWidth: isUser ? rowLayout.userBubbleMaxWidth : rowLayout.assistantContentMaxWidth }}
           >
             {!isUser && (
               <MessageNameRow

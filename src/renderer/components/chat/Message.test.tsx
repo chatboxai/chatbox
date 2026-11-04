@@ -1,6 +1,11 @@
 import { type Message, MessageRoleEnum } from '@shared/types'
 import { describe, expect, test, vi } from 'vitest'
-import { getConversationContentClassName, getConversationRowLayout, isErrorOnlyMessage } from './message-layout'
+import {
+  ASSISTANT_CONTENT_MAX_WIDTH,
+  getConversationContentClassName,
+  getConversationRowLayout,
+  isErrorOnlyMessage,
+} from './message-layout'
 import { getMessageRoleClass } from './message-role-class'
 import { getMessageTokenDisplay } from './message-token-display'
 
@@ -31,6 +36,8 @@ describe('Conversation row layout', () => {
       avatarGap: 10,
       farSideSpace: 64,
       userBubbleMaxWidth: 'min(640px, 72%)',
+      spansColumn: false,
+      assistantContentMaxWidth: ASSISTANT_CONTENT_MAX_WIDTH,
       generatingLoaderSize: 32,
       nameRowOffset: 4,
     })
@@ -43,10 +50,27 @@ describe('Conversation row layout', () => {
       avatarGap: 8,
       farSideSpace: 24,
       userBubbleMaxWidth: '80%',
+      spansColumn: false,
+      assistantContentMaxWidth: ASSISTANT_CONTENT_MAX_WIDTH,
       generatingLoaderSize: 28,
       nameRowOffset: 2,
     })
     expect(getConversationRowLayout(true, false)).toMatchObject({ farSideSpace: 44, nameRowOffset: 0 })
+  })
+
+  test('lets replies span the full-width column on wide screens', () => {
+    for (const showAvatar of [true, false]) {
+      const layout = getConversationRowLayout(false, showAvatar, true)
+      expect(layout.spansColumn).toBe(true)
+      expect(layout.farSideSpace).toBe(0)
+      expect(layout.assistantContentMaxWidth).toBeUndefined()
+      expect(layout.userBubbleMaxWidth).toBe('min(640px, 72%)')
+    }
+  })
+
+  test('keeps the small-screen row unchanged in the full-width column', () => {
+    expect(getConversationRowLayout(true, true, true)).toEqual(getConversationRowLayout(true, true))
+    expect(getConversationRowLayout(true, false, true)).toEqual(getConversationRowLayout(true, false))
   })
 })
 
@@ -73,6 +97,15 @@ describe('Conversation content surface', () => {
 
   test('keeps error-only replies out of the bubble surface', () => {
     expect(content('bubble', 'assistant', true)).not.toContain('bg-')
+  })
+
+  test('fills the full-width column with a classic reply while a bubble keeps fitting its content', () => {
+    const spanning = (layout: 'classic' | 'bubble', errorOnly = false) =>
+      getConversationContentClassName({ layout, role: 'assistant', isSmallScreen: false, errorOnly, spansColumn: true })
+    expect(content('classic', 'assistant').split(' ')).not.toContain('w-full')
+    expect(spanning('classic').split(' ')).toContain('w-full')
+    expect(spanning('bubble')).toBe(content('bubble', 'assistant'))
+    expect(spanning('classic', true)).toBe(content('classic', 'assistant', true))
   })
 })
 

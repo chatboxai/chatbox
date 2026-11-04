@@ -12,7 +12,7 @@ import { MessageLongPressHint } from '@/components/chat/MessageLongPressHint'
 import { ChatboxWelcomeCard } from '@/components/common/ChatboxWelcomeCard'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import InputBox, { type InputBoxPayload } from '@/components/InputBox/InputBox'
-import { paddedContentColumnClassName } from '@/components/layout/contentColumn'
+import { contentColumnContainerClassName, paddedContentColumnClassName } from '@/components/layout/contentColumn'
 import Header from '@/components/layout/Header'
 import Page from '@/components/layout/Page'
 import { SessionSheet } from '@/components/session/SessionSheet'
@@ -22,6 +22,7 @@ import { useProviders } from '@/hooks/useProviders'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { useSessionPresentation, useSessionTranscript } from '@/hooks/useSessionPresentation'
 import useVersion from '@/hooks/useVersion'
+import { cn } from '@/lib/utils'
 import { defaultSessionsForCN, defaultSessionsForEN } from '@/packages/initial_data'
 import * as remote from '@/packages/remote'
 import {
@@ -286,7 +287,13 @@ function RouteComponent() {
 
   return currentSession ? (
     <div className="flex h-full">
-      <div className={`flex min-w-0 flex-1 flex-col h-full ${!isSmallScreen ? 'relative' : ''}`}>
+      <div
+        className={cn(
+          'flex min-w-0 flex-1 flex-col h-full',
+          !isSmallScreen && 'relative',
+          contentColumnContainerClassName(widthFull)
+        )}
+      >
         <Header session={currentSession} />
         <MessageList
           ref={messageListRef}

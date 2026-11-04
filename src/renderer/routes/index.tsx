@@ -25,7 +25,7 @@ import { ScalableIcon } from '@/components/common/ScalableIcon'
 import { ImageInStorage } from '@/components/Image'
 import InputBox, { type InputBoxPayload } from '@/components/InputBox/InputBox'
 import HomepageIcon from '@/components/icons/HomepageIcon'
-import { paddedContentColumnClassName } from '@/components/layout/contentColumn'
+import { contentColumnContainerClassName, paddedContentColumnClassName } from '@/components/layout/contentColumn'
 import Page from '@/components/layout/Page'
 import { getForceShowNewUserScenarioCardsFlag } from '@/dev/devToolsFlags'
 import { useMyCopilots, useRemoteCopilotsByCursor } from '@/hooks/useCopilots'
@@ -441,7 +441,9 @@ function Index() {
 
   return (
     <Page title="">
-      <div className="p-0 flex flex-col h-full min-h-0 overflow-hidden">
+      <div
+        className={clsx('p-0 flex flex-col h-full min-h-0 overflow-hidden', contentColumnContainerClassName(widthFull))}
+      >
         <div
           className={clsx('min-h-0 flex-1 overflow-y-auto', welcomeCardMode !== 'none' ? 'pb-36 sm:pb-32' : 'pb-md')}
         >

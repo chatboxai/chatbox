@@ -65,6 +65,11 @@
   margin-bottom: 0;
 }
 
+/* A reply spanning the full-width column keeps prose to a readable line length while code blocks and tables fill the column. */
+.assistant-msg.msg-spans-column .msg-content :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6) {
+  max-width: 960px;
+}
+
 /* Assistant replies start right under their name row, which already sets the gap. */
 .assistant-msg .msg-content p:first-child {
   margin-top: 0;

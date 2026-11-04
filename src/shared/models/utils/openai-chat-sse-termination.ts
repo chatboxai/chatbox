@@ -1,4 +1,5 @@
 import { normalizeChatCompletionCacheUsage } from './openai-cache-usage'
+import { createOpenAIToolCallDeltaNormalizer } from './openai-tool-call-deltas'
 
 interface ByteTransformController {
   enqueue(chunk: Uint8Array): void
@@ -84,6 +85,7 @@ export function wrapOpenAIChatCompletionSse<TStream>(body: TStream): TStream {
 
   const decoder = new TextDecoder()
   const encoder = new TextEncoder()
+  const normalizeToolCallDeltas = createOpenAIToolCallDeltaNormalizer()
   let buffer = ''
 
   return body.pipeThrough(
@@ -101,11 +103,13 @@ export function wrapOpenAIChatCompletionSse<TStream>(body: TStream): TStream {
             return
           }
           let normalized = frame
-          // A backslash may hide an escaped `usage` key, so parse those frames too.
-          if (data && (data.includes('"usage"') || data.includes('\\'))) {
+          // Escaped keys may identify usage or tool calls, so parse those frames too.
+          if (data && (data.includes('"usage"') || data.includes('"tool_calls"') || data.includes('\\'))) {
             try {
               const value: unknown = JSON.parse(data)
-              if (normalizeChatCompletionCacheUsage(value)) {
+              const usageChanged = normalizeChatCompletionCacheUsage(value)
+              const toolCallsChanged = normalizeToolCallDeltas(value)
+              if (usageChanged || toolCallsChanged) {
                 normalized = frame
                   .split(/\r?\n/)
                   .filter((line) => line !== 'data' && !line.startsWith('data:'))

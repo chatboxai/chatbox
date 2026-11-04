@@ -1,5 +1,5 @@
 import { createForkCommandIdentity } from '@chatbox/core/application/session'
-import { withSessionGenerationLock } from '@chatbox/core/generation'
+import { trySessionGenerationLock, withSessionGenerationLock } from '@chatbox/core/generation'
 import type { SessionHeader } from '@chatbox/core/ports'
 import { SessionActionBlockedError } from '@chatbox/core/session/action-gates'
 import { isActionAvailableInMode, resolveSessionMode } from '@chatbox/core/session/mode-policy'
@@ -216,26 +216,20 @@ export async function saveAndResendMessage(
 
 type GenerateMoreFn = (sessionId: string, msgId: string) => Promise<void>
 
-export async function regenerateInNewFork(
-  sessionId: string,
-  msg: Message,
-  options?: { runGenerateMore?: GenerateMoreFn }
-) {
-  return withSessionGenerationLock(sessionId, async () => {
-    if (!(await guardSessionAction(sessionId, 'regenerate'))) {
+export async function regenerateInNewFork(sessionId: string, msg: Message) {
+  // Every Reply Again surface (toolbar, long-press menu, swipe) lands here; a
+  // repeated trigger while the session has generation work is dropped.
+  return trySessionGenerationLock(sessionId, async () => {
+    const session = (await rendererApplication.sessions.getSessionHeader(sessionId))?.header ?? null
+    if (!(await guardSessionAction(sessionId, 'regenerate', {}, session))) {
       return
     }
-    return regenerateInNewForkWithoutSessionLock(sessionId, msg, options)
+    if (!session || !supportsSessionGeneration(session.type)) return
+    return regenerateInNewForkWithoutSessionLock(sessionId, session, msg)
   })
 }
 
-async function regenerateInNewForkWithoutSessionLock(
-  sessionId: string,
-  msg: Message,
-  options?: { runGenerateMore?: GenerateMoreFn }
-) {
-  const session = (await rendererApplication.sessions.getSessionHeader(sessionId))?.header
-  if (!session || !supportsSessionGeneration(session.type)) return
+async function regenerateInNewForkWithoutSessionLock(sessionId: string, session: SessionHeader, msg: Message) {
   // The reply shows its provider and model from its first render, so its avatar and name do not change once
   // generation starts.
   const reply = await initializeTargetMessage(

@@ -321,6 +321,7 @@ export {
   TOOL_RESULT_PREVIEW_LENGTH,
   TOOL_RESULT_SIZE_LIMIT,
   ToolCallLimitPausedError,
+  trySessionGenerationLock,
   updateToolCallPart,
   updateToolCallParts,
   withSessionGenerationLock,

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   hasPendingSessionGeneration,
   resetSessionGenerationLocksForTests,
+  trySessionGenerationLock,
   waitForSessionGenerations,
   withSessionGenerationLock,
 } from './generation-lock'
@@ -55,6 +56,29 @@ describe('session generation lock', () => {
     expect(events.at(-1)).toBe('idle')
     expect(events).toContain('queued')
     expect(events).toContain('second')
+  })
+
+  it('drops try-lock work while the session has accepted or queued generation work', async () => {
+    let finish = () => {}
+    const active = withSessionGenerationLock(
+      'busy',
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve
+        })
+    )
+    const dropped = vi.fn(async () => 'dropped')
+    await expect(trySessionGenerationLock('busy', dropped)).resolves.toBeUndefined()
+    expect(dropped).not.toHaveBeenCalled()
+    await expect(trySessionGenerationLock('idle', async () => 'ran')).resolves.toBe('ran')
+
+    const first = trySessionGenerationLock('try', async () => 'first')
+    await expect(trySessionGenerationLock('try', async () => 'second')).resolves.toBeUndefined()
+    await expect(first).resolves.toBe('first')
+
+    finish()
+    await active
+    await expect(trySessionGenerationLock('busy', async () => 'after')).resolves.toBe('after')
   })
 
   afterEach(() => {

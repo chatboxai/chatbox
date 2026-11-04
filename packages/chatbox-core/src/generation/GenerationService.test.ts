@@ -22,6 +22,7 @@ import { InMemorySessionRecordStore } from '../testing/InMemorySessionRecordStor
 import { InMemorySessionRowStore } from '../testing/InMemorySessionRowStore'
 import {
   type GenerationCompactionPort,
+  type GenerationCoordinationPort,
   type GenerationHostPort,
   type GenerationPreparationRequest,
   GenerationService,
@@ -30,6 +31,11 @@ import {
   type GenerationSteeringPort,
 } from './GenerationService'
 import { BasicGenerationPreparation } from './BasicGenerationPreparation'
+import {
+  resetSessionGenerationLocksForTests,
+  trySessionGenerationLock,
+  withSessionGenerationLock,
+} from './generation-lock'
 import { createModelMessageTokenCounter, estimateModelMessagesTokens, textTokenCounter } from './mid-run-compaction'
 import { estimateToolDefinitionTokens } from './request-overhead'
 import { GenerationRuntimeStore } from './runtime-store'
@@ -119,7 +125,7 @@ interface Harness {
   setCompaction(port: GenerationCompactionPort): void
 }
 
-function createHarness(): Harness {
+function createHarness(options: { coordination?: Partial<GenerationCoordinationPort> } = {}): Harness {
   const session = createSession()
   const sessionSettings = {
     provider: 'openai',
@@ -382,6 +388,7 @@ function createHarness(): Harness {
       wakeBackgroundTaskFollowUps: (sessionId) => {
         coordinationEvents.push(`wake:${sessionId}`)
       },
+      ...options.coordination,
     },
     steering: {
       register: steeringRegister,
@@ -3500,5 +3507,59 @@ describe('GenerationService', () => {
         }),
       ],
     })
+  })
+})
+
+describe('last-step retry admission', () => {
+  function retryableHarness() {
+    resetSessionGenerationLocksForTests()
+    const harness = createHarness({
+      coordination: {
+        runExclusive: (sessionId, operation) => withSessionGenerationLock(sessionId, operation),
+        tryRunExclusive: (sessionId, operation) => trySessionGenerationLock(sessionId, operation),
+      },
+    })
+    harness.setTools({ user_exec: { execute: async () => ({ stdout: '/workspace' }) } } as unknown as ToolSet)
+    harness.session.messages[1] = {
+      ...targetMessage(),
+      generating: false,
+      error: 'provider disconnected',
+      contentParts: [
+        { type: 'tool-call', state: 'call', toolCallId: 'tool-1', toolName: 'user_exec', args: { command: 'pwd' } },
+      ],
+    }
+    return harness
+  }
+  const retry = (harness: Harness) =>
+    harness.service.retryFromLastToolCallAfterApiError('session-1', 'assistant-1', 'tool-1')
+
+  it('drops a repeated retry triggered in the same tick and runs a fresh one after it settles', async () => {
+    const harness = retryableHarness()
+
+    await Promise.all([retry(harness), retry(harness)])
+    expect(harness.preparedRequests).toHaveLength(1)
+
+    await retry(harness)
+    expect(harness.preparedRequests).toHaveLength(2)
+  })
+
+  it('drops a retry while the session has generation work instead of running it afterwards', async () => {
+    const harness = retryableHarness()
+    let finish = () => {}
+    const active = withSessionGenerationLock(
+      'session-1',
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve
+        })
+    )
+
+    await retry(harness)
+    finish()
+    await active
+    expect(harness.preparedRequests).toHaveLength(0)
+
+    await retry(harness)
+    expect(harness.preparedRequests).toHaveLength(1)
   })
 })

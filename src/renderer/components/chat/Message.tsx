@@ -99,6 +99,7 @@ import { PictureGallery } from './PictureGallery'
 import { useMessageLongPress } from './useMessageLongPress'
 import { useProcessTimelineCollapse } from './useProcessTimelineCollapse'
 import { useReplyBelowAction } from './useReplyBelowAction'
+import { useSingleFlightAction } from './useSingleFlightAction'
 
 const useIsGenerationRuntimeActive = (sessionId: string, messageId: string) =>
   rendererApplication.generationHooks.useIsActive(sessionId, messageId)
@@ -293,15 +294,22 @@ const _Message: FC<Props> = (props) => {
     [t]
   )
 
-  const handleRefresh = useCallback(async () => {
+  const replyAgain = useCallback(async () => {
     const gate = getSessionActionGate('regenerate', sessionLocks)
     if (!gate.allowed) {
       notifyActionBlocked(gate.reason)
       return
     }
-    if (!(await handleStop())) return
+    if (msg.generating && !(await handleStop())) return
     await regenerateInNewFork(sessionId, msg)
   }, [sessionLocks, handleStop, msg, notifyActionBlocked, sessionId])
+  // Every retry of this reply (whole message or last step, from any surface)
+  // shares one run: the reply shows as working from the trigger until the
+  // retry takes over, which waits on a storage commit, and repeated triggers
+  // in the meantime are ignored.
+  const { pending: retryPending, run: runRetry } = useSingleFlightAction()
+  const handleRefresh = useCallback(() => runRetry(replyAgain), [runRetry, replyAgain])
+  const showGenerating = Boolean(msg.generating) || retryPending
 
   // Tracking is best-effort and must never block or break the accept/decline
   // action, so this fetches the session on its own and swallows failures.
@@ -381,29 +389,28 @@ const _Message: FC<Props> = (props) => {
     await handleRefresh()
   }, [handleRefresh])
 
-  const handleRetryLastStep = useCallback(async () => {
-    if (!lastStepForRetry) return
-    const gate = getSessionActionGate('regenerate', sessionLocks)
-    if (!gate.allowed) {
-      notifyActionBlocked(gate.reason)
-      return
-    }
-    setRetryChoiceOpened(false)
-    await retryFromLastToolCallAfterApiError(sessionId, msg.id, lastStepForRetry.toolCallId)
-  }, [sessionLocks, lastStepForRetry, msg.id, notifyActionBlocked, sessionId])
+  const retryLastStep = useCallback(
+    (toolCallId: string) =>
+      runRetry(async () => {
+        const gate = getSessionActionGate('regenerate', sessionLocks)
+        if (!gate.allowed) {
+          notifyActionBlocked(gate.reason)
+          return
+        }
+        setRetryChoiceOpened(false)
+        await retryFromLastToolCallAfterApiError(sessionId, msg.id, toolCallId)
+      }),
+    [runRetry, sessionLocks, msg.id, notifyActionBlocked, sessionId]
+  )
 
-  const handleErrorTipRetry = useCallback(async () => {
-    if (lastStepForRetry) {
-      const gate = getSessionActionGate('regenerate', sessionLocks)
-      if (!gate.allowed) {
-        notifyActionBlocked(gate.reason)
-        return
-      }
-      await retryFromLastToolCallAfterApiError(sessionId, msg.id, lastStepForRetry.toolCallId)
-      return
-    }
-    await handleRefresh()
-  }, [sessionLocks, handleRefresh, lastStepForRetry, msg.id, notifyActionBlocked, sessionId])
+  const handleRetryLastStep = useCallback(async () => {
+    if (lastStepForRetry) await retryLastStep(lastStepForRetry.toolCallId)
+  }, [lastStepForRetry, retryLastStep])
+
+  const handleErrorTipRetry = useCallback(
+    () => (lastStepForRetry ? retryLastStep(lastStepForRetry.toolCallId) : handleRefresh()),
+    [handleRefresh, lastStepForRetry, retryLastStep]
+  )
 
   const handleMessageRetry = useCallback(async () => {
     if (lastStepForRetry) {
@@ -1225,7 +1232,7 @@ const _Message: FC<Props> = (props) => {
     </Flex>
   )
 
-  const actionButtons = !readOnly && buttonGroup !== 'none' && !msg.generating && !longPressMenuEnabled && (
+  const actionButtons = !readOnly && buttonGroup !== 'none' && !showGenerating && !longPressMenuEnabled && (
     <Flex
       gap={0}
       m={actionRowMargin}
@@ -1393,7 +1400,7 @@ const _Message: FC<Props> = (props) => {
             onClick={onClickAssistantAvatar}
           />
         )}
-        {!isUser && msg.generating && (
+        {!isUser && showGenerating && (
           <Flex className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
             <Loader
               size={rowLayout.generatingLoaderSize}
@@ -1451,7 +1458,7 @@ const _Message: FC<Props> = (props) => {
                 layout={isBubbleLayout ? 'bubble' : 'classic'}
                 isSmallScreen={isSmallScreen}
                 offsetTop={rowLayout.nameRowOffset}
-                generating={Boolean(msg.generating) && !shouldShowAvatar}
+                generating={showGenerating && !shouldShowAvatar}
               />
             )}
             {messageContent}

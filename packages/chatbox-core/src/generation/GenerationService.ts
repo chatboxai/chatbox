@@ -254,6 +254,12 @@ export interface GenerationToolExecutionPort {
 
 export interface GenerationCoordinationPort {
   runExclusive<T>(sessionId: string, operation: () => Promise<T>): Promise<T>
+  /**
+   * Like `runExclusive`, but skips `operation` (resolving `undefined`) when the
+   * session already has generation work, instead of queueing behind it. Hosts
+   * with user-triggered retries provide it so a repeated trigger is dropped.
+   */
+  tryRunExclusive?<T>(sessionId: string, operation: () => Promise<T>): Promise<T | undefined>
   wakeBackgroundTaskFollowUps(sessionId: string): Promise<void> | void
 }
 
@@ -1234,10 +1240,13 @@ export class GenerationService<TContext> {
     }
   }
 
-  retryFromLastToolCallAfterApiError(sessionId: string, messageId: string, toolCallId: string): Promise<void> {
-    return this.dependencies.coordination.runExclusive(sessionId, () =>
-      this.retryFromLastToolCallAfterApiErrorUnlocked(sessionId, messageId, toolCallId)
-    )
+  /** A user-triggered retry: dropped, not queued, while the session already has generation work. */
+  async retryFromLastToolCallAfterApiError(sessionId: string, messageId: string, toolCallId: string): Promise<void> {
+    const { coordination } = this.dependencies
+    const operation = () => this.retryFromLastToolCallAfterApiErrorUnlocked(sessionId, messageId, toolCallId)
+    await (coordination.tryRunExclusive
+      ? coordination.tryRunExclusive(sessionId, operation)
+      : coordination.runExclusive(sessionId, operation))
   }
 
   private async stopPausedToolCallUnlocked(

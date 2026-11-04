@@ -131,6 +131,7 @@ import { getMessageText } from '@shared/utils/message'
 import { formatTimestampWithZone, TIME_REMINDER_MIN_GAP_MS } from '@shared/utils/system-reminder'
 import type { ModelMessage } from 'ai'
 import { convertToLanguageModelPrompt, standardizePrompt } from 'ai/internal'
+import platform from '@/platform'
 import {
   addOrUpdateMyCopilot,
   disableCopilotMemory,
@@ -138,7 +139,6 @@ import {
   getCopilotMemorySelection,
   removeMyCopilot,
 } from '@/stores/copilotStore'
-import platform from '@/platform'
 import {
   computeEffectiveAgentMode,
   prepareAgentGenerationHarness,
@@ -2050,4 +2050,106 @@ describe('chat mode memories', () => {
 
     await storageMock.setItemNow('agent-memories', [])
   })
+})
+
+describe('injectDefaultMetadata setting', () => {
+  function createGappedMessages(): Message[] {
+    const now = Date.now()
+    return [
+      {
+        id: 'msg-system',
+        role: MessageRoleEnum.System,
+        timestamp: now - 50 * 60 * 1000,
+        contentParts: [{ type: 'text', text: 'SESSION_SYSTEM_PROMPT' }],
+      },
+      {
+        id: 'msg-1',
+        role: MessageRoleEnum.User,
+        timestamp: now - 45 * 60 * 1000,
+        contentParts: [{ type: 'text', text: 'EARLIER_QUESTION' }],
+      },
+      {
+        id: 'msg-2',
+        role: MessageRoleEnum.Assistant,
+        timestamp: now - 44 * 60 * 1000,
+        contentParts: [{ type: 'text', text: 'EARLIER_ANSWER' }],
+      },
+      {
+        id: 'msg-3',
+        role: MessageRoleEnum.User,
+        timestamp: now - 60 * 1000,
+        contentParts: [{ type: 'text', text: 'USER_QUESTION_TEXT' }],
+      },
+    ]
+  }
+
+  function prepareWith(globalSettings: Settings, agentModeValue: 'on' | 'off') {
+    const messages = createGappedMessages()
+    return prepareAgentGenerationHarness({
+      session: createSession(),
+      settings: { provider: ModelProviderEnum.ChatboxAI, modelId: 'test-model' } as SessionSettings,
+      globalSettings,
+      configs: { uuid: 'config-1' } as Config,
+      messages,
+      targetMsgIx: messages.length,
+      model: createMockModel(),
+      dependencies: createModelDependencies(),
+      webBrowsing: false,
+      agentModeValue,
+      agentModeLocked: agentModeValue === 'on',
+      agentModeSupported: true,
+      signal: new AbortController().signal,
+      sandboxProviderFactory: () => sandboxProviderMock as unknown as SandboxProvider,
+      isPro: () => true,
+    })
+  }
+
+  test('chat mode sends no model or time metadata when the setting is off', async () => {
+    const prepared = await prepareWith({ injectDefaultMetadata: false } as Settings, 'off')
+
+    const serialized = JSON.stringify(prepared.coreMessages)
+    expect(serialized).toContain('SESSION_SYSTEM_PROMPT')
+    expect(serialized).toContain('## Response Language')
+    expect(serialized).toContain('USER_QUESTION_TEXT')
+    expect(serialized).not.toContain('## Runtime')
+    expect(serialized).not.toContain('Current model:')
+    expect(serialized).not.toContain('Conversation started:')
+    expect(serialized).not.toContain('system-reminder')
+    expect(serialized).not.toContain('Current date and time:')
+    expect(prepared.systemPrompt).not.toContain('## Runtime')
+    expect(prepared.systemPrompt).toContain('## Response Language')
+  })
+
+  test('agent mode sends no runtime metadata when the setting is off', async () => {
+    const prepared = await prepareWith({ injectDefaultMetadata: false } as Settings, 'on')
+
+    const serialized = JSON.stringify(prepared.coreMessages)
+    expect(serialized).toContain('You are Chatbox agent')
+    expect(serialized).toContain('USER_QUESTION_TEXT')
+    expect(serialized).not.toContain('## Runtime')
+    expect(serialized).not.toContain('Current model:')
+    expect(serialized).not.toContain('Session context captured:')
+    expect(serialized).not.toContain('system-reminder')
+    expect(serialized).not.toContain('Current date and time:')
+    expect(prepared.tools.run_command).toBeDefined()
+  })
+
+  test.each(['off', 'on'] as const)(
+    'agent mode %s: enabling the setting produces the same request as the default',
+    async (agentModeValue) => {
+      vi.useFakeTimers({ now: new Date('2026-11-04T10:00:00Z'), toFake: ['Date'] })
+      try {
+        const byDefault = await prepareWith({} as Settings, agentModeValue)
+        const enabled = await prepareWith({ injectDefaultMetadata: true } as Settings, agentModeValue)
+
+        const serialized = JSON.stringify(enabled.coreMessages)
+        expect(serialized).toBe(JSON.stringify(byDefault.coreMessages))
+        expect(enabled.systemPrompt).toBe(byDefault.systemPrompt)
+        expect(serialized).toContain('Current model: test-model')
+        expect(serialized).toContain(agentModeValue === 'on' ? 'Session context captured:' : 'Current date and time:')
+      } finally {
+        vi.useRealTimers()
+      }
+    }
+  )
 })

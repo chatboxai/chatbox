@@ -164,6 +164,8 @@ describe('Chatbox API origin probing', () => {
       PRIMARY,
       FALLBACK,
       FALLBACK,
+      'https://api.chatboxai.com',
+      'https://api.chatboxai.com',
       'https://api.ai-chatbox.com',
       'https://api.ai-chatbox.com',
       'https://api.chatboxapp.xyz',
@@ -384,6 +386,7 @@ describe('isChatboxAPI', () => {
   it('matches exact Chatbox API origins only', () => {
     expect(isChatboxAPI('https://api.chatboxai.app/api/user')).toBe(true)
     expect(isChatboxAPI('https://api.chatbox.run/api/user')).toBe(true)
+    expect(isChatboxAPI('https://api.chatboxai.com/api/user')).toBe(true)
     expect(isChatboxAPI(new URL('https://chatboxai.app/api/user'))).toBe(true)
     expect(isChatboxAPI('https://api.chatboxai.app.example.org/api/user')).toBe(false)
     expect(isChatboxAPI('https://api.chatboxai.app@other.example/api/user')).toBe(false)

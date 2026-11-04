@@ -7,6 +7,7 @@ export { getChatboxAPIOrigin } from './chatbox-api-origin'
 const DEFAULT_POOL = [
   'https://api.chatboxai.app',
   'https://api.chatbox.run',
+  'https://api.chatboxai.com',
   'https://api.ai-chatbox.com',
   'https://api.chatboxapp.xyz',
 ]

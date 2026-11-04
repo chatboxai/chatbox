@@ -507,6 +507,35 @@ describe('row session actions', () => {
     expect(updated.threads?.[0].messages.map((message) => message.id).slice(0, 1)).toEqual([pivot.id])
     expect(updated.threads?.[0].messages.at(-1)?.generating).toBe(true)
   })
+  test('regenerateInNewFork saves the reply with its provider and model before generation starts', async () => {
+    const pivot = makeMessage('pivot', 'user')
+    const target = makeMessage('target', 'assistant')
+    const session: Session = {
+      id: 'session-8c',
+      name: 'Test',
+      messages: [pivot, target],
+      settings: { provider: 'openai', modelId: 'gpt-mock' },
+    }
+
+    await seed(session)
+    await sessionActions.regenerateInNewFork(session.id, target)
+    const reply = inspect(session.id).messages.at(-1)
+    expect(reply).toMatchObject({
+      role: 'assistant',
+      generating: true,
+      aiProvider: 'openai',
+      aiProviderName: 'Mock Provider',
+      model: 'mock-model',
+      modelId: 'gpt-mock',
+    })
+    expect(orchestrateMock).toHaveBeenCalledWith(
+      session.id,
+      expect.objectContaining({ id: reply?.id, aiProvider: 'openai' }),
+      {
+        operationType: 'regenerate',
+      }
+    )
+  })
   test('regenerateInNewFork skips an anchored summary when picking the fork pivot', async () => {
     const pivot = makeMessage('pivot', 'user')
     // Manual compaction during generation anchors the summary right after the

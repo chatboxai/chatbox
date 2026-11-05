@@ -181,6 +181,46 @@ describe('smooth follow output controller', () => {
     expect(scrollToBottom).toHaveBeenCalledOnce()
   })
 
+  it('keeps following through a bottom rubber-band bounce', () => {
+    const { controller, runFrames, scrollToBottom, stopScrolling } = createHarness('auto')
+
+    controller.handleAtBottomChange(true)
+    controller.handleScroll(200, 200)
+    for (const scrollTop of [230, 260, 240, 215, 203, 200]) {
+      expect(controller.handleScroll(scrollTop, 200)).toBe(false)
+    }
+
+    expect(stopScrolling).not.toHaveBeenCalled()
+    expect(controller.isFollowing()).toBe(true)
+    controller.handleHeightChange(400)
+    controller.handleHeightChange(420)
+    runFrames()
+    expect(scrollToBottom).toHaveBeenCalledOnce()
+  })
+
+  it('resumes from a pause when the user pulls into a bottom bounce', () => {
+    const { controller } = createHarness()
+
+    controller.handleAtBottomChange(true)
+    controller.handleScroll(200, 200)
+    controller.handleScroll(150, 200)
+    expect(controller.isFollowing()).toBe(false)
+
+    controller.handleScroll(250, 200)
+    controller.handleScroll(200, 200)
+    expect(controller.isFollowing()).toBe(true)
+  })
+
+  it('does not treat a top rubber-band bounce as scrolling', () => {
+    const { controller, stopScrolling } = createHarness()
+
+    controller.handleScroll(0, 200)
+    controller.handleScroll(-40, 200)
+    expect(controller.handleScroll(-10, 200)).toBe(false)
+    expect(controller.handleScroll(0, 200)).toBe(false)
+    expect(stopScrolling).not.toHaveBeenCalled()
+  })
+
   it('does not resume when a layout shrink puts a user-paused viewport at the bottom', () => {
     const { controller, runFrames, scrollToBottom } = createHarness()
 

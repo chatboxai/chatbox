@@ -78,7 +78,10 @@ export function createSmoothFollowOutputController({
     lastMaxScrollTop = maxScrollTop
   }
 
-  const handleScroll = (scrollTop: number, maxScrollTop: number) => {
+  const handleScroll = (rawScrollTop: number, maxScrollTop: number) => {
+    // iOS rubber-band scrolling reports offsets past either edge. Returning from a bottom bounce shrinks
+    // scrollTop toward the bottom and must not read as an upward scroll that pins the view mid-bounce.
+    const scrollTop = Math.min(Math.max(rawScrollTop, 0), maxScrollTop)
     const movedUp = lastScrollTop !== undefined && scrollTop < lastScrollTop - SCROLL_DIRECTION_TOLERANCE
     const movedDown = lastScrollTop !== undefined && scrollTop > lastScrollTop + SCROLL_DIRECTION_TOLERANCE
     const movedUpBecauseLayoutShrank = isLayoutClampedScroll(lastScrollTop, lastMaxScrollTop, scrollTop, maxScrollTop)

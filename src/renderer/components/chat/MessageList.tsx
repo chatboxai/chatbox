@@ -42,6 +42,7 @@ import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { useSessionControls } from '@/hooks/useSessionLockState'
 import type { useSessionTranscript } from '@/hooks/useSessionPresentation'
 import { cn } from '@/lib/utils'
+import platform from '@/platform'
 import { useSessionAgentMode } from '@/stores/session/agent-mode'
 import { removeMessage } from '@/stores/session/messages'
 import { moveThreadToConversations, removeThread, switchThread } from '@/stores/session/threads'
@@ -66,7 +67,11 @@ import { areMinimapAnchorsEqual, buildMessageMinimapAnchors } from './message-na
 import { buildTranscriptRenderItems } from './message-render-items'
 import { MessageSwipeStartContext } from './message-swipe-start'
 import SummaryMessage from './SummaryMessage'
-import { createSmoothFollowOutputController, isLayoutClampedScroll } from './smooth-follow-output'
+import {
+  createSmoothFollowOutputController,
+  getFollowOutputScrollBehavior,
+  isLayoutClampedScroll,
+} from './smooth-follow-output'
 import { createTranscriptContentAnchor, shiftTranscriptContentAnchor } from './transcript-content-anchor'
 import { scrollToTranscriptItem, transcriptAnchorLayoutSettled } from './transcript-item-scroll'
 
@@ -250,6 +255,7 @@ const MessageList = forwardRef<
           if (element) scrollToPosition({ top: Math.max(0, element.scrollHeight - element.clientHeight), behavior })
         },
         stopScrolling: (top) => scrollToPosition({ top, behavior: 'auto' }),
+        getScrollBehavior: () => getFollowOutputScrollBehavior(platform.type),
       }),
     [scrollToPosition]
   )

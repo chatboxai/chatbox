@@ -1,5 +1,9 @@
-import { describe, expect, it, vi } from 'vitest'
-import { createSmoothFollowOutputController, isLayoutClampedScroll } from './smooth-follow-output'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  createSmoothFollowOutputController,
+  getFollowOutputScrollBehavior,
+  isLayoutClampedScroll,
+} from './smooth-follow-output'
 
 function createHarness(behavior: 'auto' | 'smooth' = 'smooth') {
   const frames = new Map<number, FrameRequestCallback>()
@@ -336,5 +340,28 @@ describe('smooth follow output controller', () => {
     runFrames()
 
     expect(scrollToBottom).not.toHaveBeenCalled()
+  })
+})
+
+describe('follow output scroll behavior', () => {
+  const stubReducedMotion = (reduce: boolean) => {
+    vi.stubGlobal('window', { matchMedia: () => ({ matches: reduce }) })
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('follows instantly on mobile even when motion is allowed', () => {
+    stubReducedMotion(false)
+    expect(getFollowOutputScrollBehavior('mobile')).toBe('auto')
+  })
+
+  it('follows smoothly on desktop and web unless reduced motion is requested', () => {
+    stubReducedMotion(false)
+    expect(getFollowOutputScrollBehavior('desktop')).toBe('smooth')
+    expect(getFollowOutputScrollBehavior('web')).toBe('smooth')
+    stubReducedMotion(true)
+    expect(getFollowOutputScrollBehavior('desktop')).toBe('auto')
   })
 })

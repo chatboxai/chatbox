@@ -313,6 +313,7 @@ const MobileActionMenu: FC<ActionMenuProps> = ({
   trigger = 'click',
 }) => {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const open = opened ?? uncontrolledOpen
   const setOpen = (nextOpen: boolean) => {
     onChange?.(nextOpen)
@@ -332,11 +333,22 @@ const MobileActionMenu: FC<ActionMenuProps> = ({
 
   return (
     <Drawer.Root open={open} onOpenChange={setOpen} noBodyStyles>
-      {trigger === 'manual' ? children : <Drawer.Trigger asChild>{children}</Drawer.Trigger>}
+      {trigger === 'manual' ? (
+        children
+      ) : (
+        <Drawer.Trigger asChild ref={triggerRef}>
+          {children}
+        </Drawer.Trigger>
+      )}
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 bg-chatbox-background-mask-overlay select-none [-webkit-touch-callout:none]" />
         <Drawer.Content
           data-testid={contentTestId}
+          onCloseAutoFocus={(event) => {
+            // Returning focus to a trigger inside a long scrolled message would scroll it into view.
+            event.preventDefault()
+            triggerRef.current?.focus({ preventScroll: true })
+          }}
           className="flex flex-col h-fit fixed bottom-0 left-0 right-0 outline-none select-none [-webkit-touch-callout:none]"
         >
           <div className="bg-chatbox-background-primary rounded-t-lg">

@@ -36,6 +36,7 @@ const h = vi.hoisted(() => ({
   agentMode: 'off' as 'off' | 'on',
   renderMenu: vi.fn(),
   smallScreen: false,
+  platformType: 'desktop' as 'desktop' | 'mobile',
   activity: 'idle' as 'idle' | 'generating',
   atTop: null as ((value: boolean) => void) | null,
   atBottom: null as ((value: boolean) => void) | null,
@@ -82,6 +83,13 @@ vi.mock('@/hooks/useSessionLockState', () => ({
 vi.mock('@/stores/session/agent-mode', () => ({ useSessionAgentMode: () => ({ value: h.agentMode }) }))
 vi.mock('@/hooks/useCopilots', () => ({ useMyCopilots: () => ({ copilots: [] }) }))
 vi.mock('@/lib/utils', () => ({ cn: (...items: unknown[]) => items.filter(Boolean).join(' ') }))
+vi.mock('@/platform', () => ({
+  default: {
+    get type() {
+      return h.platformType
+    },
+  },
+}))
 vi.mock('@/hooks/useScreenChange', () => ({ useIsSmallScreen: () => h.smallScreen }))
 vi.mock('@/stores/sessionActivityStore', () => ({ useSessionActivity: () => h.activity }))
 vi.mock('@/hooks/useNeedRoomForWinControls', async () => {
@@ -396,6 +404,7 @@ beforeEach(() => {
   h.agentMode = 'off'
   h.renderMenu.mockClear()
   h.smallScreen = false
+  h.platformType = 'desktop'
   h.activity = 'idle'
   h.atTop = null
   h.atBottom = null
@@ -937,34 +946,41 @@ describe('row transcript host', () => {
     }
   })
 
-  test('keeps explicit Tail following after acknowledging a shorter window', async () => {
-    h.measuredHeight = 8000
-    const listRef = createRef<MessageListRef>()
-    const view = render(<Host listRef={listRef} />)
-    await waitFor(() => expect(h.firstReady).toBe(true))
-    const viewport = view.getByTestId('virtuoso')
-    viewport.scrollTop = 6000
-    fireEvent.scroll(viewport)
-    h.measuredHeight = 1000
-    act(() => listRef.current?.scrollToBottom())
-    await waitFor(() => {
-      expect(h.controller!.getSnapshot().layout).toBeNull()
-      expect(viewport.scrollTop).toBe(400)
-    })
-    act(() => h.heightChanged?.(1000))
-    h.scrollTo.mockClear()
-    vi.useFakeTimers()
-    try {
-      await act(async () => {
-        h.measuredHeight = 1100
-        h.heightChanged?.(1100)
-        await vi.advanceTimersByTimeAsync(50)
+  test.each([
+    ['desktop', 'smooth'],
+    ['mobile', 'auto'],
+  ] as const)(
+    'keeps explicit Tail following on %s with %s scrolling after acknowledging a shorter window',
+    async (platformType, behavior) => {
+      h.platformType = platformType
+      h.measuredHeight = 8000
+      const listRef = createRef<MessageListRef>()
+      const view = render(<Host listRef={listRef} />)
+      await waitFor(() => expect(h.firstReady).toBe(true))
+      const viewport = view.getByTestId('virtuoso')
+      viewport.scrollTop = 6000
+      fireEvent.scroll(viewport)
+      h.measuredHeight = 1000
+      act(() => listRef.current?.scrollToBottom())
+      await waitFor(() => {
+        expect(h.controller!.getSnapshot().layout).toBeNull()
+        expect(viewport.scrollTop).toBe(400)
       })
-      expect(h.scrollTo).toHaveBeenCalledWith({ top: 500, behavior: 'smooth' })
-    } finally {
-      vi.useRealTimers()
+      act(() => h.heightChanged?.(1000))
+      h.scrollTo.mockClear()
+      vi.useFakeTimers()
+      try {
+        await act(async () => {
+          h.measuredHeight = 1100
+          h.heightChanged?.(1100)
+          await vi.advanceTimersByTimeAsync(50)
+        })
+        expect(h.scrollTo).toHaveBeenCalledWith({ top: 500, behavior })
+      } finally {
+        vi.useRealTimers()
+      }
     }
-  })
+  )
 
   test('reveals the first window after the virtual tail is measured', async () => {
     h.tailMounted = false

@@ -1,10 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildChatboxAIGroupViews } from '@/components/ModelSelectorV2/chatboxCatalog'
-import { getChatboxAIModelList, getModelManifest, uploadAndCreateUserFile, uploadAndParseUserFile } from './remote'
+import {
+  checkLoginStatus,
+  getChatboxAIModelList,
+  getModelManifest,
+  getUserProfile,
+  getWebAuthToken,
+  listLicensesByUser,
+  loginOrSignupWithEmailCode,
+  refreshAccessToken,
+  requestLoginTicketId,
+  sendEmailLoginCode,
+  uploadAndCreateUserFile,
+  uploadAndParseUserFile,
+} from './remote'
 
 const { afetch, upload, setBlob } = vi.hoisted(() => ({ afetch: vi.fn(), upload: vi.fn(), setBlob: vi.fn() }))
 
-vi.mock('@shared/request/request', () => ({ createAfetch: () => afetch, uploadFile: upload }))
+vi.mock('@shared/request/request', () => ({
+  createAfetch: () => afetch,
+  createAuthenticatedAfetch: () => afetch,
+  uploadFile: upload,
+}))
 vi.mock('@shared/request/chatboxai_pool', () => ({ getChatboxAPIOrigin: () => 'https://example.test' }))
 vi.mock('@/lib/utils', () => ({ getLogger: () => ({ error: vi.fn() }) }))
 vi.mock('@/platform', () => ({
@@ -12,6 +29,7 @@ vi.mock('@/platform', () => ({
     type: 'web',
     getPlatform: async () => 'web',
     getVersion: async () => 'test',
+    getDeviceName: async () => 'test',
     setStoreBlob: setBlob,
   },
 }))
@@ -105,6 +123,30 @@ describe('remote model catalog compatibility', () => {
 
     respond({ models: {} })
     await expect(getChatboxAIModelList({})).rejects.toThrow()
+  })
+})
+
+describe('account API origin', () => {
+  beforeEach(() => {
+    afetch.mockReset().mockResolvedValue({ json: async () => ({ data: {} }), headers: { get: () => 'token' } })
+  })
+
+  it.each([
+    ['/api/auth/request_login_ticket', () => requestLoginTicketId()],
+    ['/api/auth/send_email_login_code', () => sendEmailLoginCode({ email: 'user@example.test' })],
+    [
+      '/api/auth/login_or_signup_with_email_code',
+      () => loginOrSignupWithEmailCode({ email: 'user@example.test', code: '1' }),
+    ],
+    ['/api/auth/web_auth_token/generate', () => getWebAuthToken()],
+    ['/api/auth/login_status', () => checkLoginStatus('ticket')],
+    ['/api/auth/token_refresh', () => refreshAccessToken({ refreshToken: 'refresh' })],
+    ['/api/user/profile', () => getUserProfile()],
+    ['/api/license/list_by_user', () => listLicensesByUser()],
+  ])('sends %s to the selected Chatbox API origin', async (path, call) => {
+    await call()
+
+    expect(afetch.mock.calls[0][0]).toBe(`https://example.test${path}`)
   })
 })
 

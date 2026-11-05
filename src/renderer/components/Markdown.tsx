@@ -64,6 +64,7 @@ import clsx from 'clsx'
 import { visit } from 'unist-util-visit'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { useCopied } from '@/hooks/useCopied'
+import { uiStore, useUIStore } from '@/stores/uiStore'
 import { highlight, highlightSync, preloadLanguage, type ShikiTheme } from '../packages/shiki'
 import { rehypeTranscriptBlocks } from './chat/transcript-markdown-blocks'
 import { ScalableIcon } from './common/ScalableIcon'
@@ -414,9 +415,15 @@ export const BlockCodeCollapsedStateProvider: React.FC<BlockCodeCollapsedStatePr
   defaultCollapsed = false,
 }) => {
   const [wrappedStates, setWrappedStates] = useState<Record<string, boolean>>({})
-  const toggleWrap = useCallback((id: string) => {
-    setWrappedStates((previous) => ({ ...previous, [id]: !previous[id] }))
-  }, [])
+  const toggleWrap = useCallback(
+    (id: string) => {
+      const { codeBlockWrap, setCodeBlockWrap } = uiStore.getState()
+      const wrapped = !(wrappedStates[id] ?? codeBlockWrap)
+      setWrappedStates((previous) => ({ ...previous, [id]: wrapped }))
+      setCodeBlockWrap(wrapped)
+    },
+    [wrappedStates]
+  )
   const [collapsedStates, setCollapsedStates] = useState<Record<string, boolean>>({})
 
   // Toggle collapse state
@@ -468,6 +475,7 @@ export const BlockCodeCollapsedStateProvider: React.FC<BlockCodeCollapsedStatePr
 // Custom hook
 export const useBlockCodeCollapsedState = (messageId: string, wrapStateId = messageId) => {
   const context = useContext(BlockCodeCollapsedStateContext)
+  const codeBlockWrap = useUIStore((state) => state.codeBlockWrap)
 
   if (context === undefined) {
     throw new Error('useBlockCodeCollapsedState must be used within a BlockCodeCollapsedStateProvider')
@@ -478,7 +486,7 @@ export const useBlockCodeCollapsedState = (messageId: string, wrapStateId = mess
   }
 
   return {
-    wrapped: context.wrappedStates[wrapStateId] ?? false,
+    wrapped: context.wrappedStates[wrapStateId] ?? codeBlockWrap,
     toggleWrap: () => context.toggleWrap(wrapStateId),
     collapsed: context.isCollapsed(messageId),
     toggleCollapsed: () => context.toggleCollapse(messageId),

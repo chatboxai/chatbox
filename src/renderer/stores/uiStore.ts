@@ -133,6 +133,8 @@ export const uiStore = createStore(
         sessionPanels: {} as Record<string, SessionPanelState | undefined>,
         // Width of the conversation side panel in px; null uses min(560px, 45%).
         sessionPanelWidth: null as number | null,
+        // Last auto-wrap choice on a code block; code blocks the user has not toggled follow it.
+        codeBlockWrap: false,
       },
       (set, get) => ({
         addToast: (content: string, duration?: number, action?: Toast['action']) => {
@@ -247,6 +249,10 @@ export const uiStore = createStore(
 
         setSessionPanelWidth: (sessionPanelWidth: number | null) => {
           set({ sessionPanelWidth })
+        },
+
+        setCodeBlockWrap: (codeBlockWrap: boolean) => {
+          set({ codeBlockWrap })
         },
 
         setOpenSearchDialog: (openSearchDialog: boolean, globalOnly = false) => {
@@ -437,6 +443,7 @@ export const uiStore = createStore(
         messageGestureHintShown: state.messageGestureHintShown,
         lowQuotaReminderDismissedPeriod: state.lowQuotaReminderDismissedPeriod,
         sessionPanelWidth: state.sessionPanelWidth,
+        codeBlockWrap: state.codeBlockWrap,
       }),
       storage: safeStorage,
     }

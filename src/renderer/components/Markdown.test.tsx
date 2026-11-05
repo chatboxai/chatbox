@@ -85,10 +85,12 @@ vi.mock('react-photoswipe-gallery', () => ({
   ),
 }))
 
+import { uiStore } from '@/stores/uiStore'
 import Markdown, { BlockCodeCollapsedStateProvider } from './Markdown'
 
 afterEach(() => {
   cleanup()
+  uiStore.getState().setCodeBlockWrap(false)
   openViewer.mockReset()
   sandboxPersistArtifact.mockReset()
   sandboxExportFile.mockReset()
@@ -108,7 +110,7 @@ describe('Markdown code wrapping', () => {
     </MantineProvider>
   )
 
-  it('toggles each code block independently without re-highlighting', () => {
+  it('remembers the last wrap choice for untoggled code blocks without re-highlighting', () => {
     render(content('```js\nconst first = 1\n```\n\n```js\nconst second = 2\n```'))
     const buttons = screen.getAllByRole('button', { name: 'Auto wrap' })
     const calls = highlightSync.mock.calls.length
@@ -116,10 +118,23 @@ describe('Markdown code wrapping', () => {
     fireEvent.click(buttons[0])
     expect(buttons[0].getAttribute('aria-pressed')).toBe('true')
     expect(buttons[0].closest('.code-block-container')?.getAttribute('data-wrap-code')).toBe('true')
-    expect(buttons[1].getAttribute('aria-pressed')).toBe('false')
+    expect(buttons[1].getAttribute('aria-pressed')).toBe('true')
+    expect(uiStore.getState().codeBlockWrap).toBe(true)
     expect(highlightSync.mock.calls.length).toBe(calls)
-    fireEvent.click(buttons[0])
-    expect(buttons[0].getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(buttons[1])
+    expect(buttons[1].getAttribute('aria-pressed')).toBe('false')
+    expect(buttons[0].getAttribute('aria-pressed')).toBe('true')
+    expect(uiStore.getState().codeBlockWrap).toBe(false)
+  })
+
+  it('starts new code blocks with the remembered wrap choice', () => {
+    uiStore.getState().setCodeBlockWrap(true)
+    render(content('```js\nconst first = 1\n```'))
+    const button = screen.getByRole('button', { name: 'Auto wrap' })
+    expect(button.getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(button)
+    expect(button.getAttribute('aria-pressed')).toBe('false')
+    expect(uiStore.getState().codeBlockWrap).toBe(false)
   })
 
   it('keeps wrapping enabled as streaming code grows and becomes highlighted', () => {

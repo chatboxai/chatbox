@@ -25,7 +25,7 @@ export type MessageErrorPresentation = MessageErrorDetails &
     | { kind: 'context-limit' }
     | { kind: 'ocr-failed'; provider: string }
     | { kind: 'api'; providerId?: string; httpStatusCode?: number }
-    | { kind: 'network'; host: string }
+    | { kind: 'network'; host: string; providerId?: string }
     | { kind: 'paint-not-supported'; providerId?: string }
     | { kind: 'provider-missing' }
     | { kind: 'known-chatbox-api'; errorCode: number }
@@ -158,7 +158,12 @@ export function resolveMessageErrorPresentation(
   }
   if (msg.errorCode === 10002 || msg.error?.startsWith('Network Error')) {
     const host = msg.errorExtra?.host
-    return { ...details, kind: 'network', host: typeof host === 'string' ? host : 'AI Provider' }
+    return {
+      ...details,
+      kind: 'network',
+      host: typeof host === 'string' ? host : 'AI Provider',
+      providerId: msg.aiProvider,
+    }
   }
   if (msg.errorCode === 10003) {
     return { ...details, kind: 'paint-not-supported', providerId: msg.aiProvider }

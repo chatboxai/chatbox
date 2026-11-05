@@ -78,8 +78,10 @@ describe('resolveMessageErrorPresentation', () => {
       )
     ).toMatchObject({ kind: 'api', httpStatusCode: 429 })
     expect(
-      resolveMessageErrorPresentation(message({ error: 'offline', errorCode: 10002, errorExtra: { host: 'api.test' } }))
-    ).toMatchObject({ kind: 'network', host: 'api.test' })
+      resolveMessageErrorPresentation(
+        message({ error: 'offline', errorCode: 10002, aiProvider: 'custom-provider', errorExtra: { host: 'api.test' } })
+      )
+    ).toMatchObject({ kind: 'network', host: 'api.test', providerId: 'custom-provider' })
     expect(resolveMessageErrorPresentation(message({ error: 'OCR failed', errorCode: 10006 }))).toMatchObject({
       kind: 'ocr-failed',
     })

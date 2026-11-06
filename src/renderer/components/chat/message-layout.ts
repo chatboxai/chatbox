@@ -9,15 +9,16 @@ export const ASSISTANT_CONTENT_MAX_WIDTH = 840
 export type ConversationRowLayout = {
   avatarSize: number
   avatarGap: number
-  /** Space kept clear left of user bubbles, on the side opposite the speaker. */
+  /** Space kept clear left of user bubbles, on the side opposite the speaker; none on a small screen. */
   userFarSideSpace: number
-  /** Space kept clear right of assistant replies; none when the assistant avatar sits above the reply. */
+  /** Space kept clear right of assistant replies; none on a small screen. */
   assistantFarSideSpace: number
   /**
    * On a small screen the assistant avatar sits above the reply, beside its name row, so the reply takes the full
    * width of the column. Elsewhere the avatar sits beside the reply.
    */
   assistantAvatarAbove: boolean
+  /** On a small screen the bubble leaves a narrow strip of the column clear, matching the room the avatar takes. */
   userBubbleMaxWidth: string
   /** The reply spans the full-width content column instead of stopping at ASSISTANT_CONTENT_MAX_WIDTH. */
   spansColumn: boolean
@@ -33,7 +34,8 @@ const NAME_ROW_LINE_HEIGHT = 20
 
 /**
  * Row metrics for one conversation message. `wideColumn` is the full-width content column on a wide screen: replies
- * span the column and user bubbles sit at its right edge, so neither side keeps far-side space.
+ * span the column and user bubbles sit at its right edge, so neither side keeps far-side space. A small screen keeps
+ * no far-side space either, with or without avatars.
  */
 export function getConversationRowLayout(
   isSmallScreen: boolean,
@@ -42,15 +44,14 @@ export function getConversationRowLayout(
 ): ConversationRowLayout {
   const avatarSize = isSmallScreen ? 24 : 28
   const spansColumn = wideColumn && !isSmallScreen
-  const farSideSpace = spansColumn ? 0 : showAvatar ? (isSmallScreen ? 24 : 64) : isSmallScreen ? 44 : 128
-  const assistantAvatarAbove = isSmallScreen && showAvatar
+  const farSideSpace = spansColumn || isSmallScreen ? 0 : showAvatar ? 64 : 128
   return {
     avatarSize,
     avatarGap: isSmallScreen ? 8 : 10,
     userFarSideSpace: farSideSpace,
-    assistantFarSideSpace: assistantAvatarAbove ? 0 : farSideSpace,
-    assistantAvatarAbove,
-    userBubbleMaxWidth: isSmallScreen ? '80%' : 'min(640px, 72%)',
+    assistantFarSideSpace: farSideSpace,
+    assistantAvatarAbove: isSmallScreen && showAvatar,
+    userBubbleMaxWidth: isSmallScreen ? (showAvatar ? 'calc(100% - 3rem)' : '95%') : 'min(640px, 72%)',
     spansColumn,
     assistantContentMaxWidth: spansColumn ? undefined : ASSISTANT_CONTENT_MAX_WIDTH,
     generatingLoaderSize: avatarSize + 4,

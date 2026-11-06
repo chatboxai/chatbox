@@ -54,19 +54,23 @@ describe('Conversation row layout', () => {
     expect(getConversationRowLayout(true, true)).toEqual({
       avatarSize: 24,
       avatarGap: 8,
-      userFarSideSpace: 24,
+      userFarSideSpace: 0,
       assistantFarSideSpace: 0,
       assistantAvatarAbove: true,
-      userBubbleMaxWidth: '80%',
+      userBubbleMaxWidth: 'calc(100% - 3rem)',
       spansColumn: false,
       assistantContentMaxWidth: ASSISTANT_CONTENT_MAX_WIDTH,
       generatingLoaderSize: 28,
       nameRowOffset: 2,
     })
+  })
+
+  test('widens small-screen replies and user bubbles with avatars hidden', () => {
     expect(getConversationRowLayout(true, false)).toMatchObject({
-      userFarSideSpace: 44,
-      assistantFarSideSpace: 44,
+      userFarSideSpace: 0,
+      assistantFarSideSpace: 0,
       assistantAvatarAbove: false,
+      userBubbleMaxWidth: '95%',
       nameRowOffset: 0,
     })
   })

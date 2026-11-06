@@ -57,21 +57,26 @@ function previewMetrics(size: LayoutPreviewProps['size']) {
   return size === 'sm' ? { avatar: 18, line: 6, bubble: 18 } : { avatar: 24, line: 8, bubble: 24 }
 }
 
-/** The user row both layouts share: a brand bubble on the right with the user avatar beside it. */
-function UserPreviewRow({ size }: LayoutPreviewProps) {
+/** The user row: a brand bubble with the user avatar beside it, on the left in classic and the right in bubble. */
+function UserPreviewRow({ size, side }: LayoutPreviewProps & { side: 'left' | 'right' }) {
   const { avatar, line, bubble } = previewMetrics(size)
+  const avatarDot = <Box className="rounded-full bg-chatbox-background-tertiary flex-shrink-0" w={avatar} h={avatar} />
   return (
-    <Flex justify="flex-end" align="flex-start" gap={6}>
+    <Flex justify={side === 'right' ? 'flex-end' : 'flex-start'} align="flex-start" gap={6}>
+      {side === 'left' && avatarDot}
       <Flex
         h={bubble}
         w="62%"
         align="center"
         px={line + 2}
-        className="rounded-[10px] rounded-tr-[3px] bg-chatbox-tint-brand"
+        className={clsx(
+          'rounded-[10px] bg-chatbox-tint-brand',
+          side === 'right' ? 'rounded-tr-[3px]' : 'rounded-tl-[3px]'
+        )}
       >
         <Box h={line} className="w-full rounded-full bg-[rgba(255,255,255,0.4)]" />
       </Flex>
-      <Box className="rounded-full bg-chatbox-background-tertiary flex-shrink-0" w={avatar} h={avatar} />
+      {side === 'right' && avatarDot}
     </Flex>
   )
 }
@@ -102,7 +107,7 @@ export function ClassicLayoutPreview({ size = 'md' }: LayoutPreviewProps) {
   const { avatar, line } = previewMetrics(size)
   return (
     <Stack gap="sm">
-      <UserPreviewRow size={size} />
+      <UserPreviewRow size={size} side="left" />
       <Flex align="flex-start" gap={6} pr={18}>
         <Box className="rounded-full bg-chatbox-tint-brand flex-shrink-0" w={avatar} h={avatar} />
         <Box flex="1" pt={line / 2}>
@@ -118,7 +123,7 @@ export function BubbleLayoutPreview({ size = 'md' }: LayoutPreviewProps) {
   const { avatar, line } = previewMetrics(size)
   return (
     <Stack gap="sm">
-      <UserPreviewRow size={size} />
+      <UserPreviewRow size={size} side="right" />
       <Flex align="flex-start" gap={6} pr={18}>
         <Box className="rounded-full bg-chatbox-tint-brand flex-shrink-0" w={avatar} h={avatar} />
         <Box flex="1" pt={line / 2}>

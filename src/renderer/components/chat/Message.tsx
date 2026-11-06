@@ -96,7 +96,12 @@ import {
   MessageSwipeCue,
 } from './MessageSwipeFeedback'
 import { getMessageActionVisibilityClass, type MessageButtonGroup } from './message-action-state'
-import { getConversationContentClassName, getConversationRowLayout, isErrorOnlyMessage } from './message-layout'
+import {
+  getConversationContentClassName,
+  getConversationRowLayout,
+  isErrorOnlyMessage,
+  isUserMessageOnRight,
+} from './message-layout'
 import { getMessagePreviewText } from './message-navigation-utils'
 import { getMessageRoleClass } from './message-role-class'
 import { createCollapsedDisplayGroups, createMessageTimelineLayout } from './message-timeline'
@@ -906,7 +911,8 @@ const _Message: FC<Props> = (props) => {
   const swipeEnabled = swipeMode !== 'none'
 
   const conversationRole = msg.role === 'user' || msg.role === 'assistant' ? msg.role : null
-  const isRightAlignedMessage = msg.role === 'user'
+  const messageLayoutValue = isBubbleLayout ? 'bubble' : 'classic'
+  const isRightAlignedMessage = msg.role === 'user' && isUserMessageOnRight(messageLayoutValue)
   const messageRoleClass = getMessageRoleClass(msg.role)
   const shouldShowAvatar = showAvatar ?? true
   const rowLayout = getConversationRowLayout(isSmallScreen, shouldShowAvatar, widthFull)
@@ -927,7 +933,7 @@ const _Message: FC<Props> = (props) => {
         className={
           conversationRole
             ? getConversationContentClassName({
-                layout: isBubbleLayout ? 'bubble' : 'classic',
+                layout: messageLayoutValue,
                 role: conversationRole,
                 isSmallScreen,
                 errorOnly: isErrorOnlyMessage(msg),
@@ -1445,7 +1451,7 @@ const _Message: FC<Props> = (props) => {
       <Box
         data-testid={TestId.message.item}
         data-message-role={msg.role}
-        {...{ [AutomationStateAttr.messageLayout]: isBubbleLayout ? 'bubble' : 'classic' }}
+        {...{ [AutomationStateAttr.messageLayout]: messageLayoutValue }}
         {...longPressProps}
         ref={ref}
         id={props.id}
@@ -1471,12 +1477,14 @@ const _Message: FC<Props> = (props) => {
       >
         <Flex
           ref={swipeRowRef}
-          justify={isUser ? 'flex-end' : 'flex-start'}
+          justify={isRightAlignedMessage ? 'flex-end' : 'flex-start'}
           align="flex-start"
           gap={rowLayout.avatarGap}
           className="group/swipe-row relative w-full min-w-0"
           style={
-            isUser ? { paddingLeft: rowLayout.userFarSideSpace } : { paddingRight: rowLayout.assistantFarSideSpace }
+            isRightAlignedMessage
+              ? { paddingLeft: rowLayout.userFarSideSpace }
+              : { paddingRight: isUser ? rowLayout.userFarSideSpace : rowLayout.assistantFarSideSpace }
           }
         >
           {longPressHighlight}
@@ -1491,10 +1499,10 @@ const _Message: FC<Props> = (props) => {
               bubble={isBubbleLayout}
             />
           )}
-          {!isUser && !rowLayout.assistantAvatarAbove && avatar}
+          {(isUser ? !isRightAlignedMessage : !rowLayout.assistantAvatarAbove) && avatar}
           <Flex
             direction="column"
-            align={isUser ? 'flex-end' : 'flex-start'}
+            align={isRightAlignedMessage ? 'flex-end' : 'flex-start'}
             className={cn('relative min-w-0', !isUser && 'flex-1')}
             style={{ maxWidth: isUser ? rowLayout.userBubbleMaxWidth : rowLayout.assistantContentMaxWidth }}
           >
@@ -1503,7 +1511,7 @@ const _Message: FC<Props> = (props) => {
                 {rowLayout.assistantAvatarAbove && avatar}
                 <MessageNameRow
                   header={header}
-                  layout={isBubbleLayout ? 'bubble' : 'classic'}
+                  layout={messageLayoutValue}
                   isSmallScreen={isSmallScreen}
                   offsetTop={rowLayout.nameRowOffset}
                   generating={showGenerating && !shouldShowAvatar}
@@ -1513,12 +1521,16 @@ const _Message: FC<Props> = (props) => {
             )}
             {messageContent}
             {(msg.files || msg.links) && (
-              <MessageAttachmentGrid files={msg.files} links={msg.links} align={isUser ? 'end' : 'start'} />
+              <MessageAttachmentGrid
+                files={msg.files}
+                links={msg.links}
+                align={isRightAlignedMessage ? 'end' : 'start'}
+              />
             )}
             {meta}
             {isUser ? actionButtons : messageActions}
           </Flex>
-          {isUser && avatar}
+          {isRightAlignedMessage && avatar}
         </Flex>
         {longPressMenu}
         {selectTextPage}

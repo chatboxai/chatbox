@@ -3,13 +3,18 @@ import { cn } from '@/lib/utils'
 
 export type MessageLayout = 'classic' | 'bubble'
 
+/** Classic keeps every avatar on the left; bubble puts the user's bubble and avatar on the right. */
+export function isUserMessageOnRight(layout: MessageLayout): boolean {
+  return layout === 'bubble'
+}
+
 /** Widest an assistant reply may grow in the standard-width column, in either layout. */
 export const ASSISTANT_CONTENT_MAX_WIDTH = 840
 
 export type ConversationRowLayout = {
   avatarSize: number
   avatarGap: number
-  /** Space kept clear left of user bubbles, on the side opposite the speaker; none on a small screen. */
+  /** Space kept clear beside user bubbles on the side away from the user avatar; none on a small screen. */
   userFarSideSpace: number
   /** Space kept clear right of assistant replies; none on a small screen. */
   assistantFarSideSpace: number
@@ -34,8 +39,8 @@ const NAME_ROW_LINE_HEIGHT = 20
 
 /**
  * Row metrics for one conversation message. `wideColumn` is the full-width content column on a wide screen: replies
- * span the column and user bubbles sit at its right edge, so neither side keeps far-side space. A small screen keeps
- * no far-side space either, with or without avatars.
+ * span the column and user bubbles sit at its edge, so neither side keeps far-side space. A small screen keeps no
+ * far-side space either, with or without avatars.
  */
 export function getConversationRowLayout(
   isSmallScreen: boolean,
@@ -62,8 +67,9 @@ export function getConversationRowLayout(
 const BUBBLE_PADDING = { small: 'px-3.5 py-[9px]', wide: 'px-4 py-2.5' } as const
 
 /**
- * Surface classes for user and assistant message content. The two layouts differ only in the assistant reply:
- * classic lays it flat on the page, bubble wraps it in a secondary-colored bubble. A classic reply spanning the
+ * Surface classes for user and assistant message content. Both layouts draw the user bubble with its tail corner
+ * toward the user avatar. Classic lays the assistant reply flat on the page, bubble wraps it in a secondary-colored
+ * bubble. A classic reply spanning the
  * full-width column fills it so code blocks and tables use the column; a bubble keeps fitting its content.
  */
 export function getConversationContentClassName({
@@ -82,7 +88,8 @@ export function getConversationContentClassName({
   const padding = isSmallScreen ? BUBBLE_PADDING.small : BUBBLE_PADDING.wide
   if (role === 'user') {
     return cn(
-      'inline-block max-w-full min-w-0 rounded-2xl rounded-tr-[4px] text-white',
+      'inline-block max-w-full min-w-0 rounded-2xl text-white',
+      isUserMessageOnRight(layout) ? 'rounded-tr-[4px]' : 'rounded-tl-[4px]',
       'bg-[var(--mantine-color-chatbox-brand-filled)]',
       padding
     )

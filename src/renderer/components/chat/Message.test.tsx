@@ -5,6 +5,7 @@ import {
   getConversationContentClassName,
   getConversationRowLayout,
   isErrorOnlyMessage,
+  isUserMessageOnRight,
 } from './message-layout'
 import { getMessageRoleClass } from './message-role-class'
 import { getMessageTokenDisplay } from './message-token-display'
@@ -93,14 +94,24 @@ describe('Conversation row layout', () => {
   })
 })
 
+describe('User message side', () => {
+  test('keeps the user avatar on the left in classic and on the right in bubble', () => {
+    expect(isUserMessageOnRight('classic')).toBe(false)
+    expect(isUserMessageOnRight('bubble')).toBe(true)
+  })
+})
+
 describe('Conversation content surface', () => {
   const content = (layout: 'classic' | 'bubble', role: 'user' | 'assistant', errorOnly = false) =>
     getConversationContentClassName({ layout, role, isSmallScreen: false, errorOnly })
 
-  test('draws the same user bubble in both layouts', () => {
-    expect(content('classic', 'user')).toBe(content('bubble', 'user'))
+  test('points the user bubble tail toward the user avatar', () => {
     expect(content('classic', 'user')).toContain('bg-[var(--mantine-color-chatbox-brand-filled)]')
-    expect(content('classic', 'user')).toContain('rounded-tr-[4px]')
+    expect(content('bubble', 'user')).toContain('bg-[var(--mantine-color-chatbox-brand-filled)]')
+    expect(content('classic', 'user')).toContain('rounded-tl-[4px]')
+    expect(content('classic', 'user')).not.toContain('rounded-tr-[4px]')
+    expect(content('bubble', 'user')).toContain('rounded-tr-[4px]')
+    expect(content('bubble', 'user')).not.toContain('rounded-tl-[4px]')
   })
 
   test('lays assistant replies flat in classic and inside a bubble in bubble layout', () => {

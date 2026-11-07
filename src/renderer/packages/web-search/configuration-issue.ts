@@ -12,6 +12,7 @@ export type WebSearchConfigurationIssue =
   | 'tavily-api-key'
   | 'bocha-api-key'
   | 'querit-api-key'
+  | 'specstream-api-key'
   | 'searxng-instance'
 
 export function getWebSearchConfigurationIssue(

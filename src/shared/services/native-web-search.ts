@@ -18,7 +18,7 @@ export interface NativeWebSearchResultItem {
 }
 
 /** Same provider set the renderer's Web Search settings expose. */
-export type NativeWebSearchProvider = 'build-in' | 'bing' | 'tavily' | 'bocha' | 'querit' | 'searxng'
+export type NativeWebSearchProvider = 'build-in' | 'bing' | 'tavily' | 'bocha' | 'querit' | 'specstream' | 'searxng'
 
 export const nativeWebSearchProviderOptions: Array<{ id: NativeWebSearchProvider; label: string }> = [
   { id: 'build-in', label: 'Chatbox AI' },
@@ -26,6 +26,7 @@ export const nativeWebSearchProviderOptions: Array<{ id: NativeWebSearchProvider
   { id: 'tavily', label: 'Tavily' },
   { id: 'bocha', label: 'BoCha' },
   { id: 'querit', label: 'Querit' },
+  { id: 'specstream', label: 'SpecStream' },
   { id: 'searxng', label: 'SearXNG' },
 ]
 
@@ -94,7 +95,12 @@ export function hasNativeWebSearchConfiguration(
   settings: Pick<NativeWebSearchSettings, 'provider' | 'apiKey'> & Partial<Pick<NativeWebSearchSettings, 'apiHost'>>,
   licenseKey?: string
 ): boolean {
-  if (settings.provider === 'tavily' || settings.provider === 'bocha' || settings.provider === 'querit') {
+  if (
+    settings.provider === 'tavily' ||
+    settings.provider === 'bocha' ||
+    settings.provider === 'querit' ||
+    settings.provider === 'specstream'
+  ) {
     return Boolean(settings.apiKey.trim())
   }
   if (settings.provider === 'build-in') return Boolean(licenseKey?.trim())
@@ -111,6 +117,7 @@ export async function searchNativeWeb(
   if (provider === 'build-in') return searchNativeChatbox(query, options)
   if (provider === 'bocha') return searchNativeBocha(query, options)
   if (provider === 'querit') return searchNativeQuerit(query, options)
+  if (provider === 'specstream') return searchNativeSpecStream(query, options)
   if (provider === 'searxng') return searchNativeSearxng(query, options)
   return searchNativeTavily(query, options)
 }
@@ -272,6 +279,46 @@ async function searchNativeQuerit(
     link: result.url,
     snippet: result.snippet,
   }))
+}
+
+export const SPECSTREAM_SEARCH_URL = 'https://api.specstream.ai/v1/web-search'
+const SPECSTREAM_MAX_QUERY_LENGTH = 2000
+
+async function searchNativeSpecStream(
+  query: string,
+  options: NativeWebSearchOptions
+): Promise<NativeWebSearchResultItem[]> {
+  const fetchFn = options.fetchFn ?? fetch
+  const url = `${SPECSTREAM_SEARCH_URL}?q=${encodeURIComponent(query.slice(0, SPECSTREAM_MAX_QUERY_LENGTH))}`
+  const response = await fetchFn(url, {
+    method: 'GET',
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${options.apiKey ?? ''}`,
+    },
+    signal: options.signal as NativeFetchInit['signal'],
+  } as NativeFetchInit)
+  if (!response.ok) {
+    throw new Error(`SpecStream search failed with status ${response.status}`)
+  }
+  // SpecStream wraps every reply in { data }. It has no result count parameter,
+  // so the list is trimmed here.
+  const payload = (await response.json()) as {
+    data?: { sources?: Array<{ title?: unknown; url?: unknown; snippet?: unknown }> }
+  }
+  const sources = payload.data?.sources
+  if (!Array.isArray(sources)) {
+    throw new Error('SpecStream returned an invalid search response')
+  }
+  return sources
+    .map((source) => {
+      const title = nonEmptyString(source?.title)
+      const link = nonEmptyString(source?.url)
+      if (!title || !link) return null
+      return { title, link, snippet: nonEmptyString(source.snippet) ?? '' }
+    })
+    .filter((item): item is NativeWebSearchResultItem => item !== null)
+    .slice(0, options.maxResults ?? DEFAULT_MAX_RESULTS)
 }
 
 async function searchNativeTavily(

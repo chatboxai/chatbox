@@ -12,6 +12,7 @@ describe('getWebSearchConfigurationIssue', () => {
     expect(getWebSearchConfigurationIssue({ provider: 'tavily' })).toBe('tavily-api-key')
     expect(getWebSearchConfigurationIssue({ provider: 'bocha' })).toBe('bocha-api-key')
     expect(getWebSearchConfigurationIssue({ provider: 'querit' })).toBe('querit-api-key')
+    expect(getWebSearchConfigurationIssue({ provider: 'specstream' })).toBe('specstream-api-key')
     expect(getWebSearchConfigurationIssue({ provider: 'searxng', searxngBaseUrl: '  ' })).toBe('searxng-instance')
   })
 })

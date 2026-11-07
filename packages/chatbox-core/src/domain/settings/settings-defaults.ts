@@ -81,6 +81,7 @@ export function createDefaultSettings(): Settings {
         tavilyApiKey: '',
         bochaApiKey: '',
         queritApiKey: '',
+        specstreamApiKey: '',
         queritMaxResults: 5,
         queritTimeRange: 'none',
         searxngBaseUrl: '',

@@ -35,6 +35,7 @@ function credentialSettings(): Settings {
         tavilyApiKey: 'tavily-key',
         bochaApiKey: 'bocha-key',
         queritApiKey: 'querit-key',
+        specstreamApiKey: 'specstream-key',
         queritMaxResults: 5,
       },
       documentParser: { type: 'mineru', mineru: { apiToken: 'extension-mineru-token' } },

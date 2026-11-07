@@ -5,6 +5,7 @@ type WebSearchConfiguration = {
   tavilyApiKey?: string
   bochaApiKey?: string
   queritApiKey?: string
+  specstreamApiKey?: string
   searxngBaseUrl?: string
 }
 
@@ -13,6 +14,7 @@ export type WebSearchConfigurationIssue =
   | 'tavily-api-key'
   | 'bocha-api-key'
   | 'querit-api-key'
+  | 'specstream-api-key'
   | 'searxng-instance'
 
 export function getWebSearchConfigurationIssue(
@@ -28,6 +30,8 @@ export function getWebSearchConfigurationIssue(
       return configuration.bochaApiKey ? null : 'bocha-api-key'
     case 'querit':
       return configuration.queritApiKey ? null : 'querit-api-key'
+    case 'specstream':
+      return configuration.specstreamApiKey ? null : 'specstream-api-key'
     case 'searxng':
       return configuration.searxngBaseUrl?.trim() ? null : 'searxng-instance'
     case 'bing':

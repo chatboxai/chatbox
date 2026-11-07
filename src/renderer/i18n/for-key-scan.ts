@@ -299,6 +299,8 @@ function _otherI18nKeys(t: (key: string) => string) {
   t('Add a BoCha API key in Web Search settings.')
   t('Querit API key is missing')
   t('Add a Querit API key in Web Search settings.')
+  t('SpecStream API key is missing')
+  t('Add a SpecStream API key in Web Search settings.')
   t('SearXNG URL is missing')
   t('Add a SearXNG instance URL in Web Search settings.')
   t('Activate Chatbox AI, or pick an image model from another provider.')

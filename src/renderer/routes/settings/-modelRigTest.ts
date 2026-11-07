@@ -151,6 +151,9 @@ async function testSearchSlot(deps: ModelRigTestDeps): Promise<SlotTestResult> {
   if (provider === 'querit' && !deps.settings.extension?.webSearch?.queritApiKey) {
     return fail('Querit API key is missing', 'Add a Querit API key in Web Search settings.')
   }
+  if (provider === 'specstream' && !deps.settings.extension?.webSearch?.specstreamApiKey) {
+    return fail('SpecStream API key is missing', 'Add a SpecStream API key in Web Search settings.')
+  }
   if (provider === 'searxng' && !deps.settings.extension?.webSearch?.searxngBaseUrl?.trim()) {
     return fail('SearXNG URL is missing', 'Add a SearXNG instance URL in Web Search settings.')
   }

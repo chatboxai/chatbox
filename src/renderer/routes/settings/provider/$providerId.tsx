@@ -64,6 +64,7 @@ import platform from '@/platform'
 import { settingsStore, useLanguage, useProviderSettings, useSettingsStore } from '@/stores/settingsStore'
 import { add as addToast } from '@/stores/toastActions'
 import { type ModelTestState, testModelCapabilities } from '@/utils/model-tester'
+import { showsNetworkCompatibility } from './-networkCompatibility'
 
 export const Route = createFileRoute('/settings/provider/$providerId')({
   component: RouteComponent,
@@ -490,11 +491,7 @@ function ProviderSettings({ providerId }: { providerId: string }) {
       ModelProviderEnum.Bedrock,
       '',
     ].includes(baseInfo.id)
-  const showNetworkCompatibility =
-    baseInfo.isCustom ||
-    baseInfo.id === ModelProviderEnum.Ollama ||
-    (platform.type === 'web' &&
-      (baseInfo.id === ModelProviderEnum.OpenCodeGo || baseInfo.id === ModelProviderEnum.OpenCodeZen))
+  const showNetworkCompatibility = showsNetworkCompatibility(baseInfo, platform.type)
   const customApiHost = normalizeAPIHost(providerSettings, baseInfo.type)
   const azureEndpoint = normalizeAzureEndpoint(providerSettings?.endpoint || baseInfo.defaultSettings?.endpoint || '')
   const hasConnectionSettings =

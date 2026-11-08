@@ -98,7 +98,7 @@ it('replies again once after releasing past the threshold and the row settling b
   const text = screen.getByTestId('text')
   expect(stateOf()).toBe('idle')
   drag(text, 100, 200, 120)
-  // The message follows a fifth of the finger and stops at 14px; the threshold is the finger's 64px.
+  // The message follows a fifth of the finger and stops at 14px; the threshold is the finger's 96px.
   expect(offsetOf(screen.getByTestId('row'))).toBe(14)
   expect(stateOf()).toBe('armed')
   expect(turnOf()).toBe('-180deg')
@@ -116,10 +116,10 @@ it('springs back without replying when released under the threshold', () => {
   const onRetry = vi.fn()
   render(<Harness mode="retry" onRetry={onRetry} />)
   const text = screen.getByTestId('text')
-  drag(text, 100, 200, 48)
-  expect(offsetOf(screen.getByTestId('row'))).toBeCloseTo(9.6)
+  drag(text, 100, 200, 80)
+  expect(offsetOf(screen.getByTestId('row'))).toBe(14)
   expect(stateOf()).toBe('dragging')
-  expect(turnOf()).toBe('-135deg')
+  expect(turnOf()).toBe('-150deg')
   release(text)
   vi.advanceTimersByTime(500)
   expect(onRetry).not.toHaveBeenCalled()

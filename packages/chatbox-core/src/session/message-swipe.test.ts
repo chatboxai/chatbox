@@ -57,8 +57,8 @@ describe('getMessageSwipeOffset', () => {
 
 describe('isMessageSwipeArmed', () => {
   it('arms at the threshold and disarms when dragged back', () => {
-    expect(isMessageSwipeArmed(63.9, true)).toBe(false)
-    expect(isMessageSwipeArmed(64, true)).toBe(true)
+    expect(isMessageSwipeArmed(95.9, true)).toBe(false)
+    expect(isMessageSwipeArmed(96, true)).toBe(true)
     expect(isMessageSwipeArmed(resolveMessageSwipeDistance(200, true), true)).toBe(true)
     expect(isMessageSwipeArmed(resolveMessageSwipeDistance(50, true), true)).toBe(false)
   })
@@ -90,15 +90,15 @@ describe('resolveMessageSwipeAxis', () => {
 describe('feedback', () => {
   it('turns the icon up to the threshold, only when retry is available', () => {
     expect(getMessageSwipeProgress(0, true)).toBe(0)
-    expect(getMessageSwipeProgress(32, true)).toBe(0.5)
+    expect(getMessageSwipeProgress(48, true)).toBe(0.5)
     expect(getMessageSwipeProgress(100, true)).toBe(1)
     expect(getMessageSwipeProgress(16, false)).toBe(0)
   })
 
   it('tells the avatar slot and name row what to show', () => {
     expect(getMessageSwipeState(0, true)).toBe('idle')
-    expect(getMessageSwipeState(40, true)).toBe('dragging')
-    expect(getMessageSwipeState(64, true)).toBe('armed')
+    expect(getMessageSwipeState(80, true)).toBe('dragging')
+    expect(getMessageSwipeState(96, true)).toBe('armed')
     expect(getMessageSwipeState(0, false)).toBe('idle')
     expect(getMessageSwipeState(10, false)).toBe('unavailable')
   })

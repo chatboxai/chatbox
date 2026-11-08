@@ -10,9 +10,9 @@ export const MESSAGE_SWIPE = {
   /** Leftward travel that gives the touch back to other gestures. */
   failLeftDistance: 8,
   /** Finger travel at which releasing replies again. */
-  armDistance: 64,
+  armDistance: 96,
   /** Furthest finger travel that counts while retry is available. */
-  maxDistance: 112,
+  maxDistance: 144,
   /** Furthest finger travel that counts while retry is unavailable (a reply is streaming, the session is busy). */
   disabledMaxDistance: 16,
   /** Share of the finger's travel the message follows. */

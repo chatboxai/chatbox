@@ -313,15 +313,15 @@ const MobileActionMenu: FC<ActionMenuProps> = ({
     <Drawer.Root open={open} onOpenChange={setOpen} noBodyStyles>
       {trigger === 'manual' ? children : <Drawer.Trigger asChild>{children}</Drawer.Trigger>}
       <Drawer.Portal>
-        <Drawer.Overlay className="fixed inset-0 bg-chatbox-background-mask-overlay" />
+        <Drawer.Overlay className="fixed inset-0 bg-chatbox-background-mask-overlay select-none [-webkit-touch-callout:none]" />
         <Drawer.Content
           data-testid={contentTestId}
-          className="flex flex-col h-fit fixed bottom-0 left-0 right-0 outline-none"
+          className="flex flex-col h-fit fixed bottom-0 left-0 right-0 outline-none select-none [-webkit-touch-callout:none]"
         >
           <div className="bg-chatbox-background-primary rounded-t-lg">
             <Drawer.Handle />
             {title && (
-              <Text c="chatbox-tertiary" size="md" className="text-center mb-2">
+              <Text c="chatbox-tertiary" size="md" lineClamp={1} className="text-center mb-2 px-4">
                 {title}
               </Text>
             )}
@@ -388,10 +388,10 @@ const MobileDoubleCheckMenuItem: FC<{
         </button>
       </Drawer.Trigger>
       <Drawer.Portal>
-        <Drawer.Overlay className="fixed inset-0 bg-chatbox-background-mask-overlay" />
+        <Drawer.Overlay className="fixed inset-0 bg-chatbox-background-mask-overlay select-none [-webkit-touch-callout:none]" />
         <Drawer.Content
           data-testid={item.confirmPanelTestId}
-          className="flex flex-col h-fit fixed bottom-0 left-0 right-0 outline-none"
+          className="flex flex-col h-fit fixed bottom-0 left-0 right-0 outline-none select-none [-webkit-touch-callout:none]"
         >
           <div className="bg-chatbox-background-primary rounded-t-lg">
             <Drawer.Handle />

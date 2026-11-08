@@ -1973,5 +1973,9 @@
   "Conversations only (V1 JSON)": "Bare samtaler (V1 JSON)",
   "Earlier messages could not be loaded": "Tidligere meldinger kunne ikke lastes inn",
   "Later messages could not be loaded": "Senere meldinger kunne ikke lastes inn",
-  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 inkluderer samtaletekst, historikk og forgreninger. Vedlegg og innstillinger er ikke inkludert."
+  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 inkluderer samtaletekst, historikk og forgreninger. Vedlegg og innstillinger er ikke inkludert.",
+  "Select Text": "Merk tekst",
+  "Me": "Meg",
+  "{{author}}: {{preview}}": "{{author}}: {{preview}}",
+  "Long press a message to reply again, edit, copy, or select text": "Trykk lenge på en melding for å svare på nytt, redigere, kopiere eller merke tekst"
 }

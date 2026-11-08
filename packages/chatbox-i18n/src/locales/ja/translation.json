@@ -1973,5 +1973,9 @@
   "Conversations only (V1 JSON)": "会話のみ（V1 JSON）",
   "Earlier messages could not be loaded": "以前のメッセージを読み込めませんでした",
   "Later messages could not be loaded": "以降のメッセージを読み込めませんでした",
-  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 には会話のテキスト、履歴、分岐が含まれます。添付ファイルと設定は含まれません。"
+  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 には会話のテキスト、履歴、分岐が含まれます。添付ファイルと設定は含まれません。",
+  "Select Text": "テキストを選択",
+  "Me": "自分",
+  "{{author}}: {{preview}}": "{{author}}：{{preview}}",
+  "Long press a message to reply again, edit, copy, or select text": "メッセージを長押しすると、再回答・編集・コピー・テキスト選択ができます"
 }

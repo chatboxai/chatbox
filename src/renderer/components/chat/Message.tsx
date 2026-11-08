@@ -10,6 +10,11 @@ import {
 import { isCancellableGeneratingAssistantMessage } from '@chatbox/core/session/generation-state'
 import { getMessageFinishTip } from '@chatbox/core/session/message-finish-tip'
 import {
+  clipMessageMenuPreview,
+  getMessageMenuEntries,
+  type MessageMenuEntryId,
+} from '@chatbox/core/session/message-menu'
+import {
   isActionAvailableInMode,
   type SessionMode,
   shouldRestrictMessageEditToLastOutput,
@@ -28,6 +33,7 @@ import {
   IconClockHour3,
   IconCode,
   IconCopy,
+  IconCursorText,
   IconDotsVertical,
   IconInfoCircle,
   IconLoader2,
@@ -67,6 +73,7 @@ import '../../static/Block.css'
 import { generate, regenerateInNewFork, retryFromLastToolCallAfterApiError } from '@/stores/session/generation'
 import { modifyMessage, removeMessage } from '@/stores/session/messages'
 import * as toastActions from '@/stores/toastActions'
+import { triggerLongPressHaptic } from '@/utils/long-press-haptic'
 import { confirmPromptCacheBreakingAction, isPromptCacheBreakConfirmDismissed } from '@/utils/prompt-cache-confirm'
 import { getSessionLockNotice, notifySessionLockBlocked } from '@/utils/session-lock-copy'
 import ActionMenu, { type ActionMenuItemProps } from '../ActionMenu'
@@ -80,6 +87,7 @@ import { MessageAttachmentGrid } from './MessageAttachmentGrid'
 import MessageErrTips from './MessageErrTips'
 import MessageStatuses, { PreparingToolCallStatus } from './MessageLoading'
 import { formatMessageTimestamp, MessageNameRow } from './MessageNameRow'
+import { MessageSelectTextPage } from './MessageSelectTextPage'
 import { getMessageActionVisibilityClass, type MessageButtonGroup } from './message-action-state'
 import {
   ASSISTANT_CONTENT_MAX_WIDTH,
@@ -92,6 +100,7 @@ import { getMessageRoleClass } from './message-role-class'
 import { createCollapsedDisplayGroups, createMessageTimelineLayout } from './message-timeline'
 import { getMessageTokenDisplay } from './message-token-display'
 import { PictureGallery } from './PictureGallery'
+import { useMessageLongPress } from './useMessageLongPress'
 import { useProcessTimelineCollapse } from './useProcessTimelineCollapse'
 import { useReplyBelowAction } from './useReplyBelowAction'
 
@@ -673,49 +682,102 @@ const _Message: FC<Props> = (props) => {
     uiStore.getState().openSessionPanel(props.sessionId, 'settings')
   }
 
-  const actionMenuItems = useMemo<ActionMenuItemProps[]>(
-    () => [
-      ...(isSmallScreen
-        ? [
-            !msg.generating &&
-              msg.role === 'assistant' && {
-                text: t('Reply Again'),
-                icon: IconReload,
-                testId: TestId.message.actionMenuRetry,
-                onClick: handleRefresh,
-                disabled: generationLocked && !isSmallScreen,
-              },
-            canReplyBelow &&
-              msg.role !== 'assistant' && {
-                text: t('Reply Again Below'),
-                icon: IconArrowDown,
-                testId: TestId.message.actionMenuRetryBelow,
-                disabled: !replyBelowGate.allowed,
-                onClick: onGenerateMore,
-              },
-            canEditMessage &&
-              !msg.model?.startsWith('Chatbox-AI') &&
-              !(msg.role === 'assistant' && props.sessionType === 'picture') && {
-                text: t('Edit'),
-                icon: IconPencil,
-                testId: TestId.message.actionMenuEdit,
-                onClick: onEditClick,
-              },
-            !(props.sessionType === 'picture' && msg.role === 'assistant') && {
-              text: t('copy'),
-              icon: IconCopy,
-              testId: TestId.message.actionMenuCopy,
-              onClick: onCopyMsg,
-            },
-            !msg.generating &&
-              props.sessionType === 'picture' &&
-              msg.role === 'assistant' && {
-                text: t('Generate More Images Below'),
-                icon: IconPhotoPlus,
-                onClick: onGenerateMore,
-              },
-          ].filter((i) => !!i)
-        : []),
+  // Small screens have no action row: every message action lives in the long-press menu, composed by the same
+  // rules the mobile app uses.
+  const longPressMenuEnabled = isSmallScreen && !readOnly && buttonGroup !== 'none'
+  const [selectTextOpened, setSelectTextOpened] = useState(false)
+  const [selectTextScrollRatio, setSelectTextScrollRatio] = useState(0)
+
+  const longPressMenuEntries = useMemo(
+    () =>
+      getMessageMenuEntries(
+        msg,
+        {
+          stop: true,
+          retry: true,
+          replyBelow: canReplyBelow,
+          edit: canEditMessage,
+          copy: true,
+          generateMoreImages: true,
+          selectText: true,
+          quote: true,
+          report: true,
+          viewJson: process.env.NODE_ENV === 'development',
+          delete: canDeleteMessage,
+        },
+        { pictureSession: props.sessionType === 'picture' }
+      ),
+    [msg, canReplyBelow, canEditMessage, canDeleteMessage, props.sessionType]
+  )
+
+  const deleteMenuItem = useMemo<ActionMenuItemProps>(
+    () => ({
+      doubleCheck: !confirmCacheBreakingDelete,
+      text: t('delete'),
+      icon: IconTrash,
+      color: 'chatbox-error',
+      testId: TestId.message.actionDelete,
+      confirmTestId: TestId.message.actionDeleteConfirm,
+      confirmPanelTestId: TestId.message.deleteConfirmation,
+      onClick: onDelMsg,
+    }),
+    [confirmCacheBreakingDelete, onDelMsg, t]
+  )
+
+  const actionMenuItems = useMemo<ActionMenuItemProps[]>(() => {
+    if (isSmallScreen) {
+      const itemFor = (entry: MessageMenuEntryId): ActionMenuItemProps => {
+        switch (entry) {
+          case 'stop':
+            return {
+              text: t('Stop generating this reply'),
+              icon: IconPlayerStopFilled,
+              testId: TestId.message.actionMenuStop,
+              onClick: () => void handleStop(),
+            }
+          case 'retry':
+            return {
+              text: t('Reply Again'),
+              icon: IconReload,
+              testId: TestId.message.actionMenuRetry,
+              onClick: handleMessageRetry,
+            }
+          case 'reply-below':
+            return {
+              text: t('Reply Again Below'),
+              icon: IconArrowDown,
+              testId: TestId.message.actionMenuRetryBelow,
+              disabled: !replyBelowGate.allowed,
+              onClick: onGenerateMore,
+            }
+          case 'edit':
+            return { text: t('Edit'), icon: IconPencil, testId: TestId.message.actionMenuEdit, onClick: onEditClick }
+          case 'copy':
+            return { text: t('copy'), icon: IconCopy, testId: TestId.message.actionMenuCopy, onClick: onCopyMsg }
+          case 'generate-more-images':
+            return { text: t('Generate More Images Below'), icon: IconPhotoPlus, onClick: onGenerateMore }
+          case 'select-text':
+            return {
+              text: t('Select Text'),
+              icon: IconCursorText,
+              testId: TestId.message.actionMenuSelectText,
+              onClick: () => setSelectTextOpened(true),
+            }
+          case 'quote':
+            return { text: t('Quote'), icon: IconQuoteFilled, testId: TestId.message.actionQuote, onClick: quoteMsg }
+          case 'divider':
+            return { divider: true }
+          case 'report':
+            return { text: t('report'), icon: IconMessageReport, onClick: onReport }
+          case 'view-json':
+            return { text: t('View Message JSON'), icon: IconCode, onClick: onViewMessageJson }
+          case 'delete':
+            return deleteMenuItem
+        }
+      }
+      return longPressMenuEntries.map(itemFor)
+    }
+    return [
       {
         text: t('Quote'),
         icon: IconQuoteFilled,
@@ -741,44 +803,36 @@ const _Message: FC<Props> = (props) => {
             },
           ]
         : []),
-      ...(canDeleteMessage
-        ? [
-            {
-              doubleCheck: !confirmCacheBreakingDelete,
-              text: t('delete'),
-              icon: IconTrash,
-              color: 'chatbox-error',
-              testId: TestId.message.actionDelete,
-              confirmTestId: TestId.message.actionDeleteConfirm,
-              confirmPanelTestId: TestId.message.deleteConfirmation,
-              onClick: onDelMsg,
-            },
-          ]
-        : []),
-    ],
-    [
-      t,
-      msg.role,
-      onReport,
-      quoteMsg,
-      onDelMsg,
-      onViewMessageJson,
-      isSmallScreen,
-      handleRefresh,
-      msg.generating,
-      onGenerateMore,
-      onEditClick,
-      onCopyMsg,
-      msg.model,
-      props.sessionType,
-      generationLocked,
-      canReplyBelow,
-      replyBelowGate.allowed,
-      canEditMessage,
-      canDeleteMessage,
-      confirmCacheBreakingDelete,
+      ...(canDeleteMessage ? [deleteMenuItem] : []),
     ]
-  )
+  }, [
+    t,
+    msg.role,
+    onReport,
+    quoteMsg,
+    onViewMessageJson,
+    isSmallScreen,
+    longPressMenuEntries,
+    handleStop,
+    handleMessageRetry,
+    onGenerateMore,
+    onEditClick,
+    onCopyMsg,
+    replyBelowGate.allowed,
+    canDeleteMessage,
+    deleteMenuItem,
+  ])
+  const actionMenuTitle = useMemo(() => {
+    if (!longPressMenuEnabled) return undefined
+    const author =
+      msg.role === 'user'
+        ? t('Me')
+        : msg.role === 'assistant'
+          ? assistantName || msg.model || t('Assistant')
+          : t('System prompt')
+    const preview = clipMessageMenuPreview(getMessageText(msg))
+    return preview ? String(t('{{author}}: {{preview}}', { author, preview })) : String(author)
+  }, [longPressMenuEnabled, msg, assistantName, t])
   const [actionMenuOpened, setActionMenuOpened] = useState(false)
   const actionMenuRequest = useRef(0)
   const handleActionMenuChange = useCallback(
@@ -796,6 +850,20 @@ const _Message: FC<Props> = (props) => {
     },
     [canDeleteMessage, msg.id, shouldConfirmPromptCacheDelete]
   )
+
+  const handleMessageLongPress = useCallback(
+    (point: { x: number; y: number }) => {
+      const rect = ref.current?.getBoundingClientRect()
+      setSelectTextScrollRatio(
+        rect && rect.height > 0 ? Math.min(1, Math.max(0, (point.y - rect.top) / rect.height)) : 0
+      )
+      triggerLongPressHaptic()
+      handleActionMenuChange(true)
+    },
+    [handleActionMenuChange]
+  )
+  const longPressHandlers = useMessageLongPress({ enabled: longPressMenuEnabled, onLongPress: handleMessageLongPress })
+  const longPressHighlighted = longPressMenuEnabled && actionMenuOpened
 
   const conversationRole = msg.role === 'user' || msg.role === 'assistant' ? msg.role : null
   const isRightAlignedMessage = msg.role === 'user'
@@ -827,7 +895,7 @@ const _Message: FC<Props> = (props) => {
         }
       >
         <Box
-          className={cn('msg-content', { 'msg-content-small': small })}
+          className={cn('msg-content', { 'msg-content-small': small, 'msg-content-trim-end': isSmallScreen })}
           sx={small ? { fontSize: theme.typography.body2.fontSize } : {}}
         >
           {showWorkSummary && (
@@ -1149,7 +1217,7 @@ const _Message: FC<Props> = (props) => {
     </Flex>
   )
 
-  const actionButtons = !readOnly && buttonGroup !== 'none' && !msg.generating && (
+  const actionButtons = !readOnly && buttonGroup !== 'none' && !msg.generating && !longPressMenuEnabled && (
     <Flex
       gap={0}
       m={actionRowMargin}
@@ -1211,11 +1279,54 @@ const _Message: FC<Props> = (props) => {
     </Flex>
   )
 
+  // Screen readers cannot long-press: a visually hidden "More" button opens the same menu.
+  const longPressMenu = longPressMenuEnabled && (
+    <ActionMenu
+      type="mobile"
+      items={actionMenuItems}
+      title={actionMenuTitle}
+      contentTestId={TestId.message.actionMenu}
+      opened={actionMenuOpened}
+      onChange={handleActionMenuChange}
+    >
+      <button type="button" className="sr-only" aria-haspopup="menu" aria-label={String(t('More'))}>
+        {t('More')}
+      </button>
+    </ActionMenu>
+  )
+
+  const selectTextPage = longPressMenuEnabled && selectTextOpened && (
+    <MessageSelectTextPage
+      msg={msg}
+      sessionId={sessionId}
+      scrollRatio={selectTextScrollRatio}
+      onClose={() => setSelectTextOpened(false)}
+    />
+  )
+
   const messageActions = (
     <>
       {actionButtons}
       {generatingActions}
     </>
+  )
+
+  const longPressProps = longPressHandlers && {
+    ...longPressHandlers,
+    'aria-haspopup': 'menu' as const,
+  }
+  // Long-press owns the touch gesture on small screens: the system selection and callout would open first.
+  // `.msg-block` turns selection on, so this needs to win over it.
+  const longPressSurfaceClass = longPressMenuEnabled && '!select-none [-webkit-touch-callout:none]'
+  // The highlight sits behind the whole row and reaches 8px past it, so the message does not move.
+  const longPressHighlight = longPressMenuEnabled && (
+    <div
+      aria-hidden
+      className={cn(
+        'pointer-events-none absolute -inset-2 rounded-[12px] transition-colors duration-200',
+        longPressHighlighted ? 'bg-chatbox-background-gray-secondary' : 'bg-transparent'
+      )}
+    />
   )
 
   const meta = (tipsElements || msg.steered) && (
@@ -1286,6 +1397,7 @@ const _Message: FC<Props> = (props) => {
         data-testid={TestId.message.item}
         data-message-role={msg.role}
         {...{ [AutomationStateAttr.messageLayout]: isBubbleLayout ? 'bubble' : 'classic' }}
+        {...longPressProps}
         ref={ref}
         id={props.id}
         key={msg.id}
@@ -1294,7 +1406,8 @@ const _Message: FC<Props> = (props) => {
           'msg-block',
           (isUser || isBubbleLayout) && 'bubble-msg',
           isUser && 'bubble-user-msg',
-          'pt-4 sm:pt-5',
+          isSmallScreen ? 'pt-5' : 'pt-4 sm:pt-5',
+          longPressSurfaceClass,
           msg.generating ? 'rendering' : 'render-done',
           messageRoleClass,
           className,
@@ -1309,14 +1422,15 @@ const _Message: FC<Props> = (props) => {
           justify={isUser ? 'flex-end' : 'flex-start'}
           align="flex-start"
           gap={rowLayout.avatarGap}
-          className="w-full min-w-0"
+          className="relative w-full min-w-0"
           style={isUser ? { paddingLeft: rowLayout.farSideSpace } : { paddingRight: rowLayout.farSideSpace }}
         >
+          {longPressHighlight}
           {!isUser && avatar}
           <Flex
             direction="column"
             align={isUser ? 'flex-end' : 'flex-start'}
-            className={cn('min-w-0', !isUser && 'flex-1')}
+            className={cn('relative min-w-0', !isUser && 'flex-1')}
             style={{ maxWidth: isUser ? rowLayout.userBubbleMaxWidth : ASSISTANT_CONTENT_MAX_WIDTH }}
           >
             {!isUser && (
@@ -1338,6 +1452,8 @@ const _Message: FC<Props> = (props) => {
           </Flex>
           {isUser && avatar}
         </Flex>
+        {longPressMenu}
+        {selectTextPage}
       </Box>
     )
   }
@@ -1346,6 +1462,7 @@ const _Message: FC<Props> = (props) => {
     <Box
       data-testid={TestId.message.item}
       data-message-role={msg.role}
+      {...longPressProps}
       ref={ref}
       id={props.id}
       key={msg.id}
@@ -1354,6 +1471,7 @@ const _Message: FC<Props> = (props) => {
         'msg-block',
         isBubbleLayout ? 'bubble-msg' : '',
         'px-2 py-1.5',
+        longPressSurfaceClass,
         msg.generating ? 'rendering' : 'render-done',
         messageRoleClass,
         className,
@@ -1364,7 +1482,8 @@ const _Message: FC<Props> = (props) => {
         paddingX: '1rem',
       }}
     >
-      <Grid container wrap="nowrap" spacing={1.5}>
+      <Grid container wrap="nowrap" spacing={1.5} className="relative">
+        {longPressHighlight}
         {shouldShowAvatar && (
           <Grid item>
             <Box className="relative mt-1">
@@ -1375,7 +1494,7 @@ const _Message: FC<Props> = (props) => {
           </Grid>
         )}
         <Grid item xs sm container sx={{ width: '0px', paddingRight: shouldShowAvatar ? '15px' : '0px' }}>
-          <Grid item xs>
+          <Grid item xs className="relative">
             {messageContent}
             {(msg.files || msg.links) && <MessageAttachmentGrid files={msg.files} links={msg.links} align="start" />}
             {meta}
@@ -1383,6 +1502,8 @@ const _Message: FC<Props> = (props) => {
           </Grid>
         </Grid>
       </Grid>
+      {longPressMenu}
+      {selectTextPage}
     </Box>
   )
 }

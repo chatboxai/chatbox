@@ -1973,5 +1973,9 @@
   "Conversations only (V1 JSON)": "Apenas conversas (V1 JSON)",
   "Earlier messages could not be loaded": "Não foi possível carregar as mensagens anteriores",
   "Later messages could not be loaded": "Não foi possível carregar as mensagens seguintes",
-  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 inclui o texto, o histórico e as ramificações das conversas. Os anexos e a configuração não são incluídos."
+  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 inclui o texto, o histórico e as ramificações das conversas. Os anexos e a configuração não são incluídos.",
+  "Select Text": "Selecionar texto",
+  "Me": "Eu",
+  "{{author}}: {{preview}}": "{{author}}: {{preview}}",
+  "Long press a message to reply again, edit, copy, or select text": "Mantenha premida uma mensagem para responder novamente, editar, copiar ou selecionar texto"
 }

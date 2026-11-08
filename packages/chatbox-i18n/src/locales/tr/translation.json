@@ -1973,5 +1973,9 @@
   "Conversations only (V1 JSON)": "Yalnızca konuşmalar (V1 JSON)",
   "Earlier messages could not be loaded": "Önceki mesajlar yüklenemedi",
   "Later messages could not be loaded": "Sonraki mesajlar yüklenemedi",
-  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1, konuşma metnini, geçmişini ve dallarını içerir. Ekler ve yapılandırma dahil edilmez."
+  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1, konuşma metnini, geçmişini ve dallarını içerir. Ekler ve yapılandırma dahil edilmez.",
+  "Select Text": "Metni seç",
+  "Me": "Ben",
+  "{{author}}: {{preview}}": "{{author}}: {{preview}}",
+  "Long press a message to reply again, edit, copy, or select text": "Yeniden yanıtlamak, düzenlemek, kopyalamak veya metin seçmek için bir mesaja uzun basın"
 }

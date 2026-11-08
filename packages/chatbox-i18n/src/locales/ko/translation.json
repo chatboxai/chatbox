@@ -1973,5 +1973,9 @@
   "Conversations only (V1 JSON)": "대화만 (V1 JSON)",
   "Earlier messages could not be loaded": "이전 메시지를 불러오지 못했습니다",
   "Later messages could not be loaded": "이후 메시지를 불러오지 못했습니다",
-  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1에는 대화 텍스트, 기록 및 분기가 포함됩니다. 첨부 파일과 설정은 포함되지 않습니다."
+  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1에는 대화 텍스트, 기록 및 분기가 포함됩니다. 첨부 파일과 설정은 포함되지 않습니다.",
+  "Select Text": "텍스트 선택",
+  "Me": "나",
+  "{{author}}: {{preview}}": "{{author}}: {{preview}}",
+  "Long press a message to reply again, edit, copy, or select text": "메시지를 길게 눌러 다시 답변, 편집, 복사, 텍스트 선택을 할 수 있습니다"
 }

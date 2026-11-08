@@ -1973,5 +1973,9 @@
   "Conversations only (V1 JSON)": "Только беседы (V1 JSON)",
   "Earlier messages could not be loaded": "Не удалось загрузить более ранние сообщения",
   "Later messages could not be loaded": "Не удалось загрузить более поздние сообщения",
-  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 включает текст, историю и ветки бесед. Вложения и настройки не включаются."
+  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 включает текст, историю и ветки бесед. Вложения и настройки не включаются.",
+  "Select Text": "Выбрать текст",
+  "Me": "Я",
+  "{{author}}: {{preview}}": "{{author}}: {{preview}}",
+  "Long press a message to reply again, edit, copy, or select text": "Нажмите и удерживайте сообщение, чтобы ответить заново, изменить, скопировать или выбрать текст"
 }

@@ -487,3 +487,11 @@ div[data-vaul-drawer] {
 .chatbox-action-bar-pulse-alt {
   animation: chatbox-action-bar-pulse 600ms ease-out 2;
 }
+
+/* Held while a message is long-pressed (press-selection-guard.ts); editable fields keep their selection. */
+html.message-press-selection-guard,
+html.message-press-selection-guard *:not(input):not(textarea):not([contenteditable]) {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none !important;
+}

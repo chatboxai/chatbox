@@ -668,8 +668,14 @@ const MessageList = forwardRef<
     const showThread = showThreadLabels && row.messageId === thread?.rootMessageId
     const hidden = hideSystemPrompt && message.role === 'system'
     const spacing = first ? 'pt-4' : last ? '!pb-4' : ''
+    // Small screens let each message own the 20px gap above it; wide layouts add space around user turns here.
     return (
-      <Stack key={message.id} gap={0} pt={message.role === 'user' ? 4 : 0} data-transcript-message={message.id}>
+      <Stack
+        key={message.id}
+        gap={0}
+        pt={message.role === 'user' && !isSmallScreen ? 4 : 0}
+        data-transcript-message={message.id}
+      >
         {showThread && (
           <ThreadLabel
             sessionId={session.id}
@@ -953,7 +959,7 @@ const MessageList = forwardRef<
                   )}
                   <Stack
                     gap={0}
-                    className={item.type === 'group' ? 'pt-5' : undefined}
+                    className={item.type === 'group' && !isSmallScreen ? 'pt-5' : undefined}
                     style={
                       item.type === 'group' && isNewMessage && index === items.length - 1
                         ? { minHeight: viewportHeight * 0.85 }

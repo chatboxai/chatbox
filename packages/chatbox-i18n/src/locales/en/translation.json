@@ -1973,5 +1973,9 @@
   "Conversations only (V1 JSON)": "Conversations only (V1 JSON)",
   "Earlier messages could not be loaded": "Earlier messages could not be loaded",
   "Later messages could not be loaded": "Later messages could not be loaded",
-  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 includes conversation text, history and branches. Attachments and configuration are not included."
+  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 includes conversation text, history and branches. Attachments and configuration are not included.",
+  "Select Text": "Select Text",
+  "Me": "Me",
+  "{{author}}: {{preview}}": "{{author}}: {{preview}}",
+  "Long press a message to reply again, edit, copy, or select text": "Long press a message to reply again, edit, copy, or select text"
 }

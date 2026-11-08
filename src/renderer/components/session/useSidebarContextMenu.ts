@@ -1,20 +1,9 @@
-import { Haptics, ImpactStyle } from '@capacitor/haptics'
 import { TestId } from '@shared/automation/testids'
 import { type MouseEvent, type PointerEvent, useEffect, useRef, useState } from 'react'
-import platform from '@/platform'
+import { triggerLongPressHaptic } from '@/utils/long-press-haptic'
 
 const LONG_PRESS_DELAY = 550
 const LONG_PRESS_MOVE_TOLERANCE = 10
-
-function triggerLongPressHaptic() {
-  if (platform.type === 'mobile') {
-    void Haptics.impact({ style: ImpactStyle.Light }).catch(() => {
-      navigator.vibrate?.(10)
-    })
-    return
-  }
-  navigator.vibrate?.(10)
-}
 
 export function useSidebarContextMenu({
   touchLayout,

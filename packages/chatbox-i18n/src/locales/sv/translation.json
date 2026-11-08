@@ -1973,5 +1973,9 @@
   "Conversations only (V1 JSON)": "Endast konversationer (V1 JSON)",
   "Earlier messages could not be loaded": "Tidigare meddelanden kunde inte läsas in",
   "Later messages could not be loaded": "Senare meddelanden kunde inte läsas in",
-  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 innehåller konversationstext, historik och förgreningar. Bilagor och inställningar ingår inte."
+  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 innehåller konversationstext, historik och förgreningar. Bilagor och inställningar ingår inte.",
+  "Select Text": "Markera text",
+  "Me": "Jag",
+  "{{author}}: {{preview}}": "{{author}}: {{preview}}",
+  "Long press a message to reply again, edit, copy, or select text": "Tryck länge på ett meddelande för att svara igen, redigera, kopiera eller markera text"
 }

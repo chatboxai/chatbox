@@ -8,7 +8,7 @@
  */
 
 export const AUTOMATION_CONTRACT_ID = 'chatbox-ui'
-export const AUTOMATION_CONTRACT_VERSION = '1.16.0'
+export const AUTOMATION_CONTRACT_VERSION = '1.17.0'
 export const AUTOMATION_CONTRACT_VERSION_ATTRIBUTE = 'data-automation-contract-version'
 
 /** Adjacent identity attributes hosted on TestId elements. */
@@ -167,6 +167,14 @@ export const TestId = {
     actionMenuRetryBelow: 'message-action-menu-retry-below',
     actionMenuEdit: 'message-action-menu-edit',
     actionMenuCopy: 'message-action-menu-copy',
+    actionMenuStop: 'message-action-menu-stop',
+    actionMenuSelectText: 'message-action-menu-select-text',
+    selectTextPage: 'message-select-text-page',
+    selectTextClose: 'message-select-text-close',
+    selectTextSelectAll: 'message-select-text-select-all',
+    selectTextBody: 'message-select-text-body',
+    longPressHint: 'message-long-press-hint',
+    longPressHintDismiss: 'message-long-press-hint-dismiss',
     actionMore: 'message-action-more',
     actionQuote: 'message-action-quote',
     actionDelete: 'message-action-delete',

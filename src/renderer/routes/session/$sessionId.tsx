@@ -1,4 +1,3 @@
-import { getSessionSearchTarget, clearSessionSearchTarget } from '@/stores/session-search-target'
 import { resolveSessionMode } from '@chatbox/core/session/mode-policy'
 import { Box, Button, Loader } from '@mantine/core'
 import type { ModelProvider } from '@shared/types'
@@ -9,6 +8,7 @@ import { useStore } from 'zustand'
 import { JK_PAGE_NAMES } from '@/analytics/jk-events'
 import { rendererApplication } from '@/app/renderer-application'
 import MessageList, { type MessageListRef } from '@/components/chat/MessageList'
+import { MessageLongPressHint } from '@/components/chat/MessageLongPressHint'
 import { ChatboxWelcomeCard } from '@/components/common/ChatboxWelcomeCard'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import InputBox, { type InputBoxPayload } from '@/components/InputBox/InputBox'
@@ -39,6 +39,7 @@ import { useSessionAgentMode } from '@/stores/session/agent-mode'
 import { switchCurrentSession } from '@/stores/session/crud'
 import { submitNewUserMessage } from '@/stores/session/messages'
 import { startNewThread } from '@/stores/session/threads'
+import { clearSessionSearchTarget, getSessionSearchTarget } from '@/stores/session-search-target'
 import { clearSessionActivity, setOnScreenSession } from '@/stores/sessionActivityStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { add as addToast } from '@/stores/toastActions'
@@ -80,6 +81,7 @@ function RouteComponent() {
   )
   const captureAnchor = useCallback(() => messageListRef.current?.captureAnchor() ?? null, [])
   const transcript = useSessionTranscript(sessionLoadTarget, initialOrigin, captureAnchor)
+  const hintMessages = useMemo(() => transcript.rows.map((row) => row.message), [transcript.rows])
   useEffect(() => {
     if (searchTarget) clearSessionSearchTarget(searchTarget)
   }, [searchTarget])
@@ -305,6 +307,14 @@ function RouteComponent() {
                   pageName={JK_PAGE_NAMES.CHAT_PAGE}
                   className="pointer-events-auto w-full"
                 />
+              </Box>
+            </Box>
+          )}
+
+          {isSmallScreen && (
+            <Box className="pointer-events-none absolute left-0 right-0 z-10" style={{ bottom: '100%' }} mb="xs">
+              <Box className={`${paddedContentColumnClassName(widthFull)} pointer-events-auto`}>
+                <MessageLongPressHint messages={hintMessages} />
               </Box>
             </Box>
           )}

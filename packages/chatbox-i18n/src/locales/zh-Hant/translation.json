@@ -1973,5 +1973,9 @@
   "Conversations only (V1 JSON)": "僅匯出對話（V1 JSON）",
   "Earlier messages could not be loaded": "更早的訊息未能載入",
   "Later messages could not be loaded": "後面的訊息未能載入",
-  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 包含對話文字、歷史對話串和分支，不包含附件和設定。"
+  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 包含對話文字、歷史對話串和分支，不包含附件和設定。",
+  "Select Text": "選取文字",
+  "Me": "我",
+  "{{author}}: {{preview}}": "{{author}}：{{preview}}",
+  "Long press a message to reply again, edit, copy, or select text": "長按訊息可重新回答、編輯、複製和選取文字"
 }

@@ -22,6 +22,7 @@ Chatbox Pro 通过工具系统扩展 AI 的能力，使 AI 不仅能生成文本
 | Tavily | ✓ | ✓ | 高质量 AI 搜索，需自备 API Key |
 | BoCha | ✓ | ✗ | 国内搜索 API，需自备 API Key |
 | Querit | ✓ | ✗ | 多源聚合搜索，需自备 API Key |
+| Outcrawl | ✓ | ✓ | 网页搜索与网页正文读取，需自备 API Key |
 
 设置页（设置 → 网页搜索）会在所选提供方下方明确列出该提供方支持哪些工具，便于用户选择。
 

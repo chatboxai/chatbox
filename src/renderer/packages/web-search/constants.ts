@@ -4,6 +4,7 @@ export const WEB_SEARCH_PROVIDERS = [
   { value: 'tavily', label: 'Tavily' },
   { value: 'bocha', label: 'BoCha' },
   { value: 'querit', label: 'Querit' },
+  { value: 'outcrawl', label: 'Outcrawl' },
   { value: 'searxng', label: 'SearXNG' },
 ] as const
 

@@ -1994,5 +1994,9 @@
   "Swipe an AI reply right to reply again. Long press a message to edit, copy, or select text": "Sveip et AI-svar mot høyre for å svare på nytt. Trykk lenge på en melding for å redigere, kopiere eller merke tekst",
   "Keep swiping to reply again": "Fortsett å sveipe for å svare igjen",
   "Release to reply again": "Slipp for å svare igjen",
-  "Generating, try again when done": "Genererer, prøv igjen når det er ferdig"
+  "Generating, try again when done": "Genererer, prøv igjen når det er ferdig",
+  "Export pre-migration data": "Eksporter data fra før migreringen",
+  "Save the original conversation as JSON for recovery. Attached files are not included. Your chat will not be changed.": "Lagre den opprinnelige samtalen som JSON for gjenoppretting. Vedlegg er ikke inkludert. Samtalen din blir ikke endret.",
+  "No pre-migration data is available for this chat.": "Ingen data fra før migreringen er tilgjengelige for denne samtalen.",
+  "Could not export pre-migration data. Your chat has not been changed.": "Kunne ikke eksportere data fra før migreringen. Samtalen din er ikke endret."
 }

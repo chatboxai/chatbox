@@ -313,4 +313,34 @@ describe('encodeSessionTree', () => {
       reason: 'archived thread thread-active collides with the active thread id',
     })
   })
+
+  test('encodes forks nested far deeper than the call stack allows', () => {
+    const depth = 20_000
+    const forks: NonNullable<Session['messageForksHash']> = {}
+    for (let index = 0; index < depth; index += 1) {
+      forks[`p${index}`] = {
+        position: 0,
+        createdAt: 1,
+        lists: [
+          { id: `list-${index}-active`, messages: [] },
+          { id: `list-${index}-saved`, messages: [message(`p${index + 1}`), message(`tail-${index}`)] },
+        ],
+      }
+    }
+    forks[`p${depth}`] = {
+      position: 0,
+      createdAt: 1,
+      lists: [
+        { id: 'list-leaf-active', messages: [] },
+        { id: 'list-leaf-saved', messages: [message('end')] },
+      ],
+    }
+
+    const tree = encode(
+      makeSession({ messages: [message('m1'), message('p0'), message('a1')], messageForksHash: forks })
+    )
+
+    expect(tree.messages).toHaveLength(3 + depth * 2 + 1)
+    expect(tree.threads[0].activeLeafMessageId).toBe('a1')
+  })
 })

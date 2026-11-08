@@ -1994,5 +1994,9 @@
   "Swipe an AI reply right to reply again. Long press a message to edit, copy, or select text": "Swipe an AI reply right to reply again. Long press a message to edit, copy, or select text",
   "Keep swiping to reply again": "Keep swiping to reply again",
   "Release to reply again": "Release to reply again",
-  "Generating, try again when done": "Generating, try again when done"
+  "Generating, try again when done": "Generating, try again when done",
+  "Export pre-migration data": "Export pre-migration data",
+  "Save the original conversation as JSON for recovery. Attached files are not included. Your chat will not be changed.": "Save the original conversation as JSON for recovery. Attached files are not included. Your chat will not be changed.",
+  "No pre-migration data is available for this chat.": "No pre-migration data is available for this chat.",
+  "Could not export pre-migration data. Your chat has not been changed.": "Could not export pre-migration data. Your chat has not been changed."
 }

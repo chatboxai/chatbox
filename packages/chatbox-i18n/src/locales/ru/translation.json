@@ -1994,5 +1994,9 @@
   "Swipe an AI reply right to reply again. Long press a message to edit, copy, or select text": "Смахните ответ ИИ вправо, чтобы ответить заново. Нажмите и удерживайте сообщение, чтобы изменить, скопировать или выбрать текст",
   "Keep swiping to reply again": "Продолжайте свайп, чтобы ответить заново",
   "Release to reply again": "Отпустите, чтобы ответить заново",
-  "Generating, try again when done": "Идёт генерация, повторите после завершения"
+  "Generating, try again when done": "Идёт генерация, повторите после завершения",
+  "Export pre-migration data": "Экспорт данных до миграции",
+  "Save the original conversation as JSON for recovery. Attached files are not included. Your chat will not be changed.": "Сохраните исходный разговор в JSON для восстановления. Вложения не включены. Разговор не будет изменён.",
+  "No pre-migration data is available for this chat.": "Для этого чата нет данных до миграции.",
+  "Could not export pre-migration data. Your chat has not been changed.": "Не удалось экспортировать данные до миграции. Чат не был изменён."
 }

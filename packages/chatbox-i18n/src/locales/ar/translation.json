@@ -1994,5 +1994,9 @@
   "Swipe an AI reply right to reply again. Long press a message to edit, copy, or select text": "اسحب رد الذكاء الاصطناعي إلى اليمين لإعادة الرد. اضغط مطولاً على رسالة لتعديلها أو نسخها أو تحديد النص",
   "Keep swiping to reply again": "تابع السحب لإعادة الرد",
   "Release to reply again": "أفلت لإعادة الرد",
-  "Generating, try again when done": "جارٍ الإنشاء، أعد المحاولة عند الانتهاء"
+  "Generating, try again when done": "جارٍ الإنشاء، أعد المحاولة عند الانتهاء",
+  "Export pre-migration data": "تصدير البيانات قبل الترحيل",
+  "Save the original conversation as JSON for recovery. Attached files are not included. Your chat will not be changed.": "احفظ المحادثة الأصلية بصيغة JSON لاستعادتها. لا يتم تضمين الملفات المرفقة. لن يتم تغيير محادثتك.",
+  "No pre-migration data is available for this chat.": "لا تتوفر بيانات قبل الترحيل لهذه المحادثة.",
+  "Could not export pre-migration data. Your chat has not been changed.": "تعذر تصدير البيانات قبل الترحيل. لم يتم تغيير محادثتك."
 }

@@ -1994,5 +1994,9 @@
   "Swipe an AI reply right to reply again. Long press a message to edit, copy, or select text": "右滑 AI 回覆可重新生成，長按訊息可編輯、複製和選取文字",
   "Keep swiping to reply again": "繼續右滑，重新生成",
   "Release to reply again": "鬆手重新生成",
-  "Generating, try again when done": "正在生成，完成後再試"
+  "Generating, try again when done": "正在生成，完成後再試",
+  "Export pre-migration data": "匯出遷移前資料",
+  "Save the original conversation as JSON for recovery. Attached files are not included. Your chat will not be changed.": "將原始對話儲存為 JSON 以便復原，不包含附件檔案。此操作不會變更對話。",
+  "No pre-migration data is available for this chat.": "此對話沒有可用的遷移前資料。",
+  "Could not export pre-migration data. Your chat has not been changed.": "無法匯出遷移前資料。對話未被變更。"
 }

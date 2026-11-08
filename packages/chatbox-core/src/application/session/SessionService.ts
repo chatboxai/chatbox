@@ -957,18 +957,11 @@ export class SessionService {
   async recoverSessionList(): Promise<{ recovered: number; failed: number }> {
     await this.initialize()
     const sessionIds = await this.repository.getAllSessionIds()
-    let existingArchivedRecords = new Map<string, SessionMetaRecord>()
-    try {
-      existingArchivedRecords = new Map(
-        (await this.repository.meta.getAllIncludingHidden())
-          .filter((record) => record.recoveryArchived === true)
-          .map((record) => [record.id, record])
-      )
-    } catch (error) {
-      await this.log('warn', 'Failed to preserve archived metadata during session-list recovery', {
-        error: describeError(error),
-      })
-    }
+    // Preserve every unreadable entry, including its name, folder and archive state.
+    // If metadata cannot be read, leave the index untouched and let the caller retry.
+    const existingRecords = new Map(
+      (await this.repository.meta.getAllIncludingHidden()).map((record) => [record.id, record])
+    )
     const sessionsWithTimestamp: Array<{ read: SessionHeaderRead; timestamp: number }> = []
     const failedSessionIds: string[] = []
     for (const sessionId of sessionIds) {
@@ -1002,7 +995,8 @@ export class SessionService {
         timestamp || now - (sessionsWithTimestamp.length - index) * 1000,
         read.summary.pausedMessageCount > 0
       )
-      const existingArchivedRecord = existingArchivedRecords.get(read.header.id)
+      const existingRecord = existingRecords.get(read.header.id)
+      const existingArchivedRecord = existingRecord?.recoveryArchived ? existingRecord : undefined
       return existingArchivedRecord
         ? {
             ...recoveredRecord,
@@ -1013,10 +1007,9 @@ export class SessionService {
         : recoveredRecord
     })
     for (const sessionId of failedSessionIds) {
-      const existingArchivedRecord = existingArchivedRecords.get(sessionId)
-      if (existingArchivedRecord) {
-        records.push(existingArchivedRecord)
-      }
+      records.push(
+        existingRecords.get(sessionId) ?? createSessionMetaRecord({ id: sessionId, name: sessionId }, now, now)
+      )
     }
     await this.repository.meta.clear()
     await this.repository.meta.createMany(records)

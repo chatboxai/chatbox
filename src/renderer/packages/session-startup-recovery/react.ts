@@ -16,11 +16,25 @@ export function useSessionStartupLoadTarget(sessionId: string | null): string | 
   return sessionStartupRecovery.getLoadTarget(sessionId)
 }
 
-export function useSessionStartupQueryFailure(sessionId: string, sessionLoadTarget: string | null, isError: boolean) {
+export function useSessionStartupQueryFailure(
+  sessionId: string,
+  sessionLoadTarget: string | null,
+  isError: boolean,
+  error?: unknown
+) {
   useEffect(() => {
     if (!isError || sessionLoadTarget !== sessionId) return
-    sessionStartupRecovery.fail(sessionId)
-  }, [isError, sessionId, sessionLoadTarget])
+    sessionStartupRecovery.fail(sessionId, error)
+    const diagnostic = sessionStartupRecovery.getDiagnostic(sessionId)
+    if (diagnostic) {
+      void import('./reporting')
+        .then(({ reportStartupFailure }) => reportStartupFailure(sessionId, diagnostic))
+        .then((reportId) => {
+          if (reportId) sessionStartupRecovery.setReportId(sessionId, diagnostic, reportId)
+        })
+        .catch(() => {})
+    }
+  }, [error, isError, sessionId, sessionLoadTarget])
 }
 
 export function useSessionStartupGuard(sessionId: string, isSessionLoadSettled: boolean, disabled = false) {

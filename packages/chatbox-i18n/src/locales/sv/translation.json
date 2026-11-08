@@ -1994,5 +1994,9 @@
   "Swipe an AI reply right to reply again. Long press a message to edit, copy, or select text": "Svep ett AI-svar åt höger för att svara igen. Tryck länge på ett meddelande för att redigera, kopiera eller markera text",
   "Keep swiping to reply again": "Fortsätt svepa för att svara igen",
   "Release to reply again": "Släpp för att svara igen",
-  "Generating, try again when done": "Genererar, försök igen när det är klart"
+  "Generating, try again when done": "Genererar, försök igen när det är klart",
+  "Export pre-migration data": "Exportera data från före migreringen",
+  "Save the original conversation as JSON for recovery. Attached files are not included. Your chat will not be changed.": "Spara den ursprungliga konversationen som JSON för återställning. Bifogade filer ingår inte. Din chatt ändras inte.",
+  "No pre-migration data is available for this chat.": "Det finns inga data från före migreringen för den här chatten.",
+  "Could not export pre-migration data. Your chat has not been changed.": "Det gick inte att exportera data från före migreringen. Din chatt har inte ändrats."
 }

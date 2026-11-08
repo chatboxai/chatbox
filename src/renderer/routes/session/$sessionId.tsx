@@ -15,6 +15,7 @@ import InputBox, { type InputBoxPayload } from '@/components/InputBox/InputBox'
 import { contentColumnContainerClassName, paddedContentColumnClassName } from '@/components/layout/contentColumn'
 import Header from '@/components/layout/Header'
 import Page from '@/components/layout/Page'
+import { SessionRecoveryDetails } from '@/components/session/SessionRecoveryDetails'
 import { SessionSheet } from '@/components/session/SessionSheet'
 import { closeSessionPanel, SessionSidePanel } from '@/components/session/SessionSidePanel'
 import { useGenerationStop } from '@/hooks/useGenerationStop'
@@ -280,6 +281,7 @@ function RouteComponent() {
             </Button>
             <Button onClick={() => sessionStartupRecovery.retry(currentSessionId)}>{t('Try Again')}</Button>
           </div>
+          <SessionRecoveryDetails sessionId={currentSessionId} />
         </div>
       </Page>
     )

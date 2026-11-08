@@ -1994,5 +1994,9 @@
   "Swipe an AI reply right to reply again. Long press a message to edit, copy, or select text": "AI 답변을 오른쪽으로 밀면 다시 생성되고, 메시지를 길게 누르면 편집, 복사, 텍스트 선택을 할 수 있습니다",
   "Keep swiping to reply again": "계속 오른쪽으로 밀어 다시 생성",
   "Release to reply again": "손을 떼면 다시 생성",
-  "Generating, try again when done": "생성 중입니다. 완료 후 다시 시도하세요"
+  "Generating, try again when done": "생성 중입니다. 완료 후 다시 시도하세요",
+  "Export pre-migration data": "이전 전 데이터 내보내기",
+  "Save the original conversation as JSON for recovery. Attached files are not included. Your chat will not be changed.": "복구를 위해 원본 대화를 JSON으로 저장합니다. 첨부 파일은 포함되지 않습니다. 대화는 변경되지 않습니다.",
+  "No pre-migration data is available for this chat.": "이 채팅에는 이전 전 데이터가 없습니다.",
+  "Could not export pre-migration data. Your chat has not been changed.": "이전 전 데이터를 내보내지 못했습니다. 채팅은 변경되지 않았습니다."
 }

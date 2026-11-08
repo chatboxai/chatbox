@@ -1994,5 +1994,9 @@
   "Swipe an AI reply right to reply again. Long press a message to edit, copy, or select text": "AI の返信を右へスワイプすると再生成、メッセージを長押しすると編集・コピー・テキスト選択ができます",
   "Keep swiping to reply again": "さらに右へスワイプして再生成",
   "Release to reply again": "指を離すと再生成",
-  "Generating, try again when done": "生成中です。完了後にもう一度お試しください"
+  "Generating, try again when done": "生成中です。完了後にもう一度お試しください",
+  "Export pre-migration data": "移行前のデータをエクスポート",
+  "Save the original conversation as JSON for recovery. Attached files are not included. Your chat will not be changed.": "復元用に元の会話を JSON として保存します。添付ファイルは含まれません。会話は変更されません。",
+  "No pre-migration data is available for this chat.": "このチャットには移行前のデータがありません。",
+  "Could not export pre-migration data. Your chat has not been changed.": "移行前のデータをエクスポートできませんでした。チャットは変更されていません。"
 }

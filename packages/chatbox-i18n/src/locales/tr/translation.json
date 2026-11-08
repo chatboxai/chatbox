@@ -1994,5 +1994,9 @@
   "Swipe an AI reply right to reply again. Long press a message to edit, copy, or select text": "Yeniden yanıtlamak için bir yapay zekâ yanıtını sağa kaydırın. Düzenlemek, kopyalamak veya metin seçmek için bir mesaja uzun basın",
   "Keep swiping to reply again": "Yeniden yanıtlamak için kaydırmaya devam edin",
   "Release to reply again": "Yeniden yanıtlamak için bırakın",
-  "Generating, try again when done": "Oluşturuluyor, bitince tekrar deneyin"
+  "Generating, try again when done": "Oluşturuluyor, bitince tekrar deneyin",
+  "Export pre-migration data": "Taşıma öncesi verileri dışa aktar",
+  "Save the original conversation as JSON for recovery. Attached files are not included. Your chat will not be changed.": "Kurtarma için özgün konuşmayı JSON olarak kaydedin. Ek dosyalar dahil değildir. Sohbetiniz değiştirilmeyecektir.",
+  "No pre-migration data is available for this chat.": "Bu sohbet için taşıma öncesi veri bulunmuyor.",
+  "Could not export pre-migration data. Your chat has not been changed.": "Taşıma öncesi veriler dışa aktarılamadı. Sohbetiniz değiştirilmedi."
 }

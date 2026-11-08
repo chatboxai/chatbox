@@ -1994,5 +1994,9 @@
   "Swipe an AI reply right to reply again. Long press a message to edit, copy, or select text": "Balayez une réponse de l'IA vers la droite pour relancer la réponse. Appuyez longuement sur un message pour le modifier, le copier ou sélectionner du texte",
   "Keep swiping to reply again": "Continuez à glisser pour répondre à nouveau",
   "Release to reply again": "Relâchez pour répondre à nouveau",
-  "Generating, try again when done": "Génération en cours, réessayez une fois terminée"
+  "Generating, try again when done": "Génération en cours, réessayez une fois terminée",
+  "Export pre-migration data": "Exporter les données avant migration",
+  "Save the original conversation as JSON for recovery. Attached files are not included. Your chat will not be changed.": "Enregistrez la conversation d’origine en JSON pour la récupérer. Les pièces jointes ne sont pas incluses. Votre conversation ne sera pas modifiée.",
+  "No pre-migration data is available for this chat.": "Aucune donnée antérieure à la migration n’est disponible pour cette conversation.",
+  "Could not export pre-migration data. Your chat has not been changed.": "Impossible d’exporter les données avant migration. Votre conversation n’a pas été modifiée."
 }

@@ -1626,3 +1626,92 @@ describe('row transcript host', () => {
     expect(h.bodyModes.every((item) => item.readOnly)).toBe(true)
   })
 })
+
+describe('send follow intent', () => {
+  async function openAtTail() {
+    const listRef = createRef<MessageListRef>()
+    const view = render(<Host listRef={listRef} />)
+    await waitFor(() => {
+      expect(h.firstReady).toBe(true)
+      expect(h.controller!.getSnapshot().layout).toBeNull()
+    })
+    const viewport = view.getByTestId('virtuoso')
+    expect(viewport.scrollTop).toBe(400)
+    return { listRef, view, viewport }
+  }
+  async function openReadingHistory() {
+    h.smallScreen = true
+    const listRef = createRef<MessageListRef>()
+    const view = render(<Host listRef={listRef} search="m0" />)
+    await waitFor(() => {
+      expect(h.firstReady).toBe(true)
+      expect(h.controller!.getSnapshot().layout).toBeNull()
+    })
+    expect(h.controller!.getSnapshot().hasNewer).toBe(true)
+    return { listRef, view, viewport: view.getByTestId('virtuoso') }
+  }
+
+  test('keeps following a send made at the tail until the user scrolls away', async () => {
+    const { listRef, viewport } = await openAtTail()
+    const stillFollowing = listRef.current!.captureSendFollow()
+    expect(stillFollowing?.()).toBe(true)
+    fireEvent.wheel(viewport, { deltaY: -80 })
+    expect(stillFollowing?.()).toBe(false)
+  })
+
+  test('does not follow a send made while reading history', async () => {
+    const { listRef, viewport } = await openAtTail()
+    viewport.scrollTop = 100
+    fireEvent.scroll(viewport)
+    expect(listRef.current!.captureSendFollow()).toBeNull()
+  })
+
+  test('does not follow a send made after jumping to an earlier message', async () => {
+    const { listRef } = await openAtTail()
+    const stillFollowing = listRef.current!.captureSendFollow()
+    act(() => void listRef.current!.scrollToMessage('m180'))
+    expect(stillFollowing?.()).toBe(false)
+    expect(listRef.current!.captureSendFollow()).toBeNull()
+  })
+
+  test.each([
+    ['scroll-to-bottom arrow', 'idle'],
+    ['generating shortcut', 'generating'],
+  ] as const)('follows a send made right after the %s, before the list reaches the tail', async (_, activity) => {
+    h.activity = activity
+    const { listRef, view } = await openReadingHistory()
+    expect(listRef.current!.captureSendFollow()).toBeNull()
+    let releaseTail!: () => void
+    h.read.mockImplementationOnce(
+      (request) =>
+        new Promise((resolve) => {
+          releaseTail = () => resolve(page(request))
+        })
+    )
+    fireEvent.click(
+      activity === 'idle' ? view.getByTestId('mobile-tail') : view.getByRole('button', { name: 'Generating...' })
+    )
+    // The tail is still being read: the list has neither moved nor resumed following yet.
+    expect(h.controller!.getSnapshot().hasNewer).toBe(true)
+    const stillFollowing = listRef.current!.captureSendFollow()
+    expect(stillFollowing?.()).toBe(true)
+    await act(async () => releaseTail())
+    await waitFor(() => expect(h.controller!.getSnapshot().rows.at(-1)?.messageId).toBe('m219'))
+    expect(stillFollowing?.()).toBe(true)
+  })
+
+  test('drops the arrow intent when the user scrolls back up before sending', async () => {
+    const { listRef, view, viewport } = await openReadingHistory()
+    fireEvent.click(view.getByTestId('mobile-tail'))
+    fireEvent.wheel(viewport, { deltaY: -80 })
+    expect(listRef.current!.captureSendFollow()).toBeNull()
+  })
+
+  test('drops the arrow intent when a touch drags toward older messages before sending', async () => {
+    const { listRef, view, viewport } = await openReadingHistory()
+    fireEvent.click(view.getByTestId('mobile-tail'))
+    fireEvent.touchStart(viewport, { touches: [{ clientY: 100 }] })
+    fireEvent.touchMove(viewport, { touches: [{ clientY: 160 }] })
+    expect(listRef.current!.captureSendFollow()).toBeNull()
+  })
+})

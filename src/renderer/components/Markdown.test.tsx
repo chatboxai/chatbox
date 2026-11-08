@@ -212,6 +212,34 @@ describe('Markdown streaming code highlighting', () => {
   })
 })
 
+describe('Markdown quoted streaming code fences', () => {
+  const renderCode = (source: string) =>
+    render(
+      <MantineProvider forceColorScheme="dark">
+        <BlockCodeCollapsedStateProvider>
+          <Markdown generating hiddenCodeActions forceColorScheme="dark">
+            {source}
+          </Markdown>
+        </BlockCodeCollapsedStateProvider>
+      </MantineProvider>
+    )
+
+  it('highlights a closed code block inside a blockquote during generation', () => {
+    renderCode('> ```html\n> <div>one</div>\n> ```')
+    expect(document.querySelector('.shiki-streaming-plain')).toBeNull()
+    expect(highlightSync).toHaveBeenCalled()
+  })
+
+  it.each([
+    ['top-level', '```html\n<div>one</div>\n> ```'],
+    ['quoted', '> ```html\n> <div>one</div>\n> > ```'],
+  ])('keeps a literal quote marker inside %s code from closing the fence', (_name, source) => {
+    renderCode(source)
+    expect(document.querySelector('.shiki-streaming-plain')?.textContent).toContain('> ```')
+    expect(highlightSync).not.toHaveBeenCalled()
+  })
+})
+
 describe('Markdown code block font size', () => {
   const renderCodeBlock = (source: string, generating = false) =>
     render(
@@ -311,6 +339,56 @@ $$`}
     const tag = displayMath?.querySelector('.tag')
     expect(displayMath).not.toBeNull()
     expect(tag?.textContent).toContain('(1)')
+  })
+})
+
+describe('Markdown streaming display math', () => {
+  const annotation = () => document.querySelector('.katex-display annotation')?.textContent
+
+  it('keeps the last rendered formula while an unclosed block is incomplete', () => {
+    const { rerender } = render(<Markdown generating>{'Total:\n\n$$\nS = n \\cdot t_0'}</Markdown>)
+    expect(annotation()).toBe('S = n \\cdot t_0')
+
+    rerender(<Markdown generating>{'Total:\n\n$$\nS = n \\cdot t_0 \\left(1 - \\frac{1}{k}'}</Markdown>)
+    expect(document.querySelector('.katex-error')).toBeNull()
+    expect(annotation()).toBe('S = n \\cdot t_0')
+
+    rerender(<Markdown generating>{'Total:\n\n$$\nS = n \\cdot t_0 \\left(1 - \\frac{1}{k}\\right)'}</Markdown>)
+    expect(annotation()).toBe('S = n \\cdot t_0 \\left(1 - \\frac{1}{k}\\right)')
+  })
+
+  it.each([
+    ['blockquote', '> ', '> '],
+    ['nested blockquote', '> > ', '> > '],
+    ['compact nested blockquote', '>> ', '>> '],
+    ['blockquote in a list', '- > ', '  > '],
+    ['list in a blockquote', '> - ', '>   '],
+  ])('holds incomplete math in a %s and reports errors as soon as it closes', (_name, opening, continuation) => {
+    const source = `${opening}$$\n${continuation}x = 1`
+    const { rerender } = render(<Markdown generating>{source}</Markdown>)
+    expect(annotation()).toBe('x = 1')
+
+    const incomplete = `${source} + \\frac{1}{`
+    rerender(<Markdown generating>{incomplete}</Markdown>)
+    expect(document.querySelector('.katex-error')).toBeNull()
+    expect(annotation()).toBe('x = 1')
+
+    rerender(<Markdown generating>{`${incomplete}\n${continuation}$$`}</Markdown>)
+    expect(document.querySelector('.katex-error')).not.toBeNull()
+  })
+
+  it('renders an empty formula until the unclosed block first parses', () => {
+    render(<Markdown generating>{'$$\n\\frac{1}{'}</Markdown>)
+    expect(document.querySelector('.katex-error')).toBeNull()
+    expect(document.querySelector('.katex-display')).not.toBeNull()
+  })
+
+  it('reports invalid math once the block is closed or generation ends', () => {
+    const { rerender } = render(<Markdown generating>{'$$\n\\frac{1}{\n$$'}</Markdown>)
+    expect(document.querySelector('.katex-error')).not.toBeNull()
+
+    rerender(<Markdown>{'$$\n\\frac{1}{'}</Markdown>)
+    expect(document.querySelector('.katex-error')).not.toBeNull()
   })
 })
 

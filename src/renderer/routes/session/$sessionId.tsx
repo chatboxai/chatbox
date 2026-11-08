@@ -76,6 +76,16 @@ function RouteComponent() {
   const sessionLoadSettled = currentSession?.id === currentSessionId || (!isFetching && !isError)
   useSessionStartupGuard(currentSessionId, sessionLoadSettled, recovering)
   const messageListRef = useRef<MessageListRef>(null)
+  const [pendingSendScroll, setPendingSendScroll] = useState<{
+    messageId: string
+    stillFollowing: () => boolean
+  } | null>(null)
+  useEffect(() => {
+    if (pendingSendScroll && headerRead?.summary.lastUserMessageId === pendingSendScroll.messageId) {
+      if (pendingSendScroll.stillFollowing()) messageListRef.current?.scrollToBottom()
+      setPendingSendScroll(null)
+    }
+  }, [pendingSendScroll, headerRead?.summary.lastUserMessageId])
   const [searchTarget] = useState(() => getSessionSearchTarget(currentSessionId))
   const initialOrigin = useMemo(
     () => (searchTarget ? { messageId: searchTarget.messageId } : ('tail' as const)),
@@ -193,7 +203,11 @@ function RouteComponent() {
 
   const onSubmit = useCallback(
     async ({ constructedMessage, needGenerating = true, onUserMessageReady }: InputBoxPayload) => {
-      messageListRef.current?.setIsNewMessage(autoScrollNewMessagesToTop)
+      const submittedList = messageListRef.current
+      submittedList?.setIsNewMessage(autoScrollNewMessagesToTop)
+      // Read the intent before any await: sending while reading history keeps the reading position, while sending
+      // from the tail (or right after asking for it) keeps following the new turn.
+      const stillFollowing = autoScrollNewMessagesToTop ? null : (submittedList?.captureSendFollow() ?? null)
 
       if (!currentSession) {
         return
@@ -213,7 +227,12 @@ function RouteComponent() {
       await submitNewUserMessage(currentSession.id, {
         newUserMsg: constructedMessage,
         needGenerating,
-        onUserMessageReady,
+        onUserMessageReady: () => {
+          onUserMessageReady?.()
+          if (stillFollowing && messageListRef.current === submittedList) {
+            setPendingSendScroll({ messageId: constructedMessage.id, stillFollowing })
+          }
+        },
       })
     },
     [autoScrollNewMessagesToTop, currentSession, currentSessionWithDefaultModel]

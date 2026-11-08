@@ -1,6 +1,8 @@
 import { sanitizeUrl } from '@braintree/sanitize-url'
 import { useTheme } from '@mui/material'
+import katex from 'katex'
 import type { Code, Root } from 'mdast'
+import type { Math as MathNode } from 'mdast-util-math'
 import {
   type ComponentProps,
   type CSSProperties,
@@ -82,7 +84,7 @@ type RehypePlugins = NonNullable<ComponentProps<typeof ReactMarkdown>['rehypePlu
 type RemarkPlugins = NonNullable<ComponentProps<typeof ReactMarkdown>['remarkPlugins']>
 type CodeNodeData = NonNullable<Code['data']> & { hProperties?: Record<string, unknown> }
 
-function isUnclosedFencedCode(node: Code, source: string): boolean {
+function isUnclosedFencedBlock(node: Code | MathNode, source: string, openingPattern: RegExp): boolean {
   const startOffset = node.position?.start.offset
   const endOffset = node.position?.end.offset
   if (startOffset === undefined || endOffset !== source.length) return false
@@ -91,15 +93,62 @@ function isUnclosedFencedCode(node: Code, source: string): boolean {
   const openingLine = source
     .slice(startOffset, openingLineEnd === -1 ? source.length : openingLineEnd)
     .replace(/\r$/, '')
-  const openingFence = openingLine.match(/^ {0,3}(`{3,}|~{3,})/)
+  const openingFence = openingLine.match(openingPattern)
   if (!openingFence) return false
   if (node.position?.start.line === node.position?.end.line) return true
 
   const fence = openingFence[1]
   const endingLineStart = source.lastIndexOf('\n', Math.max(startOffset, endOffset - 1)) + 1
-  const endingLine = source.slice(endingLineStart, endOffset).replace(/\r$/, '')
-  const closingFence = new RegExp(`^ {0,3}${fence[0]}{${fence.length},}[\\t ]*$`)
+  const openingLineStart = source.lastIndexOf('\n', startOffset - 1) + 1
+  const quoteDepth = source.slice(openingLineStart, startOffset).match(/>/g)?.length ?? 0
+  let endingLine = source.slice(endingLineStart, endOffset).replace(/\r$/, '')
+  // Remove enclosing quote markers while preserving any markers inside the fenced content.
+  for (let depth = 0; depth < quoteDepth; depth++) endingLine = endingLine.replace(/^[\t ]*>[\t ]?/, '')
+  const closingFence = new RegExp(`^ {0,3}\\${fence[0]}{${fence.length},}[\\t ]*$`)
   return !closingFence.test(endingLine)
+}
+
+function isUnclosedFencedCode(node: Code, source: string): boolean {
+  return isUnclosedFencedBlock(node, source, /^ {0,3}(`{3,}|~{3,})/)
+}
+
+function isUnclosedMathBlock(node: MathNode, source: string): boolean {
+  return isUnclosedFencedBlock(node, source, /^ {0,3}(\${2,})/)
+}
+
+function canRenderDisplayMath(value: string): boolean {
+  try {
+    katex.renderToString(value, { displayMode: true, throwOnError: true })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * While generating, the trailing `$$` block is still being written and its partial source often fails to parse.
+ * Show the last source that rendered so the formula does not flip between rendered math and a one-line error.
+ */
+function remarkHoldGeneratingMath(options: { generating?: boolean; renderedMath: Map<number, string> }) {
+  return (tree: Root, file: { value: unknown }) => {
+    if (!options.generating) {
+      options.renderedMath.clear()
+      return
+    }
+    const source = typeof file.value === 'string' ? file.value : ''
+    visit(tree, 'math', (node: MathNode) => {
+      const start = node.position?.start.offset
+      if (start === undefined || !isUnclosedMathBlock(node, source)) return
+      if (canRenderDisplayMath(node.value)) {
+        options.renderedMath.set(start, node.value)
+        return
+      }
+      const held = options.renderedMath.get(start) ?? ''
+      node.value = held
+      const code = node.data?.hChildren?.[0]
+      if (code?.type === 'element') code.children = [{ type: 'text', value: held }]
+    })
+  }
 }
 
 function remarkAddCodeIndex(options: { generating?: boolean } = {}) {
@@ -159,12 +208,19 @@ function Markdown(props: {
     () => (enableLaTeXRendering ? latex.processLaTeX(children) : children),
     [children, enableLaTeXRendering]
   )
+  const [renderedMath] = useState(() => new Map<number, string>())
   const remarkPlugins = useMemo<RemarkPlugins>(
     () =>
       enableLaTeXRendering
-        ? [remarkGfm, remarkMath, remarkBreaks, [remarkAddCodeIndex, { generating }]]
+        ? [
+            remarkGfm,
+            remarkMath,
+            [remarkHoldGeneratingMath, { generating, renderedMath }],
+            remarkBreaks,
+            [remarkAddCodeIndex, { generating }],
+          ]
         : [remarkGfm, remarkBreaks, [remarkAddCodeIndex, { generating }]],
-    [enableLaTeXRendering, generating]
+    [enableLaTeXRendering, generating, renderedMath]
   )
   const streamingSegments = useStreamingTextSegments(processedChildren, generating, uniqueId)
   const rehypePlugins = useMemo<RehypePlugins>(() => {

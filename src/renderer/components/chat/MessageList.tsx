@@ -67,6 +67,7 @@ import { areMinimapAnchorsEqual, buildMessageMinimapAnchors } from './message-na
 import { buildTranscriptRenderItems } from './message-render-items'
 import { MessageSwipeStartContext } from './message-swipe-start'
 import SummaryMessage from './SummaryMessage'
+import { createSendFollowIntent } from './send-follow-intent'
 import {
   createSmoothFollowOutputController,
   getFollowOutputScrollBehavior,
@@ -80,6 +81,11 @@ export interface MessageListRef {
   captureAnchor(): SessionTranscriptViewportAnchor | null
   scrollToTop(): void
   scrollToBottom(): void
+  /**
+   * Captures, at send time, whether the user is following the tail (or has just asked for it). Returns null when the
+   * user is reading history; otherwise a check that turns false once the user browses away.
+   */
+  captureSendFollow(): (() => boolean) | null
   scrollToMessage(messageId: string): Promise<boolean>
   setIsNewMessage(value: boolean): void
 }
@@ -260,6 +266,12 @@ const MessageList = forwardRef<
     [scrollToPosition]
   )
   useEffect(() => () => follow.dispose(), [follow])
+  const sendFollowIntent = useMemo(createSendFollowIntent, [])
+  /** A user-driven move away from the tail; pauses following and withdraws any tail intent captured for a send. */
+  const leaveTail = useCallback(() => {
+    sendFollowIntent.leaveTail()
+    follow.pause()
+  }, [follow, sendFollowIntent])
   const scrollByGeometry = useCallback((delta: number) => {
     virtuoso.current?.scrollBy({ top: delta, behavior: 'auto' })
     if (scrollbarPointer.current && scroller.current) scrollbarPointer.current.scrollTop = scroller.current.scrollTop
@@ -305,11 +317,12 @@ const MessageList = forwardRef<
   }, [contentAnchor])
   const navigate = useCallback(
     (origin: 'head' | 'tail' | { messageId: string }) => {
-      if (origin !== 'tail') follow.pause()
+      if (origin === 'tail') sendFollowIntent.requestTail()
+      else leaveTail()
       if (typeof origin === 'object') setHighlighted(origin.messageId)
       return controller.navigate(origin)
     },
-    [controller, follow]
+    [controller, leaveTail, sendFollowIntent]
   )
   useImperativeHandle(
     ref,
@@ -321,10 +334,21 @@ const MessageList = forwardRef<
       scrollToBottom: () => {
         void navigate('tail')
       },
+      captureSendFollow: () => {
+        const state = controller.getSnapshot()
+        const element = scroller.current
+        const atTail =
+          follow.isFollowing() ||
+          (!!element &&
+            !state.hasNewer &&
+            (!state.layout || state.layout.kind === 'tail') &&
+            element.scrollHeight - element.clientHeight - element.scrollTop <= 4)
+        return sendFollowIntent.capture(atTail)
+      },
       scrollToMessage: (messageId) => navigate({ messageId }),
       setIsNewMessage,
     }),
-    [captureAnchor, navigate]
+    [captureAnchor, controller, follow, navigate, sendFollowIntent]
   )
   useEffect(() => {
     uiStore.getState().setMessageListElement(container)
@@ -332,17 +356,17 @@ const MessageList = forwardRef<
       owner,
       sessionId: session.id,
       navigateMessage: async (messageId) => {
-        follow.pause()
+        leaveTail()
         setHighlighted(messageId)
         return controller.navigate({ messageId })
       },
       openSearch: async (messageId) => {
-        follow.pause()
+        leaveTail()
         setHighlighted(messageId)
         return controller.openSearch(messageId)
       },
       viewThread: async (threadId) => {
-        follow.pause()
+        leaveTail()
         return controller.viewThread(threadId)
       },
       scrollToIndex: ({ index, align, behavior }) => {
@@ -357,7 +381,7 @@ const MessageList = forwardRef<
         uiStore.getState().setMessageListElement(null)
       }
     }
-  }, [owner, session.id, controller, follow, navigate, scrollToItem])
+  }, [owner, session.id, controller, leaveTail, navigate, scrollToItem])
 
   const layoutFrame = useRef<number | null>(null)
   const applying = useRef<number | null>(null)
@@ -588,15 +612,26 @@ const MessageList = forwardRef<
     if (delta) {
       progress.current++
       userDirection.current = delta < 0 ? 'older' : 'newer'
-      if (delta < 0) follow.pause()
+      if (delta < 0) leaveTail()
     }
-    follow.handleScroll(element.scrollTop, Math.max(0, element.scrollHeight - element.clientHeight))
+    if (follow.handleScroll(element.scrollTop, Math.max(0, element.scrollHeight - element.clientHeight)))
+      sendFollowIntent.leaveTail()
     const maxScrollTop = element.scrollHeight - element.clientHeight
     if (maxScrollTop - element.scrollTop >= 0) handleScrollTopThrottled(element.scrollTop, maxScrollTop)
     contentAnchor.onScroll()
     if (element.scrollTop < 160) loadAtEdge('older')
     if (element.scrollHeight - element.clientHeight - element.scrollTop < 160) loadAtEdge('newer')
-  }, [controller, follow, loadAtEdge, contentAnchor, userInput, synchronizeBrowseIntent, handleScrollTopThrottled])
+  }, [
+    controller,
+    follow,
+    leaveTail,
+    sendFollowIntent,
+    loadAtEdge,
+    contentAnchor,
+    userInput,
+    synchronizeBrowseIntent,
+    handleScrollTopThrottled,
+  ])
   useEffect(() => {
     if (transcript.firstWindowReady && transcript.hasNewer && follow.isFollowing() && !transcript.operation)
       navigate('tail')
@@ -644,7 +679,7 @@ const MessageList = forwardRef<
         item.messages.some((message) => message.id === target.messageId)
       )
       if (index < 0) return
-      follow.pause()
+      leaveTail()
       userDirection.current = null
       touchY.current = null
       scrollbarPointer.current = null
@@ -659,7 +694,7 @@ const MessageList = forwardRef<
         ...(barHeight ? { offset: -barHeight } : {}),
       })
     },
-    [captureAnchor, controller, follow, contentAnchor, messageElement]
+    [captureAnchor, controller, leaveTail, contentAnchor, messageElement]
   )
   const shouldConfirmPromptCacheDelete = useCallback(
     (messageId: string, target: PromptCacheDeleteTarget) =>
@@ -826,7 +861,7 @@ const MessageList = forwardRef<
               userInput()
               progress.current++
               userDirection.current = event.deltaY < 0 ? 'older' : 'newer'
-              if (event.deltaY < 0) follow.pause()
+              if (event.deltaY < 0) leaveTail()
               onScroll()
             }}
             onTouchStartCapture={(event) => {
@@ -842,7 +877,7 @@ const MessageList = forwardRef<
               userInput()
               progress.current++
               userDirection.current = direction
-              if (userDirection.current === 'older') follow.pause()
+              if (userDirection.current === 'older') leaveTail()
               touchY.current = currentY
               onScroll()
             }}
@@ -855,7 +890,7 @@ const MessageList = forwardRef<
                 userInput()
                 progress.current++
                 userDirection.current = event.key.endsWith('Up') ? 'older' : 'newer'
-                if (userDirection.current === 'older') follow.pause()
+                if (userDirection.current === 'older') leaveTail()
               }
             }}
           >

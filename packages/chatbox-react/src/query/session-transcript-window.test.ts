@@ -757,7 +757,7 @@ describe('transcript window', () => {
     expect(data.read).toHaveBeenCalledTimes(1)
   })
 
-  it('requires a bounded source read before appending to a live page with unknown bytes', async () => {
+  it('appends after a streamed body edit without rereading or rebasing the window', async () => {
     const data = fixture([1])
     const controller = new SessionTranscriptWindowController({
       sessionId: 's',
@@ -767,11 +767,18 @@ describe('transcript window', () => {
     await controller.open()
     acknowledge(controller)
     controller.updateMessage('T1-1', { generating: true, contentParts: [{ type: 'text', text: 'live' }] })
-    const pages = controller.getSnapshot().pages
+    controller.updateMessage('T1-1', { generating: false, contentParts: [{ type: 'text', text: 'live answer' }] })
+    const before = controller.getSnapshot()
+    expect(before.pages[0].payloadBytes).toBeNull()
     const row = message('T1', 2)
-    expect(controller.applyRows({ record: data.record, revision: 2 }, 1, [row], [row.messageId], false)).toBe(false)
-    expect(controller.getSnapshot().pages).toBe(pages)
-    expect(controller.getSnapshot().rows).toHaveLength(1)
+    expect(controller.applyRows({ record: data.record, revision: 2 }, 1, [row], [row.messageId], false)).toBe(true)
+    const state = controller.getSnapshot()
+    expect(state.windowEpoch).toBe(before.windowEpoch)
+    expect(state.rows.map((item) => item.messageId)).toEqual(['T1-1', 'T1-2'])
+    expect(state.pages).toHaveLength(1)
+    expect(state.pages[0].payloadBytes).toBe(
+      state.rows.reduce((sum, item) => sum + new TextEncoder().encode(JSON.stringify(item.message)).length, 0)
+    )
     expect(data.read).toHaveBeenCalledTimes(1)
   })
 
@@ -1724,7 +1731,6 @@ describe('transcript window', () => {
     data.threads[0].activeLeafMessageId = 'T1-4'
     data.setRevision(2)
     const commit = { record: data.record, revision: 2 }
-    expect(controller.applyRows(commit, 1, appended, ['T1-3', 'T1-4'], false)).toBe(false)
     const preservedPage = await data.read({ sessionId: 's', limit: 20, origin: { messageId: 'T1-2' } })
     const delayed = deferred<SessionTranscriptPage>()
     data.read.mockImplementationOnce(() => delayed.promise)

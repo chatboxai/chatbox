@@ -11,3 +11,20 @@ import type { Message } from '../types'
 export function isContextEligibleMessage(message: Pick<Message, 'generating' | 'isForkMarker'>): boolean {
   return !message.generating && !message.isForkMarker
 }
+
+/**
+ * The messages before a generation target, for context building. A resumed
+ * continuation includes its own target, which stays flagged `generating` for
+ * the UI; its tool calls and results are exactly the context the follow-up
+ * request continues from, so that message is passed on as complete.
+ */
+export function selectMessagesBeforeTarget(
+  messages: Message[],
+  targetIndex: number,
+  resumesLastMessage: boolean
+): Message[] {
+  const selected = messages.slice(0, targetIndex)
+  const resumed = selected.at(-1)
+  if (!resumesLastMessage || !resumed?.generating) return selected
+  return [...selected.slice(0, -1), { ...resumed, generating: false }]
+}

@@ -1190,7 +1190,11 @@ export class SessionTranscriptWindowController {
     if (!pages.length) return false
     const tail = pages[pages.length - 1]
     if (append.length) {
-      if (tail.payloadBytes === null && tail.messages.length < this.options.pageSize) return false
+      if (tail.payloadBytes === null && tail.messages.length < this.options.pageSize)
+        tail.payloadBytes = tail.messages.reduce(
+          (bytes, row) => bytes + new TextEncoder().encode(JSON.stringify(row.message)).length,
+          0
+        )
       const lastId = append[append.length - 1].messageId
       for (const page of pages)
         page.threads = page.threads.map((thread) =>

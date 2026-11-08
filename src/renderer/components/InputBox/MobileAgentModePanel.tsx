@@ -84,7 +84,7 @@ const MobileAgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProp
     modelId,
     agentModeActive: workActive,
     copilotId: sessionId === 'new' ? draftCopilotId : header?.copilotId,
-    copilotName: sessionId === 'new' ? draftCopilotName : header?.name,
+    copilotName: sessionId === 'new' ? draftCopilotName : undefined,
     onClose,
   })
   const webSearch = useSettingsStore((s) => s.extension.webSearch)

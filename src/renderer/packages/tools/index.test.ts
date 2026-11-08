@@ -10,6 +10,11 @@ describe('getToolName', () => {
     expect(getToolName('user_exec')).toBe('Run Command')
   })
 
+  it('names the memory tools', () => {
+    expect(getToolName('save_memory')).toBe('Save Memory')
+    expect(getToolName('delete_memory')).toBe('Delete Memory')
+  })
+
   it.each([
     [{ argv: ['version'] }, 'Chatbox Version'],
     [{ argv: ['account', 'status'] }, 'Account Status'],

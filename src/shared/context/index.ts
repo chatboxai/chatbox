@@ -6,7 +6,7 @@ export {
   getContextHistoryStartNote,
 } from './compaction-handoff'
 export { findLatestApplicableCompactionPoint } from './compaction-points'
-export { isContextEligibleMessage } from './message-eligibility'
+export { isContextEligibleMessage, selectMessagesBeforeTarget } from './message-eligibility'
 export {
   CONTEXT_HISTORY_START_MESSAGE_ID,
   type ContextProjectionEntry,

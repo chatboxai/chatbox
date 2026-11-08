@@ -95,6 +95,34 @@ function createModel(
 }
 
 describe('ChatboxAI apiStyle fallback', () => {
+  it('retains gateway DeepSeek cached tokens in the shared model stream', async () => {
+    const dependencies = createDependencies()
+    vi.mocked(dependencies.request.fetchWithOptions).mockResolvedValue(
+      new Response(
+        `data: ${JSON.stringify({
+          id: 'cache-test',
+          model: 'deepseek-v4.1-flash',
+          created: 1,
+          choices: [{ index: 0, delta: { content: 'OK' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 1636, completion_tokens: 1, prompt_tokens_details: { cached_tokens: 1536 } },
+        })}\n\ndata: [DONE]\n\n`,
+        { headers: { 'content-type': 'text/event-stream' } }
+      )
+    )
+    const model = new TestChatboxAI(
+      {
+        licenseKey: 'test-license',
+        model: { modelId: 'deepseek-v4.1-flash', apiStyle: 'openai', type: 'chat' },
+        language: 'en',
+        dalleStyle: 'vivid',
+      },
+      { uuid: 'test' },
+      dependencies
+    )
+    const result = await model.chat([{ role: 'user', content: 'Synthetic diagnostic' }], {})
+    expect(result.usage?.cachedInputTokens).toBe(1536)
+  })
+
   it('infers google apiStyle for cached Gemini models without apiStyle metadata', () => {
     const model = createModel({
       modelId: 'gemini-3.5-flash',

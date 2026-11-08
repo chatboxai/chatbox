@@ -120,7 +120,7 @@ function useSettingsSearch(query: string): SettingsSearchResult[] {
       if (!item) return []
       return [
         {
-          key: `${entry.page}:${entry.id}`,
+          key: `${entry.page}:${entry.id}:${entry.label}`,
           entry,
           label: String(t(entry.label, entry.labelOptions ?? {})),
           pageLabel: pageLabel(item),

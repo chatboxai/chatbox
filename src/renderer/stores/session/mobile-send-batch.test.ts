@@ -20,7 +20,7 @@ vi.mock('@/platform', () => ({ default: mocks.platform }))
 vi.mock('@/lib/utils', () => ({ getLogger: () => ({ error: vi.fn(), warn: vi.fn() }) }))
 vi.mock('@/adapters', () => ({ createModel: vi.fn().mockResolvedValue({}) }))
 vi.mock('@/packages/context-management', () => ({ runCompactionWithUIState: mocks.compaction }))
-vi.mock('@/packages/model-setting-utils', () => ({ getModelDisplayName: vi.fn() }))
+vi.mock('@/packages/model-setting-utils', () => ({ getMessageProviderName: vi.fn(), getModelDisplayName: vi.fn() }))
 vi.mock('@/packages/token', () => ({ estimateTokensFromMessages: vi.fn().mockReturnValue(1) }))
 vi.mock('@/utils/sentry', () => ({ reportError: vi.fn() }))
 vi.mock('./session-settings', () => ({

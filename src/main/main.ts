@@ -46,6 +46,7 @@ import type { ShortcutSetting } from 'src/shared/types'
 import { applyDevLaunchHashToUrl, buildDevLaunchHash, parseDevLaunchOptions } from '../shared/dev-launch'
 import type { FileEditRequest } from '../shared/file-edits'
 import { KNOWN_LOCAL_PARSER_ERROR_CODES } from '../shared/file-parse-errors'
+import { startChatboxAPIOriginProbing } from '../shared/request/chatboxai_pool'
 import { VIEW_IMAGE_MAX_READ_BYTES } from '../shared/tools/view-image'
 import { flushSentry, sentry } from './adapters/sentry'
 import { registerAgentPersonaHandlers } from './agent-persona/ipc-handlers'
@@ -60,6 +61,7 @@ import { editTextFile, writeTextFile } from './file-mutations'
 import { parseFile } from './file-parser'
 import { isQuitForInstallRequested } from './installer-command'
 import Locale from './locales'
+import { mainFetch } from './main-fetch'
 import * as mcpIpc from './mcp/ipc-stdio-transport'
 import MenuBuilder from './menu'
 import { registerOAuthHandlers } from './oauth'
@@ -754,6 +756,8 @@ if (quitForInstallRequested) {
   app
     .whenReady()
     .then(async () => {
+      // Main is a separate JS context from the renderer, so it selects its own Chatbox API origin.
+      startChatboxAPIOriginProbing({ fetch: mainFetch })
       await knowledgeBaseInitPromise
       await createWindow()
       startupWindowCreated = true

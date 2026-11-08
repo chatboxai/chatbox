@@ -3,20 +3,20 @@ import deepmerge from 'deepmerge'
 import { z } from 'zod'
 import { projectSettingsForExport } from '../application/settings/export-projection'
 import type { BackupBusinessRecord, BackupImportContext, BackupManifest, BackupSelection } from '../backup-v3/types'
-import { SettingsSchema, createDefaultSettings, mergeSettingsWithDefaults } from '../domain/settings'
+import { createDefaultSettings, mergeSettingsWithDefaults, SettingsSchema } from '../domain/settings'
 import type { KeyValueStoragePort } from '../ports/key-value-storage'
-import type { Message, SessionHeader } from '../types/session'
 import {
   combineMemoryStateTokens,
-  isMemoryStateToken,
-  MemoryEntrySchema,
   createMemoryStateToken,
   getSnapshotCopilotLifecycleToken,
+  isMemoryStateToken,
+  MemoryEntrySchema,
   parseCopilotMemoryStateTokens,
   type SessionPromptContextSnapshot,
 } from '../types/agent-persona'
-import type { BackupHostOptions } from './types'
+import type { Message, SessionHeader } from '../types/session'
 import { throwIfAborted } from '../utils/abort'
+import type { BackupHostOptions } from './types'
 
 export const GLOBAL_KEYS = {
   settings: 'settings',
@@ -117,12 +117,22 @@ const tokenSchema = z
   .passthrough()
 const soulSchema = z.object({ content: z.string(), updatedAt: z.number().finite() }).passthrough()
 
-function validateSettingsFields(value: unknown, shape: Record<string, z.ZodType>): Record<string, unknown> {
+/**
+ * Display preferences whose unknown values fall back to the default instead of rejecting the whole settings
+ * record; every other field is validated strictly.
+ */
+const SETTINGS_FIELDS_WITH_DEFAULT_FALLBACK: ReadonlySet<string> = new Set(['messageLayout', 'showModelName'])
+
+function validateSettingsFields(
+  value: unknown,
+  shape: Record<string, z.ZodType>,
+  fallbackFields: ReadonlySet<string> = new Set()
+): Record<string, unknown> {
   const fields = object(value)
   for (const [key, field] of Object.entries(shape)) {
     if (!Object.hasOwn(fields, key)) continue
     let validator = field
-    while (validator instanceof z.ZodCatch) validator = validator.unwrap() as z.ZodType
+    if (!fallbackFields.has(key)) while (validator instanceof z.ZodCatch) validator = validator.unwrap() as z.ZodType
     validator.parse(fields[key])
   }
   return fields
@@ -136,7 +146,11 @@ export function validateBackupGlobal(record: Global): void {
       const settings = deepmerge(createDefaultSettings(), object(record.value), {
         arrayMerge: (_target, source) => source,
       })
-      SettingsSchema.parse(mergeSettingsWithDefaults(validateSettingsFields(settings, SettingsSchema.shape)))
+      SettingsSchema.parse(
+        mergeSettingsWithDefaults(
+          validateSettingsFields(settings, SettingsSchema.shape, SETTINGS_FIELDS_WITH_DEFAULT_FALLBACK)
+        )
+      )
       break
     }
     case 'copilot':

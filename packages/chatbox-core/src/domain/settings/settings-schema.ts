@@ -538,13 +538,18 @@ export const SettingsSchema = GlobalSessionSettingsSchema.extend({
   showWordCount: z.boolean().optional().catch(undefined),
   showTokenCount: z.boolean().optional().catch(undefined),
   showTokenUsed: z.boolean().optional().catch(undefined),
-  showModelName: z.boolean().optional().catch(undefined),
+  /** Shown unless turned off; an invalid stored value reads as the default. */
+  showModelName: z.boolean().optional().catch(true),
   showMessageTimestamp: z.boolean().optional().catch(undefined),
   showFirstTokenLatency: z.boolean().optional().catch(undefined),
 
   showAvatar: z.boolean().optional().catch(undefined),
   hideSystemPromptMessage: z.boolean().optional().catch(undefined),
-  messageLayout: z.enum(['left', 'bubble']).optional().catch(undefined),
+  // 'left' is the pre-classic name of the flat layout; stored settings and backups may still carry it.
+  messageLayout: z
+    .preprocess((value) => (value === 'left' ? 'classic' : value), z.enum(['classic', 'bubble']))
+    .optional()
+    .catch(undefined),
   autoScrollNewMessagesToTop: z.boolean().default(false),
 
   theme: z.nativeEnum(Theme),

@@ -50,7 +50,7 @@ import useAppTheme from '@/hooks/useAppTheme'
 import { useSystemLanguageWhenInit } from '@/hooks/useDefaultSystemLanguage'
 import { useI18nEffect } from '@/hooks/useI18nEffect'
 import useNeedRoomForWinControls from '@/hooks/useNeedRoomForWinControls'
-import useScreenChange, { useSidebarWidth } from '@/hooks/useScreenChange'
+import useScreenChange, { useIsSmallScreen, useSidebarWidth } from '@/hooks/useScreenChange'
 import useShortcut from '@/hooks/useShortcut'
 import useVersion from '@/hooks/useVersion'
 import '@/modals'
@@ -147,11 +147,11 @@ function BackgroundImageOverlay() {
         />
       )}
 
-      <Flex h={54} className="sm:hidden bg-chatbox-background-primary" />
+      <Flex h={54} className="chatbox-wallpaper-header-overlay sm:hidden bg-chatbox-background-primary" />
 
-      <Flex className="sm:hidden relative h-36 bg-gradient-to-b from-chatbox-background-primary from-0 to-transparent to-100%" />
+      <Flex className="chatbox-wallpaper-header-overlay sm:hidden relative h-36 bg-gradient-to-b from-chatbox-background-primary from-0 to-transparent to-100%" />
 
-      <Flex className="sm:hidden absolute bottom-0 left-0 w-full h-36 bg-gradient-to-t from-chatbox-background-primary from-0 to-transparent to-100%" />
+      <Flex className="chatbox-wallpaper-composer-overlay sm:hidden absolute bottom-0 left-0 w-full h-36 bg-gradient-to-t from-chatbox-background-primary from-0 to-transparent to-100%" />
     </div>
   )
 }
@@ -193,6 +193,10 @@ function Root() {
   const spellCheck = useSettingsStore((state) => state.spellCheck)
   const language = useLanguage()
   const hasBackgroundImage = useHasBackgroundImage()
+  const isSmallScreen = useIsSmallScreen()
+  // The small-screen settings index sits on the grouped surface (see `SettingsRoot`).
+  const pageSurface =
+    isSmallScreen && (location.pathname === '/settings' || location.pathname === '/settings/') ? 'grouped' : undefined
   const pageViewSessionLoadTarget = useSessionStartupLoadTarget(getSessionIdFromPathname(location.pathname))
   const pageViewVisitGate = useRef(createPageViewVisitGate())
   const initialized = useRef(false)
@@ -391,6 +395,7 @@ function Root() {
         titleBarHeight ? 'bg-chatbox-background-primary-hover' : 'bg-chatbox-background-primary'
       )}
       data-chatbox-platform={CHATBOX_BUILD_PLATFORM}
+      data-page-surface={pageSurface}
       spellCheck={spellCheck}
       dir={language === 'ar' ? 'rtl' : 'ltr'}
     >
@@ -423,6 +428,7 @@ function Root() {
               'h-full overflow-hidden box-border border-0 border-solid border-chatbox-border-primary',
               hasBackgroundImage ? 'bg-transparent' : 'bg-chatbox-background-primary'
             )}
+            data-page-surface={pageSurface}
             sx={
               titleBarHeight
                 ? {

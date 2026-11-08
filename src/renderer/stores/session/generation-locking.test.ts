@@ -13,6 +13,7 @@ const {
   modifyMessageMock,
   orchestrateGenerationMock,
   guardSessionActionMock,
+  executeStructureCommandMock,
 } = vi.hoisted(() => ({
   updateMessageMock: vi.fn(),
   getSessionMock: vi.fn(),
@@ -23,6 +24,7 @@ const {
   modifyMessageMock: vi.fn(),
   orchestrateGenerationMock: vi.fn(),
   guardSessionActionMock: vi.fn(),
+  executeStructureCommandMock: vi.fn(),
 }))
 
 vi.mock('@/app/renderer-application', async () => {
@@ -30,7 +32,11 @@ vi.mock('@/app/renderer-application', async () => {
   const { createRowSessionFixtureReads } = await import('./testing/row-session-fixture')
   return {
     rendererApplication: {
-      sessions: { ...createRowSessionFixtureReads(getSessionMock), updateMessage: updateMessageMock },
+      sessions: {
+        ...createRowSessionFixtureReads(getSessionMock),
+        updateMessage: updateMessageMock,
+        executeStructureCommand: executeStructureCommandMock,
+      },
       generationRuntime: new GenerationRuntimeStore(),
     },
   }
@@ -54,7 +60,11 @@ vi.mock('@/adapters/CurrentGenerationService', () => ({
   currentGenerationService: { orchestrate: orchestrateGenerationMock },
 }))
 vi.mock('./action-guard', () => ({ guardSessionAction: guardSessionActionMock }))
-vi.mock('./utils', () => ({ getSessionWebBrowsing: vi.fn() }))
+vi.mock('./utils', () => ({
+  getSessionWebBrowsing: vi.fn(),
+  initializeTargetMessage: async (message: Message) => ({ ...message, generating: true }),
+}))
+vi.mock('../settingsStore', () => ({ settingsStore: { getState: () => ({ getSettings: () => ({}) }) } }))
 vi.mock('@/packages/token', () => ({ estimateTokensFromMessages: () => 0 }))
 
 import { resetSessionGenerationLocksForTests } from '@chatbox/core/generation'
@@ -95,6 +105,12 @@ describe('generation entry-point locking', () => {
     getSessionSettingsMock.mockResolvedValue({})
     guardSessionActionMock.mockResolvedValue(true)
     insertMessageAfterMock.mockResolvedValue(undefined)
+    executeStructureCommandMock
+      .mockReset()
+      .mockImplementation(async (_sessionId: string, operation: { reply: Message }) => ({
+        applied: true,
+        replyMessageId: operation.reply.id,
+      }))
   })
 
   afterEach(() => {
@@ -416,5 +432,33 @@ describe('generation entry-point locking', () => {
     expect(createSaveAndResendForkMock).not.toHaveBeenCalled()
     expect(modifyMessageMock).not.toHaveBeenCalled()
     expect(insertMessageAfterMock).not.toHaveBeenCalled()
+  })
+
+  it('drops repeated Reply Again triggers instead of regenerating again after the first reply settles', async () => {
+    let finishReply = () => {}
+    orchestrateGenerationMock.mockReset().mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishReply = resolve
+        })
+    )
+
+    const first = regenerateInNewFork('session-1', message('assistant-1'))
+    const repeatedTap = regenerateInNewFork('session-1', message('assistant-1'))
+    await vi.waitFor(() => expect(orchestrateGenerationMock).toHaveBeenCalledTimes(1))
+    const tapWhileStreaming = regenerateInNewFork('session-1', message('assistant-1'))
+
+    await expect(repeatedTap).resolves.toBeUndefined()
+    await expect(tapWhileStreaming).resolves.toBeUndefined()
+    finishReply()
+    await first
+
+    expect(executeStructureCommandMock).toHaveBeenCalledTimes(1)
+    expect(orchestrateGenerationMock).toHaveBeenCalledTimes(1)
+
+    orchestrateGenerationMock.mockResolvedValue(undefined)
+    await regenerateInNewFork('session-1', message('assistant-1'))
+    expect(executeStructureCommandMock).toHaveBeenCalledTimes(2)
+    expect(orchestrateGenerationMock).toHaveBeenCalledTimes(2)
   })
 })

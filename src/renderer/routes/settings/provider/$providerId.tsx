@@ -64,6 +64,7 @@ import platform from '@/platform'
 import { settingsStore, useLanguage, useProviderSettings, useSettingsStore } from '@/stores/settingsStore'
 import { add as addToast } from '@/stores/toastActions'
 import { type ModelTestState, testModelCapabilities } from '@/utils/model-tester'
+import { showsNetworkCompatibility } from './-networkCompatibility'
 
 export const Route = createFileRoute('/settings/provider/$providerId')({
   component: RouteComponent,
@@ -490,11 +491,7 @@ function ProviderSettings({ providerId }: { providerId: string }) {
       ModelProviderEnum.Bedrock,
       '',
     ].includes(baseInfo.id)
-  const showNetworkCompatibility =
-    baseInfo.isCustom ||
-    baseInfo.id === ModelProviderEnum.Ollama ||
-    (platform.type === 'web' &&
-      (baseInfo.id === ModelProviderEnum.OpenCodeGo || baseInfo.id === ModelProviderEnum.OpenCodeZen))
+  const showNetworkCompatibility = showsNetworkCompatibility(baseInfo, platform.type)
   const customApiHost = normalizeAPIHost(providerSettings, baseInfo.type)
   const azureEndpoint = normalizeAzureEndpoint(providerSettings?.endpoint || baseInfo.defaultSettings?.endpoint || '')
   const hasConnectionSettings =
@@ -1254,18 +1251,35 @@ function ProviderSettings({ providerId }: { providerId: string }) {
                   </Flex>
                 </>
               ) : modelTestResult.basicTest?.status === 'error' ? (
-                <Flex align="center" gap="xs" className="w-full">
-                  <Text span c="chatbox-error" maw="100%">
-                    {t(
-                      'Connection failed! Please make sure the API key was copied completely, has no extra spaces, has sufficient balance, matches the provider, and has not expired.'
-                    )}
-                    <div className="bg-red-50 dark:bg-red-900/20 px-2 py-2">
-                      <Text size="xs" c="chatbox-error">
-                        {modelTestResult.basicTest.error}
-                      </Text>
-                    </div>
+                <Stack gap="xs" className="w-full">
+                  <Text fw={500} c="chatbox-error">
+                    {t('Unable to connect. Check the following:')}
                   </Text>
-                </Flex>
+                  <Text size="sm">
+                    1.{' '}
+                    {t(
+                      'API key: Make sure it is complete, has no extra spaces, and has not expired; ensure the account has sufficient balance.'
+                    )}
+                  </Text>
+                  <Text size="sm">
+                    2.{' '}
+                    {t(
+                      "API host: Check the API host and API path against your provider's documentation to ensure the address is correct."
+                    )}
+                  </Text>
+                  <Text size="sm">3. {t('Model provider: The model provider should match the API key.')}</Text>
+                  <Text size="sm">
+                    4.{' '}
+                    {t(
+                      'If Improve Network Compatibility is shown in the provider settings, try enabling it and retry.'
+                    )}
+                  </Text>
+                  <div className="bg-red-50 dark:bg-red-900/20 px-2 py-2">
+                    <Text size="xs" c="chatbox-error">
+                      {modelTestResult.basicTest.error}
+                    </Text>
+                  </div>
+                </Stack>
               ) : (
                 <Flex align="center" gap="xs">
                   <Loader size="xs" />

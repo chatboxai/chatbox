@@ -115,6 +115,11 @@ function resolveQuotaCardKind(msg: Message): QuotaCardKind | undefined {
   return undefined
 }
 
+export function resolveQuotaCardAction(cardKind: QuotaCardKind, licensePlan?: ChatboxAIPlanType): QuotaCardAction {
+  const freeQuota = cardKind === 'free-quota-exhausted' || cardKind === 'free-ocr-quota-exhausted'
+  return licensePlan === 'pro_plus' && !freeQuota ? 'buy-expansion-pack' : 'upgrade-plan'
+}
+
 export function resolveMessageErrorPresentation(
   msg: Message,
   options: { licensePlan?: ChatboxAIPlanType } = {}
@@ -125,13 +130,11 @@ export function resolveMessageErrorPresentation(
   }
   const cardKind = resolveQuotaCardKind(msg)
   if (cardKind) {
-    const freeQuota = cardKind === 'free-quota-exhausted' || cardKind === 'free-ocr-quota-exhausted'
-    const action = options.licensePlan === 'pro_plus' && !freeQuota ? 'buy-expansion-pack' : 'upgrade-plan'
     return {
       ...details,
       kind: 'quota',
       cardKind,
-      action,
+      action: resolveQuotaCardAction(cardKind, options.licensePlan),
     }
   }
 

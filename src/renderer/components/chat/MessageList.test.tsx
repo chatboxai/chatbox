@@ -36,6 +36,7 @@ const h = vi.hoisted(() => ({
   agentMode: 'off' as 'off' | 'on',
   renderMenu: vi.fn(),
   smallScreen: false,
+  platformType: 'desktop' as 'desktop' | 'mobile',
   activity: 'idle' as 'idle' | 'generating',
   atTop: null as ((value: boolean) => void) | null,
   atBottom: null as ((value: boolean) => void) | null,
@@ -80,7 +81,15 @@ vi.mock('@/hooks/useSessionLockState', () => ({
   }),
 }))
 vi.mock('@/stores/session/agent-mode', () => ({ useSessionAgentMode: () => ({ value: h.agentMode }) }))
+vi.mock('@/hooks/useCopilots', () => ({ useMyCopilots: () => ({ copilots: [] }) }))
 vi.mock('@/lib/utils', () => ({ cn: (...items: unknown[]) => items.filter(Boolean).join(' ') }))
+vi.mock('@/platform', () => ({
+  default: {
+    get type() {
+      return h.platformType
+    },
+  },
+}))
 vi.mock('@/hooks/useScreenChange', () => ({ useIsSmallScreen: () => h.smallScreen }))
 vi.mock('@/stores/sessionActivityStore', () => ({ useSessionActivity: () => h.activity }))
 vi.mock('@/hooks/useNeedRoomForWinControls', async () => {
@@ -211,7 +220,7 @@ vi.mock('react-virtuoso', async () => {
             })
             element.current.getBoundingClientRect = () => ({ top: 0, bottom: 600, height: 600 }) as DOMRect
             for (const row of Array.from(
-              element.current.querySelectorAll<HTMLElement>('[data-transcript-message], .w-full')
+              element.current.querySelectorAll<HTMLElement>('[data-transcript-message], .w-full, .mx-auto')
             ))
               row.getBoundingClientRect = () => {
                 const top = h.rowTop + (h.rowOffsets.get(row.dataset.transcriptMessage ?? '') ?? 0)
@@ -395,6 +404,7 @@ beforeEach(() => {
   h.agentMode = 'off'
   h.renderMenu.mockClear()
   h.smallScreen = false
+  h.platformType = 'desktop'
   h.activity = 'idle'
   h.atTop = null
   h.atBottom = null
@@ -600,6 +610,67 @@ describe('row transcript host', () => {
       else expect(h.read).toHaveBeenCalledTimes(1)
     }
   )
+  test('overlays the small-screen navigation bar on the transcript and lands earlier messages below it', async () => {
+    h.smallScreen = true
+    const view = render(<Host search="m60" />)
+    await waitFor(() => expect(h.firstReady).toBe(true))
+    const viewport = view.getByTestId('virtuoso')
+    scrollGeometry(viewport, 800)
+    fireEvent.scroll(viewport)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 270))
+    })
+    viewport.scrollTop = 700
+    fireEvent.scroll(viewport)
+    const previous = await view.findByRole('button', { name: 'Back to previous message' })
+    const bar = previous.parentElement!.parentElement!
+    expect(viewport.parentElement?.classList.contains('chatbox-scroll-top-fade')).toBe(true)
+    expect(bar.closest('.chatbox-scroll-top-fade')).toBeNull()
+    expect(bar.parentElement).toBe(viewport.parentElement?.parentElement)
+    expect(bar.className.split(' ')).toEqual(expect.arrayContaining(['absolute', 'top-0', 'left-0', 'right-0']))
+    Object.defineProperty(bar, 'offsetHeight', { value: 30, configurable: true })
+    viewport.getBoundingClientRect = () => ({ top: 40, bottom: 640, height: 600 }) as DOMRect
+    h.rowTop = 40
+    for (let siblingOrder = 11; siblingOrder < 111; siblingOrder++)
+      h.rowOffsets.set(`m${siblingOrder}`, (siblingOrder - 60) * 100)
+    h.scrollToIndex.mockClear()
+    fireEvent.click(previous)
+    expect(h.scrollToIndex).toHaveBeenCalledExactlyOnceWith({
+      index: 47,
+      align: 'start',
+      behavior: 'smooth',
+      offset: -30,
+    })
+  })
+  test('hides the small-screen navigation bar while an explicit jump positions its target', async () => {
+    h.smallScreen = true
+    const view = render(<Host search="m60" />)
+    await waitFor(() => expect(h.firstReady).toBe(true))
+    const viewport = view.getByTestId('virtuoso')
+    scrollGeometry(viewport, 800)
+    fireEvent.scroll(viewport)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 270))
+    })
+    viewport.scrollTop = 700
+    fireEvent.scroll(viewport)
+    await view.findByRole('button', { name: 'Back to previous message' })
+    h.rowOffsets.set('m40', 200)
+    let navigated: Promise<boolean> | undefined
+    act(() => {
+      navigated = h.navigation?.navigateMessage('m40')
+    })
+    await waitFor(() => expect(view.queryByRole('button', { name: 'Back to previous message' })).toBeNull())
+    await act(async () => {
+      await navigated
+    })
+    viewport.scrollTop = 600
+    fireEvent.scroll(viewport)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300))
+    })
+    expect(view.queryByRole('button', { name: 'Back to previous message' })).toBeNull()
+  })
   test.each([
     { label: 'Previous message', index: 47 },
     { label: 'Next message', index: 51 },
@@ -877,34 +948,41 @@ describe('row transcript host', () => {
     }
   })
 
-  test('keeps explicit Tail following after acknowledging a shorter window', async () => {
-    h.measuredHeight = 8000
-    const listRef = createRef<MessageListRef>()
-    const view = render(<Host listRef={listRef} />)
-    await waitFor(() => expect(h.firstReady).toBe(true))
-    const viewport = view.getByTestId('virtuoso')
-    viewport.scrollTop = 6000
-    fireEvent.scroll(viewport)
-    h.measuredHeight = 1000
-    act(() => listRef.current?.scrollToBottom())
-    await waitFor(() => {
-      expect(h.controller!.getSnapshot().layout).toBeNull()
-      expect(viewport.scrollTop).toBe(400)
-    })
-    act(() => h.heightChanged?.(1000))
-    h.scrollTo.mockClear()
-    vi.useFakeTimers()
-    try {
-      await act(async () => {
-        h.measuredHeight = 1100
-        h.heightChanged?.(1100)
-        await vi.advanceTimersByTimeAsync(50)
+  test.each([
+    ['desktop', 'smooth'],
+    ['mobile', 'auto'],
+  ] as const)(
+    'keeps explicit Tail following on %s with %s scrolling after acknowledging a shorter window',
+    async (platformType, behavior) => {
+      h.platformType = platformType
+      h.measuredHeight = 8000
+      const listRef = createRef<MessageListRef>()
+      const view = render(<Host listRef={listRef} />)
+      await waitFor(() => expect(h.firstReady).toBe(true))
+      const viewport = view.getByTestId('virtuoso')
+      viewport.scrollTop = 6000
+      fireEvent.scroll(viewport)
+      h.measuredHeight = 1000
+      act(() => listRef.current?.scrollToBottom())
+      await waitFor(() => {
+        expect(h.controller!.getSnapshot().layout).toBeNull()
+        expect(viewport.scrollTop).toBe(400)
       })
-      expect(h.scrollTo).toHaveBeenCalledWith({ top: 500, behavior: 'smooth' })
-    } finally {
-      vi.useRealTimers()
+      act(() => h.heightChanged?.(1000))
+      h.scrollTo.mockClear()
+      vi.useFakeTimers()
+      try {
+        await act(async () => {
+          h.measuredHeight = 1100
+          h.heightChanged?.(1100)
+          await vi.advanceTimersByTimeAsync(50)
+        })
+        expect(h.scrollTo).toHaveBeenCalledWith({ top: 500, behavior })
+      } finally {
+        vi.useRealTimers()
+      }
     }
-  })
+  )
 
   test('reveals the first window after the virtual tail is measured', async () => {
     h.tailMounted = false
@@ -940,6 +1018,69 @@ describe('row transcript host', () => {
       expect(view.queryByTestId('minimap')).toBeNull()
       expect(view.getByText('Try Again')).toBeTruthy()
       expect(view.container.querySelector('.mantine-Loader-root')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+  test('settles a tail that rests at a reachable bottom short of the measured bottom', async () => {
+    vi.useFakeTimers()
+    try {
+      // The list clamps scrolling a few pixels short of scrollHeight - clientHeight, as device rounding can.
+      h.scrollTo.mockImplementation(({ top }: { top: number }) => {
+        if (h.currentScroller) h.currentScroller.scrollTop = Math.min(top, h.measuredHeight - 600 - 4)
+      })
+      const view = render(<Host />)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(h.firstReady).toBe(false)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(200)
+      })
+      expect(view.queryByText('Try Again')).toBeNull()
+      expect(h.firstReady).toBe(true)
+      expect(getComputedStyle(view.getByTestId('virtuoso')).visibility).toBe('visible')
+      expect(h.currentScroller?.scrollTop).toBe(396)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+  test('keeps a tail that is still moving hidden until the deadline, then shows it where it rests', async () => {
+    vi.useFakeTimers()
+    try {
+      // Each request lands at a different position short of the bottom, so the tail never comes to rest.
+      let requests = 0
+      h.scrollTo.mockImplementation(({ top }: { top: number }) => {
+        if (h.currentScroller)
+          h.currentScroller.scrollTop = Math.min(top, h.measuredHeight - 600 - 40 - (requests++ % 2))
+      })
+      const view = render(<Host />)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000)
+      })
+      expect(h.firstReady).toBe(false)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5100)
+      })
+      expect(view.queryByText('Try Again')).toBeNull()
+      expect(h.firstReady).toBe(true)
+      expect(getComputedStyle(view.getByTestId('virtuoso')).visibility).toBe('visible')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+  test('does not settle a tail below the viewport even when scrolling stops', async () => {
+    vi.useFakeTimers()
+    try {
+      h.rowTop = 700
+      h.scrollTo.mockImplementation(({ top }: { top: number }) => {
+        if (h.currentScroller) h.currentScroller.scrollTop = Math.min(top, h.measuredHeight - 600 - 4)
+      })
+      render(<Host />)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000)
+      })
+      expect(h.firstReady).toBe(false)
     } finally {
       vi.useRealTimers()
     }
@@ -1485,5 +1626,94 @@ describe('row transcript host', () => {
     render(<Host read={{ ...header, header: { ...header.header, type: 'picture' } }} />)
     await waitFor(() => expect(h.firstReady).toBe(true))
     expect(h.bodyModes.every((item) => item.readOnly)).toBe(true)
+  })
+})
+
+describe('send follow intent', () => {
+  async function openAtTail() {
+    const listRef = createRef<MessageListRef>()
+    const view = render(<Host listRef={listRef} />)
+    await waitFor(() => {
+      expect(h.firstReady).toBe(true)
+      expect(h.controller!.getSnapshot().layout).toBeNull()
+    })
+    const viewport = view.getByTestId('virtuoso')
+    expect(viewport.scrollTop).toBe(400)
+    return { listRef, view, viewport }
+  }
+  async function openReadingHistory() {
+    h.smallScreen = true
+    const listRef = createRef<MessageListRef>()
+    const view = render(<Host listRef={listRef} search="m0" />)
+    await waitFor(() => {
+      expect(h.firstReady).toBe(true)
+      expect(h.controller!.getSnapshot().layout).toBeNull()
+    })
+    expect(h.controller!.getSnapshot().hasNewer).toBe(true)
+    return { listRef, view, viewport: view.getByTestId('virtuoso') }
+  }
+
+  test('keeps following a send made at the tail until the user scrolls away', async () => {
+    const { listRef, viewport } = await openAtTail()
+    const stillFollowing = listRef.current!.captureSendFollow()
+    expect(stillFollowing?.()).toBe(true)
+    fireEvent.wheel(viewport, { deltaY: -80 })
+    expect(stillFollowing?.()).toBe(false)
+  })
+
+  test('does not follow a send made while reading history', async () => {
+    const { listRef, viewport } = await openAtTail()
+    viewport.scrollTop = 100
+    fireEvent.scroll(viewport)
+    expect(listRef.current!.captureSendFollow()).toBeNull()
+  })
+
+  test('does not follow a send made after jumping to an earlier message', async () => {
+    const { listRef } = await openAtTail()
+    const stillFollowing = listRef.current!.captureSendFollow()
+    act(() => void listRef.current!.scrollToMessage('m180'))
+    expect(stillFollowing?.()).toBe(false)
+    expect(listRef.current!.captureSendFollow()).toBeNull()
+  })
+
+  test.each([
+    ['scroll-to-bottom arrow', 'idle'],
+    ['generating shortcut', 'generating'],
+  ] as const)('follows a send made right after the %s, before the list reaches the tail', async (_, activity) => {
+    h.activity = activity
+    const { listRef, view } = await openReadingHistory()
+    expect(listRef.current!.captureSendFollow()).toBeNull()
+    let releaseTail!: () => void
+    h.read.mockImplementationOnce(
+      (request) =>
+        new Promise((resolve) => {
+          releaseTail = () => resolve(page(request))
+        })
+    )
+    fireEvent.click(
+      activity === 'idle' ? view.getByTestId('mobile-tail') : view.getByRole('button', { name: 'Generating...' })
+    )
+    // The tail is still being read: the list has neither moved nor resumed following yet.
+    expect(h.controller!.getSnapshot().hasNewer).toBe(true)
+    const stillFollowing = listRef.current!.captureSendFollow()
+    expect(stillFollowing?.()).toBe(true)
+    await act(async () => releaseTail())
+    await waitFor(() => expect(h.controller!.getSnapshot().rows.at(-1)?.messageId).toBe('m219'))
+    expect(stillFollowing?.()).toBe(true)
+  })
+
+  test('drops the arrow intent when the user scrolls back up before sending', async () => {
+    const { listRef, view, viewport } = await openReadingHistory()
+    fireEvent.click(view.getByTestId('mobile-tail'))
+    fireEvent.wheel(viewport, { deltaY: -80 })
+    expect(listRef.current!.captureSendFollow()).toBeNull()
+  })
+
+  test('drops the arrow intent when a touch drags toward older messages before sending', async () => {
+    const { listRef, view, viewport } = await openReadingHistory()
+    fireEvent.click(view.getByTestId('mobile-tail'))
+    fireEvent.touchStart(viewport, { touches: [{ clientY: 100 }] })
+    fireEvent.touchMove(viewport, { touches: [{ clientY: 160 }] })
+    expect(listRef.current!.captureSendFollow()).toBeNull()
   })
 })

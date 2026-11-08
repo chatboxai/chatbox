@@ -13,6 +13,7 @@ import {
   EMPTY_ATTACHMENT_CONTENT_ERROR,
   NON_RECOVERABLE_LOCAL_PARSER_ERROR_CODES,
 } from '@shared/file-parse-errors'
+import { ChatboxAIAPIError } from '@shared/models/errors'
 import type { SessionHeader, SessionMeta, SessionSettings, Settings } from '@shared/types'
 import type { DocumentParserConfig } from '@shared/types/settings'
 import { BrowserAttachmentAdapter } from '@/adapters/BrowserAttachmentAdapter'
@@ -30,6 +31,7 @@ import storage from '@/storage'
 import { nonSessionStorageKey } from '@/storage/non-session-key'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import { authInfoStore } from '@/stores/authInfoStore'
+import { getChatboxAIParserAccountError } from '@/utils/file-parse-error'
 import { reportError } from '@/utils/sentry'
 import * as defaults from '../../shared/defaults'
 import { SESSION_ATTACHMENT_RAG_LOG_PREFIX } from '../../shared/session-attachment-rag/logging'
@@ -204,7 +206,7 @@ function normalizeFilePreprocessFailure(error: unknown, stage: FilePreprocessSta
   }
 
   const errorCode = error instanceof Error ? error.message : ''
-  if (EXPECTED_FILE_PREPROCESS_ERROR_CODES.has(errorCode)) return undefined
+  if (EXPECTED_FILE_PREPROCESS_ERROR_CODES.has(errorCode) || getChatboxAIParserAccountError(errorCode)) return undefined
   return new FilePreprocessFailure(FILE_PREPROCESS_FAILED_ERROR, stage, error)
 }
 
@@ -382,6 +384,9 @@ async function fallbackToChatboxAIParser(
     log.error(`Chatbox AI fallback parsing failed for "${file.name}":`, error)
     if (isStorageQuotaError(error)) {
       throw new FilePreprocessFailure(FILE_STORAGE_QUOTA_EXCEEDED_ERROR, 'cloud_parse', error)
+    }
+    if (error instanceof ChatboxAIAPIError && getChatboxAIParserAccountError(error.detail.name)) {
+      throw new Error(error.detail.name)
     }
     if (
       error instanceof Error &&

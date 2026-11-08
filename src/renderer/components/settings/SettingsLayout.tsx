@@ -171,6 +171,7 @@ export function SettingRow({
   description,
   control,
   controlLayout = 'inline',
+  labelAction,
   status,
   children,
   disabled,
@@ -179,6 +180,8 @@ export function SettingRow({
   /** Anchor for settings search. */
   id?: string
   label: ReactNode
+  /** Small action for the whole row, beside the label or under the description in the two-column layout. */
+  labelAction?: ReactNode
   description?: ReactNode
   control?: ReactNode | ((id: string) => ReactNode)
   controlLayout?: 'inline' | 'block'
@@ -208,6 +211,23 @@ export function SettingRow({
     return () => clearTimeout(timer)
   }, [highlightedId, id])
 
+  const labelText = labelFor ? (
+    <Text
+      component="label"
+      htmlFor={labelFor}
+      fz={density === 'compact' ? 13 : 14}
+      fw={500}
+      lh="20px"
+      className={clsx('text-pretty', !disabled && 'cursor-pointer')}
+    >
+      {label}
+    </Text>
+  ) : (
+    <Text component="div" fz={density === 'compact' ? 13 : 14} fw={500} lh="20px" className="text-pretty">
+      {label}
+    </Text>
+  )
+
   return (
     <div
       ref={ref}
@@ -224,21 +244,13 @@ export function SettingRow({
     >
       <div className="settings-row-main">
         <div className="settings-row-label flex flex-col gap-0.5 min-w-0">
-          {labelFor ? (
-            <Text
-              component="label"
-              htmlFor={labelFor}
-              fz={density === 'compact' ? 13 : 14}
-              fw={500}
-              lh="20px"
-              className={clsx('text-pretty', !disabled && 'cursor-pointer')}
-            >
-              {label}
-            </Text>
+          {labelAction ? (
+            <div className="settings-row-heading">
+              {labelText}
+              <div className="settings-row-label-action">{labelAction}</div>
+            </div>
           ) : (
-            <Text component="div" fz={density === 'compact' ? 13 : 14} fw={500} lh="20px" className="text-pretty">
-              {label}
-            </Text>
+            labelText
           )}
           {description && (
             <Text component="div" fz={12} c="chatbox-tertiary" lh="18px" className="text-pretty">

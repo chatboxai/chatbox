@@ -1,6 +1,6 @@
 # Provider 网络兼容性请求
 
-> Last updated: 2026-08
+> Last updated: 2026-10
 
 ## 目标与术语
 
@@ -19,7 +19,15 @@ Provider 设置中的“改善网络兼容性”持久化字段仍名为 `usePro
 
 本地地址由 `isLocalHost()` 判定，目前包括 `localhost`、loopback、`10.0.0.0/8`、`192.168.0.0/16` 和 `172.16.0.0/12`。此判定在 Web/HarmonyOS 上防止把内网目标地址和凭证发送给 relay；Desktop 开启兼容性请求时按产品约束仅把非本地地址切到主进程。
 
-LM Studio 是移动端例外：Provider definition 在 Mobile 上自动把兼容性偏好设为开启，使局域网请求使用 Capacitor native transport 并触发系统局域网权限；Desktop 仍只遵守用户设置。
+以下内置 Provider 的 definition 在 Mobile 上自动把兼容性偏好设为开启，使请求走 Capacitor native transport；Desktop 和 Web 仍只遵守用户设置：
+
+- LM Studio：局域网请求需要经由原生网络触发系统局域网权限。
+- OpenCode Go / OpenCode Zen：服务端 CORS 不允许 WebView 跨域请求。
+- GLM 与 GLM Coding Plan：智谱 `/chat/completions` 的 CORS 预检响应不带 `Access-Control-Allow-Origin`，而 `/models` 带有（2026-10-27 验证），因此 WebView `fetch` 能拉取模型列表却无法对话。
+
+Web 端同样受这些 CORS 限制，因此 OpenCode Go / Zen、GLM 与 GLM Coding Plan 的设置页在 Web 上展示“改善网络兼容性”开关，由用户决定是否经 Chatbox relay 请求。
+
+已知限制：Capacitor native transport 的非流式请求经 `CapacitorHttp.request()` 发出，不接收 `AbortSignal`，发出后无法从原生层取消。
 
 ## 调用链与所有权
 

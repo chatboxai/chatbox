@@ -8,6 +8,8 @@ export interface SessionEdit {
   /** Keys set to undefined return to the inherited value. */
   settings?: Partial<SessionSettings>
   assistantAvatarKey?: string | null
+  /** Trimmed; empty text or null returns to the copilot or provider name. */
+  assistantName?: string | null
   backgroundImage?: SessionHeader['backgroundImage'] | null
 }
 
@@ -24,6 +26,9 @@ export function applySessionEdit(session: SessionHeader, edit: SessionEdit): Ses
   }
   if (edit.assistantAvatarKey !== undefined) {
     next.assistantAvatarKey = edit.assistantAvatarKey ?? undefined
+  }
+  if (edit.assistantName !== undefined) {
+    next.assistantName = edit.assistantName?.trim() || undefined
   }
   if (edit.backgroundImage !== undefined) {
     next.backgroundImage = edit.backgroundImage ?? undefined

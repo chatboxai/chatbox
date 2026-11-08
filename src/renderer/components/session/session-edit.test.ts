@@ -44,4 +44,12 @@ describe('applySessionEdit', () => {
     expect(cleared.assistantAvatarKey).toBeUndefined()
     expect(cleared.backgroundImage).toBeUndefined()
   })
+
+  it('trims the assistant name and clears it with blank text or null', () => {
+    expect(applySessionEdit(makeSession(), { assistantName: '  Mover  ' }).assistantName).toBe('Mover')
+    const named = makeSession({ assistantName: 'Mover' })
+    expect(applySessionEdit(named, { assistantName: '   ' }).assistantName).toBeUndefined()
+    expect(applySessionEdit(named, { assistantName: null }).assistantName).toBeUndefined()
+    expect(applySessionEdit(named, { name: 'Renamed' }).assistantName).toBe('Mover')
+  })
 })

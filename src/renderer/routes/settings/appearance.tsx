@@ -130,13 +130,7 @@ export function RouteComponent() {
               />
             )}
           />
-          <SettingRow
-            id="theme-color"
-            label={t('Theme color')}
-            description={t('Light and dark themes keep their own colors')}
-            controlLayout="block"
-            control={<InterfaceColorPresets />}
-          />
+          <InterfaceColorPresets />
           <SettingRow id="font-size" label={t('Font Size')} controlLayout="block" control={<FontSizeControl />} />
           <SettingRow
             id="startup-page"

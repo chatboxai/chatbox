@@ -36,9 +36,8 @@ export function sanitizeGeneratedSessionName(raw: string): string {
 
 /**
  * Historical sessions predate `threadName` (`undefined`). New conversations
- * persist `threadName: ''` so a copilot or other preset name is not copied
- * onto the thread and first-reply naming can still run. Inbox and Untitled
- * also stay unset.
+ * persist `threadName: ''` so a preset name is not copied onto the thread and
+ * first-reply naming can still run. Inbox and Untitled also stay unset.
  */
 export function shouldBackfillThreadName(session: Pick<SessionHeader, 'id' | 'name' | 'threadName'>): boolean {
   if (session.threadName !== undefined) return false

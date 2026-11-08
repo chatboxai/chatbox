@@ -245,7 +245,7 @@ const AgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProps>(fun
     modelId,
     agentModeActive: agentModeUIState.isActive,
     copilotId: isNewSession ? draftCopilotId : currentSession?.copilotId,
-    copilotName: currentSession?.name ?? draftCopilotName,
+    copilotName: isNewSession ? draftCopilotName : undefined,
     onClose,
   })
   const { effectiveMemorySource, memoryCount } = memory

@@ -327,6 +327,31 @@ describe('SessionNamingService', () => {
     expect(disabled.scheduled).toHaveLength(0)
   })
 
+  test('syncAutoTitle names an Untitled Copilot conversation from content', async () => {
+    const harness = createHarness()
+    harness.setSession(createSession({ name: 'Untitled', copilotId: 'writer', threadName: '' }))
+
+    await harness.service.syncAutoTitle('session-1')
+
+    expect(harness.scheduled).toHaveLength(1)
+    expect(harness.chat).not.toHaveBeenCalled()
+    harness.scheduled[0].callback()
+    await vi.waitFor(() => expect(harness.session?.name).toBe('北京旅行计划'))
+    expect(harness.session?.threadName).toBe('北京旅行计划')
+    expect(harness.session?.copilotId).toBe('writer')
+  })
+
+  test('syncAutoTitle leaves an already titled Copilot conversation alone', async () => {
+    const harness = createHarness()
+    harness.setSession(createSession({ name: 'Writing partner', copilotId: 'writer', threadName: 'Writing partner' }))
+
+    await harness.service.syncAutoTitle('session-1')
+
+    expect(harness.scheduled).toHaveLength(0)
+    expect(harness.chat).not.toHaveBeenCalled()
+    expect(harness.session?.name).toBe('Writing partner')
+  })
+
   test('cancels pending work and clears retry state when a Session is deleted', () => {
     const harness = createHarness()
     harness.service.scheduleNameAndThreadName('session-1')

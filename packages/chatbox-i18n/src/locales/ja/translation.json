@@ -1988,5 +1988,9 @@
   "Long press a message to reply again, edit, copy, or select text": "メッセージを長押しすると、再回答・編集・コピー・テキスト選択ができます",
   "Not enough points": "ポイント不足",
   "License expired": "ライセンス期限切れ",
-  "Uses built-in document parsing feature, supports common file types, and consumes no compute points. If local parsing fails, Chatbox AI cloud parsing will be used when a license is available and compute points will be consumed.": "内蔵のドキュメント解析機能を使用し、一般的なファイル形式をサポートしています。コンピューティングポイントは消費されません。ローカル解析に失敗した場合、ライセンスがあれば Chatbox AI のクラウド解析を使用し、ポイントを消費します。"
+  "Uses built-in document parsing feature, supports common file types, and consumes no compute points. If local parsing fails, Chatbox AI cloud parsing will be used when a license is available and compute points will be consumed.": "内蔵のドキュメント解析機能を使用し、一般的なファイル形式をサポートしています。コンピューティングポイントは消費されません。ローカル解析に失敗した場合、ライセンスがあれば Chatbox AI のクラウド解析を使用し、ポイントを消費します。",
+  "Swipe an AI reply right to reply again. Long press a message to edit, copy, or select text": "AI の返信を右へスワイプすると再生成、メッセージを長押しすると編集・コピー・テキスト選択ができます",
+  "Keep swiping to reply again": "さらに右へスワイプして再生成",
+  "Release to reply again": "指を離すと再生成",
+  "Generating, try again when done": "生成中です。完了後にもう一度お試しください"
 }

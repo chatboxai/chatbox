@@ -24,7 +24,8 @@ export function shouldShowMessageLongPressHint({
 }
 
 /**
- * Notice above the composer telling small-screen users that message actions moved into the long-press menu.
+ * Notice above the composer telling small-screen users that swiping an AI reply right replies again and that the
+ * remaining message actions live in the long-press menu.
  * It appears at most once per app launch and closes after five seconds or on "Got it"; only "Got it" records it as
  * seen, so a hint that timed out appears again on the next launch.
  */
@@ -33,9 +34,7 @@ export const MessageLongPressHint: FC<{ messages: readonly Pick<Message, 'role' 
 }) => {
   const { t } = useTranslation()
   const isSmallScreen = useIsSmallScreen()
-  const alreadyShown = useUIStore(
-    (state) => state.messageLongPressHintShown || state.messageLongPressHintShownThisLaunch
-  )
+  const alreadyShown = useUIStore((state) => state.messageGestureHintShown || state.messageLongPressHintShownThisLaunch)
   const [visible, setVisible] = useState(false)
 
   const shouldShow = shouldShowMessageLongPressHint({ isSmallScreen, alreadyShown, messages })
@@ -52,7 +51,7 @@ export const MessageLongPressHint: FC<{ messages: readonly Pick<Message, 'role' 
   }, [visible])
 
   const acknowledge = () => {
-    uiStore.setState({ messageLongPressHintShown: true })
+    uiStore.setState({ messageGestureHintShown: true })
     setVisible(false)
   }
 
@@ -62,7 +61,7 @@ export const MessageLongPressHint: FC<{ messages: readonly Pick<Message, 'role' 
       data-testid={TestId.message.longPressHint}
       role="status"
       sx={{ flexWrap: 'nowrap', '& .MuiSnackbarContent-action': { flexShrink: 0 } }}
-      message={t('Long press a message to reply again, edit, copy, or select text')}
+      message={t('Swipe an AI reply right to reply again. Long press a message to edit, copy, or select text')}
       action={
         <Button size="small" data-testid={TestId.message.longPressHintDismiss} onClick={acknowledge}>
           {t('Got it')}

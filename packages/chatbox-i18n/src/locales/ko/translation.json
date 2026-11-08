@@ -1988,5 +1988,9 @@
   "Long press a message to reply again, edit, copy, or select text": "메시지를 길게 눌러 다시 답변, 편집, 복사, 텍스트 선택을 할 수 있습니다",
   "Not enough points": "포인트 부족",
   "License expired": "라이선스 만료",
-  "Uses built-in document parsing feature, supports common file types, and consumes no compute points. If local parsing fails, Chatbox AI cloud parsing will be used when a license is available and compute points will be consumed.": "내장 문서 파싱 기능을 사용하며, 일반적인 파일 형식을 지원하고 계산 포인트가 차감되지 않습니다. 로컬 분석에 실패하면 라이선스가 있는 경우 Chatbox AI 클라우드 분석을 사용하며 포인트가 소모됩니다."
+  "Uses built-in document parsing feature, supports common file types, and consumes no compute points. If local parsing fails, Chatbox AI cloud parsing will be used when a license is available and compute points will be consumed.": "내장 문서 파싱 기능을 사용하며, 일반적인 파일 형식을 지원하고 계산 포인트가 차감되지 않습니다. 로컬 분석에 실패하면 라이선스가 있는 경우 Chatbox AI 클라우드 분석을 사용하며 포인트가 소모됩니다.",
+  "Swipe an AI reply right to reply again. Long press a message to edit, copy, or select text": "AI 답변을 오른쪽으로 밀면 다시 생성되고, 메시지를 길게 누르면 편집, 복사, 텍스트 선택을 할 수 있습니다",
+  "Keep swiping to reply again": "계속 오른쪽으로 밀어 다시 생성",
+  "Release to reply again": "손을 떼면 다시 생성",
+  "Generating, try again when done": "생성 중입니다. 완료 후 다시 시도하세요"
 }

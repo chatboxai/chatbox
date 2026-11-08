@@ -64,6 +64,7 @@ import { getSessionAssistantName } from './MessageNameRow'
 import MessageNavigation, { ScrollToBottomButton } from './MessageNavigation'
 import { areMinimapAnchorsEqual, buildMessageMinimapAnchors } from './message-navigation-utils'
 import { buildTranscriptRenderItems } from './message-render-items'
+import { MessageSwipeStartContext } from './message-swipe-start'
 import SummaryMessage from './SummaryMessage'
 import { createSmoothFollowOutputController, isLayoutClampedScroll } from './smooth-follow-output'
 import { createTranscriptContentAnchor, shiftTranscriptContentAnchor } from './transcript-content-anchor'
@@ -787,241 +788,246 @@ const MessageList = forwardRef<
   )
   return (
     <div className={cn('w-full h-full min-h-0 mx-auto flex flex-col', className)}>
-      <BlockCodeCollapsedStateProvider defaultCollapsed={!!settingsStore.getState().autoCollapseCodeBlock}>
-        {transcriptErrorAt === 'navigate' && (
-          <div className={cn('shrink-0 py-2', !isSmallScreen && 'px-[28px]')}>
-            <div className={paddedContentColumnClassName(widthFull)}>{transcriptErrorNotice}</div>
-          </div>
-        )}
-        <div
-          ref={container}
-          data-session-id={session.id}
-          data-session-view="rows"
-          data-testid={TestId.chat.transcript}
-          data-transcript-message-count={transcript.rows.length}
-          data-transcript-page-count={transcript.pages.length}
-          data-transcript-first-message-id={transcript.rows[0]?.messageId}
-          data-transcript-last-message-id={transcript.rows.at(-1)?.messageId}
-          data-transcript-window-epoch={transcript.windowEpoch}
-          className={cn('overflow-hidden relative min-h-0 flex-1', !isSmallScreen && 'px-[28px]')}
-          aria-busy={!!transcript.operation && transcript.operation.phase !== 'error'}
-          onPointerDownCapture={(event) => {
-            synchronizeBrowseIntent()
-            const element = scroller.current
-            if (event.pointerType === 'mouse' && event.button === 0 && element && event.target === element) {
-              scrollbarPointer.current = { pointerId: event.pointerId, scrollTop: element.scrollTop }
-              userInput()
-            }
-          }}
-          onWheelCapture={(event) => {
-            synchronizeBrowseIntent()
-            userInput()
-            progress.current++
-            userDirection.current = event.deltaY < 0 ? 'older' : 'newer'
-            if (event.deltaY < 0) follow.pause()
-            onScroll()
-          }}
-          onTouchStartCapture={(event) => {
-            synchronizeBrowseIntent()
-            touchY.current = event.touches[0]?.clientY ?? null
-            userInput()
-          }}
-          onTouchMoveCapture={(event) => {
-            synchronizeBrowseIntent()
-            const currentY = event.touches[0]?.clientY
-            if (currentY === undefined || touchY.current === null || currentY === touchY.current) return
-            const direction = currentY > touchY.current ? 'older' : 'newer'
-            userInput()
-            progress.current++
-            userDirection.current = direction
-            if (userDirection.current === 'older') follow.pause()
-            touchY.current = currentY
-            onScroll()
-          }}
-          onTouchEndCapture={() => {
-            touchY.current = null
-          }}
-          onKeyDownCapture={(event) => {
-            synchronizeBrowseIntent()
-            if (['ArrowUp', 'PageUp', 'ArrowDown', 'PageDown'].includes(event.key)) {
+      <MessageSwipeStartContext.Provider value={hideScrollNavigation}>
+        <BlockCodeCollapsedStateProvider defaultCollapsed={!!settingsStore.getState().autoCollapseCodeBlock}>
+          {transcriptErrorAt === 'navigate' && (
+            <div className={cn('shrink-0 py-2', !isSmallScreen && 'px-[28px]')}>
+              <div className={paddedContentColumnClassName(widthFull)}>{transcriptErrorNotice}</div>
+            </div>
+          )}
+          <div
+            ref={container}
+            data-session-id={session.id}
+            data-session-view="rows"
+            data-testid={TestId.chat.transcript}
+            data-transcript-message-count={transcript.rows.length}
+            data-transcript-page-count={transcript.pages.length}
+            data-transcript-first-message-id={transcript.rows[0]?.messageId}
+            data-transcript-last-message-id={transcript.rows.at(-1)?.messageId}
+            data-transcript-window-epoch={transcript.windowEpoch}
+            className={cn('overflow-hidden relative min-h-0 flex-1', !isSmallScreen && 'px-[28px]')}
+            aria-busy={!!transcript.operation && transcript.operation.phase !== 'error'}
+            onPointerDownCapture={(event) => {
+              synchronizeBrowseIntent()
+              const element = scroller.current
+              if (event.pointerType === 'mouse' && event.button === 0 && element && event.target === element) {
+                scrollbarPointer.current = { pointerId: event.pointerId, scrollTop: element.scrollTop }
+                userInput()
+              }
+            }}
+            onWheelCapture={(event) => {
+              synchronizeBrowseIntent()
               userInput()
               progress.current++
-              userDirection.current = event.key.endsWith('Up') ? 'older' : 'newer'
+              userDirection.current = event.deltaY < 0 ? 'older' : 'newer'
+              if (event.deltaY < 0) follow.pause()
+              onScroll()
+            }}
+            onTouchStartCapture={(event) => {
+              synchronizeBrowseIntent()
+              touchY.current = event.touches[0]?.clientY ?? null
+              userInput()
+            }}
+            onTouchMoveCapture={(event) => {
+              synchronizeBrowseIntent()
+              const currentY = event.touches[0]?.clientY
+              if (currentY === undefined || touchY.current === null || currentY === touchY.current) return
+              const direction = currentY > touchY.current ? 'older' : 'newer'
+              userInput()
+              progress.current++
+              userDirection.current = direction
               if (userDirection.current === 'older') follow.pause()
-            }
-          }}
-        >
-          {isSmallScreen && (
-            <Transition mounted={showScrollToPrev && (!atTop || transcript.hasOlder)} transition="fade">
-              {(transitionStyle) => (
-                <Flex
-                  ref={navigationBar}
-                  style={transitionStyle}
-                  className="absolute z-10 top-0 left-0 right-0 leading-tight bg-chatbox-background-secondary"
-                >
-                  {[
-                    { text: t('Return to the top'), icon: IconArrowBarToUp, onClick: () => navigate('head') },
-                    { text: t('Back to previous message'), icon: IconArrowUp, onClick: () => void jumpUser('older') },
-                  ].map((item, index) => (
-                    <Button
-                      key={item.text}
-                      variant="transparent"
-                      className={cn('w-1/2', index === 0 ? 'border-r border-r-chatbox-border-primary' : '')}
-                      classNames={{ section: '!mr-xxs' }}
-                      size="xs"
-                      h="auto"
-                      py={6}
-                      c="chatbox-tertiary"
-                      onClick={item.onClick}
-                      leftSection={<ScalableIcon icon={item.icon} size={16} />}
-                    >
-                      {item.text}
-                    </Button>
-                  ))}
-                </Flex>
-              )}
-            </Transition>
-          )}
-          {(items.length > 0 || transcript.operation?.phase !== 'reading') && (
-            <Virtuoso
-              key={`${session.id}:${transcript.windowEpoch}`}
-              style={{
-                scrollbarGutter: isSmallScreen ? 'auto' : 'stable both-edges',
-                visibility: transcript.firstWindowReady ? undefined : 'hidden',
-                opacity: transcript.firstWindowReady ? undefined : 0,
-              }}
-              className={platformType === 'win32' ? 'scrollbar-custom' : ''}
-              ref={virtuoso}
-              data={items}
-              firstItemIndex={0}
-              computeItemKey={(_, item) => item.key}
-              followOutput={false}
-              skipAnimationFrameInResizeObserver
-              initialTopMostItemIndex={0}
-              components={transcriptListComponents}
-              context={{
-                columnClassName: paddedContentColumnClassName(widthFull),
-                olderNotice: transcriptErrorAt === 'older' ? transcriptErrorNotice : null,
-                newerNotice: transcriptErrorAt === 'newer' ? transcriptErrorNotice : null,
-              }}
-              scrollerRef={(element) => {
-                scroller.current = element instanceof HTMLElement ? element : null
-                setViewportHeight(scroller.current?.clientHeight ?? 0)
-                // Virtuoso attaches the scroller after this component's layout effects, and an empty list reports no range.
-                if (scroller.current) applyLayout()
-              }}
-              onScroll={onScroll}
-              startReached={() => loadAtEdge('older')}
-              endReached={() => loadAtEdge('newer')}
-              rangeChanged={applyLayout}
-              totalListHeightChanged={(height) => {
-                applyLayout()
-                if (!controller.getSnapshot().layout) follow.handleHeightChange(height)
-                const element = scroller.current
-                if (element && pendingMeasurementScroll.current !== element) {
-                  pendingMeasurementScroll.current = element
-                  // ResizeObserver can adjust the native offset after this frame's scroll events.
-                  // Publish the measured viewport before paint so the rendered range matches it.
-                  queueMicrotask(() => {
-                    if (pendingMeasurementScroll.current === element) pendingMeasurementScroll.current = null
-                    if (scroller.current === element && element.scrollTop !== reportedScrollTop.current)
-                      element.dispatchEvent(new Event('scroll'))
-                  })
-                }
-              }}
-              atBottomStateChange={(value) => {
-                setAtBottom(value)
-                if (!controller.getSnapshot().layout) follow.handleAtBottomChange(value)
-                uiStore.getState().setMessageScrollingAtBottom(value && !controller.getSnapshot().hasNewer)
-              }}
-              atTopStateChange={(value) => {
-                setAtTop(value)
-                uiStore.getState().setMessageScrollingAtTop(value && !controller.getSnapshot().hasOlder)
-              }}
-              increaseViewportBy={{ top: viewportHeight, bottom: viewportHeight }}
-              minOverscanItemCount={{ top: 3, bottom: 3 }}
-              itemContent={(index, item) => (
-                <div
-                  className={contentColumnClassName(widthFull)}
-                  ref={index === items.length - 1 ? lastItem : undefined}
-                >
-                  {item.type === 'thread' && (
-                    <ThreadLabel
-                      sessionId={session.id}
-                      sessionMode={sessionMode}
-                      thread={{
-                        id: item.thread.threadId,
-                        name: item.thread.name ?? session.name,
-                        createdAtLabel:
-                          item.thread.threadOrder >= 0 ? new Date(item.thread.createdAt).toLocaleString() : undefined,
-                      }}
-                    />
-                  )}
-                  <Stack
-                    gap={0}
-                    className={item.type === 'group' && !isSmallScreen ? 'pt-5' : undefined}
-                    style={
-                      item.type === 'group' && isNewMessage && index === items.length - 1
-                        ? { minHeight: viewportHeight * 0.85 }
-                        : undefined
-                    }
+              touchY.current = currentY
+              onScroll()
+            }}
+            onTouchEndCapture={() => {
+              touchY.current = null
+            }}
+            onKeyDownCapture={(event) => {
+              synchronizeBrowseIntent()
+              if (['ArrowUp', 'PageUp', 'ArrowDown', 'PageDown'].includes(event.key)) {
+                userInput()
+                progress.current++
+                userDirection.current = event.key.endsWith('Up') ? 'older' : 'newer'
+                if (userDirection.current === 'older') follow.pause()
+              }
+            }}
+          >
+            {isSmallScreen && (
+              <Transition mounted={showScrollToPrev && (!atTop || transcript.hasOlder)} transition="fade">
+                {(transitionStyle) => (
+                  <Flex
+                    ref={navigationBar}
+                    style={transitionStyle}
+                    className="absolute z-10 top-0 left-0 right-0 leading-tight bg-chatbox-background-secondary"
                   >
-                    {item.messages.map((message, messageIndex) =>
-                      renderMessage(
-                        message,
-                        index === 0 && messageIndex === 0,
-                        index === items.length - 1 && messageIndex === item.messages.length - 1
-                      )
+                    {[
+                      { text: t('Return to the top'), icon: IconArrowBarToUp, onClick: () => navigate('head') },
+                      { text: t('Back to previous message'), icon: IconArrowUp, onClick: () => void jumpUser('older') },
+                    ].map((item, index) => (
+                      <Button
+                        key={item.text}
+                        variant="transparent"
+                        className={cn('w-1/2', index === 0 ? 'border-r border-r-chatbox-border-primary' : '')}
+                        classNames={{ section: '!mr-xxs' }}
+                        size="xs"
+                        h="auto"
+                        py={6}
+                        c="chatbox-tertiary"
+                        onClick={item.onClick}
+                        leftSection={<ScalableIcon icon={item.icon} size={16} />}
+                      >
+                        {item.text}
+                      </Button>
+                    ))}
+                  </Flex>
+                )}
+              </Transition>
+            )}
+            {(items.length > 0 || transcript.operation?.phase !== 'reading') && (
+              <Virtuoso
+                key={`${session.id}:${transcript.windowEpoch}`}
+                style={{
+                  scrollbarGutter: isSmallScreen ? 'auto' : 'stable both-edges',
+                  visibility: transcript.firstWindowReady ? undefined : 'hidden',
+                  opacity: transcript.firstWindowReady ? undefined : 0,
+                }}
+                className={platformType === 'win32' ? 'scrollbar-custom' : ''}
+                ref={virtuoso}
+                data={items}
+                firstItemIndex={0}
+                computeItemKey={(_, item) => item.key}
+                followOutput={false}
+                skipAnimationFrameInResizeObserver
+                initialTopMostItemIndex={0}
+                components={transcriptListComponents}
+                context={{
+                  columnClassName: paddedContentColumnClassName(widthFull),
+                  olderNotice: transcriptErrorAt === 'older' ? transcriptErrorNotice : null,
+                  newerNotice: transcriptErrorAt === 'newer' ? transcriptErrorNotice : null,
+                }}
+                scrollerRef={(element) => {
+                  scroller.current = element instanceof HTMLElement ? element : null
+                  setViewportHeight(scroller.current?.clientHeight ?? 0)
+                  // Virtuoso attaches the scroller after this component's layout effects, and an empty list reports no range.
+                  if (scroller.current) applyLayout()
+                }}
+                onScroll={onScroll}
+                startReached={() => loadAtEdge('older')}
+                endReached={() => loadAtEdge('newer')}
+                rangeChanged={applyLayout}
+                totalListHeightChanged={(height) => {
+                  applyLayout()
+                  if (!controller.getSnapshot().layout) follow.handleHeightChange(height)
+                  const element = scroller.current
+                  if (element && pendingMeasurementScroll.current !== element) {
+                    pendingMeasurementScroll.current = element
+                    // ResizeObserver can adjust the native offset after this frame's scroll events.
+                    // Publish the measured viewport before paint so the rendered range matches it.
+                    queueMicrotask(() => {
+                      if (pendingMeasurementScroll.current === element) pendingMeasurementScroll.current = null
+                      if (scroller.current === element && element.scrollTop !== reportedScrollTop.current)
+                        element.dispatchEvent(new Event('scroll'))
+                    })
+                  }
+                }}
+                atBottomStateChange={(value) => {
+                  setAtBottom(value)
+                  if (!controller.getSnapshot().layout) follow.handleAtBottomChange(value)
+                  uiStore.getState().setMessageScrollingAtBottom(value && !controller.getSnapshot().hasNewer)
+                }}
+                atTopStateChange={(value) => {
+                  setAtTop(value)
+                  uiStore.getState().setMessageScrollingAtTop(value && !controller.getSnapshot().hasOlder)
+                }}
+                increaseViewportBy={{ top: viewportHeight, bottom: viewportHeight }}
+                minOverscanItemCount={{ top: 3, bottom: 3 }}
+                itemContent={(index, item) => (
+                  <div
+                    className={contentColumnClassName(widthFull)}
+                    ref={index === items.length - 1 ? lastItem : undefined}
+                  >
+                    {item.type === 'thread' && (
+                      <ThreadLabel
+                        sessionId={session.id}
+                        sessionMode={sessionMode}
+                        thread={{
+                          id: item.thread.threadId,
+                          name: item.thread.name ?? session.name,
+                          createdAtLabel:
+                            item.thread.threadOrder >= 0 ? new Date(item.thread.createdAt).toLocaleString() : undefined,
+                        }}
+                      />
                     )}
-                  </Stack>
-                </div>
-              )}
-            />
-          )}
-          {(transcript.isLoadingOlder || transcript.isLoadingNewer) && (
-            <Loader className="absolute top-2 left-1/2" size="xs" />
-          )}
-          {transcriptErrorAt === 'open' && (
-            <div className="absolute inset-0 flex overflow-y-auto px-md pb-16">
-              <div className="m-auto w-full max-w-[560px]">{transcriptErrorNotice}</div>
-            </div>
-          )}
-          {!isSmallScreen && transcript.firstWindowReady && (
-            <TranscriptMinimap key={session.id} transcript={transcript} onNavigate={navigate} />
-          )}
-          {activity === 'generating' && (!atBottom || transcript.hasNewer) && (
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2">
-              <Button
-                w={40}
-                h={40}
-                p={0}
-                radius="xl"
-                bg="var(--chatbox-background-primary)"
-                c="chatbox-secondary"
-                className="border border-solid border-chatbox-border-primary shadow-lg"
-                aria-label={t('Generating...')}
-                onClick={() => navigate('tail')}
+                    <Stack
+                      gap={0}
+                      className={item.type === 'group' && !isSmallScreen ? 'pt-5' : undefined}
+                      style={
+                        item.type === 'group' && isNewMessage && index === items.length - 1
+                          ? { minHeight: viewportHeight * 0.85 }
+                          : undefined
+                      }
+                    >
+                      {item.messages.map((message, messageIndex) =>
+                        renderMessage(
+                          message,
+                          index === 0 && messageIndex === 0,
+                          index === items.length - 1 && messageIndex === item.messages.length - 1
+                        )
+                      )}
+                    </Stack>
+                  </div>
+                )}
+              />
+            )}
+            {(transcript.isLoadingOlder || transcript.isLoadingNewer) && (
+              <Loader className="absolute top-2 left-1/2" size="xs" />
+            )}
+            {transcriptErrorAt === 'open' && (
+              <div className="absolute inset-0 flex overflow-y-auto px-md pb-16">
+                <div className="m-auto w-full max-w-[560px]">{transcriptErrorNotice}</div>
+              </div>
+            )}
+            {!isSmallScreen && transcript.firstWindowReady && (
+              <TranscriptMinimap key={session.id} transcript={transcript} onNavigate={navigate} />
+            )}
+            {activity === 'generating' && (!atBottom || transcript.hasNewer) && (
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2">
+                <Button
+                  w={40}
+                  h={40}
+                  p={0}
+                  radius="xl"
+                  bg="var(--chatbox-background-primary)"
+                  c="chatbox-secondary"
+                  className="border border-solid border-chatbox-border-primary shadow-lg"
+                  aria-label={t('Generating...')}
+                  onClick={() => navigate('tail')}
+                >
+                  <Loading height={16} viewBox="0 0 38 24" aria-hidden="true" />
+                </Button>
+              </div>
+            )}
+            {!isSmallScreen ? (
+              <MessageNavigation
+                visible={showNavigation}
+                onVisibleChange={setShowNavigation}
+                onScrollToTop={() => navigate('head')}
+                onScrollToBottom={() => navigate('tail')}
+                onScrollToPrev={() => void jumpUser('older')}
+                onScrollToNext={() => void jumpUser('newer')}
+              />
+            ) : (
+              <Transition
+                mounted={activity !== 'generating' && (!atBottom || transcript.hasNewer)}
+                transition="slide-up"
               >
-                <Loading height={16} viewBox="0 0 38 24" aria-hidden="true" />
-              </Button>
-            </div>
-          )}
-          {!isSmallScreen ? (
-            <MessageNavigation
-              visible={showNavigation}
-              onVisibleChange={setShowNavigation}
-              onScrollToTop={() => navigate('head')}
-              onScrollToBottom={() => navigate('tail')}
-              onScrollToPrev={() => void jumpUser('older')}
-              onScrollToNext={() => void jumpUser('newer')}
-            />
-          ) : (
-            <Transition mounted={activity !== 'generating' && (!atBottom || transcript.hasNewer)} transition="slide-up">
-              {(transitionStyle) => <ScrollToBottomButton onClick={() => navigate('tail')} style={transitionStyle} />}
-            </Transition>
-          )}
-        </div>
-      </BlockCodeCollapsedStateProvider>
+                {(transitionStyle) => <ScrollToBottomButton onClick={() => navigate('tail')} style={transitionStyle} />}
+              </Transition>
+            )}
+          </div>
+        </BlockCodeCollapsedStateProvider>
+      </MessageSwipeStartContext.Provider>
     </div>
   )
 })

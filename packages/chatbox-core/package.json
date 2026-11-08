@@ -35,6 +35,7 @@
     "./session/assistant-avatar": "./src/session/assistant-avatar.ts",
     "./session/message-header": "./src/session/message-header.ts",
     "./session/message-menu": "./src/session/message-menu.ts",
+    "./session/message-swipe": "./src/session/message-swipe.ts",
     "./session/message-success": "./src/session/message-success.ts",
     "./session/session-tree": "./src/session/session-tree/index.ts",
     "./testing": "./src/testing/index.ts",

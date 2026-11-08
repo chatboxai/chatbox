@@ -6,6 +6,7 @@ import {
 } from '@chatbox/core/session/message-header'
 
 export { getSessionAssistantName } from '@chatbox/core/session/message-header'
+
 import { Loader } from '@mantine/core'
 import type { Message } from '@shared/types'
 import * as dateFns from 'date-fns'
@@ -58,6 +59,7 @@ export function MessageNameRow({
   isSmallScreen,
   offsetTop = 0,
   generating,
+  className,
 }: {
   header: AssistantMessageHeader
   layout: MessageLayout
@@ -66,6 +68,7 @@ export function MessageNameRow({
   offsetTop?: number
   /** Spinner at the end of the row, for replies streaming without an avatar to carry the loader. */
   generating: boolean
+  className?: string
 }) {
   const { t } = useTranslation()
   const { provider, model, time } = header.meta
@@ -100,7 +103,8 @@ export function MessageNameRow({
       style={offsetTop ? { marginTop: offsetTop } : undefined}
       className={cn(
         'flex w-full min-w-0 max-w-full items-baseline gap-1.5 whitespace-nowrap leading-5',
-        layout === 'bubble' ? 'mb-1.5' : 'mb-1'
+        layout === 'bubble' ? 'mb-1.5' : 'mb-1',
+        className
       )}
     >
       <span

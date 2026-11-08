@@ -1988,5 +1988,9 @@
   "Long press a message to reply again, edit, copy, or select text": "اضغط مطولاً على رسالة لإعادة الرد أو التعديل أو النسخ أو تحديد النص",
   "Not enough points": "نقاط غير كافية",
   "License expired": "انتهت صلاحية الترخيص",
-  "Uses built-in document parsing feature, supports common file types, and consumes no compute points. If local parsing fails, Chatbox AI cloud parsing will be used when a license is available and compute points will be consumed.": "يستخدم ميزة تحليل المستندات المدمجة، ويدعم أنواع الملفات الشائعة، ولا يستهلك نقاط الحوسبة. إذا فشل التحليل المحلي، فسيُستخدم التحليل السحابي من Chatbox AI عند توفر ترخيص، مع استهلاك نقاط الحوسبة."
+  "Uses built-in document parsing feature, supports common file types, and consumes no compute points. If local parsing fails, Chatbox AI cloud parsing will be used when a license is available and compute points will be consumed.": "يستخدم ميزة تحليل المستندات المدمجة، ويدعم أنواع الملفات الشائعة، ولا يستهلك نقاط الحوسبة. إذا فشل التحليل المحلي، فسيُستخدم التحليل السحابي من Chatbox AI عند توفر ترخيص، مع استهلاك نقاط الحوسبة.",
+  "Swipe an AI reply right to reply again. Long press a message to edit, copy, or select text": "اسحب رد الذكاء الاصطناعي إلى اليمين لإعادة الرد. اضغط مطولاً على رسالة لتعديلها أو نسخها أو تحديد النص",
+  "Keep swiping to reply again": "تابع السحب لإعادة الرد",
+  "Release to reply again": "أفلت لإعادة الرد",
+  "Generating, try again when done": "جارٍ الإنشاء، أعد المحاولة عند الانتهاء"
 }

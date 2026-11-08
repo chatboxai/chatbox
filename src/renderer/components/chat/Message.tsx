@@ -14,6 +14,7 @@ import {
   getMessageMenuEntries,
   type MessageMenuEntryId,
 } from '@chatbox/core/session/message-menu'
+import { getMessageSwipeMode } from '@chatbox/core/session/message-swipe'
 import {
   isActionAvailableInMode,
   type SessionMode,
@@ -89,6 +90,11 @@ import MessageErrTips from './MessageErrTips'
 import MessageStatuses, { PreparingToolCallStatus } from './MessageLoading'
 import { formatMessageTimestamp, getMessageHeader, getMessageHeaderTitle, MessageNameRow } from './MessageNameRow'
 import { MessageSelectTextPage } from './MessageSelectTextPage'
+import {
+  MESSAGE_SWIPE_AVATAR_HIDDEN_CLASS,
+  MESSAGE_SWIPE_NAME_HIDDEN_CLASS,
+  MessageSwipeCue,
+} from './MessageSwipeFeedback'
 import { getMessageActionVisibilityClass, type MessageButtonGroup } from './message-action-state'
 import { getConversationContentClassName, getConversationRowLayout, isErrorOnlyMessage } from './message-layout'
 import { getMessagePreviewText } from './message-navigation-utils'
@@ -97,6 +103,7 @@ import { createCollapsedDisplayGroups, createMessageTimelineLayout } from './mes
 import { getMessageTokenDisplay } from './message-token-display'
 import { PictureGallery } from './PictureGallery'
 import { useMessageLongPress } from './useMessageLongPress'
+import { type MessageSwipeMode, useMessageSwipe } from './useMessageSwipe'
 import { useProcessTimelineCollapse } from './useProcessTimelineCollapse'
 import { useReplyBelowAction } from './useReplyBelowAction'
 import { useSingleFlightAction } from './useSingleFlightAction'
@@ -879,6 +886,25 @@ const _Message: FC<Props> = (props) => {
   const longPressHandlers = useMessageLongPress({ enabled: longPressMenuEnabled, onLongPress: handleMessageLongPress })
   const longPressHighlighted = longPressMenuEnabled && actionMenuOpened
 
+  // Swiping an assistant reply to the right runs the menu's "Reply Again"; it is shown as unavailable whenever that
+  // entry is missing, the session is busy, or this reply's Reply Again is already under way.
+  const swipeMenuMode = longPressMenuEnabled ? getMessageSwipeMode(msg.role, longPressMenuEntries) : 'none'
+  const swipeMode: MessageSwipeMode =
+    swipeMenuMode === 'retry' && (retryPending || !getSessionActionGate('regenerate', sessionLocks).allowed)
+      ? 'unavailable'
+      : swipeMenuMode
+  const swipeRowRef = useRef<HTMLDivElement>(null)
+  const swipeSurfaceRef = useRef<HTMLDivElement>(null)
+  const handleSwipeRetry = useCallback(() => void handleMessageRetry(), [handleMessageRetry])
+  useMessageSwipe({
+    mode: swipeMode,
+    onRetry: handleSwipeRetry,
+    targetRef: ref,
+    rowRef: swipeRowRef,
+    surfaceRef: swipeSurfaceRef,
+  })
+  const swipeEnabled = swipeMode !== 'none'
+
   const conversationRole = msg.role === 'user' || msg.role === 'assistant' ? msg.role : null
   const isRightAlignedMessage = msg.role === 'user'
   const messageRoleClass = getMessageRoleClass(msg.role)
@@ -896,6 +922,7 @@ const _Message: FC<Props> = (props) => {
   const messageContent = (
     <>
       <div
+        ref={swipeSurfaceRef}
         data-testid={TestId.message.content}
         className={
           conversationRole
@@ -1382,8 +1409,12 @@ const _Message: FC<Props> = (props) => {
 
   if (conversationRole) {
     const isUser = conversationRole === 'user'
+    const swipeFeedback = !isUser && swipeEnabled
     const avatar = shouldShowAvatar && (
-      <Box className="relative shrink-0" title={isUser || isSmallScreen ? undefined : getMessageHeaderTitle(header)}>
+      <Box
+        className={cn('relative shrink-0', swipeFeedback && MESSAGE_SWIPE_AVATAR_HIDDEN_CLASS)}
+        title={isUser || isSmallScreen ? undefined : getMessageHeaderTitle(header)}
+      >
         {isUser ? (
           <UserAvatar
             size={rowLayout.avatarSize}
@@ -1427,6 +1458,7 @@ const _Message: FC<Props> = (props) => {
           rowLayout.spansColumn && 'msg-spans-column',
           isSmallScreen ? 'pt-5' : 'pt-4 sm:pt-5',
           longPressSurfaceClass,
+          swipeEnabled && 'touch-pan-y',
           msg.generating ? 'rendering' : 'render-done',
           messageRoleClass,
           className,
@@ -1438,13 +1470,24 @@ const _Message: FC<Props> = (props) => {
         }}
       >
         <Flex
+          ref={swipeRowRef}
           justify={isUser ? 'flex-end' : 'flex-start'}
           align="flex-start"
           gap={rowLayout.avatarGap}
-          className="relative w-full min-w-0"
+          className="group/swipe-row relative w-full min-w-0"
           style={isUser ? { paddingLeft: rowLayout.farSideSpace } : { paddingRight: rowLayout.farSideSpace }}
         >
           {longPressHighlight}
+          {swipeFeedback && (
+            <MessageSwipeCue
+              avatarSize={rowLayout.avatarSize}
+              avatarGap={rowLayout.avatarGap}
+              nameRowOffset={rowLayout.nameRowOffset}
+              farSideSpace={rowLayout.farSideSpace}
+              showAvatar={shouldShowAvatar}
+              bubble={isBubbleLayout}
+            />
+          )}
           {!isUser && avatar}
           <Flex
             direction="column"
@@ -1453,13 +1496,16 @@ const _Message: FC<Props> = (props) => {
             style={{ maxWidth: isUser ? rowLayout.userBubbleMaxWidth : rowLayout.assistantContentMaxWidth }}
           >
             {!isUser && (
-              <MessageNameRow
-                header={header}
-                layout={isBubbleLayout ? 'bubble' : 'classic'}
-                isSmallScreen={isSmallScreen}
-                offsetTop={rowLayout.nameRowOffset}
-                generating={showGenerating && !shouldShowAvatar}
-              />
+              <div className="relative w-full min-w-0">
+                <MessageNameRow
+                  header={header}
+                  layout={isBubbleLayout ? 'bubble' : 'classic'}
+                  isSmallScreen={isSmallScreen}
+                  offsetTop={rowLayout.nameRowOffset}
+                  generating={showGenerating && !shouldShowAvatar}
+                  className={swipeFeedback ? MESSAGE_SWIPE_NAME_HIDDEN_CLASS : undefined}
+                />
+              </div>
             )}
             {messageContent}
             {(msg.files || msg.links) && (

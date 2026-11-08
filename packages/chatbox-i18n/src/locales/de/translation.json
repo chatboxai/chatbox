@@ -1988,5 +1988,9 @@
   "Long press a message to reply again, edit, copy, or select text": "Halte eine Nachricht gedrückt, um erneut zu antworten, sie zu bearbeiten, zu kopieren oder Text auszuwählen",
   "Not enough points": "Nicht genug Punkte",
   "License expired": "Lizenz abgelaufen",
-  "Uses built-in document parsing feature, supports common file types, and consumes no compute points. If local parsing fails, Chatbox AI cloud parsing will be used when a license is available and compute points will be consumed.": "Verwendet eine integrierte Funktion zur Dokumentenanalyse, unterstützt gängige Dateitypen und verbraucht keine Rechenpunkte. Schlägt die lokale Verarbeitung fehl, wird bei vorhandener Lizenz die Cloud-Verarbeitung von Chatbox AI verwendet und Rechenpunkte werden verbraucht."
+  "Uses built-in document parsing feature, supports common file types, and consumes no compute points. If local parsing fails, Chatbox AI cloud parsing will be used when a license is available and compute points will be consumed.": "Verwendet eine integrierte Funktion zur Dokumentenanalyse, unterstützt gängige Dateitypen und verbraucht keine Rechenpunkte. Schlägt die lokale Verarbeitung fehl, wird bei vorhandener Lizenz die Cloud-Verarbeitung von Chatbox AI verwendet und Rechenpunkte werden verbraucht.",
+  "Swipe an AI reply right to reply again. Long press a message to edit, copy, or select text": "Wische eine KI-Antwort nach rechts, um erneut zu antworten. Halte eine Nachricht gedrückt, um sie zu bearbeiten, zu kopieren oder Text auszuwählen",
+  "Keep swiping to reply again": "Weiter wischen, um erneut zu antworten",
+  "Release to reply again": "Loslassen, um erneut zu antworten",
+  "Generating, try again when done": "Wird generiert – danach erneut versuchen"
 }

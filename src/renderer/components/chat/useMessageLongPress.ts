@@ -38,7 +38,7 @@ const onDocumentScroll = (event: Event) => {
   if (isTranscriptScroller(event.target)) transcriptInertia.scroll()
 }
 
-function useTranscriptScrollInertia(enabled: boolean): ScrollInertiaTracker {
+export function useTranscriptScrollInertia(enabled: boolean): ScrollInertiaTracker {
   useEffect(() => {
     if (!enabled) return
     if (inertiaListenerUsers++ === 0) {

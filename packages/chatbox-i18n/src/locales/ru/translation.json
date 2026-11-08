@@ -1988,5 +1988,9 @@
   "Long press a message to reply again, edit, copy, or select text": "Нажмите и удерживайте сообщение, чтобы ответить заново, изменить, скопировать или выбрать текст",
   "Not enough points": "Недостаточно баллов",
   "License expired": "Срок лицензии истек",
-  "Uses built-in document parsing feature, supports common file types, and consumes no compute points. If local parsing fails, Chatbox AI cloud parsing will be used when a license is available and compute points will be consumed.": "Использует встроенную функцию разбора документов, поддерживает распространенные типы файлов и не расходует вычислительные баллы. Если локальная обработка не удалась и есть лицензия, используется облачная обработка Chatbox AI с расходом вычислительных баллов."
+  "Uses built-in document parsing feature, supports common file types, and consumes no compute points. If local parsing fails, Chatbox AI cloud parsing will be used when a license is available and compute points will be consumed.": "Использует встроенную функцию разбора документов, поддерживает распространенные типы файлов и не расходует вычислительные баллы. Если локальная обработка не удалась и есть лицензия, используется облачная обработка Chatbox AI с расходом вычислительных баллов.",
+  "Swipe an AI reply right to reply again. Long press a message to edit, copy, or select text": "Смахните ответ ИИ вправо, чтобы ответить заново. Нажмите и удерживайте сообщение, чтобы изменить, скопировать или выбрать текст",
+  "Keep swiping to reply again": "Продолжайте свайп, чтобы ответить заново",
+  "Release to reply again": "Отпустите, чтобы ответить заново",
+  "Generating, try again when done": "Идёт генерация, повторите после завершения"
 }

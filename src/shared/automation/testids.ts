@@ -8,7 +8,7 @@
  */
 
 export const AUTOMATION_CONTRACT_ID = 'chatbox-ui'
-export const AUTOMATION_CONTRACT_VERSION = '1.17.0'
+export const AUTOMATION_CONTRACT_VERSION = '1.21.0'
 export const AUTOMATION_CONTRACT_VERSION_ATTRIBUTE = 'data-automation-contract-version'
 
 /** Adjacent identity attributes hosted on TestId elements. */
@@ -175,6 +175,8 @@ export const TestId = {
     selectTextBody: 'message-select-text-body',
     longPressHint: 'message-long-press-hint',
     longPressHintDismiss: 'message-long-press-hint-dismiss',
+    swipeCue: 'message-swipe-cue',
+    swipeHint: 'message-swipe-hint',
     actionMore: 'message-action-more',
     actionQuote: 'message-action-quote',
     actionDelete: 'message-action-delete',

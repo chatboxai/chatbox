@@ -6,7 +6,8 @@ import type { ComponentProps } from 'react'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
   formatMessageTimestamp,
-  getMessageNameRowParts,
+  getMessageHeader,
+  getMessageHeaderTitle,
   getSessionAssistantName,
   MessageNameRow,
 } from './MessageNameRow'
@@ -36,45 +37,80 @@ Object.defineProperty(window, 'matchMedia', {
 
 afterEach(cleanup)
 
-function renderRow(props: Partial<ComponentProps<typeof MessageNameRow>> = {}) {
+const deepseek = {
+  aiProvider: 'deepseek',
+  aiProviderName: 'DeepSeek',
+  model: 'DeepSeek (DS Chat)',
+  modelId: 'deepseek-chat',
+}
+const on = { fallbackLabel: 'Assistant', showModelName: true, showTime: true }
+
+function renderRow(
+  props: Partial<Omit<ComponentProps<typeof MessageNameRow>, 'header'>> & {
+    message?: Parameters<typeof getMessageHeader>[0]
+    options?: Partial<Parameters<typeof getMessageHeader>[1]>
+  } = {}
+) {
+  const { message = deepseek, options, ...rowProps } = props
   return render(
     <MantineProvider>
-      <MessageNameRow layout="classic" isSmallScreen={false} generating={false} {...props} />
+      <MessageNameRow
+        header={getMessageHeader(message, { ...on, ...options })}
+        layout="classic"
+        isSmallScreen={false}
+        generating={false}
+        {...rowProps}
+      />
     </MantineProvider>
   )
 }
 
-describe('Message name row parts', () => {
-  test('shows the model alone for ordinary chats', () => {
-    expect(getMessageNameRowParts({ model: 'gpt-5.1', fallbackLabel: 'Assistant' })).toEqual({
-      assistantName: undefined,
-      label: 'gpt-5.1',
-      time: undefined,
-      title: 'gpt-5.1',
+describe('Message header', () => {
+  test('names the provider and puts the model id after it', () => {
+    expect(getMessageHeader(deepseek, { ...on, showTime: false })).toEqual({
+      name: 'DeepSeek',
+      meta: { provider: undefined, model: 'deepseek-chat', time: undefined },
+      detail: 'deepseek-chat',
     })
   })
 
-  test('puts the copilot name before the model', () => {
+  test('names the copilot and puts the provider before the model', () => {
+    const header = getMessageHeader({ ...deepseek, timestamp: Date.now() }, { ...on, assistantName: 'Mover' })
+    expect(header.name).toBe('Mover')
+    expect(header.meta).toMatchObject({ provider: 'DeepSeek', model: 'deepseek-chat' })
+    expect(header.detail).toMatch(/^DeepSeek · deepseek-chat · \d{2}:\d{2}$/)
+  })
+
+  test('reads replies from before provider names and model ids were recorded', () => {
+    expect(getMessageHeader({ model: 'OpenAI (GPT-4o nick)' }, on)).toMatchObject({
+      name: 'OpenAI',
+      meta: { model: 'GPT-4o nick' },
+    })
+    expect(getMessageHeader({ model: 'Chatbox AI 4' }, on)).toMatchObject({
+      name: 'Chatbox AI 4',
+      meta: { model: undefined },
+    })
+    expect(getMessageHeader({}, on).name).toBe('Assistant')
     expect(
-      getMessageNameRowParts({
-        assistantName: 'Translator',
-        model: 'gpt-5.1',
-        time: '14:32',
-        fallbackLabel: 'Assistant',
-      })
-    ).toEqual({ assistantName: 'Translator', label: 'gpt-5.1', time: '14:32', title: 'Translator · gpt-5.1' })
+      getMessageHeader({ aiProvider: 'custom-1', modelId: 'm' }, { ...on, lookupProviderName: () => 'Gateway' }).name
+    ).toBe('Gateway')
   })
 
-  test('falls back for replies without a model', () => {
-    expect(getMessageNameRowParts({ assistantName: 'Translator', fallbackLabel: 'Assistant' })).toMatchObject({
-      assistantName: 'Translator',
-      label: undefined,
-      title: 'Translator',
+  test('drops only the segments whose settings are off', () => {
+    const off = { ...on, showModelName: false, showTime: false }
+    expect(getMessageHeader({ ...deepseek, timestamp: Date.now() }, off).meta).toEqual({
+      provider: undefined,
+      model: undefined,
+      time: undefined,
     })
-    expect(getMessageNameRowParts({ model: '  ', fallbackLabel: 'Assistant' })).toMatchObject({
-      assistantName: undefined,
-      label: 'Assistant',
-    })
+    expect(getMessageHeader(deepseek, { ...off, assistantName: 'Mover' }).meta.provider).toBe('DeepSeek')
+  })
+
+  test('hover text puts the name over every detail', () => {
+    expect(getMessageHeaderTitle(getMessageHeader(deepseek, { ...on, showModelName: false }))).toBe(
+      'DeepSeek\ndeepseek-chat'
+    )
+    expect(getMessageHeaderTitle(getMessageHeader({}, on))).toBe('Assistant')
   })
 })
 
@@ -85,20 +121,25 @@ describe('Session assistant name', () => {
     expect(getSessionAssistantName({ copilotId: 'c1' }, copilots)).toBe('Translator')
   })
 
+  test('prefers the session name over the copilot, and the copilot over the provider', () => {
+    const copilots = [{ id: 'c1', name: 'Translator' }]
+    const name = (session: { assistantName?: string; copilotId?: string }) =>
+      getMessageHeader(deepseek, { ...on, showTime: false, assistantName: getSessionAssistantName(session, copilots) })
+    expect(name({ assistantName: ' Mover ', copilotId: 'c1' })).toMatchObject({
+      name: 'Mover',
+      detail: 'DeepSeek · deepseek-chat',
+    })
+    expect(name({ assistantName: '  ', copilotId: 'c1' })).toMatchObject({ name: 'Translator' })
+    expect(name({})).toMatchObject({ name: 'DeepSeek', detail: 'deepseek-chat' })
+  })
+
   test('never takes the chat title for a copilot without a saved definition', () => {
     // A renamed chat whose copilot was deleted, never saved, or not imported.
     const session = { copilotId: 'missing', name: 'October expenses' }
     expect(getSessionAssistantName(session, [{ id: 'c1', name: 'Translator' }])).toBeUndefined()
-    expect(
-      getMessageNameRowParts({
-        assistantName: getSessionAssistantName(session, []),
-        model: 'gpt-5.1',
-        fallbackLabel: 'Assistant',
-      })
-    ).toMatchObject({
-      assistantName: undefined,
-      label: 'gpt-5.1',
-    })
+    expect(getMessageHeader(deepseek, { ...on, assistantName: getSessionAssistantName(session, []) }).name).toBe(
+      'DeepSeek'
+    )
   })
 })
 
@@ -112,39 +153,48 @@ describe('Message timestamp', () => {
 })
 
 describe('MessageNameRow', () => {
-  test('renders the segments in one line with separators and the full names as hover text', () => {
-    renderRow({ assistantName: 'Translator', model: 'gpt-5.1', timestamp: Date.now() })
-    const rowElement = screen.getByTitle('Translator · gpt-5.1')
-    expect(rowElement.textContent).toMatch(/^Translator·gpt-5\.1·\d{2}:\d{2}$/)
-    expect(rowElement.className).toContain('whitespace-nowrap')
-    expect(rowElement.className).toContain('mb-1')
-    expect(screen.getByText('Translator').className).toContain('max-w-[50%]')
-    expect(screen.getByText('Translator').className).toContain('shrink-0')
-    expect(screen.getByText('gpt-5.1').className).toContain('min-w-0')
-    expect(screen.getByText('Translator').className).toContain('font-semibold')
-    expect(screen.getByText('gpt-5.1').className).not.toContain('font-semibold')
+  test('renders a bold name and grey monospace details on one line', () => {
+    renderRow({ message: { ...deepseek, timestamp: Date.now() }, options: { assistantName: 'Mover' } })
+    const name = screen.getByText('Mover')
+    const row = name.parentElement as HTMLElement
+    expect(row.textContent).toMatch(/^MoverDeepSeek · deepseek-chat · \d{2}:\d{2}$/)
+    expect(row.getAttribute('title')).toMatch(/^Mover\nDeepSeek · deepseek-chat · \d{2}:\d{2}$/)
+    expect(row.className).toContain('whitespace-nowrap')
+    expect(row.className).toContain('mb-1')
+    expect(name.className).toContain('font-semibold')
+    expect(name.className).toContain('max-w-[45%]')
+    const meta = screen.getByText('deepseek-chat').parentElement as HTMLElement
+    expect(meta.className).toContain('font-mono')
+    expect(meta.className).toContain('text-[var(--chatbox-message-name-muted)]')
   })
 
-  test('bolds the model when it leads the row and uses the touch sizes on small screens', () => {
-    renderRow({ model: 'gpt-5.1', isSmallScreen: true, layout: 'bubble' })
-    const model = screen.getByText('gpt-5.1')
-    expect(model.className).toContain('font-semibold')
-    const row = model.parentElement as HTMLElement
+  test('gives way in the model first, then the provider, and never in the time', () => {
+    renderRow({ message: { ...deepseek, timestamp: Date.now() }, options: { assistantName: 'Mover' } })
+    expect(screen.getByText('deepseek-chat').className).toContain('shrink-[1000]')
+    expect(screen.getByText('DeepSeek').className).toContain('max-w-[10em]')
+    expect(screen.getByText(/^\d{2}:\d{2}$/).className).toContain('shrink-0')
+  })
+
+  test('shows the bold name alone, across the row, when both details are off', () => {
+    renderRow({ options: { showModelName: false, showTime: false }, isSmallScreen: true, layout: 'bubble' })
+    const name = screen.getByText('DeepSeek')
+    const row = name.parentElement as HTMLElement
+    expect(row.textContent).toBe('DeepSeek')
+    expect(name.className).not.toContain('max-w-[45%]')
     expect(row.getAttribute('title')).toBeNull()
-    expect(row.className).toContain('leading-[18px]')
     expect(row.className).toContain('mb-1.5')
   })
 
-  test('shows the generic assistant label for replies that predate model tracking', () => {
-    renderRow({})
+  test('shows the generic assistant label for replies without any provider information', () => {
+    renderRow({ message: {} })
     expect(screen.getByText('Assistant')).toBeTruthy()
   })
 
   test('adds a spinner only when asked to', () => {
-    renderRow({ model: 'gpt-5.1' })
+    renderRow()
     expect(screen.queryByLabelText('Generating...')).toBeNull()
     cleanup()
-    renderRow({ model: 'gpt-5.1', generating: true })
+    renderRow({ generating: true })
     expect(screen.getByLabelText('Generating...')).toBeTruthy()
   })
 })

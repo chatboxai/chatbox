@@ -1,9 +1,19 @@
+import {
+  type AssistantMessageHeader,
+  getAssistantMessageHeader,
+  getAssistantMessageSource,
+  MESSAGE_HEADER_SEPARATOR,
+} from '@chatbox/core/session/message-header'
+
+export { getSessionAssistantName } from '@chatbox/core/session/message-header'
 import { Loader } from '@mantine/core'
+import type { Message } from '@shared/types'
 import * as dateFns from 'date-fns'
-import { Fragment, type ReactNode } from 'react'
+import { Fragment, type ReactNode, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import type { MessageLayout } from './message-layout'
+import { useSnapEllipsis } from './snap-ellipsis'
 
 export function formatMessageTimestamp(timestamp: number): string {
   const date = new Date(timestamp)
@@ -12,125 +22,111 @@ export function formatMessageTimestamp(timestamp: number): string {
   return dateFns.format(date, 'yyyy-MM-dd HH:mm')
 }
 
-/**
- * Name of the copilot a chat was started from, read from the saved copilot. The chat title is not a copilot
- * identity (it can be renamed or generated), so a copilot without a saved definition gets no name.
- */
-export function getSessionAssistantName(
-  session: { copilotId?: string },
-  copilots: readonly { id: string; name: string }[]
-): string | undefined {
-  if (!session.copilotId) return undefined
-  return copilots.find((copilot) => copilot.id === session.copilotId)?.name.trim() || undefined
-}
-
-export type MessageNameRowParts = {
-  /** Copilot the chat was started from; omitted for ordinary chats. */
-  assistantName?: string
-  /** Model that wrote the reply, or the generic assistant label for replies that predate model tracking. */
-  label?: string
-  time?: string
-  /** Hover text with the full, untruncated names. */
-  title: string
-}
-
-export function getMessageNameRowParts({
-  assistantName,
-  model,
-  time,
-  fallbackLabel,
-}: {
-  assistantName?: string
-  model?: string
-  time?: string
-  fallbackLabel: string
-}): MessageNameRowParts {
-  const name = assistantName?.trim() || undefined
-  const modelName = model?.trim() || undefined
-  const label = modelName ?? (name ? undefined : fallbackLabel)
-  return {
-    assistantName: name,
-    label,
-    time,
-    title: [name, label].filter(Boolean).join(' · '),
+/** Header of an assistant reply, from the message's provider/model record and the display settings. */
+export function getMessageHeader(
+  message: Pick<Message, 'aiProvider' | 'aiProviderName' | 'model' | 'modelId' | 'timestamp'>,
+  options: {
+    assistantName?: string
+    fallbackLabel: string
+    showModelName: boolean
+    showTime: boolean
+    lookupProviderName?: (providerId: string) => string | undefined
   }
+): AssistantMessageHeader {
+  return getAssistantMessageHeader(getAssistantMessageSource(message, options.lookupProviderName), {
+    assistantName: options.assistantName,
+    fallbackLabel: options.fallbackLabel,
+    showModelName: options.showModelName,
+    showTime: options.showTime,
+    time: message.timestamp === undefined ? undefined : formatMessageTimestamp(message.timestamp),
+  })
+}
+
+/** Name and every detail of a reply on two lines, for hover text. */
+export function getMessageHeaderTitle(header: AssistantMessageHeader): string {
+  return header.detail ? `${header.name}\n${header.detail}` : header.name
 }
 
 /**
- * The line above every assistant reply: `[assistant] · model · [time]`. It stays a single line. The assistant name
- * keeps its width up to half the row; the model name is the only part that shrinks, so a long model id gives way
- * first. The model does not grow either, which keeps the time right after it.
+ * The line above every assistant reply: a bold name followed by grey monospace `[provider ·] model · time`. It stays
+ * a single line. The name keeps up to 45% of the row; in the grey part the model id gives way first, then the
+ * provider (capped at 10em), and the time never shrinks.
  */
 export function MessageNameRow({
-  assistantName,
-  model,
-  timestamp,
+  header,
   layout,
   isSmallScreen,
   generating,
 }: {
-  assistantName?: string
-  model?: string
-  timestamp?: number
+  header: AssistantMessageHeader
   layout: MessageLayout
   isSmallScreen: boolean
   /** Spinner at the end of the row, for replies streaming without an avatar to carry the loader. */
   generating: boolean
 }) {
   const { t } = useTranslation()
-  const parts = getMessageNameRowParts({
-    assistantName,
-    model,
-    time: timestamp === undefined ? undefined : formatMessageTimestamp(timestamp),
-    fallbackLabel: t('Assistant'),
-  })
-  const segments: { key: string; node: ReactNode }[] = []
-  if (parts.assistantName) {
-    segments.push({
-      key: 'assistant',
+  const { provider, model, time } = header.meta
+  const meta: { key: string; node: ReactNode }[] = []
+  if (provider) {
+    meta.push({
+      key: 'provider',
       node: (
-        <span className="max-w-[50%] shrink-0 truncate font-semibold text-chatbox-tint-primary">
-          {parts.assistantName}
+        <span data-snap-ellipsis className="min-w-0 max-w-[10em] shrink truncate">
+          {provider}
         </span>
       ),
     })
   }
-  if (parts.label) {
-    segments.push({
+  if (model)
+    meta.push({
       key: 'model',
       node: (
-        <span className={cn('min-w-0 truncate text-chatbox-tint-secondary', !parts.assistantName && 'font-semibold')}>
-          {parts.label}
+        <span data-snap-ellipsis className="min-w-0 shrink-[1000] truncate">
+          {model}
         </span>
       ),
     })
-  }
-  if (parts.time) segments.push({ key: 'time', node: <span className="shrink-0">{parts.time}</span> })
+  if (time) meta.push({ key: 'time', node: <span className="shrink-0">{time}</span> })
+  const rowRef = useRef<HTMLDivElement>(null)
+  useSnapEllipsis(rowRef, `${header.name}|${provider}|${model}|${time}`)
 
   return (
     <div
-      title={isSmallScreen ? undefined : parts.title}
+      ref={rowRef}
+      title={isSmallScreen ? undefined : getMessageHeaderTitle(header)}
       className={cn(
-        'flex w-full min-w-0 max-w-full items-center whitespace-nowrap text-[var(--chatbox-message-name-muted)]',
-        isSmallScreen ? 'h-[18px] gap-1 text-xs leading-[18px]' : 'h-5 gap-1.5 text-[13px] leading-5',
+        'flex w-full min-w-0 max-w-full items-baseline gap-1.5 whitespace-nowrap leading-5',
         layout === 'bubble' ? 'mb-1.5' : 'mb-1'
       )}
     >
-      {segments.map((segment, index) => (
-        <Fragment key={segment.key}>
-          {index > 0 && (
-            <span aria-hidden="true" className="shrink-0">
-              ·
-            </span>
-          )}
-          {segment.node}
-        </Fragment>
-      ))}
+      <span
+        data-snap-ellipsis
+        className={cn(
+          'min-w-0 truncate text-sm font-semibold text-chatbox-tint-primary',
+          meta.length > 0 && 'max-w-[45%] shrink-0'
+        )}
+      >
+        {header.name}
+      </span>
+      {meta.length > 0 && (
+        <span className="flex min-w-0 font-mono text-xs text-[var(--chatbox-message-name-muted)]">
+          {meta.map((segment, index) => (
+            <Fragment key={segment.key}>
+              {index > 0 && (
+                <span aria-hidden="true" className="shrink-0 whitespace-pre">
+                  {MESSAGE_HEADER_SEPARATOR}
+                </span>
+              )}
+              {segment.node}
+            </Fragment>
+          ))}
+        </span>
+      )}
       {generating && (
         <Loader
           size={12}
           aria-label={t('Generating...') as string}
-          className="shrink-0"
+          className="shrink-0 self-center"
           classNames={{ root: "after:content-[''] after:border-[2px]" }}
         />
       )}

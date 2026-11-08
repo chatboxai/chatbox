@@ -24,6 +24,7 @@ import NiceModal from '@ebay/nice-modal-react'
 import { ActionIcon, type ActionIconProps, Anchor, Button, Flex, Loader, Modal, Stack, Text } from '@mantine/core'
 import { Box, Grid, useTheme } from '@mui/material'
 import { AutomationStateAttr, TestId } from '@shared/automation/testids'
+import { getProviderDisplayName } from '@shared/providers'
 import type { Message, MessageBackgroundTask, MessageTextPart, MessageToolCallPart, SessionType } from '@shared/types'
 import { getMessageText } from '@shared/utils/message'
 import {
@@ -86,7 +87,7 @@ import { MessageArtifactsUI, ToolCallPartUI } from '../message-parts/ToolCallPar
 import { MessageAttachmentGrid } from './MessageAttachmentGrid'
 import MessageErrTips from './MessageErrTips'
 import MessageStatuses, { PreparingToolCallStatus } from './MessageLoading'
-import { formatMessageTimestamp, MessageNameRow } from './MessageNameRow'
+import { formatMessageTimestamp, getMessageHeader, getMessageHeaderTitle, MessageNameRow } from './MessageNameRow'
 import { MessageSelectTextPage } from './MessageSelectTextPage'
 import { getMessageActionVisibilityClass, type MessageButtonGroup } from './message-action-state'
 import {
@@ -149,7 +150,7 @@ interface Props {
   small?: boolean
   assistantAvatarKey?: string
   sessionPicUrl?: string
-  /** Name of the copilot the chat was started from, shown before the model in the assistant name row. */
+  /** Assistant name set for the chat or taken from its copilot; it replaces the provider as the bold name in the header row. */
   assistantName?: string
 }
 
@@ -206,6 +207,8 @@ const _Message: FC<Props> = (props) => {
   const isSmallScreen = useIsSmallScreen()
   const userAvatarKey = useSettingsStore((state) => state.userAvatarKey)
   const showMessageTimestamp = useSettingsStore((state) => state.showMessageTimestamp)
+  const showModelName = useSettingsStore((state) => state.showModelName)
+  const customProviders = useSettingsStore((state) => state.customProviders)
   const showWordCount = useSettingsStore((state) => state.showWordCount)
   const showTokenUsed = useSettingsStore((state) => state.showTokenUsed)
   const showFirstTokenLatency = useSettingsStore((state) => state.showFirstTokenLatency)
@@ -217,6 +220,17 @@ const _Message: FC<Props> = (props) => {
   const generationRuntimeActive = useIsGenerationRuntimeActive(sessionId, msg.id)
 
   const isBubbleLayout = messageLayout === 'bubble'
+  const header = useMemo(
+    () =>
+      getMessageHeader(msg, {
+        assistantName,
+        fallbackLabel: t('Assistant'),
+        showModelName: showModelName ?? true,
+        showTime: Boolean(showMessageTimestamp),
+        lookupProviderName: (providerId) => getProviderDisplayName(providerId, customProviders),
+      }),
+    [msg, assistantName, t, showModelName, showMessageTimestamp, customProviders]
+  )
 
   const [retryChoiceOpened, setRetryChoiceOpened] = useState(false)
 
@@ -824,15 +838,12 @@ const _Message: FC<Props> = (props) => {
   ])
   const actionMenuTitle = useMemo(() => {
     if (!longPressMenuEnabled) return undefined
-    const author =
-      msg.role === 'user'
-        ? t('Me')
-        : msg.role === 'assistant'
-          ? assistantName || msg.model || t('Assistant')
-          : t('System prompt')
+    const author = msg.role === 'user' ? t('Me') : msg.role === 'assistant' ? header.name : t('System prompt')
     const preview = clipMessageMenuPreview(getMessageText(msg))
     return preview ? String(t('{{author}}: {{preview}}', { author, preview })) : String(author)
-  }, [longPressMenuEnabled, msg, assistantName, t])
+  }, [longPressMenuEnabled, msg, header.name, t])
+  const actionMenuTitleEmphasis = msg.role === 'assistant' ? header.name : undefined
+  const actionMenuSubtitle = longPressMenuEnabled && msg.role === 'assistant' ? header.detail || undefined : undefined
   const [actionMenuOpened, setActionMenuOpened] = useState(false)
   const actionMenuRequest = useRef(0)
   const handleActionMenuChange = useCallback(
@@ -1285,6 +1296,8 @@ const _Message: FC<Props> = (props) => {
       type="mobile"
       items={actionMenuItems}
       title={actionMenuTitle}
+      titleEmphasis={actionMenuTitleEmphasis}
+      subtitle={actionMenuSubtitle}
       contentTestId={TestId.message.actionMenu}
       opened={actionMenuOpened}
       onChange={handleActionMenuChange}
@@ -1366,7 +1379,7 @@ const _Message: FC<Props> = (props) => {
   if (conversationRole) {
     const isUser = conversationRole === 'user'
     const avatar = shouldShowAvatar && (
-      <Box className="relative shrink-0">
+      <Box className="relative shrink-0" title={isUser || isSmallScreen ? undefined : getMessageHeaderTitle(header)}>
         {isUser ? (
           <UserAvatar
             size={rowLayout.avatarSize}
@@ -1435,9 +1448,7 @@ const _Message: FC<Props> = (props) => {
           >
             {!isUser && (
               <MessageNameRow
-                assistantName={assistantName}
-                model={msg.model}
-                timestamp={showMessageTimestamp ? msg.timestamp : undefined}
+                header={header}
                 layout={isBubbleLayout ? 'bubble' : 'classic'}
                 isSmallScreen={isSmallScreen}
                 generating={Boolean(msg.generating) && !shouldShowAvatar}

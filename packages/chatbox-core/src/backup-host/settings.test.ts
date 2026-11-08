@@ -150,23 +150,24 @@ describe('backup settings commit', () => {
     }
   )
 
-  it.each([true, false, 'x'])(
-    'imports a backup carrying the retired showModelName=%s and drops the field',
-    async (showModelName) => {
-      vi.useFakeTimers()
-      const host = setup()
-      for (const __version of [8, SETTINGS_PERSIST_VERSION]) {
-        const record = { ...imported, __version, showModelName }
-        expect(() =>
-          validateBackupGlobal({ type: 'global', category: 'settings', id: 'settings', value: record })
-        ).not.toThrow()
-        await commitBackupSettings(record, host)
-        expect(host.settings.getSettings()).toMatchObject({ language: 'zh-Hans', providers: imported.providers })
-        expect(host.settings.getSettings()).not.toHaveProperty('showModelName')
-        expect(host.read()).not.toHaveProperty('showModelName')
-      }
+  it.each([
+    [true, true],
+    [false, false],
+    ['x', true],
+  ])('imports a backup carrying showModelName=%s as %s', async (showModelName, expected) => {
+    vi.useFakeTimers()
+    const host = setup()
+    for (const __version of [8, SETTINGS_PERSIST_VERSION]) {
+      const record = { ...imported, __version, showModelName }
+      expect(() =>
+        validateBackupGlobal({ type: 'global', category: 'settings', id: 'settings', value: record })
+      ).not.toThrow()
+      await commitBackupSettings(record, host)
+      expect(host.settings.getSettings()).toMatchObject({ language: 'zh-Hans', providers: imported.providers })
+      expect(host.settings.getSettings().showModelName).toBe(expected)
+      expect(host.read()).toMatchObject({ showModelName: expected })
     }
-  )
+  })
 
   it('still rejects the whole settings record for other invalid fields', () => {
     expect(() =>

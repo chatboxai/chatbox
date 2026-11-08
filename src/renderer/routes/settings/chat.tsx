@@ -14,23 +14,15 @@ import {
   useSettingsDensity,
 } from '@/components/settings/SettingsLayout'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { getMessageMetaUpdate, getSelectedMessageMeta, MESSAGE_META_OPTIONS } from './-messageMeta'
 
 export const Route = createFileRoute('/settings/chat')({
   component: RouteComponent,
 })
 
-type MessageMetaKey = 'showMessageTimestamp' | 'showWordCount' | 'showTokenUsed' | 'showFirstTokenLatency'
-
 type BooleanSettingKey = {
   [K in keyof Settings]-?: Settings[K] extends boolean | undefined ? K : never
 }[keyof Settings]
-
-const MESSAGE_META_OPTIONS: { key: MessageMetaKey; label: string }[] = [
-  { key: 'showMessageTimestamp', label: 'Time' },
-  { key: 'showWordCount', label: 'Word count' },
-  { key: 'showTokenUsed', label: 'Token usage' },
-  { key: 'showFirstTokenLatency', label: 'First token latency' },
-]
 
 export function RouteComponent() {
   const { t } = useTranslation()
@@ -183,21 +175,13 @@ export function RouteComponent() {
         <SettingRow
           id="message-meta"
           label={t('Message info')}
-          description={t(
-            "The model name always appears in the assistant's name row. Time appears there too; the rest appear below the message."
-          )}
+          description={t("Model name and time appear in the assistant's name row; the rest appear below the message.")}
           controlLayout="block"
           control={
             <Chip.Group
               multiple
-              value={MESSAGE_META_OPTIONS.filter((option) => settings[option.key]).map((option) => option.key)}
-              onChange={(values) =>
-                setSettings(
-                  Object.fromEntries(
-                    MESSAGE_META_OPTIONS.map((option) => [option.key, values.includes(option.key)])
-                  ) as Pick<Settings, MessageMetaKey>
-                )
-              }
+              value={getSelectedMessageMeta(settings)}
+              onChange={(values) => setSettings(getMessageMetaUpdate(values))}
             >
               <Group gap={6}>
                 {MESSAGE_META_OPTIONS.map((option) => (

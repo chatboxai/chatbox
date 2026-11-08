@@ -21,6 +21,7 @@ export function createDefaultSettings(): Settings {
     showWordCount: false,
     showTokenCount: false,
     showTokenUsed: true,
+    showModelName: true,
     showMessageTimestamp: false,
     showFirstTokenLatency: false,
     showAvatar: true,

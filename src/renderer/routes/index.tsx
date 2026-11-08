@@ -47,6 +47,7 @@ import { useUIStore } from '@/stores/uiStore'
 import { getHomeWelcomeCardMode } from '@/utils/homeWelcomeCard'
 import { NewUserScenarioGrid } from './-new-user-scenarios/NewUserScenarioGrid'
 import { type NewUserScenario, newUserScenarios, resolveNewUserScenarioContent } from './-new-user-scenarios/scenarios'
+import { getNewChatAssistantFields } from './-newChatSession'
 
 const scenarioAgentModeOff = {
   value: 'off',
@@ -277,9 +278,7 @@ function Index() {
           name: options?.name ?? session.name,
           type: 'chat',
           folderId,
-          assistantAvatarKey: session.assistantAvatarKey,
-          picUrl: session.picUrl,
-          backgroundImage: session.backgroundImage,
+          ...getNewChatAssistantFields(session),
           messages: options?.messages ?? (systemPrompt ? [createMessage('system', systemPrompt)] : []),
           copilotId: session.copilotId,
           threadName: options?.threadName ?? session.threadName ?? '',

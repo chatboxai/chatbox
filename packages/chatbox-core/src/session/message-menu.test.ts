@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { clipMessageMenuPreview, getMessageMenuEntries, type MessageMenuAvailability } from './message-menu'
+import {
+  clipMessageMenuPreview,
+  getMessageMenuEntries,
+  type MessageMenuAvailability,
+  splitMessageMenuTitle,
+} from './message-menu'
 
 const all: MessageMenuAvailability = {
   stop: true,
@@ -107,5 +112,25 @@ describe('clipMessageMenuPreview', () => {
       '押金一般在交房检查无问题后 7 个工作日…'
     )
     expect(clipMessageMenuPreview(' short\n')).toBe('short')
+  })
+})
+
+describe('splitMessageMenuTitle', () => {
+  it('splits the title around the author wherever the translation puts it', () => {
+    expect(splitMessageMenuTitle('DeepSeek：押金…', 'DeepSeek')).toEqual({
+      before: '',
+      emphasis: 'DeepSeek',
+      after: '：押金…',
+    })
+    expect(splitMessageMenuTitle('« Mover » : bonjour', 'Mover')).toEqual({
+      before: '« ',
+      emphasis: 'Mover',
+      after: ' » : bonjour',
+    })
+  })
+
+  it('leaves titles without the author whole', () => {
+    expect(splitMessageMenuTitle('Assistant', undefined)).toBeUndefined()
+    expect(splitMessageMenuTitle('Assistant', 'DeepSeek')).toBeUndefined()
   })
 })

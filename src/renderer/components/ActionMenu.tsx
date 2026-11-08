@@ -1,3 +1,4 @@
+import { splitMessageMenuTitle } from '@chatbox/core/session/message-menu'
 import { Menu, type MenuItemProps, type MenuProps, Popover, Stack, Text, useMantineTheme } from '@mantine/core'
 import { IconCheck, type IconProps } from '@tabler/icons-react'
 import { type FC, type MouseEventHandler, type ReactElement, useEffect, useRef, useState } from 'react'
@@ -43,6 +44,10 @@ export type ActionMenuProps = {
   children: ReactElement
   items: ActionMenuItemProps[]
   title?: string
+  /** Part of the title drawn in bold (e.g. the author name); shown by the mobile sheet. */
+  titleEmphasis?: string
+  /** Second line under the title, in monospace; shown by the mobile sheet. */
+  subtitle?: string
   contentTestId?: string
   type?: 'desktop' | 'mobile' | 'contextual' | 'auto'
   trigger?: 'click' | 'manual'
@@ -66,6 +71,8 @@ const DesktopActionMenu: FC<ActionMenuProps> = ({
   children,
   items,
   title,
+  titleEmphasis: _titleEmphasis,
+  subtitle: _subtitle,
   contentTestId,
   trigger: _trigger,
   position = 'bottom-start',
@@ -282,10 +289,24 @@ const ContextualDoubleCheckMenuItem: FC<{
   )
 }
 
+function EmphasizedTitle({ title, emphasis }: { title: string; emphasis?: string }) {
+  const parts = splitMessageMenuTitle(title, emphasis)
+  if (!parts) return title
+  return (
+    <>
+      {parts.before}
+      <span className="font-semibold text-chatbox-tint-primary">{parts.emphasis}</span>
+      {parts.after}
+    </>
+  )
+}
+
 const MobileActionMenu: FC<ActionMenuProps> = ({
   children,
   items,
   title,
+  titleEmphasis,
+  subtitle,
   contentTestId,
   opened,
   onChange,
@@ -321,8 +342,18 @@ const MobileActionMenu: FC<ActionMenuProps> = ({
           <div className="bg-chatbox-background-primary rounded-t-lg">
             <Drawer.Handle />
             {title && (
-              <Text c="chatbox-tertiary" size="md" lineClamp={1} className="text-center mb-2 px-4">
-                {title}
+              <Text
+                c="chatbox-tertiary"
+                size="md"
+                lineClamp={1}
+                className={subtitle ? 'text-center px-4' : 'text-center mb-2 px-4'}
+              >
+                <EmphasizedTitle title={title} emphasis={titleEmphasis} />
+              </Text>
+            )}
+            {subtitle && (
+              <Text c="chatbox-tertiary" size="xs" truncate="end" className="text-center mb-2 px-4 font-mono">
+                {subtitle}
               </Text>
             )}
             <Stack className="px-2" gap={0}>

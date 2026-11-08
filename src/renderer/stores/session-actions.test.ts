@@ -124,6 +124,7 @@ vi.mock('@/packages/model-calls', () => ({
 }))
 
 vi.mock('@/packages/model-setting-utils', () => ({
+  getMessageProviderName: () => 'Mock Provider',
   getModelDisplayName: async () => 'mock-model',
 }))
 

@@ -23,7 +23,7 @@ import { createModel } from '@/adapters'
 import { rendererApplication, sessionRepository } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
 import { runCompactionWithUIState } from '@/packages/context-management'
-import { getModelDisplayName } from '@/packages/model-setting-utils'
+import { getMessageProviderName, getModelDisplayName } from '@/packages/model-setting-utils'
 import { estimateTokensFromMessages, type TokenModel } from '@/packages/token'
 import platform from '@/platform'
 import { clearMessageGenerationStopOperation } from '@/stores/generationStopOperations'
@@ -449,7 +449,10 @@ export async function submitNewUserMessageUnlocked(
     newAssistantMsg = {
       ...newAssistantMsg,
       generating: false,
+      aiProvider: settings.provider,
+      aiProviderName: getMessageProviderName(settings, globalSettings),
       model: await getModelDisplayName(settings, globalSettings, 'chat'),
+      modelId: settings.modelId,
       contentParts: [{ type: 'text', text: '' }],
       errorCode,
       error: userFacingErrorMessage,

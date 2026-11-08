@@ -786,6 +786,7 @@ export class GenerationService<TContext> {
           contentParts: tailParts,
           status: [],
           aiProvider: targetMessage.aiProvider,
+          aiProviderName: targetMessage.aiProviderName,
           model: targetMessage.model,
           modelId: targetMessage.modelId,
           name: targetMessage.name,

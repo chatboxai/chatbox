@@ -5,6 +5,7 @@ import {
   defineProvider,
   getAllProviders,
   getProviderDefinition,
+  getProviderDisplayName,
   getSystemProviders,
   hasProvider,
 } from './registry'
@@ -47,6 +48,16 @@ describe('Provider Registry', () => {
       defineProvider(updated)
       const retrieved = getProviderDefinition('test-provider')
       expect(retrieved?.name).toBe('Updated Provider')
+    })
+  })
+
+  describe('getProviderDisplayName', () => {
+    it('prefers a custom provider name over the built-in definition name', () => {
+      defineProvider(testProvider)
+      expect(getProviderDisplayName('test-provider')).toBe('Test Provider')
+      expect(getProviderDisplayName('custom-1', [{ id: 'custom-1', name: ' My Gateway ' }])).toBe('My Gateway')
+      expect(getProviderDisplayName('test-provider', [{ id: 'test-provider', name: '' }])).toBe('Test Provider')
+      expect(getProviderDisplayName('deleted', [])).toBeUndefined()
     })
   })
 

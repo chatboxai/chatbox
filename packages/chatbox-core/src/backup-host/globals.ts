@@ -121,7 +121,7 @@ const soulSchema = z.object({ content: z.string(), updatedAt: z.number().finite(
  * Display preferences whose unknown values fall back to the default instead of rejecting the whole settings
  * record; every other field is validated strictly.
  */
-const SETTINGS_FIELDS_WITH_DEFAULT_FALLBACK: ReadonlySet<string> = new Set(['messageLayout'])
+const SETTINGS_FIELDS_WITH_DEFAULT_FALLBACK: ReadonlySet<string> = new Set(['messageLayout', 'showModelName'])
 
 function validateSettingsFields(
   value: unknown,

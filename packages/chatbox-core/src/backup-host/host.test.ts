@@ -635,6 +635,7 @@ describe('incremental backup host import', () => {
     const backup = JSON.parse(
       readFileSync(new URL('../testing/fixtures/published-backups/v1.15.0-settings.json', import.meta.url), 'utf8')
     )
+    backup.settings.showModelName = false
     // Distinguish the legacy spellings from the current defaults they migrate into.
     Object.assign(backup.settings.shortcuts, {
       inpubBoxSendMessage: 'Ctrl+Enter',
@@ -668,7 +669,7 @@ describe('incremental backup host import', () => {
       autoUpdate: false,
       shortcuts: { inputBoxSendMessage: 'Ctrl+Enter', inputBoxSendMessageWithoutResponse: 'Enter' },
     })
-    expect(await f.storage.get(GLOBAL_KEYS.settings)).not.toHaveProperty('showModelName')
+    expect(await f.storage.get(GLOBAL_KEYS.settings)).toHaveProperty('showModelName', false)
     expect(replaceSettings).toHaveBeenCalledOnce()
   })
 })

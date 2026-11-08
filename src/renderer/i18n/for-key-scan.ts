@@ -188,7 +188,8 @@ function _otherI18nKeys(t: (key: string) => string) {
   t('Automatic updates')
   t('Beta updates')
 
-  // src/renderer/routes/settings/chat.tsx
+  // src/renderer/routes/settings/-messageMeta.ts
+  t('Model name')
   t('Time')
   t('Word count')
   t('Token usage')

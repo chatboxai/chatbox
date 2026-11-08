@@ -24,7 +24,7 @@ vi.mock('@/platform', () => ({ default: { isDesktopLike: false, type: 'desktop' 
 vi.mock('@/lib/utils', () => ({ getLogger: () => ({ error: vi.fn(), warn: vi.fn() }) }))
 vi.mock('@/adapters', () => ({ createModel: vi.fn() }))
 vi.mock('@/packages/context-management', () => ({ runCompactionWithUIState: vi.fn() }))
-vi.mock('@/packages/model-setting-utils', () => ({ getModelDisplayName: vi.fn() }))
+vi.mock('@/packages/model-setting-utils', () => ({ getMessageProviderName: vi.fn(), getModelDisplayName: vi.fn() }))
 vi.mock('@/packages/token', () => ({ estimateTokensFromMessages: vi.fn() }))
 vi.mock('@/utils/session-lock-copy', () => ({ notifySessionLockBlocked: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/utils/sentry', () => ({ reportError: vi.fn() }))

@@ -66,6 +66,12 @@ const safeSettings: SafeSettingSpec[] = [
     page: 'Chat',
     read: () => settingsStore.getState().maxContextMessageCount ?? Number.MAX_SAFE_INTEGER,
   },
+  {
+    key: 'chat.show-model-name',
+    description: 'Show model names on messages.',
+    page: 'Chat',
+    read: () => settingsStore.getState().showModelName ?? true,
+  },
   ...(
     [
       ['chat.show-word-count', 'Show message word counts.', 'showWordCount', 'Chat'],

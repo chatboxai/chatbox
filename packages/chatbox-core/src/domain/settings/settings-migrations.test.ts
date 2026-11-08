@@ -116,15 +116,23 @@ describe('settings migrations', () => {
     ).toBeUndefined()
   })
 
-  test.each([true, false, 'x'])('loads stored settings carrying the retired showModelName=%s', (showModelName) => {
+  test.each([
+    [true, true],
+    [false, false],
+    ['x', true],
+  ])('loads stored showModelName=%s as %s', (showModelName, expected) => {
     const defaults = createDefaultSettings()
     const merged = mergeSettingsWithDefaults({ ...defaults, showTokenUsed: false, showModelName })
-    expect(merged).toMatchObject({ showTokenUsed: false, messageLayout: 'classic' })
-    expect(merged).not.toHaveProperty('showModelName')
+    expect(merged).toMatchObject({ showTokenUsed: false, messageLayout: 'classic', showModelName: expected })
 
     const migrated = migrateSettings({ ...defaults, showTokenUsed: false, showModelName }, 8, { isDesktopLike: true })
-    expect(migrated).toMatchObject({ showTokenUsed: false })
-    expect(migrated).not.toHaveProperty('showModelName')
+    expect(migrated).toMatchObject({ showTokenUsed: false, showModelName: expected })
+  })
+
+  test('shows model names for stored settings without the field', () => {
+    const { showModelName: _omitted, ...withoutField } = createDefaultSettings()
+    expect(mergeSettingsWithDefaults(withoutField).showModelName).toBe(true)
+    expect(migrateSettings(withoutField, 9, { isDesktopLike: true }).showModelName).toBe(true)
   })
 
   test('uses the desktop parser default when an older snapshot has no parser', () => {

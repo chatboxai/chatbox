@@ -388,6 +388,11 @@ export const MessageSchema = z.object({
   name: z.string().optional(),
   generating: z.boolean().optional(),
   aiProvider: z.union([ModelProviderSchema, z.string()]).optional(),
+  /**
+   * Provider display name when the reply was generated (e.g. "DeepSeek" or a custom provider's name). Kept on the
+   * message so the name survives provider renames and deletions.
+   */
+  aiProviderName: z.string().optional(),
   /** Display name of the generating model (e.g. "Claude API (claude-sonnet-4-6)"), for the UI only. */
   model: z.string().optional(),
   /**
@@ -481,6 +486,8 @@ export const SessionHeaderSchema = z.object({
   archivedAt: z.number().optional(),
   copilotId: z.string().optional(),
   assistantAvatarKey: z.string().optional(),
+  /** Name shown beside the assistant avatar on replies; overrides the copilot and provider names. */
+  assistantName: z.string().optional(),
   backgroundImage: ImageSourceSchema.optional(),
   settings: SessionSettingsSchema.optional(),
   threadName: z.string().optional(),

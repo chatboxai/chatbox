@@ -102,3 +102,17 @@ export function clipMessageMenuPreview(text: string, maxLength = MESSAGE_MENU_TI
   const chars = Array.from(text.replace(/\s+/g, ' ').trim())
   return chars.length > maxLength ? `${chars.slice(0, maxLength).join('')}…` : chars.join('')
 }
+
+/**
+ * Splits a menu title around the first occurrence of `emphasis` (the author name), so it can be drawn in bold
+ * wherever the translation places it. Returns undefined when the title does not contain it.
+ */
+export function splitMessageMenuTitle(
+  title: string,
+  emphasis: string | undefined
+): { before: string; emphasis: string; after: string } | undefined {
+  if (!emphasis) return undefined
+  const index = title.indexOf(emphasis)
+  if (index < 0) return undefined
+  return { before: title.slice(0, index), emphasis, after: title.slice(index + emphasis.length) }
+}

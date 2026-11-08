@@ -25,8 +25,9 @@ const turnStyle = { transform: 'rotate(var(--message-swipe-turn, 0deg))' }
 const SWIPE_SHOWN_CLASS =
   'group-data-[swipe-state=dragging]/swipe-row:visible group-data-[swipe-state=armed]/swipe-row:visible group-data-[swipe-state=unavailable]/swipe-row:visible'
 
-/** Horizontal padding of a reply bubble on small screens; a pinned hint moves inside the bubble by this much. */
+/** Horizontal padding of a reply bubble on small screens; a pinned cue moves inside the bubble by this much. */
 const BUBBLE_INSET = 14
+const PINNED_BUBBLE_INSET = `calc(var(--message-swipe-pin-progress, 0) * ${BUBBLE_INSET}px)`
 
 /** Outlined retry ring that takes the avatar's place, same size, while the reply is dragged or armed. */
 function MessageSwipeAvatarRetry({ size }: { size: number }) {
@@ -50,7 +51,7 @@ function MessageSwipeAvatarRetry({ size }: { size: number }) {
  * The line that replaces the name row while swiping: what releasing will do, or why it will not. Without an avatar the
  * retry icon leads the line instead.
  */
-function MessageSwipeHint({ top, leadingIcon, bubble }: { top: number; leadingIcon: boolean; bubble: boolean }) {
+function MessageSwipeHint({ top, leadingIcon, inset }: { top: number; leadingIcon: boolean; inset: boolean }) {
   const { t } = useTranslation()
   return (
     <div
@@ -63,7 +64,7 @@ function MessageSwipeHint({ top, leadingIcon, bubble }: { top: number; leadingIc
       )}
       style={{
         marginTop: top,
-        paddingLeft: bubble ? `calc(var(--message-swipe-pin-progress, 0) * ${BUBBLE_INSET}px)` : undefined,
+        paddingLeft: inset ? PINNED_BUBBLE_INSET : undefined,
       }}
     >
       {leadingIcon && (
@@ -91,7 +92,9 @@ function MessageSwipeHint({ top, leadingIcon, bubble }: { top: number; leadingIc
  * The swipe cue: the retry ring over the avatar and the hint over the name row, drawn over the top of the row. When the
  * row's top is scrolled out of view, `useMessageSwipe` moves the cue down to the top of the row's visible part
  * (`--message-swipe-pin`) and shows a band of the surface colour behind it that fades out below, so the text it
- * passes over stays out of the way: the page in the classic layout, the bubble in the bubble layout.
+ * passes over stays out of the way: the page in the classic layout, the bubble in the bubble layout. A pinned cue over
+ * a bubble moves inside the bubble's padding: only the hint when the avatar sits beside the reply, the whole cue when
+ * the bubble starts at the cue's left edge (avatar above the reply, or no avatar).
  */
 export function MessageSwipeCue({
   avatarSize,
@@ -99,6 +102,7 @@ export function MessageSwipeCue({
   nameRowOffset,
   farSideSpace,
   showAvatar,
+  avatarAbove,
   bubble,
 }: {
   avatarSize: number
@@ -106,15 +110,23 @@ export function MessageSwipeCue({
   nameRowOffset: number
   farSideSpace: number
   showAvatar: boolean
+  /** The avatar sits above the reply, so the cue's left edge is the reply's left edge. */
+  avatarAbove: boolean
   bubble: boolean
 }) {
+  const avatarBeside = showAvatar && !avatarAbove
   const surface = bubble ? 'var(--chatbox-background-secondary)' : 'var(--chatbox-background-primary)'
   return (
     <div
       aria-hidden
       data-testid={TestId.message.swipeCue}
       className={cn('pointer-events-none invisible absolute left-0 top-0 z-10 flex', SWIPE_SHOWN_CLASS)}
-      style={{ right: farSideSpace, gap: avatarGap, transform: 'translateY(var(--message-swipe-pin, 0px))' }}
+      style={{
+        right: farSideSpace,
+        gap: avatarGap,
+        paddingLeft: bubble && !avatarBeside ? PINNED_BUBBLE_INSET : undefined,
+        transform: 'translateY(var(--message-swipe-pin, 0px))',
+      }}
     >
       <span
         className="absolute"
@@ -133,7 +145,7 @@ export function MessageSwipeCue({
         />
       </span>
       {showAvatar && <MessageSwipeAvatarRetry size={avatarSize} />}
-      <MessageSwipeHint top={nameRowOffset} leadingIcon={!showAvatar} bubble={bubble} />
+      <MessageSwipeHint top={nameRowOffset} leadingIcon={!showAvatar} inset={bubble && avatarBeside} />
     </div>
   )
 }

@@ -1475,7 +1475,9 @@ const _Message: FC<Props> = (props) => {
           align="flex-start"
           gap={rowLayout.avatarGap}
           className="group/swipe-row relative w-full min-w-0"
-          style={isUser ? { paddingLeft: rowLayout.farSideSpace } : { paddingRight: rowLayout.farSideSpace }}
+          style={
+            isUser ? { paddingLeft: rowLayout.userFarSideSpace } : { paddingRight: rowLayout.assistantFarSideSpace }
+          }
         >
           {longPressHighlight}
           {swipeFeedback && (
@@ -1483,12 +1485,13 @@ const _Message: FC<Props> = (props) => {
               avatarSize={rowLayout.avatarSize}
               avatarGap={rowLayout.avatarGap}
               nameRowOffset={rowLayout.nameRowOffset}
-              farSideSpace={rowLayout.farSideSpace}
+              farSideSpace={rowLayout.assistantFarSideSpace}
               showAvatar={shouldShowAvatar}
+              avatarAbove={rowLayout.assistantAvatarAbove}
               bubble={isBubbleLayout}
             />
           )}
-          {!isUser && avatar}
+          {!isUser && !rowLayout.assistantAvatarAbove && avatar}
           <Flex
             direction="column"
             align={isUser ? 'flex-end' : 'flex-start'}
@@ -1496,7 +1499,8 @@ const _Message: FC<Props> = (props) => {
             style={{ maxWidth: isUser ? rowLayout.userBubbleMaxWidth : rowLayout.assistantContentMaxWidth }}
           >
             {!isUser && (
-              <div className="relative w-full min-w-0">
+              <Flex align="flex-start" gap={rowLayout.avatarGap} className="relative w-full min-w-0">
+                {rowLayout.assistantAvatarAbove && avatar}
                 <MessageNameRow
                   header={header}
                   layout={isBubbleLayout ? 'bubble' : 'classic'}
@@ -1505,7 +1509,7 @@ const _Message: FC<Props> = (props) => {
                   generating={showGenerating && !shouldShowAvatar}
                   className={swipeFeedback ? MESSAGE_SWIPE_NAME_HIDDEN_CLASS : undefined}
                 />
-              </div>
+              </Flex>
             )}
             {messageContent}
             {(msg.files || msg.links) && (

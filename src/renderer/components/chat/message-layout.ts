@@ -9,8 +9,15 @@ export const ASSISTANT_CONTENT_MAX_WIDTH = 840
 export type ConversationRowLayout = {
   avatarSize: number
   avatarGap: number
-  /** Space kept clear on the side opposite the speaker: right of assistant replies, left of user bubbles. */
-  farSideSpace: number
+  /** Space kept clear left of user bubbles, on the side opposite the speaker. */
+  userFarSideSpace: number
+  /** Space kept clear right of assistant replies; none when the assistant avatar sits above the reply. */
+  assistantFarSideSpace: number
+  /**
+   * On a small screen the assistant avatar sits above the reply, beside its name row, so the reply takes the full
+   * width of the column. Elsewhere the avatar sits beside the reply.
+   */
+  assistantAvatarAbove: boolean
   userBubbleMaxWidth: string
   /** The reply spans the full-width content column instead of stopping at ASSISTANT_CONTENT_MAX_WIDTH. */
   spansColumn: boolean
@@ -35,10 +42,14 @@ export function getConversationRowLayout(
 ): ConversationRowLayout {
   const avatarSize = isSmallScreen ? 24 : 28
   const spansColumn = wideColumn && !isSmallScreen
+  const farSideSpace = spansColumn ? 0 : showAvatar ? (isSmallScreen ? 24 : 64) : isSmallScreen ? 44 : 128
+  const assistantAvatarAbove = isSmallScreen && showAvatar
   return {
     avatarSize,
     avatarGap: isSmallScreen ? 8 : 10,
-    farSideSpace: spansColumn ? 0 : showAvatar ? (isSmallScreen ? 24 : 64) : isSmallScreen ? 44 : 128,
+    userFarSideSpace: farSideSpace,
+    assistantFarSideSpace: assistantAvatarAbove ? 0 : farSideSpace,
+    assistantAvatarAbove,
     userBubbleMaxWidth: isSmallScreen ? '80%' : 'min(640px, 72%)',
     spansColumn,
     assistantContentMaxWidth: spansColumn ? undefined : ASSISTANT_CONTENT_MAX_WIDTH,

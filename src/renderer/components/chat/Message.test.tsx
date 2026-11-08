@@ -34,35 +34,50 @@ describe('Conversation row layout', () => {
     expect(getConversationRowLayout(false, true)).toEqual({
       avatarSize: 28,
       avatarGap: 10,
-      farSideSpace: 64,
+      userFarSideSpace: 64,
+      assistantFarSideSpace: 64,
+      assistantAvatarAbove: false,
       userBubbleMaxWidth: 'min(640px, 72%)',
       spansColumn: false,
       assistantContentMaxWidth: ASSISTANT_CONTENT_MAX_WIDTH,
       generatingLoaderSize: 32,
       nameRowOffset: 4,
     })
-    expect(getConversationRowLayout(false, false)).toMatchObject({ farSideSpace: 128, nameRowOffset: 0 })
+    expect(getConversationRowLayout(false, false)).toMatchObject({
+      userFarSideSpace: 128,
+      assistantFarSideSpace: 128,
+      nameRowOffset: 0,
+    })
   })
 
-  test('uses the small-screen avatar, gap and far-side space', () => {
+  test('puts the small-screen assistant avatar above a reply that runs to the right edge', () => {
     expect(getConversationRowLayout(true, true)).toEqual({
       avatarSize: 24,
       avatarGap: 8,
-      farSideSpace: 24,
+      userFarSideSpace: 24,
+      assistantFarSideSpace: 0,
+      assistantAvatarAbove: true,
       userBubbleMaxWidth: '80%',
       spansColumn: false,
       assistantContentMaxWidth: ASSISTANT_CONTENT_MAX_WIDTH,
       generatingLoaderSize: 28,
       nameRowOffset: 2,
     })
-    expect(getConversationRowLayout(true, false)).toMatchObject({ farSideSpace: 44, nameRowOffset: 0 })
+    expect(getConversationRowLayout(true, false)).toMatchObject({
+      userFarSideSpace: 44,
+      assistantFarSideSpace: 44,
+      assistantAvatarAbove: false,
+      nameRowOffset: 0,
+    })
   })
 
   test('lets replies span the full-width column on wide screens', () => {
     for (const showAvatar of [true, false]) {
       const layout = getConversationRowLayout(false, showAvatar, true)
       expect(layout.spansColumn).toBe(true)
-      expect(layout.farSideSpace).toBe(0)
+      expect(layout.userFarSideSpace).toBe(0)
+      expect(layout.assistantFarSideSpace).toBe(0)
+      expect(layout.assistantAvatarAbove).toBe(false)
       expect(layout.assistantContentMaxWidth).toBeUndefined()
       expect(layout.userBubbleMaxWidth).toBe('min(640px, 72%)')
     }

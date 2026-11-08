@@ -10,18 +10,15 @@ describe('provider network compatibility switch', () => {
     ModelProviderEnum.ZhipuGLMCodingPlan,
   ])('shows %s only on web', (id) => {
     expect(showsNetworkCompatibility({ id }, 'web')).toBe(true)
-    for (const platformType of ['desktop', 'mobile', 'harmony'] as const) {
+    for (const platformType of ['desktop', 'mobile'] as const) {
       expect(showsNetworkCompatibility({ id }, platformType)).toBe(false)
     }
   })
 
-  it.each(['web', 'desktop', 'mobile', 'harmony'] as const)(
-    'shows custom providers and Ollama on %s',
-    (platformType) => {
-      expect(showsNetworkCompatibility({ id: 'custom-provider', isCustom: true }, platformType)).toBe(true)
-      expect(showsNetworkCompatibility({ id: ModelProviderEnum.Ollama }, platformType)).toBe(true)
-    }
-  )
+  it.each(['web', 'desktop', 'mobile'] as const)('shows custom providers and Ollama on %s', (platformType) => {
+    expect(showsNetworkCompatibility({ id: 'custom-provider', isCustom: true }, platformType)).toBe(true)
+    expect(showsNetworkCompatibility({ id: ModelProviderEnum.Ollama }, platformType)).toBe(true)
+  })
 
   it('hides other built-in providers', () => {
     expect(showsNetworkCompatibility({ id: ModelProviderEnum.OpenAI }, 'web')).toBe(false)

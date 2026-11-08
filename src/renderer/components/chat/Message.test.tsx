@@ -1,6 +1,6 @@
 import { type Message, MessageRoleEnum } from '@shared/types'
 import { describe, expect, test, vi } from 'vitest'
-import { isErrorOnlyMessage, shouldRightAlignMessage } from './message-layout'
+import { getConversationContentClassName, getConversationRowLayout, isErrorOnlyMessage } from './message-layout'
 import { getMessageRoleClass } from './message-role-class'
 import { getMessageTokenDisplay } from './message-token-display'
 
@@ -24,21 +24,53 @@ describe('Message role classes', () => {
   })
 })
 
-describe('Message layout alignment', () => {
-  test('keeps user messages left-aligned in classic layout', () => {
-    expect(shouldRightAlignMessage('left', MessageRoleEnum.User)).toBe(false)
+describe('Conversation row layout', () => {
+  test('uses the wide-screen avatar, gap and far-side space', () => {
+    expect(getConversationRowLayout(false, true)).toEqual({
+      avatarSize: 36,
+      avatarGap: 12,
+      farSideSpace: 64,
+      userBubbleMaxWidth: 'min(640px, 72%)',
+      generatingLoaderSize: 40,
+    })
+    expect(getConversationRowLayout(false, false).farSideSpace).toBe(128)
   })
 
-  test('right-aligns user messages only in bubble layout', () => {
-    expect(shouldRightAlignMessage('bubble', MessageRoleEnum.User)).toBe(true)
-    expect(shouldRightAlignMessage('bubble', MessageRoleEnum.Assistant)).toBe(false)
+  test('uses the small-screen avatar, gap and far-side space', () => {
+    expect(getConversationRowLayout(true, true)).toEqual({
+      avatarSize: 32,
+      avatarGap: 8,
+      farSideSpace: 24,
+      userBubbleMaxWidth: '80%',
+      generatingLoaderSize: 36,
+    })
+    expect(getConversationRowLayout(true, false).farSideSpace).toBe(44)
+  })
+})
+
+describe('Conversation content surface', () => {
+  const content = (layout: 'classic' | 'bubble', role: 'user' | 'assistant', errorOnly = false) =>
+    getConversationContentClassName({ layout, role, isSmallScreen: false, errorOnly })
+
+  test('draws the same user bubble in both layouts', () => {
+    expect(content('classic', 'user')).toBe(content('bubble', 'user'))
+    expect(content('classic', 'user')).toContain('bg-[var(--mantine-color-chatbox-brand-filled)]')
+    expect(content('classic', 'user')).toContain('rounded-tr-[4px]')
   })
 
-  test('does not right-align system or tool messages in any layout', () => {
-    expect(shouldRightAlignMessage('left', MessageRoleEnum.System)).toBe(false)
-    expect(shouldRightAlignMessage('bubble', MessageRoleEnum.System)).toBe(false)
-    expect(shouldRightAlignMessage('left', MessageRoleEnum.Tool)).toBe(false)
-    expect(shouldRightAlignMessage('bubble', MessageRoleEnum.Tool)).toBe(false)
+  test('lays assistant replies flat in classic and inside a bubble in bubble layout', () => {
+    expect(content('classic', 'assistant')).not.toContain('bg-')
+    expect(content('classic', 'assistant')).not.toContain('px-')
+    expect(content('bubble', 'assistant')).toContain('bg-chatbox-background-secondary')
+    expect(content('bubble', 'assistant')).toContain('rounded-tl-[4px]')
+    expect(content('bubble', 'assistant')).toContain('px-4 py-2.5')
+    expect(
+      getConversationContentClassName({ layout: 'bubble', role: 'assistant', isSmallScreen: true, errorOnly: false })
+    ).toContain('px-3.5 py-[9px]')
+  })
+
+  test('keeps error-only replies out of the bubble surface', () => {
+    expect(content('bubble', 'assistant', true)).not.toContain('bg-')
   })
 })
 

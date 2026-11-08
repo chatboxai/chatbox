@@ -12,7 +12,6 @@ const { state } = vi.hoisted(() => {
     showWordCount: false,
     showTokenCount: false,
     showTokenUsed: true,
-    showModelName: true,
     showMessageTimestamp: false,
     showAvatar: true,
     enableMarkdownRendering: true,

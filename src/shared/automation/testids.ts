@@ -8,7 +8,7 @@
  */
 
 export const AUTOMATION_CONTRACT_ID = 'chatbox-ui'
-export const AUTOMATION_CONTRACT_VERSION = '1.15.0'
+export const AUTOMATION_CONTRACT_VERSION = '1.16.0'
 export const AUTOMATION_CONTRACT_VERSION_ATTRIBUTE = 'data-automation-contract-version'
 
 /** Adjacent identity attributes hosted on TestId elements. */
@@ -32,6 +32,8 @@ export const AutomationStateAttr = {
   transcriptLastMessageId: 'data-transcript-last-message-id',
   transcriptWindowEpoch: 'data-transcript-window-epoch',
   navigationEntryCount: 'data-navigation-entry-count',
+  /** `classic` or `bubble` on each user and assistant `message-item`. */
+  messageLayout: 'data-message-layout',
 } as const
 
 export type AutomationReasoningLevel = 'default' | 'off' | 'low' | 'medium' | 'high'

@@ -36,6 +36,7 @@ import { useTranslation } from 'react-i18next'
 import { type ContextProp, Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import { rendererApplication } from '@/app/renderer-application'
 import { contentColumnClassName, paddedContentColumnClassName } from '@/components/layout/contentColumn'
+import { useMyCopilots } from '@/hooks/useCopilots'
 import { platformTypeAtom } from '@/hooks/useNeedRoomForWinControls'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { useSessionControls } from '@/hooks/useSessionLockState'
@@ -59,6 +60,7 @@ import ForkGroup from './ForkGroup'
 import ForkMarkerMessage from './ForkMarkerMessage'
 import Message from './Message'
 import MessageMinimapRail from './MessageMinimapRail'
+import { getSessionAssistantName } from './MessageNameRow'
 import MessageNavigation, { ScrollToBottomButton } from './MessageNavigation'
 import { areMinimapAnchorsEqual, buildMessageMinimapAnchors } from './message-navigation-utils'
 import { buildTranscriptRenderItems } from './message-render-items'
@@ -90,6 +92,8 @@ const MessageList = forwardRef<
   const hideSystemPromptSetting = useSettingsStore((state) => state.hideSystemPromptMessage)
   const globalMaxContextMessageCount = useSettingsStore((state) => state.maxContextMessageCount)
   const sessionMode = resolveSessionMode(useSessionAgentMode(session.id).value)
+  const { copilots } = useMyCopilots()
+  const assistantName = getSessionAssistantName(session, copilots)
   const controls = useSessionControls(session, session.id)
   const sessionLocks = controls.locks
   const hideSystemPrompt = hideSystemPromptSetting || !isActionAvailableInMode('session-system-prompt', sessionMode)
@@ -690,6 +694,7 @@ const MessageList = forwardRef<
                 allowGeneratingStop
                 assistantAvatarKey={session.assistantAvatarKey}
                 sessionPicUrl={session.picUrl}
+                assistantName={assistantName}
               />
             )}
           </ErrorBoundary>
@@ -705,6 +710,7 @@ const MessageList = forwardRef<
             sessionMode={sessionMode}
             assistantAvatarKey={session.assistantAvatarKey}
             sessionPicUrl={session.picUrl}
+            assistantName={assistantName}
           />
         )}
       </Stack>

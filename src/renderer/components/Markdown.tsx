@@ -56,15 +56,16 @@ import {
   IconJson,
   IconPlayerPlayFilled,
   type IconProps,
-  IconWorldUpload,
   IconTextWrap,
   IconTextWrapDisabled,
+  IconWorldUpload,
 } from '@tabler/icons-react'
 import clsx from 'clsx'
 import { visit } from 'unist-util-visit'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { useCopied } from '@/hooks/useCopied'
 import { highlight, highlightSync, preloadLanguage, type ShikiTheme } from '../packages/shiki'
+import { rehypeTranscriptBlocks } from './chat/transcript-markdown-blocks'
 import { ScalableIcon } from './common/ScalableIcon'
 import { ImageViewer, ImageViewerItem } from './ImageViewer'
 import IconDart from './icons/Dart'
@@ -73,7 +74,6 @@ import { MessageMermaid, SVGPreview } from './Mermaid'
 import { SandboxFileLink } from './message-parts/SandboxFileLink'
 import { parseSandboxLinkHref } from './message-parts/sandbox-link'
 import { type StreamingTextSegment, useStreamingTextSegments, wrapStreamingSegmentsInHast } from './streaming-text-fade'
-import { rehypeTranscriptBlocks } from './chat/transcript-markdown-blocks'
 import './shiki-code.css'
 
 const CODE_BLOCK_COLLAPSE_LINE_THRESHOLD = 7
@@ -230,6 +230,12 @@ function Markdown(props: {
               )
             },
             img: ({ node, ...props }) => <MarkdownImage {...props} />,
+            // Wide tables scroll inside their own box so the surrounding reply keeps its width.
+            table: ({ node, ...props }) => (
+              <div className="markdown-table-scroll">
+                <table {...props} />
+              </div>
+            ),
           }),
           [
             uniqueId,

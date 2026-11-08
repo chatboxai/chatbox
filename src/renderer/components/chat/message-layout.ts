@@ -1,9 +1,59 @@
 import type { Message } from '@shared/types'
+import { cn } from '@/lib/utils'
 
-type MessageLayout = 'left' | 'bubble' | undefined
+export type MessageLayout = 'classic' | 'bubble'
 
-export function shouldRightAlignMessage(messageLayout: MessageLayout, role: Message['role']): boolean {
-  return messageLayout === 'bubble' && role === 'user'
+/** Widest an assistant reply may grow, in either layout. */
+export const ASSISTANT_CONTENT_MAX_WIDTH = 840
+
+export type ConversationRowLayout = {
+  avatarSize: number
+  avatarGap: number
+  /** Space kept clear on the side opposite the speaker: right of assistant replies, left of user bubbles. */
+  farSideSpace: number
+  userBubbleMaxWidth: string
+  /** Loader drawn around the avatar while a reply streams. */
+  generatingLoaderSize: number
+}
+
+export function getConversationRowLayout(isSmallScreen: boolean, showAvatar: boolean): ConversationRowLayout {
+  const avatarSize = isSmallScreen ? 32 : 36
+  return {
+    avatarSize,
+    avatarGap: isSmallScreen ? 8 : 12,
+    farSideSpace: showAvatar ? (isSmallScreen ? 24 : 64) : isSmallScreen ? 44 : 128,
+    userBubbleMaxWidth: isSmallScreen ? '80%' : 'min(640px, 72%)',
+    generatingLoaderSize: avatarSize + 4,
+  }
+}
+
+const BUBBLE_PADDING = { small: 'px-3.5 py-[9px]', wide: 'px-4 py-2.5' } as const
+
+/**
+ * Surface classes for user and assistant message content. The two layouts differ only in the assistant reply:
+ * classic lays it flat on the page, bubble wraps it in a secondary-colored bubble.
+ */
+export function getConversationContentClassName({
+  layout,
+  role,
+  isSmallScreen,
+  errorOnly,
+}: {
+  layout: MessageLayout
+  role: 'user' | 'assistant'
+  isSmallScreen: boolean
+  errorOnly: boolean
+}): string {
+  const padding = isSmallScreen ? BUBBLE_PADDING.small : BUBBLE_PADDING.wide
+  if (role === 'user') {
+    return cn(
+      'inline-block max-w-full min-w-0 rounded-2xl rounded-tr-[4px] text-white',
+      'bg-[var(--mantine-color-chatbox-brand-filled)]',
+      padding
+    )
+  }
+  if (layout === 'classic' || errorOnly) return 'max-w-full min-w-0'
+  return cn('inline-block max-w-full min-w-0 rounded-2xl rounded-tl-[4px] bg-chatbox-background-secondary', padding)
 }
 
 export function isErrorOnlyMessage(message: Message): boolean {

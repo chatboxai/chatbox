@@ -18,7 +18,7 @@ import type { PromptCacheDeleteTarget } from '@chatbox/core/session/prompt-cache
 import NiceModal from '@ebay/nice-modal-react'
 import { ActionIcon, type ActionIconProps, Anchor, Button, Flex, Loader, Modal, Stack, Text } from '@mantine/core'
 import { Box, Grid, useTheme } from '@mui/material'
-import { TestId } from '@shared/automation/testids'
+import { AutomationStateAttr, TestId } from '@shared/automation/testids'
 import type { Message, MessageBackgroundTask, MessageTextPart, MessageToolCallPart, SessionType } from '@shared/types'
 import { getMessageText } from '@shared/utils/message'
 import {
@@ -42,7 +42,6 @@ import {
   IconTrash,
 } from '@tabler/icons-react'
 import clsx from 'clsx'
-import * as dateFns from 'date-fns'
 import type React from 'react'
 import { type FC, forwardRef, type MouseEventHandler, memo, useCallback, useMemo, useRef, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
@@ -80,8 +79,14 @@ import { MessageArtifactsUI, ToolCallPartUI } from '../message-parts/ToolCallPar
 import { MessageAttachmentGrid } from './MessageAttachmentGrid'
 import MessageErrTips from './MessageErrTips'
 import MessageStatuses, { PreparingToolCallStatus } from './MessageLoading'
+import { formatMessageTimestamp, MessageNameRow } from './MessageNameRow'
 import { getMessageActionVisibilityClass, type MessageButtonGroup } from './message-action-state'
-import { isErrorOnlyMessage, shouldRightAlignMessage } from './message-layout'
+import {
+  ASSISTANT_CONTENT_MAX_WIDTH,
+  getConversationContentClassName,
+  getConversationRowLayout,
+  isErrorOnlyMessage,
+} from './message-layout'
 import { getMessagePreviewText } from './message-navigation-utils'
 import { getMessageRoleClass } from './message-role-class'
 import { createCollapsedDisplayGroups, createMessageTimelineLayout } from './message-timeline'
@@ -135,6 +140,8 @@ interface Props {
   small?: boolean
   assistantAvatarKey?: string
   sessionPicUrl?: string
+  /** Name of the copilot the chat was started from, shown before the model in the assistant name row. */
+  assistantName?: string
 }
 
 const BackgroundTaskNotificationUI: FC<{ task: MessageBackgroundTask; className?: string }> = ({ task, className }) => {
@@ -182,6 +189,7 @@ const _Message: FC<Props> = (props) => {
     small,
     assistantAvatarKey,
     sessionPicUrl,
+    assistantName,
   } = props
 
   const { t } = useTranslation()
@@ -189,7 +197,6 @@ const _Message: FC<Props> = (props) => {
   const isSmallScreen = useIsSmallScreen()
   const userAvatarKey = useSettingsStore((state) => state.userAvatarKey)
   const showMessageTimestamp = useSettingsStore((state) => state.showMessageTimestamp)
-  const showModelName = useSettingsStore((state) => state.showModelName)
   const showWordCount = useSettingsStore((state) => state.showWordCount)
   const showTokenUsed = useSettingsStore((state) => state.showTokenUsed)
   const showFirstTokenLatency = useSettingsStore((state) => state.showFirstTokenLatency)
@@ -462,9 +469,6 @@ const _Message: FC<Props> = (props) => {
   // because they are technical/universal abbreviations that remain readable across all locales.
   const tips: { label: string; tooltip?: string }[] = []
   if (props.sessionType === 'chat' || !props.sessionType) {
-    if (showModelName && props.msg.role === 'assistant') {
-      tips.push({ label: props.msg.model || 'unknown', tooltip: t('Model') as string })
-    }
     if (showTokenUsed && msg.role === 'assistant' && !msg.generating) {
       const tokenDisplay = getMessageTokenDisplay(msg)
       if (tokenDisplay) {
@@ -492,25 +496,16 @@ const _Message: FC<Props> = (props) => {
         })
     }
   } else if (props.sessionType === 'picture') {
-    if (showModelName && props.msg.role === 'assistant') {
-      tips.push({ label: props.msg.model || 'unknown', tooltip: t('Model') as string })
-      if (props.msg.style) tips.push({ label: props.msg.style })
+    if (props.msg.role === 'assistant' && props.msg.style) {
+      tips.push({ label: props.msg.style })
     }
   }
 
   const finishTip = getMessageFinishTip(msg, t)
 
-  if (showMessageTimestamp && msg.timestamp !== undefined) {
-    const date = new Date(msg.timestamp)
-    let messageTimestamp: string
-    if (dateFns.isToday(date)) {
-      messageTimestamp = dateFns.format(date, 'HH:mm')
-    } else if (dateFns.isThisYear(date)) {
-      messageTimestamp = dateFns.format(date, 'MM-dd HH:mm')
-    } else {
-      messageTimestamp = dateFns.format(date, 'yyyy-MM-dd HH:mm')
-    }
-    tips.push({ label: messageTimestamp })
+  // Assistant replies show their time in the name row.
+  if (showMessageTimestamp && msg.timestamp !== undefined && msg.role !== 'assistant') {
+    tips.push({ label: formatMessageTimestamp(msg.timestamp) })
   }
 
   const trackWithSessionName = useCallback(
@@ -802,30 +797,11 @@ const _Message: FC<Props> = (props) => {
     [canDeleteMessage, msg.id, shouldConfirmPromptCacheDelete]
   )
 
-  const isUserBubble = isBubbleLayout && msg.role === 'user'
-  const isClassicLayout = !isBubbleLayout
-  const isClassicMessage = isClassicLayout && (msg.role === 'assistant' || msg.role === 'user')
-  const isRightAlignedMessage = shouldRightAlignMessage(messageLayout, msg.role)
+  const conversationRole = msg.role === 'user' || msg.role === 'assistant' ? msg.role : null
+  const isRightAlignedMessage = msg.role === 'user'
   const messageRoleClass = getMessageRoleClass(msg.role)
   const shouldShowAvatar = showAvatar ?? true
-  // Small screens put a smaller assistant avatar above the reply so the text keeps the full width.
-  const stackAssistantAvatar = isSmallScreen && shouldShowAvatar && msg.role === 'assistant'
-  const stackedAssistantAvatar = stackAssistantAvatar && (
-    <Box className="relative mb-1 w-fit self-start">
-      <AssistantAvatar
-        size={24}
-        avatarKey={assistantAvatarKey}
-        picUrl={sessionPicUrl}
-        sessionType={props.sessionType}
-        onClick={onClickAssistantAvatar}
-      />
-      {msg.generating && (
-        <Flex className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-          <Loader size={28} classNames={{ root: "after:content-[''] after:border-[2px]" }} />
-        </Flex>
-      )}
-    </Box>
-  )
+  const rowLayout = getConversationRowLayout(isSmallScreen, shouldShowAvatar)
   const statusElements = <MessageStatuses statuses={leadingStatuses} />
   const errorTipsElement = (
     <MessageErrTips
@@ -839,27 +815,16 @@ const _Message: FC<Props> = (props) => {
     <>
       <div
         data-testid={TestId.message.content}
-        className={cn(
-          isBubbleLayout
-            ? 'inline-block max-w-full min-w-0'
-            : msg.role === 'assistant'
-              ? 'w-full min-w-0'
-              : 'inline-block max-w-full min-w-0',
-          isBubbleLayout
-            ? cn(
-                'px-4 py-1 rounded-lg',
-                msg.role === 'user'
-                  ? 'bg-[var(--mantine-color-chatbox-brand-filled)] text-white'
-                  : msg.role === 'assistant'
-                    ? isErrorOnlyMessage(msg)
-                      ? '!p-0 !bg-transparent'
-                      : 'bg-chatbox-background-secondary'
-                    : 'bg-chatbox-background-secondary rounded-lg'
-              )
-            : msg.role !== 'assistant'
-              ? 'bg-chatbox-background-secondary px-4 rounded-lg'
-              : ''
-        )}
+        className={
+          conversationRole
+            ? getConversationContentClassName({
+                layout: isBubbleLayout ? 'bubble' : 'classic',
+                role: conversationRole,
+                isSmallScreen,
+                errorOnly: isErrorOnlyMessage(msg),
+              })
+            : 'inline-block max-w-full min-w-0 bg-chatbox-background-secondary px-4 rounded-lg'
+        }
       >
         <Box
           className={cn('msg-content', { 'msg-content-small': small })}
@@ -1011,7 +976,7 @@ const _Message: FC<Props> = (props) => {
                               })
                             }}
                           >
-                            {isUserBubble ? (
+                            {msg.role === 'user' ? (
                               <>
                                 <span className="block mb-1 text-xs text-white/80">
                                   {t('OCR Text')} ({item.ocrResult.length} {t('characters')})
@@ -1253,7 +1218,7 @@ const _Message: FC<Props> = (props) => {
     </>
   )
 
-  const meta = (
+  const meta = (tipsElements || msg.steered) && (
     <Flex
       direction="column"
       gap={2}
@@ -1287,101 +1252,91 @@ const _Message: FC<Props> = (props) => {
     return <BackgroundTaskNotificationUI task={msg.backgroundTask} className={className} />
   }
 
-  if (isBubbleLayout && msg.role === 'user') {
+  if (conversationRole) {
+    const isUser = conversationRole === 'user'
+    const avatar = shouldShowAvatar && (
+      <Box className="relative shrink-0">
+        {isUser ? (
+          <UserAvatar
+            size={rowLayout.avatarSize}
+            avatarKey={userAvatarKey}
+            onClick={() => navigateToSettings('/appearance')}
+          />
+        ) : (
+          <AssistantAvatar
+            size={rowLayout.avatarSize}
+            avatarKey={assistantAvatarKey}
+            picUrl={sessionPicUrl}
+            sessionType={props.sessionType}
+            onClick={onClickAssistantAvatar}
+          />
+        )}
+        {!isUser && msg.generating && (
+          <Flex className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+            <Loader
+              size={rowLayout.generatingLoaderSize}
+              classNames={{ root: "after:content-[''] after:border-[2px]" }}
+            />
+          </Flex>
+        )}
+      </Box>
+    )
     return (
       <Box
         data-testid={TestId.message.item}
         data-message-role={msg.role}
+        {...{ [AutomationStateAttr.messageLayout]: isBubbleLayout ? 'bubble' : 'classic' }}
         ref={ref}
         id={props.id}
         key={msg.id}
         className={cn(
           'group/message',
           'msg-block',
-          'bubble-msg',
-          'bubble-user-msg',
-          'px-2 py-1.5',
+          (isUser || isBubbleLayout) && 'bubble-msg',
+          isUser && 'bubble-user-msg',
+          'pt-4 sm:pt-5',
           msg.generating ? 'rendering' : 'render-done',
           messageRoleClass,
           className,
           'w-full'
         )}
         sx={{
-          paddingBottom: '0.1rem',
+          paddingBottom: 0,
           paddingX: '1rem',
         }}
       >
-        <Flex justify="flex-end" gap="xs" className="w-full min-w-0">
+        <Flex
+          justify={isUser ? 'flex-end' : 'flex-start'}
+          align="flex-start"
+          gap={rowLayout.avatarGap}
+          className="w-full min-w-0"
+          style={isUser ? { paddingLeft: rowLayout.farSideSpace } : { paddingRight: rowLayout.farSideSpace }}
+        >
+          {!isUser && avatar}
           <Flex
             direction="column"
-            align="flex-end"
-            className={cn(
-              'min-w-0',
-              isSmallScreen ? (shouldShowAvatar ? 'max-w-[calc(100%-3rem)]' : 'max-w-[95%]') : 'max-w-[85%]'
-            )}
+            align={isUser ? 'flex-end' : 'flex-start'}
+            className={cn('min-w-0', !isUser && 'flex-1')}
+            style={{ maxWidth: isUser ? rowLayout.userBubbleMaxWidth : ASSISTANT_CONTENT_MAX_WIDTH }}
           >
+            {!isUser && (
+              <MessageNameRow
+                assistantName={assistantName}
+                model={msg.model}
+                timestamp={showMessageTimestamp ? msg.timestamp : undefined}
+                layout={isBubbleLayout ? 'bubble' : 'classic'}
+                isSmallScreen={isSmallScreen}
+                generating={Boolean(msg.generating) && !shouldShowAvatar}
+              />
+            )}
             {messageContent}
-            {(msg.files || msg.links) && <MessageAttachmentGrid files={msg.files} links={msg.links} align="end" />}
+            {(msg.files || msg.links) && (
+              <MessageAttachmentGrid files={msg.files} links={msg.links} align={isUser ? 'end' : 'start'} />
+            )}
             {meta}
-            {actionButtons}
+            {isUser ? actionButtons : messageActions}
           </Flex>
-          {shouldShowAvatar && (
-            <Box className="mt-1 shrink-0">
-              <UserAvatar avatarKey={userAvatarKey} onClick={() => navigateToSettings('/appearance')} />
-            </Box>
-          )}
-        </Flex>
-      </Box>
-    )
-  }
-
-  if (isClassicMessage) {
-    return (
-      <Box
-        ref={ref}
-        id={props.id}
-        key={msg.id}
-        className={cn(
-          'group/message',
-          'msg-block',
-          'px-2 py-1.5',
-          msg.generating ? 'rendering' : 'render-done',
-          messageRoleClass,
-          className,
-          'w-full'
-        )}
-        sx={{
-          paddingBottom: '0.1rem',
-          paddingX: '1rem',
-        }}
-      >
-        <Flex gap="xs" align="flex-start" className="w-full min-w-0">
-          {shouldShowAvatar && !stackAssistantAvatar && (
-            <Box className={cn('relative shrink-0', msg.role !== 'assistant' ? 'mt-1' : 'mt-2')}>
-              {msg.role === 'assistant' ? (
-                <AssistantAvatar
-                  avatarKey={assistantAvatarKey}
-                  picUrl={sessionPicUrl}
-                  sessionType={props.sessionType}
-                  onClick={onClickAssistantAvatar}
-                />
-              ) : (
-                <UserAvatar avatarKey={userAvatarKey} onClick={() => navigateToSettings('/appearance')} />
-              )}
-              {msg.role === 'assistant' && msg.generating && (
-                <Flex className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-                  <Loader size={32} className=" " classNames={{ root: "after:content-[''] after:border-[2px]" }} />
-                </Flex>
-              )}
-            </Box>
-          )}
-          <Flex direction="column" align="flex-start" className="min-w-0 flex-1 max-w-full">
-            {stackedAssistantAvatar}
-            {messageContent}
-            {(msg.files || msg.links) && <MessageAttachmentGrid files={msg.files} links={msg.links} align="start" />}
-            {meta}
-            {messageActions}
-          </Flex>
+          {isUser && avatar}
         </Flex>
       </Box>
     )
@@ -1410,47 +1365,19 @@ const _Message: FC<Props> = (props) => {
       }}
     >
       <Grid container wrap="nowrap" spacing={1.5}>
-        {shouldShowAvatar && !stackAssistantAvatar && (
+        {shouldShowAvatar && (
           <Grid item>
-            <Box className={cn('relative', msg.role !== 'assistant' ? 'mt-1' : 'mt-2')}>
-              {
-                {
-                  assistant: (
-                    <AssistantAvatar
-                      avatarKey={assistantAvatarKey}
-                      picUrl={sessionPicUrl}
-                      sessionType={props.sessionType}
-                      onClick={onClickAssistantAvatar}
-                    />
-                  ),
-                  user: !isBubbleLayout ? (
-                    <UserAvatar avatarKey={userAvatarKey} onClick={() => navigateToSettings('/appearance')} />
-                  ) : null,
-                  system: <SystemAvatar sessionType={props.sessionType} onClick={onClickAssistantAvatar} />,
-                  tool: null,
-                }[msg.role]
-              }
-              {msg.role === 'assistant' && msg.generating && (
-                <Flex className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-                  <Loader size={32} className=" " classNames={{ root: "after:content-[''] after:border-[2px]" }} />
-                </Flex>
+            <Box className="relative mt-1">
+              {msg.role === 'system' && (
+                <SystemAvatar sessionType={props.sessionType} onClick={onClickAssistantAvatar} />
               )}
             </Box>
           </Grid>
         )}
-        <Grid
-          item
-          xs
-          sm
-          container
-          sx={{ width: '0px', paddingRight: shouldShowAvatar && !stackAssistantAvatar ? '15px' : '0px' }}
-        >
+        <Grid item xs sm container sx={{ width: '0px', paddingRight: shouldShowAvatar ? '15px' : '0px' }}>
           <Grid item xs>
-            {stackedAssistantAvatar}
             {messageContent}
-            {(msg.files || msg.links) && (
-              <MessageAttachmentGrid files={msg.files} links={msg.links} align={isUserBubble ? 'end' : 'start'} />
-            )}
+            {(msg.files || msg.links) && <MessageAttachmentGrid files={msg.files} links={msg.links} align="start" />}
             {meta}
             {messageActions}
           </Grid>

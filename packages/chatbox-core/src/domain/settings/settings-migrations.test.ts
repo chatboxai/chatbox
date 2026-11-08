@@ -85,6 +85,48 @@ describe('settings migrations', () => {
     expect(migrateSettings(withoutThreshold, 7, { isDesktopLike: true }).compactionThreshold).toBe(0.75)
   })
 
+  test('maps the legacy left layout to classic and keeps bubble users on bubbles', () => {
+    const defaults = createDefaultSettings()
+    expect(defaults.messageLayout).toBe('classic')
+    expect(migrateSettings({ ...defaults, messageLayout: 'left' }, 8, { isDesktopLike: true }).messageLayout).toBe(
+      'classic'
+    )
+    expect(migrateSettings({ ...defaults, messageLayout: 'bubble' }, 8, { isDesktopLike: true }).messageLayout).toBe(
+      'bubble'
+    )
+    expect(mergeSettingsWithDefaults({ ...defaults, messageLayout: 'left' }).messageLayout).toBe('classic')
+  })
+
+  test('keeps bubbles for stored settings that predate the classic default', () => {
+    const { messageLayout: _omitted, ...withoutLayout } = createDefaultSettings()
+    for (const version of [0, 5, 8]) {
+      expect(migrateSettings(withoutLayout, version, { isDesktopLike: true }).messageLayout).toBe('bubble')
+    }
+    expect(migrateSettings({ ...withoutLayout, messageLayout: null }, 8, { isDesktopLike: true }).messageLayout).toBe(
+      'bubble'
+    )
+    expect(mergeSettingsWithDefaults(withoutLayout).messageLayout).toBe('classic')
+  })
+
+  test('drops unknown layout values so they render as the classic default', () => {
+    const defaults = createDefaultSettings()
+    expect(mergeSettingsWithDefaults({ ...defaults, messageLayout: 'grid' }).messageLayout).toBeUndefined()
+    expect(
+      migrateSettings({ ...defaults, messageLayout: 42 }, 8, { isDesktopLike: true }).messageLayout
+    ).toBeUndefined()
+  })
+
+  test.each([true, false, 'x'])('loads stored settings carrying the retired showModelName=%s', (showModelName) => {
+    const defaults = createDefaultSettings()
+    const merged = mergeSettingsWithDefaults({ ...defaults, showTokenUsed: false, showModelName })
+    expect(merged).toMatchObject({ showTokenUsed: false, messageLayout: 'classic' })
+    expect(merged).not.toHaveProperty('showModelName')
+
+    const migrated = migrateSettings({ ...defaults, showTokenUsed: false, showModelName }, 8, { isDesktopLike: true })
+    expect(migrated).toMatchObject({ showTokenUsed: false })
+    expect(migrated).not.toHaveProperty('showModelName')
+  })
+
   test('uses the desktop parser default when an older snapshot has no parser', () => {
     const migrated = migrateSettings(createDefaultSettings(), 4, {
       isDesktopLike: true,

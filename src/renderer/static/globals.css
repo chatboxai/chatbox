@@ -29,6 +29,8 @@
   --chatbox-tint-primary: #212529;
   --chatbox-tint-secondary: #495057;
   --chatbox-tint-tertiary: #868e96;
+  /* Separators and time in the assistant name row: 13px text needs at least 4.5:1 on the page. */
+  --chatbox-message-name-muted: #6c757d;
 
   --chatbox-tint-white: #ffffff;
   --chatbox-tint-black: #000000;
@@ -121,6 +123,7 @@
   --chatbox-tint-primary: #ececec;
   --chatbox-tint-secondary: #bdbdbd;
   --chatbox-tint-tertiary: #999999;
+  --chatbox-message-name-muted: #9a9a9a;
 
   --chatbox-tint-white: #ffffff;
   --chatbox-tint-black: #000000;

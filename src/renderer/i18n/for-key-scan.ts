@@ -173,7 +173,7 @@ function _otherI18nKeys(t: (key: string) => string) {
   t('System prompt')
   t('Context messages')
   t('Message layout')
-  t('Show below messages')
+  t('Message info')
   t('LaTeX Rendering')
   t('Theme color')
   t('Recover Conversation List')
@@ -189,7 +189,6 @@ function _otherI18nKeys(t: (key: string) => string) {
   t('Beta updates')
 
   // src/renderer/routes/settings/chat.tsx
-  t('Model name')
   t('Time')
   t('Word count')
   t('Token usage')
@@ -205,8 +204,8 @@ function _otherI18nKeys(t: (key: string) => string) {
   t('Mist Blue')
 
   // src/renderer/components/common/MessageLayoutPreview.tsx
-  t('Left-aligned')
-  t('Chat bubbles')
+  t('Classic')
+  t('Bubble')
 
   // src/renderer/modals/ExportChat.tsx
   t('All threads')

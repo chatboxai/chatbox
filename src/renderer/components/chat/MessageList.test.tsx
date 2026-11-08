@@ -80,6 +80,7 @@ vi.mock('@/hooks/useSessionLockState', () => ({
   }),
 }))
 vi.mock('@/stores/session/agent-mode', () => ({ useSessionAgentMode: () => ({ value: h.agentMode }) }))
+vi.mock('@/hooks/useCopilots', () => ({ useMyCopilots: () => ({ copilots: [] }) }))
 vi.mock('@/lib/utils', () => ({ cn: (...items: unknown[]) => items.filter(Boolean).join(' ') }))
 vi.mock('@/hooks/useScreenChange', () => ({ useIsSmallScreen: () => h.smallScreen }))
 vi.mock('@/stores/sessionActivityStore', () => ({ useSessionActivity: () => h.activity }))

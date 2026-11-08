@@ -138,6 +138,18 @@ describe('Markdown code wrapping', () => {
   })
 })
 
+describe('Markdown tables', () => {
+  it('wraps tables in a horizontal scroll box', () => {
+    const view = render(
+      <MantineProvider>
+        <Markdown>{'| A | B |\n| --- | --- |\n| 1 | 2 |'}</Markdown>
+      </MantineProvider>
+    )
+    const table = view.container.querySelector('table')
+    expect(table?.parentElement?.className).toBe('markdown-table-scroll')
+  })
+})
+
 describe('Markdown streaming code highlighting', () => {
   const renderStreamingMarkdown = (source: string) => (
     <MantineProvider forceColorScheme="dark">

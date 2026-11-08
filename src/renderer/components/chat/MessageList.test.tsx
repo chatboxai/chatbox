@@ -623,8 +623,10 @@ describe('row transcript host', () => {
     viewport.scrollTop = 700
     fireEvent.scroll(viewport)
     const previous = await view.findByRole('button', { name: 'Back to previous message' })
-    const bar = previous.parentElement!
-    expect(bar.parentElement).toBe(viewport.parentElement)
+    const bar = previous.parentElement!.parentElement!
+    expect(viewport.parentElement?.classList.contains('chatbox-scroll-top-fade')).toBe(true)
+    expect(bar.closest('.chatbox-scroll-top-fade')).toBeNull()
+    expect(bar.parentElement).toBe(viewport.parentElement?.parentElement)
     expect(bar.className.split(' ')).toEqual(expect.arrayContaining(['absolute', 'top-0', 'left-0', 'right-0']))
     Object.defineProperty(bar, 'offsetHeight', { value: 30, configurable: true })
     viewport.getBoundingClientRect = () => ({ top: 40, bottom: 640, height: 600 }) as DOMRect

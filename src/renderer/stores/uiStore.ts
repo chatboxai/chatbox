@@ -124,8 +124,10 @@ export const uiStore = createStore(
         agentModeLastSelected: 'off' as Extract<AgentModeValue, 'on' | 'off'>,
         sessionAgentModeMap: {} as Record<string, AgentModeEntry>,
         promptCacheBreakConfirmDismissed: {} as Record<string, boolean>,
-        // The one-time small-screen hint that message actions moved to long-press has been shown.
+        // The user acknowledged the small-screen hint that message actions moved to long-press.
         messageLongPressHintShown: false,
+        // The long-press hint already appeared in this app launch (not persisted).
+        messageLongPressHintShownThisLaunch: false,
         // License + quota period whose low-points reminder the user closed.
         lowQuotaReminderDismissedPeriod: null as string | null,
         sessionPanels: {} as Record<string, SessionPanelState | undefined>,

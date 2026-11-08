@@ -34,30 +34,46 @@ describe('MessageLongPressHint', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     screenState.small = true
-    uiStore.setState({ messageLongPressHintShown: false })
+    uiStore.setState({ messageLongPressHintShown: false, messageLongPressHintShownThisLaunch: false })
   })
   afterEach(() => {
     cleanup()
     vi.useRealTimers()
   })
 
-  it('shows once, records it, and hides after five seconds', () => {
+  it('hides after five seconds without recording it as seen, and shows once per launch', () => {
     render(<MessageLongPressHint messages={[reply]} />)
     expect(screen.getByTestId(TestId.message.longPressHint).textContent).toContain(
       'Long press a message to reply again, edit, copy, or select text'
     )
-    expect(uiStore.getState().messageLongPressHintShown).toBe(true)
     act(() => vi.advanceTimersByTime(5_000))
     expect(screen.queryByTestId(TestId.message.longPressHint)).toBeNull()
+    expect(uiStore.getState().messageLongPressHintShown).toBe(false)
 
     cleanup()
     render(<MessageLongPressHint messages={[reply]} />)
     expect(screen.queryByTestId(TestId.message.longPressHint)).toBeNull()
   })
 
-  it('closes on Got it', () => {
+  it('shows again on the next launch until acknowledged', () => {
     render(<MessageLongPressHint messages={[reply]} />)
+    cleanup()
+    uiStore.setState({ messageLongPressHintShownThisLaunch: false })
+
+    render(<MessageLongPressHint messages={[reply]} />)
+    expect(screen.getByTestId(TestId.message.longPressHint)).toBeTruthy()
+  })
+
+  it('records it as seen on Got it', () => {
+    render(<MessageLongPressHint messages={[reply]} />)
+    expect(uiStore.getState().messageLongPressHintShown).toBe(false)
     fireEvent.click(screen.getByTestId(TestId.message.longPressHintDismiss))
+    expect(screen.queryByTestId(TestId.message.longPressHint)).toBeNull()
+    expect(uiStore.getState().messageLongPressHintShown).toBe(true)
+
+    cleanup()
+    uiStore.setState({ messageLongPressHintShownThisLaunch: false })
+    render(<MessageLongPressHint messages={[reply]} />)
     expect(screen.queryByTestId(TestId.message.longPressHint)).toBeNull()
   })
 
@@ -65,6 +81,6 @@ describe('MessageLongPressHint', () => {
     screenState.small = false
     render(<MessageLongPressHint messages={[reply]} />)
     expect(screen.queryByTestId(TestId.message.longPressHint)).toBeNull()
-    expect(uiStore.getState().messageLongPressHintShown).toBe(false)
+    expect(uiStore.getState().messageLongPressHintShownThisLaunch).toBe(false)
   })
 })

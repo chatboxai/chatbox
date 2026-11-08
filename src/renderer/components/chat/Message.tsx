@@ -1092,7 +1092,7 @@ const _Message: FC<Props> = (props) => {
                               })
                             }}
                           >
-                            {msg.role === 'user' ? (
+                            {msg.role === 'user' && isBubbleLayout ? (
                               <>
                                 <span className="block mb-1 text-xs text-white/80">
                                   {t('OCR Text')} ({item.ocrResult.length} {t('characters')})
@@ -1460,7 +1460,7 @@ const _Message: FC<Props> = (props) => {
           'group/message',
           'msg-block',
           (isUser || isBubbleLayout) && 'bubble-msg',
-          isUser && 'bubble-user-msg',
+          isUser && isBubbleLayout && 'bubble-user-msg',
           rowLayout.spansColumn && 'msg-spans-column',
           isSmallScreen ? 'pt-5' : 'pt-4 sm:pt-5',
           longPressSurfaceClass,

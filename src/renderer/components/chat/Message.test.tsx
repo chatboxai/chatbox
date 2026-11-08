@@ -105,9 +105,15 @@ describe('Conversation content surface', () => {
   const content = (layout: 'classic' | 'bubble', role: 'user' | 'assistant', errorOnly = false) =>
     getConversationContentClassName({ layout, role, isSmallScreen: false, errorOnly })
 
-  test('points the user bubble tail toward the user avatar', () => {
-    expect(content('classic', 'user')).toContain('bg-[var(--mantine-color-chatbox-brand-filled)]')
+  test('fills the classic user bubble gray and the bubble-layout user bubble with the brand color', () => {
+    expect(content('classic', 'user')).toContain('bg-chatbox-background-secondary')
+    expect(content('classic', 'user')).not.toContain('brand')
+    expect(content('classic', 'user')).not.toContain('text-white')
     expect(content('bubble', 'user')).toContain('bg-[var(--mantine-color-chatbox-brand-filled)]')
+    expect(content('bubble', 'user')).toContain('text-white')
+  })
+
+  test('points the user bubble tail toward the user avatar', () => {
     expect(content('classic', 'user')).toContain('rounded-tl-[4px]')
     expect(content('classic', 'user')).not.toContain('rounded-tr-[4px]')
     expect(content('bubble', 'user')).toContain('rounded-tr-[4px]')

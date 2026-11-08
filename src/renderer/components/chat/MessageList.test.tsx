@@ -601,6 +601,65 @@ describe('row transcript host', () => {
       else expect(h.read).toHaveBeenCalledTimes(1)
     }
   )
+  test('overlays the small-screen navigation bar on the transcript and lands earlier messages below it', async () => {
+    h.smallScreen = true
+    const view = render(<Host search="m60" />)
+    await waitFor(() => expect(h.firstReady).toBe(true))
+    const viewport = view.getByTestId('virtuoso')
+    scrollGeometry(viewport, 800)
+    fireEvent.scroll(viewport)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 270))
+    })
+    viewport.scrollTop = 700
+    fireEvent.scroll(viewport)
+    const previous = await view.findByRole('button', { name: 'Back to previous message' })
+    const bar = previous.parentElement!
+    expect(bar.parentElement).toBe(viewport.parentElement)
+    expect(bar.className.split(' ')).toEqual(expect.arrayContaining(['absolute', 'top-0', 'left-0', 'right-0']))
+    Object.defineProperty(bar, 'offsetHeight', { value: 30, configurable: true })
+    viewport.getBoundingClientRect = () => ({ top: 40, bottom: 640, height: 600 }) as DOMRect
+    h.rowTop = 40
+    for (let siblingOrder = 11; siblingOrder < 111; siblingOrder++)
+      h.rowOffsets.set(`m${siblingOrder}`, (siblingOrder - 60) * 100)
+    h.scrollToIndex.mockClear()
+    fireEvent.click(previous)
+    expect(h.scrollToIndex).toHaveBeenCalledExactlyOnceWith({
+      index: 47,
+      align: 'start',
+      behavior: 'smooth',
+      offset: -30,
+    })
+  })
+  test('hides the small-screen navigation bar while an explicit jump positions its target', async () => {
+    h.smallScreen = true
+    const view = render(<Host search="m60" />)
+    await waitFor(() => expect(h.firstReady).toBe(true))
+    const viewport = view.getByTestId('virtuoso')
+    scrollGeometry(viewport, 800)
+    fireEvent.scroll(viewport)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 270))
+    })
+    viewport.scrollTop = 700
+    fireEvent.scroll(viewport)
+    await view.findByRole('button', { name: 'Back to previous message' })
+    h.rowOffsets.set('m40', 200)
+    let navigated: Promise<boolean> | undefined
+    act(() => {
+      navigated = h.navigation?.navigateMessage('m40')
+    })
+    await waitFor(() => expect(view.queryByRole('button', { name: 'Back to previous message' })).toBeNull())
+    await act(async () => {
+      await navigated
+    })
+    viewport.scrollTop = 600
+    fireEvent.scroll(viewport)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300))
+    })
+    expect(view.queryByRole('button', { name: 'Back to previous message' })).toBeNull()
+  })
   test.each([
     { label: 'Previous message', index: 47 },
     { label: 'Next message', index: 51 },

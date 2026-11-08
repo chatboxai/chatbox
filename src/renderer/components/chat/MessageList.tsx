@@ -134,13 +134,38 @@ const MessageList = forwardRef<
   const lastScrollTop = useRef<number>()
   const lastMaxScrollTop = useRef<number>()
   const scrollNavigationTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const navigationBar = useRef<HTMLDivElement>(null)
   useEffect(
     () => () => {
       if (scrollNavigationTimer.current) clearTimeout(scrollNavigationTimer.current)
     },
     []
   )
+  const hideScrollNavigation = useCallback(() => {
+    if (scrollNavigationTimer.current) {
+      clearTimeout(scrollNavigationTimer.current)
+      scrollNavigationTimer.current = null
+    }
+    lastScrollTop.current = undefined
+    setShowScrollToPrev(false)
+  }, [])
+  // An explicit jump places its target at the top of the list, where the small-screen bar would cover it.
+  const positioningExplicitTarget = useCallback(() => {
+    const layout = controller.getSnapshot().layout
+    return !!layout && layout.kind !== 'preserve'
+  }, [controller])
+  useLayoutEffect(
+    () =>
+      controller.subscribe(() => {
+        if (positioningExplicitTarget()) hideScrollNavigation()
+      }),
+    [controller, positioningExplicitTarget, hideScrollNavigation]
+  )
   const handleScrollTopThrottled = useThrottledCallback((scrollTop: number, maxScrollTop: number) => {
+    if (positioningExplicitTarget()) {
+      hideScrollNavigation()
+      return
+    }
     if (typeof lastScrollTop.current === 'number') {
       const layoutShrank = isLayoutClampedScroll(
         lastScrollTop.current,
@@ -618,7 +643,14 @@ const MessageList = forwardRef<
       scrollbarPointer.current = null
       contentAnchor.onUserInput()
       setHighlighted(target.messageId)
-      virtuoso.current?.scrollToIndex({ index, align: 'start', behavior: 'smooth' })
+      // The small-screen navigation bar overlays the top of the list; land the message below it.
+      const barHeight = navigationBar.current?.offsetHeight
+      virtuoso.current?.scrollToIndex({
+        index,
+        align: 'start',
+        behavior: 'smooth',
+        ...(barHeight ? { offset: -barHeight } : {}),
+      })
     },
     [captureAnchor, controller, follow, contentAnchor, messageElement]
   )
@@ -750,33 +782,6 @@ const MessageList = forwardRef<
   return (
     <div className={cn('w-full h-full min-h-0 mx-auto flex flex-col', className)}>
       <BlockCodeCollapsedStateProvider defaultCollapsed={!!settingsStore.getState().autoCollapseCodeBlock}>
-        {isSmallScreen && (
-          <Transition mounted={showScrollToPrev && (!atTop || transcript.hasOlder)} transition="fade">
-            {(transitionStyle) => (
-              <Flex style={transitionStyle} className="shrink-0 leading-tight bg-chatbox-background-secondary">
-                {[
-                  { text: t('Return to the top'), icon: IconArrowBarToUp, onClick: () => navigate('head') },
-                  { text: t('Back to previous message'), icon: IconArrowUp, onClick: () => void jumpUser('older') },
-                ].map((item, index) => (
-                  <Button
-                    key={item.text}
-                    variant="transparent"
-                    className={cn('w-1/2', index === 0 ? 'border-r border-r-chatbox-border-primary' : '')}
-                    classNames={{ section: '!mr-xxs' }}
-                    size="xs"
-                    h="auto"
-                    py={6}
-                    c="chatbox-tertiary"
-                    onClick={item.onClick}
-                    leftSection={<ScalableIcon icon={item.icon} size={16} />}
-                  >
-                    {item.text}
-                  </Button>
-                ))}
-              </Flex>
-            )}
-          </Transition>
-        )}
         {transcriptErrorAt === 'navigate' && (
           <div className={cn('shrink-0 py-2', !isSmallScreen && 'px-[28px]')}>
             <div className={paddedContentColumnClassName(widthFull)}>{transcriptErrorNotice}</div>
@@ -840,6 +845,37 @@ const MessageList = forwardRef<
             }
           }}
         >
+          {isSmallScreen && (
+            <Transition mounted={showScrollToPrev && (!atTop || transcript.hasOlder)} transition="fade">
+              {(transitionStyle) => (
+                <Flex
+                  ref={navigationBar}
+                  style={transitionStyle}
+                  className="absolute z-10 top-0 left-0 right-0 leading-tight bg-chatbox-background-secondary"
+                >
+                  {[
+                    { text: t('Return to the top'), icon: IconArrowBarToUp, onClick: () => navigate('head') },
+                    { text: t('Back to previous message'), icon: IconArrowUp, onClick: () => void jumpUser('older') },
+                  ].map((item, index) => (
+                    <Button
+                      key={item.text}
+                      variant="transparent"
+                      className={cn('w-1/2', index === 0 ? 'border-r border-r-chatbox-border-primary' : '')}
+                      classNames={{ section: '!mr-xxs' }}
+                      size="xs"
+                      h="auto"
+                      py={6}
+                      c="chatbox-tertiary"
+                      onClick={item.onClick}
+                      leftSection={<ScalableIcon icon={item.icon} size={16} />}
+                    >
+                      {item.text}
+                    </Button>
+                  ))}
+                </Flex>
+              )}
+            </Transition>
+          )}
           {(items.length > 0 || transcript.operation?.phase !== 'reading') && (
             <Virtuoso
               key={`${session.id}:${transcript.windowEpoch}`}

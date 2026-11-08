@@ -1,4 +1,4 @@
-import { ActionIcon, Box, Flex, ScrollArea, Stack, Text, UnstyledButton } from '@mantine/core'
+import { ActionIcon, Box, Flex, Stack, Text, UnstyledButton } from '@mantine/core'
 import type { ImageGeneration } from '@shared/types'
 import { IconInfoCircle, IconPlus, IconServer } from '@tabler/icons-react'
 import { useRef, useState } from 'react'
@@ -149,7 +149,7 @@ export function MobileModelDrawer({
             </Drawer.Title>
           </Flex>
 
-          <ScrollArea flex={1} type="auto" offsetScrollbars>
+          <div className="min-h-0 flex-1 overflow-y-auto">
             <Stack gap="md" p="xs" pb="xl">
               {modelGroups.map((group, groupIndex) => (
                 <Stack key={group.providerId} gap={2}>
@@ -214,7 +214,7 @@ export function MobileModelDrawer({
                 </Stack>
               ))}
             </Stack>
-          </ScrollArea>
+          </div>
         </Drawer.Content>
       </Drawer.Portal>
       <ImageModelDetailDrawer

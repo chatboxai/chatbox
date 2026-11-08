@@ -4,6 +4,8 @@ import {
   ASSISTANT_CONTENT_MAX_WIDTH,
   getConversationContentClassName,
   getConversationRowLayout,
+  getLongPressSurfaceClassName,
+  hasConversationContentSurface,
   isErrorOnlyMessage,
   isUserMessageOnRight,
 } from './message-layout'
@@ -142,6 +144,26 @@ describe('Conversation content surface', () => {
     expect(spanning('classic').split(' ')).toContain('w-full')
     expect(spanning('bubble')).toBe(content('bubble', 'assistant'))
     expect(spanning('classic', true)).toBe(content('classic', 'assistant', true))
+  })
+})
+
+describe('Long-press surface', () => {
+  test('gives the pressed tint to bubbles only', () => {
+    expect(hasConversationContentSurface({ layout: 'classic', role: 'user', errorOnly: false })).toBe(true)
+    expect(hasConversationContentSurface({ layout: 'bubble', role: 'user', errorOnly: false })).toBe(true)
+    expect(hasConversationContentSurface({ layout: 'bubble', role: 'assistant', errorOnly: false })).toBe(true)
+    expect(hasConversationContentSurface({ layout: 'classic', role: 'assistant', errorOnly: false })).toBe(false)
+    expect(hasConversationContentSurface({ layout: 'bubble', role: 'assistant', errorOnly: true })).toBe(false)
+  })
+
+  test('draws the tint inside the surface, clipped to its corners, only while pressed', () => {
+    const pressed = getLongPressSurfaceClassName(true).split(' ')
+    expect(pressed).toEqual(
+      expect.arrayContaining(['relative', 'isolate', 'before:inset-0', 'before:-z-10', 'before:rounded-[inherit]'])
+    )
+    expect(pressed).toContain('before:bg-black/[0.08]')
+    expect(getLongPressSurfaceClassName(false).split(' ')).toContain('before:bg-transparent')
+    expect(getLongPressSurfaceClassName(false)).not.toContain('before:bg-black')
   })
 })
 

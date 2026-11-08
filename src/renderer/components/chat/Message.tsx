@@ -99,6 +99,8 @@ import { getMessageActionVisibilityClass, type MessageButtonGroup } from './mess
 import {
   getConversationContentClassName,
   getConversationRowLayout,
+  getLongPressSurfaceClassName,
+  hasConversationContentSurface,
   isErrorOnlyMessage,
   isUserMessageOnRight,
 } from './message-layout'
@@ -912,6 +914,15 @@ const _Message: FC<Props> = (props) => {
 
   const conversationRole = msg.role === 'user' || msg.role === 'assistant' ? msg.role : null
   const messageLayoutValue = isBubbleLayout ? 'bubble' : 'classic'
+  // Only a bubble shows the pressed tint; a classic reply lies flat on the page and stays flat.
+  const longPressSurfaceHighlight =
+    longPressMenuEnabled &&
+    (!conversationRole ||
+      hasConversationContentSurface({
+        layout: messageLayoutValue,
+        role: conversationRole,
+        errorOnly: isErrorOnlyMessage(msg),
+      }))
   const isRightAlignedMessage = msg.role === 'user' && isUserMessageOnRight(messageLayoutValue)
   const messageRoleClass = getMessageRoleClass(msg.role)
   const shouldShowAvatar = showAvatar ?? true
@@ -930,7 +941,7 @@ const _Message: FC<Props> = (props) => {
       <div
         ref={swipeSurfaceRef}
         data-testid={TestId.message.content}
-        className={
+        className={cn(
           conversationRole
             ? getConversationContentClassName({
                 layout: messageLayoutValue,
@@ -939,8 +950,9 @@ const _Message: FC<Props> = (props) => {
                 errorOnly: isErrorOnlyMessage(msg),
                 spansColumn: rowLayout.spansColumn,
               })
-            : 'inline-block max-w-full min-w-0 bg-chatbox-background-secondary px-4 rounded-lg'
-        }
+            : 'inline-block max-w-full min-w-0 bg-chatbox-background-secondary px-4 rounded-lg',
+          longPressSurfaceHighlight && getLongPressSurfaceClassName(longPressHighlighted)
+        )}
       >
         <Box
           className={cn('msg-content', { 'msg-content-small': small, 'msg-content-trim-end': isSmallScreen })}
@@ -1368,17 +1380,6 @@ const _Message: FC<Props> = (props) => {
   // Long-press owns the touch gesture on small screens: the system selection and callout would open first.
   // `.msg-block` turns selection on, so this needs to win over it.
   const longPressSurfaceClass = longPressMenuEnabled && '!select-none [-webkit-touch-callout:none]'
-  // The highlight sits behind the whole row and reaches 8px past it, so the message does not move.
-  const longPressHighlight = longPressMenuEnabled && (
-    <div
-      aria-hidden
-      className={cn(
-        'pointer-events-none absolute -inset-2 rounded-[12px] transition-colors duration-200',
-        longPressHighlighted ? 'bg-chatbox-background-gray-secondary' : 'bg-transparent'
-      )}
-    />
-  )
-
   const meta = (tipsElements || msg.steered) && (
     <Flex
       direction="column"
@@ -1487,7 +1488,6 @@ const _Message: FC<Props> = (props) => {
               : { paddingRight: isUser ? rowLayout.userFarSideSpace : rowLayout.assistantFarSideSpace }
           }
         >
-          {longPressHighlight}
           {swipeFeedback && (
             <MessageSwipeCue
               avatarSize={rowLayout.avatarSize}
@@ -1563,7 +1563,6 @@ const _Message: FC<Props> = (props) => {
       }}
     >
       <Grid container wrap="nowrap" spacing={1.5} className="relative">
-        {longPressHighlight}
         {shouldShowAvatar && (
           <Grid item>
             <Box className="relative mt-1">

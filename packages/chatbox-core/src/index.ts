@@ -3,6 +3,7 @@
 export type { ChatStreamOptions, ModelInterface, ModelStreamPart } from '@shared/models/types'
 export { SessionHeaderSchema } from '@shared/types'
 export { getChatboxAPIOrigin } from '@shared/request/chatbox-api-origin'
+export { type ApiOriginsStorage, startChatboxAPIOriginProbing } from '@shared/request/chatboxai_pool'
 export {
   licenseActivationSettings,
   licenseDeactivationSettings,

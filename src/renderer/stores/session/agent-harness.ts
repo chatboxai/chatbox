@@ -69,6 +69,7 @@ Unless the user requests otherwise, all visible assistant text must be in the sa
 
 export interface AgentGenerationSideEffects {
   lockAgentMode?: (reason: Exclude<AgentModeLockReason, null>) => void
+  persistOcrResult?: (messageId: string, storageKey: string, text: string) => Promise<void>
   /** Persist freshly captured prompt context into the session settings. */
   persistSessionPromptContextSnapshot?: (snapshot: SessionPromptContextSnapshot) => void
 }
@@ -296,7 +297,7 @@ export async function prepareAgentGenerationHarness(
       throw ChatboxAIAPIError.fromCodeName('model_not_support_image_2', 'model_not_support_image_2')
     }
     try {
-      await ocrImagesInMessages(promptMsgs, ocrResult.model, session.id)
+      await ocrImagesInMessages(promptMsgs, ocrResult.model, session.id, sideEffects?.persistOcrResult)
     } catch (err) {
       throw new OCRError(ocrResult.providerName, err instanceof Error ? err : new Error(extractStreamErrorMessage(err)))
     }

@@ -1,7 +1,7 @@
 import { createForkCommandIdentity } from '@chatbox/core/application/session'
+import { trySessionGenerationLock, withSessionGenerationLock } from '@chatbox/core/generation'
 import type { SessionHeader } from '@chatbox/core/ports'
 import { SessionActionBlockedError } from '@chatbox/core/session/action-gates'
-import { withSessionGenerationLock } from '@chatbox/core/generation'
 import { isActionAvailableInMode, resolveSessionMode } from '@chatbox/core/session/mode-policy'
 import { buildContext } from '@shared/context'
 import type { AttachmentResolver } from '@shared/context/types'
@@ -12,12 +12,14 @@ import { v4 as uuidv4 } from 'uuid'
 import { currentGenerationService } from '@/adapters/CurrentGenerationService'
 import { rendererApplication } from '@/app/renderer-application'
 import { estimateTokensFromMessages } from '@/packages/token'
+import { settingsStore } from '../settingsStore'
 import { guardSessionAction } from './action-guard'
 import { createAttachmentResolver } from './attachment-resolver'
 import { createNewFork, createSaveAndResendFork } from './forks'
 import { insertMessageAfter, modifyMessage } from './messages'
-import { getSessionHeader, getSessionTokenModel } from './session-settings'
+import { getSessionHeader, getSessionSettings, getSessionTokenModel } from './session-settings'
 import type { AgentModeEntrySource } from './types'
+import { initializeTargetMessage } from './utils'
 
 /** Internal generation entry point for callers that already hold the session generation lock. */
 export async function _generateWithoutSessionLock(
@@ -214,27 +216,28 @@ export async function saveAndResendMessage(
 
 type GenerateMoreFn = (sessionId: string, msgId: string) => Promise<void>
 
-export async function regenerateInNewFork(
-  sessionId: string,
-  msg: Message,
-  options?: { runGenerateMore?: GenerateMoreFn }
-) {
-  return withSessionGenerationLock(sessionId, async () => {
-    if (!(await guardSessionAction(sessionId, 'regenerate'))) {
+export async function regenerateInNewFork(sessionId: string, msg: Message) {
+  // Every Reply Again surface (toolbar, long-press menu, swipe) lands here; a
+  // repeated trigger while the session has generation work is dropped.
+  return trySessionGenerationLock(sessionId, async () => {
+    const session = (await rendererApplication.sessions.getSessionHeader(sessionId))?.header ?? null
+    if (!(await guardSessionAction(sessionId, 'regenerate', {}, session))) {
       return
     }
-    return regenerateInNewForkWithoutSessionLock(sessionId, msg, options)
+    if (!session || !supportsSessionGeneration(session.type)) return
+    return regenerateInNewForkWithoutSessionLock(sessionId, session, msg)
   })
 }
 
-async function regenerateInNewForkWithoutSessionLock(
-  sessionId: string,
-  msg: Message,
-  options?: { runGenerateMore?: GenerateMoreFn }
-) {
-  const session = (await rendererApplication.sessions.getSessionHeader(sessionId))?.header
-  if (!session || !supportsSessionGeneration(session.type)) return
-  const reply = { ...createMessage('assistant', ''), generating: true }
+async function regenerateInNewForkWithoutSessionLock(sessionId: string, session: SessionHeader, msg: Message) {
+  // The reply shows its provider and model from its first render, so its avatar and name do not change once
+  // generation starts.
+  const reply = await initializeTargetMessage(
+    createMessage('assistant', ''),
+    await getSessionSettings(sessionId, session),
+    settingsStore.getState().getSettings(),
+    session.type
+  )
   const result = await rendererApplication.sessions.executeStructureCommand(sessionId, {
     action: 'message-retry',
     messageId: msg.id,

@@ -66,6 +66,50 @@ describe('OpenAI Chat SSE logical termination', () => {
     await expect(readAll(wrapOpenAIChatCompletionSse(input))).resolves.toBe(payload)
   })
 
+  it('normalizes cache usage while keeping event metadata and passing other frames through', async () => {
+    const payload = [
+      'event: chunk\nid: 1\ndata: {"usage":{"prompt_tokens":10,"cached_tokens":4}}\n\n',
+      'data: {"usage": not json}\n\n',
+      'data: {"content":"no usage"}\n\n',
+    ].join('')
+    const input = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode(payload))
+        controller.close()
+      },
+    })
+
+    await expect(readAll(wrapOpenAIChatCompletionSse(input))).resolves.toBe(
+      'event: chunk\nid: 1\ndata: {"usage":{"prompt_tokens":10,"cached_tokens":4,"prompt_tokens_details":{"cached_tokens":4}}}\n\n' +
+        'data: {"usage": not json}\n\n' +
+        'data: {"content":"no usage"}\n\n'
+    )
+  })
+
+  it('normalizes an escaped top-level usage key like an ordinary one', async () => {
+    const normalize = (payload: string) =>
+      readAll(
+        wrapOpenAIChatCompletionSse(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              for (const byte of encoder.encode(payload)) controller.enqueue(new Uint8Array([byte]))
+              controller.close()
+            },
+          })
+        )
+      )
+    const expected =
+      'data: {"usage":{"prompt_tokens":10,"cached_tokens":4,"prompt_tokens_details":{"cached_tokens":4}}}\n\n'
+
+    await expect(normalize('data: {"usage":{"prompt_tokens":10,"cached_tokens":4}}\n\n')).resolves.toBe(expected)
+    await expect(normalize('data: {"us\\u0061ge":{"prompt_tokens":10,"cached_tokens":4}}\n\n')).resolves.toBe(expected)
+
+    const unchanged =
+      'data: {"choices":[{"usage":{"prompt_tokens":10,"cached_tokens":4}}]}\n\n' +
+      'data: {"content":"\\"us\\u0061ge\\": {\\"cached_tokens\\":4}"}\n\n'
+    await expect(normalize(unchanged)).resolves.toBe(unchanged)
+  })
+
   it('does not wrap non-chat or non-streaming responses', () => {
     const response = new Response('{"ok":true}', { headers: { 'content-type': 'application/json' } })
     const eventStreamResponse = new Response('data: [DONE]\n\n', {

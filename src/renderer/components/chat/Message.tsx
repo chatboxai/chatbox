@@ -10,6 +10,12 @@ import {
 import { isCancellableGeneratingAssistantMessage } from '@chatbox/core/session/generation-state'
 import { getMessageFinishTip } from '@chatbox/core/session/message-finish-tip'
 import {
+  clipMessageMenuPreview,
+  getMessageMenuEntries,
+  type MessageMenuEntryId,
+} from '@chatbox/core/session/message-menu'
+import { getMessageSwipeMode } from '@chatbox/core/session/message-swipe'
+import {
   isActionAvailableInMode,
   type SessionMode,
   shouldRestrictMessageEditToLastOutput,
@@ -18,7 +24,8 @@ import type { PromptCacheDeleteTarget } from '@chatbox/core/session/prompt-cache
 import NiceModal from '@ebay/nice-modal-react'
 import { ActionIcon, type ActionIconProps, Anchor, Button, Flex, Loader, Modal, Stack, Text } from '@mantine/core'
 import { Box, Grid, useTheme } from '@mui/material'
-import { TestId } from '@shared/automation/testids'
+import { AutomationStateAttr, TestId } from '@shared/automation/testids'
+import { getProviderDisplayName } from '@shared/providers'
 import type { Message, MessageBackgroundTask, MessageTextPart, MessageToolCallPart, SessionType } from '@shared/types'
 import { getMessageText } from '@shared/utils/message'
 import {
@@ -28,6 +35,7 @@ import {
   IconClockHour3,
   IconCode,
   IconCopy,
+  IconCursorText,
   IconDotsVertical,
   IconInfoCircle,
   IconLoader2,
@@ -42,7 +50,6 @@ import {
   IconTrash,
 } from '@tabler/icons-react'
 import clsx from 'clsx'
-import * as dateFns from 'date-fns'
 import type React from 'react'
 import { type FC, forwardRef, type MouseEventHandler, memo, useCallback, useMemo, useRef, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
@@ -68,6 +75,7 @@ import '../../static/Block.css'
 import { generate, regenerateInNewFork, retryFromLastToolCallAfterApiError } from '@/stores/session/generation'
 import { modifyMessage, removeMessage } from '@/stores/session/messages'
 import * as toastActions from '@/stores/toastActions'
+import { triggerLongPressHaptic } from '@/utils/long-press-haptic'
 import { confirmPromptCacheBreakingAction, isPromptCacheBreakConfirmDismissed } from '@/utils/prompt-cache-confirm'
 import { getSessionLockNotice, notifySessionLockBlocked } from '@/utils/session-lock-copy'
 import ActionMenu, { type ActionMenuItemProps } from '../ActionMenu'
@@ -80,15 +88,32 @@ import { MessageArtifactsUI, ToolCallPartUI } from '../message-parts/ToolCallPar
 import { MessageAttachmentGrid } from './MessageAttachmentGrid'
 import MessageErrTips from './MessageErrTips'
 import MessageStatuses, { PreparingToolCallStatus } from './MessageLoading'
+import { formatMessageTimestamp, getMessageHeader, getMessageHeaderTitle, MessageNameRow } from './MessageNameRow'
+import { MessageSelectTextPage } from './MessageSelectTextPage'
+import {
+  MESSAGE_SWIPE_AVATAR_HIDDEN_CLASS,
+  MESSAGE_SWIPE_NAME_HIDDEN_CLASS,
+  MessageSwipeCue,
+} from './MessageSwipeFeedback'
 import { getMessageActionVisibilityClass, type MessageButtonGroup } from './message-action-state'
-import { isErrorOnlyMessage, shouldRightAlignMessage } from './message-layout'
+import {
+  getConversationContentClassName,
+  getConversationRowLayout,
+  getLongPressSurfaceClassName,
+  hasConversationContentSurface,
+  isErrorOnlyMessage,
+  isUserMessageOnRight,
+} from './message-layout'
 import { getMessagePreviewText } from './message-navigation-utils'
 import { getMessageRoleClass } from './message-role-class'
 import { createCollapsedDisplayGroups, createMessageTimelineLayout } from './message-timeline'
 import { getMessageTokenDisplay } from './message-token-display'
 import { PictureGallery } from './PictureGallery'
+import { useMessageLongPress } from './useMessageLongPress'
+import { type MessageSwipeMode, useMessageSwipe } from './useMessageSwipe'
 import { useProcessTimelineCollapse } from './useProcessTimelineCollapse'
 import { useReplyBelowAction } from './useReplyBelowAction'
+import { useSingleFlightAction } from './useSingleFlightAction'
 
 const useIsGenerationRuntimeActive = (sessionId: string, messageId: string) =>
   rendererApplication.generationHooks.useIsActive(sessionId, messageId)
@@ -135,6 +160,8 @@ interface Props {
   small?: boolean
   assistantAvatarKey?: string
   sessionPicUrl?: string
+  /** Assistant name set for the chat or taken from its copilot; it replaces the provider as the bold name in the header row. */
+  assistantName?: string
 }
 
 const BackgroundTaskNotificationUI: FC<{ task: MessageBackgroundTask; className?: string }> = ({ task, className }) => {
@@ -182,6 +209,7 @@ const _Message: FC<Props> = (props) => {
     small,
     assistantAvatarKey,
     sessionPicUrl,
+    assistantName,
   } = props
 
   const { t } = useTranslation()
@@ -190,6 +218,7 @@ const _Message: FC<Props> = (props) => {
   const userAvatarKey = useSettingsStore((state) => state.userAvatarKey)
   const showMessageTimestamp = useSettingsStore((state) => state.showMessageTimestamp)
   const showModelName = useSettingsStore((state) => state.showModelName)
+  const customProviders = useSettingsStore((state) => state.customProviders)
   const showWordCount = useSettingsStore((state) => state.showWordCount)
   const showTokenUsed = useSettingsStore((state) => state.showTokenUsed)
   const showFirstTokenLatency = useSettingsStore((state) => state.showFirstTokenLatency)
@@ -201,6 +230,17 @@ const _Message: FC<Props> = (props) => {
   const generationRuntimeActive = useIsGenerationRuntimeActive(sessionId, msg.id)
 
   const isBubbleLayout = messageLayout === 'bubble'
+  const header = useMemo(
+    () =>
+      getMessageHeader(msg, {
+        assistantName,
+        fallbackLabel: t('Assistant'),
+        showModelName: showModelName ?? true,
+        showTime: Boolean(showMessageTimestamp),
+        lookupProviderName: (providerId) => getProviderDisplayName(providerId, customProviders),
+      }),
+    [msg, assistantName, t, showModelName, showMessageTimestamp, customProviders]
+  )
 
   const [retryChoiceOpened, setRetryChoiceOpened] = useState(false)
 
@@ -218,6 +258,7 @@ const _Message: FC<Props> = (props) => {
   const ref = useRef<HTMLDivElement>(null)
 
   const setQuote = useUIStore((state) => state.setQuote)
+  const widthFull = useUIStore((state) => state.widthFull)
 
   const quoteMsg = useCallback(() => {
     let input = getMessageText(msg)
@@ -267,15 +308,22 @@ const _Message: FC<Props> = (props) => {
     [t]
   )
 
-  const handleRefresh = useCallback(async () => {
+  const replyAgain = useCallback(async () => {
     const gate = getSessionActionGate('regenerate', sessionLocks)
     if (!gate.allowed) {
       notifyActionBlocked(gate.reason)
       return
     }
-    if (!(await handleStop())) return
+    if (msg.generating && !(await handleStop())) return
     await regenerateInNewFork(sessionId, msg)
   }, [sessionLocks, handleStop, msg, notifyActionBlocked, sessionId])
+  // Every retry of this reply (whole message or last step, from any surface)
+  // shares one run: the reply shows as working from the trigger until the
+  // retry takes over, which waits on a storage commit, and repeated triggers
+  // in the meantime are ignored.
+  const { pending: retryPending, run: runRetry } = useSingleFlightAction()
+  const handleRefresh = useCallback(() => runRetry(replyAgain), [runRetry, replyAgain])
+  const showGenerating = Boolean(msg.generating) || retryPending
 
   // Tracking is best-effort and must never block or break the accept/decline
   // action, so this fetches the session on its own and swallows failures.
@@ -355,29 +403,28 @@ const _Message: FC<Props> = (props) => {
     await handleRefresh()
   }, [handleRefresh])
 
-  const handleRetryLastStep = useCallback(async () => {
-    if (!lastStepForRetry) return
-    const gate = getSessionActionGate('regenerate', sessionLocks)
-    if (!gate.allowed) {
-      notifyActionBlocked(gate.reason)
-      return
-    }
-    setRetryChoiceOpened(false)
-    await retryFromLastToolCallAfterApiError(sessionId, msg.id, lastStepForRetry.toolCallId)
-  }, [sessionLocks, lastStepForRetry, msg.id, notifyActionBlocked, sessionId])
+  const retryLastStep = useCallback(
+    (toolCallId: string) =>
+      runRetry(async () => {
+        const gate = getSessionActionGate('regenerate', sessionLocks)
+        if (!gate.allowed) {
+          notifyActionBlocked(gate.reason)
+          return
+        }
+        setRetryChoiceOpened(false)
+        await retryFromLastToolCallAfterApiError(sessionId, msg.id, toolCallId)
+      }),
+    [runRetry, sessionLocks, msg.id, notifyActionBlocked, sessionId]
+  )
 
-  const handleErrorTipRetry = useCallback(async () => {
-    if (lastStepForRetry) {
-      const gate = getSessionActionGate('regenerate', sessionLocks)
-      if (!gate.allowed) {
-        notifyActionBlocked(gate.reason)
-        return
-      }
-      await retryFromLastToolCallAfterApiError(sessionId, msg.id, lastStepForRetry.toolCallId)
-      return
-    }
-    await handleRefresh()
-  }, [sessionLocks, handleRefresh, lastStepForRetry, msg.id, notifyActionBlocked, sessionId])
+  const handleRetryLastStep = useCallback(async () => {
+    if (lastStepForRetry) await retryLastStep(lastStepForRetry.toolCallId)
+  }, [lastStepForRetry, retryLastStep])
+
+  const handleErrorTipRetry = useCallback(
+    () => (lastStepForRetry ? retryLastStep(lastStepForRetry.toolCallId) : handleRefresh()),
+    [handleRefresh, lastStepForRetry, retryLastStep]
+  )
 
   const handleMessageRetry = useCallback(async () => {
     if (lastStepForRetry) {
@@ -462,9 +509,6 @@ const _Message: FC<Props> = (props) => {
   // because they are technical/universal abbreviations that remain readable across all locales.
   const tips: { label: string; tooltip?: string }[] = []
   if (props.sessionType === 'chat' || !props.sessionType) {
-    if (showModelName && props.msg.role === 'assistant') {
-      tips.push({ label: props.msg.model || 'unknown', tooltip: t('Model') as string })
-    }
     if (showTokenUsed && msg.role === 'assistant' && !msg.generating) {
       const tokenDisplay = getMessageTokenDisplay(msg)
       if (tokenDisplay) {
@@ -492,25 +536,16 @@ const _Message: FC<Props> = (props) => {
         })
     }
   } else if (props.sessionType === 'picture') {
-    if (showModelName && props.msg.role === 'assistant') {
-      tips.push({ label: props.msg.model || 'unknown', tooltip: t('Model') as string })
-      if (props.msg.style) tips.push({ label: props.msg.style })
+    if (props.msg.role === 'assistant' && props.msg.style) {
+      tips.push({ label: props.msg.style })
     }
   }
 
   const finishTip = getMessageFinishTip(msg, t)
 
-  if (showMessageTimestamp && msg.timestamp !== undefined) {
-    const date = new Date(msg.timestamp)
-    let messageTimestamp: string
-    if (dateFns.isToday(date)) {
-      messageTimestamp = dateFns.format(date, 'HH:mm')
-    } else if (dateFns.isThisYear(date)) {
-      messageTimestamp = dateFns.format(date, 'MM-dd HH:mm')
-    } else {
-      messageTimestamp = dateFns.format(date, 'yyyy-MM-dd HH:mm')
-    }
-    tips.push({ label: messageTimestamp })
+  // Assistant replies show their time in the name row.
+  if (showMessageTimestamp && msg.timestamp !== undefined && msg.role !== 'assistant') {
+    tips.push({ label: formatMessageTimestamp(msg.timestamp) })
   }
 
   const trackWithSessionName = useCallback(
@@ -678,49 +713,102 @@ const _Message: FC<Props> = (props) => {
     uiStore.getState().openSessionPanel(props.sessionId, 'settings')
   }
 
-  const actionMenuItems = useMemo<ActionMenuItemProps[]>(
-    () => [
-      ...(isSmallScreen
-        ? [
-            !msg.generating &&
-              msg.role === 'assistant' && {
-                text: t('Reply Again'),
-                icon: IconReload,
-                testId: TestId.message.actionMenuRetry,
-                onClick: handleRefresh,
-                disabled: generationLocked && !isSmallScreen,
-              },
-            canReplyBelow &&
-              msg.role !== 'assistant' && {
-                text: t('Reply Again Below'),
-                icon: IconArrowDown,
-                testId: TestId.message.actionMenuRetryBelow,
-                disabled: !replyBelowGate.allowed,
-                onClick: onGenerateMore,
-              },
-            canEditMessage &&
-              !msg.model?.startsWith('Chatbox-AI') &&
-              !(msg.role === 'assistant' && props.sessionType === 'picture') && {
-                text: t('Edit'),
-                icon: IconPencil,
-                testId: TestId.message.actionMenuEdit,
-                onClick: onEditClick,
-              },
-            !(props.sessionType === 'picture' && msg.role === 'assistant') && {
-              text: t('copy'),
-              icon: IconCopy,
-              testId: TestId.message.actionMenuCopy,
-              onClick: onCopyMsg,
-            },
-            !msg.generating &&
-              props.sessionType === 'picture' &&
-              msg.role === 'assistant' && {
-                text: t('Generate More Images Below'),
-                icon: IconPhotoPlus,
-                onClick: onGenerateMore,
-              },
-          ].filter((i) => !!i)
-        : []),
+  // Small screens have no action row: every message action lives in the long-press menu, composed by the same
+  // rules the mobile app uses.
+  const longPressMenuEnabled = isSmallScreen && !readOnly && buttonGroup !== 'none'
+  const [selectTextOpened, setSelectTextOpened] = useState(false)
+  const [selectTextScrollRatio, setSelectTextScrollRatio] = useState(0)
+
+  const longPressMenuEntries = useMemo(
+    () =>
+      getMessageMenuEntries(
+        msg,
+        {
+          stop: true,
+          retry: true,
+          replyBelow: canReplyBelow,
+          edit: canEditMessage,
+          copy: true,
+          generateMoreImages: true,
+          selectText: true,
+          quote: true,
+          report: true,
+          viewJson: process.env.NODE_ENV === 'development',
+          delete: canDeleteMessage,
+        },
+        { pictureSession: props.sessionType === 'picture' }
+      ),
+    [msg, canReplyBelow, canEditMessage, canDeleteMessage, props.sessionType]
+  )
+
+  const deleteMenuItem = useMemo<ActionMenuItemProps>(
+    () => ({
+      doubleCheck: !confirmCacheBreakingDelete,
+      text: t('delete'),
+      icon: IconTrash,
+      color: 'chatbox-error',
+      testId: TestId.message.actionDelete,
+      confirmTestId: TestId.message.actionDeleteConfirm,
+      confirmPanelTestId: TestId.message.deleteConfirmation,
+      onClick: onDelMsg,
+    }),
+    [confirmCacheBreakingDelete, onDelMsg, t]
+  )
+
+  const actionMenuItems = useMemo<ActionMenuItemProps[]>(() => {
+    if (isSmallScreen) {
+      const itemFor = (entry: MessageMenuEntryId): ActionMenuItemProps => {
+        switch (entry) {
+          case 'stop':
+            return {
+              text: t('Stop generating this reply'),
+              icon: IconPlayerStopFilled,
+              testId: TestId.message.actionMenuStop,
+              onClick: () => void handleStop(),
+            }
+          case 'retry':
+            return {
+              text: t('Reply Again'),
+              icon: IconReload,
+              testId: TestId.message.actionMenuRetry,
+              onClick: handleMessageRetry,
+            }
+          case 'reply-below':
+            return {
+              text: t('Reply Again Below'),
+              icon: IconArrowDown,
+              testId: TestId.message.actionMenuRetryBelow,
+              disabled: !replyBelowGate.allowed,
+              onClick: onGenerateMore,
+            }
+          case 'edit':
+            return { text: t('Edit'), icon: IconPencil, testId: TestId.message.actionMenuEdit, onClick: onEditClick }
+          case 'copy':
+            return { text: t('copy'), icon: IconCopy, testId: TestId.message.actionMenuCopy, onClick: onCopyMsg }
+          case 'generate-more-images':
+            return { text: t('Generate More Images Below'), icon: IconPhotoPlus, onClick: onGenerateMore }
+          case 'select-text':
+            return {
+              text: t('Select Text'),
+              icon: IconCursorText,
+              testId: TestId.message.actionMenuSelectText,
+              onClick: () => setSelectTextOpened(true),
+            }
+          case 'quote':
+            return { text: t('Quote'), icon: IconQuoteFilled, testId: TestId.message.actionQuote, onClick: quoteMsg }
+          case 'divider':
+            return { divider: true }
+          case 'report':
+            return { text: t('report'), icon: IconMessageReport, onClick: onReport }
+          case 'view-json':
+            return { text: t('View Message JSON'), icon: IconCode, onClick: onViewMessageJson }
+          case 'delete':
+            return deleteMenuItem
+        }
+      }
+      return longPressMenuEntries.map(itemFor)
+    }
+    return [
       {
         text: t('Quote'),
         icon: IconQuoteFilled,
@@ -746,44 +834,33 @@ const _Message: FC<Props> = (props) => {
             },
           ]
         : []),
-      ...(canDeleteMessage
-        ? [
-            {
-              doubleCheck: !confirmCacheBreakingDelete,
-              text: t('delete'),
-              icon: IconTrash,
-              color: 'chatbox-error',
-              testId: TestId.message.actionDelete,
-              confirmTestId: TestId.message.actionDeleteConfirm,
-              confirmPanelTestId: TestId.message.deleteConfirmation,
-              onClick: onDelMsg,
-            },
-          ]
-        : []),
-    ],
-    [
-      t,
-      msg.role,
-      onReport,
-      quoteMsg,
-      onDelMsg,
-      onViewMessageJson,
-      isSmallScreen,
-      handleRefresh,
-      msg.generating,
-      onGenerateMore,
-      onEditClick,
-      onCopyMsg,
-      msg.model,
-      props.sessionType,
-      generationLocked,
-      canReplyBelow,
-      replyBelowGate.allowed,
-      canEditMessage,
-      canDeleteMessage,
-      confirmCacheBreakingDelete,
+      ...(canDeleteMessage ? [deleteMenuItem] : []),
     ]
-  )
+  }, [
+    t,
+    msg.role,
+    onReport,
+    quoteMsg,
+    onViewMessageJson,
+    isSmallScreen,
+    longPressMenuEntries,
+    handleStop,
+    handleMessageRetry,
+    onGenerateMore,
+    onEditClick,
+    onCopyMsg,
+    replyBelowGate.allowed,
+    canDeleteMessage,
+    deleteMenuItem,
+  ])
+  const actionMenuTitle = useMemo(() => {
+    if (!longPressMenuEnabled) return undefined
+    const author = msg.role === 'user' ? t('Me') : msg.role === 'assistant' ? header.name : t('System prompt')
+    const preview = clipMessageMenuPreview(getMessageText(msg))
+    return preview ? String(t('{{author}}: {{preview}}', { author, preview })) : String(author)
+  }, [longPressMenuEnabled, msg, header.name, t])
+  const actionMenuTitleEmphasis = msg.role === 'assistant' ? header.name : undefined
+  const actionMenuSubtitle = longPressMenuEnabled && msg.role === 'assistant' ? header.detail || undefined : undefined
   const [actionMenuOpened, setActionMenuOpened] = useState(false)
   const actionMenuRequest = useRef(0)
   const handleActionMenuChange = useCallback(
@@ -802,30 +879,54 @@ const _Message: FC<Props> = (props) => {
     [canDeleteMessage, msg.id, shouldConfirmPromptCacheDelete]
   )
 
-  const isUserBubble = isBubbleLayout && msg.role === 'user'
-  const isClassicLayout = !isBubbleLayout
-  const isClassicMessage = isClassicLayout && (msg.role === 'assistant' || msg.role === 'user')
-  const isRightAlignedMessage = shouldRightAlignMessage(messageLayout, msg.role)
+  const handleMessageLongPress = useCallback(
+    (point: { x: number; y: number }) => {
+      const rect = ref.current?.getBoundingClientRect()
+      setSelectTextScrollRatio(
+        rect && rect.height > 0 ? Math.min(1, Math.max(0, (point.y - rect.top) / rect.height)) : 0
+      )
+      triggerLongPressHaptic()
+      handleActionMenuChange(true)
+    },
+    [handleActionMenuChange]
+  )
+  const longPressHandlers = useMessageLongPress({ enabled: longPressMenuEnabled, onLongPress: handleMessageLongPress })
+  const longPressHighlighted = longPressMenuEnabled && actionMenuOpened
+
+  // Swiping an assistant reply to the right runs the menu's "Reply Again"; it is shown as unavailable whenever that
+  // entry is missing, the session is busy, or this reply's Reply Again is already under way.
+  const swipeMenuMode = longPressMenuEnabled ? getMessageSwipeMode(msg.role, longPressMenuEntries) : 'none'
+  const swipeMode: MessageSwipeMode =
+    swipeMenuMode === 'retry' && (retryPending || !getSessionActionGate('regenerate', sessionLocks).allowed)
+      ? 'unavailable'
+      : swipeMenuMode
+  const swipeRowRef = useRef<HTMLDivElement>(null)
+  const swipeSurfaceRef = useRef<HTMLDivElement>(null)
+  const handleSwipeRetry = useCallback(() => void handleMessageRetry(), [handleMessageRetry])
+  useMessageSwipe({
+    mode: swipeMode,
+    onRetry: handleSwipeRetry,
+    targetRef: ref,
+    rowRef: swipeRowRef,
+    surfaceRef: swipeSurfaceRef,
+  })
+  const swipeEnabled = swipeMode !== 'none'
+
+  const conversationRole = msg.role === 'user' || msg.role === 'assistant' ? msg.role : null
+  const messageLayoutValue = isBubbleLayout ? 'bubble' : 'classic'
+  // Only a bubble shows the pressed tint; a classic reply lies flat on the page and stays flat.
+  const longPressSurfaceHighlight =
+    longPressMenuEnabled &&
+    (!conversationRole ||
+      hasConversationContentSurface({
+        layout: messageLayoutValue,
+        role: conversationRole,
+        errorOnly: isErrorOnlyMessage(msg),
+      }))
+  const isRightAlignedMessage = msg.role === 'user' && isUserMessageOnRight(messageLayoutValue)
   const messageRoleClass = getMessageRoleClass(msg.role)
   const shouldShowAvatar = showAvatar ?? true
-  // Small screens put a smaller assistant avatar above the reply so the text keeps the full width.
-  const stackAssistantAvatar = isSmallScreen && shouldShowAvatar && msg.role === 'assistant'
-  const stackedAssistantAvatar = stackAssistantAvatar && (
-    <Box className="relative mb-1 w-fit self-start">
-      <AssistantAvatar
-        size={24}
-        avatarKey={assistantAvatarKey}
-        picUrl={sessionPicUrl}
-        sessionType={props.sessionType}
-        onClick={onClickAssistantAvatar}
-      />
-      {msg.generating && (
-        <Flex className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-          <Loader size={28} classNames={{ root: "after:content-[''] after:border-[2px]" }} />
-        </Flex>
-      )}
-    </Box>
-  )
+  const rowLayout = getConversationRowLayout(isSmallScreen, shouldShowAvatar, widthFull)
   const statusElements = <MessageStatuses statuses={leadingStatuses} />
   const errorTipsElement = (
     <MessageErrTips
@@ -838,31 +939,23 @@ const _Message: FC<Props> = (props) => {
   const messageContent = (
     <>
       <div
+        ref={swipeSurfaceRef}
         data-testid={TestId.message.content}
         className={cn(
-          isBubbleLayout
-            ? 'inline-block max-w-full min-w-0'
-            : msg.role === 'assistant'
-              ? 'w-full min-w-0'
-              : 'inline-block max-w-full min-w-0',
-          isBubbleLayout
-            ? cn(
-                'px-4 py-1 rounded-lg',
-                msg.role === 'user'
-                  ? 'bg-[var(--mantine-color-chatbox-brand-filled)] text-white'
-                  : msg.role === 'assistant'
-                    ? isErrorOnlyMessage(msg)
-                      ? '!p-0 !bg-transparent'
-                      : 'bg-chatbox-background-secondary'
-                    : 'bg-chatbox-background-secondary rounded-lg'
-              )
-            : msg.role !== 'assistant'
-              ? 'bg-chatbox-background-secondary px-4 rounded-lg'
-              : ''
+          conversationRole
+            ? getConversationContentClassName({
+                layout: messageLayoutValue,
+                role: conversationRole,
+                isSmallScreen,
+                errorOnly: isErrorOnlyMessage(msg),
+                spansColumn: rowLayout.spansColumn,
+              })
+            : 'inline-block max-w-full min-w-0 bg-chatbox-background-secondary px-4 rounded-lg',
+          longPressSurfaceHighlight && getLongPressSurfaceClassName(longPressHighlighted)
         )}
       >
         <Box
-          className={cn('msg-content', { 'msg-content-small': small })}
+          className={cn('msg-content', { 'msg-content-small': small, 'msg-content-trim-end': isSmallScreen })}
           sx={small ? { fontSize: theme.typography.body2.fontSize } : {}}
         >
           {showWorkSummary && (
@@ -1011,7 +1104,7 @@ const _Message: FC<Props> = (props) => {
                               })
                             }}
                           >
-                            {isUserBubble ? (
+                            {msg.role === 'user' && isBubbleLayout ? (
                               <>
                                 <span className="block mb-1 text-xs text-white/80">
                                   {t('OCR Text')} ({item.ocrResult.length} {t('characters')})
@@ -1184,7 +1277,7 @@ const _Message: FC<Props> = (props) => {
     </Flex>
   )
 
-  const actionButtons = !readOnly && buttonGroup !== 'none' && !msg.generating && (
+  const actionButtons = !readOnly && buttonGroup !== 'none' && !showGenerating && !longPressMenuEnabled && (
     <Flex
       gap={0}
       m={actionRowMargin}
@@ -1246,6 +1339,33 @@ const _Message: FC<Props> = (props) => {
     </Flex>
   )
 
+  // Screen readers cannot long-press: a visually hidden "More" button opens the same menu.
+  const longPressMenu = longPressMenuEnabled && (
+    <ActionMenu
+      type="mobile"
+      items={actionMenuItems}
+      title={actionMenuTitle}
+      titleEmphasis={actionMenuTitleEmphasis}
+      subtitle={actionMenuSubtitle}
+      contentTestId={TestId.message.actionMenu}
+      opened={actionMenuOpened}
+      onChange={handleActionMenuChange}
+    >
+      <button type="button" className="sr-only" aria-haspopup="menu" aria-label={String(t('More'))}>
+        {t('More')}
+      </button>
+    </ActionMenu>
+  )
+
+  const selectTextPage = longPressMenuEnabled && selectTextOpened && (
+    <MessageSelectTextPage
+      msg={msg}
+      sessionId={sessionId}
+      scrollRatio={selectTextScrollRatio}
+      onClose={() => setSelectTextOpened(false)}
+    />
+  )
+
   const messageActions = (
     <>
       {actionButtons}
@@ -1253,7 +1373,14 @@ const _Message: FC<Props> = (props) => {
     </>
   )
 
-  const meta = (
+  const longPressProps = longPressHandlers && {
+    ...longPressHandlers,
+    'aria-haspopup': 'menu' as const,
+  }
+  // Long-press owns the touch gesture on small screens: the system selection and callout would open first.
+  // `.msg-block` turns selection on, so this needs to win over it.
+  const longPressSurfaceClass = longPressMenuEnabled && '!select-none [-webkit-touch-callout:none]'
+  const meta = (tipsElements || msg.steered) && (
     <Flex
       direction="column"
       gap={2}
@@ -1287,102 +1414,126 @@ const _Message: FC<Props> = (props) => {
     return <BackgroundTaskNotificationUI task={msg.backgroundTask} className={className} />
   }
 
-  if (isBubbleLayout && msg.role === 'user') {
+  if (conversationRole) {
+    const isUser = conversationRole === 'user'
+    const swipeFeedback = !isUser && swipeEnabled
+    const avatar = shouldShowAvatar && (
+      <Box
+        className={cn('relative shrink-0', swipeFeedback && MESSAGE_SWIPE_AVATAR_HIDDEN_CLASS)}
+        title={isUser || isSmallScreen ? undefined : getMessageHeaderTitle(header)}
+      >
+        {isUser ? (
+          <UserAvatar
+            size={rowLayout.avatarSize}
+            avatarKey={userAvatarKey}
+            onClick={() => navigateToSettings('/appearance')}
+          />
+        ) : (
+          <AssistantAvatar
+            size={rowLayout.avatarSize}
+            avatarKey={assistantAvatarKey}
+            picUrl={sessionPicUrl}
+            sessionType={props.sessionType}
+            aiProvider={msg.aiProvider}
+            onClick={onClickAssistantAvatar}
+          />
+        )}
+        {!isUser && showGenerating && (
+          <Flex className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+            <Loader
+              size={rowLayout.generatingLoaderSize}
+              classNames={{ root: "after:content-[''] after:border-[2px]" }}
+            />
+          </Flex>
+        )}
+      </Box>
+    )
     return (
       <Box
         data-testid={TestId.message.item}
         data-message-role={msg.role}
+        {...{ [AutomationStateAttr.messageLayout]: messageLayoutValue }}
+        {...longPressProps}
         ref={ref}
         id={props.id}
         key={msg.id}
         className={cn(
           'group/message',
           'msg-block',
-          'bubble-msg',
-          'bubble-user-msg',
-          'px-2 py-1.5',
+          (isUser || isBubbleLayout) && 'bubble-msg',
+          isUser && isBubbleLayout && 'bubble-user-msg',
+          rowLayout.spansColumn && 'msg-spans-column',
+          isSmallScreen ? 'pt-5' : 'pt-4 sm:pt-5',
+          longPressSurfaceClass,
+          swipeEnabled && 'touch-pan-y',
           msg.generating ? 'rendering' : 'render-done',
           messageRoleClass,
           className,
           'w-full'
         )}
         sx={{
-          paddingBottom: '0.1rem',
+          paddingBottom: 0,
           paddingX: '1rem',
         }}
       >
-        <Flex justify="flex-end" gap="xs" className="w-full min-w-0">
+        <Flex
+          ref={swipeRowRef}
+          justify={isRightAlignedMessage ? 'flex-end' : 'flex-start'}
+          align="flex-start"
+          gap={rowLayout.avatarGap}
+          className="group/swipe-row relative w-full min-w-0"
+          style={
+            isRightAlignedMessage
+              ? { paddingLeft: rowLayout.userFarSideSpace }
+              : { paddingRight: isUser ? rowLayout.userFarSideSpace : rowLayout.assistantFarSideSpace }
+          }
+        >
+          {swipeFeedback && (
+            <MessageSwipeCue
+              avatarSize={rowLayout.avatarSize}
+              avatarGap={rowLayout.avatarGap}
+              nameRowOffset={rowLayout.nameRowOffset}
+              farSideSpace={rowLayout.assistantFarSideSpace}
+              showAvatar={shouldShowAvatar}
+              avatarAbove={rowLayout.assistantAvatarAbove}
+              bubble={isBubbleLayout}
+            />
+          )}
+          {(isUser ? !isRightAlignedMessage : !rowLayout.assistantAvatarAbove) && avatar}
           <Flex
             direction="column"
-            align="flex-end"
-            className={cn(
-              'min-w-0',
-              isSmallScreen ? (shouldShowAvatar ? 'max-w-[calc(100%-3rem)]' : 'max-w-[95%]') : 'max-w-[85%]'
-            )}
+            align={isRightAlignedMessage ? 'flex-end' : 'flex-start'}
+            className={cn('relative min-w-0', !isUser && 'flex-1')}
+            style={{ maxWidth: isUser ? rowLayout.userBubbleMaxWidth : rowLayout.assistantContentMaxWidth }}
           >
-            {messageContent}
-            {(msg.files || msg.links) && <MessageAttachmentGrid files={msg.files} links={msg.links} align="end" />}
-            {meta}
-            {actionButtons}
-          </Flex>
-          {shouldShowAvatar && (
-            <Box className="mt-1 shrink-0">
-              <UserAvatar avatarKey={userAvatarKey} onClick={() => navigateToSettings('/appearance')} />
-            </Box>
-          )}
-        </Flex>
-      </Box>
-    )
-  }
-
-  if (isClassicMessage) {
-    return (
-      <Box
-        ref={ref}
-        id={props.id}
-        key={msg.id}
-        className={cn(
-          'group/message',
-          'msg-block',
-          'px-2 py-1.5',
-          msg.generating ? 'rendering' : 'render-done',
-          messageRoleClass,
-          className,
-          'w-full'
-        )}
-        sx={{
-          paddingBottom: '0.1rem',
-          paddingX: '1rem',
-        }}
-      >
-        <Flex gap="xs" align="flex-start" className="w-full min-w-0">
-          {shouldShowAvatar && !stackAssistantAvatar && (
-            <Box className={cn('relative shrink-0', msg.role !== 'assistant' ? 'mt-1' : 'mt-2')}>
-              {msg.role === 'assistant' ? (
-                <AssistantAvatar
-                  avatarKey={assistantAvatarKey}
-                  picUrl={sessionPicUrl}
-                  sessionType={props.sessionType}
-                  onClick={onClickAssistantAvatar}
+            {!isUser && (
+              <Flex align="flex-start" gap={rowLayout.avatarGap} className="relative w-full min-w-0">
+                {rowLayout.assistantAvatarAbove && avatar}
+                <MessageNameRow
+                  header={header}
+                  layout={messageLayoutValue}
+                  isSmallScreen={isSmallScreen}
+                  offsetTop={rowLayout.nameRowOffset}
+                  generating={showGenerating && !shouldShowAvatar}
+                  className={swipeFeedback ? MESSAGE_SWIPE_NAME_HIDDEN_CLASS : undefined}
                 />
-              ) : (
-                <UserAvatar avatarKey={userAvatarKey} onClick={() => navigateToSettings('/appearance')} />
-              )}
-              {msg.role === 'assistant' && msg.generating && (
-                <Flex className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-                  <Loader size={32} className=" " classNames={{ root: "after:content-[''] after:border-[2px]" }} />
-                </Flex>
-              )}
-            </Box>
-          )}
-          <Flex direction="column" align="flex-start" className="min-w-0 flex-1 max-w-full">
-            {stackedAssistantAvatar}
+              </Flex>
+            )}
             {messageContent}
-            {(msg.files || msg.links) && <MessageAttachmentGrid files={msg.files} links={msg.links} align="start" />}
+            {(msg.files || msg.links) && (
+              <MessageAttachmentGrid
+                files={msg.files}
+                links={msg.links}
+                align={isRightAlignedMessage ? 'end' : 'start'}
+              />
+            )}
             {meta}
-            {messageActions}
+            {isUser ? actionButtons : messageActions}
           </Flex>
+          {isRightAlignedMessage && avatar}
         </Flex>
+        {longPressMenu}
+        {selectTextPage}
       </Box>
     )
   }
@@ -1391,6 +1542,7 @@ const _Message: FC<Props> = (props) => {
     <Box
       data-testid={TestId.message.item}
       data-message-role={msg.role}
+      {...longPressProps}
       ref={ref}
       id={props.id}
       key={msg.id}
@@ -1399,6 +1551,7 @@ const _Message: FC<Props> = (props) => {
         'msg-block',
         isBubbleLayout ? 'bubble-msg' : '',
         'px-2 py-1.5',
+        longPressSurfaceClass,
         msg.generating ? 'rendering' : 'render-done',
         messageRoleClass,
         className,
@@ -1409,53 +1562,27 @@ const _Message: FC<Props> = (props) => {
         paddingX: '1rem',
       }}
     >
-      <Grid container wrap="nowrap" spacing={1.5}>
-        {shouldShowAvatar && !stackAssistantAvatar && (
+      <Grid container wrap="nowrap" spacing={1.5} className="relative">
+        {shouldShowAvatar && (
           <Grid item>
-            <Box className={cn('relative', msg.role !== 'assistant' ? 'mt-1' : 'mt-2')}>
-              {
-                {
-                  assistant: (
-                    <AssistantAvatar
-                      avatarKey={assistantAvatarKey}
-                      picUrl={sessionPicUrl}
-                      sessionType={props.sessionType}
-                      onClick={onClickAssistantAvatar}
-                    />
-                  ),
-                  user: !isBubbleLayout ? (
-                    <UserAvatar avatarKey={userAvatarKey} onClick={() => navigateToSettings('/appearance')} />
-                  ) : null,
-                  system: <SystemAvatar sessionType={props.sessionType} onClick={onClickAssistantAvatar} />,
-                  tool: null,
-                }[msg.role]
-              }
-              {msg.role === 'assistant' && msg.generating && (
-                <Flex className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-                  <Loader size={32} className=" " classNames={{ root: "after:content-[''] after:border-[2px]" }} />
-                </Flex>
+            <Box className="relative mt-1">
+              {msg.role === 'system' && (
+                <SystemAvatar sessionType={props.sessionType} onClick={onClickAssistantAvatar} />
               )}
             </Box>
           </Grid>
         )}
-        <Grid
-          item
-          xs
-          sm
-          container
-          sx={{ width: '0px', paddingRight: shouldShowAvatar && !stackAssistantAvatar ? '15px' : '0px' }}
-        >
-          <Grid item xs>
-            {stackedAssistantAvatar}
+        <Grid item xs sm container sx={{ width: '0px', paddingRight: shouldShowAvatar ? '15px' : '0px' }}>
+          <Grid item xs className="relative">
             {messageContent}
-            {(msg.files || msg.links) && (
-              <MessageAttachmentGrid files={msg.files} links={msg.links} align={isUserBubble ? 'end' : 'start'} />
-            )}
+            {(msg.files || msg.links) && <MessageAttachmentGrid files={msg.files} links={msg.links} align="start" />}
             {meta}
             {messageActions}
           </Grid>
         </Grid>
       </Grid>
+      {longPressMenu}
+      {selectTextPage}
     </Box>
   )
 }

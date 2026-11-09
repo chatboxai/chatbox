@@ -1,4 +1,3 @@
-import { getSessionSearchTarget, clearSessionSearchTarget } from '@/stores/session-search-target'
 import { resolveSessionMode } from '@chatbox/core/session/mode-policy'
 import { Box, Button, Loader } from '@mantine/core'
 import type { ModelProvider } from '@shared/types'
@@ -9,12 +8,14 @@ import { useStore } from 'zustand'
 import { JK_PAGE_NAMES } from '@/analytics/jk-events'
 import { rendererApplication } from '@/app/renderer-application'
 import MessageList, { type MessageListRef } from '@/components/chat/MessageList'
+import { MessageLongPressHint } from '@/components/chat/MessageLongPressHint'
 import { ChatboxWelcomeCard } from '@/components/common/ChatboxWelcomeCard'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import InputBox, { type InputBoxPayload } from '@/components/InputBox/InputBox'
-import { paddedContentColumnClassName } from '@/components/layout/contentColumn'
+import { contentColumnContainerClassName, paddedContentColumnClassName } from '@/components/layout/contentColumn'
 import Header from '@/components/layout/Header'
 import Page from '@/components/layout/Page'
+import { SessionRecoveryDetails } from '@/components/session/SessionRecoveryDetails'
 import { SessionSheet } from '@/components/session/SessionSheet'
 import { closeSessionPanel, SessionSidePanel } from '@/components/session/SessionSidePanel'
 import { useGenerationStop } from '@/hooks/useGenerationStop'
@@ -22,6 +23,7 @@ import { useProviders } from '@/hooks/useProviders'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { useSessionPresentation, useSessionTranscript } from '@/hooks/useSessionPresentation'
 import useVersion from '@/hooks/useVersion'
+import { cn } from '@/lib/utils'
 import { defaultSessionsForCN, defaultSessionsForEN } from '@/packages/initial_data'
 import * as remote from '@/packages/remote'
 import {
@@ -39,6 +41,7 @@ import { useSessionAgentMode } from '@/stores/session/agent-mode'
 import { switchCurrentSession } from '@/stores/session/crud'
 import { submitNewUserMessage } from '@/stores/session/messages'
 import { startNewThread } from '@/stores/session/threads'
+import { clearSessionSearchTarget, getSessionSearchTarget } from '@/stores/session-search-target'
 import { clearSessionActivity, setOnScreenSession } from '@/stores/sessionActivityStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { add as addToast } from '@/stores/toastActions'
@@ -73,6 +76,16 @@ function RouteComponent() {
   const sessionLoadSettled = currentSession?.id === currentSessionId || (!isFetching && !isError)
   useSessionStartupGuard(currentSessionId, sessionLoadSettled, recovering)
   const messageListRef = useRef<MessageListRef>(null)
+  const [pendingSendScroll, setPendingSendScroll] = useState<{
+    messageId: string
+    stillFollowing: () => boolean
+  } | null>(null)
+  useEffect(() => {
+    if (pendingSendScroll && headerRead?.summary.lastUserMessageId === pendingSendScroll.messageId) {
+      if (pendingSendScroll.stillFollowing()) messageListRef.current?.scrollToBottom()
+      setPendingSendScroll(null)
+    }
+  }, [pendingSendScroll, headerRead?.summary.lastUserMessageId])
   const [searchTarget] = useState(() => getSessionSearchTarget(currentSessionId))
   const initialOrigin = useMemo(
     () => (searchTarget ? { messageId: searchTarget.messageId } : ('tail' as const)),
@@ -80,6 +93,7 @@ function RouteComponent() {
   )
   const captureAnchor = useCallback(() => messageListRef.current?.captureAnchor() ?? null, [])
   const transcript = useSessionTranscript(sessionLoadTarget, initialOrigin, captureAnchor)
+  const hintMessages = useMemo(() => transcript.rows.map((row) => row.message), [transcript.rows])
   useEffect(() => {
     if (searchTarget) clearSessionSearchTarget(searchTarget)
   }, [searchTarget])
@@ -189,7 +203,11 @@ function RouteComponent() {
 
   const onSubmit = useCallback(
     async ({ constructedMessage, needGenerating = true, onUserMessageReady }: InputBoxPayload) => {
-      messageListRef.current?.setIsNewMessage(autoScrollNewMessagesToTop)
+      const submittedList = messageListRef.current
+      submittedList?.setIsNewMessage(autoScrollNewMessagesToTop)
+      // Read the intent before any await: sending while reading history keeps the reading position, while sending
+      // from the tail (or right after asking for it) keeps following the new turn.
+      const stillFollowing = autoScrollNewMessagesToTop ? null : (submittedList?.captureSendFollow() ?? null)
 
       if (!currentSession) {
         return
@@ -209,7 +227,12 @@ function RouteComponent() {
       await submitNewUserMessage(currentSession.id, {
         newUserMsg: constructedMessage,
         needGenerating,
-        onUserMessageReady,
+        onUserMessageReady: () => {
+          onUserMessageReady?.()
+          if (stillFollowing && messageListRef.current === submittedList) {
+            setPendingSendScroll({ messageId: constructedMessage.id, stillFollowing })
+          }
+        },
       })
     },
     [autoScrollNewMessagesToTop, currentSession, currentSessionWithDefaultModel]
@@ -277,6 +300,7 @@ function RouteComponent() {
             </Button>
             <Button onClick={() => sessionStartupRecovery.retry(currentSessionId)}>{t('Try Again')}</Button>
           </div>
+          <SessionRecoveryDetails sessionId={currentSessionId} />
         </div>
       </Page>
     )
@@ -284,7 +308,13 @@ function RouteComponent() {
 
   return currentSession ? (
     <div className="flex h-full">
-      <div className={`flex min-w-0 flex-1 flex-col h-full ${!isSmallScreen ? 'relative' : ''}`}>
+      <div
+        className={cn(
+          'flex min-w-0 flex-1 flex-col h-full',
+          !isSmallScreen && 'relative',
+          contentColumnContainerClassName(widthFull)
+        )}
+      >
         <Header session={currentSession} />
         <MessageList
           ref={messageListRef}
@@ -305,6 +335,14 @@ function RouteComponent() {
                   pageName={JK_PAGE_NAMES.CHAT_PAGE}
                   className="pointer-events-auto w-full"
                 />
+              </Box>
+            </Box>
+          )}
+
+          {isSmallScreen && (
+            <Box className="pointer-events-none absolute left-0 right-0 z-10" style={{ bottom: '100%' }} mb="xs">
+              <Box className={`${paddedContentColumnClassName(widthFull)} pointer-events-auto`}>
+                <MessageLongPressHint messages={hintMessages} />
               </Box>
             </Box>
           )}

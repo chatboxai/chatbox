@@ -1,8 +1,8 @@
 import {
-  SessionRowConflictError,
   type SessionBranchPreview,
   type SessionForkOptionsPage,
   type SessionGenerationControl,
+  SessionRowConflictError,
 } from '@chatbox/core/ports'
 import { getSessionActionGate, type SessionLockState } from '@chatbox/core/session/action-gates'
 import { isActionAvailableInMode, type SessionMode } from '@chatbox/core/session/mode-policy'
@@ -12,7 +12,7 @@ import { TestId } from '@shared/automation/testids'
 import { supportsSessionGeneration } from '@shared/session/capabilities'
 import type { SessionType } from '@shared/types'
 import { IconAlignRight, IconChevronLeft, IconChevronRight, IconFold, IconTrash } from '@tabler/icons-react'
-import { useQueries, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
+import { type UseQueryResult, useQueries, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { rendererApplication } from '@/app/renderer-application'
@@ -32,6 +32,7 @@ type ForkGroupProps = {
   sessionMode?: SessionMode
   assistantAvatarKey?: string
   sessionPicUrl?: string
+  assistantName?: string
 }
 
 type Branch = SessionForkOptionsPage['branches'][number]
@@ -455,6 +456,7 @@ function PreviewMessage(props: ForkGroupProps & { messageId: string }) {
       sessionMode={props.sessionMode}
       assistantAvatarKey={props.assistantAvatarKey}
       sessionPicUrl={props.sessionPicUrl}
+      assistantName={props.assistantName}
     />
   ) : null
 }

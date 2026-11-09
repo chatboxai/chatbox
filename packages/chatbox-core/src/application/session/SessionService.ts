@@ -102,6 +102,7 @@ export class SessionService {
   private readonly getLastUsedModels: NonNullable<SessionServiceOptions['getLastUsedModels']>
   private readonly pendingMetaRepairs = new Set<string>()
   private readonly pendingArchiveListRefreshes = new Set<string>()
+  private readonly reconciledArchivedIds = new Set<string>()
   private archiveStateRevision = 0
   private initialization: Promise<void> | null = null
   private readonly folderStore: SessionFolderStorePort
@@ -448,7 +449,52 @@ export class SessionService {
 
   async listArchivedSessionsMetaPage(cursor: number, limit?: number): Promise<SessionMetaPage> {
     await this.initialize()
-    return this.repository.meta.getArchivedPage(cursor, limit)
+    const page = await this.repository.meta.getArchivedPage(cursor, limit)
+    const stale = new Set<string>()
+    for (const item of page.items) {
+      if (await this.reconcileArchivedMeta(item)) stale.add(item.id)
+    }
+    if (stale.size === 0) return page
+    // Reconciled rows left the archived set, so later rows moved up by the same count.
+    return {
+      items: page.items.filter((item) => !stale.has(item.id)),
+      nextCursor: page.nextCursor === null ? null : page.nextCursor - stale.size,
+      total: page.total - stale.size,
+    }
+  }
+
+  /**
+   * Metadata can keep an archive timestamp after its header was restored (rows written before
+   * the header projection listed cleared fields). Each archived row is checked against its header
+   * once per service lifetime; a row whose header is not archived is re-projected from the header.
+   * Metadata-only recovery archives are authoritative and are left as they are.
+   * Returns whether the row is no longer archived.
+   */
+  private async reconcileArchivedMeta(item: SessionMetaRecord): Promise<boolean> {
+    if (item.recoveryArchived || this.reconciledArchivedIds.has(item.id)) return false
+    try {
+      const read = await this.repository.getSessionHeader(item.id)
+      if (!read || read.header.archivedAt !== undefined) {
+        this.reconciledArchivedIds.add(item.id)
+        return false
+      }
+      const result = await this.writes.reprojectMeta(item.id)
+      this.reconciledArchivedIds.add(item.id)
+      if (!result?.meta || result.metaRevision === null) return false
+      await this.events.publish({
+        type: 'session-meta-projected',
+        sessionId: item.id,
+        meta: result.meta,
+        revision: result.metaRevision,
+      })
+      return result.meta.archivedAt === undefined
+    } catch (error) {
+      await this.log('warn', 'Failed to reconcile archived session metadata', {
+        sessionId: item.id,
+        error: describeError(error),
+      })
+      return false
+    }
   }
 
   async countSessionsMeta(): Promise<number> {
@@ -911,18 +957,11 @@ export class SessionService {
   async recoverSessionList(): Promise<{ recovered: number; failed: number }> {
     await this.initialize()
     const sessionIds = await this.repository.getAllSessionIds()
-    let existingArchivedRecords = new Map<string, SessionMetaRecord>()
-    try {
-      existingArchivedRecords = new Map(
-        (await this.repository.meta.getAllIncludingHidden())
-          .filter((record) => record.recoveryArchived === true)
-          .map((record) => [record.id, record])
-      )
-    } catch (error) {
-      await this.log('warn', 'Failed to preserve archived metadata during session-list recovery', {
-        error: describeError(error),
-      })
-    }
+    // Preserve every unreadable entry, including its name, folder and archive state.
+    // If metadata cannot be read, leave the index untouched and let the caller retry.
+    const existingRecords = new Map(
+      (await this.repository.meta.getAllIncludingHidden()).map((record) => [record.id, record])
+    )
     const sessionsWithTimestamp: Array<{ read: SessionHeaderRead; timestamp: number }> = []
     const failedSessionIds: string[] = []
     for (const sessionId of sessionIds) {
@@ -956,7 +995,8 @@ export class SessionService {
         timestamp || now - (sessionsWithTimestamp.length - index) * 1000,
         read.summary.pausedMessageCount > 0
       )
-      const existingArchivedRecord = existingArchivedRecords.get(read.header.id)
+      const existingRecord = existingRecords.get(read.header.id)
+      const existingArchivedRecord = existingRecord?.recoveryArchived ? existingRecord : undefined
       return existingArchivedRecord
         ? {
             ...recoveredRecord,
@@ -967,10 +1007,9 @@ export class SessionService {
         : recoveredRecord
     })
     for (const sessionId of failedSessionIds) {
-      const existingArchivedRecord = existingArchivedRecords.get(sessionId)
-      if (existingArchivedRecord) {
-        records.push(existingArchivedRecord)
-      }
+      records.push(
+        existingRecords.get(sessionId) ?? createSessionMetaRecord({ id: sessionId, name: sessionId }, now, now)
+      )
     }
     await this.repository.meta.clear()
     await this.repository.meta.createMany(records)

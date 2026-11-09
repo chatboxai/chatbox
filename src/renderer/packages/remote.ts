@@ -853,7 +853,7 @@ export async function requestLoginTicketId() {
   const deviceName = await platform.getDeviceName()
 
   const res = await afetch(
-    `${getChatboxOrigin()}/api/auth/request_login_ticket`,
+    `${getAPIOrigin()}/api/auth/request_login_ticket`,
     {
       method: 'POST',
       headers: {
@@ -883,7 +883,7 @@ export async function sendEmailLoginCode(params: { email: string; lang?: string 
   }
   const afetch = await getAfetch()
   const res = await afetch(
-    `${getChatboxOrigin()}/api/auth/send_email_login_code`,
+    `${getAPIOrigin()}/api/auth/send_email_login_code`,
     {
       method: 'POST',
       headers: {
@@ -914,7 +914,7 @@ export async function loginOrSignupWithEmailCode(params: { email: string; code: 
   }
   const afetch = await getAfetch()
   const res = await afetch(
-    `${getChatboxOrigin()}/api/auth/login_or_signup_with_email_code`,
+    `${getAPIOrigin()}/api/auth/login_or_signup_with_email_code`,
     {
       method: 'POST',
       headers: {
@@ -947,7 +947,7 @@ export async function getWebAuthToken(): Promise<string> {
   }
   const afetch = await getAuthenticatedAfetch()
   const res = await afetch(
-    `${getChatboxOrigin()}/api/auth/web_auth_token/generate`,
+    `${getAPIOrigin()}/api/auth/web_auth_token/generate`,
     {
       method: 'POST',
       headers: {
@@ -974,7 +974,7 @@ export async function checkLoginStatus(ticketId: string) {
   }
   const afetch = await getAfetch()
   const res = await afetch(
-    `${getChatboxOrigin()}/api/auth/login_status`,
+    `${getAPIOrigin()}/api/auth/login_status`,
     {
       method: 'POST',
       headers: {
@@ -1015,7 +1015,7 @@ export async function refreshAccessToken(params: { refreshToken: string }) {
   }
   const afetch = await getAfetch()
   const res = await afetch(
-    `${getChatboxOrigin()}/api/auth/token_refresh`,
+    `${getAPIOrigin()}/api/auth/token_refresh`,
     {
       method: 'POST',
       headers: {
@@ -1058,7 +1058,7 @@ export async function getUserProfile() {
   }
   const afetch = await getAuthenticatedAfetch()
   const res = await afetch(
-    `${getChatboxOrigin()}/api/user/profile`,
+    `${getAPIOrigin()}/api/user/profile`,
     {
       method: 'GET',
       headers: {
@@ -1156,7 +1156,7 @@ export async function listLicensesByUser(): Promise<UserLicense[]> {
   }
   const afetch = await getAuthenticatedAfetch()
   const res = await afetch(
-    `${getChatboxOrigin()}/api/license/list_by_user`,
+    `${getAPIOrigin()}/api/license/list_by_user`,
     {
       method: 'GET',
       headers: {

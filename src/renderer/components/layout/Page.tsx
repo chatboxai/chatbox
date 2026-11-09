@@ -56,7 +56,12 @@ export const PageHeader: FC<PageHeaderProps> = ({ title, left, right }) => {
 
   return (
     <>
-      <Flex h={48} align="center" px={4} className="title-bar flex-none bg-chatbox-background-primary">
+      <Flex
+        h={48}
+        align="center"
+        px={4}
+        className="title-bar chatbox-title-bar flex-none bg-chatbox-background-primary"
+      >
         <Flex align="center" miw={44} className={needRoomForMacWindowControls ? 'pl-20' : ''}>
           {left || (
             <IconButton
@@ -84,7 +89,7 @@ export const PageHeader: FC<PageHeaderProps> = ({ title, left, right }) => {
         </Flex>
         <WindowControls className="-mr-3 ml-2" />
       </Flex>
-      <Divider />
+      <Divider className="chatbox-title-bar-divider" />
       <MobileWebDownloadBanner />
     </>
   )
@@ -98,7 +103,7 @@ export const Page: FC<PageProps> = ({ children, title, left, right }) => {
   return (
     <div className="flex flex-col h-full">
       <PageHeader title={title} left={left} right={right} />
-      <Box className="flex-1 overflow-auto">{children}</Box>
+      <Box className="chatbox-scroll-top-fade flex-1 overflow-auto">{children}</Box>
     </div>
   )
 }

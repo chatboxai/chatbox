@@ -1,4 +1,4 @@
-import { buildContext, flattenToolCallPartsToText } from '@shared/context'
+import { buildContext, flattenToolCallPartsToText, selectMessagesBeforeTarget } from '@shared/context'
 import type { AttachmentPolicy } from '@shared/context/attachments'
 import type { Message, MessageContentParts } from '@shared/types'
 import type { MemoryToolContext } from '@shared/types/agent-persona'
@@ -68,7 +68,12 @@ export class BasicGenerationPreparation<TContext> implements GenerationPreparati
       modelSupportToolUseForFile: false,
       sandboxMode: false,
     }
-    let promptMessages = await buildContext(request.messages.slice(0, request.targetMessageIndex), {
+    const contextMessages = selectMessagesBeforeTarget(
+      request.messages,
+      request.targetMessageIndex,
+      request.preserveLastPromptMessageToolCalls
+    )
+    let promptMessages = await buildContext(contextMessages, {
       attachmentResolver: request.attachments,
       compactionPoints: request.compactionPoints,
       maxContextMessageCount: request.settings.maxContextMessageCount,

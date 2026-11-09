@@ -172,6 +172,7 @@ function ArchivedSessionRow({
                 await rendererApplication.sessions.restoreSession(session.id)
               } catch (error) {
                 console.error('Failed to restore archived session:', error)
+              } finally {
                 setSessionBusy(session.id, false)
               }
             }}

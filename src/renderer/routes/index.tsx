@@ -25,7 +25,7 @@ import { ScalableIcon } from '@/components/common/ScalableIcon'
 import { ImageInStorage } from '@/components/Image'
 import InputBox, { type InputBoxPayload } from '@/components/InputBox/InputBox'
 import HomepageIcon from '@/components/icons/HomepageIcon'
-import { paddedContentColumnClassName } from '@/components/layout/contentColumn'
+import { contentColumnContainerClassName, paddedContentColumnClassName } from '@/components/layout/contentColumn'
 import Page from '@/components/layout/Page'
 import { getForceShowNewUserScenarioCardsFlag } from '@/dev/devToolsFlags'
 import { useMyCopilots, useRemoteCopilotsByCursor } from '@/hooks/useCopilots'
@@ -36,8 +36,8 @@ import * as remote from '@/packages/remote'
 import { router } from '@/router'
 import { useAuthInfoStore } from '@/stores/authInfoStore'
 import { resolveChatboxLicenseDefaultModel } from '@/stores/defaultChatModel'
-import { lastUsedModelStore } from '@/stores/lastUsedModelStore'
 import { getHasCompletedFirstSuccessfulChat } from '@/stores/firstSuccessfulChat'
+import { lastUsedModelStore } from '@/stores/lastUsedModelStore'
 import { getSessionAgentModeEntry } from '@/stores/session/agent-mode'
 import { switchCurrentSession } from '@/stores/session/crud'
 import { generate } from '@/stores/session/generation'
@@ -47,6 +47,7 @@ import { useUIStore } from '@/stores/uiStore'
 import { getHomeWelcomeCardMode } from '@/utils/homeWelcomeCard'
 import { NewUserScenarioGrid } from './-new-user-scenarios/NewUserScenarioGrid'
 import { type NewUserScenario, newUserScenarios, resolveNewUserScenarioContent } from './-new-user-scenarios/scenarios'
+import { applyCopilotToNewSession, clearCopilotFromNewSession, getNewChatAssistantFields } from './-newChatSession'
 
 const scenarioAgentModeOff = {
   value: 'off',
@@ -216,22 +217,19 @@ function Index() {
 
   const { copilots: myCopilots } = useMyCopilots()
   const { copilots: remoteCopilots } = useRemoteCopilotsByCursor({ limit: 10 })
+  const [routeCopilot, setRouteCopilot] = useState<CopilotDetail | null>(null)
   const selectedCopilotId = useMemo(() => session?.copilotId, [session?.copilotId])
   const selectedCopilot = useMemo(
-    () => myCopilots.find((c) => c.id === selectedCopilotId) || remoteCopilots.find((c) => c.id === selectedCopilotId),
-    [myCopilots, remoteCopilots, selectedCopilotId]
+    () =>
+      myCopilots.find((c) => c.id === selectedCopilotId) ||
+      remoteCopilots.find((c) => c.id === selectedCopilotId) ||
+      (routeCopilot?.id === selectedCopilotId ? routeCopilot : undefined),
+    [myCopilots, remoteCopilots, routeCopilot, selectedCopilotId]
   )
   useEffect(() => {
-    setSession((old) => ({
-      ...old,
-      assistantAvatarKey:
-        selectedCopilot?.avatar?.type === 'storage-key' ? selectedCopilot.avatar.storageKey : undefined,
-      picUrl: selectedCopilot?.avatar?.type === 'url' ? selectedCopilot.avatar.url : selectedCopilot?.picUrl,
-      backgroundImage: selectedCopilot?.backgroundImage,
-      name: selectedCopilot?.name || 'Untitled',
-      threadName: '',
-    }))
-    setSystemPrompt(selectedCopilot?.prompt ?? (settingsStore.getState().defaultPrompt || ''))
+    if (!selectedCopilot) return
+    setSession((old) => applyCopilotToNewSession(old, selectedCopilot))
+    setSystemPrompt(selectedCopilot.prompt)
   }, [selectedCopilot])
 
   const routerState = useRouterState()
@@ -245,15 +243,8 @@ function Index() {
         return
       }
 
-      setSession((old) => ({
-        ...old,
-        copilotId: c.id,
-        assistantAvatarKey: c.avatar?.type === 'storage-key' ? c.avatar.storageKey : undefined,
-        picUrl: c.avatar?.type === 'url' ? c.avatar.url : c.picUrl,
-        backgroundImage: c.backgroundImage,
-        name: c.name || 'Untitled',
-        threadName: '',
-      }))
+      setRouteCopilot(c)
+      setSession((old) => applyCopilotToNewSession(old, c))
       setSystemPrompt(c.prompt)
     } else if (copilotId) {
       setSession((old) => ({ ...old, copilotId }))
@@ -277,9 +268,7 @@ function Index() {
           name: options?.name ?? session.name,
           type: 'chat',
           folderId,
-          assistantAvatarKey: session.assistantAvatarKey,
-          picUrl: session.picUrl,
-          backgroundImage: session.backgroundImage,
+          ...getNewChatAssistantFields(session),
           messages: options?.messages ?? (systemPrompt ? [createMessage('system', systemPrompt)] : []),
           copilotId: session.copilotId,
           threadName: options?.threadName ?? session.threadName ?? '',
@@ -308,7 +297,7 @@ function Index() {
           },
         },
         undefined,
-        { copilotName: session.copilotId ? session.name : undefined }
+        { copilotName: selectedCopilot?.name }
       )
 
       if (session.copilotId) {
@@ -354,6 +343,7 @@ function Index() {
     },
     [
       session,
+      selectedCopilot,
       systemPrompt,
       folderId,
       addSessionKnowledgeBase,
@@ -442,7 +432,9 @@ function Index() {
 
   return (
     <Page title="">
-      <div className="p-0 flex flex-col h-full min-h-0 overflow-hidden">
+      <div
+        className={clsx('p-0 flex flex-col h-full min-h-0 overflow-hidden', contentColumnContainerClassName(widthFull))}
+      >
         <div
           className={clsx('min-h-0 flex-1 overflow-y-auto', welcomeCardMode !== 'none' ? 'pb-36 sm:pb-32' : 'pb-md')}
         >
@@ -466,7 +458,7 @@ function Index() {
               <Stack gap="sm" className={paddedContentColumnClassName(widthFull)}>
                 <Flex align="center" gap="sm">
                   <CopilotItem
-                    name={session.name}
+                    name={selectedCopilot?.name ?? ''}
                     avatar={
                       session.assistantAvatarKey
                         ? { type: 'storage-key', storageKey: session.assistantAvatarKey }
@@ -480,7 +472,11 @@ function Index() {
                     size={32}
                     c="chatbox-tertiary"
                     bg="var(--chatbox-background-secondary)"
-                    onClick={() => setSession((old) => ({ ...old, copilotId: undefined }))}
+                    onClick={() => {
+                      setRouteCopilot(null)
+                      setSession((old) => clearCopilotFromNewSession(old))
+                      setSystemPrompt(settingsStore.getState().defaultPrompt || '')
+                    }}
                   >
                     <ScalableIcon icon={IconX} size={24} />
                   </ActionIcon>
@@ -514,7 +510,7 @@ function Index() {
               sessionType="chat"
               sessionId="new"
               draftCopilotId={session.copilotId}
-              draftCopilotName={session.copilotId ? session.name : undefined}
+              draftCopilotName={selectedCopilot?.name}
               model={selectedModel}
               // fullWidth
               onSelectModel={onSelectModel}

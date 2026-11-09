@@ -3,6 +3,7 @@ import {
   GenerationService,
   type GenerationServiceDependencies,
   type GenerationSessionPort,
+  trySessionGenerationLock,
   withSessionGenerationLock,
 } from '@chatbox/core/generation'
 import type { LoggerPort, SessionContextSource } from '@chatbox/core/ports'
@@ -306,6 +307,7 @@ const dependencies: GenerationServiceDependencies<ModelDependencies> = {
   },
   coordination: {
     runExclusive: (sessionId, operation) => withSessionGenerationLock(sessionId, operation),
+    tryRunExclusive: (sessionId, operation) => trySessionGenerationLock(sessionId, operation),
     wakeBackgroundTaskFollowUps: (sessionId) => wakeBackgroundTaskFollowUps(sessionId),
   },
   steering: {

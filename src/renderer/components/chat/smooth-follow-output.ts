@@ -5,7 +5,7 @@ interface SmoothFollowOutputOptions {
   stopScrolling?: (scrollTop: number) => void
   requestFrame?: (callback: FrameRequestCallback) => number
   cancelFrame?: (handle: number) => void
-  getScrollBehavior?: () => FollowOutputScrollBehavior
+  getScrollBehavior: () => FollowOutputScrollBehavior
 }
 
 const SCROLL_DIRECTION_TOLERANCE = 0.5
@@ -15,6 +15,13 @@ const HEIGHT_CHANGE_TOLERANCE = 0.5
 // device pixel ratios, where `scrollHeight - clientHeight` (integers) and `scrollTop` (fractional) leave a
 // sub-pixel gap that never closes.
 const AT_BOTTOM_TOLERANCE = 4
+
+// Mobile WebViews re-target an unfinished native smooth scroll on every streamed height change and visibly
+// chase the bottom, so mobile follows output with instant scrolls.
+export function getFollowOutputScrollBehavior(platformType: string): FollowOutputScrollBehavior {
+  if (platformType === 'mobile') return 'auto'
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+}
 
 export function isLayoutClampedScroll(
   previousScrollTop: number | undefined,
@@ -36,7 +43,7 @@ export function createSmoothFollowOutputController({
   stopScrolling,
   requestFrame = window.requestAnimationFrame.bind(window),
   cancelFrame = window.cancelAnimationFrame.bind(window),
-  getScrollBehavior = () => (window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'),
+  getScrollBehavior,
 }: SmoothFollowOutputOptions) {
   // Wait for a real at-bottom signal so restoring a session in the middle does not unexpectedly jump to the end.
   let following = false
@@ -71,7 +78,10 @@ export function createSmoothFollowOutputController({
     lastMaxScrollTop = maxScrollTop
   }
 
-  const handleScroll = (scrollTop: number, maxScrollTop: number) => {
+  const handleScroll = (rawScrollTop: number, maxScrollTop: number) => {
+    // iOS rubber-band scrolling reports offsets past either edge. Returning from a bottom bounce shrinks
+    // scrollTop toward the bottom and must not read as an upward scroll that pins the view mid-bounce.
+    const scrollTop = Math.min(Math.max(rawScrollTop, 0), maxScrollTop)
     const movedUp = lastScrollTop !== undefined && scrollTop < lastScrollTop - SCROLL_DIRECTION_TOLERANCE
     const movedDown = lastScrollTop !== undefined && scrollTop > lastScrollTop + SCROLL_DIRECTION_TOLERANCE
     const movedUpBecauseLayoutShrank = isLayoutClampedScroll(lastScrollTop, lastMaxScrollTop, scrollTop, maxScrollTop)

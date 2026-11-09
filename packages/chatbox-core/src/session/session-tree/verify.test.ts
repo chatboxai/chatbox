@@ -313,4 +313,42 @@ describe('verifySessionTreeRoundTrip', () => {
       expect(count, `${shape} never appeared in the generated corpus`).toBeGreaterThan(10)
     }
   })
+
+  test('round-trips forks nested far deeper than the call stack allows', () => {
+    const depth = 20_000
+    const forks: Record<string, MessageForkEntry> = {}
+    for (let index = 0; index < depth; index += 1) {
+      forks[`p${index}`] = {
+        position: 0,
+        createdAt: 1,
+        lists: [
+          { id: `list-${index}-active`, messages: [] },
+          { id: `list-${index}-saved`, messages: [message(`p${index + 1}`), message(`tail-${index}`)] },
+        ],
+      }
+    }
+    forks[`p${depth}`] = {
+      position: 0,
+      createdAt: 1,
+      lists: [
+        { id: 'list-leaf-active', messages: [] },
+        { id: 'list-leaf-saved', messages: [message('end')] },
+      ],
+    }
+
+    const result = verifySessionTreeRoundTrip(
+      {
+        id: 'session-1',
+        name: 'Session',
+        messages: [message('m1'), message('p0'), message('a1')],
+        messageForksHash: forks,
+      },
+      OPTIONS
+    )
+
+    if (!result.ok) {
+      throw new Error(result.reason)
+    }
+    expect(Object.keys(result.session.messageForksHash ?? {})).toHaveLength(depth + 1)
+  })
 })

@@ -173,7 +173,7 @@ function _otherI18nKeys(t: (key: string) => string) {
   t('System prompt')
   t('Context messages')
   t('Message layout')
-  t('Show below messages')
+  t('Message info')
   t('LaTeX Rendering')
   t('Theme color')
   t('Recover Conversation List')
@@ -188,7 +188,7 @@ function _otherI18nKeys(t: (key: string) => string) {
   t('Automatic updates')
   t('Beta updates')
 
-  // src/renderer/routes/settings/chat.tsx
+  // src/renderer/routes/settings/-messageMeta.ts
   t('Model name')
   t('Time')
   t('Word count')
@@ -205,8 +205,8 @@ function _otherI18nKeys(t: (key: string) => string) {
   t('Mist Blue')
 
   // src/renderer/components/common/MessageLayoutPreview.tsx
-  t('Left-aligned')
-  t('Chat bubbles')
+  t('Classic')
+  t('Bubble')
 
   // src/renderer/modals/ExportChat.tsx
   t('All threads')
@@ -221,6 +221,9 @@ function _otherI18nKeys(t: (key: string) => string) {
   )
   t(
     'Uses built-in document parsing feature, supports common file types. Free usage, no compute points will be consumed.'
+  )
+  t(
+    'Uses built-in document parsing feature, supports common file types, and consumes no compute points. If local parsing fails, Chatbox AI cloud parsing will be used when a license is available and compute points will be consumed.'
   )
   t(
     'Cloud-based document parsing service, supports PDF, Office files, EPUB and many other file types. Consumes compute points.'

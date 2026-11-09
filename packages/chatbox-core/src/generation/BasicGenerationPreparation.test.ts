@@ -183,4 +183,40 @@ describe('BasicGenerationPreparation', () => {
         : []
     )
   })
+  it.each([true, false])(
+    'keeps a resumed generating message in context only for a continuation (%s)',
+    async (resumes) => {
+      const request = createRequest()
+      request.messages[2] = {
+        id: 'assistant',
+        role: 'assistant',
+        generating: true,
+        contentParts: [
+          {
+            type: 'tool-call',
+            state: 'result',
+            toolCallId: 'call-1',
+            toolName: 'read_file',
+            args: { path: 'input.txt' },
+            result: 'File contents',
+          },
+        ],
+      }
+      request.targetMessageIndex = 3
+      request.preserveLastPromptMessageToolCalls = resumes
+      const preparation = new BasicGenerationPreparation<TestContext>({
+        prepareTools: async (): Promise<BasicGenerationToolPreparation> => ({
+          tools: { read_file: tool({ inputSchema: jsonSchema({ type: 'object' }) }) },
+        }),
+      })
+
+      const prepared = await preparation.prepare(request)
+
+      expect(prepared.promptMessages.map((message) => message.role)).toEqual(
+        resumes ? ['system', 'user', 'assistant'] : ['system', 'user']
+      )
+      expect(JSON.stringify(prepared.coreMessages).includes('"toolCallId":"call-1"')).toBe(resumes)
+      expect(request.messages[2].generating).toBe(true)
+    }
+  )
 })

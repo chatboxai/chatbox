@@ -1,8 +1,10 @@
+import { getSessionAssistantName } from '@chatbox/core/session/message-header'
 import { isActionAvailableInMode, type SessionMode } from '@chatbox/core/session/mode-policy'
 import {
   Anchor,
   Box,
   Button,
+  CloseButton,
   FileButton,
   Flex,
   NumberInput,
@@ -13,9 +15,10 @@ import {
   UnstyledButton,
 } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
+import { getProviderDisplayName } from '@shared/providers'
 import { ModelProviderEnum, type SessionHeader, type SessionSettings } from '@shared/types'
 import { MAX_TOOL_CALLS_BEFORE_CONFIRMATION, shouldPauseOnToolCallLimit } from '@shared/utils/tool-call-limit-pause'
-import { IconArrowBackUp, IconTrash } from '@tabler/icons-react'
+import { IconArrowBackUp, IconCamera, IconTrash } from '@tabler/icons-react'
 import { isEqual, omit } from 'lodash'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -37,6 +40,7 @@ import {
   SettingsSection,
   useSettingsDensity,
 } from '@/components/settings/SettingsLayout'
+import { useMyCopilots } from '@/hooks/useCopilots'
 import { useFieldDraft } from '@/hooks/useFieldDraft'
 import { useProviders } from '@/hooks/useProviders'
 import { navigateToSettings } from '@/modals/settings-navigation'
@@ -57,6 +61,7 @@ import { rendererApplication } from '@/app/renderer-application'
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024
 const TEXT_COMMIT_DELAY_MS = 600
 const UNDO_VISIBLE_MS = 8000
+const ASSISTANT_NAME_MAX_LENGTH = 40
 
 /**
  * Text field that applies its value shortly after typing stops, on blur and when it unmounts.
@@ -176,6 +181,13 @@ export function SessionSettingsContent({
   const showSystemPrompt = isActionAvailableInMode('session-system-prompt', mode)
 
   const name = useCommittedText(session.name, (value) => void save({ name: value }), false)
+  const assistantName = useCommittedText(session.assistantName ?? '', (value) => void save({ assistantName: value }))
+  const { copilots } = useMyCopilots()
+  const customProviders = useSettingsStore((s) => s.customProviders)
+  const defaultAssistantName: string =
+    getSessionAssistantName({ copilotId: session.copilotId }, copilots) ??
+    (settings?.provider ? getProviderDisplayName(settings.provider, customProviders) : undefined) ??
+    String(t('Assistant'))
   const { read: headerRead } = rendererApplication.sessionHooks.useSessionHeader(
     draftSystemPrompt === undefined ? session.id : null
   )
@@ -221,37 +233,8 @@ export function SessionSettingsContent({
 
   return (
     <div className="flex flex-col gap-5" data-testid={TestId.sessionPanel.settings}>
-      <Flex align="center" gap="sm">
-        <FileButton
-          accept="image/png,image/jpeg"
-          onChange={(file) => {
-            if (!file) return
-            const key = StorageKeyGenerator.picture(`assistant-avatar:${session.id}`)
-            handleImageInputAndSave(
-              file,
-              key,
-              () => void save({ assistantAvatarKey: key }),
-              (k, v) => currentBlobStorage.set(k, v)
-            )
-          }}
-        >
-          {(props) => (
-            <UnstyledButton
-              {...props}
-              aria-label={t('Change avatar') ?? undefined}
-              className="relative shrink-0 rounded-full"
-            >
-              <AssistantAvatar
-                size={40}
-                avatarKey={session.assistantAvatarKey}
-                picUrl={session.picUrl}
-                sessionType={session.type}
-              />
-            </UnstyledButton>
-          )}
-        </FileButton>
+      <SettingsSection title={t('Name')} bare>
         <TextInput
-          flex={1}
           data-testid={TestId.settings.sessionName}
           aria-label={t('Name') ?? undefined}
           placeholder={t('Name') ?? ''}
@@ -260,17 +243,80 @@ export function SessionSettingsContent({
           onBlur={name.onBlur}
           size={density === 'touch' ? 'md' : 'sm'}
         />
-        {session.assistantAvatarKey && (
-          <Button
-            variant="subtle"
-            color="chatbox-gray"
-            size="compact-xs"
-            onClick={() => void save({ assistantAvatarKey: null })}
+      </SettingsSection>
+
+      <SettingsSection title={t('Assistant')} bare>
+        <Flex align="center" gap="sm">
+          <FileButton
+            accept="image/png,image/jpeg"
+            onChange={(file) => {
+              if (!file) return
+              const key = StorageKeyGenerator.picture(`assistant-avatar:${session.id}`)
+              handleImageInputAndSave(
+                file,
+                key,
+                () => void save({ assistantAvatarKey: key }),
+                (k, v) => currentBlobStorage.set(k, v)
+              )
+            }}
           >
-            {t('Reset avatar')}
-          </Button>
+            {(props) => (
+              <UnstyledButton
+                {...props}
+                aria-label={t('Change avatar') ?? undefined}
+                className="relative shrink-0 rounded-full"
+              >
+                <AssistantAvatar
+                  size={40}
+                  avatarKey={session.assistantAvatarKey}
+                  picUrl={session.picUrl}
+                  sessionType={session.type}
+                />
+                <span className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full border border-solid border-chatbox-border-primary bg-chatbox-background-primary text-chatbox-tint-secondary">
+                  <ScalableIcon icon={IconCamera} size={10} />
+                </span>
+              </UnstyledButton>
+            )}
+          </FileButton>
+          <TextInput
+            flex={1}
+            aria-label={t('Assistant Name') ?? undefined}
+            placeholder={defaultAssistantName}
+            maxLength={ASSISTANT_NAME_MAX_LENGTH}
+            value={assistantName.value}
+            onChange={(e) => assistantName.onChange(e.currentTarget.value)}
+            onBlur={assistantName.onBlur}
+            size={density === 'touch' ? 'md' : 'sm'}
+            rightSection={
+              assistantName.value ? (
+                <CloseButton
+                  size="sm"
+                  aria-label={t('Clear') ?? undefined}
+                  onClick={() => {
+                    assistantName.onChange('')
+                    void save({ assistantName: null })
+                  }}
+                />
+              ) : undefined
+            }
+          />
+        </Flex>
+        <Text size="xs" c="chatbox-tertiary" className="px-1">
+          {t('Shown next to the avatar on replies. Leave empty to use {{name}}.', { name: defaultAssistantName })}
+        </Text>
+        {session.assistantAvatarKey && (
+          <Box>
+            <Button
+              variant="subtle"
+              color="chatbox-gray"
+              size="compact-xs"
+              onClick={() => void save({ assistantAvatarKey: null })}
+            >
+              {t('Reset avatar')}
+            </Button>
+          </Box>
         )}
-      </Flex>
+      </SettingsSection>
 
       {isChat &&
         (showSystemPrompt ? (

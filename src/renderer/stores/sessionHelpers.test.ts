@@ -176,6 +176,7 @@ vi.mock('./session/agent-mode', () => ({ getSessionAgentModeEntry: mockGetSessio
 
 import type { SessionSearchResult } from '@chatbox/core/application/session'
 import { InMemorySessionRepository } from '@chatbox/core/testing'
+import { ChatboxAIAPIError } from '@shared/models/errors'
 import type { Session } from '@shared/types'
 import {
   isSessionAttachmentRagAuthError,
@@ -621,6 +622,34 @@ describe('preprocessFile local parser fallback', () => {
     expect(result.content).toBe('')
     expect(result.storageKey).toBe('')
     expect(result.error).toBe('empty_attachment_content')
+  })
+
+  it.each(['token_quota_exhausted', 'free_token_quota_exhausted', 'expired_license', 'license_downgraded'])(
+    'keeps the %s account error from the cloud parser fallback',
+    async (codeName) => {
+      const file = createFile('report.pdf')
+      mockParseFileLocally.mockRejectedValueOnce(new Error('local failed'))
+      mockUploadAndCreateUserFile.mockRejectedValueOnce(
+        ChatboxAIAPIError.fromCodeName(`{"error":{"code":"${codeName}"}}`, codeName)
+      )
+
+      const result = await prepareFileAttachment(file, { provider: '', modelId: '' })
+
+      expect(result.error).toBe(codeName)
+      expect(mockReportError).not.toHaveBeenCalled()
+    }
+  )
+
+  it('reports other Chatbox AI failures from the cloud parser fallback as parse failures', async () => {
+    const file = createFile('report.pdf')
+    mockParseFileLocally.mockRejectedValueOnce(new Error('local failed'))
+    mockUploadAndCreateUserFile.mockRejectedValueOnce(
+      ChatboxAIAPIError.fromCodeName('{"error":{"code":"rate_limit_exceeded"}}', 'rate_limit_exceeded')
+    )
+
+    const result = await prepareFileAttachment(file, { provider: '', modelId: '' })
+
+    expect(result.error).toBe('chatbox_ai_parser_failed')
   })
 
   it('preserves storage quota failures thrown during the cloud parser fallback', async () => {

@@ -25,6 +25,18 @@ export async function withSessionGenerationLock<T>(sessionId: string, task: () =
   }
 }
 
+/**
+ * Takes the session generation turn only when no generation work is accepted
+ * or queued for the session; otherwise resolves `undefined` without running
+ * `task`. User-triggered regenerate actions use this: the lock is held for the
+ * whole reply, so a repeated tap queued behind it would wait out the reply the
+ * first tap started and then regenerate again.
+ */
+export function trySessionGenerationLock<T>(sessionId: string, task: () => Promise<T>): Promise<T | undefined> {
+  if (hasPendingSessionGeneration(sessionId)) return Promise.resolve(undefined)
+  return withSessionGenerationLock(sessionId, task)
+}
+
 export function resetSessionGenerationLocksForTests(): void {
   sessionGenerationTails.clear()
 }

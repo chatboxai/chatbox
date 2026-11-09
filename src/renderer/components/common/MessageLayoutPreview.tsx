@@ -4,7 +4,7 @@ import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
 import { ScalableIcon } from './ScalableIcon'
 
-type MessageLayout = 'left' | 'bubble'
+type MessageLayout = 'classic' | 'bubble'
 
 type MessageLayoutSelectorProps = {
   value: MessageLayout
@@ -17,8 +17,8 @@ const layoutOptions: {
   labelKey: string
   Preview: (props: { size?: 'sm' | 'md' }) => React.JSX.Element
 }[] = [
-  { value: 'left', labelKey: 'Left-aligned', Preview: ClassicLayoutPreview },
-  { value: 'bubble', labelKey: 'Chat bubbles', Preview: BubbleLayoutPreview },
+  { value: 'classic', labelKey: 'Classic', Preview: ClassicLayoutPreview },
+  { value: 'bubble', labelKey: 'Bubble', Preview: BubbleLayoutPreview },
 ]
 
 export function MessageLayoutSelector({ value, onValueChange, size = 'md', ...props }: MessageLayoutSelectorProps) {
@@ -51,64 +51,88 @@ export function MessageLayoutSelector({ value, onValueChange, size = 'md', ...pr
   )
 }
 
-export function ClassicLayoutPreview({ size = 'md' }: { size?: 'sm' | 'md' }) {
-  const avatarSize = size === 'sm' ? 22 : 32
-  const lineHeight = size === 'sm' ? 8 : 12
+type LayoutPreviewProps = { size?: 'sm' | 'md' }
+
+function previewMetrics(size: LayoutPreviewProps['size']) {
+  return size === 'sm' ? { avatar: 18, line: 6, bubble: 18 } : { avatar: 24, line: 8, bubble: 24 }
+}
+
+/** The user row: a brand bubble with the user avatar beside it, on the left in classic and the right in bubble. */
+function UserPreviewRow({ size, side }: LayoutPreviewProps & { side: 'left' | 'right' }) {
+  const { avatar, line, bubble } = previewMetrics(size)
+  const avatarDot = <Box className="rounded-full bg-chatbox-background-tertiary flex-shrink-0" w={avatar} h={avatar} />
+  return (
+    <Flex justify={side === 'right' ? 'flex-end' : 'flex-start'} align="flex-start" gap={6}>
+      {side === 'left' && avatarDot}
+      <Flex
+        h={bubble}
+        w="62%"
+        align="center"
+        px={line + 2}
+        className={clsx(
+          'rounded-[10px] bg-chatbox-tint-brand',
+          side === 'right' ? 'rounded-tr-[3px]' : 'rounded-tl-[3px]'
+        )}
+      >
+        <Box h={line} className="w-full rounded-full bg-[rgba(255,255,255,0.4)]" />
+      </Flex>
+      {side === 'right' && avatarDot}
+    </Flex>
+  )
+}
+
+function AssistantPreviewLines({ size }: LayoutPreviewProps) {
+  const { line } = previewMetrics(size)
+  return (
+    <Stack gap={line * 0.75}>
+      <Box h={line} className="rounded-full bg-chatbox-background-tertiary" />
+      <Box h={line} className="rounded-full bg-chatbox-background-tertiary" />
+      <Box h={line} className="w-3/5 rounded-full bg-chatbox-background-tertiary" />
+    </Stack>
+  )
+}
+
+/** The assistant name row above the reply: a darker name bar followed by a lighter, shorter one. */
+function AssistantPreviewNameRow({ size }: LayoutPreviewProps) {
+  const { line } = previewMetrics(size)
+  return (
+    <Flex gap={line / 2} mb={line * 0.75}>
+      <Box h={line * 0.75} w="34%" className="rounded-full bg-chatbox-tint-gray" />
+      <Box h={line * 0.75} w="12%" className="rounded-full bg-chatbox-background-tertiary" />
+    </Flex>
+  )
+}
+
+export function ClassicLayoutPreview({ size = 'md' }: LayoutPreviewProps) {
+  const { avatar, line } = previewMetrics(size)
   return (
     <Stack gap="sm">
-      {/* Row 1: avatar + short message */}
-      <Flex gap="xs" align="center">
-        <Box className="rounded-full bg-chatbox-tint-brand flex-shrink-0" w={avatarSize} h={avatarSize} />
-        <Flex
-          h={avatarSize}
-          w="80%"
-          align="center"
-          justify="center"
-          className="bg-chatbox-background-tertiary rounded-full"
-        >
-          <Box h={lineHeight} w="80%" bg="#ADB5BD" className="rounded-full" />
-        </Flex>
-      </Flex>
-      {/* Row 2: avatar + long message */}
-      <Flex align="self-start" gap="xs">
-        <Box className="rounded-full bg-chatbox-tint-brand flex-shrink-0" w={avatarSize} h={avatarSize} />
-        <Stack gap={lineHeight / 2} flex="1">
-          <Box h={lineHeight} className="w-full rounded-full bg-chatbox-background-tertiary" />
-          <Box h={lineHeight} className="w-full rounded-full bg-chatbox-background-tertiary" />
-          <Box h={lineHeight} className="w-full rounded-full bg-chatbox-background-tertiary" />
-          <Box h={lineHeight} className="w-1/2 rounded-full bg-chatbox-background-tertiary" />
-        </Stack>
+      <UserPreviewRow size={size} side="left" />
+      <Flex align="flex-start" gap={6} pr={18}>
+        <Box className="rounded-full bg-chatbox-tint-brand flex-shrink-0" w={avatar} h={avatar} />
+        <Box flex="1" pt={line / 2}>
+          <AssistantPreviewNameRow size={size} />
+          <AssistantPreviewLines size={size} />
+        </Box>
       </Flex>
     </Stack>
   )
 }
 
-export function BubbleLayoutPreview({ size = 'md' }: { size?: 'sm' | 'md' }) {
-  const avatarSize = size === 'sm' ? 22 : 32
-  const lineHeight = size === 'sm' ? 8 : 12
-
+export function BubbleLayoutPreview({ size = 'md' }: LayoutPreviewProps) {
+  const { avatar, line } = previewMetrics(size)
   return (
     <Stack gap="sm">
-      {/* User bubble (right side) */}
-      <Stack
-        justify="center"
-        h={avatarSize}
-        px={avatarSize / 2}
-        className="self-end w-3/4 bg-chatbox-tint-brand rounded-full"
-      >
-        <Box h={lineHeight} className="rounded-sm bg-[rgba(255,255,255,0.32)]"></Box>
-      </Stack>
-      {/* Assistant bubble (left side) */}
-      <Stack
-        gap={lineHeight / 2}
-        px={lineHeight}
-        py={0.75 * lineHeight}
-        className="w-3/4 bg-chatbox-background-tertiary rounded-lg"
-      >
-        <Box h={lineHeight} className="rounded-sm bg-[#ADB5BD] opacity-40 w-3/4"></Box>
-        <Box h={lineHeight} className="rounded-sm bg-[#ADB5BD] opacity-40"></Box>
-        <Box h={lineHeight} className="rounded-sm bg-[#ADB5BD] opacity-40"></Box>
-      </Stack>
+      <UserPreviewRow size={size} side="right" />
+      <Flex align="flex-start" gap={6} pr={18}>
+        <Box className="rounded-full bg-chatbox-tint-brand flex-shrink-0" w={avatar} h={avatar} />
+        <Box flex="1" pt={line / 2}>
+          <AssistantPreviewNameRow size={size} />
+          <Box px={line + 2} py={line} className="rounded-[10px] rounded-tl-[3px] bg-chatbox-background-secondary">
+            <AssistantPreviewLines size={size} />
+          </Box>
+        </Box>
+      </Flex>
     </Stack>
   )
 }

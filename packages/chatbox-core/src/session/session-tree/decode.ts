@@ -74,11 +74,94 @@ export function decodeSessionTree(tree: SessionTree): DecodeSessionTreeResult {
   const decodeThread = (threadRow: ThreadRow): ChainResult => {
     const visited = new Set<string>()
 
-    const chainFrom = (startMessageId: string): ChainResult => {
-      const chain: Message[] = []
-      let cursor: string | null = startMessageId
+    interface ForkExpansion {
+      row: MessageRow
+      pivotId: string
+      children: MessageRow[]
+      lists: MessageForkEntry['lists']
+      /** Index of the next child whose branch still needs decoding. */
+      nextChild: number
+      /** Index of the active placeholder once it has been placed. */
+      position: number
+    }
 
-      while (cursor !== null) {
+    interface ChainFrame {
+      chain: Message[]
+      cursor: string | null
+      fork: ForkExpansion | null
+      /** Where this chain lands once the frame completes. */
+      attachTo: { expansion: ForkExpansion; listId: string } | null
+    }
+
+    // Saved branches nest as deep as the session nests pivots, so the walk keeps
+    // its own frame stack instead of calling itself per branch.
+    const chainFrom = (startMessageId: string): ChainResult => {
+      const stack: ChainFrame[] = [{ chain: [], cursor: startMessageId, fork: null, attachTo: null }]
+
+      while (stack.length > 0) {
+        const frame = stack[stack.length - 1]
+
+        if (frame.fork) {
+          const expansion = frame.fork
+          if (expansion.nextChild < expansion.children.length) {
+            const child = expansion.children[expansion.nextChild]
+            const id = child.branchId ?? `fork_list_${child.messageId}`
+            expansion.nextChild += 1
+            if (child.messageId === expansion.row.activeChildId) {
+              expansion.position = expansion.lists.length
+              expansion.lists.push({ id, messages: [] })
+              continue
+            }
+            stack.push({
+              chain: [],
+              cursor: child.messageId,
+              fork: null,
+              attachTo: { expansion, listId: id },
+            })
+            continue
+          }
+
+          if (expansion.row.activeChildId === null) {
+            const pendingSeq = expansion.row.pendingBranchOrder
+            const nextSibling =
+              pendingSeq === undefined ? -1 : expansion.children.findIndex((child) => child.siblingOrder > pendingSeq)
+            expansion.position = nextSibling < 0 ? expansion.lists.length : nextSibling
+            expansion.lists.splice(expansion.position, 0, {
+              id: expansion.row.pendingBranchId ?? `fork_list_empty_${expansion.pivotId}`,
+              messages: [],
+            })
+          } else if (expansion.position < 0) {
+            return {
+              ok: false,
+              reason: `message ${expansion.row.messageId} points at active child ${expansion.row.activeChildId}, not one of its children`,
+            }
+          }
+
+          const children = expansion.children
+          messageForksHash[expansion.pivotId] = {
+            position: expansion.position,
+            lists: expansion.lists,
+            createdAt:
+              rowsById.get(expansion.pivotId)?.forkCreatedAt ??
+              tree.session.forkCreatedAt?.[expansion.pivotId] ??
+              Math.min(...children.map((child) => child.createdAt)),
+          }
+          frame.fork = null
+          frame.cursor = expansion.row.activeChildId
+          continue
+        }
+
+        if (frame.cursor === null) {
+          stack.pop()
+          const attachTo = frame.attachTo
+          if (!attachTo) {
+            return { ok: true, messages: frame.chain }
+          }
+          attachTo.expansion.lists.push({ id: attachTo.listId, messages: frame.chain })
+          continue
+        }
+
+        const cursor = frame.cursor
         if (visited.has(cursor)) {
           return { ok: false, reason: `message ${cursor} is reachable twice in thread ${threadRow.threadId}` }
         }
@@ -92,17 +175,18 @@ export function decodeSessionTree(tree: SessionTree): DecodeSessionTreeResult {
         if (row.threadId !== threadRow.threadId) {
           return { ok: false, reason: `message ${cursor} belongs to thread ${row.threadId}` }
         }
-        chain.push(row.message)
+        frame.chain.push(row.message)
 
         const children: MessageRow[] = childrenByParent.get(childKey(threadRow.threadId, cursor)) ?? []
         if (children.length === 0) {
           if (row.activeChildId !== null) {
             return { ok: false, reason: `leaf ${cursor} points at active child ${row.activeChildId}` }
           }
-          break
+          frame.cursor = null
+          continue
         }
         if (children.length === 1 && row.activeChildId === children[0].messageId) {
-          cursor = row.activeChildId
+          frame.cursor = row.activeChildId
           continue
         }
 
@@ -114,46 +198,18 @@ export function decodeSessionTree(tree: SessionTree): DecodeSessionTreeResult {
           return { ok: false, reason: `fork pivot ${pivot.pivotId} is claimed by two branch points` }
         }
 
-        const lists: MessageForkEntry['lists'] = []
-        let position = -1
-        for (const child of children) {
-          const id = child.branchId ?? `fork_list_${child.messageId}`
-          if (child.messageId === row.activeChildId) {
-            position = lists.length
-            lists.push({ id, messages: [] })
-            continue
-          }
-          const branch = chainFrom(child.messageId)
-          if (!branch.ok) {
-            return branch
-          }
-          lists.push({ id, messages: branch.messages })
+        frame.cursor = null
+        frame.fork = {
+          row,
+          pivotId: pivot.pivotId,
+          children,
+          lists: [],
+          nextChild: 0,
+          position: -1,
         }
-        if (row.activeChildId === null) {
-          const pendingSeq = row.pendingBranchOrder
-          const nextSibling =
-            pendingSeq === undefined ? -1 : children.findIndex((child) => child.siblingOrder > pendingSeq)
-          position = nextSibling < 0 ? lists.length : nextSibling
-          lists.splice(position, 0, { id: row.pendingBranchId ?? `fork_list_empty_${pivot.pivotId}`, messages: [] })
-        } else if (position < 0) {
-          return {
-            ok: false,
-            reason: `message ${cursor} points at active child ${row.activeChildId}, not one of its children`,
-          }
-        }
-
-        messageForksHash[pivot.pivotId] = {
-          position,
-          lists,
-          createdAt:
-            rowsById.get(pivot.pivotId)?.forkCreatedAt ??
-            tree.session.forkCreatedAt?.[pivot.pivotId] ??
-            Math.min(...children.map((child) => child.createdAt)),
-        }
-        cursor = row.activeChildId
       }
 
-      return { ok: true, messages: chain }
+      return { ok: false, reason: `thread ${threadRow.threadId} did not resolve` }
     }
 
     if (threadRow.rootMessageId === null) {

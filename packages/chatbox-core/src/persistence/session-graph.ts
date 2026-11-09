@@ -17,6 +17,7 @@ export interface PersistedSessionHeader {
   archivedAt?: number
   copilotId?: string
   assistantAvatarKey?: string
+  assistantName?: string
   picUrl?: string
   backgroundImage?: Session['backgroundImage']
   settings?: Session['settings']
@@ -108,6 +109,7 @@ const sessionKeys = [
   'archivedAt',
   'copilotId',
   'assistantAvatarKey',
+  'assistantName',
   'backgroundImage',
   'settings',
   'threads',
@@ -294,6 +296,7 @@ export class SessionGraphCodec {
         archivedAt: session.archivedAt,
         copilotId: session.copilotId,
         assistantAvatarKey: session.assistantAvatarKey,
+        assistantName: session.assistantName,
         picUrl: session.picUrl,
         backgroundImage: cloneJson(session.backgroundImage),
         settings: cloneJson(session.settings),
@@ -389,6 +392,7 @@ export class SessionGraphCodec {
         ...(graph.header.assistantAvatarKey === undefined
           ? {}
           : { assistantAvatarKey: graph.header.assistantAvatarKey }),
+        ...(graph.header.assistantName === undefined ? {} : { assistantName: graph.header.assistantName }),
         ...(graph.header.backgroundImage === undefined ? {} : { backgroundImage: graph.header.backgroundImage }),
         ...(graph.header.settings === undefined ? {} : { settings: graph.header.settings }),
         ...(graph.header.threadName === undefined ? {} : { threadName: graph.header.threadName }),

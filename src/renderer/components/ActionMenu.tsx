@@ -1,3 +1,4 @@
+import { splitMessageMenuTitle } from '@chatbox/core/session/message-menu'
 import { Menu, type MenuItemProps, type MenuProps, Popover, Stack, Text, useMantineTheme } from '@mantine/core'
 import { IconCheck, type IconProps } from '@tabler/icons-react'
 import { type FC, type MouseEventHandler, type ReactElement, useEffect, useRef, useState } from 'react'
@@ -43,6 +44,10 @@ export type ActionMenuProps = {
   children: ReactElement
   items: ActionMenuItemProps[]
   title?: string
+  /** Part of the title drawn in bold (e.g. the author name); shown by the mobile sheet. */
+  titleEmphasis?: string
+  /** Second line under the title, in monospace; shown by the mobile sheet. */
+  subtitle?: string
   contentTestId?: string
   type?: 'desktop' | 'mobile' | 'contextual' | 'auto'
   trigger?: 'click' | 'manual'
@@ -66,6 +71,8 @@ const DesktopActionMenu: FC<ActionMenuProps> = ({
   children,
   items,
   title,
+  titleEmphasis: _titleEmphasis,
+  subtitle: _subtitle,
   contentTestId,
   trigger: _trigger,
   position = 'bottom-start',
@@ -282,16 +289,31 @@ const ContextualDoubleCheckMenuItem: FC<{
   )
 }
 
+function EmphasizedTitle({ title, emphasis }: { title: string; emphasis?: string }) {
+  const parts = splitMessageMenuTitle(title, emphasis)
+  if (!parts) return title
+  return (
+    <>
+      {parts.before}
+      <span className="font-semibold text-chatbox-tint-primary">{parts.emphasis}</span>
+      {parts.after}
+    </>
+  )
+}
+
 const MobileActionMenu: FC<ActionMenuProps> = ({
   children,
   items,
   title,
+  titleEmphasis,
+  subtitle,
   contentTestId,
   opened,
   onChange,
   trigger = 'click',
 }) => {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const open = opened ?? uncontrolledOpen
   const setOpen = (nextOpen: boolean) => {
     onChange?.(nextOpen)
@@ -311,18 +333,39 @@ const MobileActionMenu: FC<ActionMenuProps> = ({
 
   return (
     <Drawer.Root open={open} onOpenChange={setOpen} noBodyStyles>
-      {trigger === 'manual' ? children : <Drawer.Trigger asChild>{children}</Drawer.Trigger>}
+      {trigger === 'manual' ? (
+        children
+      ) : (
+        <Drawer.Trigger asChild ref={triggerRef}>
+          {children}
+        </Drawer.Trigger>
+      )}
       <Drawer.Portal>
-        <Drawer.Overlay className="fixed inset-0 bg-chatbox-background-mask-overlay" />
+        <Drawer.Overlay className="fixed inset-0 bg-chatbox-background-mask-overlay select-none [-webkit-touch-callout:none]" />
         <Drawer.Content
           data-testid={contentTestId}
-          className="flex flex-col h-fit fixed bottom-0 left-0 right-0 outline-none"
+          onCloseAutoFocus={(event) => {
+            // Returning focus to a trigger inside a long scrolled message would scroll it into view.
+            event.preventDefault()
+            triggerRef.current?.focus({ preventScroll: true })
+          }}
+          className="flex flex-col h-fit fixed bottom-0 left-0 right-0 outline-none select-none [-webkit-touch-callout:none]"
         >
           <div className="bg-chatbox-background-primary rounded-t-lg">
             <Drawer.Handle />
             {title && (
-              <Text c="chatbox-tertiary" size="md" className="text-center mb-2">
-                {title}
+              <Text
+                c="chatbox-tertiary"
+                size="md"
+                lineClamp={1}
+                className={subtitle ? 'text-center px-4' : 'text-center mb-2 px-4'}
+              >
+                <EmphasizedTitle title={title} emphasis={titleEmphasis} />
+              </Text>
+            )}
+            {subtitle && (
+              <Text c="chatbox-tertiary" size="xs" truncate="end" className="text-center mb-2 px-4 font-mono">
+                {subtitle}
               </Text>
             )}
             <Stack className="px-2" gap={0}>
@@ -388,10 +431,10 @@ const MobileDoubleCheckMenuItem: FC<{
         </button>
       </Drawer.Trigger>
       <Drawer.Portal>
-        <Drawer.Overlay className="fixed inset-0 bg-chatbox-background-mask-overlay" />
+        <Drawer.Overlay className="fixed inset-0 bg-chatbox-background-mask-overlay select-none [-webkit-touch-callout:none]" />
         <Drawer.Content
           data-testid={item.confirmPanelTestId}
-          className="flex flex-col h-fit fixed bottom-0 left-0 right-0 outline-none"
+          className="flex flex-col h-fit fixed bottom-0 left-0 right-0 outline-none select-none [-webkit-touch-callout:none]"
         >
           <div className="bg-chatbox-background-primary rounded-t-lg">
             <Drawer.Handle />

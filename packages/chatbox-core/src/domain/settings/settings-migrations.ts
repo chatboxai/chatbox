@@ -2,7 +2,7 @@ import deepmerge from 'deepmerge'
 import { createDefaultSettings, getDefaultDocumentParser, type SettingsHostDefaults } from './settings-defaults'
 import { type Settings, SettingsSchema } from './settings-schema'
 
-export const SETTINGS_PERSIST_VERSION = 8
+export const SETTINGS_PERSIST_VERSION = 9
 
 /** Compaction threshold persisted as the default by settings versions up to 7. */
 const VERSION_7_DEFAULT_COMPACTION_THRESHOLD = 0.6
@@ -92,6 +92,12 @@ export function migrateSettings(persisted: unknown, version: number, host: Setti
     Math.abs(settings.compactionThreshold - VERSION_7_DEFAULT_COMPACTION_THRESHOLD) < 1e-9
   ) {
     settings.compactionThreshold = createDefaultSettings().compactionThreshold
+  }
+
+  // Version 9 makes the flat classic layout the default. Settings written before it rendered a missing
+  // layout as bubbles, so they keep bubbles; only fresh installs, which have no stored settings, start classic.
+  if (shouldRunMigration(8) && (persisted as Record<string, unknown> | null | undefined)?.messageLayout == null) {
+    settings.messageLayout = 'bubble'
   }
 
   const extension = settings.extension as { documentParser?: { type?: string } } | undefined

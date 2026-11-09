@@ -1,7 +1,7 @@
 import { createMemoryToolContext, type MemoryToolContext } from '@chatbox/core/application/memory'
 import type { SessionContextBeforeTarget, SessionHeader } from '@chatbox/core/ports'
 import { buildAgentPersonaPrompt, buildMemoriesSection } from '@shared/agent-persona/prompt'
-import { buildContext, flattenToolCallPartsToText } from '@shared/context'
+import { buildContext, flattenToolCallPartsToText, selectMessagesBeforeTarget } from '@shared/context'
 import type { AttachmentPolicy } from '@shared/context/attachments'
 import type { AttachmentResolver } from '@shared/context/types'
 import { ChatboxAIAPIError, OCRError } from '@shared/models/errors'
@@ -263,12 +263,8 @@ export async function prepareAgentGenerationHarness(
     isPro,
   })
 
-  const messagesForPrompt = (await refreshSessionAttachmentStatuses(messages.slice(0, targetMsgIx))).map((message) =>
-    // A resumed continuation keeps its target message flagged `generating` for the UI,
-    // but its tool calls/results are exactly the context the follow-up request must
-    // continue from — without this the eligibility filter drops the whole message and
-    // the model restarts the task from scratch.
-    message.id === resumedMessage?.id && message.generating ? { ...message, generating: false } : message
+  const messagesForPrompt = await refreshSessionAttachmentStatuses(
+    selectMessagesBeforeTarget(messages, targetMsgIx, preserveLastPromptMessageToolCalls)
   )
   const attachmentPolicy = {
     modelSupportToolUseForFile: model.isSupportToolUse('read-file'),
@@ -389,6 +385,11 @@ export async function prepareAgentGenerationHarness(
   const conversationStartedAt =
     promptContextSnapshot?.capturedAt ?? (history ? history.firstMessageTimestamp : messages[0]?.timestamp)
 
+  // The "Inject default metadata" setting covers the runtime block (model name,
+  // conversation start time, `<system-reminder>` contract) and the time-gap
+  // reminders. Session prompts, persona and tool instructions are always sent.
+  const injectDefaultMetadata = globalSettings.injectDefaultMetadata !== false
+
   let injectedMessages: Message[]
   let systemPrompt: string
   if (effectiveAgentMode === 'on' && promptContextSnapshot) {
@@ -403,7 +404,9 @@ export async function prepareAgentGenerationHarness(
       platformType: platform.type,
       os: getOS(),
     })
-    const runtimeMetadata = `\n## Runtime\nCurrent model: ${model.modelId}\nSession context captured: ${formatTimestampWithZone(promptContextSnapshot.capturedAt, promptContextSnapshot.capturedUtcOffsetMinutes)}\n${SYSTEM_REMINDER_PROMPT_INSTRUCTION}`
+    const runtimeMetadata = injectDefaultMetadata
+      ? `\n## Runtime\nCurrent model: ${model.modelId}\nSession context captured: ${formatTimestampWithZone(promptContextSnapshot.capturedAt, promptContextSnapshot.capturedUtcOffsetMinutes)}\n${SYSTEM_REMINDER_PROMPT_INSTRUCTION}`
+      : ''
     const systemText = `${personaPrompt}\n${instructions}${runtimeMetadata}`
     systemPrompt = systemText
     injectedMessages = [
@@ -415,6 +418,11 @@ export async function prepareAgentGenerationHarness(
       },
       ...promptMsgs,
     ]
+  } else if (!injectDefaultMetadata) {
+    systemPrompt = instructions.trim() ? `Additional info for this conversation: ${instructions}` : ''
+    injectedMessages = systemPrompt
+      ? injectModelSystemPrompt(model.modelId, promptMsgs, instructions, 'system', systemPrompt)
+      : promptMsgs
   } else {
     // Chat mode mirrors the agent-mode ordering above: the session's own
     // system prompt keeps the byte-0 position, instructions follow, and the
@@ -444,7 +452,9 @@ export async function prepareAgentGenerationHarness(
   // `sequenceMessages` merges each into its user turn's tail, or leaves the
   // trailing one as its own user turn after a resumed tool history (both
   // provider-safe shapes).
-  injectedMessages = insertTimeGapReminders(injectedMessages, { anchorTimestamp: conversationStartedAt })
+  if (injectDefaultMetadata) {
+    injectedMessages = insertTimeGapReminders(injectedMessages, { anchorTimestamp: conversationStartedAt })
+  }
 
   if (!model.isSupportSystemMessage()) {
     injectedMessages = injectedMessages.map((message) => ({

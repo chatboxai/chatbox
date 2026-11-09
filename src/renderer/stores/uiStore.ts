@@ -124,11 +124,17 @@ export const uiStore = createStore(
         agentModeLastSelected: 'off' as Extract<AgentModeValue, 'on' | 'off'>,
         sessionAgentModeMap: {} as Record<string, AgentModeEntry>,
         promptCacheBreakConfirmDismissed: {} as Record<string, boolean>,
+        // The user acknowledged the small-screen hint about swiping replies and long-pressing messages.
+        messageGestureHintShown: false,
+        // The long-press hint already appeared in this app launch (not persisted).
+        messageLongPressHintShownThisLaunch: false,
         // License + quota period whose low-points reminder the user closed.
         lowQuotaReminderDismissedPeriod: null as string | null,
         sessionPanels: {} as Record<string, SessionPanelState | undefined>,
         // Width of the conversation side panel in px; null uses min(560px, 45%).
         sessionPanelWidth: null as number | null,
+        // Last auto-wrap choice on a code block; code blocks the user has not toggled follow it.
+        codeBlockWrap: false,
       },
       (set, get) => ({
         addToast: (content: string, duration?: number, action?: Toast['action']) => {
@@ -243,6 +249,10 @@ export const uiStore = createStore(
 
         setSessionPanelWidth: (sessionPanelWidth: number | null) => {
           set({ sessionPanelWidth })
+        },
+
+        setCodeBlockWrap: (codeBlockWrap: boolean) => {
+          set({ codeBlockWrap })
         },
 
         setOpenSearchDialog: (openSearchDialog: boolean, globalOnly = false) => {
@@ -430,8 +440,10 @@ export const uiStore = createStore(
         sessionWebBrowsingMap: state.sessionWebBrowsingMap,
         sessionKnowledgeBaseMap: state.sessionKnowledgeBaseMap,
         promptCacheBreakConfirmDismissed: state.promptCacheBreakConfirmDismissed,
+        messageGestureHintShown: state.messageGestureHintShown,
         lowQuotaReminderDismissedPeriod: state.lowQuotaReminderDismissedPeriod,
         sessionPanelWidth: state.sessionPanelWidth,
+        codeBlockWrap: state.codeBlockWrap,
       }),
       storage: safeStorage,
     }

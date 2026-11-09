@@ -29,6 +29,8 @@
   --chatbox-tint-primary: #212529;
   --chatbox-tint-secondary: #495057;
   --chatbox-tint-tertiary: #868e96;
+  /* Separators and time in the assistant name row: 13px text needs at least 4.5:1 on the page. */
+  --chatbox-message-name-muted: #6c757d;
 
   --chatbox-tint-white: #ffffff;
   --chatbox-tint-black: #000000;
@@ -121,6 +123,7 @@
   --chatbox-tint-primary: #ececec;
   --chatbox-tint-secondary: #bdbdbd;
   --chatbox-tint-tertiary: #999999;
+  --chatbox-message-name-muted: #9a9a9a;
 
   --chatbox-tint-white: #ffffff;
   --chatbox-tint-black: #000000;
@@ -156,7 +159,10 @@
   --chatbox-background-tertiary-hover: color-mix(in srgb, var(--chatbox-background-tertiary), white 9%);
   --chatbox-background-disabled: color-mix(in srgb, var(--chatbox-background-primary), white 4%);
   /* Page behind grouped cards: one step below the primary surface, so cards read as raised. */
-  --chatbox-background-grouped: color-mix(in srgb, var(--chatbox-background-primary), black 32%);
+  --chatbox-background-grouped: color-mix(in srgb, var(--chatbox-background-primary), black 45%);
+  /* Neutral gray raised surfaces: settings cards, and the chat composer one step lighter. */
+  --chatbox-background-raised: #383838;
+  --chatbox-background-composer: #454545;
 
   --chatbox-background-brand-primary: var(--chatbox-brand);
   --chatbox-background-brand-primary-hover: color-mix(in srgb, var(--chatbox-brand), black 12%);
@@ -483,4 +489,97 @@ div[data-vaul-drawer] {
 .chatbox-action-bar-pulse,
 .chatbox-action-bar-pulse-alt {
   animation: chatbox-action-bar-pulse 600ms ease-out 2;
+}
+
+/* Held while a message is long-pressed (press-selection-guard.ts); editable fields keep their selection. */
+html.message-press-selection-guard,
+html.message-press-selection-guard *:not(input):not(textarea):not([contenteditable]) {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none !important;
+}
+
+/*
+ * Dark mode raised surfaces: settings cards on the raised gray, the chat composer on the lighter
+ * composer gray. Tertiary text and placeholders on them use the secondary tint to stay at 4.5:1.
+ */
+:root[data-mantine-color-scheme="dark"] .settings-section-body.bg-chatbox-background-primary,
+:root[data-mantine-color-scheme="dark"] .bg-chatbox-background-grouped .bg-chatbox-background-primary {
+  background-color: var(--chatbox-background-raised);
+}
+
+:root[data-mantine-color-scheme="dark"] .chatbox-composer-surface {
+  background-color: var(--chatbox-background-composer);
+}
+
+:root[data-mantine-color-scheme="dark"] .settings-section-body.bg-chatbox-background-primary,
+:root[data-mantine-color-scheme="dark"] .bg-chatbox-background-grouped .bg-chatbox-background-primary,
+:root[data-mantine-color-scheme="dark"] .chatbox-composer-surface {
+  --chatbox-tint-tertiary: var(--chatbox-tint-secondary);
+  --chatbox-tint-placeholder: var(--chatbox-tint-secondary);
+  --mantine-color-chatbox-tertiary-light-color: var(--chatbox-tint-secondary);
+  --mantine-color-chatbox-tertiary-text: var(--chatbox-tint-secondary);
+  --mantine-color-dimmed: var(--chatbox-tint-secondary);
+  --mantine-color-placeholder: var(--chatbox-tint-secondary);
+}
+
+/* The dark composer placeholder sits a step below entered text and stays at 3:1 on the composer gray. */
+:root[data-mantine-color-scheme="dark"] .chatbox-composer-surface textarea::placeholder {
+  color: var(--chatbox-tint-gray);
+  opacity: 1;
+}
+
+/* Dark settings index: the app shell and main panel take the grouped page color, so the page runs
+   evenly up under the transparent header and the status bar. */
+:root[data-mantine-color-scheme="dark"] [data-page-surface="grouped"] {
+  background-color: var(--chatbox-background-grouped);
+}
+
+/*
+ * Dark mode title bars are transparent and show the page behind them. Scroll containers next to
+ * them fade their top edge, so content leaving the viewport dissolves before it reaches the title
+ * instead of being cut off under it.
+ */
+:root[data-mantine-color-scheme="dark"] .chatbox-title-bar {
+  background-color: transparent;
+}
+
+:root[data-mantine-color-scheme="dark"] .chatbox-title-bar-divider {
+  display: none;
+}
+
+:root[data-mantine-color-scheme="dark"] .chatbox-scroll-top-fade {
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 12px);
+  mask-image: linear-gradient(to bottom, transparent, #000 12px);
+}
+
+/* Capacitor navigation and composer surroundings show the page or wallpaper directly. */
+:root[data-mantine-color-scheme]
+  :is([data-chatbox-platform="android"], [data-chatbox-platform="ios"])
+  .chatbox-title-bar {
+  background: transparent;
+}
+
+:root[data-mantine-color-scheme]
+  :is([data-chatbox-platform="android"], [data-chatbox-platform="ios"])
+  :is(.chatbox-wallpaper-header-overlay, .chatbox-wallpaper-composer-overlay) {
+  visibility: hidden;
+}
+
+:root[data-mantine-color-scheme]
+  :is([data-chatbox-platform="android"], [data-chatbox-platform="ios"])
+  .chatbox-title-bar-divider {
+  display: block;
+  visibility: hidden;
+}
+
+/*
+ * Only content fades, at the top edge. The floating jump capsule stays above the mask, so content
+ * stays visible around its pill and only the pill itself has a backing.
+ */
+:root[data-mantine-color-scheme]
+  :is([data-chatbox-platform="android"], [data-chatbox-platform="ios"])
+  .chatbox-scroll-top-fade {
+  -webkit-mask-image: linear-gradient(to bottom, transparent, black 12px);
+  mask-image: linear-gradient(to bottom, transparent, black 12px);
 }

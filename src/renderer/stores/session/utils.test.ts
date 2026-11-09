@@ -14,7 +14,10 @@ const { reportErrorMock, trackEventMock } = vi.hoisted(() => ({
 vi.mock('@/platform', () => ({ default: { type: 'desktop', isDesktopLike: true } }))
 vi.mock('@/utils/track', () => ({ trackEvent: trackEventMock }))
 vi.mock('@/utils/sentry', () => ({ reportError: reportErrorMock }))
-vi.mock('@/packages/model-setting-utils', () => ({ getModelDisplayName: vi.fn() }))
+vi.mock('@/packages/model-setting-utils', () => ({
+  getMessageProviderName: vi.fn(() => 'Claude'),
+  getModelDisplayName: vi.fn(),
+}))
 vi.mock('@/app/renderer-application', () => ({
   rendererApplication: {
     sessionHooks: { useSession: vi.fn(() => ({ session: null })) },
@@ -310,6 +313,16 @@ describe('initializeTargetMessage', () => {
 
     expect(result.modelId).toBe('claude-opus-5')
     expect(result.contentParts).toEqual(signedMessage().contentParts)
+  })
+
+  test('records the provider display name with the provider and model', async () => {
+    const result = await initializeTargetMessage(
+      signedMessage(),
+      { provider: 'claude', modelId: 'claude-opus-5' } as SessionSettings,
+      globalSettings,
+      'chat'
+    )
+    expect(result).toMatchObject({ aiProvider: 'claude', aiProviderName: 'Claude', modelId: 'claude-opus-5' })
   })
 
   test('keeps replay metadata when the identity is unchanged or was never stamped', async () => {

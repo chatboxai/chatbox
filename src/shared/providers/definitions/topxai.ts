@@ -5,7 +5,7 @@ import TopxAI from './models/topxai'
 const TOPXAI_API_HOST = 'https://ai.topxea.com/v1'
 
 // Model ids, context windows and output limits as the live catalogue lists
-// them: https://ai.topxea.com/api/pricing (read 2026-10-25).
+// them: https://ai.topxea.com/api/pricing (read 2026-11-08).
 export const topxAIProvider = defineProvider({
   id: ModelProviderEnum.TopxAI,
   name: 'TopxAI',
@@ -72,6 +72,13 @@ export const topxAIProvider = defineProvider({
         nickname: 'DeepSeek Flash Abliterated',
         capabilities: ['vision', 'reasoning', 'tool_use'],
         contextWindow: 1_048_576,
+        maxOutput: 131_072,
+      },
+      {
+        modelId: 'deepseek-flash-fast',
+        nickname: 'DeepSeek Flash Fast',
+        capabilities: ['vision', 'reasoning', 'tool_use'],
+        contextWindow: 1_048_576,
         maxOutput: 262_144,
       },
       {
@@ -79,6 +86,13 @@ export const topxAIProvider = defineProvider({
         nickname: 'GLM-5.3-Abliterated',
         capabilities: ['reasoning', 'tool_use'],
         contextWindow: 1_000_000,
+        maxOutput: 131_072,
+      },
+      {
+        modelId: 'GLM-5.3-Flash-Abliterated',
+        nickname: 'GLM-5.3-Flash-Abliterated',
+        capabilities: ['vision', 'reasoning', 'tool_use'],
+        contextWindow: 1_048_576,
         maxOutput: 131_072,
       },
     ],

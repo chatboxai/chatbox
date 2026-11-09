@@ -5,7 +5,7 @@ import TopxAI from './models/topxai'
 const TOPXAI_API_HOST = 'https://ai.topxea.com/v1'
 
 // Model ids, context windows and output limits as the live catalogue lists
-// them: https://ai.topxea.com/api/pricing (read 2026-11-08).
+// them: https://ai.topxea.com/api/pricing (read 2026-11-09).
 export const topxAIProvider = defineProvider({
   id: ModelProviderEnum.TopxAI,
   name: 'TopxAI',
@@ -38,6 +38,13 @@ export const topxAIProvider = defineProvider({
         nickname: 'Claude Fable 5.1',
         capabilities: ['reasoning', 'tool_use'],
         contextWindow: 1_000_000,
+        maxOutput: 128_000,
+      },
+      {
+        modelId: 'gpt-6.1-terra',
+        nickname: 'GPT-6.1 Terra',
+        capabilities: ['vision', 'reasoning', 'tool_use'],
+        contextWindow: 1_050_000,
         maxOutput: 128_000,
       },
       {

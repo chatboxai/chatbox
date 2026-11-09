@@ -21,7 +21,7 @@ export async function* binaryChunks(chunks: AsyncIterable<Uint8Array>, signal?: 
     total += chunk.length
     if (total > 4 * 1024 ** 3) throw new Error('File exceeds file size budget')
     for (let offset = 0; offset < chunk.length; ) {
-      signal?.throwIfAborted()
+      throwIfAborted(signal)
       const count = Math.min(chunk.length - offset, BRIDGE_WRITE_BYTES - used)
       buffer.set(chunk.subarray(offset, offset + count), used)
       used += count
@@ -32,6 +32,6 @@ export async function* binaryChunks(chunks: AsyncIterable<Uint8Array>, signal?: 
       }
     }
   }
-  signal?.throwIfAborted()
+  throwIfAborted(signal)
   if (used > 0) yield buffer.slice(0, used)
 }

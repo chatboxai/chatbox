@@ -1,8 +1,9 @@
-import { binaryChunks } from './binary-chunks'
 import { Toast } from '@capacitor/toast'
+import { throwIfAborted } from '@chatbox/core/utils/abort'
 import i18n from '@/i18n'
 import { getLogger } from '@/lib/utils'
 import { CHATBOX_BUILD_PLATFORM } from '@/variables'
+import { binaryChunks } from './binary-chunks'
 import {
   AndroidFilterWriter,
   type FilterWriter,
@@ -157,9 +158,9 @@ export default class MobileExporter implements Exporter {
         if (actualPath === undefined) actualPath = await this.writer.writeFirstBinaryChunk(filename, chunk)
         else await this.writer.appendBinaryChunk(filename, chunk, actualPath)
       }
-      signal?.throwIfAborted()
+      throwIfAborted(signal)
       if (actualPath === undefined) actualPath = await this.writer.writeFirstBinaryChunk(filename, new Uint8Array())
-      signal?.throwIfAborted()
+      throwIfAborted(signal)
       await this.writer.completeExport(filename, actualPath)
     } finally {
       if (actualPath !== undefined) await this.writer.cleanupPartialExport(filename, actualPath)

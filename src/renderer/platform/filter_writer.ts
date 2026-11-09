@@ -1,10 +1,11 @@
-import { binaryChunks, bytesToBase64 } from './binary-chunks'
 import { Directory, Encoding, Filesystem, type WriteFileOptions, type WriteFileResult } from '@capacitor/filesystem'
 import { Share } from '@capacitor/share'
 import { Toast } from '@capacitor/toast'
+import { throwIfAborted } from '@chatbox/core/utils/abort'
 import i18n from '@/i18n'
 import { getLogger } from '@/lib/utils'
 import { AndroidDocumentSaver } from './android_document_saver'
+import { binaryChunks, bytesToBase64 } from './binary-chunks'
 
 const log = getLogger('android-filter-writer')
 
@@ -467,7 +468,7 @@ export class AndroidFilterWriter extends FilterWriter {
         })
         tempUri = result.uri
       }
-      signal?.throwIfAborted()
+      throwIfAborted(signal)
       const saveResult = await AndroidDocumentSaver.saveFile({ sourceUri: tempUri, suggestedName: filename, mimeType })
       await this.handlePostWrite({ uri: saveResult.uri })
     } finally {

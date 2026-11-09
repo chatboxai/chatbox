@@ -31,3 +31,11 @@ export function createSendFollowIntent() {
     },
   }
 }
+
+/**
+ * Whether a send made while reading history still returns to the tail. Mobile layouts (the Capacitor app and small
+ * screens) jump to the new turn; wide layouts keep the reading position and offer the generating shortcut instead.
+ */
+export function sendFromHistoryFollowsTail(options: { platformType: string; isSmallScreen: boolean }): boolean {
+  return options.platformType === 'mobile' || options.isSmallScreen
+}

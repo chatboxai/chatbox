@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { createSendFollowIntent } from './send-follow-intent'
+import { createSendFollowIntent, sendFromHistoryFollowsTail } from './send-follow-intent'
 
 describe('send follow intent', () => {
   test('follows a send made at the tail until the user leaves it', () => {
@@ -27,5 +27,22 @@ describe('send follow intent', () => {
     expect(intent.capture(false)).toBeNull()
     intent.requestTail()
     expect(intent.capture(false)?.()).toBe(true)
+  })
+})
+
+describe('send from history', () => {
+  test('returns to the tail in the Capacitor app', () => {
+    expect(sendFromHistoryFollowsTail({ platformType: 'mobile', isSmallScreen: true })).toBe(true)
+    expect(sendFromHistoryFollowsTail({ platformType: 'mobile', isSmallScreen: false })).toBe(true)
+  })
+
+  test('returns to the tail on a small screen outside the app', () => {
+    expect(sendFromHistoryFollowsTail({ platformType: 'web', isSmallScreen: true })).toBe(true)
+    expect(sendFromHistoryFollowsTail({ platformType: 'desktop', isSmallScreen: true })).toBe(true)
+  })
+
+  test('keeps the reading position on wide desktop and web layouts', () => {
+    expect(sendFromHistoryFollowsTail({ platformType: 'desktop', isSmallScreen: false })).toBe(false)
+    expect(sendFromHistoryFollowsTail({ platformType: 'web', isSmallScreen: false })).toBe(false)
   })
 })

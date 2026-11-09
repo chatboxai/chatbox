@@ -67,7 +67,7 @@ import MessageNavigation, { ScrollToBottomButton } from './MessageNavigation'
 import { areMinimapAnchorsEqual, buildMessageMinimapAnchors } from './message-navigation-utils'
 import { buildTranscriptRenderItems } from './message-render-items'
 import SummaryMessage from './SummaryMessage'
-import { createSendFollowIntent } from './send-follow-intent'
+import { createSendFollowIntent, sendFromHistoryFollowsTail } from './send-follow-intent'
 import {
   createSmoothFollowOutputController,
   getFollowOutputScrollBehavior,
@@ -82,8 +82,9 @@ export interface MessageListRef {
   scrollToTop(): void
   scrollToBottom(): void
   /**
-   * Captures, at send time, whether the user is following the tail (or has just asked for it). Returns null when the
-   * user is reading history; otherwise a check that turns false once the user browses away.
+   * Captures, at send time, whether the send should follow the tail. Mobile layouts always follow; wide layouts follow
+   * only when the user is at the tail (or has just asked for it) and return null while reading history. The returned
+   * check turns false once the user browses away.
    */
   captureSendFollow(): (() => boolean) | null
   scrollToMessage(messageId: string): Promise<boolean>
@@ -335,6 +336,8 @@ const MessageList = forwardRef<
         void navigate('tail')
       },
       captureSendFollow: () => {
+        if (sendFromHistoryFollowsTail({ platformType: platform.type, isSmallScreen }))
+          return sendFollowIntent.capture(true)
         const state = controller.getSnapshot()
         const element = scroller.current
         const atTail =
@@ -348,7 +351,7 @@ const MessageList = forwardRef<
       scrollToMessage: (messageId) => navigate({ messageId }),
       setIsNewMessage,
     }),
-    [captureAnchor, controller, follow, navigate, sendFollowIntent]
+    [captureAnchor, controller, follow, isSmallScreen, navigate, sendFollowIntent]
   )
   useEffect(() => {
     uiStore.getState().setMessageListElement(container)

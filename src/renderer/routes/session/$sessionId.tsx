@@ -203,8 +203,8 @@ function RouteComponent() {
     async ({ constructedMessage, needGenerating = true, onUserMessageReady }: InputBoxPayload) => {
       const submittedList = messageListRef.current
       submittedList?.setIsNewMessage(autoScrollNewMessagesToTop)
-      // Read the intent before any await: sending while reading history keeps the reading position, while sending
-      // from the tail (or right after asking for it) keeps following the new turn.
+      // Read the intent before any await: sending from the tail (or right after asking for it), or from anywhere on
+      // a mobile layout, follows the new turn; sending while reading history on a wide layout keeps the position.
       const stillFollowing = autoScrollNewMessagesToTop ? null : (submittedList?.captureSendFollow() ?? null)
 
       if (!currentSession) {

@@ -1642,7 +1642,6 @@ describe('send follow intent', () => {
     return { listRef, view, viewport }
   }
   async function openReadingHistory() {
-    h.smallScreen = true
     const listRef = createRef<MessageListRef>()
     const view = render(<Host listRef={listRef} search="m0" />)
     await waitFor(() => {
@@ -1677,7 +1676,7 @@ describe('send follow intent', () => {
   })
 
   test.each([
-    ['scroll-to-bottom arrow', 'idle'],
+    ['bottom navigation button', 'idle'],
     ['generating shortcut', 'generating'],
   ] as const)('follows a send made right after the %s, before the list reaches the tail', async (_, activity) => {
     h.activity = activity
@@ -1691,7 +1690,7 @@ describe('send follow intent', () => {
         })
     )
     fireEvent.click(
-      activity === 'idle' ? view.getByTestId('mobile-tail') : view.getByRole('button', { name: 'Generating...' })
+      activity === 'idle' ? view.getByTestId('desktop-navigation') : view.getByRole('button', { name: 'Generating...' })
     )
     // The tail is still being read: the list has neither moved nor resumed following yet.
     expect(h.controller!.getSnapshot().hasNewer).toBe(true)
@@ -1704,16 +1703,37 @@ describe('send follow intent', () => {
 
   test('drops the arrow intent when the user scrolls back up before sending', async () => {
     const { listRef, view, viewport } = await openReadingHistory()
-    fireEvent.click(view.getByTestId('mobile-tail'))
+    fireEvent.click(view.getByTestId('desktop-navigation'))
     fireEvent.wheel(viewport, { deltaY: -80 })
     expect(listRef.current!.captureSendFollow()).toBeNull()
   })
 
   test('drops the arrow intent when a touch drags toward older messages before sending', async () => {
     const { listRef, view, viewport } = await openReadingHistory()
-    fireEvent.click(view.getByTestId('mobile-tail'))
+    fireEvent.click(view.getByTestId('desktop-navigation'))
     fireEvent.touchStart(viewport, { touches: [{ clientY: 100 }] })
     fireEvent.touchMove(viewport, { touches: [{ clientY: 160 }] })
     expect(listRef.current!.captureSendFollow()).toBeNull()
+  })
+
+  test.each([
+    ['the Capacitor app', 'mobile', false],
+    ['a small screen', 'desktop', true],
+  ] as const)('follows a send made while reading history in %s', async (_, platformType, smallScreen) => {
+    h.platformType = platformType
+    h.smallScreen = smallScreen
+    const { listRef } = await openReadingHistory()
+    expect(listRef.current!.captureSendFollow()?.()).toBe(true)
+  })
+
+  test('stops following a mobile send from history once the user scrolls during the send', async () => {
+    h.platformType = 'mobile'
+    h.smallScreen = true
+    const { listRef, viewport } = await openReadingHistory()
+    const stillFollowing = listRef.current!.captureSendFollow()
+    expect(stillFollowing?.()).toBe(true)
+    fireEvent.touchStart(viewport, { touches: [{ clientY: 100 }] })
+    fireEvent.touchMove(viewport, { touches: [{ clientY: 160 }] })
+    expect(stillFollowing?.()).toBe(false)
   })
 })

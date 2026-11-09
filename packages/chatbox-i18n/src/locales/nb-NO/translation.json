@@ -2001,5 +2001,9 @@
   "Export pre-migration data": "Eksporter data fra før migreringen",
   "Save the original conversation as JSON for recovery. Attached files are not included. Your chat will not be changed.": "Lagre den opprinnelige samtalen som JSON for gjenoppretting. Vedlegg er ikke inkludert. Samtalen din blir ikke endret.",
   "No pre-migration data is available for this chat.": "Ingen data fra før migreringen er tilgjengelige for denne samtalen.",
-  "Could not export pre-migration data. Your chat has not been changed.": "Kunne ikke eksportere data fra før migreringen. Samtalen din er ikke endret."
+  "Could not export pre-migration data. Your chat has not been changed.": "Kunne ikke eksportere data fra før migreringen. Samtalen din er ikke endret.",
+  "Chatbox AI license missing for signed-out user": "<strong>Logg inn</strong><br/>Du bruker en modell levert av Chatbox AI. Logg inn for å begynne å bruke den med én gang.<br/><OpenChatboxLoginButton>Logg inn på Chatbox AI</OpenChatboxLoginButton>",
+  "Chatbox AI license missing for signed-in user": "<strong>Ingen Chatbox AI-konto</strong><br/>Du bruker en Chatbox AI-modell. Hent gratisabonnementet for å begynne å bruke den med én gang.<br/><OpenClaimFreePlanButton>Hent gratisabonnementet</OpenClaimFreePlanButton>",
+  "Chatbox AI manual license not found": "<strong>Fant ikke Chatbox AI-lisensen</strong><br/>Kontroller Chatbox AI-lisensnøkkelen du skrev inn manuelt, og prøv igjen.<br/><OpenManualLicenseButton>Skriv inn lisensnøkkelen på nytt</OpenManualLicenseButton>",
+  "After claiming your free plan, open Chatbox AI settings to activate it": "Etter at du har hentet gratisabonnementet, <OpenChatboxSettingsButton>åpner du Chatbox AI-innstillingene</OpenChatboxSettingsButton> for å aktivere det."
 }

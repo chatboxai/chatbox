@@ -2001,5 +2001,9 @@
   "Export pre-migration data": "تصدير البيانات قبل الترحيل",
   "Save the original conversation as JSON for recovery. Attached files are not included. Your chat will not be changed.": "احفظ المحادثة الأصلية بصيغة JSON لاستعادتها. لا يتم تضمين الملفات المرفقة. لن يتم تغيير محادثتك.",
   "No pre-migration data is available for this chat.": "لا تتوفر بيانات قبل الترحيل لهذه المحادثة.",
-  "Could not export pre-migration data. Your chat has not been changed.": "تعذر تصدير البيانات قبل الترحيل. لم يتم تغيير محادثتك."
+  "Could not export pre-migration data. Your chat has not been changed.": "تعذر تصدير البيانات قبل الترحيل. لم يتم تغيير محادثتك.",
+  "Chatbox AI license missing for signed-out user": "<strong>يرجى تسجيل الدخول</strong><br/>أنت تستخدم نموذجًا مقدمًا من Chatbox AI. سجّل الدخول لبدء استخدامه فورًا.<br/><OpenChatboxLoginButton>تسجيل الدخول إلى Chatbox AI</OpenChatboxLoginButton>",
+  "Chatbox AI license missing for signed-in user": "<strong>لا يوجد حساب Chatbox AI</strong><br/>أنت تستخدم نموذج Chatbox AI. احصل على الخطة المجانية لبدء استخدامه فورًا.<br/><OpenClaimFreePlanButton>احصل على الخطة المجانية</OpenClaimFreePlanButton>",
+  "Chatbox AI manual license not found": "<strong>لم يتم العثور على ترخيص Chatbox AI</strong><br/>تحقق من مفتاح ترخيص Chatbox AI الذي أدخلته يدويًا ثم حاول مرة أخرى.<br/><OpenManualLicenseButton>إعادة إدخال مفتاح الترخيص</OpenManualLicenseButton>",
+  "After claiming your free plan, open Chatbox AI settings to activate it": "بعد الحصول على الخطة المجانية، <OpenChatboxSettingsButton>افتح إعدادات Chatbox AI</OpenChatboxSettingsButton> لتفعيلها."
 }

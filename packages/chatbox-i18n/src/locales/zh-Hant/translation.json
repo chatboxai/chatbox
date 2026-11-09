@@ -2001,5 +2001,9 @@
   "Export pre-migration data": "匯出遷移前資料",
   "Save the original conversation as JSON for recovery. Attached files are not included. Your chat will not be changed.": "將原始對話儲存為 JSON 以便復原，不包含附件檔案。此操作不會變更對話。",
   "No pre-migration data is available for this chat.": "此對話沒有可用的遷移前資料。",
-  "Could not export pre-migration data. Your chat has not been changed.": "無法匯出遷移前資料。對話未被變更。"
+  "Could not export pre-migration data. Your chat has not been changed.": "無法匯出遷移前資料。對話未被變更。",
+  "Chatbox AI license missing for signed-out user": "<strong>請登入</strong><br/>您正在使用 Chatbox AI 提供的模型服務，登入後即可立即使用。<br/><OpenChatboxLoginButton>Chatbox AI 登入</OpenChatboxLoginButton>",
+  "Chatbox AI license missing for signed-in user": "<strong>無 Chatbox AI 帳號</strong><br/>您正在使用 Chatbox AI 模型，領取免費方案後即可立即使用。<br/><OpenClaimFreePlanButton>領取免費方案</OpenClaimFreePlanButton>",
+  "Chatbox AI manual license not found": "<strong>找不到 Chatbox AI 授權碼</strong><br/>請檢查手動輸入的 Chatbox AI 授權碼並重試。<br/><OpenManualLicenseButton>重新輸入授權碼</OpenManualLicenseButton>",
+  "After claiming your free plan, open Chatbox AI settings to activate it": "領取免費方案後，請<OpenChatboxSettingsButton>開啟 Chatbox AI 設定</OpenChatboxSettingsButton>完成啟用。"
 }

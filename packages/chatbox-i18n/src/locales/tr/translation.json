@@ -2001,5 +2001,9 @@
   "Export pre-migration data": "Taşıma öncesi verileri dışa aktar",
   "Save the original conversation as JSON for recovery. Attached files are not included. Your chat will not be changed.": "Kurtarma için özgün konuşmayı JSON olarak kaydedin. Ek dosyalar dahil değildir. Sohbetiniz değiştirilmeyecektir.",
   "No pre-migration data is available for this chat.": "Bu sohbet için taşıma öncesi veri bulunmuyor.",
-  "Could not export pre-migration data. Your chat has not been changed.": "Taşıma öncesi veriler dışa aktarılamadı. Sohbetiniz değiştirilmedi."
+  "Could not export pre-migration data. Your chat has not been changed.": "Taşıma öncesi veriler dışa aktarılamadı. Sohbetiniz değiştirilmedi.",
+  "Chatbox AI license missing for signed-out user": "<strong>Lütfen giriş yapın</strong><br/>Chatbox AI tarafından sağlanan bir modeli kullanıyorsunuz. Hemen kullanmaya başlamak için giriş yapın.<br/><OpenChatboxLoginButton>Chatbox AI'a giriş yap</OpenChatboxLoginButton>",
+  "Chatbox AI license missing for signed-in user": "<strong>Chatbox AI hesabı yok</strong><br/>Bir Chatbox AI modeli kullanıyorsunuz. Hemen kullanmaya başlamak için ücretsiz planı alın.<br/><OpenClaimFreePlanButton>Ücretsiz planı al</OpenClaimFreePlanButton>",
+  "Chatbox AI manual license not found": "<strong>Chatbox AI lisansı bulunamadı</strong><br/>Elle girdiğiniz Chatbox AI lisans anahtarını kontrol edip tekrar deneyin.<br/><OpenManualLicenseButton>Lisans anahtarını yeniden gir</OpenManualLicenseButton>",
+  "After claiming your free plan, open Chatbox AI settings to activate it": "Ücretsiz planı aldıktan sonra etkinleştirmek için <OpenChatboxSettingsButton>Chatbox AI ayarlarını açın</OpenChatboxSettingsButton>."
 }

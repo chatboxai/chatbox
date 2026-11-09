@@ -14,6 +14,13 @@ function message(overrides: Partial<Message>): Message {
 }
 
 describe('resolveMessageErrorPresentation', () => {
+  it.each([20003, 20004])('routes Chatbox AI license error %s to account guidance', (errorCode) => {
+    expect(resolveMessageErrorPresentation(message({ errorCode }))).toMatchObject({
+      kind: 'known-chatbox-api',
+      errorCode,
+    })
+  })
+
   it.each([
     [MESSAGE_ERROR_CODES.CHATBOX_AI_QUOTA_EXHAUSTED, 'quota-exhausted'],
     [MESSAGE_ERROR_CODES.CHATBOX_AI_FREE_QUOTA_EXHAUSTED, 'free-quota-exhausted'],

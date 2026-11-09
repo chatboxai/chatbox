@@ -2001,5 +2001,9 @@
   "Export pre-migration data": "이전 전 데이터 내보내기",
   "Save the original conversation as JSON for recovery. Attached files are not included. Your chat will not be changed.": "복구를 위해 원본 대화를 JSON으로 저장합니다. 첨부 파일은 포함되지 않습니다. 대화는 변경되지 않습니다.",
   "No pre-migration data is available for this chat.": "이 채팅에는 이전 전 데이터가 없습니다.",
-  "Could not export pre-migration data. Your chat has not been changed.": "이전 전 데이터를 내보내지 못했습니다. 채팅은 변경되지 않았습니다."
+  "Could not export pre-migration data. Your chat has not been changed.": "이전 전 데이터를 내보내지 못했습니다. 채팅은 변경되지 않았습니다.",
+  "Chatbox AI license missing for signed-out user": "<strong>로그인해 주세요</strong><br/>Chatbox AI에서 제공하는 모델을 사용하고 있습니다. 로그인하면 바로 사용할 수 있습니다.<br/><OpenChatboxLoginButton>Chatbox AI 로그인</OpenChatboxLoginButton>",
+  "Chatbox AI license missing for signed-in user": "<strong>Chatbox AI 계정이 없습니다</strong><br/>Chatbox AI 모델을 사용하고 있습니다. 무료 플랜을 받으면 바로 사용할 수 있습니다.<br/><OpenClaimFreePlanButton>무료 플랜 받기</OpenClaimFreePlanButton>",
+  "Chatbox AI manual license not found": "<strong>Chatbox AI 라이선스를 찾을 수 없습니다</strong><br/>직접 입력한 Chatbox AI 라이선스 키를 확인하고 다시 시도하세요.<br/><OpenManualLicenseButton>라이선스 키 다시 입력</OpenManualLicenseButton>",
+  "After claiming your free plan, open Chatbox AI settings to activate it": "무료 플랜을 받은 후 <OpenChatboxSettingsButton>Chatbox AI 설정을 열어</OpenChatboxSettingsButton> 활성화하세요."
 }

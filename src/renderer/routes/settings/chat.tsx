@@ -175,7 +175,7 @@ export function RouteComponent() {
         <SettingRow
           id="message-meta"
           label={t('Message info')}
-          description={t("Model name and time appear in the assistant's name row; the rest appear below the message.")}
+          description={t('Shown below each message.')}
           controlLayout="block"
           control={
             <Chip.Group

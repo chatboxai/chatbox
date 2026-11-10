@@ -4,8 +4,6 @@ import {
   ASSISTANT_CONTENT_MAX_WIDTH,
   getConversationContentClassName,
   getConversationRowLayout,
-  getLongPressSurfaceClassName,
-  hasConversationContentSurface,
   isErrorOnlyMessage,
   isUserMessageOnRight,
 } from './message-layout'
@@ -33,8 +31,8 @@ describe('Message role classes', () => {
 })
 
 describe('Conversation row layout', () => {
-  test('uses the wide-screen avatar, gap and far-side space', () => {
-    expect(getConversationRowLayout(false, true)).toEqual({
+  test('puts the bubble-layout avatar beside the reply on wide screens', () => {
+    expect(getConversationRowLayout(false, true, 'bubble')).toEqual({
       avatarSize: 28,
       avatarGap: 10,
       userFarSideSpace: 64,
@@ -44,55 +42,77 @@ describe('Conversation row layout', () => {
       spansColumn: false,
       assistantContentMaxWidth: ASSISTANT_CONTENT_MAX_WIDTH,
       generatingLoaderSize: 32,
-      nameRowOffset: 4,
     })
-    expect(getConversationRowLayout(false, false)).toMatchObject({
+    expect(getConversationRowLayout(false, false, 'bubble')).toMatchObject({
       userFarSideSpace: 128,
       assistantFarSideSpace: 128,
-      nameRowOffset: 0,
+      assistantAvatarAbove: false,
     })
   })
 
-  test('puts the small-screen assistant avatar above a reply that runs to the right edge', () => {
-    expect(getConversationRowLayout(true, true)).toEqual({
+  test('keeps the bubble-layout avatar beside the reply on small screens', () => {
+    expect(getConversationRowLayout(true, true, 'bubble')).toEqual({
       avatarSize: 24,
       avatarGap: 8,
       userFarSideSpace: 0,
       assistantFarSideSpace: 0,
-      assistantAvatarAbove: true,
+      assistantAvatarAbove: false,
       userBubbleMaxWidth: 'calc(100% - 3rem)',
       spansColumn: false,
       assistantContentMaxWidth: ASSISTANT_CONTENT_MAX_WIDTH,
       generatingLoaderSize: 28,
-      nameRowOffset: 2,
     })
-  })
-
-  test('widens small-screen replies and user bubbles with avatars hidden', () => {
-    expect(getConversationRowLayout(true, false)).toMatchObject({
-      userFarSideSpace: 0,
+    expect(getConversationRowLayout(true, false, 'bubble')).toMatchObject({
       assistantFarSideSpace: 0,
       assistantAvatarAbove: false,
       userBubbleMaxWidth: '95%',
-      nameRowOffset: 0,
     })
   })
 
-  test('lets replies span the full-width column on wide screens', () => {
-    for (const showAvatar of [true, false]) {
-      const layout = getConversationRowLayout(false, showAvatar, true)
-      expect(layout.spansColumn).toBe(true)
-      expect(layout.userFarSideSpace).toBe(0)
+  test('puts the classic avatar above a full-width reply on every screen size', () => {
+    for (const isSmallScreen of [false, true]) {
+      const layout = getConversationRowLayout(isSmallScreen, true, 'classic')
+      expect(layout.assistantAvatarAbove).toBe(true)
       expect(layout.assistantFarSideSpace).toBe(0)
-      expect(layout.assistantAvatarAbove).toBe(false)
-      expect(layout.assistantContentMaxWidth).toBeUndefined()
-      expect(layout.userBubbleMaxWidth).toBe('min(640px, 72%)')
+      expect(layout.assistantContentMaxWidth).toBe(ASSISTANT_CONTENT_MAX_WIDTH)
+    }
+    expect(getConversationRowLayout(false, true, 'classic').userFarSideSpace).toBe(64)
+  })
+
+  test('lays a classic reply out the same with avatars shown or hidden', () => {
+    for (const isSmallScreen of [false, true]) {
+      for (const wideColumn of [false, true]) {
+        const shown = getConversationRowLayout(isSmallScreen, true, 'classic', wideColumn)
+        const hidden = getConversationRowLayout(isSmallScreen, false, 'classic', wideColumn)
+        expect(hidden.assistantAvatarAbove).toBe(false)
+        expect(hidden.assistantFarSideSpace).toBe(shown.assistantFarSideSpace)
+        expect(hidden.assistantContentMaxWidth).toBe(shown.assistantContentMaxWidth)
+        expect(hidden.spansColumn).toBe(shown.spansColumn)
+      }
+    }
+  })
+
+  test('lets replies span the full-width column on wide screens', () => {
+    for (const messageLayout of ['classic', 'bubble'] as const) {
+      for (const showAvatar of [true, false]) {
+        const layout = getConversationRowLayout(false, showAvatar, messageLayout, true)
+        expect(layout.spansColumn).toBe(true)
+        expect(layout.userFarSideSpace).toBe(0)
+        expect(layout.assistantFarSideSpace).toBe(0)
+        expect(layout.assistantContentMaxWidth).toBeUndefined()
+        expect(layout.userBubbleMaxWidth).toBe('min(640px, 72%)')
+      }
     }
   })
 
   test('keeps the small-screen row unchanged in the full-width column', () => {
-    expect(getConversationRowLayout(true, true, true)).toEqual(getConversationRowLayout(true, true))
-    expect(getConversationRowLayout(true, false, true)).toEqual(getConversationRowLayout(true, false))
+    for (const messageLayout of ['classic', 'bubble'] as const) {
+      for (const showAvatar of [true, false]) {
+        expect(getConversationRowLayout(true, showAvatar, messageLayout, true)).toEqual(
+          getConversationRowLayout(true, showAvatar, messageLayout)
+        )
+      }
+    }
   })
 })
 
@@ -144,26 +164,6 @@ describe('Conversation content surface', () => {
     expect(spanning('classic').split(' ')).toContain('w-full')
     expect(spanning('bubble')).toBe(content('bubble', 'assistant'))
     expect(spanning('classic', true)).toBe(content('classic', 'assistant', true))
-  })
-})
-
-describe('Long-press surface', () => {
-  test('gives the pressed tint to bubbles only', () => {
-    expect(hasConversationContentSurface({ layout: 'classic', role: 'user', errorOnly: false })).toBe(true)
-    expect(hasConversationContentSurface({ layout: 'bubble', role: 'user', errorOnly: false })).toBe(true)
-    expect(hasConversationContentSurface({ layout: 'bubble', role: 'assistant', errorOnly: false })).toBe(true)
-    expect(hasConversationContentSurface({ layout: 'classic', role: 'assistant', errorOnly: false })).toBe(false)
-    expect(hasConversationContentSurface({ layout: 'bubble', role: 'assistant', errorOnly: true })).toBe(false)
-  })
-
-  test('draws the tint inside the surface, clipped to its corners, only while pressed', () => {
-    const pressed = getLongPressSurfaceClassName(true).split(' ')
-    expect(pressed).toEqual(
-      expect.arrayContaining(['relative', 'isolate', 'before:inset-0', 'before:-z-10', 'before:rounded-[inherit]'])
-    )
-    expect(pressed).toContain('before:bg-black/[0.08]')
-    expect(getLongPressSurfaceClassName(false).split(' ')).toContain('before:bg-transparent')
-    expect(getLongPressSurfaceClassName(false)).not.toContain('before:bg-black')
   })
 })
 

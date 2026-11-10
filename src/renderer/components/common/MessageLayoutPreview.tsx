@@ -92,33 +92,21 @@ function AssistantPreviewLines({ size }: LayoutPreviewProps) {
   )
 }
 
-/** The assistant name row above the reply: a darker name bar followed by a lighter, shorter one. */
-function AssistantPreviewNameRow({ size }: LayoutPreviewProps) {
-  const { line } = previewMetrics(size)
-  return (
-    <Flex gap={line / 2} mb={line * 0.75}>
-      <Box h={line * 0.75} w="34%" className="rounded-full bg-chatbox-tint-gray" />
-      <Box h={line * 0.75} w="12%" className="rounded-full bg-chatbox-background-tertiary" />
-    </Flex>
-  )
-}
-
+/** Classic: the assistant avatar in a row of its own, then the reply flat across the full width. */
 export function ClassicLayoutPreview({ size = 'md' }: LayoutPreviewProps) {
   const { avatar, line } = previewMetrics(size)
   return (
     <Stack gap="sm">
       <UserPreviewRow size={size} side="left" />
-      <Flex align="flex-start" gap={6} pr={18}>
-        <Box className="rounded-full bg-chatbox-tint-brand flex-shrink-0" w={avatar} h={avatar} />
-        <Box flex="1" pt={line / 2}>
-          <AssistantPreviewNameRow size={size} />
-          <AssistantPreviewLines size={size} />
-        </Box>
-      </Flex>
+      <Box>
+        <Box className="rounded-full bg-chatbox-tint-brand" w={avatar} h={avatar} mb={line * 0.75} />
+        <AssistantPreviewLines size={size} />
+      </Box>
     </Stack>
   )
 }
 
+/** Bubble: the assistant avatar beside the reply's bubble. */
 export function BubbleLayoutPreview({ size = 'md' }: LayoutPreviewProps) {
   const { avatar, line } = previewMetrics(size)
   return (
@@ -126,11 +114,13 @@ export function BubbleLayoutPreview({ size = 'md' }: LayoutPreviewProps) {
       <UserPreviewRow size={size} side="right" />
       <Flex align="flex-start" gap={6} pr={18}>
         <Box className="rounded-full bg-chatbox-tint-brand flex-shrink-0" w={avatar} h={avatar} />
-        <Box flex="1" pt={line / 2}>
-          <AssistantPreviewNameRow size={size} />
-          <Box px={line + 2} py={line} className="rounded-[10px] rounded-tl-[3px] bg-chatbox-background-secondary">
-            <AssistantPreviewLines size={size} />
-          </Box>
+        <Box
+          flex="1"
+          px={line + 2}
+          py={line}
+          className="rounded-[10px] rounded-tl-[3px] bg-chatbox-background-secondary"
+        >
+          <AssistantPreviewLines size={size} />
         </Box>
       </Flex>
     </Stack>

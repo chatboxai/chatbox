@@ -9,7 +9,7 @@ import {
   IconX,
 } from '@tabler/icons-react'
 import { useAtomValue } from 'jotai'
-import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { useCopied } from '@/hooks/useCopied'
@@ -17,10 +17,10 @@ import { requestManualCompaction } from '@/packages/context-management'
 import { compactionUIStateMapAtom, setCompactionUIState } from '@/stores/atoms'
 import { add as addToast } from '@/stores/toastActions'
 import { ScalableIcon } from '../common/ScalableIcon'
+import { getLogicalEndScrollLeft } from '../message-parts/ReasoningInlineSummary'
 
 const MAX_CHARS = 200
 const MAX_LINES = 3
-const COMPLETED_STATUS_DURATION_MS = 15_000
 
 function shouldTruncate(text: string): boolean {
   if (text.length > MAX_CHARS) return true
@@ -41,10 +41,9 @@ function getTruncatedText(text: string): string {
 
 interface CompactionStatusProps {
   sessionId: string
-  onViewSummary?: (summaryMessageId: string) => void
 }
 
-export const CompactionStatus = memo(function CompactionStatus({ sessionId, onViewSummary }: CompactionStatusProps) {
+export const CompactionStatus = memo(function CompactionStatus({ sessionId }: CompactionStatusProps) {
   const { t } = useTranslation()
   const compactionStateMap = useAtomValue(compactionUIStateMapAtom)
   const [expanded, setExpanded] = useState(false)
@@ -64,6 +63,17 @@ export const CompactionStatus = memo(function CompactionStatus({ sessionId, onVi
     const lines = compactionState.streamingText.split('\n').filter((line) => line.trim() !== '')
     return lines[lines.length - 1] || ''
   }, [compactionState.streamingText])
+
+  const previewRef = useRef<HTMLParagraphElement>(null)
+  useLayoutEffect(() => {
+    const preview = previewRef.current
+    if (!preview || compactionState.status !== 'running') return
+    preview.scrollLeft = getLogicalEndScrollLeft(
+      getComputedStyle(preview).direction,
+      preview.scrollWidth,
+      preview.clientWidth
+    )
+  }, [lastLine, compactionState.status])
 
   const errorText = (compactionState.error ?? t('Compaction failed')) as string
   const { copied, copy } = useCopied(errorText)
@@ -94,47 +104,12 @@ export const CompactionStatus = memo(function CompactionStatus({ sessionId, onVi
     })
   }, [sessionId])
 
-  const handleViewSummary = useCallback(() => {
-    if (!compactionState.summaryMessageId) return
-    onViewSummary?.(compactionState.summaryMessageId)
-    handleDismiss()
-  }, [compactionState.summaryMessageId, handleDismiss, onViewSummary])
-
   useEffect(() => {
-    if (compactionState.status !== 'completed') return
-    const timer = window.setTimeout(handleDismiss, COMPLETED_STATUS_DURATION_MS)
-    return () => window.clearTimeout(timer)
+    if (compactionState.status === 'completed') handleDismiss()
   }, [compactionState.status, handleDismiss])
 
-  if (compactionState.status === 'idle') {
+  if (compactionState.status === 'idle' || compactionState.status === 'completed') {
     return null
-  }
-
-  if (compactionState.status === 'completed') {
-    return (
-      <Box className="rounded-xl bg-chatbox-background-brand-secondary border border-chatbox-border-primary shadow-sm px-3 py-2">
-        <Flex align="center" justify="space-between" gap="xs">
-          <Flex align="center" gap="xs" className="min-w-0">
-            <ScalableIcon icon={IconCheck} size={16} className="flex-shrink-0 text-chatbox-tint-brand" />
-            <Text size="sm" c="chatbox-primary" className="truncate">
-              {t('Earlier messages summarized')}
-            </Text>
-          </Flex>
-          <Flex align="center" gap="xxs" className="flex-shrink-0">
-            {compactionState.summaryMessageId && onViewSummary && (
-              <Button size="compact-xs" variant="subtle" onClick={handleViewSummary}>
-                {t('View')}
-              </Button>
-            )}
-            <Tooltip label={t('Dismiss')}>
-              <ActionIcon size="xs" variant="subtle" color="chatbox-secondary" onClick={handleDismiss}>
-                <IconX size={14} />
-              </ActionIcon>
-            </Tooltip>
-          </Flex>
-        </Flex>
-      </Box>
-    )
   }
 
   if (compactionState.status === 'failed') {
@@ -203,11 +178,15 @@ export const CompactionStatus = memo(function CompactionStatus({ sessionId, onVi
           {t('Compacting conversation...')}
         </Text>
       </Flex>
-      {lastLine && (
-        <Text size="xs" c="dimmed" className="text-center mt-1 truncate">
-          {lastLine}
-        </Text>
-      )}
+      <Text
+        ref={previewRef}
+        size="xs"
+        c="dimmed"
+        className="text-left mt-1 truncate"
+        style={{ minHeight: '20px', lineHeight: '20px', textOverflow: 'clip' }}
+      >
+        {lastLine}
+      </Text>
     </Box>
   )
 })

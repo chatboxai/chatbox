@@ -11,14 +11,3 @@ export function triggerLongPressHaptic() {
   }
   navigator.vibrate?.(10)
 }
-
-/** Medium tap marking the moment a swiped message will reply again on release. */
-export function triggerSwipeArmHaptic() {
-  if (platform.type === 'mobile') {
-    void Haptics.impact({ style: ImpactStyle.Medium }).catch(() => {
-      navigator.vibrate?.(10)
-    })
-    return
-  }
-  navigator.vibrate?.(10)
-}

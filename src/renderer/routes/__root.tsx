@@ -9,7 +9,6 @@ import {
   createTheme,
   type DefaultMantineColor,
   Drawer,
-  Flex,
   Input,
   type MantineColorsTuple,
   MantineProvider,
@@ -90,12 +89,10 @@ import { useUIStore } from '@/stores/uiStore'
 import { CHATBOX_BUILD_CHANNEL, CHATBOX_BUILD_PLATFORM } from '@/variables'
 import { blobToDataUrl } from './image-creator/-components/constants'
 
-function BackgroundImageOverlay() {
+/** The chat wallpaper's image URL on chat routes, or undefined until the image is actually available. */
+function useChatWallpaperUrl(): string | undefined {
   const location = useLocation()
   const globalBackgroundImageKey = useSettingsStore((s) => s.backgroundImageKey)
-  const backgroundImageOpacity = useSettingsStore((s) => s.backgroundImageOpacity)
-  const showSidebar = useUIStore((s) => s.showSidebar)
-  const sidebarWidth = useSidebarWidth()
   const isRootPage = location.pathname === '/'
   const isSessionPage = location.pathname.startsWith('/session/') && location.pathname.length > '/session/'.length
   const sessionId = getSessionIdFromPathname(location.pathname)
@@ -117,55 +114,29 @@ function BackgroundImageOverlay() {
     enabled: !!effectiveKey,
     staleTime: Number.POSITIVE_INFINITY,
   })
-  const imageUrl =
-    session?.backgroundImage?.type === 'url'
-      ? session.backgroundImage.url
-      : effectiveKey && blob
-        ? blobToDataUrl(blob)
-        : undefined
+  const storedImageUrl = useMemo(() => (effectiveKey && blob ? blobToDataUrl(blob) : undefined), [effectiveKey, blob])
 
-  if (!isRootPage && !isSessionPage) return null
-  if (!imageUrl) return null
-  return (
-    <div className="pointer-events-none absolute z-0 top-0 left-0 w-full h-full">
-      <div
-        className="absolute top-0 left-0 w-full h-full bg-cover bg-center bg-no-repeat"
-        style={{
-          backgroundImage: `
-          url("${imageUrl.replace(/"/g, '%22')}")
-        `,
-          opacity: backgroundImageOpacity,
-        }}
-      />
-      <div className="hidden sm:block absolute top-0 left-0 w-full h-40 bg-gradient-to-b from-chatbox-background-primary from-0 to-transparent to-100%" />
-      {showSidebar && (
-        <div
-          className="hidden sm:block absolute top-0 left-0 h-full bg-gradient-to-r from-chatbox-background-primary from-[25%] to-transparent to-100%"
-          style={{
-            width: `${sidebarWidth * 2}px`,
-          }}
-        />
-      )}
-
-      <Flex h={54} className="chatbox-wallpaper-header-overlay sm:hidden bg-chatbox-background-primary" />
-
-      <Flex className="chatbox-wallpaper-header-overlay sm:hidden relative h-36 bg-gradient-to-b from-chatbox-background-primary from-0 to-transparent to-100%" />
-
-      <Flex className="chatbox-wallpaper-composer-overlay sm:hidden absolute bottom-0 left-0 w-full h-36 bg-gradient-to-t from-chatbox-background-primary from-0 to-transparent to-100%" />
-    </div>
-  )
+  if (!isRootPage && !isSessionPage) return undefined
+  return session?.backgroundImage?.type === 'url' ? session.backgroundImage.url || undefined : storedImageUrl
 }
 
-function useHasBackgroundImage() {
-  const location = useLocation()
-  const globalBackgroundImageKey = useSettingsStore((s) => s.backgroundImageKey)
-  const isRootPage = location.pathname === '/'
-  const isSessionPage = location.pathname.startsWith('/session/') && location.pathname.length > '/session/'.length
-  const sessionId = getSessionIdFromPathname(location.pathname)
-  const sessionLoadTarget = useSessionStartupLoadTarget(sessionId)
-  const { session } = useSessionHeader(sessionLoadTarget)
-
-  return (isRootPage || isSessionPage) && Boolean(session?.backgroundImage ?? globalBackgroundImageKey)
+function BackgroundImageOverlay({ imageUrl }: { imageUrl: string }) {
+  const backgroundImageOpacity = useSettingsStore((s) => s.backgroundImageOpacity)
+  const isSmallScreen = useIsSmallScreen()
+  return (
+    // Wide layouts render it inside the main panel, so the sidebar and title bar stay solid. Small
+    // screens render it on the app shell, so it fills the safe areas and runs under the header.
+    <div
+      className={clsx(
+        'pointer-events-none absolute inset-0 bg-cover bg-center bg-no-repeat',
+        isSmallScreen ? 'z-0' : '-z-10'
+      )}
+      style={{
+        backgroundImage: `url("${imageUrl.replace(/"/g, '%22')}")`,
+        opacity: backgroundImageOpacity,
+      }}
+    />
+  )
 }
 
 function SettingsModalErrorFallback({ retry }: { error: Error; retry: () => void }) {
@@ -192,7 +163,8 @@ function Root() {
   const startupPathname = useRef(location.pathname)
   const spellCheck = useSettingsStore((state) => state.spellCheck)
   const language = useLanguage()
-  const hasBackgroundImage = useHasBackgroundImage()
+  const wallpaperUrl = useChatWallpaperUrl()
+  const hasBackgroundImage = Boolean(wallpaperUrl)
   const isSmallScreen = useIsSmallScreen()
   // The small-screen settings index sits on the grouped surface (see `SettingsRoot`).
   const pageSurface =
@@ -399,8 +371,8 @@ function Root() {
       spellCheck={spellCheck}
       dir={language === 'ar' ? 'rtl' : 'ltr'}
     >
-      <BackgroundImageOverlay />
       {platform.isDesktopLike && (getOS() === 'Windows' || getOS() === 'Linux') && <ExitFullscreenButton />}
+      {isSmallScreen && wallpaperUrl && <BackgroundImageOverlay imageUrl={wallpaperUrl} />}
       <AppTitleBar />
       <Grid container className="min-h-0 flex-1 relative z-[1]">
         <Sidebar />
@@ -426,8 +398,9 @@ function Root() {
           <Box
             className={clsx(
               'h-full overflow-hidden box-border border-0 border-solid border-chatbox-border-primary',
-              hasBackgroundImage ? 'bg-transparent' : 'bg-chatbox-background-primary'
+              hasBackgroundImage ? 'relative isolate bg-transparent' : 'bg-chatbox-background-primary'
             )}
+            data-chat-wallpaper={hasBackgroundImage || undefined}
             data-page-surface={pageSurface}
             sx={
               titleBarHeight
@@ -439,6 +412,7 @@ function Root() {
                 : undefined
             }
           >
+            {!isSmallScreen && wallpaperUrl && <BackgroundImageOverlay imageUrl={wallpaperUrl} />}
             {/* Keyed per route so a crashing page stays contained to that page
                 instead of latching the whole main area until the app restarts. */}
             <ErrorBoundary key={location.pathname} name="main">

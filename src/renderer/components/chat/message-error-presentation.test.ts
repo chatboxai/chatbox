@@ -14,6 +14,13 @@ function message(overrides: Partial<Message>): Message {
 }
 
 describe('resolveMessageErrorPresentation', () => {
+  it.each([20003, 20004])('routes Chatbox AI license error %s to account guidance', (errorCode) => {
+    expect(resolveMessageErrorPresentation(message({ errorCode }))).toMatchObject({
+      kind: 'known-chatbox-api',
+      errorCode,
+    })
+  })
+
   it.each([
     [MESSAGE_ERROR_CODES.CHATBOX_AI_QUOTA_EXHAUSTED, 'quota-exhausted'],
     [MESSAGE_ERROR_CODES.CHATBOX_AI_FREE_QUOTA_EXHAUSTED, 'free-quota-exhausted'],
@@ -78,8 +85,10 @@ describe('resolveMessageErrorPresentation', () => {
       )
     ).toMatchObject({ kind: 'api', httpStatusCode: 429 })
     expect(
-      resolveMessageErrorPresentation(message({ error: 'offline', errorCode: 10002, errorExtra: { host: 'api.test' } }))
-    ).toMatchObject({ kind: 'network', host: 'api.test' })
+      resolveMessageErrorPresentation(
+        message({ error: 'offline', errorCode: 10002, aiProvider: 'custom-provider', errorExtra: { host: 'api.test' } })
+      )
+    ).toMatchObject({ kind: 'network', host: 'api.test', providerId: 'custom-provider' })
     expect(resolveMessageErrorPresentation(message({ error: 'OCR failed', errorCode: 10006 }))).toMatchObject({
       kind: 'ocr-failed',
     })

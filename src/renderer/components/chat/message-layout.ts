@@ -16,11 +16,11 @@ export type ConversationRowLayout = {
   avatarGap: number
   /** Space kept clear beside user bubbles on the side away from the user avatar; none on a small screen. */
   userFarSideSpace: number
-  /** Space kept clear right of assistant replies; none on a small screen. */
+  /** Space kept clear right of a bubble-layout reply; none on a small screen and none for a classic reply. */
   assistantFarSideSpace: number
   /**
-   * On a small screen the assistant avatar sits above the reply, beside its name row, so the reply takes the full
-   * width of the column. Elsewhere the avatar sits beside the reply.
+   * Classic puts the assistant avatar in a row of its own above the reply, so the reply takes the full width whether
+   * avatars are shown or not. Bubble puts the avatar beside the reply's bubble.
    */
   assistantAvatarAbove: boolean
   /** On a small screen the bubble leaves a narrow strip of the column clear, matching the room the avatar takes. */
@@ -31,11 +31,7 @@ export type ConversationRowLayout = {
   assistantContentMaxWidth?: number
   /** Loader drawn around the avatar while a reply streams. */
   generatingLoaderSize: number
-  /** Top offset that centers the assistant name row's line box on the avatar. */
-  nameRowOffset: number
 }
-
-const NAME_ROW_LINE_HEIGHT = 20
 
 /**
  * Row metrics for one conversation message. `wideColumn` is the full-width content column on a wide screen: replies
@@ -45,6 +41,7 @@ const NAME_ROW_LINE_HEIGHT = 20
 export function getConversationRowLayout(
   isSmallScreen: boolean,
   showAvatar: boolean,
+  messageLayout: MessageLayout,
   wideColumn = false
 ): ConversationRowLayout {
   const avatarSize = isSmallScreen ? 24 : 28
@@ -54,13 +51,12 @@ export function getConversationRowLayout(
     avatarSize,
     avatarGap: isSmallScreen ? 8 : 10,
     userFarSideSpace: farSideSpace,
-    assistantFarSideSpace: farSideSpace,
-    assistantAvatarAbove: isSmallScreen && showAvatar,
+    assistantFarSideSpace: messageLayout === 'classic' ? 0 : farSideSpace,
+    assistantAvatarAbove: messageLayout === 'classic' && showAvatar,
     userBubbleMaxWidth: isSmallScreen ? (showAvatar ? 'calc(100% - 3rem)' : '95%') : 'min(640px, 72%)',
     spansColumn,
     assistantContentMaxWidth: spansColumn ? undefined : ASSISTANT_CONTENT_MAX_WIDTH,
     generatingLoaderSize: avatarSize + 4,
-    nameRowOffset: showAvatar ? (avatarSize - NAME_ROW_LINE_HEIGHT) / 2 : 0,
   }
 }
 
@@ -98,31 +94,6 @@ export function getConversationContentClassName({
   if (errorOnly) return 'max-w-full min-w-0'
   if (layout === 'classic') return cn('max-w-full min-w-0', spansColumn && 'w-full')
   return cn('inline-block max-w-full min-w-0 rounded-2xl rounded-tl-[4px] bg-chatbox-background-secondary', padding)
-}
-
-/** Whether the message content is drawn on a bubble surface: user messages, and bubble-layout replies with content. */
-export function hasConversationContentSurface({
-  layout,
-  role,
-  errorOnly,
-}: {
-  layout: MessageLayout
-  role: 'user' | 'assistant'
-  errorOnly: boolean
-}): boolean {
-  return role === 'user' || (layout === 'bubble' && !errorOnly)
-}
-
-/**
- * Pressed tint for a long-press surface, drawn inside the bubble behind its text so the name row, avatar and tips around
- * the bubble stay uncovered.
- */
-export function getLongPressSurfaceClassName(pressed: boolean): string {
-  return cn(
-    "relative isolate before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:rounded-[inherit] before:content-['']",
-    'before:transition-colors before:duration-200',
-    pressed ? 'before:bg-black/[0.08] dark:before:bg-white/[0.08]' : 'before:bg-transparent'
-  )
 }
 
 export function isErrorOnlyMessage(message: Message): boolean {

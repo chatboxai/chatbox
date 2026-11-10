@@ -12,6 +12,7 @@ Chatbox Pro 是一款跨平台 AI 聊天客户端，支持桌面（macOS / Windo
 |------|------|------|
 | 多模型支持 | 同时接入 OpenAI、Claude、Gemini、DeepSeek 等 30+ AI 服务商，并支持部分官方 OAuth 登录 | [AI 模型与服务商](./ai-models.md) |
 | 会话管理 | 多会话并行、线程分支、消息分叉、自动命名 | [会话与对话](./conversations.md) |
+| 发送后滚动 | 阅读历史时发送：移动端跳到底部，桌面端保持位置 | [发送消息后的滚动位置](./send-scroll-behavior.md) |
 | 知识库 | 上传文档让 AI 检索回答，支持 PDF / Word / Markdown 等格式 | [知识库](./knowledge-base.md) |
 | 工具与集成 | MCP 工具扩展、网页搜索、文件读取 | [工具与集成](./tools-and-integrations.md) |
 | Agent Skills | 遵循 agentskills.io 规范的技能系统，支持全局与会话级启用 | [Agent Skills](./agent-skills.md) |

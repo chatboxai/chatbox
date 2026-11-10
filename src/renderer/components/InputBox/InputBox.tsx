@@ -178,7 +178,6 @@ export type InputBoxProps = {
   stopGenerationStatus?: 'idle' | 'stopping' | 'failed'
   onStartNewThread?(): Promise<(() => Promise<boolean>) | undefined>
   onClickSessionSettings?(): boolean | Promise<boolean>
-  onViewCompactionSummary?(summaryMessageId: string): void
   onStartAutoDialogue?(userSidePrompt: string): void
 }
 
@@ -223,7 +222,6 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       stopGenerationStatus = 'idle',
       onStartNewThread,
       onClickSessionSettings,
-      onViewCompactionSummary,
       onStartAutoDialogue,
     },
     ref
@@ -1606,9 +1604,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       <Box pt={0} pb={isSmallScreen ? 'md' : 'sm'} id={dom.InputBoxID} className="overflow-visible" {...getRootProps()}>
         <input className="hidden" {...getInputProps()} />
         <Stack className={cn('overflow-visible', paddedContentColumnClassName(widthFull))} gap="xs">
-          {currentSessionId && (
-            <CompactionStatus sessionId={currentSessionId} onViewSummary={onViewCompactionSummary} />
-          )}
+          {currentSessionId && <CompactionStatus sessionId={currentSessionId} />}
           {!isNewSession && headerRead && (
             <WebSearchUnavailableBanner
               sessionId={headerRead.header.id}

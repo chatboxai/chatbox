@@ -129,10 +129,19 @@ function _errorI18nKeys(t: (key: string) => string) {
 
   // HTTP status code errors (MessageErrTips.tsx)
   t(
-    'HTTP error: Unauthorized (401). Your authentication credentials are invalid or have expired. Please check your API key or login status.'
+    'HTTP error: Unauthorized (401). The API key for your configured {{apiProvider}} API may be invalid, expired, or entered incorrectly. Please check it and configure it again.'
   )
   t(
-    'HTTP error: Forbidden (403). You do not have permission to access this resource. Please check your API key permissions or account status.'
+    'HTTP error: Forbidden (403). You do not have permission to access your configured {{apiProvider}} API. Please check your API key permissions or account status.'
+  )
+  t(
+    'You currently have a Chatbox {{plan}} plan, with {{planPoints}} plan points and {{expansionPoints}} expansion pack points. Switch to a model under "Chatbox AI" in the model list to use it immediately.'
+  )
+  t(
+    'You currently have a Chatbox {{plan}} plan, with {{planPoints}} plan points. Switch to a model under "Chatbox AI" in the model list to use it immediately.'
+  )
+  t(
+    'You currently have {{expansionPoints}} Chatbox expansion pack points. Switch to a model under "Chatbox AI" in the model list to use it immediately.'
   )
   t('HTTP error: Request Timeout (408). The server took too long to respond. Please try again later.')
   t(

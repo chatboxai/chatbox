@@ -1830,7 +1830,7 @@
   "Importing does not clear all local data. Content in the backup overwrites matching records, while content not included is kept. Continue?": "不會清空本機全部資料。備份中包含的內容會覆蓋相同的記錄，未包含的內容會保留。確定繼續？",
   "Save settings, conversations and copilots to a backup file.": "將設定、對話和搭檔儲存到備份檔案。",
   "Search settings": "搜尋設定",
-  "Model name and time appear in the assistant's name row; the rest appear below the message.": "模型名稱和時間顯示在助理名稱列，其餘顯示在訊息下方",
+  "Shown below each message.": "顯示在每則訊息下方。",
   "Show replies as they are written": "逐字顯示回覆",
   "Startup & updates": "啟動與更新",
   "Summarize long conversations so they stay within the model's context window.": "壓縮長對話，使其保持在模型的上下文視窗之內。",

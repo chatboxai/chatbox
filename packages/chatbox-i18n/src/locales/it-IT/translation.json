@@ -1830,7 +1830,7 @@
   "Importing does not clear all local data. Content in the backup overwrites matching records, while content not included is kept. Continue?": "L’importazione non cancella tutti i dati locali. I contenuti del backup sovrascrivono i record corrispondenti, mentre quelli non inclusi vengono conservati. Continuare?",
   "Save settings, conversations and copilots to a backup file.": "Salva impostazioni, conversazioni e copilot in un file di backup.",
   "Search settings": "Cerca impostazioni",
-  "Model name and time appear in the assistant's name row; the rest appear below the message.": "Il nome del modello e l'ora appaiono nella riga del nome dell'assistente; il resto appare sotto il messaggio.",
+  "Shown below each message.": "Mostrato sotto ogni messaggio.",
   "Show replies as they are written": "Mostra le risposte mentre vengono scritte",
   "Startup & updates": "Avvio e aggiornamenti",
   "Summarize long conversations so they stay within the model's context window.": "Riassumi le conversazioni lunghe perché restino nella finestra di contesto del modello.",

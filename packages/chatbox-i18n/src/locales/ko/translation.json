@@ -1830,7 +1830,7 @@
   "Importing does not clear all local data. Content in the backup overwrites matching records, while content not included is kept. Continue?": "기기의 모든 데이터가 삭제되지는 않습니다. 백업에 포함된 내용은 동일한 기록을 덮어쓰고, 포함되지 않은 내용은 유지됩니다. 계속하시겠습니까?",
   "Save settings, conversations and copilots to a backup file.": "설정, 대화 및 코파일럿을 백업 파일로 저장합니다.",
   "Search settings": "설정 검색",
-  "Model name and time appear in the assistant's name row; the rest appear below the message.": "모델 이름과 시간은 어시스턴트 이름 줄에 표시되고, 나머지는 메시지 아래에 표시됩니다.",
+  "Shown below each message.": "각 메시지 아래에 표시됩니다.",
   "Show replies as they are written": "작성되는 대로 답변을 표시합니다",
   "Startup & updates": "시작 및 업데이트",
   "Summarize long conversations so they stay within the model's context window.": "긴 대화를 요약하여 모델의 컨텍스트 창 안에 유지합니다.",

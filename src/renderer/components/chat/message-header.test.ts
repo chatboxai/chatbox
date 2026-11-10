@@ -1,41 +1,10 @@
-// @vitest-environment jsdom
-
-import { MantineProvider } from '@mantine/core'
-import { cleanup, render, screen } from '@testing-library/react'
-import type { ComponentProps } from 'react'
-import { afterEach, describe, expect, test, vi } from 'vitest'
+import { describe, expect, test } from 'vitest'
 import {
   formatMessageTimestamp,
   getMessageHeader,
   getMessageHeaderTitle,
   getSessionAssistantName,
-  MessageNameRow,
-} from './MessageNameRow'
-
-vi.mock('@/lib/utils', () => ({
-  cn: (...classes: (string | false | null | undefined)[]) => classes.filter(Boolean).join(' '),
-}))
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
-}))
-
-Object.defineProperty(window, 'matchMedia', {
-  writable: true,
-  value: vi.fn(
-    (query: string): MediaQueryList => ({
-      matches: false,
-      media: query,
-      onchange: null,
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      dispatchEvent: vi.fn(() => false),
-    })
-  ),
-})
-
-afterEach(cleanup)
+} from './message-header'
 
 const deepseek = {
   aiProvider: 'deepseek',
@@ -44,26 +13,6 @@ const deepseek = {
   modelId: 'deepseek-chat',
 }
 const on = { fallbackLabel: 'Assistant', showModelName: true, showTime: true }
-
-function renderRow(
-  props: Partial<Omit<ComponentProps<typeof MessageNameRow>, 'header'>> & {
-    message?: Parameters<typeof getMessageHeader>[0]
-    options?: Partial<Parameters<typeof getMessageHeader>[1]>
-  } = {}
-) {
-  const { message = deepseek, options, ...rowProps } = props
-  return render(
-    <MantineProvider>
-      <MessageNameRow
-        header={getMessageHeader(message, { ...on, ...options })}
-        layout="classic"
-        isSmallScreen={false}
-        generating={false}
-        {...rowProps}
-      />
-    </MantineProvider>
-  )
-}
 
 describe('Message header', () => {
   test('names the provider and puts the model id after it', () => {
@@ -149,60 +98,5 @@ describe('Message timestamp', () => {
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 5).getTime()
     expect(formatMessageTimestamp(today)).toBe('09:05')
     expect(formatMessageTimestamp(new Date(2001, 2, 4, 7, 8).getTime())).toBe('2001-03-04 07:08')
-  })
-})
-
-describe('MessageNameRow', () => {
-  test('renders a bold name and grey monospace details on one line', () => {
-    renderRow({ message: { ...deepseek, timestamp: Date.now() }, options: { assistantName: 'Mover' } })
-    const name = screen.getByText('Mover')
-    const row = name.parentElement as HTMLElement
-    expect(row.textContent).toMatch(/^MoverDeepSeek · deepseek-chat · \d{2}:\d{2}$/)
-    expect(row.getAttribute('title')).toMatch(/^Mover\nDeepSeek · deepseek-chat · \d{2}:\d{2}$/)
-    expect(row.className).toContain('whitespace-nowrap')
-    expect(row.className).toContain('mb-1')
-    expect(name.className).toContain('font-semibold')
-    expect(name.className).toContain('max-w-[45%]')
-    const meta = screen.getByText('deepseek-chat').parentElement as HTMLElement
-    expect(meta.className).toContain('font-mono')
-    expect(meta.className).toContain('text-[var(--chatbox-message-name-muted)]')
-  })
-
-  test('gives way in the model first, then the provider, and never in the time', () => {
-    renderRow({ message: { ...deepseek, timestamp: Date.now() }, options: { assistantName: 'Mover' } })
-    expect(screen.getByText('deepseek-chat').className).toContain('shrink-[1000]')
-    expect(screen.getByText('DeepSeek').className).toContain('max-w-[10em]')
-    expect(screen.getByText(/^\d{2}:\d{2}$/).className).toContain('shrink-0')
-  })
-
-  test('shows the bold name alone, across the row, when both details are off', () => {
-    renderRow({ options: { showModelName: false, showTime: false }, isSmallScreen: true, layout: 'bubble' })
-    const name = screen.getByText('DeepSeek')
-    const row = name.parentElement as HTMLElement
-    expect(row.textContent).toBe('DeepSeek')
-    expect(name.className).not.toContain('max-w-[45%]')
-    expect(row.getAttribute('title')).toBeNull()
-    expect(row.className).toContain('mb-1.5')
-  })
-
-  test('shows the generic assistant label for replies without any provider information', () => {
-    renderRow({ message: {} })
-    expect(screen.getByText('Assistant')).toBeTruthy()
-  })
-
-  test('shifts down by the given offset to center on the avatar', () => {
-    renderRow()
-    expect((screen.getByText('DeepSeek').parentElement as HTMLElement).style.marginTop).toBe('')
-    cleanup()
-    renderRow({ offsetTop: 4 })
-    expect((screen.getByText('DeepSeek').parentElement as HTMLElement).style.marginTop).toBe('4px')
-  })
-
-  test('adds a spinner only when asked to', () => {
-    renderRow()
-    expect(screen.queryByLabelText('Generating...')).toBeNull()
-    cleanup()
-    renderRow({ generating: true })
-    expect(screen.getByLabelText('Generating...')).toBeTruthy()
   })
 })

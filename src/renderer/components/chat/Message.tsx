@@ -80,8 +80,8 @@ import { MessageArtifactsUI, ToolCallPartUI } from '../message-parts/ToolCallPar
 import { MessageAttachmentGrid } from './MessageAttachmentGrid'
 import MessageErrTips from './MessageErrTips'
 import MessageStatuses, { PreparingToolCallStatus } from './MessageLoading'
-import { formatMessageTimestamp, getMessageHeader, getMessageHeaderTitle, MessageNameRow } from './MessageNameRow'
 import { getMessageActionVisibilityClass, type MessageButtonGroup } from './message-action-state'
+import { formatMessageTimestamp, getMessageHeader, getMessageHeaderTitle } from './message-header'
 import {
   getConversationContentClassName,
   getConversationRowLayout,
@@ -490,6 +490,9 @@ const _Message: FC<Props> = (props) => {
   // Units like "tokens", "words", "tkn", "s" are intentionally kept as hardcoded English
   // because they are technical/universal abbreviations that remain readable across all locales.
   const tips: { label: string; tooltip?: string }[] = []
+  if (msg.role === 'assistant' && header.meta.model) {
+    tips.push({ label: header.meta.model, tooltip: [header.name, header.detail].filter(Boolean).join(' · ') })
+  }
   if (props.sessionType === 'chat' || !props.sessionType) {
     if (showTokenUsed && msg.role === 'assistant' && !msg.generating) {
       const tokenDisplay = getMessageTokenDisplay(msg)
@@ -525,8 +528,7 @@ const _Message: FC<Props> = (props) => {
 
   const finishTip = getMessageFinishTip(msg, t)
 
-  // Assistant replies show their time in the name row.
-  if (showMessageTimestamp && msg.timestamp !== undefined && msg.role !== 'assistant') {
+  if (showMessageTimestamp && msg.timestamp !== undefined) {
     tips.push({ label: formatMessageTimestamp(msg.timestamp) })
   }
 
@@ -822,7 +824,7 @@ const _Message: FC<Props> = (props) => {
   const isRightAlignedMessage = msg.role === 'user' && isUserMessageOnRight(messageLayoutValue)
   const messageRoleClass = getMessageRoleClass(msg.role)
   const shouldShowAvatar = showAvatar ?? true
-  const rowLayout = getConversationRowLayout(isSmallScreen, shouldShowAvatar, widthFull)
+  const rowLayout = getConversationRowLayout(isSmallScreen, shouldShowAvatar, messageLayoutValue, widthFull)
   const statusElements = <MessageStatuses statuses={leadingStatuses} />
   const errorTipsElement = (
     <MessageErrTips
@@ -1245,7 +1247,15 @@ const _Message: FC<Props> = (props) => {
     </>
   )
 
-  const meta = (tipsElements || msg.steered) && (
+  // Without an avatar to carry the loader, a streaming reply shows a spinner where its details will appear.
+  const generatingSpinner = msg.role === 'assistant' && showGenerating && !shouldShowAvatar && (
+    <Loader
+      size={12}
+      aria-label={t('Generating...') as string}
+      classNames={{ root: "after:content-[''] after:border-[2px]" }}
+    />
+  )
+  const meta = (tipsElements || generatingSpinner || msg.steered) && (
     <Flex
       direction="column"
       gap={2}
@@ -1264,6 +1274,7 @@ const _Message: FC<Props> = (props) => {
           {tipsElements}
         </Flex>
       )}
+      {generatingSpinner}
       {msg.steered && (
         <Flex align="center" gap={4} justify={isRightAlignedMessage ? 'flex-end' : 'flex-start'}>
           <IconArrowUp size={11} className="text-[var(--mantine-color-chatbox-brand-filled)] flex-shrink-0" />
@@ -1352,18 +1363,7 @@ const _Message: FC<Props> = (props) => {
             className={cn('relative min-w-0', !isUser && 'flex-1')}
             style={{ maxWidth: isUser ? rowLayout.userBubbleMaxWidth : rowLayout.assistantContentMaxWidth }}
           >
-            {!isUser && (
-              <Flex align="flex-start" gap={rowLayout.avatarGap} className="relative w-full min-w-0">
-                {rowLayout.assistantAvatarAbove && avatar}
-                <MessageNameRow
-                  header={header}
-                  layout={messageLayoutValue}
-                  isSmallScreen={isSmallScreen}
-                  offsetTop={rowLayout.nameRowOffset}
-                  generating={showGenerating && !shouldShowAvatar}
-                />
-              </Flex>
-            )}
+            {!isUser && rowLayout.assistantAvatarAbove && <div className="mb-1.5 flex">{avatar}</div>}
             {messageContent}
             {(msg.files || msg.links) && (
               <MessageAttachmentGrid

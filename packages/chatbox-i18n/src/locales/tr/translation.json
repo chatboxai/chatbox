@@ -1830,7 +1830,7 @@
   "Importing does not clear all local data. Content in the backup overwrites matching records, while content not included is kept. Continue?": "İçe aktarma tüm yerel verileri silmez. Yedekteki içerik eşleşen kayıtların üzerine yazılır, yedekte bulunmayan içerik ise korunur. Devam edilsin mi?",
   "Save settings, conversations and copilots to a backup file.": "Ayarları, sohbetleri ve yardımcıları bir yedek dosyasına kaydedin.",
   "Search settings": "Ayarlarda ara",
-  "Model name and time appear in the assistant's name row; the rest appear below the message.": "Model adı ve saat asistanın ad satırında görünür; diğerleri mesajın altında görünür.",
+  "Shown below each message.": "Her mesajın altında gösterilir.",
   "Show replies as they are written": "Yanıtları yazılırken göster",
   "Startup & updates": "Başlangıç ve güncellemeler",
   "Summarize long conversations so they stay within the model's context window.": "Uzun sohbetleri modelin bağlam penceresine sığacak şekilde özetleyin.",

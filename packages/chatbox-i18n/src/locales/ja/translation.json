@@ -1830,7 +1830,7 @@
   "Importing does not clear all local data. Content in the backup overwrites matching records, while content not included is kept. Continue?": "端末上のすべてのデータが消去されることはありません。バックアップ内の内容は同じレコードを上書きし、含まれない内容は保持されます。続行しますか？",
   "Save settings, conversations and copilots to a backup file.": "設定、会話、Copilot をバックアップファイルに保存します。",
   "Search settings": "設定を検索",
-  "Model name and time appear in the assistant's name row; the rest appear below the message.": "モデル名と時刻はアシスタントの名前行に表示され、その他はメッセージの下に表示されます。",
+  "Shown below each message.": "各メッセージの下に表示されます。",
   "Show replies as they are written": "生成中の返答を順に表示します",
   "Startup & updates": "起動とアップデート",
   "Summarize long conversations so they stay within the model's context window.": "長い会話を要約し、モデルのコンテキストウィンドウに収めます。",

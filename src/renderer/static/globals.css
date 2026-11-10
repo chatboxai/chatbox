@@ -160,7 +160,8 @@
   --chatbox-background-disabled: color-mix(in srgb, var(--chatbox-background-primary), white 4%);
   /* Page behind grouped cards: one step below the primary surface, so cards read as raised. */
   --chatbox-background-grouped: color-mix(in srgb, var(--chatbox-background-primary), black 45%);
-  /* Neutral gray raised surfaces: settings cards, and the chat composer one step lighter. */
+  /* Neutral gray raised surfaces: settings cards, and the chat composer one step lighter.
+     Custom dark palettes override both inline with tints of their primary (useAppTheme). */
   --chatbox-background-raised: #383838;
   --chatbox-background-composer: #454545;
 

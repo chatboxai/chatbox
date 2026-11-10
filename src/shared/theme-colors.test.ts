@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_INTERFACE_COLORS,
+  deriveDarkSurfaceColors,
   INTERFACE_COLOR_PRESETS,
   isInterfaceBrandColorAllowed,
   renameInterfaceColorPreset,
+  resolveDarkSurfaceOverrides,
   resolveInterfaceBrandColor,
   resolveInterfaceBrandColors,
   withColorOpacity,
@@ -84,5 +86,57 @@ describe('renameInterfaceColorPreset', () => {
 
   it('does not accept a blank label', () => {
     expect(renameInterfaceColorPreset(presets, 'custom-1', '   ')).toBe(presets)
+  })
+})
+
+describe('deriveDarkSurfaceColors', () => {
+  it('derives the stylesheet grays from the Default dark primary', () => {
+    expect(deriveDarkSurfaceColors('#242424')).toEqual({ raised: '#383838', composer: '#454545' })
+  })
+
+  it('tints the surfaces toward white from a custom primary', () => {
+    expect(deriveDarkSurfaceColors('#000624')).toEqual({ raised: '#171c38', composer: '#262b45' })
+    expect(deriveDarkSurfaceColors('#000624'.toUpperCase())).toEqual({ raised: '#171c38', composer: '#262b45' })
+  })
+
+  it('accepts 3-digit hex', () => {
+    expect(deriveDarkSurfaceColors('#222')).toEqual(deriveDarkSurfaceColors('#222222'))
+  })
+
+  it('returns null for unsupported colors', () => {
+    for (const color of ['', '242424', '#24242', '#2424244d', 'rgb(36, 36, 36)', '#gggggg']) {
+      expect(deriveDarkSurfaceColors(color)).toBeNull()
+    }
+  })
+})
+
+describe('resolveDarkSurfaceOverrides', () => {
+  const withDarkPrimary = (backgroundPrimary: string) => ({
+    ...DEFAULT_INTERFACE_COLORS,
+    dark: { ...DEFAULT_INTERFACE_COLORS.dark, backgroundPrimary },
+  })
+
+  it('keeps the stylesheet surfaces for built-in dark presets', () => {
+    for (const preset of INTERFACE_COLOR_PRESETS) {
+      expect(resolveDarkSurfaceOverrides(preset.colors, 'dark')).toBeNull()
+      expect(
+        resolveDarkSurfaceOverrides(withDarkPrimary(preset.colors.dark.backgroundPrimary.toUpperCase()), 'dark')
+      ).toBeNull()
+    }
+  })
+
+  it('overrides the surfaces for a custom dark primary', () => {
+    expect(resolveDarkSurfaceOverrides(withDarkPrimary('#000624'), 'dark')).toEqual({
+      raised: '#171c38',
+      composer: '#262b45',
+    })
+  })
+
+  it('keeps the stylesheet surfaces in light mode', () => {
+    expect(resolveDarkSurfaceOverrides(withDarkPrimary('#000624'), 'light')).toBeNull()
+  })
+
+  it('keeps the stylesheet surfaces for an unsupported custom primary', () => {
+    expect(resolveDarkSurfaceOverrides(withDarkPrimary('not-a-color'), 'dark')).toBeNull()
   })
 })

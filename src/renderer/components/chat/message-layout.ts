@@ -100,31 +100,6 @@ export function getConversationContentClassName({
   return cn('inline-block max-w-full min-w-0 rounded-2xl rounded-tl-[4px] bg-chatbox-background-secondary', padding)
 }
 
-/** Whether the message content is drawn on a bubble surface: user messages, and bubble-layout replies with content. */
-export function hasConversationContentSurface({
-  layout,
-  role,
-  errorOnly,
-}: {
-  layout: MessageLayout
-  role: 'user' | 'assistant'
-  errorOnly: boolean
-}): boolean {
-  return role === 'user' || (layout === 'bubble' && !errorOnly)
-}
-
-/**
- * Pressed tint for a long-press surface, drawn inside the bubble behind its text so the name row, avatar and tips around
- * the bubble stay uncovered.
- */
-export function getLongPressSurfaceClassName(pressed: boolean): string {
-  return cn(
-    "relative isolate before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:rounded-[inherit] before:content-['']",
-    'before:transition-colors before:duration-200',
-    pressed ? 'before:bg-black/[0.08] dark:before:bg-white/[0.08]' : 'before:bg-transparent'
-  )
-}
-
 export function isErrorOnlyMessage(message: Message): boolean {
   return Boolean(
     message.role === 'assistant' &&

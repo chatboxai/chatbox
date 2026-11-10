@@ -124,10 +124,6 @@ export const uiStore = createStore(
         agentModeLastSelected: 'off' as Extract<AgentModeValue, 'on' | 'off'>,
         sessionAgentModeMap: {} as Record<string, AgentModeEntry>,
         promptCacheBreakConfirmDismissed: {} as Record<string, boolean>,
-        // The user acknowledged the small-screen hint about swiping replies and long-pressing messages.
-        messageGestureHintShown: false,
-        // The long-press hint already appeared in this app launch (not persisted).
-        messageLongPressHintShownThisLaunch: false,
         // License + quota period whose low-points reminder the user closed.
         lowQuotaReminderDismissedPeriod: null as string | null,
         sessionPanels: {} as Record<string, SessionPanelState | undefined>,
@@ -440,7 +436,6 @@ export const uiStore = createStore(
         sessionWebBrowsingMap: state.sessionWebBrowsingMap,
         sessionKnowledgeBaseMap: state.sessionKnowledgeBaseMap,
         promptCacheBreakConfirmDismissed: state.promptCacheBreakConfirmDismissed,
-        messageGestureHintShown: state.messageGestureHintShown,
         lowQuotaReminderDismissedPeriod: state.lowQuotaReminderDismissedPeriod,
         sessionPanelWidth: state.sessionPanelWidth,
         codeBlockWrap: state.codeBlockWrap,

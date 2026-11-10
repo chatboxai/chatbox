@@ -62,7 +62,6 @@ vi.mock('@/components/InputBox/InputBox', () => ({
     return null
   },
 }))
-vi.mock('@/components/chat/MessageLongPressHint', () => ({ MessageLongPressHint: () => null }))
 vi.mock('@/components/common/ChatboxWelcomeCard', () => ({ ChatboxWelcomeCard: () => null }))
 vi.mock('@/components/common/ErrorBoundary', () => ({
   ErrorBoundary: ({ children }: { children: ReactNode }) => children,

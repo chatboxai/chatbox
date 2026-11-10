@@ -34,8 +34,8 @@ export const topxAIProvider = defineProvider({
         maxOutput: 128_000,
       },
       {
-        modelId: 'claude-fable-5-1',
-        nickname: 'Claude Fable 5.1',
+        modelId: 'claude-fable-5-2',
+        nickname: 'Claude Fable 5.2',
         capabilities: ['reasoning', 'tool_use'],
         contextWindow: 1_000_000,
         maxOutput: 128_000,

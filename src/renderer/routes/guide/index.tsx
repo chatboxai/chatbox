@@ -275,7 +275,7 @@ function GuidePage() {
       />
 
       {/* Messages */}
-      <ScrollArea viewportRef={viewportRef} className="flex-1" type="scroll">
+      <ScrollArea viewportRef={viewportRef} className="chatbox-scroll-top-fade flex-1" type="scroll">
         <Stack gap={0} pt="md" pb="md" mb={showInputArea ? 0 : 120} maw={800} mx="auto">
           {messages.map((message, index) => (
             <GuideMessage

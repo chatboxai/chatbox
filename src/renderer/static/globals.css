@@ -491,6 +491,13 @@ div[data-vaul-drawer] {
   animation: chatbox-action-bar-pulse 600ms ease-out 2;
 }
 
+/* Over a chat wallpaper the composer is frosted glass, so the wallpaper shows through behind the text. */
+[data-chat-wallpaper] .chatbox-composer-surface {
+  background-color: color-mix(in srgb, var(--chatbox-background-primary) 72%, transparent);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+
 /*
  * Dark mode raised surfaces: settings cards on the raised gray, the chat composer on the lighter
  * composer gray. Tertiary text and placeholders on them use the secondary tint to stay at 4.5:1.
@@ -521,6 +528,11 @@ div[data-vaul-drawer] {
   opacity: 1;
 }
 
+/* The dark wallpaper composer keeps the composer gray at the same translucency. */
+:root[data-mantine-color-scheme="dark"] [data-chat-wallpaper] .chatbox-composer-surface {
+  background-color: color-mix(in srgb, var(--chatbox-background-composer) 72%, transparent);
+}
+
 /* Dark settings index: the app shell and main panel take the grouped page color, so the page runs
    evenly up under the transparent header and the status bar. */
 :root[data-mantine-color-scheme="dark"] [data-page-surface="grouped"] {
@@ -528,15 +540,16 @@ div[data-vaul-drawer] {
 }
 
 /*
- * Dark mode title bars are transparent and show the page behind them. Scroll containers next to
- * them fade their top edge, so content leaving the viewport dissolves before it reaches the title
- * instead of being cut off under it.
+ * Small-screen title bars (the only place these classes render) are transparent in every theme and
+ * show the page or wallpaper behind them. Scroll containers next to them fade their top edge, so
+ * content leaving the viewport dissolves before it reaches the title instead of being cut off under
+ * it: on small screens in every theme, and in dark mode on wide layouts too.
  */
-:root[data-mantine-color-scheme="dark"] .chatbox-title-bar {
+:root[data-mantine-color-scheme] .chatbox-title-bar {
   background-color: transparent;
 }
 
-:root[data-mantine-color-scheme="dark"] .chatbox-title-bar-divider {
+:root[data-mantine-color-scheme] .chatbox-title-bar-divider {
   display: none;
 }
 
@@ -545,17 +558,25 @@ div[data-vaul-drawer] {
   mask-image: linear-gradient(to bottom, transparent, #000 12px);
 }
 
+/* Matches useIsSmallScreen: below the 640px `sm` breakpoint shared by the MUI theme and Tailwind. */
+@media (max-width: 639.95px) {
+  :root[data-mantine-color-scheme] .chatbox-scroll-top-fade {
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 12px);
+    mask-image: linear-gradient(to bottom, transparent, #000 12px);
+  }
+}
+
+/* The message list fades its bottom edge into the composer instead of cutting content off above it. */
+.chatbox-scroll-bottom-fade {
+  -webkit-mask-image: linear-gradient(to top, transparent, #000 12px);
+  mask-image: linear-gradient(to top, transparent, #000 12px);
+}
+
 /* Capacitor navigation and composer surroundings show the page or wallpaper directly. */
 :root[data-mantine-color-scheme]
   :is([data-chatbox-platform="android"], [data-chatbox-platform="ios"])
   .chatbox-title-bar {
   background: transparent;
-}
-
-:root[data-mantine-color-scheme]
-  :is([data-chatbox-platform="android"], [data-chatbox-platform="ios"])
-  :is(.chatbox-wallpaper-header-overlay, .chatbox-wallpaper-composer-overlay) {
-  visibility: hidden;
 }
 
 :root[data-mantine-color-scheme]

@@ -946,7 +946,7 @@ const MessageList = forwardRef<
                   visibility: transcript.firstWindowReady ? undefined : 'hidden',
                   opacity: transcript.firstWindowReady ? undefined : 0,
                 }}
-                className={platformType === 'win32' ? 'scrollbar-custom' : ''}
+                className={cn('chatbox-scroll-bottom-fade', platformType === 'win32' && 'scrollbar-custom')}
                 ref={virtuoso}
                 data={items}
                 firstItemIndex={0}
@@ -1115,8 +1115,13 @@ const transcriptListComponents = {
     context.olderNotice ? (
       <TranscriptHeadRow className={cn(context.columnClassName, 'pt-4')}>{context.olderNotice}</TranscriptHeadRow>
     ) : null,
+  // The empty footer keeps the last message clear of the scroller's 12px bottom fade.
   Footer: ({ context }: ContextProp<TranscriptListContext>) =>
-    context.newerNotice ? <div className={cn(context.columnClassName, 'pb-4')}>{context.newerNotice}</div> : null,
+    context.newerNotice ? (
+      <div className={cn(context.columnClassName, 'pb-4')}>{context.newerNotice}</div>
+    ) : (
+      <div aria-hidden="true" className="h-3" />
+    ),
 }
 
 const TranscriptMinimap = memo(

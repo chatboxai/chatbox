@@ -249,10 +249,6 @@ function RouteComponent() {
 
   const { requestStop: onStopGenerating, status: stopGenerationStatus } = useGenerationStop(currentSession?.id)
 
-  const onViewCompactionSummary = useCallback((summaryMessageId: string) => {
-    messageListRef.current?.scrollToMessage(summaryMessageId)
-  }, [])
-
   const model = useMemo(() => {
     if (!currentSessionWithDefaultModel?.settings?.modelId || !currentSessionWithDefaultModel?.settings?.provider) {
       return undefined
@@ -351,7 +347,6 @@ function RouteComponent() {
               onSubmit={onSubmit}
               onStopGenerating={onStopGenerating}
               stopGenerationStatus={stopGenerationStatus}
-              onViewCompactionSummary={onViewCompactionSummary}
             />
           </ErrorBoundary>
         </Box>

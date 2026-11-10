@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { MantineProvider } from '@mantine/core'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { getDefaultStore } from 'jotai'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
@@ -57,22 +57,93 @@ describe('CompactionStatus completed state', () => {
     })
   })
 
-  test('opens the generated summary and dismisses the receipt', () => {
-    const onViewSummary = vi.fn()
-    render(
+  test('clears completed progress without rendering a completion notice', () => {
+    const { container } = render(
       <MantineProvider>
-        <CompactionStatus sessionId="session-1" onViewSummary={onViewSummary} />
+        <CompactionStatus sessionId="session-1" />
       </MantineProvider>
     )
 
-    expect(screen.getByText('Earlier messages summarized')).toBeTruthy()
-    fireEvent.click(screen.getByText('View'))
-
-    expect(onViewSummary).toHaveBeenCalledWith('summary-1')
+    expect(container.querySelector('button, p')).toBeNull()
+    expect(screen.queryByText('Earlier messages summarized')).toBeNull()
     expect(getCompactionUIState('session-1')).toMatchObject({
       status: 'idle',
       summaryMessageId: null,
     })
+  })
+})
+
+describe('CompactionStatus running preview', () => {
+  const setStreamingText = (streamingText: string) =>
+    getDefaultStore().set(compactionUIStateMapAtom, {
+      'session-1': { status: 'running', error: null, streamingText, summaryMessageId: null },
+    })
+
+  const renderRunning = (streamingText: string) => {
+    setStreamingText('')
+    render(
+      <MantineProvider>
+        <CompactionStatus sessionId="session-1" />
+      </MantineProvider>
+    )
+    act(() => setStreamingText(streamingText))
+  }
+  // The truncating row that holds the preview text.
+  const previewRow = (text: string) => screen.getByText(text).closest('.truncate') as HTMLElement
+
+  beforeEach(() => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    })
+  })
+
+  test('shows the latest summary line in the same preview row while lines stream', () => {
+    renderRunning('Opening line.')
+    const row = previewRow('Opening line.')
+    for (const [streamingText, latest] of [
+      ['Opening line.\n', 'Opening line.'],
+      ['Opening line.\nSecond', 'Second'],
+      ['Opening line.\nSecond line keeps growing with more detail.', 'Second line keeps growing with more detail.'],
+      ['Opening line.\nSecond line keeps growing with more detail.\n\n', 'Second line keeps growing with more detail.'],
+      ['Opening line.\nSecond line keeps growing with more detail.\n\nThird', 'Third'],
+    ]) {
+      act(() => setStreamingText(streamingText))
+      expect(previewRow(latest)).toBe(row)
+      expect(row.isConnected).toBe(true)
+      expect(row.textContent).toBe(latest)
+    }
+  })
+
+  test('follows the latest summary text horizontally and resets on a short new line', () => {
+    renderRunning('Opening line.')
+    const row = previewRow('Opening line.')
+    let contentWidth = 480
+    Object.defineProperties(row, {
+      scrollWidth: { configurable: true, get: () => contentWidth },
+      clientWidth: { configurable: true, get: () => 160 },
+    })
+
+    act(() => setStreamingText('Opening line. More details arrive at the end.'))
+    expect(row.scrollLeft).toBe(320)
+    expect(row.style.textOverflow).toBe('clip')
+    expect(row.className).not.toContain('text-center')
+    expect(row.getAttribute('dir')).not.toBe('rtl')
+
+    contentWidth = 160
+    act(() => setStreamingText('Opening line. More details arrive at the end.\nNew line.'))
+    expect(row.textContent).toBe('New line.')
+    expect(row.scrollLeft).toBe(0)
+    expect(row.isConnected).toBe(true)
   })
 })
 

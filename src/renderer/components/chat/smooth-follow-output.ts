@@ -1,6 +1,7 @@
 type FollowOutputScrollBehavior = 'auto' | 'smooth'
 
 interface SmoothFollowOutputOptions {
+  onFollowingChange?: (following: boolean) => void
   scrollToBottom: (behavior: FollowOutputScrollBehavior) => void
   stopScrolling?: (scrollTop: number) => void
   requestFrame?: (callback: FrameRequestCallback) => number
@@ -39,6 +40,7 @@ export function isLayoutClampedScroll(
 }
 
 export function createSmoothFollowOutputController({
+  onFollowingChange,
   scrollToBottom,
   stopScrolling,
   requestFrame = window.requestAnimationFrame.bind(window),
@@ -54,6 +56,7 @@ export function createSmoothFollowOutputController({
   let pendingFrame: number | undefined
 
   const pause = () => {
+    if (following) onFollowingChange?.(false)
     following = false
     pausedByUser = true
     if (pendingFrame !== undefined) {
@@ -63,6 +66,7 @@ export function createSmoothFollowOutputController({
   }
 
   const resume = () => {
+    if (!following) onFollowingChange?.(true)
     following = true
     pausedByUser = false
   }

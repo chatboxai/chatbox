@@ -142,6 +142,7 @@ const MessageList = forwardRef<
   const [isNewMessage, setIsNewMessage] = useState(false)
   const [viewportHeight, setViewportHeight] = useState(0)
   const [atBottom, setAtBottom] = useState(false)
+  const [followingTail, setFollowingTail] = useState(false)
   const [atTop, setAtTop] = useState(false)
   const [showScrollToPrev, setShowScrollToPrev] = useState(false)
   const lastScrollTop = useRef<number>()
@@ -257,6 +258,7 @@ const MessageList = forwardRef<
   const follow = useMemo(
     () =>
       createSmoothFollowOutputController({
+        onFollowingChange: setFollowingTail,
         scrollToBottom: (behavior) => {
           const element = scroller.current
           if (element) scrollToPosition({ top: Math.max(0, element.scrollHeight - element.clientHeight), behavior })
@@ -1049,7 +1051,7 @@ const MessageList = forwardRef<
           {!isSmallScreen && transcript.firstWindowReady && (
             <TranscriptMinimap key={session.id} transcript={transcript} onNavigate={navigate} />
           )}
-          {activity === 'generating' && (!atBottom || transcript.hasNewer) && (
+          {activity === 'generating' && (transcript.hasNewer || (!atBottom && !followingTail)) && (
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2">
               <Button
                 w={40}
@@ -1076,7 +1078,10 @@ const MessageList = forwardRef<
               onScrollToNext={() => void jumpUser('newer')}
             />
           ) : (
-            <Transition mounted={activity !== 'generating' && (!atBottom || transcript.hasNewer)} transition="slide-up">
+            <Transition
+              mounted={activity !== 'generating' && (transcript.hasNewer || (!atBottom && !followingTail))}
+              transition="slide-up"
+            >
               {(transitionStyle) => <ScrollToBottomButton onClick={() => navigate('tail')} style={transitionStyle} />}
             </Transition>
           )}

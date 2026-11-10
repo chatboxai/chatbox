@@ -1652,6 +1652,43 @@ describe('send follow intent', () => {
     return { listRef, view, viewport: view.getByTestId('virtuoso') }
   }
 
+  test('keeps the generating shortcut unmounted while streamed chunks briefly move the followed tail', async () => {
+    h.activity = 'generating'
+    const { view, viewport } = await openAtTail()
+    act(() => h.atBottom?.(true))
+    for (let chunk = 0; chunk < 3; chunk++) {
+      // Each chunk grows the reply past the bottom threshold until Virtuoso's follow scroll lands.
+      act(() => h.atBottom?.(false))
+      expect(view.queryByRole('button', { name: 'Generating...' })).toBeNull()
+      act(() => h.atBottom?.(true))
+    }
+    fireEvent.wheel(viewport, { deltaY: -80 })
+    act(() => h.atBottom?.(false))
+    expect(view.getByRole('button', { name: 'Generating...' })).toBeTruthy()
+  })
+
+  test('keeps the mobile return-to-tail control hidden while followed content grows', async () => {
+    h.smallScreen = true
+    const { view, viewport } = await openAtTail()
+    act(() => h.atBottom?.(true))
+    await waitFor(() => expect(view.queryByTestId('mobile-tail')).toBeNull(), { timeout: 3000 })
+    act(() => h.atBottom?.(false))
+    // The slide-up transition mounts its child after a frame.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 100)))
+    expect(view.queryByTestId('mobile-tail')).toBeNull()
+    act(() => h.atBottom?.(true))
+    fireEvent.wheel(viewport, { deltaY: -80 })
+    act(() => h.atBottom?.(false))
+    await waitFor(() => expect(view.getByTestId('mobile-tail')).toBeTruthy(), { timeout: 3000 })
+  })
+
+  test('shows the generating shortcut at a historical page bottom with newer messages unloaded', async () => {
+    h.activity = 'generating'
+    const { view } = await openReadingHistory()
+    act(() => h.atBottom?.(true))
+    expect(view.getByRole('button', { name: 'Generating...' })).toBeTruthy()
+  })
+
   test('keeps following a send made at the tail until the user scrolls away', async () => {
     const { listRef, viewport } = await openAtTail()
     const stillFollowing = listRef.current!.captureSendFollow()

@@ -105,7 +105,7 @@ export function calculateSvgRasterSize(
   if (!Number.isFinite(sourceWidth) || !Number.isFinite(sourceHeight) || sourceWidth <= 0 || sourceHeight <= 0) {
     throw new Error('SVG has invalid dimensions')
   }
-  const maxOutputDimension = options.maxOutputDimension ?? Number.POSITIVE_INFINITY
+  const maxOutputDimension = options.maxOutputDimension ?? 4096
   if (Number.isNaN(maxOutputDimension) || maxOutputDimension <= 0) {
     throw new Error('SVG raster limit must be positive')
   }

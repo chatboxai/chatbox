@@ -160,6 +160,7 @@ export function MermaidSVGPreviewDangerous(props: {
 
 export function SVGPreview(props: { xmlCode: string; className?: string; generating?: boolean }) {
   let { xmlCode, className, generating } = props
+  const { t } = useTranslation()
   const svgBase64 = useMemo(() => {
     if (!xmlCode.includes('</svg') && generating) {
       return ''
@@ -214,11 +215,19 @@ export function SVGPreview(props: { xmlCode: string; className?: string; generat
           },
           appendTo: 'bar',
           onClick: async () => {
-            if (platform.type === 'mobile') {
-              const pngBase64 = await picUtils.svgToPngBase64(svgBase64)
-              platform.exporter.exportImageFile(`svg_${Math.random().toString(36).substring(7)}`, pngBase64)
-            } else {
-              platform.exporter.exportByUrl(`svg_${Math.random().toString(36).substring(7)}`, svgBase64)
+            try {
+              if (platform.type === 'mobile') {
+                const pngBase64 = await picUtils.svgToPngBase64(svgBase64)
+                await platform.exporter.exportImageFile(`svg_${Math.random().toString(36).substring(7)}`, pngBase64)
+              } else {
+                await platform.exporter.exportByUrl(`svg_${Math.random().toString(36).substring(7)}`, svgBase64)
+              }
+            } catch (error) {
+              toastActions.add(
+                t('Failed to export file: {{error}}', {
+                  error: error instanceof Error ? error.message : String(error),
+                })
+              )
             }
           },
         },

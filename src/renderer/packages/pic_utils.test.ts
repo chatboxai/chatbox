@@ -41,6 +41,10 @@ describe('calculateSvgRasterSize', () => {
     expect(calculateSvgRasterSize(640, 480)).toEqual({ width: 1280, height: 960 })
   })
 
+  test('bounds the default raster to the mobile canvas limit', () => {
+    expect(calculateSvgRasterSize(19_200, 5_952)).toEqual({ width: 4096, height: 1269 })
+  })
+
   test('bounds large square SVGs before allocating the canvas', () => {
     expect(calculateSvgRasterSize(10_000, 10_000, { maxOutputDimension: 1568 })).toEqual({
       width: 1568,

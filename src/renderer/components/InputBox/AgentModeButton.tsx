@@ -17,6 +17,7 @@ import { getAgentModeUIState } from './agentModeState'
 import { useComposerMenuStore } from './composerMenuStore'
 import { type ComposerMenuLayout, resolveComposerMenuLayout, useComposerTouchLayout } from './composerTouchLayout'
 import MobileAgentModePanel from './MobileAgentModePanel'
+import { getStatusBadgeCutoutStyle } from './status-badge-cutout'
 
 interface AgentModeButtonProps {
   sessionId: string
@@ -304,12 +305,10 @@ function CompactAgentModeIcon({ mode, size }: { mode: AgentModeValue; size: numb
 
   return (
     <span className="relative inline-flex shrink-0" style={{ width: size, height: size }} data-agent-mode={mode}>
-      <IconRobot size={size} strokeWidth={1.8} />
-      <AgentModeStatusIcon
-        mode={mode}
-        size={statusSize}
-        className="absolute -bottom-0.5 -right-0.5 bg-[var(--chatbox-background-secondary)]"
-      />
+      <span className="inline-flex" style={getStatusBadgeCutoutStyle(size, statusSize)}>
+        <IconRobot size={size} strokeWidth={1.8} />
+      </span>
+      <AgentModeStatusIcon mode={mode} size={statusSize} className="absolute -bottom-0.5 -right-0.5" />
     </span>
   )
 }

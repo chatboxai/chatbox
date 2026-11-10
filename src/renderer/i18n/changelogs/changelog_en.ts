@@ -1,4 +1,11 @@
 const changelog = `
+## v1.24.3 - 2026.11.10
+1. Improved message list flickering and scrolling during generation
+2. Improved chat wallpaper and input appearance, and custom dark theme colors
+3. Adjusted message avatars, model names, and timestamps, and improved readability in classic layout
+4. Restored the mobile message toolbar for regenerating, editing, copying, and deleting messages
+
+
 ## v1.24.2 - 2026.11.08
 1. Improved the dark theme and mobile message layout.
 2. Fixed message scrolling jumps and replies not following automatically.

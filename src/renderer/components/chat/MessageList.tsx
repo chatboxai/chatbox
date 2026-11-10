@@ -34,7 +34,7 @@ import {
   useState,
 } from 'react'
 import { useTranslation } from 'react-i18next'
-import { type ContextProp, Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
+import { type ContextProp, type FlatScrollIntoViewLocation, Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import { rendererApplication } from '@/app/renderer-application'
 import { contentColumnClassName, paddedContentColumnClassName } from '@/components/layout/contentColumn'
 import { useMyCopilots } from '@/hooks/useCopilots'
@@ -262,6 +262,17 @@ const MessageList = forwardRef<
       setFollowOutputState(value)
     },
     [followOutputRef]
+  )
+  const followChangedRowsToBottom = useCallback(
+    ({ totalCount }: { totalCount: number }): FlatScrollIntoViewLocation => ({
+      index: totalCount - 1,
+      align: 'end',
+      behavior: 'auto',
+      // Virtuoso may wait for a measurement; a newer user scroll must cancel that pending tail request.
+      calculateViewLocation: ({ locationParams }) =>
+        followOutputRef.current && !branchFollow.paused && !controller.getSnapshot().hasNewer ? locationParams : null,
+    }),
+    [branchFollow, controller, followOutputRef]
   )
   useLayoutEffect(() => {
     if (transcript.hasNewer) setFollowOutput(false)
@@ -814,6 +825,8 @@ const MessageList = forwardRef<
                 firstItemIndex={position.firstItemIndex}
                 computeItemKey={(_, item) => item.key}
                 followOutput={followingTail ? followOutputToBottom : false}
+                // Editing can replace rows without changing their count. Let Virtuoso restore the tail after measuring them.
+                scrollIntoViewOnChange={followingTail ? followChangedRowsToBottom : undefined}
                 skipAnimationFrameInResizeObserver
                 initialTopMostItemIndex={position.initialLocation}
                 components={transcriptListComponents}

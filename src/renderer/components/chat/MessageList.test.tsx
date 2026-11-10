@@ -45,6 +45,9 @@ const h = vi.hoisted(() => ({
   atBottom: null as ((value: boolean) => void) | null,
   isScrolling: null as ((value: boolean) => void) | null,
   followOutput: false as false | 'auto' | 'smooth' | ((atBottom: boolean) => false | 'auto' | 'smooth'),
+  scrollIntoViewOnChange: undefined as
+    | undefined
+    | ((params: { totalCount: number }) => import('react-virtuoso').FlatScrollIntoViewLocation),
   acknowledgeMeasurements: true,
   starts: [] as Array<() => void>,
   minimapProps: null as MessageMinimapRailProps | null,
@@ -217,6 +220,7 @@ vi.mock('react-virtuoso', async () => {
           scrollerRef(element: HTMLElement | null): void
           itemsRendered(items: Array<{ size: number }>): void
           followOutput: typeof h.followOutput
+          scrollIntoViewOnChange: typeof h.scrollIntoViewOnChange
           startReached(): void
           onScroll(): void
           atTopStateChange(value: boolean): void
@@ -261,6 +265,7 @@ vi.mock('react-virtuoso', async () => {
         h.atBottom = props.atBottomStateChange
         h.isScrolling = props.isScrolling
         h.followOutput = props.followOutput
+        h.scrollIntoViewOnChange = props.scrollIntoViewOnChange
         h.starts.push(props.startReached)
         return (
           <div
@@ -429,6 +434,7 @@ beforeEach(() => {
   h.atBottom = null
   h.isScrolling = null
   h.followOutput = false
+  h.scrollIntoViewOnChange = undefined
   h.acknowledgeMeasurements = true
   h.starts.length = 0
   h.minimapProps = null
@@ -969,7 +975,19 @@ describe('send follow intent', () => {
       h.controller!.updateMessage(replyId, { contentParts: [{ type: 'text', text: 'Streaming reply' }] })
     })
     expect(viewport.dataset.followOutput).toBe('auto')
+    const pendingLocation = h.scrollIntoViewOnChange?.({ totalCount: 20 })
+    expect(pendingLocation).toMatchObject({ index: 19, align: 'end', behavior: 'auto' })
     expect(h.scrollToIndex).not.toHaveBeenCalled()
+    const geometry = {
+      itemTop: 0,
+      itemBottom: 1000,
+      viewportTop: 0,
+      viewportBottom: 600,
+      locationParams: { index: 19, align: 'end' as const },
+    }
+    expect(pendingLocation?.calculateViewLocation?.(geometry)).toEqual(geometry.locationParams)
+    fireEvent.wheel(viewport, { deltaY: -80 })
+    expect(pendingLocation?.calculateViewLocation?.(geometry)).toBeNull()
   })
 
   test('keeps a created branch paused when its shorter content makes a historical reader physically reach the bottom', async () => {
@@ -984,6 +1002,7 @@ describe('send follow intent', () => {
       h.controller!.updateMessage(replyId, { contentParts: [{ type: 'text', text: 'Streaming reply' }] })
     })
     expect(h.followOutput).toBe(false)
+    expect(h.scrollIntoViewOnChange).toBeUndefined()
     expect(viewport.scrollTop).toBe(100)
     expect(h.scrollToIndex).not.toHaveBeenCalled()
   })

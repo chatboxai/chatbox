@@ -68,7 +68,6 @@ import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { useCopied } from '@/hooks/useCopied'
 import { uiStore, useUIStore } from '@/stores/uiStore'
 import { highlight, highlightSync, preloadLanguage, type ShikiTheme } from '../packages/shiki'
-import { rehypeTranscriptBlocks } from './chat/transcript-markdown-blocks'
 import { ScalableIcon } from './common/ScalableIcon'
 import { ImageViewer, ImageViewerItem } from './ImageViewer'
 import IconDart from './icons/Dart'
@@ -226,9 +225,8 @@ function Markdown(props: {
   const rehypePlugins = useMemo<RehypePlugins>(() => {
     const plugins: RehypePlugins = [rehypeKatex]
     if (streamingSegments.length > 0) plugins.push([rehypeWrapStreamingSegments, streamingSegments])
-    plugins.push([rehypeTranscriptBlocks, { sourceId: uniqueId ?? fallbackId }])
     return plugins
-  }, [streamingSegments, uniqueId, fallbackId])
+  }, [streamingSegments])
 
   return (
     <ImageViewer>

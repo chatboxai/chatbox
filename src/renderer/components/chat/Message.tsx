@@ -661,12 +661,7 @@ const _Message: FC<Props> = (props) => {
           {part.text || ''}
         </Markdown>
       ) : (
-        <div
-          data-transcript-block={`${msg.id}-step-${index}`}
-          className="break-words [overflow-wrap:anywhere] whitespace-pre-line"
-        >
-          {part.text}
-        </div>
+        <div className="break-words [overflow-wrap:anywhere] whitespace-pre-line">{part.text}</div>
       ),
     [
       enableMarkdownRendering,
@@ -896,10 +891,7 @@ const _Message: FC<Props> = (props) => {
                       <ReasoningContentUI message={msg} part={item} onCopyReasoningContent={onCopyReasoningContent} />
                     </div>
                   ) : item.type === 'text' ? (
-                    <div
-                      key={`text-${msg.id}-${index}`}
-                      data-transcript-block={enableMarkdownRendering ? undefined : `${msg.id}-${index}`}
-                    >
+                    <div key={`text-${msg.id}-${index}`}>
                       {enableMarkdownRendering ? (
                         <Markdown
                           uniqueId={`${msg.id}-${index}`}

@@ -1,6 +1,7 @@
 import type { SessionMetaPage } from '@chatbox/core'
 import { SessionEventBus } from '@chatbox/core/application/session'
-import { SessionRowConflictError, type SessionCommandDelta, type SessionHeaderRead } from '@chatbox/core/ports'
+import { type SessionCommandDelta, type SessionHeaderRead, SessionRowConflictError } from '@chatbox/core/ports'
+import { InMemorySessionRepository, InMemorySessionRowStore } from '@chatbox/core/testing'
 import { QueryClient } from '@tanstack/react-query'
 import { describe, expect, it, vi } from 'vitest'
 import { QueryKeys } from './query-keys'
@@ -11,7 +12,6 @@ import {
   type SessionQuerySource,
 } from './session-query-options'
 import { SessionTranscriptWindowController } from './session-transcript-window'
-import { InMemorySessionRowStore } from '@chatbox/core/testing'
 
 const emptyPage: SessionMetaPage = { items: [], nextCursor: null, total: 0 }
 function header(revision = 1): SessionHeaderRead {
@@ -90,6 +90,261 @@ describe('row query definitions', () => {
 })
 
 describe('row query event bridge', () => {
+  it('retries consecutive removal revision gaps from the surviving loaded range without navigating', async () => {
+    const h = harness()
+    const repository = new InMemorySessionRepository()
+    await repository.seedSession({
+      id: 's',
+      name: 'Conversation',
+      messages: Array.from({ length: 60 }, (_, index) => ({
+        id: `m${index}`,
+        role: index % 2 ? ('assistant' as const) : ('user' as const),
+        contentParts: [{ type: 'text' as const, text: `Message ${index}` }],
+      })),
+    })
+    const controller = new SessionTranscriptWindowController({
+      sessionId: 's',
+      pageSize: 20,
+      source: { readTranscriptWindow: (request) => repository.readSessionTranscriptWindow(request) },
+    })
+    h.bridge.registerWindow('s', controller)
+    try {
+      await controller.open()
+      controller.acknowledgeLayout(controller.getSnapshot().layout!.requestId)
+      const before = controller.getSnapshot()
+      expect(before.rows[0].messageId).toBe('m40')
+      await repository.executeSessionCommand('s', {
+        type: 'header',
+        updater: (stored) => {
+          if (!stored) throw new Error('Missing seeded session')
+          return { ...stored, name: 'Renamed' }
+        },
+      })
+      let revision = before.revision
+      for (const messageId of ['m40', 'm41']) {
+        const result = await repository.executeSessionCommand('s', {
+          type: 'structure',
+          operation: { action: 'message-remove', messageId, replacementPivotId: `replacement-${messageId}` },
+        })
+        revision = result.delta.revision
+        await h.events.publish({
+          type: 'session-command-committed',
+          delta: result.delta,
+          meta: null,
+          metaRevision: null,
+          preserveCachedGeneratingMessages: true,
+        })
+        expect(controller.getSnapshot().operation).toMatchObject({ kind: 'refresh', phase: 'error' })
+        expect(controller.getSnapshot().rows).toBe(before.rows)
+      }
+
+      expect(await controller.retry()).toBe(true)
+
+      expect(controller.getSnapshot().rows.map((row) => row.messageId)).toEqual(
+        Array.from({ length: 18 }, (_, index) => `m${42 + index}`)
+      )
+      expect(controller.getSnapshot()).toMatchObject({
+        revision,
+        windowEpoch: before.windowEpoch,
+        firstWindowReady: true,
+        operation: null,
+        layout: null,
+      })
+    } finally {
+      h.dispose()
+    }
+  })
+
+  it.each(['add-system', 'edit-system', 'reply-below'] as const)(
+    'refreshes a committed %s operation across all loaded pages without repositioning the list',
+    async (operation) => {
+      const h = harness()
+      const repository = new InMemorySessionRepository()
+      await repository.seedSession({
+        id: 's',
+        name: 'Conversation',
+        messages: Array.from({ length: 60 }, (_, index) => ({
+          id: `m${index}`,
+          role:
+            operation === 'edit-system' && index === 0
+              ? ('system' as const)
+              : index % 2
+                ? ('assistant' as const)
+                : ('user' as const),
+          contentParts: [{ type: 'text' as const, text: `Message ${index}` }],
+        })),
+      })
+      const controller = new SessionTranscriptWindowController({
+        sessionId: 's',
+        pageSize: 20,
+        source: { readTranscriptWindow: (request) => repository.readSessionTranscriptWindow(request) },
+      })
+      const refresh = vi.spyOn(controller, 'refresh')
+      h.bridge.registerWindow('s', controller)
+      try {
+        await controller.open()
+        controller.acknowledgeLayout(controller.getSnapshot().layout!.requestId)
+        for (let index = 0; index < 2; index++) {
+          await controller.loadOlder()
+          controller.acknowledgeLayout(controller.getSnapshot().layout!.requestId)
+        }
+        const before = controller.getSnapshot()
+        const snapshots: ReturnType<typeof controller.getSnapshot>[] = []
+        controller.subscribe(() => snapshots.push(controller.getSnapshot()))
+        const result = await repository.executeSessionCommand('s', {
+          type: 'structure',
+          operation:
+            operation === 'reply-below'
+              ? {
+                  action: 'message-insert-after',
+                  previousId: 'm24',
+                  requireAnchor: true,
+                  message: {
+                    id: 'reply',
+                    role: 'assistant',
+                    generating: true,
+                    contentParts: [{ type: 'text', text: 'New reply' }],
+                  },
+                }
+              : {
+                  action: 'set-system-prompt',
+                  text: 'Updated instructions',
+                  messageId: 'system',
+                  replacementPivotId: 'replacement',
+                  now: 2,
+                },
+        })
+        await h.events.publish({
+          type: 'session-command-committed',
+          delta: result.delta,
+          meta: null,
+          metaRevision: null,
+          preserveCachedGeneratingMessages: true,
+        })
+        await vi.waitFor(() => expect(controller.getSnapshot().operation).toBeNull())
+
+        const expected = before.rows.map((row) => row.messageId)
+        if (operation === 'add-system') expected.unshift('system')
+        else if (operation === 'reply-below') expected.splice(25, 0, 'reply')
+        const after = controller.getSnapshot()
+        expect(after.rows.map((row) => row.messageId)).toEqual(expected)
+        expect(after).toMatchObject({
+          revision: result.delta.revision,
+          windowEpoch: before.windowEpoch,
+          firstWindowReady: true,
+          hasOlder: false,
+          hasNewer: false,
+          layout: null,
+        })
+        expect(refresh).toHaveBeenCalledOnce()
+        expect(snapshots.every((state) => state.windowEpoch === before.windowEpoch && state.layout === null)).toBe(true)
+        expect(snapshots.every((state) => state.rows.length >= before.rows.length)).toBe(true)
+        if (operation !== 'reply-below')
+          expect(after.rows[0].message.contentParts).toEqual([{ type: 'text', text: 'Updated instructions' }])
+      } finally {
+        h.dispose()
+      }
+    }
+  )
+
+  it.each(['tail', 'history'] as const)(
+    'projects a committed compaction into the %s window without refreshing it',
+    async (position) => {
+      const h = harness()
+      const repository = new InMemorySessionRepository()
+      await repository.seedSession({
+        id: 's',
+        name: 'Conversation',
+        messages: Array.from({ length: 60 }, (_, index) => ({
+          id: `m${index}`,
+          role: index % 2 ? ('assistant' as const) : ('user' as const),
+          contentParts: [{ type: 'text' as const, text: `Message ${index}` }],
+        })),
+      })
+      const read = vi.spyOn(repository, 'readSessionTranscriptWindow')
+      const controller = new SessionTranscriptWindowController({
+        sessionId: 's',
+        pageSize: 20,
+        source: { readTranscriptWindow: (request) => repository.readSessionTranscriptWindow(request) },
+      })
+      const refresh = vi.spyOn(controller, 'refresh')
+      h.bridge.registerWindow('s', controller)
+      try {
+        await controller.open(position === 'history' ? 'head' : 'tail')
+        controller.acknowledgeLayout(controller.getSnapshot().layout!.requestId)
+        if (position === 'tail') {
+          for (let index = 0; index < 2; index++) {
+            await controller.loadOlder()
+            controller.acknowledgeLayout(controller.getSnapshot().layout!.requestId)
+          }
+        }
+        const before = controller.getSnapshot()
+        const readCount = read.mock.calls.length
+        const snapshots: ReturnType<typeof controller.getSnapshot>[] = []
+        controller.subscribe(() => snapshots.push(controller.getSnapshot()))
+        const source = await repository.getSessionContextSource({ sessionId: 's' })
+        if (!source) throw new Error('Missing compaction context')
+        const result = await repository.executeSessionCommand('s', {
+          type: 'structure',
+          operation: {
+            action: 'compaction-commit',
+            threadId: source.thread.threadId,
+            coverage: { kind: 'conversation', boundaryMessageId: 'm59' },
+            pathMessageIds: source.pathMessageIds,
+            summary: {
+              id: 'summary',
+              role: 'assistant',
+              isSummary: true,
+              contentParts: [{ type: 'text', text: 'Conversation summary' }],
+            },
+            createdAt: 2,
+          },
+        })
+        expect(result.delta.structureResult?.applied).toBe(true)
+        expect(result.delta.diff.insertParents).toHaveLength(1)
+
+        await h.events.publish({
+          type: 'session-command-committed',
+          delta: result.delta,
+          meta: null,
+          metaRevision: null,
+          preserveCachedGeneratingMessages: true,
+        })
+
+        const state = controller.getSnapshot()
+        expect(state.rows.map((row) => row.messageId)).toEqual([
+          ...before.rows.map((row) => row.messageId),
+          ...(position === 'tail' ? ['summary'] : []),
+        ])
+        expect(state).toMatchObject({
+          revision: result.delta.revision,
+          windowEpoch: before.windowEpoch,
+          firstWindowReady: true,
+          hasNewer: position === 'history',
+          operation: null,
+          layout: null,
+        })
+        expect(snapshots).toHaveLength(1)
+        expect(refresh).not.toHaveBeenCalled()
+        expect(read).toHaveBeenCalledTimes(readCount)
+        expect(h.source.readSessionTranscriptWindow).not.toHaveBeenCalled()
+        if (position === 'history') {
+          while (controller.getSnapshot().hasNewer) {
+            expect(await controller.loadNewer()).toBe(true)
+            controller.acknowledgeLayout(controller.getSnapshot().layout!.requestId)
+          }
+          expect(controller.getSnapshot().rows.map((row) => row.messageId)).toEqual([
+            ...Array.from({ length: 60 }, (_, index) => `m${index}`),
+            'summary',
+          ])
+          expect(controller.getSnapshot().windowEpoch).toBe(before.windowEpoch)
+        }
+      } finally {
+        h.dispose()
+      }
+    }
+  )
+
   it.each([false, true])('projects a created branch atomically from committed rows (empty: %s)', async (empty) => {
     const h = harness()
     const store = new InMemorySessionRowStore()
@@ -157,15 +412,21 @@ describe('row query event bridge', () => {
         metaRevision: null,
         preserveCachedGeneratingMessages: true,
       })
-      expect(snapshots).toHaveLength(1)
+      expect(snapshots).toHaveLength(2)
       expect(snapshots[0]).toMatchObject({
+        revision: 1,
+        windowEpoch: epoch,
+        operation: { kind: 'branch', branchMode: 'create', phase: 'reading' },
+      })
+      expect(snapshots[0].rows.map((row) => row.messageId)).toEqual(['m0', 'm1'])
+      expect(snapshots[1]).toMatchObject({
         revision: 2,
         windowEpoch: epoch,
         hasNewer: false,
-        operation: { kind: 'branch', phase: 'layout' },
+        operation: { kind: 'branch', branchMode: 'create', phase: 'layout' },
       })
-      expect(snapshots[0].rows.map((row) => row.messageId)).toEqual(empty ? ['m0'] : ['m0', 'm2'])
-      expect(snapshots[0].operation?.branchOperationId).toBe(snapshots[0].layout?.requestId)
+      expect(snapshots[1].rows.map((row) => row.messageId)).toEqual(empty ? ['m0'] : ['m0', 'm2'])
+      expect(snapshots[0].operation?.branchOperationId).toBe(snapshots[1].layout?.requestId)
       expect(read).toHaveBeenCalledTimes(1)
       if (!empty) {
         await h.bridge.updateMessageCache('s', 'm2', { contentParts: [{ type: 'text', text: 'live reply' }] })
@@ -267,7 +528,8 @@ describe('row query event bridge', () => {
         expect(await branching).toBe(true)
         expect(branchRead).toHaveBeenCalledExactlyOnceWith(
           target === 'message' ? { messageId: 'm2' } : { threadId: 't', edge: 'tail' },
-          2
+          2,
+          'select'
         )
         const state = controller.getSnapshot()
         expect(state.rows.map((row) => row.messageId)).toEqual(['m2'])

@@ -9,13 +9,13 @@ import type {
 } from '@chatbox/core'
 import type { SessionCommandDelta, SessionHeaderRead } from '@chatbox/core/ports'
 import { getSessionListGroupRank, sortSessionRecords, uniqueSessionRecords } from '@chatbox/core/utils/session-sort'
-import { type InfiniteData, type QueryClient } from '@tanstack/react-query'
+import type { InfiniteData, QueryClient } from '@tanstack/react-query'
 import { QueryKeys } from './query-keys'
 import {
   createSessionQueryDefinitions,
+  type SessionMessageQueryRead,
   type SessionQueryDefinitions,
   type SessionQuerySource,
-  type SessionMessageQueryRead,
 } from './session-query-options'
 import type { SessionTranscriptWindowController } from './session-transcript-window'
 
@@ -208,7 +208,7 @@ export class SessionQueryBridge {
         if (controller.applyRemovals(delta)) {
           const readBranch = this.source.readSessionBranchMessagesPage
           if (readBranch) await controller.completeRemovals((request) => readBranch.call(this.source, request))
-        } else controller.rejectRemovalProjection()
+        } else controller.rejectRemovalProjection(ranges.messages.delete)
         continue
       }
       if (
@@ -218,6 +218,7 @@ export class SessionQueryBridge {
       )
         continue
       if (controller.applyThreadCommit(delta)) continue
+      if (controller.applyCompaction(delta)) continue
       controller.updateMetadata(
         delta.diff.messageMetadataUpsert ?? [],
         delta.diff.threads.upsert,
@@ -245,6 +246,7 @@ export class SessionQueryBridge {
             ...delta,
             previousRevision: delta.previousRevision,
             sharedPrefixEnd: navigation.sharedPrefixEnd,
+            branchMode: navigation.mode,
             ...(navigation.firstMessageId ? { origin: { messageId: navigation.firstMessageId } } : { cursor }),
           })
         } else
@@ -252,7 +254,8 @@ export class SessionQueryBridge {
             navigation.firstMessageId
               ? { messageId: navigation.firstMessageId }
               : { threadId: navigation.sharedPrefixEnd.threadId, edge: 'tail' },
-            revision
+            revision,
+            navigation.mode
           )
       } else if (
         structural ||

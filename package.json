@@ -277,7 +277,7 @@
     "react-swipeable-views": "^0.14.1",
     "react-syntax-highlighter": "^15.5.0",
     "react-test-renderer": "^18.2.0",
-    "react-virtuoso": "4.18.1",
+    "react-virtuoso": "4.18.20",
     "react-zoom-pan-pinch": "^3.4.4",
     "rehype-katex": "^7.0.0",
     "remark-breaks": "^4.0.0",

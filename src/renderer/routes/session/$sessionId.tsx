@@ -90,8 +90,7 @@ function RouteComponent() {
     () => (searchTarget ? { messageId: searchTarget.messageId } : ('tail' as const)),
     [searchTarget]
   )
-  const captureAnchor = useCallback(() => messageListRef.current?.captureAnchor() ?? null, [])
-  const transcript = useSessionTranscript(sessionLoadTarget, initialOrigin, captureAnchor)
+  const transcript = useSessionTranscript(sessionLoadTarget, initialOrigin)
   useEffect(() => {
     if (searchTarget) clearSessionSearchTarget(searchTarget)
   }, [searchTarget])

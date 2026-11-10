@@ -353,7 +353,8 @@ export async function buildToolsForSession(
     message.contentParts.some((part) => part.type === 'tool-call' && part.resultStorageKey)
   )
   const needFileToolSet =
-    (hasInlineFileOrLink || hasStoredToolResults || options.fileResourceKeys) && model.isSupportToolUse('read-file')
+    (hasInlineFileOrLink || hasStoredToolResults || options.fileResourceKeys?.length) &&
+    model.isSupportToolUse('read-file')
   const needSessionAttachmentRagToolSet = sessionAttachmentIds.length > 0 && model.isSupportToolUse('read-file')
   const kbSupported = Boolean(knowledgeBase) && model.isSupportToolUse('knowledge-base')
   const webSupported = webBrowsing && model.isSupportToolUse('web-browsing')

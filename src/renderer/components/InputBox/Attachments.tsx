@@ -1,6 +1,6 @@
-import { TestId } from '@shared/automation/testids'
 import NiceModal from '@ebay/nice-modal-react'
 import { Typography } from '@mui/material'
+import { TestId } from '@shared/automation/testids'
 import { CHATBOX_AI_PARSER_LICENSE_KEY_REQUIRED_ERROR } from '@shared/file-parse-errors'
 import type { SessionAttachmentIndexingStage } from '@shared/types'
 import { IconPlayerPlay } from '@tabler/icons-react'
@@ -8,6 +8,7 @@ import { AlertCircle, CheckCircle, Eye, Link2, Loader2, RotateCw, Trash2 } from 
 import type { MouseEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
+import { GLASS_FILL_CLASS, GLASS_TINT_CLASS } from '@/lib/glass-surface'
 import platform from '@/platform'
 import {
   isSessionAttachmentRagAuthError,
@@ -495,10 +496,13 @@ export function MessageAttachment(props: {
             relative
             rounded-lg
             bg-chatbox-background-secondary
+            ${GLASS_FILL_CLASS}
             ${isClickable ? 'cursor-pointer hover:bg-chatbox-background-secondary-hover transition-colors' : ''}`}
         onClick={handleClick}
       >
-        <div className="flex-none w-7 h-7 rounded-lg bg-chatbox-background-primary flex items-center justify-center">
+        <div
+          className={`flex-none w-7 h-7 rounded-lg bg-chatbox-background-primary flex items-center justify-center ${GLASS_TINT_CLASS}`}
+        >
           {filename && <FileIcon filename={filename} className="w-4 h-4" />}
           {url && !filename && <Link2 className="w-4 h-4 text-chatbox-secondary" strokeWidth={1.5} />}
         </div>

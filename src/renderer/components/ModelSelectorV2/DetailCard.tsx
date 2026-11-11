@@ -10,7 +10,7 @@ import { formatNumber } from '@/utils/format'
 import { ScalableIcon } from '../common/ScalableIcon'
 import { ModelIcon } from '../icons/ModelIcon'
 import { CapabilityIconRow } from './CapabilityIconRow'
-import { CARD_SURFACE_STYLE, FALLBACK_UPGRADE_URL, MODEL_SELECTOR_SURFACE_CLASS } from './constants'
+import { CARD_SURFACE_STYLE, FALLBACK_UPGRADE_URL, getModelSelectorFloatingSurfaceClass } from './constants'
 import { getCostLabel, getCostLevelBarCount } from './helpers'
 import type { DetailModel } from './types'
 
@@ -307,7 +307,7 @@ export function DetailCard({
       gap={mobile ? 'md' : 'md'}
       className={clsx(
         'relative border border-solid text-chatbox-tint-primary',
-        MODEL_SELECTOR_SURFACE_CLASS,
+        getModelSelectorFloatingSurfaceClass(!!mobile),
         mobile ? 'm-[4px] border-0 px-4 pb-4 pt-3 rounded-[12px]' : 'm-[4px] w-[320px] rounded-[12px] px-4 pb-4 pt-4',
         model.type === 'image' && 'max-h-[80vh] overflow-y-auto'
       )}

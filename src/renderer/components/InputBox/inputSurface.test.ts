@@ -1,18 +1,28 @@
-import { readFileSync } from 'node:fs'
-import path from 'node:path'
 import { describe, expect, test } from 'vitest'
-import { INPUT_SURFACE_CLASS_NAME } from './inputSurface'
+import { GLASS_SURFACE_CLASS, GLASS_TINT_CLASS } from '@/lib/glass-surface'
+import {
+  COMPOSER_NOTICE_CLASS_NAME,
+  COMPOSER_NOTICE_STYLE,
+  INPUT_SURFACE_CLASS_NAME,
+  SKILL_MENU_SURFACE_CLASS_NAME,
+} from './inputSurface'
 
-describe('composer surface over a chat wallpaper', () => {
-  test('the composer turns translucent and blurred only under the wallpaper marker', () => {
-    const globalStyles = readFileSync(path.resolve(process.cwd(), 'src/renderer/static/globals.css'), 'utf8')
+describe('composer surface', () => {
+  test('is a glass surface over a chat wallpaper, sharing the popover glass rules', () => {
+    const classes = INPUT_SURFACE_CLASS_NAME.split(/\s+/)
+    expect(classes).toContain('chatbox-composer-surface')
+    expect(classes).toContain(GLASS_SURFACE_CLASS)
+  })
+})
 
-    expect(INPUT_SURFACE_CLASS_NAME).toContain('chatbox-composer-surface')
-    expect(globalStyles).toMatch(
-      /\n\[data-chat-wallpaper\] \.chatbox-composer-surface {\s*background-color: color-mix\(in srgb, var\(--chatbox-background-primary\) 72%, transparent\);\s*-webkit-backdrop-filter: blur\(16px\);\s*backdrop-filter: blur\(16px\);\s*}/
-    )
-    expect(globalStyles).toMatch(
-      /:root\[data-mantine-color-scheme="dark"\] \[data-chat-wallpaper\] \.chatbox-composer-surface {\s*background-color: color-mix\(in srgb, var\(--chatbox-background-composer\) 72%, transparent\);\s*}/
-    )
+describe('composer popups and notices', () => {
+  test('the slash skill list floats as a glass surface', () => {
+    expect(SKILL_MENU_SURFACE_CLASS_NAME.split(/\s+/)).toContain(GLASS_SURFACE_CLASS)
+  })
+
+  test('warnings inside the composer are tints, with no inline background that would cover the glass', () => {
+    expect(COMPOSER_NOTICE_CLASS_NAME.split(/\s+/)).toContain(GLASS_TINT_CLASS)
+    expect(COMPOSER_NOTICE_STYLE).not.toHaveProperty('background')
+    expect(COMPOSER_NOTICE_STYLE).not.toHaveProperty('backgroundColor')
   })
 })

@@ -11,6 +11,7 @@ import {
   useState,
 } from 'react'
 import { useTranslation } from 'react-i18next'
+import { GLASS_HIDDEN_CLASS, GLASS_SURFACE_CLASS } from '@/lib/glass-surface'
 import { cn } from '@/lib/utils'
 
 const ITEM_HEIGHT = 12
@@ -506,7 +507,7 @@ const MessageMinimapRail = ({
         <div
           aria-hidden="true"
           data-testid="message-minimap-top-fade"
-          className="pointer-events-none absolute left-0 top-0 z-10 h-8 w-5 bg-gradient-to-b from-chatbox-background-primary to-transparent"
+          className={`pointer-events-none absolute left-0 top-0 z-10 h-8 w-5 bg-gradient-to-b from-chatbox-background-primary to-transparent ${GLASS_HIDDEN_CLASS}`}
           style={edgeFadeBlurStyle}
         />
       )}
@@ -514,7 +515,7 @@ const MessageMinimapRail = ({
         <div
           aria-hidden="true"
           data-testid="message-minimap-bottom-fade"
-          className="pointer-events-none absolute left-0 bottom-0 z-10 h-8 w-5 bg-gradient-to-t from-chatbox-background-primary to-transparent"
+          className={`pointer-events-none absolute left-0 bottom-0 z-10 h-8 w-5 bg-gradient-to-t from-chatbox-background-primary to-transparent ${GLASS_HIDDEN_CLASS}`}
           style={edgeFadeBlurStyle}
         />
       )}
@@ -524,7 +525,8 @@ const MessageMinimapRail = ({
           className={cn(
             'pointer-events-none absolute left-12 z-20 w-[360px]',
             'rounded-lg border border-solid border-chatbox-border-primary bg-chatbox-background-primary px-3 py-2',
-            'shadow-lg'
+            'shadow-lg',
+            GLASS_SURFACE_CLASS
           )}
           style={{ top: hoveredTop, transform: 'translateY(-50%)', maxWidth: 'min(360px, calc(100vw - 96px))' }}
         >

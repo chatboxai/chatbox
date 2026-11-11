@@ -48,6 +48,8 @@ import { rendererApplication } from '@/app/renderer-application'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { useKnowledgeBases } from '@/hooks/knowledge-base'
 import { useMCPServerStatus, useToggleMCPServer } from '@/hooks/mcp'
+import { useSessionPresentation } from '@/hooks/useSessionPresentation'
+import { GLASS_SURFACE_CLASS, GLASS_TINT_CLASS } from '@/lib/glass-surface'
 import { navigateToSettings } from '@/modals/settings-navigation'
 import { BUILTIN_MCP_SERVERS } from '@/packages/mcp/builtin'
 import { skillsController, subscribeSkillsChanged } from '@/packages/skills/controller'
@@ -56,15 +58,14 @@ import { WEB_SEARCH_PROVIDERS, type WebSearchProviderValue } from '@/packages/we
 import platform from '@/platform'
 import { useAutoValidate } from '@/stores/premiumActions'
 import { setSessionAgentMode, useSessionAgentMode } from '@/stores/session/agent-mode'
-import { useSessionPresentation } from '@/hooks/useSessionPresentation'
 import { useMcpSettings, useSettingsStore } from '@/stores/settingsStore'
 import * as toastActions from '@/stores/toastActions'
 import { useUIStore } from '@/stores/uiStore'
 import { featureFlags } from '@/utils/feature-flags'
 import { ScalableIcon } from '../common/ScalableIcon'
 import MCPStatus from '../mcp/MCPStatus'
-import { CommandApprovalOptions, WorkingDirectoryContent } from './AgentModeSettingsContent'
 import { AgentMemorySettingsContent, useAgentMemorySettings } from './AgentMemorySettings'
+import { CommandApprovalOptions, WorkingDirectoryContent } from './AgentModeSettingsContent'
 import AgentModeStatusIcon from './AgentModeStatusIcon'
 import { getAgentModeUIState } from './agentModeState'
 import type { ComposerMenuLayout } from './composerTouchLayout'
@@ -662,7 +663,7 @@ const AgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProps>(fun
       aria-disabled={disabled}
       className={`rounded outline-none focus-visible:ring-2 focus-visible:ring-[var(--chatbox-tint-brand)] ${
         active
-          ? 'bg-[var(--mantine-color-gray-1)] dark:bg-[var(--mantine-color-dark-5)]'
+          ? `bg-[var(--mantine-color-gray-1)] dark:bg-[var(--mantine-color-dark-5)] ${GLASS_TINT_CLASS}`
           : disabled
             ? ''
             : 'hover:bg-[var(--mantine-color-gray-0)] dark:hover:bg-[var(--mantine-color-dark-5)]'
@@ -1015,9 +1016,11 @@ const AgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProps>(fun
 
   const showMainList = !isTouchLayout || page === 'main'
   const showTouchSubPage = isTouchLayout && page !== 'main'
+  // The touch drawer is itself the glass surface. On desktop the dropdown is a clear glass host, so the
+  // main list and the submenu beside it are each a surface that blurs the page.
   const panelWidthClass = isTouchLayout
     ? 'w-full'
-    : 'w-max min-w-[min(240px,calc(100vw-24px))] max-w-[min(340px,calc(100vw-24px))]'
+    : `w-max min-w-[min(240px,calc(100vw-24px))] max-w-[min(340px,calc(100vw-24px))] rounded-[var(--popover-radius)] ${GLASS_SURFACE_CLASS}`
 
   // ==================== RENDER ====================
   return (
@@ -1051,7 +1054,11 @@ const AgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProps>(fun
                 </Text>
               </>
             ) : (
-              <Flex align="flex-start" gap="sm" className="rounded-lg bg-chatbox-background-secondary px-2 py-1.5">
+              <Flex
+                align="flex-start"
+                gap="sm"
+                className={`rounded-lg bg-chatbox-background-secondary px-2 py-1.5 ${GLASS_TINT_CLASS}`}
+              >
                 <AgentModeStatusIcon mode="off" size={14} className="mt-0.5 shrink-0" />
                 <Stack gap={2} className="min-w-0">
                   <Text size="sm" fw={500} c="chatbox-primary">
@@ -1068,7 +1075,7 @@ const AgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProps>(fun
                 justify="space-between"
                 align="center"
                 gap="sm"
-                className="rounded-lg bg-chatbox-background-secondary px-2 py-1.5"
+                className={`rounded-lg bg-chatbox-background-secondary px-2 py-1.5 ${GLASS_TINT_CLASS}`}
               >
                 <Stack gap={0} className="min-w-0">
                   <Text size="xs" fw={500} c="chatbox-primary">
@@ -1306,7 +1313,7 @@ const AgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProps>(fun
           ref={subPanelRef}
           gap={0}
           py="xs"
-          className={`absolute overflow-y-auto bg-[var(--mantine-color-body)] shadow-lg border-[var(--mantine-color-default-border)] ${
+          className={`absolute overflow-y-auto bg-[var(--mantine-color-body)] shadow-lg border-[var(--mantine-color-default-border)] ${GLASS_SURFACE_CLASS} ${
             resolvedSubPanelPosition?.placement === 'overlay'
               ? 'rounded-lg border'
               : resolvedSubPanelPosition?.placement === 'left'

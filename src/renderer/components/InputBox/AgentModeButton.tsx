@@ -7,6 +7,7 @@ import { type FC, useCallback, useEffect, useMemo, useRef, useState } from 'reac
 import { useTranslation } from 'react-i18next'
 import { Drawer } from 'vaul'
 import { blurMessageInput } from '@/hooks/dom'
+import { GLASS_HOST_CLASS } from '@/lib/glass-surface'
 import { getWebSearchConfigurationIssue } from '@/packages/web-search/configuration-issue'
 import platform from '@/platform'
 import { useSessionAgentMode } from '@/stores/session/agent-mode'
@@ -289,6 +290,7 @@ const AgentModeButton: FC<AgentModeButtonProps> = ({
       </Popover.Target>
       <Popover.Dropdown
         p={0}
+        className={GLASS_HOST_CLASS}
         style={{ overflow: 'visible' }}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}

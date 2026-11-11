@@ -157,6 +157,7 @@ vi.mock('./MessageMinimapRail', () => ({
   },
 }))
 vi.mock('./MessageNavigation', () => ({
+  FLOATING_BUTTON_GLASS_PROPS: { className: 'chatbox-glass-surface', style: {} },
   default: ({
     onScrollToBottom,
     onScrollToPrev,

@@ -13,6 +13,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { useTranslation } from 'react-i18next'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { useCopied } from '@/hooks/useCopied'
+import { GLASS_FILL_CLASS } from '@/lib/glass-surface'
 import { requestManualCompaction } from '@/packages/context-management'
 import { compactionUIStateMapAtom, setCompactionUIState } from '@/stores/atoms'
 import { add as addToast } from '@/stores/toastActions'
@@ -171,7 +172,9 @@ export const CompactionStatus = memo(function CompactionStatus({ sessionId }: Co
   }
 
   return (
-    <Box className="rounded-xl bg-chatbox-background-tertiary border border-chatbox-border-primary shadow-sm p-3">
+    <Box
+      className={`rounded-xl bg-chatbox-background-tertiary border border-chatbox-border-primary shadow-sm p-3 ${GLASS_FILL_CLASS}`}
+    >
       <Flex align="center" gap="xs" justify="center">
         <ScalableIcon icon={IconLoader2} size={16} className="animate-spin text-chatbox-tertiary" />
         <Text size="sm" c="chatbox-tertiary">

@@ -1,5 +1,3 @@
-import { rendererApplication } from '@/app/renderer-application'
-import { ImageGenerationResultGallery } from '@/components/chat/ImageGenerationResultGallery'
 import {
   APPROVAL_RESPONSE_TIMEOUT_MS,
   type ApprovalDenyReason,
@@ -23,7 +21,10 @@ import clsx from 'clsx'
 import { type FC, type MouseEvent, memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { currentGenerationService } from '@/adapters/CurrentGenerationService'
+import { rendererApplication } from '@/app/renderer-application'
+import { ImageGenerationResultGallery } from '@/components/chat/ImageGenerationResultGallery'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
+import { GLASS_TINT_CLASS } from '@/lib/glass-surface'
 import { getLogger } from '@/lib/utils'
 import { formatComputePointsRemainingRatio } from '@/packages/chatbox-cli/compute-points'
 import { getFileMutationDisplayStats } from '@/packages/model-calls/toolsets/file-mutation-stats'
@@ -90,7 +91,7 @@ function getWorkdir(interaction: PendingPauseInteraction): string | undefined {
 
 const PayloadBlock: FC<{ children: string; mono?: boolean }> = ({ children, mono = true }) => (
   <Box
-    className="rounded-md bg-chatbox-background-primary px-2.5 py-2"
+    className={`rounded-md bg-chatbox-background-primary px-2.5 py-2 ${GLASS_TINT_CLASS}`}
     style={{
       maxHeight: PAYLOAD_MAX_HEIGHT,
       overflow: 'auto',

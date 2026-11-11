@@ -107,6 +107,11 @@ describe('CompactionStatus running preview', () => {
     })
   })
 
+  test('the running card is a translucent glass fill in the transcript', () => {
+    renderRunning('')
+    expect(screen.getByText('Compacting conversation...').closest('.chatbox-glass-fill')).not.toBeNull()
+  })
+
   test('shows the latest summary line in the same preview row while lines stream', () => {
     renderRunning('Opening line.')
     const row = previewRow('Opening line.')

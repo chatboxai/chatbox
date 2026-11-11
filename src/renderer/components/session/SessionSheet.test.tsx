@@ -73,4 +73,6 @@ test('opens a bottom sheet while its session is loading, shows retry on failure 
   )
   expect(view.getByText('Loaded settings')).toBeTruthy()
   expect(view.queryByRole('status')).toBeNull()
+  // The drawer itself is the glass surface; its tab switcher takes the same tint as the desktop panel's tab bar.
+  expect(sheet.querySelector('.mantine-SegmentedControl-root')?.classList).toContain('chatbox-glass-tint')
 })

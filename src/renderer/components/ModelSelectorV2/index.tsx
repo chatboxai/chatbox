@@ -23,6 +23,7 @@ import { trackListModelClick, trackSelectModelClick, trackUpgradeModelClick } fr
 import useChatboxAIModels from '@/hooks/useChatboxAIModels'
 import { useProviders } from '@/hooks/useProviders'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
+import { GLASS_HOST_CLASS } from '@/lib/glass-surface'
 import { collapsedProvidersAtom } from '@/stores/atoms/uiAtoms'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
@@ -37,6 +38,7 @@ import {
   DESKTOP_DETAIL_VIEWPORT_MARGIN,
   DRAWER_SURFACE_STYLE,
   EMPTY_MODEL_IDS,
+  getModelSelectorFloatingSurfaceClass,
   HOVER_CLASS,
   MODEL_SELECTOR_SURFACE_CLASS,
   SELECTED_CLASS,
@@ -382,7 +384,7 @@ export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
         gap={0}
         className={clsx(
           'overflow-hidden',
-          MODEL_SELECTOR_SURFACE_CLASS,
+          getModelSelectorFloatingSurfaceClass(isMobile),
           isMobile ? 'border-0' : 'rounded-[10px] border border-solid border-chatbox-border-primary shadow-lg'
         )}
       >
@@ -579,15 +581,14 @@ export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
             <Drawer.Trigger asChild>{children}</Drawer.Trigger>
             <Drawer.Portal>
               <Drawer.Overlay className="fixed inset-0 bg-chatbox-background-mask-overlay" />
-              <Drawer.Content className="fixed bottom-0 left-0 right-0 outline-none">
-                <Stack
-                  gap={0}
-                  className={clsx(
-                    'max-h-[88vh] rounded-t-[16px] border border-b-0 border-solid',
-                    MODEL_SELECTOR_SURFACE_CLASS
-                  )}
-                  style={DRAWER_SURFACE_STYLE}
-                >
+              <Drawer.Content
+                className={clsx(
+                  'fixed bottom-0 left-0 right-0 rounded-t-[16px] border border-b-0 border-solid outline-none',
+                  MODEL_SELECTOR_SURFACE_CLASS
+                )}
+                style={DRAWER_SURFACE_STYLE}
+              >
+                <Stack gap={0} className="max-h-[88vh]">
                   <div aria-hidden className="mx-auto my-3 h-1 w-14 rounded-full bg-chatbox-tint-tertiary opacity-70" />
                   <Drawer.Title className="hidden">{t('Select Model')}</Drawer.Title>
                   {content}
@@ -606,12 +607,14 @@ export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
           >
             <Drawer.Portal>
               <Drawer.Overlay className="fixed inset-0 bg-chatbox-background-mask-overlay" />
-              <Drawer.Content className="fixed bottom-0 left-0 right-0 outline-none">
-                <Stack
-                  gap={0}
-                  className={clsx('rounded-t-[16px] border border-b-0 border-solid', MODEL_SELECTOR_SURFACE_CLASS)}
-                  style={DRAWER_SURFACE_STYLE}
-                >
+              <Drawer.Content
+                className={clsx(
+                  'fixed bottom-0 left-0 right-0 rounded-t-[16px] border border-b-0 border-solid outline-none',
+                  MODEL_SELECTOR_SURFACE_CLASS
+                )}
+                style={DRAWER_SURFACE_STYLE}
+              >
+                <Stack gap={0}>
                   <div aria-hidden className="mx-auto my-3 h-1 w-14 rounded-full bg-chatbox-tint-tertiary opacity-70" />
                   <Drawer.Title className="hidden">{t('Model details')}</Drawer.Title>
                   {mobileDetail && (
@@ -658,7 +661,7 @@ export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
         </Combobox.Target>
         <Combobox.Dropdown
           ref={desktopDropdownRef}
-          className="!rounded-none !border-0 !bg-transparent !p-0 !shadow-none"
+          className={clsx('!rounded-none !border-0 !bg-transparent !p-0 !shadow-none', GLASS_HOST_CLASS)}
           style={{ overflow: 'visible' }}
         >
           {content}

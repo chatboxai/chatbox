@@ -45,9 +45,9 @@ vi.mock('@/stores/approvalAttentionStore', () => ({
 
 vi.mock('@/stores/toastActions', () => ({ add: vi.fn() }))
 
+import { APPROVAL_RESPONSE_TIMEOUT_MS } from '@chatbox/core/message-approval'
 import { currentGenerationService } from '@/adapters/CurrentGenerationService'
 import { pulsePendingActionBar } from '@/stores/approvalAttentionStore'
-import { APPROVAL_RESPONSE_TIMEOUT_MS } from '@chatbox/core/message-approval'
 import RowPendingActionBar, { PENDING_ACTION_ARMING_MS } from './PendingActionBar'
 
 Object.defineProperty(globalThis, 'ResizeObserver', {
@@ -164,6 +164,11 @@ describe('PendingActionBar', () => {
   afterEach(() => {
     vi.useRealTimers()
     cleanup()
+  })
+
+  it('tints the payload block inside the glass action bar', () => {
+    renderBar(makeSession([commandApproval]))
+    expect(screen.getByText('rm -rf build').closest('.chatbox-glass-tint')).not.toBeNull()
   })
 
   it('renders nothing without pending interactions', () => {

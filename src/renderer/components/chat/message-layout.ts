@@ -1,4 +1,5 @@
 import type { Message } from '@shared/types'
+import { GLASS_FILL_CLASS } from '@/lib/glass-surface'
 import { cn } from '@/lib/utils'
 
 export type MessageLayout = 'classic' | 'bubble'
@@ -66,7 +67,8 @@ const BUBBLE_PADDING = { small: 'px-3.5 py-[9px]', wide: 'px-4 py-2.5' } as cons
  * Surface classes for user and assistant message content. Both layouts draw the user bubble with its tail corner
  * toward the user avatar; classic fills it with the neutral secondary background, bubble with the brand color. Classic
  * lays the assistant reply flat on the page, bubble wraps it in a secondary-colored bubble. A classic reply spanning the
- * full-width column fills it so code blocks and tables use the column; a bubble keeps fitting its content.
+ * full-width column fills it so code blocks and tables use the column; a bubble keeps fitting its content. The neutral
+ * bubbles take a translucent glass fill over a chat wallpaper.
  */
 export function getConversationContentClassName({
   layout,
@@ -87,13 +89,17 @@ export function getConversationContentClassName({
       'inline-block max-w-full min-w-0 rounded-2xl',
       isUserMessageOnRight(layout)
         ? 'rounded-tr-[4px] bg-[var(--mantine-color-chatbox-brand-filled)] text-white'
-        : 'rounded-tl-[4px] bg-chatbox-background-secondary',
+        : cn('rounded-tl-[4px] bg-chatbox-background-secondary', GLASS_FILL_CLASS),
       padding
     )
   }
   if (errorOnly) return 'max-w-full min-w-0'
   if (layout === 'classic') return cn('max-w-full min-w-0', spansColumn && 'w-full')
-  return cn('inline-block max-w-full min-w-0 rounded-2xl rounded-tl-[4px] bg-chatbox-background-secondary', padding)
+  return cn(
+    'inline-block max-w-full min-w-0 rounded-2xl rounded-tl-[4px] bg-chatbox-background-secondary',
+    GLASS_FILL_CLASS,
+    padding
+  )
 }
 
 export function isErrorOnlyMessage(message: Message): boolean {

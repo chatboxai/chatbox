@@ -59,6 +59,14 @@ describe('AgentModeRewardQuotaCard', () => {
     expect(screen.queryByText(/200,?000|20万/)).toBeNull()
   })
 
+  test('is a translucent glass fill whose background comes from classes, not inline styles', () => {
+    renderCard()
+    const card = screen.getByRole('status')
+    expect(card.classList).toContain('chatbox-glass-fill')
+    expect(card.style.background).toBe('')
+    expect(card.style.backgroundColor).toBe('')
+  })
+
   test('dispatches claim and exposes a retryable failure state', () => {
     const { onAction } = renderCard({ onAction: vi.fn(), claimFailed: true })
 

@@ -117,3 +117,17 @@ describe('FileMiniCard session attachment failure', () => {
     expect(screen.getByRole('button', { name: 'Continue' }).hasAttribute('disabled')).toBe(true)
   })
 })
+
+describe('MessageAttachment glass', () => {
+  test('the chip is a translucent fill without blur and its icon box a tint', () => {
+    const { container } = render(
+      <MantineProvider>
+        <MessageAttachment label="notes.md" filename="notes.md" />
+      </MantineProvider>
+    )
+    const chip = container.querySelector('.chatbox-glass-fill')
+    expect(chip).not.toBeNull()
+    expect(container.querySelector('.chatbox-glass-surface')).toBeNull()
+    expect(chip?.querySelector('.chatbox-glass-tint')).not.toBeNull()
+  })
+})

@@ -180,7 +180,9 @@ describe.each(['bubble', 'classic'] as const)('small-screen message action bar i
     const row = bar.parentElement?.className.split(' ') ?? []
     expect(row).toEqual(expect.arrayContaining(['visible', 'opacity-100', 'sticky', 'bottom-4']))
     expect(row).not.toContain('invisible')
-    expect(bar.className.split(' ')).toEqual(expect.arrayContaining(['bg-chatbox-background-primary', 'shadow-sm']))
+    expect(bar.className.split(' ')).toEqual(
+      expect.arrayContaining(['bg-chatbox-background-primary', 'shadow-sm', 'chatbox-glass-surface'])
+    )
   })
 
   test.each([

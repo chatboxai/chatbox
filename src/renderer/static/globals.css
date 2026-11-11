@@ -489,13 +489,6 @@ div[data-vaul-drawer] {
   animation: chatbox-action-bar-pulse 600ms ease-out 2;
 }
 
-/* Over a chat wallpaper the composer is frosted glass, so the wallpaper shows through behind the text. */
-[data-chat-wallpaper] .chatbox-composer-surface {
-  background-color: color-mix(in srgb, var(--chatbox-background-primary) 72%, transparent);
-  -webkit-backdrop-filter: blur(16px);
-  backdrop-filter: blur(16px);
-}
-
 /*
  * Dark mode raised surfaces: settings cards on the raised gray, the chat composer on the lighter
  * composer gray. Tertiary text and placeholders on them use the secondary tint to stay at 4.5:1.
@@ -527,8 +520,77 @@ div[data-vaul-drawer] {
 }
 
 /* The dark wallpaper composer keeps the composer gray at the same translucency. */
-:root[data-mantine-color-scheme="dark"] [data-chat-wallpaper] .chatbox-composer-surface {
-  background-color: color-mix(in srgb, var(--chatbox-background-composer) 72%, transparent);
+:root[data-mantine-color-scheme="dark"][data-chat-wallpaper] .chatbox-composer-surface {
+  background-color: color-mix(in srgb, var(--chatbox-background-composer) var(--chatbox-glass-opacity), transparent);
+}
+
+/*
+ * Glass over a chat wallpaper; tiers and usage are documented in lib/glass-surface.ts. Every rule hangs
+ * off the data-chat-wallpaper marker on the root, so without a wallpaper nothing here applies.
+ */
+:root {
+  --chatbox-glass-opacity: 60%;
+  --chatbox-glass-blur: 16px;
+  /* Sticky bars keep a quarter of the glass transparency: 90% at the default 60%. */
+  --chatbox-glass-bar-opacity: calc(100% - (100% - var(--chatbox-glass-opacity)) / 4);
+}
+
+/* biome-ignore lint/correctness/noUnknownMediaFeatureName: Media Queries Level 5 feature, supported since Chromium 118 */
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --chatbox-glass-opacity: 94%;
+    --chatbox-glass-blur: 0px;
+  }
+}
+
+/*
+ * Surfaces and fills take a translucent page color. These selectors weigh as much as one utility class
+ * and come after the utilities, so they replace `bg-*` fills (and Mantine's dropdown fill, which loads
+ * earlier) while `hover:bg-*` utilities still win. Every vaul bottom drawer is a surface on purpose,
+ * dialog drawers (AdaptiveModal, AdaptiveSelect) included: on narrow screens they open over the
+ * wallpaper like the other sheets.
+ */
+:where(:root[data-chat-wallpaper])
+  :is(.chatbox-glass-surface, .chatbox-glass-fill, [data-vaul-drawer]):where(:not(.chatbox-glass-host)) {
+  background-color: color-mix(in srgb, var(--chatbox-background-primary) var(--chatbox-glass-opacity), transparent);
+}
+
+/* Only surfaces blur; fills in the scrolling transcript stay unblurred. */
+:where(:root[data-chat-wallpaper]) :is(.chatbox-glass-surface, [data-vaul-drawer]):where(:not(.chatbox-glass-host)) {
+  -webkit-backdrop-filter: blur(var(--chatbox-glass-blur));
+  backdrop-filter: blur(var(--chatbox-glass-blur));
+}
+
+/* A host dropdown stays clear, and its open transition's inline will-change would make it the backdrop root. */
+:root[data-chat-wallpaper] .chatbox-glass-host {
+  background-color: transparent;
+  will-change: auto !important;
+}
+
+:where(:root[data-chat-wallpaper]) .chatbox-glass-hidden {
+  display: none;
+}
+
+/* Inside any glass: legible secondary text, tinted cards and rows, near-opaque sticky bars. */
+:root[data-chat-wallpaper] :is(.chatbox-glass-surface, .chatbox-glass-fill, [data-vaul-drawer]) {
+  --chatbox-tint-tertiary: var(--chatbox-tint-secondary);
+  --chatbox-tint-placeholder: var(--chatbox-tint-secondary);
+  --mantine-color-chatbox-tertiary-light-color: var(--chatbox-tint-secondary);
+  --mantine-color-chatbox-tertiary-text: var(--chatbox-tint-secondary);
+  --mantine-color-dimmed: var(--chatbox-tint-secondary);
+  --mantine-color-placeholder: var(--chatbox-tint-secondary);
+
+  & :is(.chatbox-glass-tint, .settings-section-body) {
+    background-color: var(--chatbox-background-gray-secondary);
+  }
+
+  & .chatbox-glass-bar {
+    background-color: color-mix(
+      in srgb,
+      var(--chatbox-background-primary) var(--chatbox-glass-bar-opacity),
+      transparent
+    );
+  }
 }
 
 /* Dark settings index: the app shell and main panel take the grouped page color, so the page runs

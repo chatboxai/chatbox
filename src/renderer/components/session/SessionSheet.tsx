@@ -1,12 +1,14 @@
-import { rendererApplication } from '@/app/renderer-application'
 import { resolveSessionMode, type SessionMode } from '@chatbox/core/session/mode-policy'
 import { Button, Loader, SegmentedControl } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import type { SessionHeader } from '@shared/types'
+import clsx from 'clsx'
 import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Drawer } from 'vaul'
+import { rendererApplication } from '@/app/renderer-application'
 import { SettingsDensityProvider } from '@/components/settings/SettingsLayout'
+import { GLASS_TINT_CLASS } from '@/lib/glass-surface'
 import { useSessionAgentMode } from '@/stores/session/agent-mode'
 import { SessionSettingsContent } from './SessionSettingsContent'
 import { closeSessionPanel, showSessionPanelTab, usePersistedSessionEdit, useSessionPanel } from './SessionSidePanel'
@@ -56,6 +58,7 @@ export function SessionSheet({
           {showThreads && (
             <div className="shrink-0 px-3 pb-2 pt-1">
               <SegmentedControl
+                className={GLASS_TINT_CLASS}
                 fullWidth
                 size="sm"
                 radius="md"
@@ -83,7 +86,7 @@ export function SessionSheet({
                 )}
               </div>
             ) : tab === 'threads' ? (
-              <div className="rounded-xl bg-chatbox-background-primary p-1">
+              <div className={clsx('rounded-xl bg-chatbox-background-primary p-1', GLASS_TINT_CLASS)}>
                 <ThreadHistoryList key={session.id} session={session} onNavigate={close} inlineMenus />
               </div>
             ) : (

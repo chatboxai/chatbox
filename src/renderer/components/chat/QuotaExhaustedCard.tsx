@@ -1,6 +1,7 @@
 import { Box, Button, Group, Paper, Stack, Text, ThemeIcon } from '@mantine/core'
 import { IconArrowUpRight, IconInfoCircle } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
+import { GLASS_FILL_CLASS } from '@/lib/glass-surface'
 import type { QuotaCardAction, QuotaCardKind } from './message-error-presentation'
 
 interface QuotaExhaustedCardProps {
@@ -43,10 +44,8 @@ export function QuotaExhaustedCard({ kind, action, onAction, onConfigureOcr }: Q
       radius={8}
       p={16}
       withBorder
-      style={{
-        borderColor: 'var(--chatbox-border-primary)',
-        background: 'var(--chatbox-background-primary)',
-      }}
+      className={`bg-chatbox-background-primary ${GLASS_FILL_CLASS}`}
+      style={{ borderColor: 'var(--chatbox-border-primary)' }}
     >
       <Group align="flex-start" wrap="nowrap" gap={14}>
         <ThemeIcon

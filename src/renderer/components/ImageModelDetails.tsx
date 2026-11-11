@@ -35,7 +35,8 @@ export function ImageModelDetailDrawer({
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 bg-chatbox-background-mask-overlay" />
         <Drawer.Content
-          className="fixed bottom-0 left-0 right-0 outline-none"
+          className={`fixed bottom-0 left-0 right-0 rounded-t-[16px] border border-b-0 border-solid outline-none ${MODEL_SELECTOR_SURFACE_CLASS}`}
+          style={DRAWER_SURFACE_STYLE}
           onCloseAutoFocus={(event) => {
             event.preventDefault()
             onRestoreFocus()
@@ -44,11 +45,7 @@ export function ImageModelDetailDrawer({
             if (!isTopOverlay) event.preventDefault()
           }}
         >
-          <Stack
-            gap={0}
-            className={`rounded-t-[16px] border border-b-0 border-solid ${MODEL_SELECTOR_SURFACE_CLASS}`}
-            style={DRAWER_SURFACE_STYLE}
-          >
+          <Stack gap={0}>
             <div aria-hidden className="mx-auto my-3 h-1 w-14 rounded-full bg-chatbox-tint-tertiary opacity-70" />
             <Drawer.Title className="hidden">{t('Model details')}</Drawer.Title>
             {model && <DetailCard model={model} onClose={onClose} mobile />}

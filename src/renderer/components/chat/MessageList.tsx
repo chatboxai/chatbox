@@ -62,7 +62,7 @@ import ForkGroup from './ForkGroup'
 import ForkMarkerMessage from './ForkMarkerMessage'
 import Message from './Message'
 import MessageMinimapRail from './MessageMinimapRail'
-import MessageNavigation, { ScrollToBottomButton } from './MessageNavigation'
+import MessageNavigation, { FLOATING_BUTTON_GLASS_PROPS, ScrollToBottomButton } from './MessageNavigation'
 import { getSessionAssistantName } from './message-header'
 import { areMinimapAnchorsEqual, buildMessageMinimapAnchors } from './message-navigation-utils'
 import { buildTranscriptRenderItems } from './message-render-items'
@@ -1058,9 +1058,12 @@ const MessageList = forwardRef<
                 h={40}
                 p={0}
                 radius="xl"
-                bg="var(--chatbox-background-primary)"
                 c="chatbox-secondary"
-                className="border border-solid border-chatbox-border-primary shadow-lg"
+                className={cn(
+                  'border border-solid border-chatbox-border-primary shadow-lg',
+                  FLOATING_BUTTON_GLASS_PROPS.className
+                )}
+                style={FLOATING_BUTTON_GLASS_PROPS.style}
                 aria-label={t('Generating...')}
                 onClick={() => navigate('tail')}
               >

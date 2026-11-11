@@ -54,6 +54,10 @@ describe('WebSearchUnavailableBanner', () => {
       <WebSearchUnavailableBanner sessionId={sessionId} errorCount={errorCount} latestHasError={latestHasError} />
     </MantineProvider>
   )
+  it('floats as a glass surface', () => {
+    render(banner('glass', 1, false))
+    expect(screen.getByRole('status').classList).toContain('chatbox-glass-surface')
+  })
   it('waits for a later conversation message after the most recent sign-in error', () => {
     const view = render(banner('sequence', 1, true))
     expect(screen.queryByRole('status')).toBeNull()

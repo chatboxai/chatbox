@@ -11,6 +11,7 @@ import { IconEye, IconFile, IconShare } from '@tabler/icons-react'
 import clsx from 'clsx'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { GLASS_FILL_CLASS } from '@/lib/glass-surface'
 import {
   localWorkPreviewDocument,
   readLocalWorkArtifact,
@@ -90,6 +91,7 @@ export function MobileWorkArtifactsUI({ artifacts, sessionId }: { artifacts: Wor
             key={artifact.path}
             className={clsx(
               'flex min-w-0 gap-3 rounded-[14px] border border-solid bg-chatbox-background-primary p-3',
+              GLASS_FILL_CLASS,
               previewable ? 'flex-col border-chatbox-border-secondary' : 'items-center border-chatbox-border-primary'
             )}
           >

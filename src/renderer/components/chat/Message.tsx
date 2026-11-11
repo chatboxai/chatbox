@@ -65,6 +65,7 @@ import { lockSessionAgentMode, setSessionAgentMode } from '@/stores/session/agen
 import { useSettingsStore } from '@/stores/settingsStore'
 import { uiStore, useUIStore } from '@/stores/uiStore'
 import '../../static/Block.css'
+import { GLASS_FILL_CLASS, GLASS_SURFACE_CLASS } from '@/lib/glass-surface'
 import { generate, regenerateInNewFork, retryFromLastToolCallAfterApiError } from '@/stores/session/generation'
 import { modifyMessage, removeMessage } from '@/stores/session/messages'
 import * as toastActions from '@/stores/toastActions'
@@ -847,7 +848,7 @@ const _Message: FC<Props> = (props) => {
                 errorOnly: isErrorOnlyMessage(msg),
                 spansColumn: rowLayout.spansColumn,
               })
-            : 'inline-block max-w-full min-w-0 bg-chatbox-background-secondary px-4 rounded-lg'
+            : `inline-block max-w-full min-w-0 bg-chatbox-background-secondary px-4 rounded-lg ${GLASS_FILL_CLASS}`
         }
       >
         <Box
@@ -937,7 +938,7 @@ const _Message: FC<Props> = (props) => {
                   ) : item.type === 'agent-mode-suggestion' ? (
                     <Flex key={`agent-mode-suggestion-${msg.id}-${index}`} className="mb-2 w-full">
                       <Flex
-                        className="w-full max-w-[760px] bg-chatbox-background-secondary border border-solid border-chatbox-border-primary rounded-lg shadow-sm overflow-hidden"
+                        className={`w-full max-w-[760px] bg-chatbox-background-secondary border border-solid border-chatbox-border-primary rounded-lg shadow-sm overflow-hidden ${GLASS_FILL_CLASS}`}
                         align="stretch"
                       >
                         <div className="w-1 shrink-0 bg-chatbox-tint-brand" />
@@ -1085,7 +1086,7 @@ const _Message: FC<Props> = (props) => {
           <div
             className={cn(
               'inline-flex items-center gap-1.5 py-3',
-              isBubbleLayout ? 'px-1 rounded-lg bg-chatbox-background-secondary' : 'px-4'
+              isBubbleLayout ? `px-1 rounded-lg bg-chatbox-background-secondary ${GLASS_FILL_CLASS}` : 'px-4'
             )}
           >
             <Loading />
@@ -1154,7 +1155,7 @@ const _Message: FC<Props> = (props) => {
   // bottom of the screen while a long message scrolls past.
   const actionBarStickyClass = isSmallScreen ? 'sticky bottom-4' : ''
   const actionBarCardClass = isSmallScreen
-    ? 'p-xxs bg-chatbox-background-primary rounded-lg border-[0.5px] border-solid border-chatbox-border-primary shadow-sm'
+    ? `p-xxs bg-chatbox-background-primary rounded-lg border-[0.5px] border-solid border-chatbox-border-primary shadow-sm ${GLASS_SURFACE_CLASS}`
     : ''
   const generatingActions = showConcurrentReplyStop && (
     <Flex gap={0} m="4px -4px -4px -4px" align="center" className={actionBarStickyClass}>

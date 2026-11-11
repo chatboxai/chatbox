@@ -239,6 +239,12 @@ describe('row branch previews', () => {
     fireEvent.click(screen.getByTestId(TestId.message.forkNext))
     expect(mocks.switchFork).toHaveBeenCalledWith('s', 'pivot', 'next')
   })
+  test('branch preview cards are translucent glass fills in the transcript', async () => {
+    renderGroup()
+    fireEvent.click(screen.getByRole('button', { name: 'Expand view' }))
+    const switchButton = await screen.findByRole('button', { name: 'Switch to this branch' })
+    expect(switchButton.closest('.chatbox-glass-fill')).not.toBeNull()
+  })
   test('one Expand view action renders every nonempty preview newest first with original ordinals', async () => {
     registerPreview('newest-first', 'newest-first')
     mocks.options.mockReturnValue({

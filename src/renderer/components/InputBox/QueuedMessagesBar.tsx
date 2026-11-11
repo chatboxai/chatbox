@@ -15,6 +15,7 @@ import { memo, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useStore } from 'zustand'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
+import { GLASS_SURFACE_CLASS, GLASS_TINT_CLASS } from '@/lib/glass-surface'
 import { cn } from '@/lib/utils'
 import { useSessionAgentMode } from '@/stores/session/agent-mode'
 import {
@@ -109,7 +110,7 @@ function QueuedItemRow({ sessionId, item, order, paused, steeringEnabled }: Queu
       <Box
         ref={editorRef}
         data-testid={TestId.chat.queuedMessageItem}
-        className="rounded-md bg-chatbox-background-primary px-2 py-1.5"
+        className={`rounded-md bg-chatbox-background-primary px-2 py-1.5 ${GLASS_TINT_CLASS}`}
       >
         <Textarea
           value={draft}
@@ -152,7 +153,7 @@ function QueuedItemRow({ sessionId, item, order, paused, steeringEnabled }: Queu
       data-testid={TestId.chat.queuedMessageItem}
       align="center"
       gap={8}
-      className="group/queue-item rounded-md bg-chatbox-background-secondary px-2 py-1 min-h-[30px]"
+      className={`group/queue-item rounded-md bg-chatbox-background-secondary px-2 py-1 min-h-[30px] ${GLASS_TINT_CLASS}`}
     >
       <Text size="xs" c="chatbox-tertiary" className="w-3 text-center flex-shrink-0 tabular-nums">
         {order}
@@ -248,7 +249,7 @@ function QueuedCompactionRow({ sessionId, item, order }: QueuedCompactionRowProp
       data-testid={TestId.chat.queuedCompactionItem}
       align="center"
       gap={8}
-      className="group/queue-item rounded-md bg-chatbox-background-secondary px-2 py-1 min-h-[30px]"
+      className={`group/queue-item rounded-md bg-chatbox-background-secondary px-2 py-1 min-h-[30px] ${GLASS_TINT_CLASS}`}
     >
       <Text size="xs" c="chatbox-tertiary" className="w-3 text-center flex-shrink-0 tabular-nums">
         {order}
@@ -329,7 +330,7 @@ export const QueuedMessagesBar = memo(function QueuedMessagesBar({ sessionId }: 
   return (
     <Box
       data-testid={TestId.chat.queuedMessageBar}
-      className="rounded-lg bg-chatbox-background-tertiary border border-chatbox-border-primary shadow-sm px-2.5 py-2"
+      className={`rounded-lg bg-chatbox-background-tertiary border border-chatbox-border-primary shadow-sm px-2.5 py-2 ${GLASS_SURFACE_CLASS}`}
     >
       <Flex align="center" justify="space-between" gap="xs" className="px-0.5">
         <Flex align="center" gap={6} className="min-w-0">

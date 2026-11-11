@@ -367,6 +367,32 @@ describe('AgentModePanel mode buttons', () => {
   })
 })
 
+describe('AgentModePanel glass over a chat wallpaper', () => {
+  test('on desktop the main list and the open submenu are separate glass surfaces; the open row is a tint', () => {
+    const view = renderPanel()
+    fireEvent.mouseEnter(screen.getByRole('button', { name: 'Skills' }))
+
+    const surfaces = view.container.querySelectorAll('.chatbox-glass-surface')
+    expect(surfaces).toHaveLength(2)
+    expect(surfaces[0].contains(surfaces[1])).toBe(false)
+    expect(surfaces[1].contains(surfaces[0])).toBe(false)
+    expect(screen.getByRole('button', { name: 'Skills' }).classList).toContain('chatbox-glass-tint')
+  })
+
+  test('in the touch drawer the drawer is the surface, and the mode card and open row are tints', () => {
+    mocks.platform.type = 'web'
+    mocks.platform.isDesktopLike = false
+    mocks.agentModeEntry.value = 'off'
+    const view = renderPanel({ modelSupportsAgentMode: false, layout: 'touch' })
+
+    expect(view.container.querySelector('.chatbox-glass-surface')).toBeNull()
+    const card = screen
+      .getByText('This app currently supports Chat Mode only. Use Work Mode on the desktop app.')
+      .closest('.chatbox-glass-tint')
+    expect(card).not.toBeNull()
+  })
+})
+
 describe('AgentModePanel submenu hover behavior', () => {
   beforeEach(() => {
     vi.useFakeTimers()

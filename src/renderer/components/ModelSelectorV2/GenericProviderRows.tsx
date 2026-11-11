@@ -2,6 +2,7 @@ import type { ProviderModelInfo } from '@shared/types'
 import { ModelProviderEnum } from '@shared/types'
 import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
+import { GLASS_BAR_CLASS } from '@/lib/glass-surface'
 import { modelMatchesSearch } from './chatboxCatalog'
 import { groupFavorites } from './helpers'
 import { ModelRow } from './ModelRow'
@@ -17,6 +18,7 @@ function ByokSectionDivider({ mobile }: { mobile: boolean }) {
     <div
       className={clsx(
         'sticky top-0 z-20 flex h-9 items-center gap-2 border-0 border-y border-solid border-chatbox-border-primary bg-chatbox-background-secondary px-2.5',
+        GLASS_BAR_CLASS,
         mobile ? 'mt-1 px-3' : 'mt-1'
       )}
     >

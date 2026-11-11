@@ -16,7 +16,7 @@ import {
   isChatboxAIModelLocked,
   modelMatchesSearch,
 } from './chatboxCatalog'
-import { FALLBACK_UPGRADE_URL, MOBILE_TAP_RESET_STYLE, MODEL_SELECTOR_SURFACE_CLASS } from './constants'
+import { FALLBACK_UPGRADE_URL, MOBILE_TAP_RESET_STYLE } from './constants'
 import { getGroupLabel, toProviderModelInfo } from './helpers'
 import { ModelRow } from './ModelRow'
 import { ProviderRowHeader } from './ProviderRowHeader'
@@ -239,7 +239,6 @@ export function ChatboxProviderRows({
     <section
       className={clsx(
         'relative border-0 border-b border-solid border-chatbox-border-primary',
-        MODEL_SELECTOR_SURFACE_CLASS,
         isMobile ? 'mb-2' : 'mb-1'
       )}
     >

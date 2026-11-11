@@ -471,6 +471,16 @@ export class TokenEstimationService {
     return totalBreakdown(mergeBreakdowns(messages, getTokenizerType(model)))
   }
 
+  /** Estimate an explicit compaction selection using the same attachment policy as sending. */
+  async estimateMessagesTokensWithAttachments(
+    messages: Message[],
+    request: Pick<TokenEstimationRequest, 'model' | 'modelSupportToolUseForFile' | 'sandboxMode'>
+  ): Promise<number> {
+    const estimate = await this.estimateDraftMessages(messages, getTokenizerType(request.model), request)
+    if (estimate.hasMissingAttachments) throw new Error('Cannot estimate compaction with missing attachments')
+    return totalBreakdown(estimate.breakdown)
+  }
+
   private async estimateDraftMessages(
     messages: Message[],
     type: TokenizerType,

@@ -72,6 +72,18 @@ const compactionService = new CompactionService({
     getCompactionContext(session, sessionSettings, pendingMessage) {
       return getCompactionContext(session, sessionSettings, pendingMessage)
     },
+    async createTokenCounter({ sessionId, sessionSettings }) {
+      const workMode = getSessionAgentModeEntry(sessionId, { settings: sessionSettings }).value === 'on'
+      const policy = await resolveTokenEstimationPolicy(sessionSettings, workMode)
+      const { provider, modelId } = sessionSettings
+      const model = provider && modelId ? { provider, modelId } : undefined
+      return (messages) =>
+        rendererTokenEstimation.estimateMessagesTokensWithAttachments(messages, {
+          model,
+          modelSupportToolUseForFile: policy.modelSupportToolUseForFile,
+          sandboxMode: policy.sandboxMode,
+        })
+    },
   },
   summaries: {
     generate: (input) => generateSummaryWithStream(input),

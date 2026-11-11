@@ -122,6 +122,55 @@ function fixture(
   }
 }
 const service = new TokenEstimationService({ get: async () => null })
+
+describe('explicit compaction message estimates', () => {
+  it('hydrates uncached attachments and follows the sandbox send policy', async () => {
+    const get = vi.fn(() => Promise.resolve('Long file content. '.repeat(1000)))
+    const estimator = new TokenEstimationService({ get })
+    const fileMessage: Message = {
+      ...message('file', 'Read this'),
+      files: [{ id: 'f', name: 'notes.txt', fileType: 'text/plain', storageKey: 'file-content' }],
+    }
+    const inline = await estimator.estimateMessagesTokensWithAttachments([fileMessage], {})
+    expect(get).toHaveBeenCalledWith('file-content')
+    get.mockClear()
+    const sandbox = await estimator.estimateMessagesTokensWithAttachments([fileMessage], { sandboxMode: true })
+    expect(sandbox).toBeLessThan(inline)
+    expect(sandbox).toBeGreaterThan(0)
+    expect(get).not.toHaveBeenCalled()
+  })
+
+  it('refuses incomplete estimates when an inline attachment cannot be read', async () => {
+    const fileMessage: Message = {
+      ...message('file'),
+      files: [{ id: 'f', name: 'notes.txt', fileType: 'text/plain', storageKey: 'missing' }],
+    }
+    await expect(service.estimateMessagesTokensWithAttachments([fileMessage], {})).rejects.toThrow(
+      'missing attachments'
+    )
+  })
+
+  it('counts images and tool results as well as text', async () => {
+    const plain = message('plain', 'Read this')
+    const rich: Message = {
+      ...plain,
+      contentParts: [
+        ...plain.contentParts,
+        { type: 'image', storageKey: 'image' },
+        {
+          type: 'tool-call',
+          state: 'result',
+          toolCallId: 'call',
+          toolName: 'read',
+          args: {},
+          result: 'result '.repeat(1000),
+        },
+      ],
+    }
+    const base = await service.estimateMessagesTokensWithAttachments([plain], {})
+    expect(await service.estimateMessagesTokensWithAttachments([rich], {})).toBeGreaterThan(base + 4096)
+  })
+})
 afterEach(() => {
   setRuntimeRegistry(null)
 })

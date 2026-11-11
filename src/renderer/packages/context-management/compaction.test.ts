@@ -19,6 +19,7 @@ const {
   getSessionHeaderMock,
   getSessionContextSourceMock,
   estimateMock,
+  estimateMessagesMock,
   readConversationAnchorIdMock,
   commitSessionCompactionMock,
   getSessionSettingsMock,
@@ -31,6 +32,7 @@ const {
   getSessionHeaderMock: vi.fn(),
   getSessionContextSourceMock: vi.fn(),
   estimateMock: vi.fn(),
+  estimateMessagesMock: vi.fn(),
   readConversationAnchorIdMock: vi.fn(),
   getSessionSettingsMock: vi.fn(),
   commitSessionCompactionMock: vi.fn(),
@@ -54,10 +56,10 @@ vi.mock('@/stores/session/session-settings', () => ({
   getSessionSettings: getSessionSettingsMock,
 }))
 vi.mock('@/settings-runtime', () => ({
-  settingsService: { getSettings: () => ({ defaultChatModel: { model: 'test-model' } }) },
+  settingsService: { getSettings: () => ({ defaultChatModel: { model: 'test-model' }, compactionRetainRatio: 0 }) },
 }))
 vi.mock('../token-estimation/row-history-service', () => ({
-  rendererTokenEstimation: { estimate: estimateMock },
+  rendererTokenEstimation: { estimate: estimateMock, estimateMessagesTokensWithAttachments: estimateMessagesMock },
 }))
 vi.mock('./summary-generator', () => ({ generateSummaryWithStream: generateSummaryWithStreamMock }))
 vi.mock('@/stores/session/action-guard', () => ({ getSessionLockStateNow: getSessionLockStateMock }))
@@ -68,6 +70,7 @@ vi.mock('@/stores/session/message-queue', () => ({
 }))
 
 import { recordRequestOverhead, requestManualCompaction, runCompactionWithUIState } from './compaction'
+
 let repository: InMemorySessionRepository
 let sessions: SessionService
 
@@ -104,6 +107,9 @@ beforeEach(async () => {
     async (id: string) => (await repository.readSessionConversationState({ sessionId: id }))?.lastSettledMessageId
   )
   estimateMock.mockResolvedValue({ totalTokens: 0 })
+  estimateMessagesMock.mockImplementation((messages: Message[]) =>
+    Promise.resolve(messages.reduce((total, item) => total + (item.isSummary ? 1 : 100), 0))
+  )
   generateSummaryWithStreamMock.mockResolvedValue({ success: true, summary: 'Summary' })
   getSessionSettingsMock.mockResolvedValue({})
   getSessionLockStateMock.mockResolvedValue({

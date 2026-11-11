@@ -33,6 +33,8 @@ function createHarness(
   options: {
     compactionPrompt?: string
     autoCompaction?: boolean
+    compactionRetainRatio?: number
+    now?: () => number
     beforeUpdate?: (session: Session) => Session
     logger?: LoggerPort
     messages?: Message[]
@@ -62,12 +64,19 @@ function createHarness(
     language: 'en',
     compactionPrompt: options.compactionPrompt,
     autoCompaction: true,
+    // Existing lifecycle tests exercise full-history compaction; retention has dedicated cases below.
+    compactionRetainRatio: options.compactionRetainRatio ?? 0,
     defaultChatModel: { provider: 'openai', model: 'gpt-4.1' },
   } as Settings
   const getCompactionContext = vi.fn(
     (current: SessionContextSource, _settings: SessionSettings, _pendingMessage?: Message) => current.candidateMessages
   )
   const measure = vi.fn<CompactionPolicyPort['measure']>(() => Promise.resolve(overThreshold))
+  const estimateTokens = vi.fn<(messages: Message[]) => Promise<number>>((messages) =>
+    Promise.resolve(
+      messages.reduce((total, item) => total + (item.tokenCountMap?.default ?? (item.isSummary ? 1 : 100)), 0)
+    )
+  )
   const generate = vi.fn<CompactionSummaryPort['generate']>(async (input) => {
     input.onStreamUpdate?.('streaming summary')
     return { success: true, summary: 'Final summary' }
@@ -98,6 +107,11 @@ function createHarness(
     return repository.getSessionHeader(session.id)
   })
   let summarySequence = 0
+  const policy: CompactionPolicyPort = {
+    measure,
+    getCompactionContext,
+    createTokenCounter: () => Promise.resolve(estimateTokens),
+  }
   const service = new CompactionService({
     sessions: {
       getSessionHeader: getSession,
@@ -122,20 +136,19 @@ function createHarness(
       },
     },
     settings: { getSettings: () => globalSettings },
-    policy: {
-      measure,
-      getCompactionContext,
-    },
+    policy,
     summaries: { generate },
     logger: options.logger,
     createId: () => (summarySequence++ ? `summary-message-${summarySequence}` : 'summary-message'),
-    now: () => 123,
+    now: options.now ?? (() => 123),
   })
   return {
     service,
+    policy,
     getSession,
     getCompactionContext,
     measure,
+    estimateTokens,
     generate,
     get session() {
       return session
@@ -144,6 +157,207 @@ function createHarness(
 }
 
 describe('CompactionService', () => {
+  test('summarizes only older history and sends the retained tail once after its summary', async () => {
+    const messages = [
+      message('system', 'system'),
+      { ...message('u1', 'user'), tokenCountMap: { default: 5000 } },
+      { ...message('a1', 'assistant'), tokenCountMap: { default: 4000 } },
+      { ...message('u2', 'user'), tokenCountMap: { default: 1000 } },
+      { ...message('a2', 'assistant'), tokenCountMap: { default: 1000 } },
+    ]
+    const harness = createHarness({ messages, compactionRetainRatio: 0.16 })
+    const pendingMessage = message('pending', 'user')
+    const result = await harness.service.run('session-1', { kind: 'automatic', pendingMessage })
+    expect(result).toMatchObject({ status: 'compacted', coverage: { boundaryMessageId: 'a1' } })
+    expect(harness.generate.mock.calls[0][0].messages.map((item) => item.id)).toEqual(['system', 'u1', 'a1'])
+    const selected = selectContextMessages([...harness.session.messages, pendingMessage], {
+      compactionPoints: harness.session.compactionPoints,
+      maxContextMessageCount: 4,
+    })
+    expect(selected.map((item) => item.id)).toEqual(['system', 'summary-message', 'u2', 'a2', 'pending'])
+    expect(selected.find((item) => item.id === 'a2')).toEqual(messages[4])
+    const sending = await buildContext([...harness.session.messages, pendingMessage], {
+      compactionPoints: harness.session.compactionPoints,
+      maxContextMessageCount: 4,
+      attachmentResolver: { read: () => Promise.resolve(null) },
+    })
+    expect(sending.map((item) => item.id)).toEqual(['system', 'u2', 'a2', 'pending'])
+    expect(sending[1].contentParts).toContainEqual({ type: 'text', text: 'u2' })
+    expect(sending[1].contentParts.some((part) => part.type === 'text' && part.text.includes('Final summary'))).toBe(
+      true
+    )
+  })
+
+  test('advances a later compaction boundary without reintroducing summarized history', async () => {
+    let timestamp = 123
+    const harness = createHarness({
+      now: () => timestamp++,
+      compactionRetainRatio: 0.16,
+      messages: [
+        { ...message('old', 'user'), tokenCountMap: { default: 7000 } },
+        { ...message('u1', 'user'), tokenCountMap: { default: 1000 } },
+        { ...message('a1', 'assistant'), tokenCountMap: { default: 1000 } },
+      ],
+    })
+    harness.getCompactionContext.mockImplementation((source) =>
+      selectContextMessages(source.candidateMessages, {
+        compactionPoints: source.compactionPoints,
+      })
+    )
+    expect((await harness.service.run('session-1', { kind: 'automatic' })).status).toBe('compacted')
+    harness.session.messages.push(
+      { ...message('u2', 'user'), tokenCountMap: { default: 1000 } },
+      { ...message('a2', 'assistant'), tokenCountMap: { default: 1000 } }
+    )
+    harness.measure.mockResolvedValue({ tokens: budget.usableTokens + 1, budget })
+    expect(await harness.service.run('session-1', { kind: 'automatic' })).toMatchObject({
+      status: 'compacted',
+      coverage: { boundaryMessageId: 'a1' },
+    })
+    const summaryInput = harness.generate.mock.calls[1][0].messages
+    expect(summaryInput.some((item) => item.id === 'old')).toBe(false)
+    expect(
+      selectContextMessages(harness.session.messages, { compactionPoints: harness.session.compactionPoints }).map(
+        (item) => item.id
+      )
+    ).toEqual(['summary-message-2', 'u2', 'a2'])
+  })
+
+  test.each(['automatic', 'manual'] as const)('%s skips when there is no older history to summarize', async (kind) => {
+    const harness = createHarness({ compactionRetainRatio: 0.16 })
+    const before = structuredClone(harness.session)
+    expect(await harness.service.run('session-1', { kind })).toEqual({
+      status: 'skipped',
+      reason: 'not_needed',
+    })
+    expect(harness.generate).not.toHaveBeenCalled()
+    expect(harness.session).toEqual(before)
+  })
+
+  test.each(['automatic', 'manual'] as const)(
+    '%s does not commit a summary that makes the request larger',
+    async (kind) => {
+      const harness = createHarness()
+      const before = structuredClone(harness.session)
+      harness.estimateTokens.mockResolvedValue(500)
+      expect(await harness.service.run('session-1', { kind })).toEqual({
+        status: 'skipped',
+        reason: 'not_needed',
+      })
+      expect(harness.generate).toHaveBeenCalledOnce()
+      expect(harness.session).toEqual(before)
+    }
+  )
+
+  test.each([
+    { label: 'empty', messages: [] },
+    { label: 'system-only', messages: [message('system', 'system')] },
+  ])('preserves the existing no_messages result for $label history', async ({ messages }) => {
+    const harness = createHarness({ messages, compactionRetainRatio: 0.16 })
+    expect(await harness.service.run('session-1', { kind: 'automatic' })).toEqual({
+      status: 'failed',
+      failure: { code: 'no_messages', message: 'No messages to compact' },
+    })
+    expect(harness.generate).not.toHaveBeenCalled()
+  })
+
+  test.each(['automatic', 'manual'] as const)(
+    '%s rejects a summary that still overflows with request overhead',
+    async (kind) => {
+      const harness = createHarness()
+      harness.service.recordRequestOverhead('session-1', { toolTokens: budget.usableTokens, extraSystemTokens: 0 })
+      expect(await harness.service.run('session-1', { kind })).toMatchObject({
+        status: 'failed',
+        failure: { code: 'summary_failed' },
+      })
+      expect(harness.session.compactionPoints).toBeUndefined()
+    }
+  )
+
+  test.each([
+    { ratio: 0, boundary: 'recent-assistant', retainedIds: [] },
+    { ratio: 0.16, boundary: 'old', retainedIds: ['recent-user', 'recent-assistant'] },
+  ])(
+    'manual compaction uses ratio $ratio even below the threshold with auto compaction off',
+    async ({ ratio, boundary, retainedIds }) => {
+      const harness = createHarness({
+        autoCompaction: false,
+        compactionRetainRatio: ratio,
+        messages: [
+          { ...message('old', 'user'), tokenCountMap: { default: 5000 } },
+          { ...message('recent-user', 'user'), tokenCountMap: { default: 1000 } },
+          { ...message('recent-assistant', 'assistant'), tokenCountMap: { default: 1000 } },
+        ],
+      })
+      harness.measure.mockResolvedValue({ tokens: 7000, budget })
+      expect(await harness.service.run('session-1', { kind: 'manual' })).toMatchObject({
+        status: 'compacted',
+        coverage: { boundaryMessageId: boundary },
+      })
+      const summaryInput = harness.generate.mock.calls[0][0].messages
+      expect(summaryInput.at(-1)?.id).toBe(boundary)
+      const selected = selectContextMessages(harness.session.messages, {
+        compactionPoints: harness.session.compactionPoints,
+      })
+      expect(selected.map((item) => item.id)).toEqual(['summary-message', ...retainedIds])
+    }
+  )
+
+  test('does not discard the manual retention budget when estimation is unavailable', async () => {
+    const harness = createHarness({ compactionRetainRatio: 0.16 })
+    harness.measure.mockResolvedValue(null)
+    expect(await harness.service.run('session-1', { kind: 'manual' })).toMatchObject({
+      status: 'failed',
+      failure: { code: 'summary_failed' },
+    })
+    expect(harness.generate).not.toHaveBeenCalled()
+    expect(harness.session.compactionPoints).toBeUndefined()
+  })
+
+  test('reports cancellation when manual estimation finishes after the user cancels', async () => {
+    const harness = createHarness({ compactionRetainRatio: 0.16 })
+    const controller = new AbortController()
+    harness.measure.mockImplementation(() => {
+      controller.abort()
+      return Promise.resolve(null)
+    })
+    expect(await harness.service.run('session-1', { kind: 'manual' }, { abortSignal: controller.signal })).toEqual({
+      status: 'cancelled',
+    })
+    expect(harness.generate).not.toHaveBeenCalled()
+    expect(harness.service.isInProgress('session-1')).toBe(false)
+  })
+
+  test.each(['automatic', 'manual'] as const)(
+    'preserves %s compaction for hosts with the original policy interface',
+    async (kind) => {
+      const harness = createHarness({ compactionRetainRatio: 0.16 })
+      delete harness.policy.createTokenCounter
+      expect(await harness.service.run('session-1', { kind })).toMatchObject({
+        status: 'compacted',
+        coverage: { boundaryMessageId: 'assistant' },
+      })
+      expect(harness.estimateTokens).not.toHaveBeenCalled()
+    }
+  )
+
+  test.each(['automatic', 'manual'] as const)(
+    '%s does not commit when cancelled while validating the summary',
+    async (kind) => {
+      const harness = createHarness()
+      const controller = new AbortController()
+      harness.estimateTokens.mockImplementation((messages) => {
+        controller.abort()
+        return Promise.resolve(messages.length)
+      })
+      expect(await harness.service.run('session-1', { kind }, { abortSignal: controller.signal })).toEqual({
+        status: 'cancelled',
+      })
+      expect(harness.session.compactionPoints).toBeUndefined()
+      expect(harness.service.isInProgress('session-1')).toBe(false)
+    }
+  )
+
   test('rejects a retained round outside the target before generating or persisting a summary', async () => {
     const harness = createHarness()
     const result = await harness.service.run('session-1', {

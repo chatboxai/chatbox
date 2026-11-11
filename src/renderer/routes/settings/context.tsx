@@ -21,6 +21,7 @@ export function RouteComponent() {
   const [promptOpen, setPromptOpen] = useState(settings.compactionPrompt !== undefined)
   const autoCompaction = settings.autoCompaction ?? true
   const threshold = settings.compactionThreshold ?? DEFAULT_COMPACTION_THRESHOLD
+  const retainRatio = settings.compactionRetainRatio ?? 0
 
   const strategyHint = useMemo(() => {
     if (threshold <= 0.5) {
@@ -85,6 +86,32 @@ export function RouteComponent() {
                 {strategyHint}
               </Text>
             </div>
+          }
+        />
+        {/* biome-ignore lint/nursery/useUniqueElementIds: SettingRow uses this ID as a search key, not a DOM ID. */}
+        <SettingRow
+          id="compaction-retain-ratio"
+          label={t('Recent History Budget')}
+          description={t(
+            'Target share of the input window kept as recent messages during automatic or manual compaction. Whole messages are preserved when space allows. Set to 0% to summarize all history. Unknown model windows use an estimate.'
+          )}
+          controlLayout="block"
+          control={
+            <Flex align="center" gap="sm">
+              <Slider
+                flex={1}
+                min={0}
+                max={0.5}
+                step={0.01}
+                value={retainRatio}
+                onChange={(value) => setSettings({ compactionRetainRatio: value })}
+                label={(value) => `${Math.round(value * 100)}%`}
+                thumbLabel={t('Recent History Budget') ?? undefined}
+              />
+              <Text fz={13} fw={500} w={44} ta="right">
+                {Math.round(retainRatio * 100)}%
+              </Text>
+            </Flex>
           }
         />
         <SettingRow

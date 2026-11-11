@@ -1,0 +1,56 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+index f382cbc..898a51d 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -586,13 +586,11 @@ var LibSQLVector = class extends vector.MastraVector {
+       const vectorStr = `[${queryVector.join(",")}]`;
+       const translatedFilter = this.transformFilter(filter);
+       const { sql: filterQuery, values: filterValues } = buildFilterQuery(translatedFilter);
+-      filterValues.push(minScore);
+-      filterValues.push(topK);
+       const query = `
+       WITH vector_scores AS (
+         SELECT
+           vector_id as id,
+-          (1-vector_distance_cos(embedding, '${vectorStr}')) as score,
++          (1-vector_distance_cos(embedding, vector32(?))) as score,
+           metadata
+           ${includeVector ? ", vector_extract(embedding) as embedding" : ""}
+         FROM ${parsedIndexName}
+@@ -605,7 +603,7 @@ var LibSQLVector = class extends vector.MastraVector {
+       LIMIT ?`;
+       const result = await this.turso.execute({
+         sql: query,
+-        args: filterValues
++        args: [vectorStr, ...filterValues, minScore, topK]
+       });
+       return result.rows.map(({ id, score, metadata, embedding }) => ({
+         id,
+diff --git a/dist/index.js b/dist/index.js
+index 1cc83ae..f0430c6 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -584,13 +584,11 @@ var LibSQLVector = class extends MastraVector {
+       const vectorStr = `[${queryVector.join(",")}]`;
+       const translatedFilter = this.transformFilter(filter);
+       const { sql: filterQuery, values: filterValues } = buildFilterQuery(translatedFilter);
+-      filterValues.push(minScore);
+-      filterValues.push(topK);
+       const query = `
+       WITH vector_scores AS (
+         SELECT
+           vector_id as id,
+-          (1-vector_distance_cos(embedding, '${vectorStr}')) as score,
++          (1-vector_distance_cos(embedding, vector32(?))) as score,
+           metadata
+           ${includeVector ? ", vector_extract(embedding) as embedding" : ""}
+         FROM ${parsedIndexName}
+@@ -603,7 +601,7 @@ var LibSQLVector = class extends MastraVector {
+       LIMIT ?`;
+       const result = await this.turso.execute({
+         sql: query,
+-        args: filterValues
++        args: [vectorStr, ...filterValues, minScore, topK]
+       });
+       return result.rows.map(({ id, score, metadata, embedding }) => ({
+         id,

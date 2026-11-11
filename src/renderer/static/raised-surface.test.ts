@@ -56,14 +56,13 @@ describe('raised surface token', () => {
 
 // Settings cards sit on the raised surface. The primary surface is the page itself, so a card on it
 // reads as flat in dark mode next to sections that are raised.
+// 1.24 does not have the local-models settings page or UpdateStatus component
+// that main's #1787 also retargeted; those files are omitted here.
 const SETTINGS_CARD_FILES = [
   'src/renderer/routes/settings/route.tsx',
   'src/renderer/routes/settings/default-models.tsx',
-  'src/renderer/routes/settings/local-models.tsx',
   'src/renderer/routes/settings/about.tsx',
   'src/renderer/components/settings/SettingsLayout.tsx',
-  'src/renderer/components/settings/UpdateStatus.tsx',
-  'src/renderer/components/settings/local-models/LocalModelsParts.tsx',
 ]
 
 describe('settings cards', () => {

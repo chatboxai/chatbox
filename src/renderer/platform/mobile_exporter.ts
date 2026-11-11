@@ -10,6 +10,7 @@ import {
   IOSFilterWriter,
   isHandledExportError,
   isSaveCanceledError,
+  isShareCanceledError,
   serializeErrorForLog,
 } from './filter_writer'
 import type { Exporter, StreamingExportResult } from './interfaces'
@@ -30,7 +31,7 @@ export default class MobileExporter implements Exporter {
       await this.writer.exportBlob(filename, blob, encoding)
       log.info('exportBlob success', { filename })
     } catch (error) {
-      if (isSaveCanceledError(error)) {
+      if (isSaveCanceledError(error) || isShareCanceledError(error)) {
         log.info('exportBlob canceled', { filename, error: serializeErrorForLog(error) })
         return
       }
@@ -52,7 +53,7 @@ export default class MobileExporter implements Exporter {
       await this.writer.exportTextFile(filename, content)
       log.info('exportTextFile success', { filename })
     } catch (error) {
-      if (isSaveCanceledError(error)) {
+      if (isSaveCanceledError(error) || isShareCanceledError(error)) {
         log.info('exportTextFile canceled', { filename, error: serializeErrorForLog(error) })
         return
       }
@@ -74,7 +75,7 @@ export default class MobileExporter implements Exporter {
       await this.writer.exportImageFile(basename, base64Data)
       log.info('exportImageFile success', { basename })
     } catch (error) {
-      if (isSaveCanceledError(error)) {
+      if (isSaveCanceledError(error) || isShareCanceledError(error)) {
         log.info('exportImageFile canceled', { basename, error: serializeErrorForLog(error) })
         return
       }
@@ -97,7 +98,7 @@ export default class MobileExporter implements Exporter {
       await this.writer.exportByUrl(filename, url)
       log.info('exportByUrl success', { filename })
     } catch (error) {
-      if (isSaveCanceledError(error)) {
+      if (isSaveCanceledError(error) || isShareCanceledError(error)) {
         log.info('exportByUrl canceled', {
           filename,
           urlOrigin,
@@ -138,7 +139,8 @@ export default class MobileExporter implements Exporter {
       if (signal?.aborted)
         throw signal.reason instanceof Error ? signal.reason : new DOMException('Operation canceled', 'AbortError')
       if (error instanceof DOMException && error.name === 'AbortError') throw error
-      if (isSaveCanceledError(error)) throw new DOMException('Operation canceled', 'AbortError')
+      if (isSaveCanceledError(error) || isShareCanceledError(error))
+        throw new DOMException('Operation canceled', 'AbortError')
       await Toast.show({ text: i18n.t('Failed to export file: {{error}}', { error }) })
       throw error
     }

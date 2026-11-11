@@ -87,6 +87,19 @@ export function isSaveCanceledError(error: unknown): boolean {
   return false
 }
 
+/** The iOS share sheet rejects with this message when the user dismisses it. */
+export function isShareCanceledError(error: unknown): boolean {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : error && typeof error === 'object' && 'message' in error
+          ? String((error as { message?: unknown }).message)
+          : ''
+  return message === 'Share canceled'
+}
+
 export class HandledExportError extends Error {
   readonly originalError: unknown
 
@@ -324,8 +337,21 @@ export class IOSFilterWriter extends FilterWriter {
     })
   }
 
-  protected handleError(error: unknown): Promise<never> {
-    return Promise.reject(error)
+  protected async handleError(error: unknown): Promise<never> {
+    if (isSaveCanceledError(error) || isShareCanceledError(error)) {
+      throw error
+    }
+    log.error('handleError', serializeErrorForLog(error))
+    try {
+      await Toast.show({
+        text: i18n.t('Failed to save file: {{error}}', {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      })
+    } catch (toastError) {
+      log.warn('handleError:toastFailed', { error: serializeErrorForLog(toastError) })
+    }
+    throw new HandledExportError(error)
   }
 
   async exportTextFile(filename: string, content: string) {

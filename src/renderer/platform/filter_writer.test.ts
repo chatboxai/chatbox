@@ -169,6 +169,30 @@ describe('MobileExporter', () => {
     buildPlatformMock.value = 'android'
   })
 
+  test('shows a toast and swallows an iOS write failure for fire-and-forget callers', async () => {
+    buildPlatformMock.value = 'ios'
+    filesystemMock.writeFile.mockRejectedValueOnce(
+      Object.assign(new Error("The 'writeFile' input parameters aren't valid."), { code: 'OS-PLUG-FILE-0005' })
+    )
+
+    await expect(new MobileExporter().exportImageFile('svg_test', 'data:,')).resolves.toBeUndefined()
+
+    expect(toastMock.show).toHaveBeenCalledWith({ text: 'Failed to save file: {{error}}' })
+    expect(shareMock.share).not.toHaveBeenCalled()
+  })
+
+  test('treats a dismissed iOS share sheet as a cancel without a toast', async () => {
+    buildPlatformMock.value = 'ios'
+    shareMock.share.mockRejectedValueOnce(new Error('Share canceled'))
+
+    await expect(
+      new MobileExporter().exportImageFile('svg_test', 'data:image/png;base64,iVBORw0KGgo=')
+    ).resolves.toBeUndefined()
+
+    expect(toastMock.show).not.toHaveBeenCalled()
+    expect(loggerMock.error).not.toHaveBeenCalled()
+  })
+
   test('does not leak an already-notified Android export failure to fire-and-forget callers', async () => {
     vi.spyOn(AndroidFilterWriter.prototype, 'exportTextFile').mockRejectedValueOnce(
       new HandledExportError(new Error('fallback failed'))

@@ -267,7 +267,7 @@ export function SettingsRoot() {
         <div className="flex flex-col gap-5 px-3 pt-3 pb-6">
           <SettingsSearchInput value={query} onChange={setQuery} />
           {query ? (
-            <div className="rounded-xl bg-chatbox-background-primary p-1">
+            <div className="rounded-xl bg-chatbox-background-raised p-1">
               <SettingsSearchResults results={results} onSelect={openResult} />
             </div>
           ) : (
@@ -276,7 +276,7 @@ export function SettingsRoot() {
                 <Flex
                   align="center"
                   gap="sm"
-                  className="rounded-xl bg-chatbox-background-primary px-3.5 py-3 text-chatbox-tint-primary"
+                  className="rounded-xl bg-chatbox-background-raised px-3.5 py-3 text-chatbox-tint-primary"
                 >
                   <Flex
                     align="center"
@@ -305,7 +305,7 @@ export function SettingsRoot() {
                     <Text fz={12} fw={600} c="chatbox-tertiary" px={14}>
                       {t(group.title)}
                     </Text>
-                    <div className="flex flex-col overflow-hidden rounded-xl bg-chatbox-background-primary">
+                    <div className="flex flex-col overflow-hidden rounded-xl bg-chatbox-background-raised">
                       {group.items
                         .filter((item) => item.key !== 'chatbox-ai')
                         .map((item, index) => (

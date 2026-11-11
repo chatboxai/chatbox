@@ -143,7 +143,7 @@ export function SettingsSection({
       <div
         className={clsx(
           'settings-section-body flex flex-col min-w-0',
-          !bare && 'border border-solid bg-chatbox-background-primary',
+          !bare && 'border border-solid bg-chatbox-background-raised',
           !bare && (density === 'touch' ? 'rounded-xl' : 'rounded-2xl'),
           !bare && (tone === 'danger' ? 'border-chatbox-border-error' : 'border-chatbox-border-primary')
         )}

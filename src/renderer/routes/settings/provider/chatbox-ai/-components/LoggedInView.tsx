@@ -344,7 +344,7 @@ export const LoggedInView = forwardRef<HTMLDivElement, LoggedInViewProps>(
             </Flex>
           </Flex>
 
-          <Paper shadow="xs" p="md" withBorder>
+          <Paper shadow="xs" p="md" withBorder className="bg-chatbox-background-raised">
             <Stack gap="lg">
               <Flex align="center" justify="space-between" gap="md">
                 <Stack gap="xxs" flex={1} style={{ minWidth: 0 }}>

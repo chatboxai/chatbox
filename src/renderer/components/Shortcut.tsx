@@ -210,7 +210,7 @@ export function ShortcutConfig(props: {
     return false
   }
   return (
-    <Box className="border border-solid py-xs px-md rounded-lg border-chatbox-border-primary">
+    <Box className="border border-solid py-xs px-md rounded-lg border-chatbox-border-primary bg-chatbox-background-raised">
       <Table>
         <Table.Thead>
           <Table.Tr>

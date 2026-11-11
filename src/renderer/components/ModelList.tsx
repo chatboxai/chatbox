@@ -76,7 +76,7 @@ export function ModelList({
         data-testid={TestId.settings.providerModelList}
         gap={0}
         px="xxs"
-        className={`border-solid border rounded-lg min-h-[60px] overflow-y-auto border-chatbox-border-primary`}
+        className="border-solid border rounded-lg min-h-[60px] overflow-y-auto border-chatbox-border-primary bg-chatbox-background-raised"
       >
         {filteredModels.length > 0 ? (
           filteredModels.map((model) => (

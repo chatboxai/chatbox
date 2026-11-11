@@ -76,6 +76,7 @@ module.exports = {
             'tertiary-hover': 'var(--chatbox-background-tertiary-hover)',
             disabled: 'var(--chatbox-background-disabled)',
             grouped: 'var(--chatbox-background-grouped)',
+            raised: 'var(--chatbox-background-raised)',
 
             // Brand
             'brand-primary': 'var(--chatbox-background-brand-primary)',

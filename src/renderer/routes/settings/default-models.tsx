@@ -290,7 +290,11 @@ export function RouteComponent() {
         </Stack>
       </Stack>
 
-      <Stack gap="sm" p="md" className="border border-solid border-chatbox-border-primary rounded-xl">
+      <Stack
+        gap="sm"
+        p="md"
+        className="border border-solid border-chatbox-border-primary rounded-xl bg-chatbox-background-raised"
+      >
         <Flex align="center" justify="space-between" gap="sm" wrap="wrap">
           <Stack gap={4} className="flex-1 min-w-[160px]">
             <Text fw={600} size="sm">
@@ -457,7 +461,7 @@ function SlotCard(props: {
     <Stack
       gap="sm"
       p="md"
-      className="border border-solid border-chatbox-border-primary rounded-xl bg-chatbox-background-primary"
+      className="border border-solid border-chatbox-border-primary rounded-xl bg-chatbox-background-raised"
     >
       <Flex align="center" gap="sm" wrap="wrap">
         <Flex

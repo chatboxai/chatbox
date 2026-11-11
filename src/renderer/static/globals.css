@@ -62,6 +62,8 @@
   --chatbox-background-tertiary-hover: #ced4da;
   --chatbox-background-disabled: #e9ecef;
   --chatbox-background-grouped: var(--chatbox-background-secondary);
+  /* Settings cards and panels; dark mode lifts them above the page. */
+  --chatbox-background-raised: var(--chatbox-background-primary);
 
   --chatbox-background-brand-primary: var(--chatbox-brand);
   --chatbox-background-brand-primary-hover: color-mix(in srgb, var(--chatbox-brand), black 12%);
@@ -493,17 +495,11 @@ div[data-vaul-drawer] {
  * Dark mode raised surfaces: settings cards on the raised gray, the chat composer on the lighter
  * composer gray. Tertiary text and placeholders on them use the secondary tint to stay at 4.5:1.
  */
-:root[data-mantine-color-scheme="dark"] .settings-section-body.bg-chatbox-background-primary,
-:root[data-mantine-color-scheme="dark"] .bg-chatbox-background-grouped .bg-chatbox-background-primary {
-  background-color: var(--chatbox-background-raised);
-}
-
 :root[data-mantine-color-scheme="dark"] .chatbox-composer-surface {
   background-color: var(--chatbox-background-composer);
 }
 
-:root[data-mantine-color-scheme="dark"] .settings-section-body.bg-chatbox-background-primary,
-:root[data-mantine-color-scheme="dark"] .bg-chatbox-background-grouped .bg-chatbox-background-primary,
+:root[data-mantine-color-scheme="dark"] .bg-chatbox-background-raised,
 :root[data-mantine-color-scheme="dark"] .chatbox-composer-surface {
   --chatbox-tint-tertiary: var(--chatbox-tint-secondary);
   --chatbox-tint-placeholder: var(--chatbox-tint-secondary);

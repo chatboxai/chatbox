@@ -223,7 +223,7 @@ export const LicenseKeyView = forwardRef<HTMLDivElement, LicenseKeyViewProps>(({
 
         {activated && licenseDetail ? (
           <>
-            <Paper shadow="xs" p="sm" withBorder>
+            <Paper shadow="xs" p="sm" withBorder className="bg-chatbox-background-raised">
               <LicenseDetailCard
                 licenseDetail={licenseDetail}
                 language={language}
@@ -292,7 +292,7 @@ export const LicenseKeyView = forwardRef<HTMLDivElement, LicenseKeyViewProps>(({
         ) : (
           <>
             {/* chatboxai not activated */}
-            <Paper shadow="xs" p="sm" withBorder>
+            <Paper shadow="xs" p="sm" withBorder className="bg-chatbox-background-raised">
               <Stack gap="sm">
                 <Text fw="600" c="chatbox-brand">
                   {t('Chatbox AI offers a user-friendly AI solution to help you enhance productivity')}

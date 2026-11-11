@@ -1,5 +1,6 @@
 import { settings as getDefaultSettings, newConfigs } from 'src/shared/defaults'
 import { getModel } from 'src/shared/providers'
+import Ezkielyna from 'src/shared/providers/definitions/models/ezkielyna'
 import LongCat from 'src/shared/providers/definitions/models/longcat'
 import OpenAI from 'src/shared/providers/definitions/models/openai'
 import OpenAIResponses from 'src/shared/providers/definitions/models/openai-responses'
@@ -206,6 +207,7 @@ describe('getModel', () => {
       'https://open.bigmodel.cn/api/coding/paas/v4',
       ZhipuGLMCodingPlan,
     ],
+    [ModelProviderEnum.Ezkielyna, 'deepseek-v4.1-flash', 'https://api.ezkielyna.store/v1', Ezkielyna],
   ])('returns OpenAI-compatible model instances for %s', (provider, modelId, apiHost, expectedModelClass) => {
     const sessionSettings: SessionSettings = {
       provider,

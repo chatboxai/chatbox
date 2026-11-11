@@ -622,6 +622,45 @@ div[data-vaul-drawer] {
   }
 }
 
+/*
+ * Small-screen chats: the message list runs up under the status bar and the transparent header that floats
+ * over it. The list fades content out across that band instead of tinting it, so the wallpaper or page stays
+ * untouched behind the status bar and the header, and only a faint trace of passing text reaches the title.
+ * The list reserves the band at its top, so content at rest starts below the fade, and explicit scroll targets
+ * land below it (`components/layout/title-bar-overlay.ts`).
+ */
+:root {
+  --chatbox-title-bar-height: 48px;
+  --chatbox-status-bar-inset: var(--mobile-safe-area-inset-top, 0px);
+  --chatbox-title-bar-overlay-height: calc(var(--chatbox-status-bar-inset) + var(--chatbox-title-bar-height));
+}
+
+.chatbox-title-bar-overlay {
+  padding-top: var(--chatbox-status-bar-inset);
+}
+
+/* Set from script while an overlay header is mounted, so the app content starts at the top of the screen. */
+:root[data-chat-header-overlay] .chatbox-app-content {
+  margin-top: calc(-1 * var(--chatbox-status-bar-inset));
+}
+
+.chatbox-scroll-under-fade {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent calc(var(--chatbox-status-bar-inset) + 8px),
+    rgb(0 0 0 / 0.06) calc(var(--chatbox-status-bar-inset) + 36px),
+    rgb(0 0 0 / 0.3) calc(var(--chatbox-title-bar-overlay-height) + 2px),
+    #000 calc(var(--chatbox-title-bar-overlay-height) + 16px)
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent calc(var(--chatbox-status-bar-inset) + 8px),
+    rgb(0 0 0 / 0.06) calc(var(--chatbox-status-bar-inset) + 36px),
+    rgb(0 0 0 / 0.3) calc(var(--chatbox-title-bar-overlay-height) + 2px),
+    #000 calc(var(--chatbox-title-bar-overlay-height) + 16px)
+  );
+}
+
 /* The message list fades its bottom edge into the composer instead of cutting content off above it. */
 .chatbox-scroll-bottom-fade {
   -webkit-mask-image: linear-gradient(to top, transparent, #000 12px);

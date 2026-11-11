@@ -29,6 +29,7 @@ const h = vi.hoisted(() => ({
   navigation: null as TranscriptNavigation | null,
   firstReady: false,
   measuredHeight: 1000,
+  overlayInset: 95,
   currentScroller: null as HTMLDivElement | null,
   itemsRendered: null as ((items: Array<{ size: number }>) => void) | null,
   initialLocations: [] as unknown[],
@@ -100,6 +101,10 @@ vi.mock('@/platform', () => ({
   },
 }))
 vi.mock('@/hooks/useScreenChange', () => ({ useIsSmallScreen: () => h.smallScreen }))
+vi.mock('../layout/title-bar-overlay', () => ({
+  TITLE_BAR_OVERLAY_HEIGHT: 'var(--chatbox-title-bar-overlay-height)',
+  measureTitleBarOverlayInset: () => h.overlayInset,
+}))
 vi.mock('@/stores/sessionActivityStore', () => ({ useSessionActivity: () => h.activity }))
 vi.mock('@/hooks/useNeedRoomForWinControls', async () => {
   const { atom } = await import('jotai')
@@ -417,6 +422,7 @@ beforeEach(() => {
   h.navigation = null
   h.firstReady = false
   h.measuredHeight = 1000
+  h.overlayInset = 95
   h.currentScroller = null
   h.itemsRendered = null
   h.initialLocations.length = 0
@@ -1723,6 +1729,40 @@ describe('Virtuoso positioning', () => {
     await waitFor(() => expect(h.controller!.getSnapshot().layout).toBeNull())
     expect(h.scrollToIndex).toHaveBeenCalledExactlyOnceWith({ index: 59, align: 'start' })
     expect(h.read).toHaveBeenCalledTimes(1)
+  })
+
+  test('lands small-screen explicit targets below the header overlay', async () => {
+    h.smallScreen = true
+    render(<Host search="m60" />)
+    await waitFor(() => expect(h.firstReady).toBe(true))
+    expect(h.initialLocations.at(-1)).toEqual({ index: 49, align: 'start', offset: -95 })
+    act(() => void h.navigation?.navigateMessage('m70'))
+    await waitFor(() => expect(h.controller!.getSnapshot().layout).toBeNull())
+    expect(h.scrollToIndex).toHaveBeenCalledExactlyOnceWith({ index: 59, align: 'start', offset: -95 })
+    act(() => void h.navigation?.scrollToIndex({ index: 40, align: 'start', behavior: 'smooth' }))
+    expect(h.scrollToIndex).toHaveBeenLastCalledWith({ index: 40, align: 'start', behavior: 'smooth', offset: -95 })
+    act(() => void h.navigation?.scrollToIndex({ index: 41, align: 'end', behavior: 'auto' }))
+    expect(h.scrollToIndex).toHaveBeenLastCalledWith({ index: 41, align: 'end', behavior: 'auto' })
+  })
+
+  test('lands small-screen previous and next user navigation below the header overlay', async () => {
+    h.smallScreen = true
+    const view = render(<Host search="m60" />)
+    await waitFor(() => expect(h.firstReady).toBe(true))
+    const viewport = view.getByTestId('virtuoso')
+    viewport.getBoundingClientRect = () => ({ top: 0, bottom: 600 }) as DOMRect
+    for (const message of Array.from(view.container.querySelectorAll<HTMLElement>('[data-transcript-message]'))) {
+      const top = (Number(message.dataset.transcriptMessage?.slice(1)) - 60) * 100
+      message.getBoundingClientRect = () => ({ top, bottom: top + 100 }) as DOMRect
+    }
+    viewport.scrollTop = 350
+    fireEvent.scroll(viewport)
+    viewport.scrollTop = 250
+    fireEvent.scroll(viewport)
+    const previous = await view.findByRole('button', { name: 'Back to previous message' })
+    Object.defineProperty(previous.closest('div.pointer-events-none'), 'offsetHeight', { value: 52 })
+    fireEvent.click(previous)
+    expect(h.scrollToIndex).toHaveBeenLastCalledWith({ index: 47, align: 'start', behavior: 'smooth', offset: -147 })
   })
 
   test('starts previous and next user navigation at the viewport message while overscan rows are mounted', async () => {

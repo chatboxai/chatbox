@@ -57,6 +57,7 @@ import { ErrorNotice } from '../common/ErrorNotice'
 import errorNoticeClasses from '../common/ErrorNotice.module.css'
 import { ScalableIcon } from '../common/ScalableIcon'
 import Loading from '../icons/Loading'
+import { measureTitleBarOverlayInset, TITLE_BAR_OVERLAY_HEIGHT } from '../layout/title-bar-overlay'
 import { BlockCodeCollapsedStateProvider } from '../Markdown'
 import ForkGroup from './ForkGroup'
 import ForkMarkerMessage from './ForkMarkerMessage'
@@ -68,7 +69,7 @@ import { areMinimapAnchorsEqual, buildMessageMinimapAnchors } from './message-na
 import { buildTranscriptRenderItems } from './message-render-items'
 import SummaryMessage from './SummaryMessage'
 import { createSendFollowIntent, sendFromHistoryFollowsTail } from './send-follow-intent'
-import { getTranscriptFirstItemIndex, getTranscriptItemLocation } from './transcript-virtuoso-position'
+import { getTranscriptFirstItemIndex, getTranscriptItemLocation, withTopInset } from './transcript-virtuoso-position'
 
 type Transcript = ReturnType<typeof useSessionTranscript>
 const followOutputToBottom = () => 'auto' as const
@@ -95,6 +96,10 @@ const MessageList = forwardRef<
   const session = headerRead.header
   const controller = transcript.controller
   const isSmallScreen = useIsSmallScreen()
+  // Small screens float the session header over the top of the list; explicit targets land below it.
+  const smallScreen = useRef(isSmallScreen)
+  smallScreen.current = isSmallScreen
+  const topInset = useCallback(() => (smallScreen.current ? measureTitleBarOverlayInset() : 0), [])
   const activity = useSessionActivity(session.id)
   const platformType = useAtomValue(platformTypeAtom)
   const widthFull = useUIStore((state) => state.widthFull)
@@ -240,7 +245,7 @@ const MessageList = forwardRef<
     epoch: transcript.windowEpoch,
     items,
     firstItemIndex: 1_000_000,
-    initialLocation: getTranscriptItemLocation(items, transcript.layout),
+    initialLocation: getTranscriptItemLocation(items, transcript.layout, topInset()),
     initialRequestId: transcript.layout?.requestId,
   }))
   if (position.items !== items || position.epoch !== transcript.windowEpoch) {
@@ -251,7 +256,9 @@ const MessageList = forwardRef<
       firstItemIndex: newWindow
         ? 1_000_000
         : getTranscriptFirstItemIndex(position.items, items, position.firstItemIndex),
-      initialLocation: newWindow ? getTranscriptItemLocation(items, transcript.layout) : position.initialLocation,
+      initialLocation: newWindow
+        ? getTranscriptItemLocation(items, transcript.layout, topInset())
+        : position.initialLocation,
       initialRequestId: newWindow ? transcript.layout?.requestId : position.initialRequestId,
     })
   }
@@ -260,9 +267,9 @@ const MessageList = forwardRef<
   const positionedRequest = useRef<number | null>(null)
   const scrollToItem = useCallback(
     (index: number, align: 'start' | 'end' | 'center' = 'start', behavior: 'auto' | 'smooth' = 'auto') => {
-      virtuoso.current?.scrollToIndex({ index, align, behavior })
+      virtuoso.current?.scrollToIndex(withTopInset({ index, align, behavior }, topInset()))
     },
-    []
+    [topInset]
   )
   const sendFollowIntent = useMemo(createSendFollowIntent, [controller])
   const [followOutput, setFollowOutputState] = useState(false)
@@ -535,11 +542,11 @@ const MessageList = forwardRef<
       positionedRequest.current !== layout.requestId
     ) {
       positionedRequest.current = layout.requestId
-      virtuoso.current.scrollToIndex(getTranscriptItemLocation(live.current.items, layout))
+      virtuoso.current.scrollToIndex(getTranscriptItemLocation(live.current.items, layout, topInset()))
     }
     if (!live.current.items.length || measuredEpoch.current === state.windowEpoch)
       controller.acknowledgeLayout(layout.requestId)
-  }, [controller, position.initialRequestId])
+  }, [controller, position.initialRequestId, topInset])
   useLayoutEffect(() => {
     applyLayout()
   }, [transcript.layout, items, applyLayout])
@@ -669,16 +676,15 @@ const MessageList = forwardRef<
       touchY.current = null
       scrollbarPointer.current = null
       setHighlighted(target.messageId)
-      // The small-screen navigation bar overlays the top of the list; land the message below it.
-      const barHeight = navigationBar.current?.offsetHeight
-      virtuoso.current?.scrollToIndex({
-        index,
-        align: 'start',
-        behavior: 'smooth',
-        ...(barHeight ? { offset: -barHeight } : {}),
-      })
+      // The small-screen navigation bar sits below the header overlay; land the message below both.
+      virtuoso.current?.scrollToIndex(
+        withTopInset(
+          { index, align: 'start' as const, behavior: 'smooth' as const },
+          topInset() + (navigationBar.current?.offsetHeight ?? 0)
+        )
+      )
     },
-    [controller, leaveTail]
+    [controller, leaveTail, topInset]
   )
   const shouldConfirmPromptCacheDelete = useCallback(
     (messageId: string, target: PromptCacheDeleteTarget) =>
@@ -899,8 +905,8 @@ const MessageList = forwardRef<
               {(transitionStyle) => (
                 <div
                   ref={navigationBar}
-                  style={transitionStyle}
-                  className="pointer-events-none absolute z-10 top-0 left-0 right-0 flex justify-center px-3 pt-2"
+                  style={{ ...transitionStyle, top: TITLE_BAR_OVERLAY_HEIGHT }}
+                  className="pointer-events-none absolute z-10 left-0 right-0 flex justify-center px-3 pt-2"
                 >
                   <Flex
                     align="center"
@@ -939,7 +945,7 @@ const MessageList = forwardRef<
             </Transition>
           )}
           {(transcript.firstWindowReady || items.length > 0 || transcript.operation?.phase !== 'reading') && (
-            <div className="chatbox-scroll-top-fade h-full">
+            <div className={cn('h-full', isSmallScreen ? 'chatbox-scroll-under-fade' : 'chatbox-scroll-top-fade')}>
               <Virtuoso
                 key={`${session.id}:${transcript.windowEpoch}`}
                 style={{
@@ -959,6 +965,7 @@ const MessageList = forwardRef<
                 initialTopMostItemIndex={position.initialLocation}
                 components={transcriptListComponents}
                 context={{
+                  topInset: isSmallScreen,
                   columnClassName: paddedContentColumnClassName(widthFull),
                   hasOlder: transcript.hasOlder,
                   hasNewer: transcript.hasNewer,
@@ -1097,6 +1104,8 @@ const MessageList = forwardRef<
 export default memo(MessageList)
 
 interface TranscriptListContext {
+  /** Small screens: the transparent header overlays the list, so the list starts with a spacer of its height. */
+  topInset: boolean
   columnClassName: string
   hasOlder: boolean
   hasNewer: boolean
@@ -1122,12 +1131,16 @@ function TranscriptEdgeLoading({ hasMore }: { hasMore: boolean }) {
   )
 }
 const transcriptListComponents = {
-  Header: ({ context }: ContextProp<TranscriptListContext>) =>
-    context.olderNotice ? (
-      <div className={cn(context.columnClassName, 'pt-4')}>{context.olderNotice}</div>
-    ) : (
-      <TranscriptEdgeLoading hasMore={context.hasOlder} />
-    ),
+  Header: ({ context }: ContextProp<TranscriptListContext>) => (
+    <>
+      {context.topInset && <div aria-hidden="true" style={{ height: TITLE_BAR_OVERLAY_HEIGHT }} />}
+      {context.olderNotice ? (
+        <div className={cn(context.columnClassName, 'pt-4')}>{context.olderNotice}</div>
+      ) : (
+        <TranscriptEdgeLoading hasMore={context.hasOlder} />
+      )}
+    </>
+  ),
   Footer: ({ context }: ContextProp<TranscriptListContext>) =>
     context.newerNotice ? (
       <div className={cn(context.columnClassName, 'pb-4')}>{context.newerNotice}</div>

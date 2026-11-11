@@ -39,4 +39,28 @@ describe('Virtuoso transcript positions', () => {
       getTranscriptItemLocation(items, { requestId: 2, kind: 'tail', anchor: { threadId: 't', messageId: 'a' } })
     ).toEqual({ index: 'LAST', align: 'end' })
   })
+
+  test('offsets start-aligned targets by the top inset and leaves the tail at the bottom', () => {
+    const items = buildMessageRenderItems([
+      { id: 'u', role: 'user', contentParts: [] },
+      { id: 'a', role: 'assistant', contentParts: [] },
+      { id: 'u2', role: 'user', contentParts: [] },
+    ])
+    const anchor = { threadId: 't', messageId: 'u2' }
+    expect(getTranscriptItemLocation(items, { requestId: 1, kind: 'anchor', anchor }, 95)).toEqual({
+      index: 2,
+      align: 'start',
+      offset: -95,
+    })
+    expect(getTranscriptItemLocation(items, { requestId: 2, kind: 'head', anchor }, 95)).toEqual({
+      index: 0,
+      align: 'start',
+      offset: -95,
+    })
+    expect(getTranscriptItemLocation(items, { requestId: 3, kind: 'tail', anchor }, 95)).toEqual({
+      index: 'LAST',
+      align: 'end',
+    })
+    expect(getTranscriptItemLocation(items, null, 95)).toEqual({ index: 'LAST', align: 'end' })
+  })
 })

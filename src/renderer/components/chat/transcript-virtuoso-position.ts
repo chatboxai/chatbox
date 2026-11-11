@@ -14,11 +14,25 @@ export function getTranscriptFirstItemIndex(
   return removed >= 0 ? firstItemIndex + removed : firstItemIndex
 }
 
+/**
+ * Where an explicit layout lands. Start-aligned targets move down by `topInset`, the height of a header
+ * overlaying the top of the list, so they land below it.
+ */
 export function getTranscriptItemLocation(
   items: readonly MessageRenderItem[],
-  layout: SessionTranscriptLayoutRequest | null
+  layout: SessionTranscriptLayoutRequest | null,
+  topInset = 0
 ): FlatIndexLocationWithAlign {
   if (!layout || layout.kind === 'tail') return { index: 'LAST', align: 'end' }
   const index = items.findIndex((item) => item.messages.some((message) => message.id === layout.anchor.messageId))
-  return { index: layout.kind === 'head' ? 0 : Math.max(0, index), align: 'start' }
+  return withTopInset({ index: layout.kind === 'head' ? 0 : Math.max(0, index), align: 'start' }, topInset)
+}
+
+/** Moves a start-aligned location down by `topInset`; other alignments are unaffected. */
+export function withTopInset<T extends { align?: 'start' | 'center' | 'end'; offset?: number }>(
+  location: T,
+  topInset: number
+): T {
+  if (!topInset || (location.align ?? 'start') !== 'start') return location
+  return { ...location, offset: (location.offset ?? 0) - topInset }
 }

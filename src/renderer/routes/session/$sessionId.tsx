@@ -302,13 +302,7 @@ function RouteComponent() {
 
   return currentSession ? (
     <div className="flex h-full">
-      <div
-        className={cn(
-          'flex min-w-0 flex-1 flex-col h-full',
-          !isSmallScreen && 'relative',
-          contentColumnContainerClassName(widthFull)
-        )}
-      >
+      <div className={cn('relative flex min-w-0 flex-1 flex-col h-full', contentColumnContainerClassName(widthFull))}>
         <Header session={currentSession} />
         <MessageList
           ref={messageListRef}

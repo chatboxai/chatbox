@@ -1,5 +1,7 @@
 import { Box, Flex, Text } from '@mantine/core'
+import { TestId } from '@shared/automation/testids'
 import { IconMenu2 } from '@tabler/icons-react'
+import clsx from 'clsx'
 import type { FC, ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import useNeedRoomForWinControls from '@/hooks/useNeedRoomForWinControls'
@@ -9,24 +11,31 @@ import Divider from '../common/Divider'
 import { ICON_SIZE, IconButton } from '../common/IconButton'
 import { TitleBarContent } from './AppTitleBar'
 import { MobileWebDownloadBanner } from './DesktopDownloadReminder'
+import { useTitleBarOverlayRoot } from './title-bar-overlay'
 import WindowControls from './WindowControls'
 
 export type PageHeaderProps = {
   title: string | ReactNode
   left?: ReactNode
   right?: ReactNode
+  /**
+   * Small screens: float the header over the content below it, which scrolls up under the header and the
+   * status bar. The content reserves `--chatbox-title-bar-overlay-height` at its top.
+   */
+  overlay?: boolean
 }
 
 /**
  * Page title row. Wide layouts render it into the app title bar; small screens get a header row
  * with the sidebar menu button and a centered title.
  */
-export const PageHeader: FC<PageHeaderProps> = ({ title, left, right }) => {
+export const PageHeader: FC<PageHeaderProps> = ({ title, left, right, overlay }) => {
   const { t } = useTranslation()
   const showSidebar = useUIStore((s) => s.showSidebar)
   const setShowSidebar = useUIStore((s) => s.setShowSidebar)
   const isSmallScreen = useIsSmallScreen()
   const { needRoomForMacWindowControls } = useNeedRoomForWinControls()
+  useTitleBarOverlayRoot(!!overlay && isSmallScreen)
 
   if (!isSmallScreen) {
     return (
@@ -54,41 +63,60 @@ export const PageHeader: FC<PageHeaderProps> = ({ title, left, right }) => {
     )
   }
 
+  const row = (
+    <Flex
+      h="var(--chatbox-title-bar-height)"
+      align="center"
+      px={4}
+      className={clsx(
+        'title-bar chatbox-title-bar flex-none bg-chatbox-background-primary',
+        overlay && 'pointer-events-none [&_.controls]:pointer-events-auto [&_button]:pointer-events-auto'
+      )}
+    >
+      <Flex align="center" miw={44} className={needRoomForMacWindowControls ? 'pl-20' : ''}>
+        {left || (
+          <IconButton
+            className="controls"
+            icon={IconMenu2}
+            size="lg"
+            iconSize={ICON_SIZE.touch}
+            color="chatbox-secondary"
+            aria-label={t('Expand')}
+            data-testid={TestId.sidebar.open}
+            onClick={() => setShowSidebar(!showSidebar)}
+          />
+        )}
+      </Flex>
+      <Flex align="center" justify="center" gap="xxs" flex={1} miw={0} px="sm">
+        {typeof title === 'string' ? (
+          <Text component="h1" fw={600} fz={16} lh="24px" m={0} truncate="end">
+            {title}
+          </Text>
+        ) : (
+          title
+        )}
+      </Flex>
+      <Flex align="center" justify="flex-end" miw={44} className="controls">
+        {right}
+      </Flex>
+      <WindowControls className="-mr-3 ml-2" />
+    </Flex>
+  )
+
+  if (overlay) {
+    return (
+      <div className="chatbox-title-bar-overlay pointer-events-none absolute inset-x-0 top-0 z-20">
+        {row}
+        <div className="pointer-events-auto">
+          <MobileWebDownloadBanner />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <>
-      <Flex
-        h={48}
-        align="center"
-        px={4}
-        className="title-bar chatbox-title-bar flex-none bg-chatbox-background-primary"
-      >
-        <Flex align="center" miw={44} className={needRoomForMacWindowControls ? 'pl-20' : ''}>
-          {left || (
-            <IconButton
-              className="controls"
-              icon={IconMenu2}
-              size="lg"
-              iconSize={ICON_SIZE.touch}
-              color="chatbox-secondary"
-              aria-label={t('Expand')}
-              onClick={() => setShowSidebar(!showSidebar)}
-            />
-          )}
-        </Flex>
-        <Flex align="center" justify="center" gap="xxs" flex={1} miw={0} px="sm">
-          {typeof title === 'string' ? (
-            <Text component="h1" fw={600} fz={16} lh="24px" m={0} truncate="end">
-              {title}
-            </Text>
-          ) : (
-            title
-          )}
-        </Flex>
-        <Flex align="center" justify="flex-end" miw={44} className="controls">
-          {right}
-        </Flex>
-        <WindowControls className="-mr-3 ml-2" />
-      </Flex>
+      {row}
       <Divider className="chatbox-title-bar-divider" />
       <MobileWebDownloadBanner />
     </>

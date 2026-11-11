@@ -361,7 +361,7 @@ function Root() {
       {platform.isDesktopLike && (getOS() === 'Windows' || getOS() === 'Linux') && <ExitFullscreenButton />}
       {isSmallScreen && wallpaperUrl && <BackgroundImageOverlay imageUrl={wallpaperUrl} />}
       <AppTitleBar />
-      <Grid container className="min-h-0 flex-1 relative z-[1]">
+      <Grid container className="chatbox-app-content min-h-0 flex-1 relative z-[1]">
         <Sidebar />
         <Box
           className="relative h-full w-full box-border"

@@ -127,6 +127,17 @@ const MessageList = forwardRef<
     [transcript.rows, transcript.threads, showThreadLabels]
   )
   const rowsById = useMemo(() => new Map(transcript.rows.map((row) => [row.messageId, row])), [transcript.rows])
+  // A new compaction point may only follow every summary of the active conversation: inserting one before an
+  // existing summary would cover part of that summary's prefix twice. Archived threads are read-only history.
+  const compactHereIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const row of transcript.rows) {
+      if (row.threadId !== headerRead.activeThreadId) continue
+      if (row.message.isSummary) ids.clear()
+      else ids.add(row.messageId)
+    }
+    return ids
+  }, [transcript.rows, headerRead.activeThreadId])
   const threadById = useMemo(
     () => new Map(transcript.threads.map((thread) => [thread.threadId, thread])),
     [transcript.threads]
@@ -748,6 +759,7 @@ const MessageList = forwardRef<
                 assistantAvatarKey={session.assistantAvatarKey}
                 sessionPicUrl={session.picUrl}
                 assistantName={assistantName}
+                compactHereAvailable={compactHereIds.has(message.id)}
               />
             )}
           </ErrorBoundary>

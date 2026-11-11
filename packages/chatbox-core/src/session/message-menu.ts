@@ -13,6 +13,7 @@ export type MessageMenuEntryId =
   | 'generate-more-images'
   | 'select-text'
   | 'quote'
+  | 'compact-here'
   | 'divider'
   | 'report'
   | 'view-json'
@@ -29,6 +30,8 @@ export interface MessageMenuAvailability {
   generateMoreImages: boolean
   selectText: boolean
   quote: boolean
+  /** "Compact up to here": the host offers it only for messages after the conversation's latest summary. */
+  compactHere: boolean
   report: boolean
   viewJson: boolean
   delete: boolean
@@ -46,6 +49,17 @@ function hasError(message: MessageMenuMessage): boolean {
 }
 
 /**
+ * "Compact up to here" can close the compacted window at settled user and assistant messages. Failed replies never
+ * enter the model context, and image-session replies carry no text to summarize.
+ */
+export function canCompactUpToMessage(message: MessageMenuMessage, context: MessageMenuContext = {}): boolean {
+  const isAssistant = message.role === 'assistant'
+  if (!isAssistant && message.role !== 'user') return false
+  if (message.generating) return false
+  return !(isAssistant && (hasError(message) || context.pictureSession))
+}
+
+/**
  * Ordered entries for one message. Availability flags carry the caller's mode/permission rules (work mode, read-only
  * handlers, dev-only JSON); this function applies the per-state rules every platform shares:
  * - generating: stop / copy / select text / quote ── delete
@@ -53,6 +67,7 @@ function hasError(message: MessageMenuMessage): boolean {
  * - user: reply again below / edit / copy / select text / quote ── delete
  * - failed assistant reply: reply again / copy / select text / quote ── report / delete
  * - image session assistant reply: reply again / generate more images below / quote ── report / delete
+ * "Compact up to here" follows quote where `canCompactUpToMessage` allows it.
  */
 export function getMessageMenuEntries(
   message: MessageMenuMessage,
@@ -86,6 +101,7 @@ export function getMessageMenuEntries(
     if (availability.selectText) primary.push('select-text')
   }
   if (availability.quote) primary.push('quote')
+  if (availability.compactHere && canCompactUpToMessage(message, context)) primary.push('compact-here')
 
   if (isAssistant && !generating && availability.report) secondary.push('report')
   if (availability.viewJson) secondary.push('view-json')

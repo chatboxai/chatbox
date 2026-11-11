@@ -23,6 +23,7 @@ const all: MessageMenuAvailability = {
   generateMoreImages: true,
   selectText: true,
   quote: true,
+  compactHere: false,
   report: true,
   viewJson: false,
   delete: true,

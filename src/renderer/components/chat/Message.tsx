@@ -9,6 +9,7 @@ import {
 } from '@chatbox/core/session/action-gates'
 import { isCancellableGeneratingAssistantMessage } from '@chatbox/core/session/generation-state'
 import { getMessageFinishTip } from '@chatbox/core/session/message-finish-tip'
+import { canCompactUpToMessage, clipMessageMenuPreview } from '@chatbox/core/session/message-menu'
 import {
   isActionAvailableInMode,
   type SessionMode,
@@ -30,6 +31,7 @@ import {
   IconCode,
   IconCopy,
   IconDotsVertical,
+  IconFileZip,
   IconInfoCircle,
   IconLoader2,
   IconMessageReport,
@@ -74,6 +76,7 @@ import { confirmPromptCacheBreakingAction, isPromptCacheBreakConfirmDismissed } 
 import { getSessionLockNotice, notifySessionLockBlocked } from '@/utils/session-lock-copy'
 import ActionMenu, { type ActionMenuItemProps } from '../ActionMenu'
 import { AssistantAvatar, SystemAvatar, UserAvatar } from '../common/Avatar'
+import { CompressionModal } from '../common/CompressionModal'
 import { ICON_SIZE, ICON_STROKE_WIDTH } from '../common/IconButton'
 import { ScalableIcon } from '../common/ScalableIcon'
 import Loading from '../icons/Loading'
@@ -146,6 +149,8 @@ interface Props {
   sessionPicUrl?: string
   /** Assistant name set for the chat or taken from its copilot; it replaces the provider as the bold name in the header row. */
   assistantName?: string
+  /** The message follows every summary of the active conversation, so it can take a new compaction point. */
+  compactHereAvailable?: boolean
 }
 
 const BackgroundTaskNotificationUI: FC<{ task: MessageBackgroundTask; className?: string }> = ({ task, className }) => {
@@ -194,6 +199,7 @@ const _Message: FC<Props> = (props) => {
     assistantAvatarKey,
     sessionPicUrl,
     assistantName,
+    compactHereAvailable = false,
   } = props
 
   const { t } = useTranslation()
@@ -695,6 +701,25 @@ const _Message: FC<Props> = (props) => {
     uiStore.getState().openSessionPanel(props.sessionId, 'settings')
   }
 
+  const [compactHereOpened, setCompactHereOpened] = useState(false)
+  const compactHereOffered =
+    compactHereAvailable && !readOnly && canCompactUpToMessage(msg, { pictureSession: props.sessionType === 'picture' })
+  const compactHereAllowed = getSessionActionGate('compact-here', sessionLocks, {
+    messageGenerating: msg.generating,
+  }).allowed
+  const compactHereMenuItem = useMemo<ActionMenuItemProps | null>(
+    () =>
+      compactHereOffered
+        ? {
+            text: t('Compact up to here'),
+            icon: IconFileZip,
+            disabled: !compactHereAllowed,
+            onClick: () => setCompactHereOpened(true),
+          }
+        : null,
+    [compactHereOffered, compactHereAllowed, t]
+  )
+
   const actionMenuItems = useMemo<ActionMenuItemProps[]>(
     () => [
       ...(isSmallScreen
@@ -743,6 +768,7 @@ const _Message: FC<Props> = (props) => {
         testId: TestId.message.actionQuote,
         onClick: quoteMsg,
       },
+      ...(compactHereMenuItem ? [compactHereMenuItem] : []),
       { divider: true },
       ...(msg.role === 'assistant'
         ? [
@@ -797,6 +823,7 @@ const _Message: FC<Props> = (props) => {
       canEditMessage,
       canDeleteMessage,
       confirmCacheBreakingDelete,
+      compactHereMenuItem,
     ]
   )
   const [actionMenuOpened, setActionMenuOpened] = useState(false)
@@ -1235,6 +1262,16 @@ const _Message: FC<Props> = (props) => {
     </Flex>
   )
 
+  const compactHereModal = compactHereOpened && (
+    <CompressionModal
+      opened
+      onClose={() => setCompactHereOpened(false)}
+      session={{ id: sessionId }}
+      targetMessageId={msg.id}
+      targetPreview={clipMessageMenuPreview(getMessageText(msg))}
+    />
+  )
+
   const messageActions = (
     <>
       {actionButtons}
@@ -1372,6 +1409,7 @@ const _Message: FC<Props> = (props) => {
           </Flex>
           {isRightAlignedMessage && avatar}
         </Flex>
+        {compactHereModal}
       </Box>
     )
   }
@@ -1417,6 +1455,7 @@ const _Message: FC<Props> = (props) => {
           </Grid>
         </Grid>
       </Grid>
+      {compactHereModal}
     </Box>
   )
 }

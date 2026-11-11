@@ -8,6 +8,7 @@ import {
   IDLE_SESSION_LOCK_STATE,
   isGenerationLocked,
   SessionActionBlockedError,
+  type SessionActionContext,
   type SessionLockState,
   shouldShowConcurrentReplyStop,
 } from './action-gates'
@@ -293,6 +294,16 @@ describe('getSessionActionGate', () => {
       reason: 'awaiting-pause-decision',
     })
     expect(getSessionActionGate('submit-message', IDLE_SESSION_LOCK_STATE)).toEqual({ allowed: true })
+  })
+
+  it('blocks compacting up to a message while the conversation it rewrites is busy', () => {
+    const reason = (state: SessionLockState, context?: SessionActionContext) =>
+      getSessionActionGate('compact-here', state, context).reason
+    expect(reason(IDLE_SESSION_LOCK_STATE, { messageGenerating: true })).toBe('message-streaming')
+    expect(reason(locks({ anyReplyGenerating: true }))).toBe('generating')
+    expect(reason(locks({ compactionRunning: true }))).toBe('compaction')
+    expect(reason(locks({ awaitingPauseDecision: true }))).toBe('awaiting-pause-decision')
+    expect(getSessionActionGate('compact-here', IDLE_SESSION_LOCK_STATE)).toEqual({ allowed: true })
   })
 })
 

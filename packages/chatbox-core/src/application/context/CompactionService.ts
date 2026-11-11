@@ -250,13 +250,20 @@ export class CompactionService {
       const modelId = session.settings?.modelId ?? globalSettings.defaultChatModel?.model
       if (!modelId) return { status: 'skipped', reason: 'no_model' }
       const sessionSettings = await this.options.sessions.getSessionSettings(sessionId, session)
-      const source = await this.options.sessions.getSessionContextSource({
+      const sourceRequest = {
         sessionId,
         expectedRevision: read.revision,
         maxContextMessageCount: sessionSettings.maxContextMessageCount,
         reserveCurrentInput: true,
         ...(request.kind === 'generation' ? { targetMessageId: request.targetMessageId } : {}),
-      })
+        ...(request.kind === 'targeted' ? { targetMessageId: request.targetMessageId, includeTarget: true } : {}),
+      }
+      const source =
+        request.kind === 'targeted'
+          ? // A target deleted or moved since the user picked it cannot be read on its path.
+            await this.options.sessions.getSessionContextSource(sourceRequest).catch(() => undefined)
+          : await this.options.sessions.getSessionContextSource(sourceRequest)
+      if (source === undefined) return { status: 'skipped', reason: 'stale_path' }
       if (!source) return this.failure('session_not_found', 'Session not found')
 
       const planned = await createCompactionPlan(source, request, (context, pendingMessage) =>

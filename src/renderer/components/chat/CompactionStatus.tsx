@@ -14,7 +14,7 @@ import { useTranslation } from 'react-i18next'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { useCopied } from '@/hooks/useCopied'
 import { GLASS_FILL_CLASS } from '@/lib/glass-surface'
-import { requestManualCompaction } from '@/packages/context-management'
+import { requestManualCompaction, requestTargetedCompaction } from '@/packages/context-management'
 import { compactionUIStateMapAtom, setCompactionUIState } from '@/stores/atoms'
 import { add as addToast } from '@/stores/toastActions'
 import { ScalableIcon } from '../common/ScalableIcon'
@@ -83,7 +83,16 @@ export const CompactionStatus = memo(function CompactionStatus({ sessionId }: Co
   // Retry is an explicit request to compress now. The automatic threshold check would
   // skip it once the message that triggered the failed compression is no longer pending.
   const handleRetry = useCallback(() => {
-    void requestManualCompaction(sessionId, { force: true, prompt: compactionState.retryPrompt })
+    const { retryPrompt, retryTargetMessageId } = compactionState
+    if (retryTargetMessageId) {
+      void requestTargetedCompaction(sessionId, retryTargetMessageId, { prompt: retryPrompt })
+        .then((outcome) => {
+          if (outcome === 'busy') addToast(t('Compression could not start'))
+        })
+        .catch(() => addToast(t('Compression could not start')))
+      return
+    }
+    void requestManualCompaction(sessionId, { force: true, prompt: retryPrompt })
       .then((outcome) => {
         if (outcome === 'queue-full') {
           addToast(t('Message queue is full'))
@@ -94,7 +103,7 @@ export const CompactionStatus = memo(function CompactionStatus({ sessionId }: Co
         }
       })
       .catch(() => addToast(t('Compression could not start')))
-  }, [compactionState.retryPrompt, sessionId, t])
+  }, [compactionState, sessionId, t])
 
   const handleDismiss = useCallback(() => {
     setCompactionUIState(sessionId, {

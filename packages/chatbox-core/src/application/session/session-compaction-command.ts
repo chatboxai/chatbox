@@ -10,6 +10,32 @@ import {
   type StructurePlan,
 } from './session-structure-plan'
 
+/** Root-first identities from the thread root through `messageId`; null when the chain is broken. */
+async function readAncestorPath(
+  reader: StructureCommandReader,
+  threadId: string,
+  messageId: string | null
+): Promise<string[] | null> {
+  const reversed: string[] = []
+  const seen = new Set<string>()
+  let next = messageId
+  while (next) {
+    const page = await reader.relations(threadId, { kind: 'ancestors', messageId: next }, 200)
+    if (!page.length) return null
+    for (const row of page) {
+      if (seen.has(row.messageId)) throw new Error('Compaction ancestry contains a cycle')
+      seen.add(row.messageId)
+      reversed.push(row.messageId)
+    }
+    next = page.at(-1)!.parentMessageId
+  }
+  return reversed.reverse()
+}
+
+function samePath(path: readonly string[], expected: readonly string[]): boolean {
+  return path.length === expected.length && path.every((id, index) => id === expected[index])
+}
+
 /** Publish the summary and its checkpoint in the same owning-thread transaction. */
 export async function planCompactionStructure(
   reader: StructureCommandReader,
@@ -33,25 +59,22 @@ export async function planCompactionStructure(
       firstTool?.toolCallId !== operation.coverage.retainedToolCallId
     )
       return empty()
-    const reversed: string[] = []
-    const seen = new Set<string>()
-    let next: string | null = target.parentMessageId
-    while (next) {
-      const page = await reader.relations(thread.threadId, { kind: 'ancestors', messageId: next }, 200)
-      if (!page.length) return empty()
-      for (const row of page) {
-        if (seen.has(row.messageId)) throw new Error('Compaction ancestry contains a cycle')
-        seen.add(row.messageId)
-        reversed.push(row.messageId)
-      }
-      next = page.at(-1)!.parentMessageId
+    const path = await readAncestorPath(reader, thread.threadId, target.parentMessageId)
+    if (!path || !samePath(path, operation.pathMessageIds)) return empty()
+  }
+  if (operation.coverage.kind === 'targeted') {
+    // The summary stands for exactly the prefix it was generated from; any structural change there abandons it.
+    const path = await readAncestorPath(reader, thread.threadId, boundary.messageId)
+    if (!path || !samePath(path, operation.pathMessageIds)) return empty()
+    // Every branch below the boundary moves under the new summary. A compaction point already inside that
+    // subtree would then be preceded by a summary covering part of its own prefix again.
+    const prefix = new Set(path)
+    for (const point of thread.compactionPoints) {
+      if (point.boundaryMessageId === boundary.messageId) return empty()
+      if (prefix.has(point.boundaryMessageId)) continue
+      const pointPath = await readAncestorPath(reader, thread.threadId, point.boundaryMessageId)
+      if (pointPath?.includes(boundary.messageId)) return empty()
     }
-    const path = reversed.reverse()
-    if (
-      path.length !== operation.pathMessageIds.length ||
-      path.some((id, index) => id !== operation.pathMessageIds[index])
-    )
-      return empty()
   }
   await assertNewMessages(reader, [operation.summary])
   if (!operation.summary.isSummary || operation.summary.role !== 'assistant')

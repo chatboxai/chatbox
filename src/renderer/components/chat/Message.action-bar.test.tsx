@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { IDLE_SESSION_LOCK_STATE, type SessionLockState } from '@chatbox/core/session/action-gates'
 import { MantineProvider } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import type { Message as MessageType } from '@shared/types'
@@ -85,7 +86,7 @@ vi.mock('../ActionMenu', () => ({
   }: {
     opened?: boolean
     onChange?: (opened: boolean) => void
-    items: { testId?: string; text?: ReactNode; onClick?: () => void }[]
+    items: { divider?: boolean; testId?: string; text?: ReactNode; disabled?: boolean; onClick?: () => void }[]
     children: ReactNode
   }) => (
     <>
@@ -93,9 +94,16 @@ vi.mock('../ActionMenu', () => ({
       {opened && (
         <div data-testid="message-menu">
           {items.map(
-            (item) =>
-              item.testId && (
-                <button key={item.testId} type="button" data-testid={item.testId} onClick={item.onClick}>
+            (item, index) =>
+              !item.divider && (
+                <button
+                  // biome-ignore lint/suspicious/noArrayIndexKey: static test menu
+                  key={index}
+                  type="button"
+                  data-testid={item.testId}
+                  disabled={item.disabled}
+                  onClick={item.onClick}
+                >
                   {item.text}
                 </button>
               )
@@ -104,6 +112,17 @@ vi.mock('../ActionMenu', () => ({
       )}
     </>
   ),
+}))
+vi.mock('../common/CompressionModal', () => ({
+  CompressionModal: ({
+    session,
+    targetMessageId,
+    targetPreview,
+  }: {
+    session: { id: string }
+    targetMessageId?: string
+    targetPreview?: string
+  }) => <div data-testid="compression-modal">{`${session.id}:${targetMessageId}:${targetPreview}`}</div>,
 }))
 vi.mock('../message-parts/ToolCallPartUI', () => ({ MessageArtifactsUI: () => null, ToolCallPartUI: () => null }))
 vi.mock('../message-parts/StepTimelineUI', () => ({ ReasoningContentUI: () => null, StepTimelineUI: () => null }))
@@ -128,11 +147,27 @@ function userMessage(): MessageType {
   return { id: 'user-message', role: 'user', contentParts: [{ type: 'text', text: 'Hi' }] } as MessageType
 }
 
-function renderMessage(msg: MessageType, buttonGroup: MessageButtonGroup = 'auto') {
+interface RenderOptions {
+  compactHereAvailable?: boolean
+  readOnly?: boolean
+  sessionLocks?: SessionLockState
+  sessionType?: 'chat' | 'picture'
+}
+
+function renderMessage(msg: MessageType, buttonGroup: MessageButtonGroup = 'auto', options: RenderOptions = {}) {
   render(
     <MantineProvider>
       <TooltipProvider>
-        <Message sessionId="session" sessionType="chat" sessionMode="chat" msg={msg} buttonGroup={buttonGroup} />
+        <Message
+          sessionId="session"
+          sessionType={options.sessionType ?? 'chat'}
+          sessionMode="chat"
+          msg={msg}
+          buttonGroup={buttonGroup}
+          compactHereAvailable={options.compactHereAvailable}
+          readOnly={options.readOnly}
+          sessionLocks={options.sessionLocks}
+        />
       </TooltipProvider>
     </MantineProvider>
   )
@@ -327,4 +362,61 @@ test('wide screens keep the More menu to the secondary actions shown beside the 
   expect(within(menu).queryByTestId(TestId.message.actionMenuRetry)).toBeNull()
   expect(within(menu).getByTestId(TestId.message.actionQuote)).toBeTruthy()
   expect(within(menu).getByTestId(TestId.message.actionDelete)).toBeTruthy()
+})
+
+describe.each([
+  ['small', true],
+  ['wide', false],
+] as const)('"Compact up to here" in the More menu on %s screens', (_, smallScreen) => {
+  beforeEach(() => {
+    h.smallScreen = smallScreen
+  })
+
+  const compactHereItem = (menu: HTMLElement) =>
+    within(menu).queryByRole('button', { name: 'Compact up to here' }) as HTMLButtonElement | null
+
+  test.each([
+    ['an assistant reply', reply(), 'assistant-message:Hello there'],
+    ['a user message', userMessage(), 'user-message:Hi'],
+  ])('%s offers it right after Quote and opens the compression dialog for that message', (_, msg, target) => {
+    renderMessage(msg, 'auto', { compactHereAvailable: true })
+    const menu = openMoreMenu()
+    const labels = within(menu)
+      .getAllByRole('button')
+      .map((button) => button.textContent)
+    expect(labels[labels.indexOf('Quote') + 1]).toBe('Compact up to here')
+    expect(screen.queryByTestId('compression-modal')).toBeNull()
+
+    fireEvent.click(within(menu).getByRole('button', { name: 'Compact up to here' }))
+
+    expect(screen.getByTestId('compression-modal').textContent).toBe(`session:${target}`)
+  })
+
+  test.each([
+    ['the list does not offer it', reply(), { compactHereAvailable: false }],
+    ['the reply failed', reply({ error: 'boom' }), { compactHereAvailable: true }],
+    ['it is an image reply', reply(), { compactHereAvailable: true, sessionType: 'picture' as const }],
+  ])('is missing when %s', (_, msg, options) => {
+    renderMessage(msg, 'always', options)
+    const menu = openMoreMenu()
+    expect(compactHereItem(menu)).toBeNull()
+    expect(within(menu).getByTestId(TestId.message.actionQuote)).toBeTruthy()
+  })
+
+  test.each([
+    ['the conversation is read-only', reply(), { compactHereAvailable: true, readOnly: true }],
+    ['the reply is still generating', reply({ generating: true }), { compactHereAvailable: true }],
+  ])('is unreachable when %s, since the message has no More menu', (_, msg, options) => {
+    renderMessage(msg, 'always', options)
+    expect(screen.queryByTestId(TestId.message.actionMore)).toBeNull()
+    expect(screen.queryByText('Compact up to here')).toBeNull()
+  })
+
+  test('is disabled while another reply in the session is generating', () => {
+    renderMessage(reply(), 'auto', {
+      compactHereAvailable: true,
+      sessionLocks: { ...IDLE_SESSION_LOCK_STATE, anyReplyGenerating: true },
+    })
+    expect(compactHereItem(openMoreMenu())?.disabled).toBe(true)
+  })
 })

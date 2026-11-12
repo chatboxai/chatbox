@@ -1,11 +1,15 @@
 import { ActionIcon, Box, Flex, ScrollArea, Stack, Text, UnstyledButton } from '@mantine/core'
 import type { ImageGeneration } from '@shared/types'
-import { IconPlus, IconServer } from '@tabler/icons-react'
+import { IconInfoCircle, IconPlus, IconServer } from '@tabler/icons-react'
+import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Drawer } from 'vaul'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
+import { getImageModelDetail, ImageModelDetailDrawer } from '@/components/ImageModelDetails'
 import { ModelIcon } from '@/components/icons/ModelIcon'
 import ProviderIcon from '@/components/icons/ProviderIcon'
+import type { DetailModel } from '@/components/ModelSelectorV2/types'
+import type { ImageModelGroup } from '@/hooks/useImageModelGroups'
 import { HistoryListContent } from './HistoryPanel'
 
 /* ============================================
@@ -104,12 +108,7 @@ export function MobileHistoryDrawer({
 export interface MobileModelDrawerProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  modelGroups: {
-    label: string
-    providerId: string
-    isCustom?: boolean
-    models: { modelId: string; displayName: string }[]
-  }[]
+  modelGroups: ImageModelGroup[]
   selectedProvider: string
   selectedModel: string
   onSelect: (provider: string, model: string) => void
@@ -124,6 +123,8 @@ export function MobileModelDrawer({
   onSelect,
 }: MobileModelDrawerProps) {
   const { t } = useTranslation()
+  const [detail, setDetail] = useState<DetailModel | null>(null)
+  const detailTriggerRef = useRef<HTMLButtonElement | null>(null)
 
   return (
     <Drawer.Root open={open} onOpenChange={onOpenChange} noBodyStyles>
@@ -162,24 +163,46 @@ export function MobileModelDrawer({
                   {group.models.map((model) => {
                     const isSelected = selectedProvider === group.providerId && selectedModel === model.modelId
                     return (
-                      <UnstyledButton
+                      <Flex
                         key={`${group.providerId}:${model.modelId}`}
-                        onClick={() => {
-                          onSelect(group.providerId, model.modelId)
-                          onOpenChange(false)
-                        }}
+                        align="center"
                         className={`
-                          w-full px-4 py-3 rounded-lg transition-colors
+                          w-full rounded-lg transition-colors
                           ${isSelected ? 'bg-[var(--chatbox-background-brand-secondary)]' : 'hover:bg-[var(--chatbox-background-secondary)]'}
                         `}
                       >
-                        <Flex align="center" gap={10}>
-                          <ModelIcon providerId={group.providerId} modelId={model.modelId} size={20} />
-                          <Text size="sm" fw={isSelected ? 600 : 400}>
+                        <UnstyledButton
+                          className="flex min-w-0 flex-1 items-center gap-2.5 px-4 py-3"
+                          onClick={() => {
+                            onSelect(group.providerId, model.modelId)
+                            onOpenChange(false)
+                          }}
+                        >
+                          <ModelIcon
+                            providerId={group.providerId}
+                            modelId={model.modelId}
+                            size={20}
+                            className="shrink-0"
+                          />
+                          <Text size="sm" fw={isSelected ? 600 : 400} className="min-w-0 break-words">
                             {model.displayName}
                           </Text>
-                        </Flex>
-                      </UnstyledButton>
+                        </UnstyledButton>
+                        {model.description?.trim() && (
+                          <ActionIcon
+                            aria-label={t('Model details') as string}
+                            variant="transparent"
+                            size="sm"
+                            className="mr-4 shrink-0 text-chatbox-tint-tertiary hover:text-chatbox-tint-secondary"
+                            onClick={(event) => {
+                              detailTriggerRef.current = event.currentTarget
+                              setDetail(getImageModelDetail(group, model))
+                            }}
+                          >
+                            <ScalableIcon icon={IconInfoCircle} size={15} />
+                          </ActionIcon>
+                        )}
+                      </Flex>
                     )
                   })}
                   {groupIndex < modelGroups.length - 1 && (
@@ -191,6 +214,13 @@ export function MobileModelDrawer({
           </ScrollArea>
         </Drawer.Content>
       </Drawer.Portal>
+      <ImageModelDetailDrawer
+        model={detail}
+        onClose={() => setDetail(null)}
+        onRestoreFocus={() => {
+          if (detailTriggerRef.current?.isConnected) detailTriggerRef.current.focus({ preventScroll: true })
+        }}
+      />
     </Drawer.Root>
   )
 }

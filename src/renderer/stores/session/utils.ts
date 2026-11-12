@@ -1,23 +1,14 @@
 import { isExpectedGenerationError } from '@shared/models/error-classification'
 import { ApiError, BaseError, NetworkError, OCRError } from '@shared/models/errors'
 import { extractStreamErrorMessage } from '@shared/models/utils/stream-error-message'
-import { findMessageContext, findMessageSourceThread } from '@shared/session/message-forks'
-import type {
-  AgentModeValue,
-  CompactionPoint,
-  Message,
-  Session,
-  SessionSettings,
-  SessionType,
-  Settings,
-} from '@shared/types'
+import type { AgentModeValue, Message, SessionSettings, SessionType, Settings } from '@shared/types'
 import { resolveCommandApprovalMode } from '@shared/types/command-execution'
 import { normalizeErrorForSentry } from '@shared/utils/sentry_policy'
 import { identity, pickBy } from 'lodash'
 import { normalizePlausibleModel, normalizePlausibleProvider } from '@/analytics/plausible'
 import { bucketCount, toBooleanString } from '@/analytics/values'
 import { captureAgentModeException } from '@/observability/agent-mode'
-import { getModelDisplayName } from '@/packages/model-setting-utils'
+import { getMessageProviderName, getModelDisplayName } from '@/packages/model-setting-utils'
 import platform from '@/platform'
 import { reportError } from '@/utils/sentry'
 import { trackEvent } from '@/utils/track'
@@ -85,29 +76,6 @@ export function trackGenerateEvent(
 }
 
 /**
- * Find target message index in session messages or threads
- * @returns Object with messages array and index, or null if not found
- */
-export function findTargetMessageIndex(
-  session: Session,
-  targetMsgId: string
-): { messages: Message[]; index: number } | null {
-  const location = findMessageContext(session, targetMsgId)
-  return location && location.index > 0 ? { messages: location.list, index: location.index } : null
-}
-
-/**
- * Compaction points applicable to a target message's conversation: thread
- * points when the message lives in an archived thread (retry from history),
- * session points otherwise. Points are stored next to their message list
- * (see buildCompactionCommitPatch / thread archive flows).
- */
-export function getCompactionPointsForTarget(session: Session, targetMsgId: string): CompactionPoint[] | undefined {
-  const sourceThread = findMessageSourceThread(session, targetMsgId)
-  return sourceThread ? sourceThread.compactionPoints : session.compactionPoints
-}
-
-/**
  * Initialize target message with generating state
  */
 export async function initializeTargetMessage(
@@ -122,6 +90,7 @@ export async function initializeTargetMessage(
   return {
     ...targetMsg,
     aiProvider: settings.provider,
+    aiProviderName: getMessageProviderName(settings, globalSettings),
     model: await getModelDisplayName(settings, globalSettings, sessionType || 'chat'),
     // Raw id alongside the display name: display names are neither stable nor
     // parseable, so this is the message's machine-readable provenance.

@@ -82,6 +82,33 @@ export function getRegistryModelMeta(chatboxProviderId: string, modelId: string)
   return findModelInRegistry(modelId, providerRegistry)
 }
 
+/** Find model metadata across providers when the host cannot resolve a provider-specific entry. */
+export function getAnyRegistryModelMeta(modelId: string): ModelMetadata | undefined {
+  let bestMatch: ModelMetadata | undefined
+  for (const providerRegistry of Object.values(getRegistry())) {
+    const match = findModelInRegistry(modelId, providerRegistry)
+    if (!match) continue
+    if (!bestMatch || match.modelId.length > bestMatch.modelId.length) {
+      bestMatch = match
+    }
+  }
+  return bestMatch
+}
+
+/** Resolve a cross-provider context window only when the most specific matches agree. */
+export function getUnambiguousRegistryModelContextWindow(modelId: string): number | undefined {
+  const matches = Object.values(getRegistry())
+    .map((providerRegistry) => findModelInRegistry(modelId, providerRegistry))
+    .filter((match): match is ModelMetadata => Boolean(match))
+  const bestMatchLength = matches.reduce((best, match) => Math.max(best, match.modelId.length), 0)
+  const contextWindows = new Set(
+    matches
+      .filter((match) => match.modelId.length === bestMatchLength && match.contextWindow > 0)
+      .map((match) => match.contextWindow)
+  )
+  return contextWindows.size === 1 ? contextWindows.values().next().value : undefined
+}
+
 export function enrichModelFromRegistry<T extends { modelId: string; [key: string]: unknown }>(
   model: T,
   chatboxProviderId: string

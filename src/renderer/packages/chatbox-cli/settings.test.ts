@@ -12,7 +12,7 @@ const { state } = vi.hoisted(() => {
     showWordCount: false,
     showTokenCount: false,
     showTokenUsed: true,
-    showModelName: true,
+    showModelName: true as boolean | undefined,
     showMessageTimestamp: false,
     showAvatar: true,
     enableMarkdownRendering: true,
@@ -95,11 +95,11 @@ describe('Chatbox CLI settings allowlist', () => {
       readOnly: true,
       key: 'appearance.theme',
       value: 'system',
-      location: 'Settings > General Settings',
+      location: 'Settings > Appearance',
       changeGuidance: expect.stringContaining('change this setting manually'),
     })
     expect(await command('get').execute(context(['appearance.spell-check']))).toMatchObject({
-      location: 'Settings > Chat Settings',
+      location: 'Settings > Chat',
     })
   })
 
@@ -109,6 +109,17 @@ describe('Chatbox CLI settings allowlist', () => {
 
     state.stream = false
     expect(await command('get').execute(context(['chat.stream']))).toMatchObject({ value: false })
+  })
+
+  it('reports the model name default and preserves an explicit opt-out', async () => {
+    state.showModelName = undefined
+    expect(await command('get').execute(context(['chat.show-model-name']))).toMatchObject({
+      value: true,
+      location: 'Settings > Chat',
+    })
+
+    state.showModelName = false
+    expect(await command('get').execute(context(['chat.show-model-name']))).toMatchObject({ value: false })
   })
 
   it('rejects settings writes at the public CLI boundary', async () => {

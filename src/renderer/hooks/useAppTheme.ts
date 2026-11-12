@@ -1,5 +1,9 @@
 import { createTheme, type ThemeOptions } from '@mui/material/styles'
-import { getDefaultInterfaceColors, resolveInterfaceBrandColor } from '@shared/theme-colors'
+import {
+  getDefaultInterfaceColors,
+  resolveDarkSurfaceOverrides,
+  resolveInterfaceBrandColor,
+} from '@shared/theme-colors'
 import { useLayoutEffect, useMemo } from 'react'
 import { settingsStore, useLanguage, useSettingsStore } from '@/stores/settingsStore'
 import { uiStore, useUIStore } from '@/stores/uiStore'
@@ -59,12 +63,25 @@ export default function useAppTheme() {
     rootStyle.setProperty('--chatbox-background-secondary', colors.backgroundSecondary)
     rootStyle.setProperty('--chatbox-background-tertiary', colors.backgroundTertiary)
     rootStyle.setProperty('--chatbox-brand', brandColor)
+    const darkSurfaces = resolveDarkSurfaceOverrides(interfaceColors, realTheme)
+    if (darkSurfaces) {
+      rootStyle.setProperty('--chatbox-background-raised', darkSurfaces.raised)
+      rootStyle.setProperty('--chatbox-background-composer', darkSurfaces.composer)
+    } else {
+      rootStyle.removeProperty('--chatbox-background-raised')
+      rootStyle.removeProperty('--chatbox-background-composer')
+    }
   }, [interfaceColors, realTheme])
 
   const themeObj = useMemo(
     () =>
       createTheme(
-        getThemeDesign(realTheme, language, resolveInterfaceBrandColor(interfaceColors[realTheme].brand, realTheme))
+        getThemeDesign(
+          realTheme,
+          language,
+          resolveInterfaceBrandColor(interfaceColors[realTheme].brand, realTheme),
+          interfaceColors[realTheme].backgroundPrimary
+        )
       ),
     [interfaceColors, language, realTheme]
   )
@@ -74,7 +91,8 @@ export default function useAppTheme() {
 export function getThemeDesign(
   realTheme: 'light' | 'dark',
   language: Language,
-  brandColor = getDefaultInterfaceColors()[realTheme].brand
+  brandColor = getDefaultInterfaceColors()[realTheme].brand,
+  backgroundColor = getDefaultInterfaceColors()[realTheme].backgroundPrimary
 ): ThemeOptions {
   return {
     palette: {
@@ -82,17 +100,29 @@ export function getThemeDesign(
       primary: {
         main: brandColor,
       },
+      // MUI 内部无法处理 css 变量，需要使用具体颜色值
+      background: {
+        default: backgroundColor,
+        paper: backgroundColor,
+      },
       ...(realTheme === 'light'
         ? {}
         : {
-            // MUI 内部无法处理 css 变量，需要使用具体颜色值
-            background: {
-              default: '#242424',
-              paper: '#242424',
+            // Same value as the dark --chatbox-tint-primary in globals.css.
+            text: {
+              primary: '#ececec',
             },
           }),
     },
     components: {
+      // MUI lightens dark-mode Paper by elevation; Chatbox surfaces carry their own layering.
+      MuiPaper: {
+        styleOverrides: {
+          root: {
+            backgroundImage: 'none',
+          },
+        },
+      },
       MuiSnackbarContent: {
         styleOverrides: {
           root: {

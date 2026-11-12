@@ -3,6 +3,7 @@ import type { ModelMessage } from 'ai'
 import { getLogger } from '@/lib/utils'
 import {
   clearPendingSteerRequests,
+  peekRequestedSteerableMessage,
   releaseInFlightQueuedMessage,
   removeQueuedMessage,
   takeRequestedSteerableMessage,
@@ -78,9 +79,11 @@ function getMessageText(contentParts: { type: string; text?: string }[]): string
  * Register the current generation as the steering consumer for this session.
  * Returns null when another generation already holds the role.
  *
- * `conversationMessageIds` are the ids of the generation's own conversation
+ * `conversationScope` resolves the generation's frozen initial conversation ids
  * (fork/thread) — only queue items anchored there may be consumed, so an
  * inactive fork's generation cannot steal a message queued for another fork.
+ * A null scope means its original topology could not be recovered safely;
+ * requested messages stay in the ordinary queue.
  *
  * `persistSteeredMessage` must durably insert the steered user message into the
  * session (anchored after the previous steered message or the caller-provided
@@ -90,7 +93,7 @@ function getMessageText(contentParts: { type: string; text?: string }[]): string
  */
 export function registerSteeringConsumer(
   sessionId: string,
-  conversationMessageIds: ReadonlySet<string>,
+  conversationScope: ReadonlySet<string> | (() => Promise<ReadonlySet<string> | null>),
   persistSteeredMessage: (message: Message, afterMessageId: string) => Promise<void>
 ): SteeringConsumer | null {
   if (activeConsumers.has(sessionId)) return null
@@ -102,6 +105,9 @@ export function registerSteeringConsumer(
   // Messages created mid-run (steered users, continuation segments) are valid
   // anchors for later queue items targeting this same conversation.
   const admittedAnchorIds = new Set<string>()
+  let scope: ReadonlySet<string> | null | undefined =
+    typeof conversationScope === 'function' ? undefined : conversationScope
+  let pendingScope: Promise<ReadonlySet<string> | null> | undefined
 
   return {
     async inject(stepMessages: ModelMessage[], anchorMessageId: string): Promise<SteeringInjectResult> {
@@ -113,12 +119,34 @@ export function registerSteeringConsumer(
       const consumed: Message[] = []
       let anchorId = anchorMessageId
       while (true) {
+        if (activeConsumers.get(sessionId) !== token) break
+        const candidate = peekRequestedSteerableMessage(sessionId)
+        if (!candidate?.conversationAnchorId) break
+        if (scope === undefined) {
+          try {
+            pendingScope ??=
+              typeof conversationScope === 'function' ? conversationScope() : Promise.resolve(conversationScope)
+            const loadedScope = await pendingScope
+            if (activeConsumers.get(sessionId) !== token || !peekRequestedSteerableMessage(sessionId)) break
+            scope = loadedScope
+          } catch {
+            pendingScope = undefined
+            log.warn('Steering scope could not be loaded; messages remain queued', { reason: 'scope-read-failed' })
+            break
+          }
+        }
+        if (scope === null) {
+          clearPendingSteerRequests(sessionId)
+          log.warn('Conversation structure changed; requested messages remain queued', { reason: 'scope-changed' })
+          break
+        }
+        const resolvedScope = scope
         // Only items the user explicitly asked to jump the queue are injected;
         // everything else waits for this reply to finish and is delivered in
         // order, one per generation.
         const head = takeRequestedSteerableMessage(
           sessionId,
-          (queuedAnchorId) => conversationMessageIds.has(queuedAnchorId) || admittedAnchorIds.has(queuedAnchorId)
+          (queuedAnchorId) => resolvedScope.has(queuedAnchorId) || admittedAnchorIds.has(queuedAnchorId)
         )
         if (!head) break
         const text = getMessageText(head.message.contentParts)

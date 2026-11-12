@@ -6,6 +6,7 @@ import {
   normalizePlausibleProvider,
   normalizePlausibleUrl,
   normalizePlausibleVersion,
+  resolvePlausibleVersion,
 } from './plausible'
 
 describe('Plausible dimensions', () => {
@@ -20,8 +21,21 @@ describe('Plausible dimensions', () => {
   })
 
   it('groups patch and prerelease versions by major and minor', () => {
-    expect(normalizePlausibleVersion('1.22.3-beta.1')).toBe('1.22')
+    expect(normalizePlausibleVersion('1.22.3')).toBe('1.22')
+    expect(normalizePlausibleVersion('1.22.3-beta.1')).toBe('1.22.3-beta.1')
+    expect(normalizePlausibleVersion('1.24.0-alpha.2')).toBe('1.24.0-alpha.2')
+    expect(normalizePlausibleVersion('1.24.0-RC.1')).toBe('1.24.0-rc.1')
+    expect(normalizePlausibleVersion('1.24.0-nightly.3')).toBe('1.24-pre')
     expect(normalizePlausibleVersion('unknown')).toBe('unknown')
+  })
+
+  it('restores the prerelease suffix only when the build version matches the platform version', () => {
+    expect(resolvePlausibleVersion('1.24.0', '1.24.0-beta.1')).toBe('1.24.0-beta.1')
+    expect(resolvePlausibleVersion('1.24.0-beta.1', '1.24.0-beta.1')).toBe('1.24.0-beta.1')
+    expect(resolvePlausibleVersion('1.24.0', '')).toBe('1.24.0')
+    expect(resolvePlausibleVersion('1.24.0', undefined)).toBe('1.24.0')
+    expect(resolvePlausibleVersion('web', '1.24.0-beta.1')).toBe('web')
+    expect(resolvePlausibleVersion('1.25.0', '1.24.0-beta.1')).toBe('1.25.0')
   })
 
   it('keeps stable built-in provider and model dimensions', () => {

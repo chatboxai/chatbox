@@ -1,6 +1,8 @@
 # 存储架构文档
 
-Chatbox 跨平台存储方案和版本迁移机制说明。
+Chatbox 通用 KV 存储方案和版本迁移机制说明。全应用业务分类、实际介质和关键 key 见 [App 存储地图](./technical/storage-map.md)。
+
+本文保留 KV 后端选型与 `configVersion` 迁移机制。当前会话的行存储与读取边界见 [会话管理系统](./technical/session-management.md)，备份兼容性见 [数据备份与恢复边界](./technical/data-backup.md)。
 
 ## 跨平台存储方案
 
@@ -8,10 +10,10 @@ Chatbox 跨平台存储方案和版本迁移机制说明。
 
 - **DESKTOP_FILE**: 桌面端文件存储（通过 IPC）
 - **INDEXEDDB**: IndexedDB（通过 localforage）
-- **LOCAL_STORAGE**: localStorage（已弃用）
+- **LOCAL_STORAGE**: 历史通用 KV 的 localStorage 适配器（仅用于迁移；草稿、登录等仍使用 localStorage）
 - **MOBILE_SQLITE**: SQLite 数据库（通过 Capacitor）
 
-### 当前方案（v1.17.0）
+### v1.17.0 的 KV 后端方案
 
 | 平台 | Settings/Configs | Sessions | 原因 |
 |------|-----------------|----------|------|

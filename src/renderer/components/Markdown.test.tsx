@@ -85,16 +85,84 @@ vi.mock('react-photoswipe-gallery', () => ({
   ),
 }))
 
+import { uiStore } from '@/stores/uiStore'
 import Markdown, { BlockCodeCollapsedStateProvider } from './Markdown'
 
 afterEach(() => {
   cleanup()
+  uiStore.getState().setCodeBlockWrap(false)
   openViewer.mockReset()
   sandboxPersistArtifact.mockReset()
   sandboxExportFile.mockReset()
   highlight.mockClear()
   highlightSync.mockClear()
   preloadLanguage.mockClear()
+})
+
+describe('Markdown code wrapping', () => {
+  const content = (source: string, generating = false, hiddenCodeActions = false) => (
+    <MantineProvider>
+      <BlockCodeCollapsedStateProvider>
+        <Markdown generating={generating} hiddenCodeActions={hiddenCodeActions}>
+          {source}
+        </Markdown>
+      </BlockCodeCollapsedStateProvider>
+    </MantineProvider>
+  )
+
+  it('remembers the last wrap choice for untoggled code blocks without re-highlighting', () => {
+    render(content('```js\nconst first = 1\n```\n\n```js\nconst second = 2\n```'))
+    const buttons = screen.getAllByRole('button', { name: 'Auto wrap' })
+    const calls = highlightSync.mock.calls.length
+    expect(buttons[0].getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(buttons[0])
+    expect(buttons[0].getAttribute('aria-pressed')).toBe('true')
+    expect(buttons[0].closest('.code-block-container')?.getAttribute('data-wrap-code')).toBe('true')
+    expect(buttons[1].getAttribute('aria-pressed')).toBe('true')
+    expect(uiStore.getState().codeBlockWrap).toBe(true)
+    expect(highlightSync.mock.calls.length).toBe(calls)
+    fireEvent.click(buttons[1])
+    expect(buttons[1].getAttribute('aria-pressed')).toBe('false')
+    expect(buttons[0].getAttribute('aria-pressed')).toBe('true')
+    expect(uiStore.getState().codeBlockWrap).toBe(false)
+  })
+
+  it('starts new code blocks with the remembered wrap choice', () => {
+    uiStore.getState().setCodeBlockWrap(true)
+    render(content('```js\nconst first = 1\n```'))
+    const button = screen.getByRole('button', { name: 'Auto wrap' })
+    expect(button.getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(button)
+    expect(button.getAttribute('aria-pressed')).toBe('false')
+    expect(uiStore.getState().codeBlockWrap).toBe(false)
+  })
+
+  it('keeps wrapping enabled as streaming code grows and becomes highlighted', () => {
+    const view = render(content('```js\nconst first = 1', true))
+    fireEvent.click(screen.getByRole('button', { name: 'Auto wrap' }))
+    view.rerender(content('```js\nconst first = 123456', true))
+    expect(screen.getByRole('button', { name: 'Auto wrap' }).getAttribute('aria-pressed')).toBe('true')
+    view.rerender(content('```js\nconst first = 123456\n```'))
+    expect(screen.getByRole('button', { name: 'Auto wrap' }).getAttribute('aria-pressed')).toBe('true')
+    expect(highlightSync).toHaveBeenCalledWith('const first = 123456\n', 'js', expect.any(String))
+  })
+
+  it('respects hidden code actions', () => {
+    render(content('```js\nconst first = 1\n```', false, true))
+    expect(screen.queryByRole('button', { name: 'Auto wrap' })).toBeNull()
+  })
+})
+
+describe('Markdown tables', () => {
+  it('wraps tables in a horizontal scroll box', () => {
+    const view = render(
+      <MantineProvider>
+        <Markdown>{'| A | B |\n| --- | --- |\n| 1 | 2 |'}</Markdown>
+      </MantineProvider>
+    )
+    const table = view.container.querySelector('table')
+    expect(table?.parentElement?.className).toBe('markdown-table-scroll')
+  })
 })
 
 describe('Markdown streaming code highlighting', () => {
@@ -141,6 +209,34 @@ describe('Markdown streaming code highlighting', () => {
     expect(highlightSync).not.toHaveBeenCalled()
     expect(highlight).not.toHaveBeenCalled()
     await waitFor(() => expect(preloadLanguage).toHaveBeenCalledWith('html'))
+  })
+})
+
+describe('Markdown quoted streaming code fences', () => {
+  const renderCode = (source: string) =>
+    render(
+      <MantineProvider forceColorScheme="dark">
+        <BlockCodeCollapsedStateProvider>
+          <Markdown generating hiddenCodeActions forceColorScheme="dark">
+            {source}
+          </Markdown>
+        </BlockCodeCollapsedStateProvider>
+      </MantineProvider>
+    )
+
+  it('highlights a closed code block inside a blockquote during generation', () => {
+    renderCode('> ```html\n> <div>one</div>\n> ```')
+    expect(document.querySelector('.shiki-streaming-plain')).toBeNull()
+    expect(highlightSync).toHaveBeenCalled()
+  })
+
+  it.each([
+    ['top-level', '```html\n<div>one</div>\n> ```'],
+    ['quoted', '> ```html\n> <div>one</div>\n> > ```'],
+  ])('keeps a literal quote marker inside %s code from closing the fence', (_name, source) => {
+    renderCode(source)
+    expect(document.querySelector('.shiki-streaming-plain')?.textContent).toContain('> ```')
+    expect(highlightSync).not.toHaveBeenCalled()
   })
 })
 
@@ -243,6 +339,56 @@ $$`}
     const tag = displayMath?.querySelector('.tag')
     expect(displayMath).not.toBeNull()
     expect(tag?.textContent).toContain('(1)')
+  })
+})
+
+describe('Markdown streaming display math', () => {
+  const annotation = () => document.querySelector('.katex-display annotation')?.textContent
+
+  it('keeps the last rendered formula while an unclosed block is incomplete', () => {
+    const { rerender } = render(<Markdown generating>{'Total:\n\n$$\nS = n \\cdot t_0'}</Markdown>)
+    expect(annotation()).toBe('S = n \\cdot t_0')
+
+    rerender(<Markdown generating>{'Total:\n\n$$\nS = n \\cdot t_0 \\left(1 - \\frac{1}{k}'}</Markdown>)
+    expect(document.querySelector('.katex-error')).toBeNull()
+    expect(annotation()).toBe('S = n \\cdot t_0')
+
+    rerender(<Markdown generating>{'Total:\n\n$$\nS = n \\cdot t_0 \\left(1 - \\frac{1}{k}\\right)'}</Markdown>)
+    expect(annotation()).toBe('S = n \\cdot t_0 \\left(1 - \\frac{1}{k}\\right)')
+  })
+
+  it.each([
+    ['blockquote', '> ', '> '],
+    ['nested blockquote', '> > ', '> > '],
+    ['compact nested blockquote', '>> ', '>> '],
+    ['blockquote in a list', '- > ', '  > '],
+    ['list in a blockquote', '> - ', '>   '],
+  ])('holds incomplete math in a %s and reports errors as soon as it closes', (_name, opening, continuation) => {
+    const source = `${opening}$$\n${continuation}x = 1`
+    const { rerender } = render(<Markdown generating>{source}</Markdown>)
+    expect(annotation()).toBe('x = 1')
+
+    const incomplete = `${source} + \\frac{1}{`
+    rerender(<Markdown generating>{incomplete}</Markdown>)
+    expect(document.querySelector('.katex-error')).toBeNull()
+    expect(annotation()).toBe('x = 1')
+
+    rerender(<Markdown generating>{`${incomplete}\n${continuation}$$`}</Markdown>)
+    expect(document.querySelector('.katex-error')).not.toBeNull()
+  })
+
+  it('renders an empty formula until the unclosed block first parses', () => {
+    render(<Markdown generating>{'$$\n\\frac{1}{'}</Markdown>)
+    expect(document.querySelector('.katex-error')).toBeNull()
+    expect(document.querySelector('.katex-display')).not.toBeNull()
+  })
+
+  it('reports invalid math once the block is closed or generation ends', () => {
+    const { rerender } = render(<Markdown generating>{'$$\n\\frac{1}{\n$$'}</Markdown>)
+    expect(document.querySelector('.katex-error')).not.toBeNull()
+
+    rerender(<Markdown>{'$$\n\\frac{1}{'}</Markdown>)
+    expect(document.querySelector('.katex-error')).not.toBeNull()
   })
 })
 

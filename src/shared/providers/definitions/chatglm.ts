@@ -70,6 +70,7 @@ export const chatGLMProvider = defineProvider({
         topP: config.settings.topP,
         maxOutputTokens: config.settings.maxTokens,
         stream: config.settings.stream,
+        useProxy: config.dependencies.platformType === 'mobile' || config.providerSetting.useProxy,
       },
       config.dependencies
     )

@@ -49,6 +49,22 @@ afterEach(() => {
 })
 
 describe('WebExporter.exportStreamingFile', () => {
+  it('does not offer a Blob download when cancelled after the final chunk', async () => {
+    setSaveFilePicker(undefined)
+    const controller = new AbortController()
+    await expect(
+      new WebExporter().exportStreamingFile(
+        'export.bin',
+        async function* () {
+          yield new Uint8Array([1])
+          controller.abort()
+        },
+        'application/octet-stream',
+        controller.signal
+      )
+    ).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
   it('returns a pending download instead of reporting a Blob download as saved', async () => {
     setSaveFilePicker(undefined)
 
@@ -76,7 +92,7 @@ describe('WebExporter.exportStreamingFile', () => {
 
     expect(showSaveFilePicker).toHaveBeenCalledWith({
       suggestedName: 'backup.zip',
-      types: [{ description: 'Chatbox backup', accept: { 'application/zip': ['.zip'] } }],
+      types: [{ description: 'File', accept: { 'application/zip': ['.zip'] } }],
     })
     expect(write).toHaveBeenCalledTimes(2)
     expect(close).toHaveBeenCalledOnce()
@@ -156,4 +172,41 @@ describe('WebExporter.exportStreamingFile', () => {
     expect(result.pendingDownload?.filename).toBe('backup.zip')
     expect(Array.from(await readBlob(result.pendingDownload?.blob ?? new Blob()))).toEqual([1, 2, 3, 4])
   })
+})
+
+it('refuses required streaming or oversized fallback before reading file bytes', async () => {
+  setSaveFilePicker(undefined)
+  const source = vi.fn(chunks)
+  const exporter = new WebExporter()
+  await expect(
+    exporter.exportStreamingFile('backup.zip', source, 'application/zip', undefined, {
+      requiresStreaming: true,
+      estimatedBytes: 100,
+    })
+  ).rejects.toThrow('cannot save')
+  await expect(
+    exporter.exportStreamingFile('backup.zip', source, 'application/zip', undefined, {
+      requiresStreaming: false,
+      estimatedBytes: 65 * 1024 ** 2,
+    })
+  ).rejects.toThrow('cannot save')
+  expect(source).not.toHaveBeenCalled()
+})
+
+it('enforces the actual whole-archive fallback budget', async () => {
+  setSaveFilePicker(undefined)
+  let reads = 0
+  await expect(
+    new WebExporter().exportStreamingFile(
+      'backup.zip',
+      async function* () {
+        for (let i = 0; i < 66; i++) {
+          reads++
+          yield new Uint8Array(1024 ** 2)
+        }
+      },
+      'application/zip'
+    )
+  ).rejects.toThrow('64 MiB')
+  expect(reads).toBe(65)
 })

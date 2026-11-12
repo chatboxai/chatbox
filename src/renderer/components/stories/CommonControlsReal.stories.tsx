@@ -85,16 +85,16 @@ export const MessageLayoutSelectorStates: StoryObj = {
     uiInventoryTargets: ['src/renderer/components/common/MessageLayoutPreview'],
   },
   render: () => {
-    const [layout, setLayout] = useState<'left' | 'bubble'>('bubble')
+    const [layout, setLayout] = useState<'classic' | 'bubble'>('bubble')
 
     return (
       <Stack gap="lg">
         <SurfaceLabel
           title="MessageLayoutSelector"
-          description="Actual settings control for choosing classic left-aligned or bubble chat layout."
+          description="Actual settings control for choosing the classic or bubble chat layout."
         />
         <MessageLayoutSelector value={layout} onValueChange={setLayout} />
-        <MessageLayoutSelector value="left" onValueChange={() => undefined} size="sm" />
+        <MessageLayoutSelector value="classic" onValueChange={() => undefined} size="sm" />
       </Stack>
     )
   },

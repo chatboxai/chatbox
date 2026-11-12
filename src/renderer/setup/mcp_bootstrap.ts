@@ -1,5 +1,6 @@
 import { getBuiltinServerConfig } from '@/packages/mcp/builtin'
 import { mcpController } from '@/packages/mcp/controller'
+import platform from '@/platform'
 import { initSettingsStore } from '@/stores/settingsStore'
 import { NODE_ENV } from '@/variables'
 
@@ -38,3 +39,19 @@ initSettingsStore()
   .catch((err) => {
     console.error('mcp bootstrap error', err)
   })
+
+if (platform.type === 'mobile') {
+  // Suspension can leave the HTTP session stale. Reconnect on the next explicit use.
+  const invalidate = () => {
+    if (document.visibilityState !== 'hidden') return
+    for (const { instance } of mcpController.servers.values()) void instance.stop()
+  }
+  document.addEventListener('visibilitychange', invalidate)
+  import('@capacitor/app')
+    .then(({ App }) => {
+      void App.addListener('appStateChange', ({ isActive }) => {
+        if (!isActive) for (const { instance } of mcpController.servers.values()) void instance.stop()
+      })
+    })
+    .catch(() => undefined)
+}

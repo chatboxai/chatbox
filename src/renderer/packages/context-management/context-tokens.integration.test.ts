@@ -1,76 +1,38 @@
-/**
- * @vitest-environment jsdom
- */
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+// @vitest-environment jsdom
 import { renderHook } from '@testing-library/react'
-import { createElement, type ReactNode } from 'react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-
-vi.mock('@/stores/queryClient', () => {
-  const mockClient = {
-    setQueryDefaults: vi.fn(),
-    setQueryData: vi.fn(),
-    getQueryData: vi.fn(),
-  }
-  return { default: mockClient, queryClient: mockClient }
-})
-
-import type { Session } from '@shared/types'
-import { computationQueue } from '@/packages/token-estimation/computation-queue'
+import type { UseTokenEstimationOptions } from '@/packages/token-estimation/hooks/useTokenEstimation'
+import { describe, expect, it, vi } from 'vitest'
+const read = vi.hoisted(() =>
+  vi.fn((_options: UseTokenEstimationOptions) => ({
+    contextTokens: 42,
+    currentInputTokens: 3,
+    totalTokens: 45,
+    contextMessageCount: 11,
+  }))
+)
+vi.mock('@/packages/token-estimation/hooks/useTokenEstimation', () => ({ useTokenEstimation: read }))
 import { useContextTokens } from './context-tokens'
-
-function createSessionWithoutTokenCache(): Session {
-  return {
-    id: 'test-session',
-    name: 'Test',
-    messages: [
-      { id: 'msg-1', role: 'user', contentParts: [{ type: 'text', text: 'Hello' }] },
-      { id: 'msg-2', role: 'assistant', contentParts: [{ type: 'text', text: 'Hi' }] },
-    ],
-    compactionPoints: [],
-    settings: {},
-  } as Session
-}
-
-let testQueryClient: QueryClient
-
-function createWrapper() {
-  return ({ children }: { children: ReactNode }) =>
-    createElement(QueryClientProvider, { client: testQueryClient }, children)
-}
-
-describe('context-tokens integration tests', () => {
-  beforeEach(() => {
-    testQueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    computationQueue._reset()
-    vi.clearAllMocks()
-  })
-
-  afterEach(() => {
-    computationQueue._reset()
-    vi.restoreAllMocks()
-  })
-
-  it('no recalculation on re-render when deps unchanged', () => {
-    const enqueueSpy = vi.spyOn(computationQueue, 'enqueueBatch')
-    const session = createSessionWithoutTokenCache()
-
-    const { rerender } = renderHook(
-      () =>
-        useContextTokens({
-          sessionId: 'test-session',
-          session,
-          settings: {},
-          model: undefined,
-          modelSupportToolUseForFile: false,
-        }),
-      { wrapper: createWrapper() }
+describe('context token row facade', () => {
+  it('forwards only identity, policy and draft inputs to independent estimation', () => {
+    const view = renderHook(() =>
+      useContextTokens({
+        sessionId: 's',
+        revision: 17,
+        enabled: false,
+        settings: { maxContextMessageCount: 20 },
+        modelSupportToolUseForFile: true,
+        sandboxMode: true,
+      })
     )
-
-    const initialCallCount = enqueueSpy.mock.calls.length
-
-    rerender()
-
-    expect(enqueueSpy.mock.calls.length).toBe(initialCallCount)
+    expect(read.mock.calls[0][0]).toMatchObject({
+      sessionId: 's',
+      enabled: false,
+      maxContextMessageCount: 20,
+      sandboxMode: true,
+    })
+    expect(read.mock.calls[0][0]).not.toHaveProperty('contextMessages')
+    expect(read.mock.calls[0][0]).not.toHaveProperty('source')
+    expect(view.result.current.messageCount).toBe(11)
+    view.unmount()
   })
 })

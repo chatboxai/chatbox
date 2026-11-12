@@ -9,9 +9,8 @@ export default function MessageErrTips(props: {
   msg: Message
   sessionId?: string
   onRetry?: () => void | Promise<void>
-  isBubbleLayout?: boolean
 }) {
-  const { msg, sessionId, onRetry, isBubbleLayout } = props
+  const { msg, sessionId, onRetry } = props
   const licensePlan = useSettingsStore((state) => state.licenseDetail?.plan)
   const presentation = resolveMessageErrorPresentation(msg, { licensePlan })
 
@@ -22,5 +21,5 @@ export default function MessageErrTips(props: {
   if (presentation.kind === 'agent-mode-reward') {
     return <AgentModeRewardError msg={msg} sessionId={sessionId} onRetry={onRetry} />
   }
-  return <GenericMessageError msg={msg} presentation={presentation} onRetry={onRetry} isBubbleLayout={isBubbleLayout} />
+  return <GenericMessageError msg={msg} presentation={presentation} onRetry={onRetry} />
 }

@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 
-import { buildSwitchForkPatch } from '@shared/session/message-forks'
 import type { Message, Session, SessionThread } from '@shared/types'
 import { createMessage } from '@shared/types'
+import { InMemorySessionRepository } from '@chatbox/core/testing'
+import { openSessionChatExport } from '@chatbox/core/utils/chat-export'
 import { JSDOM } from 'jsdom'
 import { expect, test, vi } from 'vitest'
 
@@ -80,32 +81,39 @@ test('interactive HTML renders only the active path and restores nested branch s
     },
   }
 
-  const html = await formatChatAsInteractiveHtml(
-    'Nested forks',
-    [{ name: 'Thread', messages: [outerPivot, outerSummary, outerActive] }],
-    forks
-  )
-  const dom = new JSDOM(html, { runScripts: 'dangerously' })
-  const { document } = dom.window
-  let applicationSession: Session = {
+  const applicationSession: Session = {
     id: 'session',
     name: 'Nested forks',
     messages: [outerPivot, outerSummary, outerActive],
     messageForksHash: forks,
   }
+  const repository = new InMemorySessionRepository()
+  await repository.seedSession(applicationSession)
+  const source = await openSessionChatExport(repository.rowStore, repository, applicationSession.id)
+  if (!source) throw new Error('Export source missing')
+  const html = await formatChatAsInteractiveHtml(source, false)
+  const dom = new JSDOM(html, { runScripts: 'dangerously' })
+  const { document } = dom.window
   const pageText = () => document.getElementById('chatbox-export-root')?.textContent ?? ''
-  const clickFork = (forkId: string, direction: 'next' | 'prev') => {
+  const clickFork = async (forkId: string, direction: 'next' | 'prev') => {
     const button = document.querySelector<HTMLButtonElement>(
       `button[data-fork-id="${forkId}"][data-fork-action="${direction}"]`
     )
     expect(button).not.toBeNull()
     button?.click()
-    const patch = buildSwitchForkPatch(applicationSession, forkId, direction)
-    expect(patch).not.toBeNull()
-    applicationSession = { ...applicationSession, ...patch }
+    const result = await repository.executeSessionCommand(applicationSession.id, {
+      type: 'structure',
+      operation: { action: 'fork-switch', pivotId: forkId, target: direction },
+    })
+    expect(result.delta.structureResult?.applied).toBe(true)
+    const window = await repository.readSessionTranscriptWindow({
+      sessionId: applicationSession.id,
+      origin: 'head',
+      limit: 50,
+    })
     expect(
       Array.from(document.querySelectorAll<HTMLElement>('[data-message-id]'), (element) => element.dataset.messageId)
-    ).toEqual(applicationSession.messages.map((message) => message.id))
+    ).toEqual(window?.messages.map((row) => row.messageId))
   }
 
   expect(document.querySelectorAll('.chatbox-export-message')).toHaveLength(3)
@@ -116,21 +124,39 @@ test('interactive HTML renders only the active path and restores nested branch s
   expect(pageText()).toContain('outer summary')
   expect(pageText()).not.toContain('inner active')
 
-  clickFork(outerPivot.id, 'next')
+  await clickFork(outerPivot.id, 'next')
   expect(pageText()).not.toContain('outer active')
   expect(pageText()).toContain('outer summary')
   expect(pageText()).toContain('inner active')
 
-  clickFork(innerPivot.id, 'next')
+  await clickFork(innerPivot.id, 'next')
   expect(pageText()).not.toContain('inner active')
   expect(pageText()).toContain('inner saved')
 
-  clickFork(outerPivot.id, 'prev')
+  await clickFork(outerPivot.id, 'prev')
   expect(pageText()).toContain('outer active')
   expect(pageText()).not.toContain('inner saved')
 
-  clickFork(outerPivot.id, 'next')
+  await clickFork(outerPivot.id, 'next')
   expect(pageText()).toContain('inner saved')
   expect(pageText()).not.toContain('inner active')
   dom.window.close()
+})
+
+test('both HTML formats use the session title for an unnamed active thread', async () => {
+  const repository = new InMemorySessionRepository()
+  await repository.seedSession({
+    id: 'unnamed',
+    name: 'Session title',
+    threadName: '',
+    messages: [message('hello', 'user', 'Hello')],
+  })
+  const source = await openSessionChatExport(repository.rowStore, repository, 'unnamed')
+  if (!source) throw new Error('Export source missing')
+  const ordinary = new JSDOM(await formatChatAsHtml(source.header.name, source.formattedThreads(false)))
+  const interactive = new JSDOM(await formatChatAsInteractiveHtml(source, false), { runScripts: 'dangerously' })
+  expect(ordinary.window.document.querySelector('h2')?.textContent).toBe('1. Session title')
+  expect(interactive.window.document.querySelector('h2')?.textContent).toBe('1. Session title')
+  ordinary.window.close()
+  interactive.window.close()
 })

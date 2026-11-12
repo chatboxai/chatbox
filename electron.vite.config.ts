@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module'
 import path, { resolve } from 'node:path'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
@@ -6,6 +7,7 @@ import { defineConfig, type ElectronViteConfig, externalizeDepsPlugin } from 'el
 import { visualizer } from 'rollup-plugin-visualizer'
 import type { Plugin } from 'vite'
 import packageJson from './release/app/package.json'
+createRequire(import.meta.url)('./scripts/build-mobile-work-worker.cjs').buildWorkModeWorker()
 /**
  * Vite plugin to inject <base href="/"> for web builds
  * This ensures relative paths resolve correctly for SPA routes like /session/xxx
@@ -218,6 +220,8 @@ export default defineConfig(({ mode }) => {
         'process.env.USE_NEWDB_API': JSON.stringify(process.env.USE_NEWDB_API || ''),
         'process.env.USE_LOCAL_CHATBOX': JSON.stringify(process.env.USE_LOCAL_CHATBOX || ''),
         'process.env.USE_BETA_CHATBOX': JSON.stringify(process.env.USE_BETA_CHATBOX || ''),
+        'process.env.CHATBOX_SKIP_GUIDE': JSON.stringify(process.env.CHATBOX_SKIP_GUIDE || ''),
+        'process.env.CHATBOX_START_PAGE': JSON.stringify(process.env.CHATBOX_START_PAGE || ''),
       },
     },
     preload: {
@@ -313,6 +317,12 @@ export default defineConfig(({ mode }) => {
               const isNodeModulePackage = (pkg: string) => normalizedId.includes(`/node_modules/${pkg}/`)
 
               if (normalizedId.includes('/node_modules/')) {
+                // Keep a single Zod instance. If Zod is pulled into vendor-ai with
+                // the Vercel AI SDK, SettingsSchema.parse() treats sibling schemas
+                // as non-schemas and renderer bootstrap never leaves the splash.
+                if (isNodeModulePackage('zod')) {
+                  return 'vendor-zod'
+                }
                 // Split large vendor chunks
                 if (isNodeModulePackage('@ai-sdk') || isNodeModulePackage('ai')) {
                   return 'vendor-ai'
@@ -350,11 +360,14 @@ export default defineConfig(({ mode }) => {
         'process.env.CHATBOX_BUILD_TARGET': JSON.stringify(process.env.CHATBOX_BUILD_TARGET || 'unknown'),
         'process.env.CHATBOX_BUILD_PLATFORM': JSON.stringify(process.env.CHATBOX_BUILD_PLATFORM || 'unknown'),
         'process.env.CHATBOX_BUILD_CHANNEL': JSON.stringify(process.env.CHATBOX_BUILD_CHANNEL || 'unknown'),
+        'process.env.CHATBOX_BUILD_VERSION': JSON.stringify(process.env.VERSION_NUMBER || ''),
         'process.env.USE_LOCAL_API': JSON.stringify(process.env.USE_LOCAL_API || ''),
         'process.env.USE_BETA_API': JSON.stringify(process.env.USE_BETA_API || ''),
         'process.env.USE_NEWDB_API': JSON.stringify(process.env.USE_NEWDB_API || ''),
         'process.env.USE_LOCAL_CHATBOX': JSON.stringify(process.env.USE_LOCAL_CHATBOX || ''),
         'process.env.USE_BETA_CHATBOX': JSON.stringify(process.env.USE_BETA_CHATBOX || ''),
+        'process.env.CHATBOX_SKIP_GUIDE': JSON.stringify(process.env.CHATBOX_SKIP_GUIDE || ''),
+        'process.env.CHATBOX_START_PAGE': JSON.stringify(process.env.CHATBOX_START_PAGE || ''),
       },
       optimizeDeps: {
         // Force a fresh dep optimization on dev startup. This avoids stale .vite

@@ -1,4 +1,4 @@
-import type { LanguageModelV3 } from '@ai-sdk/provider'
+import type { LanguageModelV4 } from '@ai-sdk/provider'
 import type { ModelDependencies } from '@shared/types/adapters'
 import type { SentryScope } from '@shared/utils/sentry_adapter'
 import type { ModelMessage } from 'ai'
@@ -6,8 +6,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Claude from './claude'
 
 const providerMocks = vi.hoisted(() => {
-  const languageModel: LanguageModelV3 = {
-    specificationVersion: 'v3',
+  const languageModel: LanguageModelV4 = {
+    specificationVersion: 'v4',
     provider: 'anthropic',
     modelId: 'claude-sonnet-4-5',
     supportedUrls: {},
@@ -80,7 +80,7 @@ function createModel(promptCacheTTL: '5m' | '1h' | undefined, stream: boolean): 
 
 function mockEmptyStream(): void {
   providerMocks.streamText.mockReturnValue({
-    fullStream: {
+    stream: {
       [Symbol.asyncIterator]() {
         return { next: () => Promise.resolve({ done: true as const, value: undefined }) }
       },

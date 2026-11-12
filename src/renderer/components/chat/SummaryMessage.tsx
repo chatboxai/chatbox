@@ -25,7 +25,7 @@ interface SummaryMessageProps {
   /** Resolved by the list container; both modes keep latest-summary edit and delete. */
   sessionMode?: SessionMode
   /** Resolve prompt-cache delete policy when the delete dialog opens. */
-  shouldConfirmPromptCacheDelete?: (messageId: string, target: PromptCacheDeleteTarget) => boolean
+  shouldConfirmPromptCacheDelete?: (messageId: string, target: PromptCacheDeleteTarget) => boolean | Promise<boolean>
 }
 
 const SummaryMessage: FC<SummaryMessageProps> = ({
@@ -60,10 +60,10 @@ const SummaryMessage: FC<SummaryMessageProps> = ({
     onDelete?.()
   }
 
-  const handleDeleteClick = () => {
+  const handleDeleteClick = async () => {
     const shouldExplain =
       !isPromptCacheBreakConfirmDismissed('delete-summary') &&
-      shouldConfirmPromptCacheDelete?.(msg.id, 'summary') === true
+      (await shouldConfirmPromptCacheDelete?.(msg.id, 'summary')) === true
     setExplainPromptCacheBreak(shouldExplain)
     setDontShowAgain(false)
     setShowDeleteConfirm(true)

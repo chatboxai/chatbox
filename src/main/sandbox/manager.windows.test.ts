@@ -178,7 +178,7 @@ console.log(JSON.stringify(payload))
     await expect(writeFile(relativePath, 'alpha\nbeta\n', sessionId)).resolves.toEqual({ success: true })
     await expect(
       editFile(relativePath, { edits: [{ search: 'beta', replace: '中文 gamma' }] }, sessionId)
-    ).resolves.toEqual({ success: true })
+    ).resolves.toMatchObject({ success: true, changed: true })
 
     expect(readFileSync(path.join(workDir, relativePath), 'utf8')).toBe('alpha\n中文 gamma\n')
 

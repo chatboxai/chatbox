@@ -39,23 +39,24 @@ export function isSuccessfulAssistantReply(message: Message): boolean {
   return hasMeaningfulAssistantOutput(message)
 }
 
-/** Whether the Session has enough content to auto-generate a title. */
+/** Role-local eligibility used by the selected-path naming projection. */
+export function isMessageEligibleForAutoTitle(message: Message): boolean {
+  if (message.role === 'user') return !isEmptyMessage(message)
+  return (
+    message.role === 'assistant' &&
+    !isFailedOrNonReplyAssistant(message) &&
+    (message.generating === true || hasMeaningfulAssistantOutput(message))
+  )
+}
+
+/** Whether selected messages contain a title-worthy user/assistant sequence. */
 export function hasContentForAutoTitle(messages: Message[]): boolean {
   let hasPreviousUserMessage = false
-
   for (const message of messages) {
-    if (message.role === 'user' && !isEmptyMessage(message)) {
-      hasPreviousUserMessage = true
-      continue
-    }
-    if (!hasPreviousUserMessage || message.role !== 'assistant' || isFailedOrNonReplyAssistant(message)) {
-      continue
-    }
-    if (message.generating || hasMeaningfulAssistantOutput(message)) {
-      return true
-    }
+    if (!isMessageEligibleForAutoTitle(message)) continue
+    if (message.role === 'user') hasPreviousUserMessage = true
+    else if (hasPreviousUserMessage && message.role === 'assistant') return true
   }
-
   return false
 }
 

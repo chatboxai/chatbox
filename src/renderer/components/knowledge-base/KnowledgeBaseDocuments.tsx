@@ -18,7 +18,6 @@ import {
 import {
   KNOWLEDGE_BASE_MAX_FILE_SIZE,
   KNOWLEDGE_BASE_MAX_FILE_SIZE_LABEL,
-  KNOWLEDGE_BASE_MAX_PARSED_CONTENT_SIZE_LABEL,
   KNOWLEDGE_BASE_PARSED_CONTENT_TOO_LARGE_ERROR,
 } from '@shared/knowledge-base'
 import type { FileMeta, KnowledgeBase } from '@shared/types'
@@ -54,7 +53,11 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { trackEvent } from '@/utils/track'
 import ChunksPreviewModal from './ChunksPreviewModal'
 import { KnowledgeBaseFileErrorButton } from './KnowledgeBaseFileErrorButton'
-import { isChatboxAIParserLicenseRequired } from './knowledge-base-file-error'
+import {
+  getKnowledgeBaseFileErrorStatusLabel,
+  getKnowledgeBaseFileErrorTooltip,
+  isChatboxAIParserLicenseRequired,
+} from './knowledge-base-file-error'
 import { RemoteRetryModal } from './RemoteRetryModal'
 
 interface KnowledgeBaseDocumentsProps {
@@ -604,7 +607,7 @@ const KnowledgeBaseDocuments: React.FC<KnowledgeBaseDocumentsProps> = ({ knowled
         return <IconPlayerPause size={16} color="var(--chatbox-tint-warning)" />
       case 'failed': {
         const isParsedContentTooLarge = error === KNOWLEDGE_BASE_PARSED_CONTENT_TOO_LARGE_ERROR
-        const isLicenseError = isChatboxAIParserLicenseRequired(error)
+        const actionLabel = getKnowledgeBaseFileErrorStatusLabel(error, t)
         // Determine label based on actual parser type used
         const getParserLabel = () => {
           if (isParsedContentTooLarge) {
@@ -619,24 +622,18 @@ const KnowledgeBaseDocuments: React.FC<KnowledgeBaseDocumentsProps> = ({ knowled
               return t('Local parse failed')
           }
         }
-        const errorLabel = isParsedContentTooLarge
-          ? t('Parsed document content must be {{limit}} or smaller.', {
-              limit: KNOWLEDGE_BASE_MAX_PARSED_CONTENT_SIZE_LABEL,
-            })
-          : isLicenseError
-            ? t('Sign in needed')
-            : error || t('Processing failed')
+        const errorLabel = error ? getKnowledgeBaseFileErrorTooltip(error, t) : t('Processing failed')
         const isRemoteParser = parserType === 'mineru' || parserType === 'chatbox-ai'
         const statusPill = (
           <Pill size="xs" c={isRemoteParser ? 'orange' : 'gray'} className="cursor-help">
-            {isLicenseError ? t('Sign in needed') : getParserLabel()}
+            {actionLabel ?? getParserLabel()}
           </Pill>
         )
         return (
           <Flex gap={4} align="center">
             <Tooltip label={errorLabel} multiline w={300} withArrow position="top">
-              {isLicenseError && error && fileName ? (
-                <KnowledgeBaseFileErrorButton errorCode={error} fileName={fileName} label={t('Sign in needed')}>
+              {actionLabel && error && fileName ? (
+                <KnowledgeBaseFileErrorButton errorCode={error} fileName={fileName} label={actionLabel}>
                   {statusPill}
                 </KnowledgeBaseFileErrorButton>
               ) : (

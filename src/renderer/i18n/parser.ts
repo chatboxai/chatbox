@@ -60,8 +60,5 @@ export function parseLocale(locale: string): Language {
   if (locale.startsWith('tr')) {
     return 'tr'
   }
-  if (locale.startsWith('be')) {
-    return 'be'
-  }
   return 'en'
 }

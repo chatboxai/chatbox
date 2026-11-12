@@ -17,7 +17,7 @@ import type { CompactionPoint, Message } from '../types'
  * usable on the current path.
  */
 export function findLatestApplicableCompactionPoint(
-  messages: Message[],
+  messages: Pick<Message, 'id'>[],
   compactionPoints?: CompactionPoint[]
 ): CompactionPoint | undefined {
   if (!compactionPoints || compactionPoints.length === 0) {

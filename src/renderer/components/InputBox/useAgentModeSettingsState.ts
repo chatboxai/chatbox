@@ -83,7 +83,7 @@ export function useCommandApprovalModeState(sessionId: string, tracking: AgentMo
       }
       const ticket = ++approvalDefaultTicket
       try {
-        await rendererApplication.sessions.updateSession(sessionId, (session) => {
+        await rendererApplication.sessions.updateSessionHeader(sessionId, (session) => {
           if (!session) {
             throw new Error('Session not found')
           }
@@ -160,7 +160,7 @@ export function useWorkingDirectoriesState(sessionId: string) {
       }
       const ticket = ++directoriesDefaultTicket
       try {
-        await rendererApplication.sessions.updateSession(sessionId, (session) => {
+        await rendererApplication.sessions.updateSessionHeader(sessionId, (session) => {
           if (!session) {
             throw new Error('Session not found')
           }

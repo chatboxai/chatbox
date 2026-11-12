@@ -1,7 +1,81 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { Message } from '../types'
 import { GenerationRuntimeStore } from './runtime-store'
 
 describe('GenerationRuntimeStore', () => {
+  it('lists generating conversations once while excluding paused runtimes and pending storage work', () => {
+    const store = new GenerationRuntimeStore()
+    store.start('active', 'one')
+    store.start('active', 'two')
+    store.start('paused', 'three')
+    store.setPhase('paused', 'three', 'paused')
+    store.start('stopping', 'four')
+    store.setPhase('stopping', 'four', 'stopping')
+    store.acquireGenerationPreparationLease('attachments')
+    store.registerUnsettledStreamDrain('draining', new Promise<void>(() => {}))
+    expect(store.getGeneratingSessionIds()).toEqual(['active', 'stopping'])
+    expect(() => store.start('new', 'five')).not.toThrow()
+    store.dispose()
+  })
+
+  it('keeps only the current runtime stream and freezes it when stopping', () => {
+    const store = new GenerationRuntimeStore()
+    const first = store.start('s', 'a')
+    const message: Message = {
+      id: 'a',
+      role: 'assistant',
+      generating: true,
+      contentParts: [{ type: 'text', text: 'before stop' }],
+    }
+    store.setLiveMessage('s', message)
+    store.beginStop('s', 'a', 1, first)
+    store.setLiveMessage('s', { ...message, contentParts: [{ type: 'text', text: 'late chunk' }] })
+    expect(store.getLiveMessage('s', 'a')).toBe(message)
+    store.clear('s', 'a')
+    expect(store.getLiveMessage('s', 'a')).toBeUndefined()
+    store.start('s', 'a')
+    expect(store.getLiveMessage('s', 'a')).toBeUndefined()
+    store.dispose()
+  })
+
+  it('cancels an idle wait without cancelling the existing generation', async () => {
+    const store = new GenerationRuntimeStore()
+    const runtime = store.start('active', 'reply')
+    const controller = new AbortController()
+    const waiting = store.waitForIdle(controller.signal)
+    controller.abort()
+    await expect(waiting).rejects.toMatchObject({ name: 'AbortError' })
+    expect(runtime.abortController.signal.aborted).toBe(false)
+    expect(store.get('active', 'reply')).toBe(runtime)
+    store.dispose()
+  })
+
+  it('waits for generation, preparation, and stream drains without stopping replies', async () => {
+    const store = new GenerationRuntimeStore()
+    const runtime = store.start('active', 'reply')
+    const preparation = store.acquireGenerationPreparationLease('preparing')!
+    let finishDrain = () => {}
+    store.registerUnsettledStreamDrain(
+      'draining',
+      new Promise<void>((resolve) => {
+        finishDrain = resolve
+      })
+    )
+    let idle = false
+    const waiting = store.waitForIdle().then(() => {
+      idle = true
+    })
+    store.finishActive('active', 'reply', runtime)
+    store.releaseGenerationPreparationLease(preparation)
+    await Promise.resolve()
+    expect(idle).toBe(false)
+    expect(runtime.abortController.signal.aborted).toBe(false)
+    finishDrain()
+    await waiting
+    expect(idle).toBe(true)
+    store.dispose()
+  })
+
   const stores: GenerationRuntimeStore[] = []
 
   function createStore(): GenerationRuntimeStore {

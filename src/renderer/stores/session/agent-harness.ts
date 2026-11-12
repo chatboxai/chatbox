@@ -1,8 +1,12 @@
+import { createMemoryToolContext, type MemoryToolContext } from '@chatbox/core/application/memory'
+import type { SessionContextBeforeTarget, SessionHeader } from '@chatbox/core/ports'
 import { buildAgentPersonaPrompt, buildMemoriesSection } from '@shared/agent-persona/prompt'
-import { buildContext, flattenToolCallPartsToText, selectContextMessages } from '@shared/context'
+import { buildContext, flattenToolCallPartsToText, selectMessagesBeforeTarget } from '@shared/context'
+import type { AttachmentPolicy } from '@shared/context/attachments'
 import type { AttachmentResolver } from '@shared/context/types'
 import { ChatboxAIAPIError, OCRError } from '@shared/models/errors'
 import type { ChatStreamOptions, ModelInterface } from '@shared/models/types'
+import { extractStreamErrorMessage } from '@shared/models/utils/stream-error-message'
 import { toSandboxSeedAttachment } from '@shared/sandbox/attachment-path'
 import type { SandboxProvider } from '@shared/sandbox-provider'
 import { supportsToolResultImages } from '@shared/tools/view-image'
@@ -14,7 +18,7 @@ import type {
   KnowledgeBase,
   Message,
   MessageContentParts,
-  Session,
+  MessageFile,
   SessionPromptContextSnapshot,
   SessionSettings,
   Settings,
@@ -38,7 +42,6 @@ import {
   hasAcceptedCallbackBackgroundTask,
   hasAcceptedCallbackBackgroundTaskResult,
 } from '@/packages/chatbox-cli/background-task-result'
-import { assessContextPressure, getConfiguredContextWindow } from '@/packages/context-management/context-pressure'
 import {
   buildModelSystemPrompt,
   convertToModelMessages,
@@ -58,7 +61,6 @@ import { resolveSessionPromptContextSnapshot } from './prompt-context-snapshot'
 import { buildToolsForSession } from './tools-builder'
 
 const log = getLogger('agent-generation-harness')
-const RECENT_TOOL_CALL_CACHE_WINDOW_MS = 5 * 60 * 1000
 
 const GLOBAL_RESPONSE_LANGUAGE_INSTRUCTION = `
 ## Response Language
@@ -72,12 +74,14 @@ export interface AgentGenerationSideEffects {
 }
 
 export interface PrepareAgentGenerationHarnessOptions {
-  session: Session
+  session: SessionHeader
   settings: SessionSettings
   globalSettings: Settings
   configs: Config
   messages: Message[]
   targetMsgIx: number
+  fileResourceKeys?: readonly string[]
+  history?: SessionContextBeforeTarget
   model: ModelInterface
   dependencies: ModelDependencies
   knowledgeBase?: Pick<KnowledgeBase, 'id' | 'name'>
@@ -89,7 +93,7 @@ export interface PrepareAgentGenerationHarnessOptions {
   providerOptions?: SessionSettings['providerOptions']
   /**
    * Points of the conversation being generated (thread-level when the target
-   * message lives in an archived thread). Defaults to session.compactionPoints.
+   * message lives in an archived thread).
    */
   compactionPoints?: CompactionPoint[]
   preserveLastPromptMessageToolCalls?: boolean
@@ -100,6 +104,7 @@ export interface PrepareAgentGenerationHarnessOptions {
 }
 
 export interface PreparedAgentGenerationHarness {
+  memoryToolContext: MemoryToolContext
   promptMsgs: Message[]
   coreMessages: Awaited<ReturnType<typeof convertToModelMessages>>
   tools: ToolSet
@@ -107,6 +112,7 @@ export interface PreparedAgentGenerationHarness {
   infoParts: MessageContentParts
   fallbackToolCallPart: MessageContentParts[number] | undefined
   systemPrompt: string | undefined
+  attachmentPolicy: AttachmentPolicy
   sandboxProvider: SandboxProvider | null
   debug: {
     effectiveAgentMode: 'on' | 'off'
@@ -121,38 +127,15 @@ export function computeEffectiveAgentMode(agentModeValue: AgentModeValue, agentM
   return agentModeValue === 'on' ? 'on' : 'off'
 }
 
-function getToolCallPreserveMessageIds(
-  messages: Message[],
-  targetMsgIx: number,
-  preserveLastPromptMessageToolCalls: boolean
-): string[] {
-  const ids = new Set<string>()
-  const targetMessage = messages[targetMsgIx]
-  const previousMessage = messages[targetMsgIx - 1]
-
-  if (preserveLastPromptMessageToolCalls && previousMessage) {
-    ids.add(previousMessage.id)
-  }
-
-  if (targetMessage?.timestamp !== undefined && previousMessage?.timestamp !== undefined) {
-    const interval = targetMessage.timestamp - previousMessage.timestamp
-    if (interval >= 0 && interval <= RECENT_TOOL_CALL_CACHE_WINDOW_MS) {
-      ids.add(previousMessage.id)
-    }
-  }
-
-  return [...ids]
-}
-
 export async function refreshSessionAttachmentStatuses(messages: Message[]): Promise<Message[]> {
-  if (platform.type !== 'desktop') {
+  if (!platform.isDesktopLike) {
     return messages
   }
 
   const ids = Array.from(
     new Set(
       messages.flatMap((message) =>
-        (message.files ?? [])
+        [...(message.files ?? []), ...(message.compactedFiles ?? [])]
           .filter((file) => file.sessionAttachmentId)
           .map((file) => file.sessionAttachmentId as number)
       )
@@ -177,32 +160,35 @@ export async function refreshSessionAttachmentStatuses(messages: Message[]): Pro
   const embeddedChunksMap = new Map(attachments.map((attachment) => [attachment.id, attachment.embeddedChunks]))
   const indexingStageMap = new Map(attachments.map((attachment) => [attachment.id, attachment.indexingStage]))
 
-  return messages.map((message) => {
-    if (!message.files?.length) {
-      return message
+  const refresh = (file: MessageFile): MessageFile => {
+    if (!file.sessionAttachmentId) {
+      return file
     }
+    return {
+      ...file,
+      sessionAttachmentAvailability:
+        availabilityMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentAvailability,
+      sessionAttachmentIndexStatus: indexStatusMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentIndexStatus,
+      sessionAttachmentStatus: indexStatusMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentStatus,
+      sessionAttachmentChunkCount: chunkCountMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentChunkCount,
+      sessionAttachmentTotalChunks: totalChunksMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentTotalChunks,
+      sessionAttachmentEmbeddedChunks:
+        embeddedChunksMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentEmbeddedChunks,
+      sessionAttachmentIndexingStage:
+        indexingStageMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentIndexingStage,
+    }
+  }
 
-    const files = message.files.map((file) => {
-      if (!file.sessionAttachmentId) {
-        return file
-      }
-      return {
-        ...file,
-        sessionAttachmentAvailability:
-          availabilityMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentAvailability,
-        sessionAttachmentIndexStatus: indexStatusMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentIndexStatus,
-        sessionAttachmentStatus: indexStatusMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentStatus,
-        sessionAttachmentChunkCount: chunkCountMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentChunkCount,
-        sessionAttachmentTotalChunks: totalChunksMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentTotalChunks,
-        sessionAttachmentEmbeddedChunks:
-          embeddedChunksMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentEmbeddedChunks,
-        sessionAttachmentIndexingStage:
-          indexingStageMap.get(file.sessionAttachmentId) ?? file.sessionAttachmentIndexingStage,
-      }
-    })
-
-    return { ...message, files }
-  })
+  // A summary references covered retrieval files with the same live index state.
+  return messages.map((message) =>
+    message.files?.length || message.compactedFiles?.length
+      ? {
+          ...message,
+          ...(message.files ? { files: message.files.map(refresh) } : {}),
+          ...(message.compactedFiles ? { compactedFiles: message.compactedFiles.map(refresh) } : {}),
+        }
+      : message
+  )
 }
 
 export async function prepareAgentGenerationHarness(
@@ -215,6 +201,7 @@ export async function prepareAgentGenerationHarness(
     configs,
     messages,
     targetMsgIx,
+    history,
     model,
     dependencies,
     knowledgeBase,
@@ -224,7 +211,7 @@ export async function prepareAgentGenerationHarness(
     agentModeSupported,
     signal,
     providerOptions,
-    compactionPoints = session.compactionPoints,
+    compactionPoints,
     preserveLastPromptMessageToolCalls = false,
     attachmentResolver = createAttachmentResolver(),
     sideEffects,
@@ -263,6 +250,7 @@ export async function prepareAgentGenerationHarness(
     settings,
     messages,
     targetMsgIx,
+    history,
     persist: sideEffects?.persistSessionPromptContextSnapshot,
     copilotId: session.copilotId,
   })
@@ -275,41 +263,19 @@ export async function prepareAgentGenerationHarness(
     isPro,
   })
 
-  const messagesForPrompt = (await refreshSessionAttachmentStatuses(messages.slice(0, targetMsgIx))).map((message) =>
-    // A resumed continuation keeps its target message flagged `generating` for the UI,
-    // but its tool calls/results are exactly the context the follow-up request must
-    // continue from — without this the eligibility filter drops the whole message and
-    // the model restarts the task from scratch.
-    message.id === resumedMessage?.id && message.generating ? { ...message, generating: false } : message
+  const messagesForPrompt = await refreshSessionAttachmentStatuses(
+    selectMessagesBeforeTarget(messages, targetMsgIx, preserveLastPromptMessageToolCalls)
   )
-  const preserveToolCallMessageIds = getToolCallPreserveMessageIds(
-    messages,
-    targetMsgIx,
-    preserveLastPromptMessageToolCalls
-  )
-  // Pressure is measured on the un-relieved context selection: below the
-  // relief threshold history rides along untouched; above it, old tool
-  // results are stubbed (calls stay). Full compaction is handled separately
-  // at submit time.
-  const contextPressure = assessContextPressure({
-    contextMessages: selectContextMessages(messagesForPrompt, {
-      compactionPoints,
-      maxContextMessageCount: settings.maxContextMessageCount,
-    }),
-    providerId: settings.provider,
-    modelId: model.modelId,
-    contextWindow: getConfiguredContextWindow(globalSettings, settings.provider, model.modelId),
-    compactionThreshold: globalSettings.compactionThreshold,
+  const attachmentPolicy = {
+    modelSupportToolUseForFile: model.isSupportToolUse('read-file'),
     sandboxMode: canExecuteCode,
-  })
+  }
   let promptMsgs = await buildContext(messagesForPrompt, {
     attachmentResolver,
     compactionPoints,
-    modelSupportToolUseForFile: model.isSupportToolUse('read-file'),
+    ...attachmentPolicy,
     maxContextMessageCount: settings.maxContextMessageCount,
-    toolCleanupMode: contextPressure.toolCleanupMode,
-    preserveToolCallMessageIds,
-    sandboxMode: canExecuteCode,
+    language: globalSettings.language,
   })
 
   // Agent mode owns its identity header: session-level system messages are
@@ -332,7 +298,7 @@ export async function prepareAgentGenerationHarness(
     try {
       await ocrImagesInMessages(promptMsgs, ocrResult.model, session.id)
     } catch (err) {
-      throw new OCRError(ocrResult.providerName, err instanceof Error ? err : new Error(`${err}`))
+      throw new OCRError(ocrResult.providerName, err instanceof Error ? err : new Error(extractStreamErrorMessage(err)))
     }
     infoParts.push({
       type: 'info',
@@ -357,7 +323,9 @@ export async function prepareAgentGenerationHarness(
       ? {
           sessionId: session.id,
           provider: sandboxProvider,
-          files: allMessages.flatMap((message) => message.files?.map(toSandboxSeedAttachment) || []),
+          files:
+            history?.sandboxSeedAttachments ??
+            allMessages.flatMap((message) => message.files?.map(toSandboxSeedAttachment) || []),
         }
       : undefined
 
@@ -370,6 +338,8 @@ export async function prepareAgentGenerationHarness(
     webBrowsing,
     knowledgeBase,
     messages: promptMsgs,
+    fileMessages: messagesForPrompt,
+    fileResourceKeys: options.fileResourceKeys,
     agentMode: effectiveAgentMode,
     sessionSettings: settings,
     codeExecution: codeExecutionOption,
@@ -412,7 +382,13 @@ export async function prepareAgentGenerationHarness(
   // Conversation-start anchor shared by the frozen system-prompt line and the
   // time-gap reminder walk below: snapshot capture when one exists, otherwise
   // the first surface message.
-  const conversationStartedAt = promptContextSnapshot?.capturedAt ?? messages[0]?.timestamp
+  const conversationStartedAt =
+    promptContextSnapshot?.capturedAt ?? (history ? history.firstMessageTimestamp : messages[0]?.timestamp)
+
+  // The "Inject default metadata" setting covers the runtime block (model name,
+  // conversation start time, `<system-reminder>` contract) and the time-gap
+  // reminders. Session prompts, persona and tool instructions are always sent.
+  const injectDefaultMetadata = globalSettings.injectDefaultMetadata !== false
 
   let injectedMessages: Message[]
   let systemPrompt: string
@@ -428,7 +404,9 @@ export async function prepareAgentGenerationHarness(
       platformType: platform.type,
       os: getOS(),
     })
-    const runtimeMetadata = `\n## Runtime\nCurrent model: ${model.modelId}\nSession context captured: ${formatTimestampWithZone(promptContextSnapshot.capturedAt, promptContextSnapshot.capturedUtcOffsetMinutes)}\n${SYSTEM_REMINDER_PROMPT_INSTRUCTION}`
+    const runtimeMetadata = injectDefaultMetadata
+      ? `\n## Runtime\nCurrent model: ${model.modelId}\nSession context captured: ${formatTimestampWithZone(promptContextSnapshot.capturedAt, promptContextSnapshot.capturedUtcOffsetMinutes)}\n${SYSTEM_REMINDER_PROMPT_INSTRUCTION}`
+      : ''
     const systemText = `${personaPrompt}\n${instructions}${runtimeMetadata}`
     systemPrompt = systemText
     injectedMessages = [
@@ -440,6 +418,11 @@ export async function prepareAgentGenerationHarness(
       },
       ...promptMsgs,
     ]
+  } else if (!injectDefaultMetadata) {
+    systemPrompt = instructions.trim() ? `Additional info for this conversation: ${instructions}` : ''
+    injectedMessages = systemPrompt
+      ? injectModelSystemPrompt(model.modelId, promptMsgs, instructions, 'system', systemPrompt)
+      : promptMsgs
   } else {
     // Chat mode mirrors the agent-mode ordering above: the session's own
     // system prompt keeps the byte-0 position, instructions follow, and the
@@ -469,7 +452,9 @@ export async function prepareAgentGenerationHarness(
   // `sequenceMessages` merges each into its user turn's tail, or leaves the
   // trailing one as its own user turn after a resumed tool history (both
   // provider-safe shapes).
-  injectedMessages = insertTimeGapReminders(injectedMessages, { anchorTimestamp: conversationStartedAt })
+  if (injectDefaultMetadata) {
+    injectedMessages = insertTimeGapReminders(injectedMessages, { anchorTimestamp: conversationStartedAt })
+  }
 
   if (!model.isSupportSystemMessage()) {
     injectedMessages = injectedMessages.map((message) => ({
@@ -480,10 +465,11 @@ export async function prepareAgentGenerationHarness(
 
   injectedMessages = sequenceMessages(injectedMessages)
 
-  const reasoningReplay = resolveReasoningReplayPolicy(settings.provider, {
-    modelId: model.modelId,
-    apiStyle: model.apiStyle,
-  })
+  const reasoningReplay = resolveReasoningReplayPolicy(
+    settings.provider,
+    { modelId: model.modelId, apiStyle: model.apiStyle },
+    model.reasoningReplaySource
+  )
   // Anchored on the last surface message, before synthetic trailing time
   // reminders: only a request that resumes an assistant tool exchange is
   // subject to the Anthropic turn-start rule. When the resumed turn cannot
@@ -491,13 +477,16 @@ export async function prepareAgentGenerationHarness(
   // then carry no thinking blocks at all — replay is dropped alongside.
   const disableClaudeThinkingForResume = shouldDisableClaudeThinkingForUnsignedResume(
     promptMsgs.at(-1),
-    reasoningReplay.signedReasoningOnly,
+    // Keyed on the route, not on "signed replay is on": OpenAI Responses also
+    // replays signed metadata but has no turn-start rule, and degrading it here
+    // would drop the encrypted reasoning items this request exists to replay.
+    reasoningReplay.replayNamespaces.includes('anthropic'),
     model.modelId
   )
   const coreMessages = await convertToModelMessages(injectedMessages, {
     modelSupportVision: model.isSupportVision(),
+    ...reasoningReplay,
     preserveReasoning: disableClaudeThinkingForResume ? false : reasoningReplay.preserveReasoning,
-    signedReasoningOnly: reasoningReplay.signedReasoningOnly,
     // getModel() stamps apiStyle from the provider type (builtin/custom Gemini providers)
     // or the per-model remote config (ChatboxAI google-routed models), so it is the single
     // signal for "this request speaks the Gemini function-call protocol".
@@ -526,12 +515,6 @@ export async function prepareAgentGenerationHarness(
     chatOptions.tools = tools as ToolSet
   }
 
-  // Long tool loops can outgrow the window mid-run where compaction cannot
-  // fire; the model layer stubs old in-run tool results near the threshold.
-  if (contextPressure.thresholdTokens !== null && Object.keys(tools).length > 0) {
-    chatOptions.contextPressure = { thresholdTokens: contextPressure.thresholdTokens }
-  }
-
   const allToolNames = Object.keys(tools)
   if (allToolNames.includes('chatbox_cli')) {
     chatOptions.prepareStep = ({ steps }) => {
@@ -557,12 +540,14 @@ export async function prepareAgentGenerationHarness(
 
   return {
     promptMsgs,
+    memoryToolContext: createMemoryToolContext(memoryScope, memoryEnabled),
     coreMessages,
     tools,
     chatOptions,
     infoParts,
     fallbackToolCallPart,
     systemPrompt,
+    attachmentPolicy,
     sandboxProvider,
     debug: {
       effectiveAgentMode,

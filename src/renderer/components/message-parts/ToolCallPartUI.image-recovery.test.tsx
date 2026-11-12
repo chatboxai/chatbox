@@ -26,7 +26,9 @@ vi.mock('react-i18next', async (importOriginal) => ({
 }))
 
 vi.mock('@/components/chat/ImageGenerationResultGallery', () => ({
-  ImageGenerationResultGallery: () => null,
+  ImageGenerationResultGallery: ({ images }: { images: readonly string[] }) => (
+    <div data-testid="reference-gallery">{images.join(',')}</div>
+  ),
 }))
 
 vi.mock('@/components/common/ChatboxAIErrorMessage', () => ({
@@ -65,7 +67,7 @@ vi.mock('@/stores/uiStore', () => ({
   useUIStore: (selector: (state: { setPictureShow: () => void }) => unknown) => selector({ setPictureShow: vi.fn() }),
 }))
 
-import { StepTimelineUI } from './ToolCallPartUI'
+import { StepTimelineUI } from './StepTimelineUI'
 
 const acceptedResult = {
   ok: true,
@@ -130,23 +132,43 @@ describe('CLI image recovery timeline', () => {
 
   afterEach(cleanup)
 
-  it('resumes an interrupted backend task from the original chat', async () => {
-    useImageGenerationRecordMock.mockReturnValue({ data: record(), isFetched: true })
+  it.each(['generating', 'error'] as const)(
+    'resumes an interrupted %s backend task from the original chat',
+    async (status) => {
+      useImageGenerationRecordMock.mockReturnValue({
+        data: record({ status, errorCode: status === 'error' ? 'image_task_persistence_failed' : undefined }),
+        isFetched: true,
+      })
 
+      render(
+        <MantineProvider>
+          <StepTimelineUI parts={[toolCall]} sessionId="session-1" messageId="message-1" />
+        </MantineProvider>
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Resume Generation' }))
+
+      await waitFor(() => {
+        expect(resumeImageGenerationWithFollowUpMock).toHaveBeenCalledWith('record-1', {
+          sessionId: 'session-1',
+          toolCallId: 'tool-1',
+        })
+      })
+    }
+  )
+
+  it('shows reference images on a pending tool call before results exist', () => {
+    useImageGenerationRecordMock.mockReturnValue({
+      data: record({ referenceImages: ['picture:reference'] }),
+      isFetched: true,
+    })
     render(
       <MantineProvider>
         <StepTimelineUI parts={[toolCall]} sessionId="session-1" messageId="message-1" />
       </MantineProvider>
     )
-
-    fireEvent.click(screen.getByRole('button', { name: 'Resume Generation' }))
-
-    await waitFor(() => {
-      expect(resumeImageGenerationWithFollowUpMock).toHaveBeenCalledWith('record-1', {
-        sessionId: 'session-1',
-        toolCallId: 'tool-1',
-      })
-    })
+    expect(screen.getByText('Reference images')).toBeTruthy()
+    expect(screen.getByTestId('reference-gallery').textContent).toBe('picture:reference')
   })
 
   it('shows an interrupted state without a recovery action when the request has no backend task id', () => {

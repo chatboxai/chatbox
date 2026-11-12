@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   AUTOMATION_CONTRACT_VERSION,
   AUTOMATION_CONTRACT_VERSION_ATTRIBUTE,
+  AutomationStateAttr,
   listStaticTestIds,
   TestId,
 } from './testids'
@@ -20,6 +21,7 @@ describe('automation test ID contract', () => {
         TestId.agent.modeTrigger,
         TestId.reasoning.trigger,
         TestId.sidebar.newChat,
+        TestId.sidebar.downloadApp,
         TestId.chat.newThread,
         TestId.chat.rollbackThread,
         TestId.message.actionBar,
@@ -34,7 +36,7 @@ describe('automation test ID contract', () => {
         TestId.message.forkNext,
         TestId.message.forkDelete,
         TestId.message.forkDeleteConfirm,
-        TestId.session.searchTrigger,
+        TestId.sidebar.search,
         TestId.session.clearMessages,
         TestId.session.delete,
         TestId.chat.sessionSettings,
@@ -71,6 +73,10 @@ describe('automation test ID contract', () => {
     ]
 
     expect(actionBarIds.some((testId) => actionMenuIds.includes(testId))).toBe(false)
+  })
+
+  it('publishes the message layout as a state attribute', () => {
+    expect(AutomationStateAttr.messageLayout).toBe('data-message-layout')
   })
 
   it('uses a stable document-root attribute for renderer automation', () => {

@@ -28,6 +28,7 @@ const selected = []
 let selectedBytes = 0
 let selectionFull = false
 let totalLines = 0
+let truncatedLineCount = 0
 
 const input = fs.createReadStream(filePath, { encoding: 'utf8' })
 const lines = readline.createInterface({ input, crlfDelay: Infinity })
@@ -45,6 +46,7 @@ const lines = readline.createInterface({ input, crlfDelay: Infinity })
         selectionFull = true
       } else {
         selected.push(candidate)
+        if (line.length > maxLineLength) truncatedLineCount++
         selectedBytes += separatorBytes + candidateBytes
       }
     }
@@ -53,7 +55,7 @@ const lines = readline.createInterface({ input, crlfDelay: Infinity })
     throw new Error('Offset ' + startLine + ' is beyond end of file (' + totalLines + ' lines total)')
   }
   const endLine = selected.length > 0 ? startLine + selected.length - 1 : 0
-  process.stdout.write(JSON.stringify({ content: selected.join('\\n'), startLine, endLine, totalLines }))
+  process.stdout.write(JSON.stringify({ content: selected.join('\\n'), startLine, endLine, totalLines, ...(truncatedLineCount > 0 ? { truncatedLineCount } : {}) }))
 })().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error))
   process.exitCode = 1

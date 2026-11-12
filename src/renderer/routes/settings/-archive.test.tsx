@@ -6,11 +6,14 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
-const { useArchivedSessionListMock, deleteAllArchivedSessionsMock, showModalMock } = vi.hoisted(() => ({
-  useArchivedSessionListMock: vi.fn(),
-  deleteAllArchivedSessionsMock: vi.fn(),
-  showModalMock: vi.fn(),
-}))
+const { useArchivedSessionListMock, deleteAllArchivedSessionsMock, restoreSessionMock, showModalMock } = vi.hoisted(
+  () => ({
+    useArchivedSessionListMock: vi.fn(),
+    deleteAllArchivedSessionsMock: vi.fn(),
+    restoreSessionMock: vi.fn(),
+    showModalMock: vi.fn(),
+  })
+)
 
 vi.mock('@ebay/nice-modal-react', () => ({
   default: { show: (...args: unknown[]) => showModalMock(...args) },
@@ -20,14 +23,16 @@ vi.mock('react-i18next', () => ({
 }))
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (config: unknown) => config,
+  Link: ({ children }: { children: ReactNode }) => <a href="/settings/data">{children}</a>,
 }))
+vi.mock('@/hooks/useScreenChange', () => ({ useIsSmallScreen: () => false }))
 vi.mock('@/app/renderer-application', () => ({
   rendererApplication: {
     sessionHooks: {
       useArchivedSessionList: useArchivedSessionListMock,
     },
     sessions: {
-      restoreSession: vi.fn(),
+      restoreSession: restoreSessionMock,
     },
   },
 }))
@@ -133,5 +138,27 @@ describe('archived chats page', () => {
     })
 
     expect(deleteAllArchivedSessionsMock).not.toHaveBeenCalled()
+  })
+
+  test('stops the restore spinner once the restore settles', async () => {
+    let finishRestore: () => void = () => undefined
+    restoreSessionMock.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishRestore = resolve
+      })
+    )
+
+    const { container } = renderArchivePage()
+    const restoreButton = () => container.querySelectorAll('button')[1]
+    await act(async () => {
+      fireEvent.click(restoreButton())
+    })
+    expect(restoreSessionMock).toHaveBeenCalledWith('archived-1')
+    expect(restoreButton().hasAttribute('data-loading')).toBe(true)
+
+    await act(async () => {
+      finishRestore()
+    })
+    expect(restoreButton().hasAttribute('data-loading')).toBe(false)
   })
 })

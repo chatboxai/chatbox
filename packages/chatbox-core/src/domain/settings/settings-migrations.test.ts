@@ -67,6 +67,74 @@ describe('settings migrations', () => {
     expect(migrated.extension.documentParser).toEqual({ type: 'chatbox-ai' })
   })
 
+  test('moves the version 7 default compaction threshold to the current default and keeps chosen values', () => {
+    const defaults = createDefaultSettings()
+    expect(
+      migrateSettings({ ...defaults, compactionThreshold: 0.6 }, 7, { isDesktopLike: true }).compactionThreshold
+    ).toBe(defaults.compactionThreshold)
+    expect(
+      migrateSettings({ ...defaults, compactionThreshold: 0.6000000000000001 }, 7, { isDesktopLike: true })
+        .compactionThreshold
+    ).toBe(defaults.compactionThreshold)
+    for (const chosen of [0.4, 0.5, 0.85, 0.9]) {
+      expect(
+        migrateSettings({ ...defaults, compactionThreshold: chosen }, 7, { isDesktopLike: true }).compactionThreshold
+      ).toBe(chosen)
+    }
+    const { compactionThreshold: _omitted, ...withoutThreshold } = defaults
+    expect(migrateSettings(withoutThreshold, 7, { isDesktopLike: true }).compactionThreshold).toBe(0.75)
+  })
+
+  test('maps the legacy left layout to classic and keeps bubble users on bubbles', () => {
+    const defaults = createDefaultSettings()
+    expect(defaults.messageLayout).toBe('classic')
+    expect(migrateSettings({ ...defaults, messageLayout: 'left' }, 8, { isDesktopLike: true }).messageLayout).toBe(
+      'classic'
+    )
+    expect(migrateSettings({ ...defaults, messageLayout: 'bubble' }, 8, { isDesktopLike: true }).messageLayout).toBe(
+      'bubble'
+    )
+    expect(mergeSettingsWithDefaults({ ...defaults, messageLayout: 'left' }).messageLayout).toBe('classic')
+  })
+
+  test('keeps bubbles for stored settings that predate the classic default', () => {
+    const { messageLayout: _omitted, ...withoutLayout } = createDefaultSettings()
+    for (const version of [0, 5, 8]) {
+      expect(migrateSettings(withoutLayout, version, { isDesktopLike: true }).messageLayout).toBe('bubble')
+    }
+    expect(migrateSettings({ ...withoutLayout, messageLayout: null }, 8, { isDesktopLike: true }).messageLayout).toBe(
+      'bubble'
+    )
+    expect(mergeSettingsWithDefaults(withoutLayout).messageLayout).toBe('classic')
+  })
+
+  test('drops unknown layout values so they render as the classic default', () => {
+    const defaults = createDefaultSettings()
+    expect(mergeSettingsWithDefaults({ ...defaults, messageLayout: 'grid' }).messageLayout).toBeUndefined()
+    expect(
+      migrateSettings({ ...defaults, messageLayout: 42 }, 8, { isDesktopLike: true }).messageLayout
+    ).toBeUndefined()
+  })
+
+  test.each([
+    [true, true],
+    [false, false],
+    ['x', true],
+  ])('loads stored showModelName=%s as %s', (showModelName, expected) => {
+    const defaults = createDefaultSettings()
+    const merged = mergeSettingsWithDefaults({ ...defaults, showTokenUsed: false, showModelName })
+    expect(merged).toMatchObject({ showTokenUsed: false, messageLayout: 'classic', showModelName: expected })
+
+    const migrated = migrateSettings({ ...defaults, showTokenUsed: false, showModelName }, 8, { isDesktopLike: true })
+    expect(migrated).toMatchObject({ showTokenUsed: false, showModelName: expected })
+  })
+
+  test('shows model names for stored settings without the field', () => {
+    const { showModelName: _omitted, ...withoutField } = createDefaultSettings()
+    expect(mergeSettingsWithDefaults(withoutField).showModelName).toBe(true)
+    expect(migrateSettings(withoutField, 9, { isDesktopLike: true }).showModelName).toBe(true)
+  })
+
   test('uses the desktop parser default when an older snapshot has no parser', () => {
     const migrated = migrateSettings(createDefaultSettings(), 4, {
       isDesktopLike: true,
@@ -108,7 +176,31 @@ describe('settings migrations', () => {
     ])
   })
 
-  test.each([0, 1, 2, 3, 4, 5, 6])('keeps the complete version %i snapshot compatible', (version) => {
+  test.each([0, 5, 6])('removes built-in EdgeOne from version %i without changing custom servers', (version) => {
+    const defaults = createDefaultSettings()
+    const customServer = {
+      id: 'edgeone-pages',
+      name: 'Custom publishing server',
+      enabled: true,
+      transport: { type: 'http' as const, url: 'https://example.com/mcp' },
+    }
+    const migrated = migrateSettings(
+      {
+        ...defaults,
+        mcp: {
+          enabledBuiltinServers: ['fetch', 'edgeone-pages', 'arxiv', 'context7'],
+          servers: [customServer],
+        },
+      },
+      version,
+      { isDesktopLike: true }
+    )
+
+    expect(migrated.mcp.enabledBuiltinServers).toEqual(['fetch', 'arxiv', 'context7'])
+    expect(migrated.mcp.servers).toEqual([expect.objectContaining(customServer)])
+  })
+
+  test.each([0, 1, 2, 3, 4, 5, 6, 7])('keeps the complete version %i snapshot compatible', (version) => {
     const defaults = createDefaultSettings()
     const persisted = {
       ...defaults,

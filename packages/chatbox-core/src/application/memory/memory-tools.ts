@@ -1,0 +1,110 @@
+import { MEMORY_ENTRY_MAX_CHARS, type MemoryScope } from '@shared/types/agent-persona'
+import { validatedToolSchema } from '@shared/validated-tool-schema'
+import type { ToolSet } from 'ai'
+import { MemoryContextUnavailableError, type MemoryService } from './MemoryService'
+
+const GLOBAL_SCOPE: MemoryScope = { type: 'global' }
+
+function formatMemoryOutput(output: unknown): string {
+  const record = typeof output === 'object' && output !== null ? (output as Record<string, unknown>) : {}
+  const error = typeof record.error === 'string' ? record.error : undefined
+  if (error) return `Error: ${error}`
+  const message = typeof record.message === 'string' ? record.message : undefined
+  return message ?? JSON.stringify(output)
+}
+
+function buildSaveMemoryTool(
+  memory: MemoryToolsPort,
+  scope: MemoryScope,
+  languageName: string | undefined
+): ToolSet[string] {
+  const languageLine = languageName
+    ? `\nWrite it in the user's preferred language (${languageName}), regardless of the conversation language, so it stays readable in Settings.`
+    : ''
+  return {
+    description: `Save a durable fact to your persistent memory for future sessions.
+Save only facts that will still matter across sessions: stable user preferences, environment details, corrections to your approach, project-level conventions. Do not save one-off task state, secrets, or anything the user asked to keep out of memory. Keep each entry a single compact fact under ${MEMORY_ENTRY_MAX_CHARS} characters.${languageLine}`,
+    inputSchema: validatedToolSchema({
+      type: 'object',
+      properties: {
+        content: {
+          type: 'string',
+          description: 'The fact to remember, as one compact self-contained sentence or two',
+        },
+      },
+      required: ['content'],
+      additionalProperties: false,
+    }),
+    execute: async (input) => {
+      const { content } = input as { content: string }
+      const result = await memory.addMemoryForScope(scope, content)
+      if (!result.ok) return { error: result.error }
+      return { message: `Memory saved with id ${result.entry.id}. It will be loaded in future agent sessions.` }
+    },
+    toModelOutput: ({ output }: { output: unknown }): { type: 'text'; value: string } => ({
+      type: 'text',
+      value: formatMemoryOutput(output),
+    }),
+  }
+}
+
+function buildDeleteMemoryTool(memory: MemoryToolsPort, scope: MemoryScope): ToolSet[string] {
+  return {
+    description:
+      'Delete a stale or incorrect entry from your persistent memory by id. Ids appear as [id] prefixes in the Memories section of your system prompt. The deletion applies from the next session.',
+    inputSchema: validatedToolSchema({
+      type: 'object',
+      properties: {
+        id: {
+          type: 'string',
+          description: 'The id of the memory entry to delete',
+        },
+      },
+      required: ['id'],
+      additionalProperties: false,
+    }),
+    execute: async (input) => {
+      const { id } = input as { id: string }
+      try {
+        const deleted = await memory.deleteMemoryForScope(scope, id)
+        return deleted ? { message: `Memory ${id} deleted.` } : { error: `No memory found with id ${id}.` }
+      } catch (error) {
+        if (error instanceof MemoryContextUnavailableError) return { error: error.message }
+        throw error
+      }
+    },
+    toModelOutput: ({ output }: { output: unknown }): { type: 'text'; value: string } => ({
+      type: 'text',
+      value: formatMemoryOutput(output),
+    }),
+  }
+}
+
+export type MemoryToolsPort = Pick<MemoryService, 'addMemoryForScope' | 'deleteMemoryForScope'>
+export interface MemoryToolsOptions {
+  memory: MemoryToolsPort
+  /** Native name of the user's UI language (for example 简体中文); memories are written in it. */
+  languageName?: string
+  /** Memory store the tools read and write; defaults to the global one. */
+  scope?: MemoryScope
+}
+
+export function createMemoryTools(options: MemoryToolsOptions): { tools: ToolSet; description: string } {
+  const scope = options.scope ?? GLOBAL_SCOPE
+  const scopeLine =
+    scope.type === 'copilot'
+      ? '\n- Your memory belongs to the assistant persona of this conversation: entries load only in future sessions that use the same assistant.'
+      : ''
+  return {
+    tools: {
+      save_memory: buildSaveMemoryTool(options.memory, scope, options.languageName),
+      delete_memory: buildDeleteMemoryTool(options.memory, scope),
+    },
+    description: `
+## Persistent Memory
+You have cross-session memory. The Memories section is a snapshot taken at session start, so writes apply to future sessions only.
+- When the user states a durable preference, corrects your approach, or you learn a stable fact about their environment, save it with save_memory right away.
+- When an existing memory turns out to be wrong or obsolete, delete it with delete_memory (then save a corrected entry if needed).${scopeLine}
+`,
+  }
+}

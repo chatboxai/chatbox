@@ -63,13 +63,17 @@ describe('provider API request routing', () => {
   })
 
   it('preserves the ApiError contract for failed desktop direct responses', async () => {
-    mocks.desktopDirectRequest.mockResolvedValue(new Response('upstream unavailable', { status: 503 }))
+    mocks.desktopDirectRequest.mockResolvedValue(
+      new Response('upstream unavailable', { status: 503, headers: { 'Retry-After': '10' } })
+    )
 
     const request = apiRequest.get('https://provider.example/v1/models', {}, { useProxy: true, retry: 0 })
 
     await expect(request).rejects.toMatchObject({
       message: 'API Error: Status Code 503',
       responseBody: 'upstream unavailable',
+      statusCode: 503,
+      retryAfter: '10',
     })
   })
 

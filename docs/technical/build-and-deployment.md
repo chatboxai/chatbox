@@ -2,7 +2,7 @@
 
 > Last updated: 2026-04
 
-本文档描述 Chatbox Pro 的构建系统、依赖管理策略及各平台部署流程，聚焦关键决策的**原因**和踩过的坑。项目结构与命令清单见 [`AGENTS.md`](../../AGENTS.md)。
+本文档描述 Chatbox Pro 的构建系统、依赖管理策略及各平台部署流程，聚焦关键决策的**原因**和踩过的坑。项目结构与命令清单见 `AGENTS.md`。
 
 ---
 
@@ -26,7 +26,7 @@
 
 项目从 npm 迁移到 pnpm，主要动机是安装速度和磁盘效率。迁移的核心挑战在于 electron-builder 兼容性。
 
-**关键决策（[`./key-decisions.md`](./key-decisions.md) #6）**：采用 `node-linker=hoisted` 模式。
+**关键决策（`./key-decisions.md` #6）**：采用 `node-linker=hoisted` 模式。
 
 electron-builder 假定 `node_modules` 为扁平结构（flat `node_modules`），而 pnpm 默认使用 symlink + `.pnpm` store 的隔离结构。如果不使用 hoisted 模式：
 
@@ -93,7 +93,7 @@ electron-vite 会将 renderer 代码打包为纯前端 bundle（类似 Vite 构�
 
 ## macOS 签名与 libsql 补丁传奇
 
-这是项目构建系统中最复杂的问题，经历了 **6 次尝试**才最终解决（来源：[`docs/libsql-patch-fix-attempts.md`](../libsql-patch-fix-attempts.md)）。
+这是项目构建系统中最复杂的问题，经历了 **6 次尝试**才最终解决（来源：`docs/libsql-patch-fix-attempts.md`）。
 
 ### 问题背景
 
@@ -114,13 +114,13 @@ electron-vite 会将 renderer 代码打包为纯前端 bundle（类似 Vite 构�
 
 ### 根因与最终方案
 
-**关键决策（[`./key-decisions.md`](./key-decisions.md) #7）**：在 macOS CI 构建中设置 `USE_HARD_LINKS=false`。
+**关键决策（`./key-decisions.md` #7）**：在 macOS CI 构建中设置 `USE_HARD_LINKS=false`。
 
 electron-builder 在 CI 环境默认启用 hard link 优化（`builder-util/out/fs.js`）。当 multi-arch 构建（arm64 + x64）在同一个 job 中运行时，两个架构的 `app.asar.unpacked` 目录中的文件通过 hard link 共享同一个 inode。第一个架构签名后，第二个架构的依赖重建/patch 操作通过 hard link **间接修改**了已签名文件，破坏了 code signature。
 
 此问题仅在 **CI + multi-arch** 条件下出现：本地构建不启用 hard link，单架构构建无交叉污染。这使得问题极难在本地复现。
 
-**关键决策（[`./key-decisions.md`](./key-decisions.md) #8）**：使用 `afterPack` hook 执行 libsql patch。
+**关键决策（`./key-decisions.md` #8）**：使用 `afterPack` hook 执行 libsql patch。
 
 electron-builder 的 hook 执行顺序为：
 
@@ -214,7 +214,7 @@ pnpm 迁移后，CI 的关键变更：
 
 ## 相关文档
 
-- libsql 签名修复记录（6 次尝试）：[`docs/libsql-patch-fix-attempts.md`](../libsql-patch-fix-attempts.md)
+- libsql 签名修复记录（6 次尝试）：`docs/libsql-patch-fix-attempts.md`
 - 依赖分离方案：[`docs/dependency-reorg.md`](../dependency-reorg.md)
-- 跨平台架构：[`docs/technical/architecture.md`](./architecture.md)
-- 关键决策记录：[`docs/technical/key-decisions.md`](./key-decisions.md)（决策 #6、#7、#8）
+- 跨平台架构：`docs/technical/architecture.md`
+- 关键决策记录：`docs/technical/key-decisions.md`（决策 #6、#7、#8）

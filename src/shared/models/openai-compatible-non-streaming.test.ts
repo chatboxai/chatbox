@@ -1,8 +1,8 @@
 import type {
-  LanguageModelV3,
-  LanguageModelV3CallOptions,
-  LanguageModelV3Content,
-  LanguageModelV3GenerateResult,
+  LanguageModelV4,
+  LanguageModelV4CallOptions,
+  LanguageModelV4Content,
+  LanguageModelV4GenerateResult,
 } from '@ai-sdk/provider'
 import { describe, expect, test, vi } from 'vitest'
 import {
@@ -13,7 +13,7 @@ import {
 const reasoning = { type: 'reasoning' as const, text: 'Private reasoning' }
 const answer = { type: 'text' as const, text: 'Final answer' }
 
-function createGenerateResult(content: LanguageModelV3Content[]): LanguageModelV3GenerateResult {
+function createGenerateResult(content: LanguageModelV4Content[]): LanguageModelV4GenerateResult {
   return {
     content,
     finishReason: { unified: 'stop', raw: 'stop' },
@@ -25,9 +25,9 @@ function createGenerateResult(content: LanguageModelV3Content[]): LanguageModelV
   }
 }
 
-function createModel(content: LanguageModelV3Content[]): LanguageModelV3 {
+function createModel(content: LanguageModelV4Content[]): LanguageModelV4 {
   return {
-    specificationVersion: 'v3',
+    specificationVersion: 'v4',
     provider: 'openai-compatible',
     modelId: 'test-model',
     supportedUrls: {},
@@ -66,7 +66,7 @@ describe('wrapOpenAICompatibleNonStreamingModel', () => {
   test('normalizes doGenerate content before simulating stream chunks', async () => {
     const model = createModel([answer, reasoning])
     const wrappedModel = wrapOpenAICompatibleNonStreamingModel(model)
-    const result = await wrappedModel.doStream({ prompt: [] } as LanguageModelV3CallOptions)
+    const result = await wrappedModel.doStream({ prompt: [] } as LanguageModelV4CallOptions)
     const contentChunks: Array<{ type: string; delta?: string }> = []
     const reader = result.stream.getReader()
 

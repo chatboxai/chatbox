@@ -48,7 +48,7 @@ vi.mock('@/stores/session/message-queue', async () => {
   }
 })
 
-import { messageQueueStore } from '@/stores/session/message-queue'
+import { messageQueueStore, removeQueuedMessage } from '@/stores/session/message-queue'
 import { QueuedMessagesBar } from './QueuedMessagesBar'
 
 const SESSION_ID = 'session-1'
@@ -72,7 +72,7 @@ beforeAll(() => {
 
 function queuedItem(id: string, text: string) {
   const message: Message = createMessage('user', text)
-  return { id, message, createdAt: Date.now() }
+  return { kind: 'message' as const, id, message, createdAt: Date.now() }
 }
 
 function setQueue(count: number, headInFlight = false) {
@@ -80,6 +80,16 @@ function setQueue(count: number, headInFlight = false) {
     ...queuedItem(`q-${index}`, `queued ${index}`),
     inFlight: headInFlight && index === 0 ? true : undefined,
   }))
+  act(() => {
+    messageQueueStore.setState({ queues: { [SESSION_ID]: queue }, paused: {} })
+  })
+}
+
+function setCompactionQueue(withMessage = false) {
+  const queue = [
+    ...(withMessage ? [queuedItem('q-0', 'queued 0')] : []),
+    { kind: 'compaction' as const, id: 'c-0', createdAt: Date.now(), prompt: 'Keep exact paths.' },
+  ]
   act(() => {
     messageQueueStore.setState({ queues: { [SESSION_ID]: queue }, paused: {} })
   })
@@ -159,5 +169,27 @@ describe('QueuedMessagesBar list height', () => {
     fireEvent.click(screen.getAllByTestId(TestId.chat.queuedMessageEdit)[7])
 
     expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
+  })
+})
+
+describe('QueuedMessagesBar compression requests', () => {
+  test('renders a queued compression as its own row next to queued messages', () => {
+    setCompactionQueue(true)
+    renderBar()
+
+    expect(screen.getAllByTestId(TestId.chat.queuedMessageItem)).toHaveLength(1)
+    const row = screen.getByTestId(TestId.chat.queuedCompactionItem)
+    expect(row.textContent).toContain('Compress Conversation')
+
+    fireEvent.click(screen.getByTestId(TestId.chat.queuedCompactionRemove))
+    expect(removeQueuedMessage).toHaveBeenCalledWith(SESSION_ID, 'c-0')
+  })
+
+  test('describes a compression-only queue as running after the reply', () => {
+    setCompactionQueue()
+    renderBar()
+
+    expect(screen.getByText('Runs when the session is idle')).toBeTruthy()
+    expect(screen.queryByText('Will send after the current response finishes')).toBeNull()
   })
 })

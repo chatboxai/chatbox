@@ -1,9 +1,12 @@
-import { CloseButton, Flex, Slider, Text, TextInput } from '@mantine/core'
+import { CloseButton, Flex, Slider, type SliderProps, Text, TextInput } from '@mantine/core'
 import clsx from 'clsx'
 import { type ChangeEvent, type KeyboardEvent, useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useFieldDraft } from '@/hooks/useFieldDraft'
 
 export type Props = {
+  /** Id of the value field, for a label that names it. */
+  inputId?: string
   value?: number
   onChange(value?: number): void
   min?: number
@@ -12,6 +15,15 @@ export type Props = {
   className?: string
   suffix?: string
   inputTestId?: string
+  /** Shown in the input while no value is set; defaults to "Model default". */
+  placeholder?: string
+  marks?: SliderProps['marks']
+  /** Labels spread evenly under the track, from the minimum to the maximum. */
+  scaleLabels?: string[]
+  inputWidth?: number
+  clearable?: boolean
+  /** Allow touching the track to set a value on small screens. */
+  allowTouchTrackInteraction?: boolean
 }
 
 // SliderChangeEnd触发 或者 input blur的时候才触发onChange
@@ -24,10 +36,24 @@ export default function SliderWithInput({
   className,
   suffix,
   inputTestId,
+  placeholder,
+  marks,
+  scaleLabels,
+  inputWidth = 64,
+  clearable = true,
+  allowTouchTrackInteraction = false,
+  inputId,
 }: Props) {
   const { t } = useTranslation()
   const [tempSliderValue, setTempSliderValue] = useState<number>()
-  const sliderValue = useMemo(() => tempSliderValue ?? value ?? 0, [tempSliderValue, value])
+  // A save can land after onChange returns (conversation settings write to storage first). The released value
+  // stays on screen while `value` is still the one it replaced, instead of snapping back until the save lands.
+  const [released, setReleased] = useState<{ value: number; replaced?: number }>()
+  if (released && released.replaced !== value) setReleased(undefined)
+  const releasedValue = released && released.replaced === value ? released.value : undefined
+  const shownValue = tempSliderValue ?? releasedValue
+  const sliderValue = useMemo(() => shownValue ?? value ?? min, [shownValue, value, min])
+  const unset = value === undefined && shownValue === undefined
   const handleSliderChange = useCallback((v: number) => {
     setTempSliderValue(v)
   }, [])
@@ -36,31 +62,34 @@ export default function SliderWithInput({
       // 有概率会出现SliderChangeEnd事件之后又产生一个SliderChange，所以延时处理
       setTimeout(() => {
         setTempSliderValue(undefined)
+        setReleased({ value: v, replaced: value })
         onChange?.(v)
       }, 100)
     },
-    [onChange]
+    [onChange, value]
   )
 
-  const [tempInputValue, setTempInputValue] = useState<string>()
-  const inputRawValue = useMemo(
-    () => tempInputValue ?? tempSliderValue ?? value,
-    [tempInputValue, tempSliderValue, value]
+  const committedText = value === undefined ? '' : `${value}`
+  const {
+    draft: inputDraft,
+    setDraft: setInputDraft,
+    flush: flushInput,
+  } = useFieldDraft(committedText, (next) => {
+    const v = Number.parseFloat(next)
+    if (!(v >= min && v <= max)) return 'rejected'
+    if (v === value) return 'unchanged'
+    onChange?.(v)
+    return 'applied'
+  })
+  const editingInput = inputDraft !== committedText
+  const inputValue = shownValue !== undefined ? `${shownValue}` : inputDraft
+  const handleInputChange = useCallback(
+    (e: ChangeEvent<HTMLInputElement>) => {
+      setReleased(undefined)
+      setInputDraft(e.currentTarget.value)
+    },
+    [setInputDraft]
   )
-  const inputValue = useMemo(() => (inputRawValue === undefined ? '' : `${inputRawValue}`), [inputRawValue])
-  const handleInputChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
-    const v = e.currentTarget.value
-    setTempInputValue(v)
-  }, [])
-  const handleInputBlur = useCallback(() => {
-    if (tempInputValue) {
-      const v = parseFloat(tempInputValue)
-      if (v >= min && v <= max) {
-        onChange?.(v)
-      }
-    }
-    setTempInputValue(undefined)
-  }, [tempInputValue, min, max, onChange])
   const handleInputKeyUp = useCallback((e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.currentTarget.blur()
@@ -68,31 +97,56 @@ export default function SliderWithInput({
   }, [])
 
   return (
-    <Flex gap="sm" align="center" className={className}>
-      <Slider
-        flex={1}
-        min={min}
-        max={max}
-        step={step}
-        value={sliderValue}
-        onChange={handleSliderChange}
-        onChangeEnd={handleSliderChangeEnd}
-      />
+    <Flex gap="sm" align={scaleLabels ? 'flex-start' : 'center'} className={className}>
+      <Flex direction="column" gap={4} flex={1} miw={0} pt={scaleLabels ? 14 : 0}>
+        <Slider
+          min={min}
+          max={max}
+          step={step}
+          marks={marks}
+          value={sliderValue}
+          onChange={handleSliderChange}
+          onChangeEnd={handleSliderChangeEnd}
+          // An unset value has no position on the scale, so the thumb, filled track and filled
+          // marks stay hidden instead of suggesting the minimum.
+          classNames={{
+            trackContainer: allowTouchTrackInteraction ? 'max-sm:!pointer-events-auto' : undefined,
+            ...(unset
+              ? {
+                  thumb: '!opacity-0',
+                  bar: '!opacity-0',
+                  mark: '!border-chatbox-border-primary !bg-chatbox-background-primary',
+                }
+              : {}),
+          }}
+        />
+        {scaleLabels && (
+          <Flex justify="space-between" gap="xs">
+            {scaleLabels.map((label) => (
+              <Text key={label} fz={11} c="chatbox-tertiary" lh="14px">
+                {label}
+              </Text>
+            ))}
+          </Flex>
+        )}
+      </Flex>
       <TextInput
+        id={inputId}
         data-testid={inputTestId}
-        w={64}
+        w={inputWidth}
         size="sm"
-        placeholder={t('Not set') || ''}
+        placeholder={placeholder ?? t('Model default') ?? ''}
         value={inputValue}
         onChange={handleInputChange}
         onFocus={(e) => e.currentTarget.select()}
-        onBlur={handleInputBlur}
+        onBlur={flushInput}
         onKeyUp={handleInputKeyUp}
-        enterKeyHint="send"
+        inputMode="decimal"
+        enterKeyHint="done"
         classNames={{
           input: clsx(
-            '!text-center !px-0',
-            suffix || typeof inputRawValue === 'string' || inputRawValue === undefined ? '!pr-4' : ''
+            '!text-center !px-0 placeholder:text-xs',
+            suffix || editingInput || inputValue === '' ? '!pr-4' : ''
           ),
         }}
         rightSection={
@@ -100,8 +154,8 @@ export default function SliderWithInput({
             <Text size="sm" c="chatbox-secondary">
               {suffix}
             </Text>
-          ) : typeof inputRawValue === 'string' || inputRawValue === undefined ? null : (
-            <CloseButton size="xs" onClick={() => onChange?.()} />
+          ) : !clearable || editingInput || inputValue === '' ? null : (
+            <CloseButton size="xs" aria-label={t('Clear') ?? undefined} onClick={() => onChange?.()} />
           )
         }
       />

@@ -2,18 +2,19 @@ import NiceModal from '@ebay/nice-modal-react'
 import {
   Avatar,
   Button,
+  Card,
   Checkbox,
   Combobox,
   colorsTuple,
   createTheme,
   type DefaultMantineColor,
   Drawer,
-  Flex,
   Input,
   type MantineColorsTuple,
   MantineProvider,
   Modal,
   NativeSelect,
+  Paper,
   Popover,
   rem,
   Select,
@@ -27,46 +28,51 @@ import {
 import { Box, Grid } from '@mui/material'
 import CssBaseline from '@mui/material/CssBaseline'
 import { ThemeProvider } from '@mui/material/styles'
+import { shouldNavigateToStartPage, shouldSkipOnboardingGuide, splitLaunchPath } from '@shared/dev-launch'
 import { type RemoteConfig, Theme } from '@shared/types'
 import { useQuery } from '@tanstack/react-query'
 import { createRootRoute, Outlet, useLocation } from '@tanstack/react-router'
+import clsx from 'clsx'
 import { useSetAtom } from 'jotai'
 import { useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { trackJkViewEvent } from '@/analytics/jk'
-import { JK_EVENTS, JK_PAGE_NAMES } from '@/analytics/jk-events'
+import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
+import { JK_PAGE_NAMES } from '@/analytics/jk-events'
+import { trackPageView } from '@/analytics/page-view'
 import { createPageViewVisitGate } from '@/analytics/page-view-visit-gate'
 import { AppProviders } from '@/components/AppProviders'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import Toasts from '@/components/common/Toasts'
-import DesktopDownloadReminder from '@/components/layout/DesktopDownloadReminder'
+import { AppTitleBar, useAppTitleBarHeight } from '@/components/layout/AppTitleBar'
 import ExitFullscreenButton from '@/components/layout/ExitFullscreenButton'
 import useAppTheme from '@/hooks/useAppTheme'
 import { useSystemLanguageWhenInit } from '@/hooks/useDefaultSystemLanguage'
 import { useI18nEffect } from '@/hooks/useI18nEffect'
 import useNeedRoomForWinControls from '@/hooks/useNeedRoomForWinControls'
-import useScreenChange, { useSidebarWidth } from '@/hooks/useScreenChange'
+import useScreenChange, { useIsSmallScreen, useSidebarWidth } from '@/hooks/useScreenChange'
 import useShortcut from '@/hooks/useShortcut'
 import useVersion from '@/hooks/useVersion'
 import '@/modals'
 import { rendererApplication } from '@/app/renderer-application'
 import DbSchemaGuardDialog from '@/components/DbSchemaGuardDialog'
+import { BackupTaskOverlay } from '@/components/settings/BackupTaskOverlay'
 import SettingsModal from '@/modals/Settings'
 import { navigateToSettings } from '@/modals/settings-navigation'
 import { prefetchModelRegistry } from '@/packages/model-registry'
 import { getOS } from '@/packages/navigator'
 import * as remote from '@/packages/remote'
 import { sessionStartupRecovery, useSessionStartupLoadTarget } from '@/packages/session-startup-recovery'
+import ClientNotificationWindow from '@/pages/ClientNotificationWindow'
 import PictureDialog from '@/pages/PictureDialog'
 import RemoteDialogWindow from '@/pages/RemoteDialogWindow'
 import SearchDialog from '@/pages/SearchDialog'
 import platform from '@/platform'
 import { getSettingsSearchParam, navigateToDynamicPath, router } from '@/router'
 import Sidebar from '@/Sidebar'
-import storage from '@/storage'
 import * as atoms from '@/stores/atoms'
+import { getRendererDevLaunchOptions } from '@/utils/dev-launch'
 
-const useSession = (sessionId: string | null) => rendererApplication.sessionHooks.useSession(sessionId)
+const useSessionHeader = (sessionId: string | null) => rendererApplication.sessionHooks.useSessionHeader(sessionId)
 
 function getSessionIdFromPathname(pathname: string): string | null {
   if (!pathname.startsWith('/session/')) return null
@@ -83,17 +89,15 @@ import { useUIStore } from '@/stores/uiStore'
 import { CHATBOX_BUILD_CHANNEL, CHATBOX_BUILD_PLATFORM } from '@/variables'
 import { blobToDataUrl } from './image-creator/-components/constants'
 
-function BackgroundImageOverlay() {
+/** The chat wallpaper's image URL on chat routes, or undefined until the image is actually available. */
+function useChatWallpaperUrl(): string | undefined {
   const location = useLocation()
   const globalBackgroundImageKey = useSettingsStore((s) => s.backgroundImageKey)
-  const backgroundImageOpacity = useSettingsStore((s) => s.backgroundImageOpacity)
-  const showSidebar = useUIStore((s) => s.showSidebar)
-  const sidebarWidth = useSidebarWidth()
   const isRootPage = location.pathname === '/'
   const isSessionPage = location.pathname.startsWith('/session/') && location.pathname.length > '/session/'.length
   const sessionId = getSessionIdFromPathname(location.pathname)
   const sessionLoadTarget = useSessionStartupLoadTarget(sessionId)
-  const { session } = useSession(sessionLoadTarget)
+  const { session } = useSessionHeader(sessionLoadTarget)
   const effectiveKey =
     session?.backgroundImage?.type === 'storage-key'
       ? session?.backgroundImage?.storageKey
@@ -104,61 +108,35 @@ function BackgroundImageOverlay() {
     queryKey: ['image-in-storage', effectiveKey],
     queryFn: async () => {
       if (!effectiveKey) return null
-      const b = await storage.getBlob(effectiveKey).catch(() => null)
+      const b = await currentBlobStorage.get(effectiveKey).catch(() => null)
       return b ?? null
     },
     enabled: !!effectiveKey,
     staleTime: Number.POSITIVE_INFINITY,
   })
-  const imageUrl =
-    session?.backgroundImage?.type === 'url'
-      ? session.backgroundImage.url
-      : effectiveKey && blob
-        ? blobToDataUrl(blob)
-        : undefined
+  const storedImageUrl = useMemo(() => (effectiveKey && blob ? blobToDataUrl(blob) : undefined), [effectiveKey, blob])
 
-  if (!isRootPage && !isSessionPage) return null
-  if (!imageUrl) return null
-  return (
-    <div className="absolute z-0 top-0 left-0 w-full h-full">
-      <div
-        className="absolute top-0 left-0 w-full h-full bg-cover bg-center bg-no-repeat"
-        style={{
-          backgroundImage: `
-          url("${imageUrl.replace(/"/g, '%22')}")
-        `,
-          opacity: backgroundImageOpacity,
-        }}
-      />
-      <div className="hidden sm:block absolute top-0 left-0 w-full h-40 bg-gradient-to-b from-chatbox-background-primary from-0 to-transparent to-100%" />
-      {showSidebar && (
-        <div
-          className="hidden sm:block absolute top-0 left-0 h-full bg-gradient-to-r from-chatbox-background-primary from-[25%] to-transparent to-100%"
-          style={{
-            width: `${sidebarWidth * 2}px`,
-          }}
-        />
-      )}
-
-      <Flex h={54} className="sm:hidden bg-chatbox-background-primary" />
-
-      <Flex className="sm:hidden relative h-36 bg-gradient-to-b from-chatbox-background-primary from-0 to-transparent to-100%" />
-
-      <Flex className="sm:hidden absolute bottom-0 left-0 w-full h-36 bg-gradient-to-t from-chatbox-background-primary from-0 to-transparent to-100%" />
-    </div>
-  )
+  if (!isRootPage && !isSessionPage) return undefined
+  return session?.backgroundImage?.type === 'url' ? session.backgroundImage.url || undefined : storedImageUrl
 }
 
-function useHasBackgroundImage() {
-  const location = useLocation()
-  const globalBackgroundImageKey = useSettingsStore((s) => s.backgroundImageKey)
-  const isRootPage = location.pathname === '/'
-  const isSessionPage = location.pathname.startsWith('/session/') && location.pathname.length > '/session/'.length
-  const sessionId = getSessionIdFromPathname(location.pathname)
-  const sessionLoadTarget = useSessionStartupLoadTarget(sessionId)
-  const { session } = useSession(sessionLoadTarget)
-
-  return (isRootPage || isSessionPage) && Boolean(session?.backgroundImage ?? globalBackgroundImageKey)
+function BackgroundImageOverlay({ imageUrl }: { imageUrl: string }) {
+  const backgroundImageOpacity = useSettingsStore((s) => s.backgroundImageOpacity)
+  const isSmallScreen = useIsSmallScreen()
+  return (
+    // Wide layouts render it inside the main panel, so the sidebar and title bar stay solid. Small
+    // screens render it on the app shell, so it fills the safe areas and runs under the header.
+    <div
+      className={clsx(
+        'pointer-events-none absolute inset-0 bg-cover bg-center bg-no-repeat',
+        isSmallScreen ? 'z-0' : '-z-10'
+      )}
+      style={{
+        backgroundImage: `url("${imageUrl.replace(/"/g, '%22')}")`,
+        opacity: backgroundImageOpacity,
+      }}
+    />
+  )
 }
 
 function SettingsModalErrorFallback({ retry }: { error: Error; retry: () => void }) {
@@ -185,7 +163,12 @@ function Root() {
   const startupPathname = useRef(location.pathname)
   const spellCheck = useSettingsStore((state) => state.spellCheck)
   const language = useLanguage()
-  const hasBackgroundImage = useHasBackgroundImage()
+  const wallpaperUrl = useChatWallpaperUrl()
+  const hasBackgroundImage = Boolean(wallpaperUrl)
+  const isSmallScreen = useIsSmallScreen()
+  // The small-screen settings index sits on the grouped surface (see `SettingsRoot`).
+  const pageSurface =
+    isSmallScreen && (location.pathname === '/settings' || location.pathname === '/settings/') ? 'grouped' : undefined
   const pageViewSessionLoadTarget = useSessionStartupLoadTarget(getSessionIdFromPathname(location.pathname))
   const pageViewVisitGate = useRef(createPageViewVisitGate())
   const initialized = useRef(false)
@@ -198,16 +181,44 @@ function Root() {
     if (initialized.current) {
       return
     }
-    // biome-ignore lint/nursery/noFloatingPromises: inline call
     ;(async () => {
       // Wait for stores to hydrate from persistent storage
       await Promise.all([initSettingsStore(), initOnboardingStore()])
       void prefetchModelRegistry()
 
-      const remoteConfig = await remote
-        .getRemoteConfig('setting_chatboxai_first')
-        .catch(() => ({ setting_chatboxai_first: false }) as RemoteConfig)
-      setRemoteConfig(async (prev) => ({ ...(await prev), ...remoteConfig }))
+      const syncRemoteConfig = async () => {
+        const remoteConfig = await remote
+          .getRemoteConfig('setting_chatboxai_first')
+          .catch(() => ({ setting_chatboxai_first: false }) as RemoteConfig)
+        setRemoteConfig(async (prev) => ({ ...(await prev), ...remoteConfig }))
+        return remoteConfig
+      }
+
+      const launchOptions = getRendererDevLaunchOptions()
+      const skipOnboarding = shouldSkipOnboardingGuide(launchOptions)
+      if (skipOnboarding) {
+        onboardingStore.getState().markCompleted()
+        initialized.current = true
+        if (
+          launchOptions.startPage &&
+          shouldNavigateToStartPage(
+            launchOptions.startPage,
+            location.pathname,
+            location.search as Record<string, unknown>
+          )
+        ) {
+          const { pathname, search } = splitLaunchPath(launchOptions.startPage)
+          navigateToDynamicPath({
+            to: pathname,
+            replace: true,
+            search: Object.keys(search).length > 0 ? search : undefined,
+          })
+        }
+        void syncRemoteConfig()
+        return
+      }
+
+      const remoteConfig = await syncRemoteConfig()
 
       // Skip guide-related checks if already on guide, dev tools, or settings/mcp page
       if (
@@ -251,10 +262,11 @@ function Root() {
         return
       }
     })()
-  }, [setOpenAboutDialog, setRemoteConfig, location.pathname, isExceeded, isExceededResolved])
+  }, [setOpenAboutDialog, setRemoteConfig, location.pathname, location.search, isExceeded, isExceededResolved])
 
   const showSidebar = useUIStore((s) => s.showSidebar)
   const sidebarWidth = useSidebarWidth()
+  const titleBarHeight = useAppTitleBarHeight()
 
   const _theme = useTheme()
   const { setColorScheme } = useMantineColorScheme()
@@ -271,6 +283,9 @@ function Root() {
 
   useEffect(() => {
     if (startupPathname.current !== '/') return
+    if (shouldSkipOnboardingGuide(getRendererDevLaunchOptions())) {
+      return
+    }
     const { startupPage } = settingsStore.getState()
     let sid = ''
     try {
@@ -333,24 +348,7 @@ function Root() {
 
     if (!pageName || !shouldTrackPageView) return
 
-    const trackPageView = async () => {
-      let content: string | undefined
-
-      if (pageViewSessionLoadTarget) {
-        const session = await rendererApplication.sessionQueryBridge
-          .getSession(pageViewSessionLoadTarget)
-          .catch(() => null)
-        content = session?.name
-      }
-
-      trackJkViewEvent(JK_EVENTS.PAGE_VIEW, {
-        pageName,
-        content,
-      })
-    }
-
-    // biome-ignore lint/nursery/noFloatingPromises: analytics tracking
-    trackPageView()
+    void trackPageView(pageName, pageViewSessionLoadTarget ?? undefined)
   }, [location.pathname, pageViewSessionLoadTarget, settingsSearch])
 
   const { needRoomForMacWindowControls } = useNeedRoomForWinControls()
@@ -364,13 +362,19 @@ function Root() {
 
   return (
     <Box
-      className="box-border App relative bg-chatbox-background-primary"
+      className={clsx(
+        'box-border App relative flex flex-col',
+        titleBarHeight ? 'bg-chatbox-background-primary-hover' : 'bg-chatbox-background-primary'
+      )}
+      data-chatbox-platform={CHATBOX_BUILD_PLATFORM}
+      data-page-surface={pageSurface}
       spellCheck={spellCheck}
       dir={language === 'ar' ? 'rtl' : 'ltr'}
     >
-      <BackgroundImageOverlay />
       {platform.isDesktopLike && (getOS() === 'Windows' || getOS() === 'Linux') && <ExitFullscreenButton />}
-      <Grid container className="h-full relative z-[1]">
+      {isSmallScreen && wallpaperUrl && <BackgroundImageOverlay imageUrl={wallpaperUrl} />}
+      <AppTitleBar />
+      <Grid container className="min-h-0 flex-1 relative z-[1]">
         <Sidebar />
         <Box
           className="relative h-full w-full box-border"
@@ -390,38 +394,30 @@ function Root() {
               : {}),
           }}
         >
+          {/* Wide layouts: the content panel sits flush under the title bar and meets the sidebar with one rounded corner. */}
           <Box
-            className="title-bar absolute inset-x-0 top-0 hidden sm:block"
-            sx={{ height: showSidebar ? '10px' : '5px' }}
-          />
-          <Box
-            className="h-full box-border"
-            sx={{
-              padding: { xs: 0, sm: showSidebar ? '10px 10px 10px 0' : '5px' },
-              transition: (theme) =>
-                theme.transitions.create('padding', {
-                  easing: showSidebar ? theme.transitions.easing.easeOut : theme.transitions.easing.sharp,
-                  duration: showSidebar
-                    ? theme.transitions.duration.enteringScreen
-                    : theme.transitions.duration.leavingScreen,
-                }),
-            }}
+            className={clsx(
+              'h-full overflow-hidden box-border border-0 border-solid border-chatbox-border-primary',
+              hasBackgroundImage ? 'relative isolate bg-transparent' : 'bg-chatbox-background-primary'
+            )}
+            data-chat-wallpaper={hasBackgroundImage || undefined}
+            data-page-surface={pageSurface}
+            sx={
+              titleBarHeight
+                ? {
+                    borderTopWidth: '1px',
+                    borderInlineStartWidth: showSidebar ? '1px' : 0,
+                    borderStartStartRadius: showSidebar ? '16px' : 0,
+                  }
+                : undefined
+            }
           >
-            <Box
-              className={`h-full overflow-hidden border-[0.5px] border-solid border-chatbox-border-primary ${
-                hasBackgroundImage ? 'bg-transparent' : 'bg-chatbox-background-primary'
-              }`}
-              sx={{
-                borderRadius: { xs: 0, sm: '16px' },
-                boxShadow: { xs: 'none', sm: platform.type === 'web' ? 'none' : '0 0 22px rgba(0, 0, 0, 0.11)' },
-              }}
-            >
-              {/* Keyed per route so a crashing page stays contained to that page
-                  instead of latching the whole main area until the app restarts. */}
-              <ErrorBoundary key={location.pathname} name="main">
-                <Outlet />
-              </ErrorBoundary>
-            </Box>
+            {!isSmallScreen && wallpaperUrl && <BackgroundImageOverlay imageUrl={wallpaperUrl} />}
+            {/* Keyed per route so a crashing page stays contained to that page
+                instead of latching the whole main area until the app restarts. */}
+            <ErrorBoundary key={location.pathname} name="main">
+              <Outlet />
+            </ErrorBoundary>
           </Box>
         </Box>
       </Grid>
@@ -445,13 +441,15 @@ function Root() {
       <PictureDialog />
       {/* 似乎是从后端拉一个弹窗的配置 */}
       <RemoteDialogWindow />
+      {/* 一次性客户端通知，与现有远程弹窗和更新提示保持独立 */}
+      <ClientNotificationWindow />
       {/* IndexedDB schema 与当前版本不匹配时的升级/刷新引导 */}
       <DbSchemaGuardDialog />
+      <BackupTaskOverlay />
       {/* 手机端举报内容 */}
       {/* <ReportContentDialog /> */}
       {/* 搜索 */}
       <SearchDialog />
-      <DesktopDownloadReminder />
       {/* 没有配置模型时的欢迎弹窗 */}
       {/* <WelcomeDialog /> */}
       <Toasts /> {/* mui */}
@@ -466,7 +464,8 @@ const creteMantineTheme = (scale = 1) =>
   createTheme({
     /** Put your mantine theme override here */
     scale,
-    defaultRadius: 'lg',
+    // Controls (buttons, rows, icon buttons, inputs) use md; surfaces (modals, cards, papers) opt into lg below.
+    defaultRadius: 'md',
     primaryColor: 'chatbox-brand',
     colors: {
       'chatbox-brand': colorsTuple(Array.from({ length: 10 }, () => 'var(--chatbox-tint-brand)')),
@@ -653,6 +652,7 @@ const creteMantineTheme = (scale = 1) =>
       Modal: Modal.extend({
         defaultProps: {
           zIndex: 2000,
+          radius: 'lg',
         },
         styles: () => ({
           title: {
@@ -704,6 +704,16 @@ const creteMantineTheme = (scale = 1) =>
         defaultProps: {
           shadow: 'md',
           zIndex: 2100,
+        },
+      }),
+      Paper: Paper.extend({
+        defaultProps: {
+          radius: 'lg',
+        },
+      }),
+      Card: Card.extend({
+        defaultProps: {
+          radius: 'lg',
         },
       }),
       Avatar: Avatar.extend({

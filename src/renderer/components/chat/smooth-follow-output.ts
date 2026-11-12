@@ -1,11 +1,12 @@
 type FollowOutputScrollBehavior = 'auto' | 'smooth'
 
 interface SmoothFollowOutputOptions {
+  onFollowingChange?: (following: boolean) => void
   scrollToBottom: (behavior: FollowOutputScrollBehavior) => void
   stopScrolling?: (scrollTop: number) => void
   requestFrame?: (callback: FrameRequestCallback) => number
   cancelFrame?: (handle: number) => void
-  getScrollBehavior?: () => FollowOutputScrollBehavior
+  getScrollBehavior: () => FollowOutputScrollBehavior
 }
 
 const SCROLL_DIRECTION_TOLERANCE = 0.5
@@ -16,12 +17,35 @@ const HEIGHT_CHANGE_TOLERANCE = 0.5
 // sub-pixel gap that never closes.
 const AT_BOTTOM_TOLERANCE = 4
 
+// Mobile WebViews re-target an unfinished native smooth scroll on every streamed height change and visibly
+// chase the bottom, so mobile follows output with instant scrolls.
+export function getFollowOutputScrollBehavior(platformType: string): FollowOutputScrollBehavior {
+  if (platformType === 'mobile') return 'auto'
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+}
+
+export function isLayoutClampedScroll(
+  previousScrollTop: number | undefined,
+  previousMaxScrollTop: number | undefined,
+  scrollTop: number,
+  maxScrollTop: number
+) {
+  return (
+    previousScrollTop !== undefined &&
+    previousMaxScrollTop !== undefined &&
+    maxScrollTop < previousMaxScrollTop - HEIGHT_CHANGE_TOLERANCE &&
+    previousScrollTop > maxScrollTop &&
+    Math.abs(maxScrollTop - scrollTop) <= AT_BOTTOM_TOLERANCE
+  )
+}
+
 export function createSmoothFollowOutputController({
+  onFollowingChange,
   scrollToBottom,
   stopScrolling,
   requestFrame = window.requestAnimationFrame.bind(window),
   cancelFrame = window.cancelAnimationFrame.bind(window),
-  getScrollBehavior = () => (window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'),
+  getScrollBehavior,
 }: SmoothFollowOutputOptions) {
   // Wait for a real at-bottom signal so restoring a session in the middle does not unexpectedly jump to the end.
   let following = false
@@ -32,7 +56,9 @@ export function createSmoothFollowOutputController({
   let pendingFrame: number | undefined
 
   const pause = () => {
+    if (following) onFollowingChange?.(false)
     following = false
+    pausedByUser = true
     if (pendingFrame !== undefined) {
       cancelFrame(pendingFrame)
       pendingFrame = undefined
@@ -40,6 +66,7 @@ export function createSmoothFollowOutputController({
   }
 
   const resume = () => {
+    if (!following) onFollowingChange?.(true)
     following = true
     pausedByUser = false
   }
@@ -50,28 +77,33 @@ export function createSmoothFollowOutputController({
     }
   }
 
-  const handleScroll = (scrollTop: number, maxScrollTop: number) => {
-    const movedUp = lastScrollTop !== undefined && scrollTop < lastScrollTop - SCROLL_DIRECTION_TOLERANCE
-    const movedDown = lastScrollTop !== undefined && scrollTop > lastScrollTop + SCROLL_DIRECTION_TOLERANCE
-    const movedUpBecauseLayoutShrank =
-      lastMaxScrollTop !== undefined && maxScrollTop < lastMaxScrollTop - HEIGHT_CHANGE_TOLERANCE
+  const syncScrollPosition = (scrollTop: number, maxScrollTop: number) => {
     lastScrollTop = scrollTop
     lastMaxScrollTop = maxScrollTop
+  }
+
+  const handleScroll = (rawScrollTop: number, maxScrollTop: number) => {
+    // iOS rubber-band scrolling reports offsets past either edge. Returning from a bottom bounce shrinks
+    // scrollTop toward the bottom and must not read as an upward scroll that pins the view mid-bounce.
+    const scrollTop = Math.min(Math.max(rawScrollTop, 0), maxScrollTop)
+    const movedUp = lastScrollTop !== undefined && scrollTop < lastScrollTop - SCROLL_DIRECTION_TOLERANCE
+    const movedDown = lastScrollTop !== undefined && scrollTop > lastScrollTop + SCROLL_DIRECTION_TOLERANCE
+    const movedUpBecauseLayoutShrank = isLayoutClampedScroll(lastScrollTop, lastMaxScrollTop, scrollTop, maxScrollTop)
+    syncScrollPosition(scrollTop, maxScrollTop)
     if (movedUp && !movedUpBecauseLayoutShrank) {
       const shouldStopScrolling = following
       pause()
-      pausedByUser = true
       // Pausing future retargets is not enough: a native smooth scroll that is already running can
       // continue pulling the viewport downward. Pinning the current position aborts that animation.
       // Deliberate navigation calls pause() before starting its own smooth scroll and must not be aborted.
       if (shouldStopScrolling) {
         stopScrolling?.(scrollTop)
       }
-    } else if (movedDown) {
-      // Resume as soon as the user reaches the end, without waiting for Virtuoso's at-bottom callback.
-      if (pausedByUser && maxScrollTop - scrollTop <= AT_BOTTOM_TOLERANCE) {
-        resume()
-      }
+    } else if (maxScrollTop - scrollTop <= AT_BOTTOM_TOLERANCE && (movedDown || (!pausedByUser && scrollTop > 0))) {
+      // Virtuoso coalesces at-bottom notifications. Measurements can replace a transient true signal
+      // before it arrives, so also recognize a real bottom scroll synchronously. Ignore the initial
+      // zero position of an unmeasured list, and require downward movement to resume a user-paused view.
+      resume()
     }
     return movedUp && !movedUpBecauseLayoutShrank
   }
@@ -103,6 +135,7 @@ export function createSmoothFollowOutputController({
     handleAtBottomChange,
     handleHeightChange,
     handleScroll,
+    syncScrollPosition,
     pause,
     resume,
     isFollowing: () => following,

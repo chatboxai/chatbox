@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { authInfoStore, useAuthInfoStore } from '@/stores/authInfoStore'
 import * as premiumActions from '@/stores/premiumActions'
 import queryClient from '@/stores/queryClient'
@@ -6,6 +6,8 @@ import { settingsStore } from '@/stores/settingsStore'
 import type { AuthTokens } from './types'
 
 export function useAuthTokens() {
+  const [afterLogin, setAfterLogin] = useState(false)
+  const consumeLogin = useCallback(() => setAfterLogin(false), [])
   const accessToken = useAuthInfoStore((state) => state.accessToken)
   const refreshToken = useAuthInfoStore((state) => state.refreshToken)
 
@@ -15,8 +17,10 @@ export function useAuthTokens() {
 
   const saveAuthTokens = useCallback(async (tokens: AuthTokens) => {
     try {
+      setAfterLogin(true)
       await authInfoStore.getState().setTokens(tokens)
     } catch (error) {
+      setAfterLogin(false)
       console.error('❌ Failed to save tokens:', error)
       throw error
     }
@@ -46,6 +50,7 @@ export function useAuthTokens() {
       queryClient.removeQueries({ queryKey: ['userProfile'] })
       queryClient.removeQueries({ queryKey: ['userLicenses'] })
       queryClient.removeQueries({ queryKey: ['licenseDetail'] })
+      queryClient.removeQueries({ queryKey: ['licenseInspection'] })
       queryClient.removeQueries({ queryKey: ['license-detail'] })
     } catch (error) {
       console.error('Failed to clear auth tokens:', error)
@@ -54,6 +59,8 @@ export function useAuthTokens() {
 
   return {
     isLoggedIn,
+    afterLogin,
+    consumeLogin,
     clearAuthTokens,
     saveAuthTokens,
   }

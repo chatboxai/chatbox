@@ -1,4 +1,4 @@
-import type { LanguageModelV3, LanguageModelV3CallOptions, LanguageModelV3StreamPart } from '@ai-sdk/provider'
+import type { LanguageModelV4, LanguageModelV4CallOptions, LanguageModelV4StreamPart } from '@ai-sdk/provider'
 import type { ModelDependencies } from '@shared/types/adapters'
 import type { SentryScope } from '@shared/utils/sentry_adapter'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -32,7 +32,7 @@ class TestPerplexity extends Perplexity {
 }
 
 const encoder = new TextEncoder()
-const request: LanguageModelV3CallOptions = {
+const request: LanguageModelV4CallOptions = {
   prompt: [{ role: 'user', content: [{ type: 'text', text: 'Hi' }] }],
 }
 
@@ -84,11 +84,11 @@ function createHeldOpenFetch(onCancel: () => void) {
 }
 
 async function readParts(
-  model: LanguageModelV3,
-  requestOverrides: Partial<LanguageModelV3CallOptions> = {}
-): Promise<LanguageModelV3StreamPart[]> {
+  model: LanguageModelV4,
+  requestOverrides: Partial<LanguageModelV4CallOptions> = {}
+): Promise<LanguageModelV4StreamPart[]> {
   const { stream } = await model.doStream({ ...request, ...requestOverrides })
-  const parts: LanguageModelV3StreamPart[] = []
+  const parts: LanguageModelV4StreamPart[] = []
   const reader = stream.getReader()
   let timer: ReturnType<typeof setTimeout> | undefined
   const timeout = new Promise<never>((_, reject) => {
@@ -109,9 +109,9 @@ async function readParts(
 }
 
 async function expectLogicalTermination(
-  model: LanguageModelV3,
+  model: LanguageModelV4,
   onCancel: ReturnType<typeof vi.fn>,
-  requestOverrides: Partial<LanguageModelV3CallOptions> = {}
+  requestOverrides: Partial<LanguageModelV4CallOptions> = {}
 ) {
   const parts = await readParts(model, requestOverrides)
   expect(parts).toContainEqual(

@@ -33,7 +33,12 @@ async function loadPdfjs() {
   return pdfjs
 }
 
-export async function parsePdfFileLocally(file: File): Promise<string> {
+export async function parsePdfFileLocally(
+  file: File,
+  options: { signal?: AbortSignal; failOnPageError?: boolean } = {}
+): Promise<string> {
+  const { signal } = options
+  signal?.throwIfAborted()
   if (!isPdfFilePath(file.name)) {
     throw new Error('local_parser_failed')
   }
@@ -43,20 +48,35 @@ export async function parsePdfFileLocally(file: File): Promise<string> {
   }
 
   const { getDocument } = await loadPdfjs()
+  signal?.throwIfAborted()
+  const data = new Uint8Array(await file.arrayBuffer())
+  signal?.throwIfAborted()
   const loadingTask = getDocument({
-    data: new Uint8Array(await file.arrayBuffer()),
+    data,
     useSystemFonts: true,
+  })
+  let destruction: Promise<void> | undefined
+  const destroy = () => (destruction ??= loadingTask.destroy())
+  let abort: (() => void) | undefined
+  const canceled = new Promise<never>((_, reject) => {
+    abort = () => {
+      void destroy().catch(() => undefined)
+      reject(signal?.reason ?? new DOMException('PDF parsing canceled', 'AbortError'))
+    }
+    signal?.addEventListener('abort', abort, { once: true })
   })
 
   try {
-    const document = await loadingTask.promise
+    const document = await Promise.race([loadingTask.promise, canceled])
     const pageTexts: string[] = []
 
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber++) {
+      signal?.throwIfAborted()
       try {
-        const page = await document.getPage(pageNumber)
+        const page = await Promise.race([document.getPage(pageNumber), canceled])
         try {
-          const textContent = await page.getTextContent()
+          const textContent = await Promise.race([page.getTextContent(), canceled])
+          signal?.throwIfAborted()
           let pageText = ''
           let lastY: number | undefined
 
@@ -89,7 +109,9 @@ export async function parsePdfFileLocally(file: File): Promise<string> {
         } finally {
           page.cleanup()
         }
-      } catch {
+      } catch (error) {
+        signal?.throwIfAborted()
+        if (options.failOnPageError) throw error
         pageTexts.push('')
       }
     }
@@ -100,11 +122,13 @@ export async function parsePdfFileLocally(file: File): Promise<string> {
 
     return pageTexts.map((text, i) => `${formatPdfPageMarker(i + 1)}\n\n${text}`).join('\n\n')
   } catch (error) {
+    signal?.throwIfAborted()
     if (error instanceof Error && error.name === 'PasswordException') {
       throw new Error(LOCAL_PARSER_PDF_PASSWORD_PROTECTED_ERROR)
     }
     throw error
   } finally {
-    await loadingTask.destroy()
+    if (abort) signal?.removeEventListener('abort', abort)
+    await destroy()
   }
 }

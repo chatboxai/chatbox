@@ -1,10 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildChatboxAIGroupViews } from '@/components/ModelSelectorV2/chatboxCatalog'
-import { getChatboxAIModelList, getModelManifest } from './remote'
+import {
+  checkLoginStatus,
+  getChatboxAIModelList,
+  getModelManifest,
+  getUserProfile,
+  getWebAuthToken,
+  listLicensesByUser,
+  loginOrSignupWithEmailCode,
+  refreshAccessToken,
+  requestLoginTicketId,
+  sendEmailLoginCode,
+  uploadAndCreateUserFile,
+  uploadAndParseUserFile,
+} from './remote'
 
-const { afetch } = vi.hoisted(() => ({ afetch: vi.fn() }))
+const { afetch, upload, setBlob } = vi.hoisted(() => ({ afetch: vi.fn(), upload: vi.fn(), setBlob: vi.fn() }))
 
-vi.mock('@shared/request/request', () => ({ createAfetch: () => afetch }))
+vi.mock('@shared/request/request', () => ({
+  createAfetch: () => afetch,
+  createAuthenticatedAfetch: () => afetch,
+  uploadFile: upload,
+}))
 vi.mock('@shared/request/chatboxai_pool', () => ({ getChatboxAPIOrigin: () => 'https://example.test' }))
 vi.mock('@/lib/utils', () => ({ getLogger: () => ({ error: vi.fn() }) }))
 vi.mock('@/platform', () => ({
@@ -12,6 +29,8 @@ vi.mock('@/platform', () => ({
     type: 'web',
     getPlatform: async () => 'web',
     getVersion: async () => 'test',
+    getDeviceName: async () => 'test',
+    setStoreBlob: setBlob,
   },
 }))
 vi.mock('@/stores/authInfoStore', () => ({ authInfoStore: {} }))
@@ -29,7 +48,13 @@ const incompatibleModels = [
   { modelId: 'malformed' },
   null,
 ]
-const image = { modelId: 'image', modelName: 'Image', type: 'image', apiStyle: 'openai' }
+const image = {
+  modelId: 'image',
+  modelName: 'Image',
+  type: 'image',
+  apiStyle: 'openai',
+  description: 'Create detailed images from text and reference images.',
+}
 
 function respond(data: unknown) {
   afetch.mockResolvedValue({ json: async () => ({ success: true, data }) })
@@ -98,5 +123,75 @@ describe('remote model catalog compatibility', () => {
 
     respond({ models: {} })
     await expect(getChatboxAIModelList({})).rejects.toThrow()
+  })
+})
+
+describe('account API origin', () => {
+  beforeEach(() => {
+    afetch.mockReset().mockResolvedValue({ json: async () => ({ data: {} }), headers: { get: () => 'token' } })
+  })
+
+  it.each([
+    ['/api/auth/request_login_ticket', () => requestLoginTicketId()],
+    ['/api/auth/send_email_login_code', () => sendEmailLoginCode({ email: 'user@example.test' })],
+    [
+      '/api/auth/login_or_signup_with_email_code',
+      () => loginOrSignupWithEmailCode({ email: 'user@example.test', code: '1' }),
+    ],
+    ['/api/auth/web_auth_token/generate', () => getWebAuthToken()],
+    ['/api/auth/login_status', () => checkLoginStatus('ticket')],
+    ['/api/auth/token_refresh', () => refreshAccessToken({ refreshToken: 'refresh' })],
+    ['/api/user/profile', () => getUserProfile()],
+    ['/api/license/list_by_user', () => listLicensesByUser()],
+  ])('sends %s to the selected Chatbox API origin', async (path, call) => {
+    await call()
+
+    expect(afetch.mock.calls[0][0]).toBe(`https://example.test${path}`)
+  })
+})
+
+describe('cloud file parsing transport', () => {
+  beforeEach(() => {
+    afetch.mockReset()
+    upload.mockReset().mockResolvedValue({})
+    setBlob.mockReset().mockResolvedValue(undefined)
+    afetch
+      .mockResolvedValueOnce({
+        json: async () => ({ data: { url: 'https://upload.test/file', filename: 'report.doc' } }),
+      })
+      .mockResolvedValueOnce({ json: async () => ({ data: { uuid: 'fixture', content: 'Parsed text' } }) })
+  })
+
+  it('passes cancellation through URL, raw upload, and parsing without persisting content', async () => {
+    const file = new File(['fixture'], 'report.doc', { type: 'application/msword' })
+    const signal = new AbortController().signal
+    expect(await uploadAndParseUserFile('test-license', file, signal)).toBe('Parsed text')
+    expect(afetch).toHaveBeenCalledTimes(2)
+    expect(afetch.mock.calls.every((call) => call[1].signal === signal)).toBe(true)
+    expect(upload).toHaveBeenCalledWith(file, 'https://upload.test/file', signal)
+    expect(JSON.parse(afetch.mock.calls[1][1].body)).toMatchObject({
+      returnContent: true,
+      filetype: 'application/msword',
+    })
+    expect(setBlob).not.toHaveBeenCalled()
+  })
+
+  it('does not start parsing when canceled during the upload', async () => {
+    const controller = new AbortController()
+    upload.mockImplementationOnce(async () => controller.abort())
+    await expect(
+      uploadAndParseUserFile('test-license', new File(['fixture'], 'report.doc'), controller.signal)
+    ).rejects.toThrow()
+    expect(afetch).toHaveBeenCalledTimes(1)
+    expect(setBlob).not.toHaveBeenCalled()
+  })
+
+  it('preserves the ordinary attachment storage path', async () => {
+    const key = await uploadAndCreateUserFile(
+      'test-license',
+      new File(['fixture'], 'report.doc', { type: 'application/msword' })
+    )
+    expect(key).toBe('parseFile-report.doc_fixture.msword.txt')
+    expect(setBlob).toHaveBeenCalledWith(key, 'Parsed text')
   })
 })

@@ -25,6 +25,50 @@ export async function withSessionGenerationLock<T>(sessionId: string, task: () =
   }
 }
 
+/**
+ * Takes the session generation turn only when no generation work is accepted
+ * or queued for the session; otherwise resolves `undefined` without running
+ * `task`. User-triggered regenerate actions use this: the lock is held for the
+ * whole reply, so a repeated tap queued behind it would wait out the reply the
+ * first tap started and then regenerate again.
+ */
+export function trySessionGenerationLock<T>(sessionId: string, task: () => Promise<T>): Promise<T | undefined> {
+  if (hasPendingSessionGeneration(sessionId)) return Promise.resolve(undefined)
+  return withSessionGenerationLock(sessionId, task)
+}
+
 export function resetSessionGenerationLocksForTests(): void {
   sessionGenerationTails.clear()
+}
+
+/**
+ * Whether an accepted submission or follow-up already owns (or is waiting for)
+ * this session's generation turn. Hosts that have work to do on the session use
+ * this to choose between queueing that work and taking the lock, which would
+ * silently wait out the whole reply first.
+ */
+export function hasPendingSessionGeneration(sessionId: string): boolean {
+  return sessionGenerationTails.has(sessionId)
+}
+
+/** Includes accepted submission work before a generation runtime has been registered. */
+export async function waitForSessionGenerations(signal?: AbortSignal): Promise<void> {
+  while (sessionGenerationTails.size) {
+    await new Promise<void>((resolve, reject) => {
+      const cancel = () => {
+        const error = new Error('Waiting for generation was canceled')
+        error.name = 'AbortError'
+        reject(signal?.reason ?? error)
+      }
+      if (signal?.aborted) {
+        cancel()
+        return
+      }
+      signal?.addEventListener('abort', cancel, { once: true })
+      void Promise.all(sessionGenerationTails.values()).then(() => {
+        signal?.removeEventListener('abort', cancel)
+        resolve()
+      })
+    })
+  }
 }

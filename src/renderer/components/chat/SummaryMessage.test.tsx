@@ -98,13 +98,13 @@ describe('SummaryMessage mode policy', () => {
     )
   })
 
-  test('explains the cache miss when deleting a summary in a long work-mode chat', () => {
-    renderSummary({ sessionMode: 'work', shouldConfirmPromptCacheDelete: () => true })
+  test('explains the cache miss when deleting a summary in a long work-mode chat', async () => {
+    renderSummary({ sessionMode: 'work', shouldConfirmPromptCacheDelete: async () => true })
     expandSummary()
     fireEvent.click(within(screen.getByLabelText('Delete')).getByRole('button'))
 
     expect(
-      screen.getByText('Deleting this summary will restore original messages to context calculation.')
+      await screen.findByText('Deleting this summary will restore original messages to context calculation.')
     ).toBeTruthy()
     expect(
       screen.getByText(
@@ -114,14 +114,14 @@ describe('SummaryMessage mode policy', () => {
     expect(screen.getByLabelText("Don't show again")).toBeTruthy()
   })
 
-  test('hides the cache explanation after the user dismissed future prompts', () => {
+  test('hides the cache explanation after the user dismissed future prompts', async () => {
     isDismissedMock.mockReturnValue(true)
-    renderSummary({ sessionMode: 'work', shouldConfirmPromptCacheDelete: () => true })
+    renderSummary({ sessionMode: 'work', shouldConfirmPromptCacheDelete: async () => true })
     expandSummary()
     fireEvent.click(within(screen.getByLabelText('Delete')).getByRole('button'))
 
     expect(
-      screen.getByText('Deleting this summary will restore original messages to context calculation.')
+      await screen.findByText('Deleting this summary will restore original messages to context calculation.')
     ).toBeTruthy()
     expect(
       screen.queryByText(
@@ -131,11 +131,11 @@ describe('SummaryMessage mode policy', () => {
     expect(screen.queryByLabelText("Don't show again")).toBeNull()
   })
 
-  test('persists dont-show-again when deleting a cache-sensitive summary', () => {
-    renderSummary({ sessionMode: 'work', shouldConfirmPromptCacheDelete: () => true })
+  test('persists dont-show-again when deleting a cache-sensitive summary', async () => {
+    renderSummary({ sessionMode: 'work', shouldConfirmPromptCacheDelete: async () => true })
     expandSummary()
     fireEvent.click(within(screen.getByLabelText('Delete')).getByRole('button'))
-    fireEvent.click(screen.getByLabelText("Don't show again"))
+    fireEvent.click(await screen.findByLabelText("Don't show again"))
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
 
     expect(dismissMock).toHaveBeenCalledWith('delete-summary')

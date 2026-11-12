@@ -1,22 +1,23 @@
 import type {
   Message,
-  Session,
   SessionApplicationEvent,
   SessionEventBus,
+  SessionFolder,
   SessionMetaPage,
   SessionMetaRecord,
   Updater,
 } from '@chatbox/core'
-import { applyMessageUpdate } from '@chatbox/core/application/session'
-import { sortSessionRecords, uniqueSessionRecords } from '@chatbox/core/utils/session-sort'
-import type { InfiniteData, QueryClient } from '@tanstack/react-query'
+import type { SessionCommandDelta, SessionHeaderRead } from '@chatbox/core/ports'
+import { getSessionListGroupRank, sortSessionRecords, uniqueSessionRecords } from '@chatbox/core/utils/session-sort'
+import { type InfiniteData, type QueryClient } from '@tanstack/react-query'
 import { QueryKeys } from './query-keys'
-import { mergeCachedGeneratingMessages } from './session-cache-policy'
 import {
   createSessionQueryDefinitions,
   type SessionQueryDefinitions,
   type SessionQuerySource,
+  type SessionMessageQueryRead,
 } from './session-query-options'
+import type { SessionTranscriptWindowController } from './session-transcript-window'
 
 export type InfiniteSessionData = InfiniteData<SessionMetaPage, number>
 
@@ -59,6 +60,11 @@ export class SessionQueryBridge {
   private visibleListRefreshGeneration = 0
   private visibleListRefreshTail: Promise<void> = Promise.resolve()
   private visibleListRefreshPending = false
+  private readonly commandRevisions = new Map<string, number>()
+  private readonly metaRevisions = new Map<string, number>()
+  private readonly windows = new Map<string, Set<SessionTranscriptWindowController>>()
+  private readonly commitListeners = new Map<string, Set<(delta: SessionCommandDelta) => void>>()
+  private readonly generationControlVersions = new Map<string, number>()
 
   constructor(
     private readonly queryClient: QueryClient,
@@ -71,6 +77,36 @@ export class SessionQueryBridge {
 
   dispose(): void {
     this.unsubscribe()
+    for (const controllers of this.windows.values()) for (const controller of controllers) controller.close()
+    this.windows.clear()
+    this.commitListeners.clear()
+    this.generationControlVersions.clear()
+    this.commandRevisions.clear()
+    this.metaRevisions.clear()
+  }
+
+  registerWindow(sessionId: string, controller: SessionTranscriptWindowController): () => void {
+    const controllers = this.windows.get(sessionId) ?? new Set<SessionTranscriptWindowController>()
+    controllers.add(controller)
+    this.windows.set(sessionId, controllers)
+    return () => {
+      controllers.delete(controller)
+      if (!controllers.size) this.windows.delete(sessionId)
+    }
+  }
+
+  subscribeCommits(sessionId: string, listener: (delta: SessionCommandDelta) => void): () => void {
+    const listeners = this.commitListeners.get(sessionId) ?? new Set<(delta: SessionCommandDelta) => void>()
+    listeners.add(listener)
+    this.commitListeners.set(sessionId, listeners)
+    return () => {
+      listeners.delete(listener)
+      if (!listeners.size) this.commitListeners.delete(sessionId)
+    }
+  }
+
+  getGenerationControlVersion(sessionId: string): number {
+    return this.generationControlVersions.get(sessionId) ?? 0
   }
 
   getCachedSessionsMeta(): SessionMetaRecord[] {
@@ -78,8 +114,8 @@ export class SessionQueryBridge {
     return uniqueSessionRecords(data?.pages.flatMap((page) => page.items) ?? [])
   }
 
-  getCachedSession(sessionId: string): Session | null | undefined {
-    return this.queryClient.getQueryData<Session | null>(QueryKeys.ChatSession(sessionId))
+  private async getFolderIds(): Promise<string[]> {
+    return (await this.queryClient.fetchQuery(this.definitions.folders)).map((folder) => folder.id)
   }
 
   async listSessionsMeta(): Promise<SessionMetaRecord[]> {
@@ -89,12 +125,195 @@ export class SessionQueryBridge {
     return uniqueSessionRecords(data.pages.flatMap((page) => page.items))
   }
 
-  getSession(sessionId: string): Promise<Session | null> {
-    return this.queryClient.fetchQuery(this.definitions.session(sessionId))
+  getSessionHeader(sessionId: string): Promise<SessionHeaderRead | null> {
+    return this.queryClient.fetchQuery(this.definitions.header(sessionId))
+  }
+
+  private sessionKeys(sessionId: string): string[][] {
+    return [
+      QueryKeys.ChatSessionHeader(sessionId),
+      QueryKeys.ChatSessionMessage(sessionId),
+      QueryKeys.ChatSessionThread(sessionId),
+      QueryKeys.ChatSessionThreads(sessionId),
+      QueryKeys.ChatSessionForks(sessionId),
+    ]
   }
 
   discardSessionCache(sessionId: string): void {
-    this.queryClient.removeQueries({ queryKey: QueryKeys.ChatSession(sessionId), exact: true })
+    this.commandRevisions.delete(sessionId)
+    for (const key of this.sessionKeys(sessionId)) this.queryClient.removeQueries({ queryKey: key })
+    for (const controller of this.windows.get(sessionId) ?? []) void controller.refresh()
+  }
+
+  /** Stream chunks patch mounted bodies; off-screen messages remain owned by their generation runtime. */
+  async updateMessageCache(
+    sessionId: string,
+    messageId: string,
+    updater: Updater<Message>,
+    options?: { shouldApply?: () => boolean }
+  ): Promise<void> {
+    if (options?.shouldApply?.() === false) return
+    for (const controller of this.windows.get(sessionId) ?? []) controller.updateMessage(messageId, updater)
+    const key = QueryKeys.ChatSessionMessage(sessionId, messageId)
+    this.queryClient.setQueryData<SessionMessageQueryRead | null>(key, (read) =>
+      read?.message
+        ? {
+            ...read,
+            message: typeof updater === 'function' ? updater(read.message) : { ...read.message, ...updater },
+          }
+        : read
+    )
+  }
+
+  private async projectCommand(delta: SessionCommandDelta, preserveLive: boolean): Promise<boolean> {
+    const { sessionId, revision } = delta
+    if ((this.commandRevisions.get(sessionId) ?? 0) >= revision) return false
+    this.commandRevisions.set(sessionId, revision)
+    const navigation = delta.structureResult?.navigation
+    const ranges = delta.diff
+    const structural =
+      (!!delta.structureResult &&
+        (!!ranges.messages.upsert.length ||
+          !!ranges.messageMetadataUpsert?.length ||
+          !!delta.structureResult.affectedScopes?.length)) ||
+      !!ranges.deleteSessionMessages ||
+      !!ranges.deleteArchivedThreads ||
+      !!ranges.insertParents?.length ||
+      !!ranges.expandForks?.length ||
+      !!ranges.deleteSubtrees?.length ||
+      !!ranges.deleteThreadMessages?.length ||
+      !!ranges.replaceMessagePivots?.length ||
+      !!ranges.reparentChildren?.length ||
+      !!ranges.siblingShifts?.length ||
+      !!ranges.messages.delete.length ||
+      !!ranges.threads.delete.length
+    const removedThreads = [
+      ...ranges.threads.delete,
+      ...(ranges.deleteThreadMessages ?? []),
+      ...(ranges.deleteSubtrees?.map((range) => range.threadId) ?? []),
+    ]
+    if (structural) this.generationControlVersions.set(sessionId, revision)
+    if (ranges.deleteSessionMessages)
+      for (const controller of this.windows.get(sessionId) ?? [])
+        removedThreads.push(...controller.getSnapshot().threads.map((thread) => thread.threadId))
+    for (const controller of this.windows.get(sessionId) ?? []) {
+      if ((controller.getSnapshot().revision ?? 0) > revision) continue
+      if (
+        ranges.messages.delete.length &&
+        !navigation &&
+        !removedThreads.length &&
+        !ranges.deleteSessionMessages &&
+        !ranges.deleteArchivedThreads
+      ) {
+        if (controller.applyRemovals(delta)) {
+          const readBranch = this.source.readSessionBranchMessagesPage
+          if (readBranch) await controller.completeRemovals((request) => readBranch.call(this.source, request))
+        } else controller.rejectRemovalProjection()
+        continue
+      }
+      if (
+        navigation?.type === 'branch' &&
+        navigation.mode === 'create' &&
+        controller.applyCreatedBranch(delta, preserveLive)
+      )
+        continue
+      if (controller.applyThreadCommit(delta)) continue
+      controller.updateMetadata(
+        delta.diff.messageMetadataUpsert ?? [],
+        delta.diff.threads.upsert,
+        navigation?.type === 'branch' ? { rows: ranges.messages.upsert, preserveLive } : undefined
+      )
+      if (navigation?.type === 'thread-switch') void controller.showSwitchedThread(delta)
+      else if (navigation?.type === 'branch') {
+        const prefix = controller
+          .getSnapshot()
+          .rows.find((row) => row.messageId === navigation.sharedPrefixEnd.messageId)
+        if (prefix && delta.previousRevision !== null && controller.getSnapshot().revision === delta.previousRevision) {
+          const cursor = {
+            sessionId,
+            revision,
+            threadId: prefix.threadId,
+            threadOrder:
+              controller.getSnapshot().threads.find((thread) => thread.threadId === prefix.threadId)?.threadOrder ?? -1,
+            messageId: prefix.messageId,
+            direction: 'after' as const,
+            scope: 'transcript' as const,
+            limit: controller.getSnapshot().pageSize,
+            maxBytes: controller.getSnapshot().maxBytes,
+          }
+          void controller.applyBranchCommit({
+            ...delta,
+            previousRevision: delta.previousRevision,
+            sharedPrefixEnd: navigation.sharedPrefixEnd,
+            ...(navigation.firstMessageId ? { origin: { messageId: navigation.firstMessageId } } : { cursor }),
+          })
+        } else
+          void controller.navigateBranch(
+            navigation.firstMessageId
+              ? { messageId: navigation.firstMessageId }
+              : { threadId: navigation.sharedPrefixEnd.threadId, edge: 'tail' },
+            revision
+          )
+      } else if (
+        structural ||
+        !controller.applyRows(
+          delta,
+          delta.previousRevision,
+          delta.diff.messages.upsert,
+          delta.appendedMessageIds,
+          preserveLive
+        )
+      ) {
+        void controller.refresh(ranges.messages.delete, removedThreads, structural ? undefined : delta)
+      }
+    }
+    for (const listener of this.commitListeners.get(sessionId) ?? []) listener(delta)
+    const upserts = new Map(delta.diff.messages.upsert.map((row) => [row.messageId, row.message]))
+    const deleted = new Set(delta.diff.messages.delete)
+    await this.queryClient.cancelQueries({ queryKey: QueryKeys.ChatSessionMessage(sessionId) })
+    this.queryClient.setQueriesData<SessionMessageQueryRead | null>(
+      { queryKey: QueryKeys.ChatSessionMessage(sessionId) },
+      (read) => {
+        if (!read || read.revision > revision) return read
+        const message = read.message
+        return {
+          header: delta.header,
+          revision,
+          message: message
+            ? deleted.has(message.id)
+              ? null
+              : preserveLive && message.generating && upserts.get(message.id)?.generating
+                ? message
+                : (upserts.get(message.id) ?? message)
+            : null,
+        }
+      }
+    )
+    if (structural || ranges.threads.upsert.length) {
+      for (const key of [
+        QueryKeys.ChatSessionThread(sessionId),
+        QueryKeys.ChatSessionThreads(sessionId),
+        ...(structural ? [QueryKeys.ChatSessionMessage(sessionId), QueryKeys.ChatSessionForks(sessionId)] : []),
+      ]) {
+        void this.queryClient.invalidateQueries({ queryKey: key })
+      }
+    }
+    const headerKey = QueryKeys.ChatSessionHeader(sessionId)
+    const hasHeaderQuery = this.queryClient.getQueryState(headerKey) !== undefined
+    await this.queryClient.cancelQueries({ queryKey: headerKey, exact: true })
+    this.queryClient.setQueryData<SessionHeaderRead | null>(headerKey, (read) =>
+      read && read.revision <= revision
+        ? { ...read, header: delta.header, activeThreadId: delta.record.activeThreadId, revision }
+        : read
+    )
+    if (hasHeaderQuery) {
+      const read = await this.source.getSessionHeader(sessionId)
+      if (this.commandRevisions.get(sessionId) === revision)
+        this.queryClient.setQueryData<SessionHeaderRead | null>(headerKey, (previous) =>
+          previous && read && previous.revision > read.revision ? previous : read
+        )
+    }
+    return this.commandRevisions.get(sessionId) === revision
   }
 
   updateSessionListData(updater: (items: SessionMetaRecord[]) => SessionMetaRecord[]): void {
@@ -106,6 +325,9 @@ export class SessionQueryBridge {
   }
 
   resetSessionList(page: SessionMetaPage): void {
+    // A page request still in flight was read at an offset of the old order;
+    // letting it land would append it to the new first page.
+    void this.queryClient.cancelQueries({ queryKey: QueryKeys.ChatSessionsList, exact: true })
     this.queryClient.setQueryData<InfiniteSessionData>(QueryKeys.ChatSessionsList, {
       pages: [page],
       pageParams: [0],
@@ -117,24 +339,6 @@ export class SessionQueryBridge {
       pages: [page],
       pageParams: [0],
     })
-  }
-
-  updateSessionCache(sessionId: string, updater: Updater<Session>): void {
-    this.queryClient.setQueryData(QueryKeys.ChatSession(sessionId), (old: Session | null | undefined) => {
-      if (!old) return old
-      return typeof updater === 'function' ? updater(old) : { ...old, ...updater }
-    })
-  }
-
-  /**
-   * Cache-only message update for streaming-frequency writes. Loads the session
-   * through the query cache first so a missing session fails loudly instead of
-   * silently dropping the update.
-   */
-  async updateMessageCache(sessionId: string, messageId: string, updater: Updater<Message>): Promise<void> {
-    const session = await this.getSession(sessionId)
-    if (!session) throw new Error(`Session ${sessionId} not found`)
-    this.updateSessionCache(sessionId, (current) => applyMessageUpdate(current, sessionId, messageId, updater))
   }
 
   private invalidateVisibleListRefresh(): void {
@@ -193,67 +397,78 @@ export class SessionQueryBridge {
     }
   }
 
+  private async projectMetadata(sessionId: string, meta: Partial<SessionMetaRecord>, revision: number): Promise<void> {
+    if ((this.metaRevisions.get(sessionId) ?? 0) >= revision) return
+    this.metaRevisions.set(sessionId, revision)
+    const folderIds = await this.getFolderIds()
+    if (this.metaRevisions.get(sessionId) !== revision) return
+    const previous = this.getCachedSessionsMeta().find((item) => item.id === sessionId)
+    const changedGroup =
+      previous &&
+      getSessionListGroupRank(previous, folderIds) !== getSessionListGroupRank({ ...previous, ...meta }, folderIds)
+    this.updateSessionListData((items) =>
+      sortSessionRecords(
+        items.map((item) => (item.id === sessionId ? { ...item, ...meta } : item)),
+        folderIds
+      )
+    )
+    if (changedGroup || this.visibleListRefreshPending) await this.refreshVisibleSessionList()
+  }
+
   private async project(event: SessionApplicationEvent): Promise<void> {
     switch (event.type) {
+      case 'session-command-committed': {
+        await this.projectCommand(event.delta, event.preserveCachedGeneratingMessages)
+        if (event.meta && event.metaRevision !== null)
+          await this.projectMetadata(event.delta.sessionId, event.meta, event.metaRevision)
+        break
+      }
+      case 'session-meta-projected':
+        await this.projectMetadata(event.sessionId, event.meta, event.revision)
+        break
       case 'session-created': {
+        if ((this.metaRevisions.get(event.record.id) ?? 0) > event.revision) {
+          await this.refreshVisibleSessionList()
+          break
+        }
+        this.metaRevisions.set(event.record.id, event.revision)
         const refreshPending = this.visibleListRefreshPending
         this.invalidateVisibleListRefresh()
-        this.queryClient.setQueryData(QueryKeys.ChatSession(event.session.id), event.session)
-        this.updateSessionListData((items) => sortSessionRecords([...items, event.record]))
-        // A record that sorts to the tail of a still-paginated window may truly
-        // belong on a page that is not loaded yet (a copy of a session outside
-        // the window), which would shift every later offset. The cache alone
-        // cannot tell, so reload the first page from the repository.
+        const folderIds = await this.getFolderIds()
+        if (this.metaRevisions.get(event.record.id) !== event.revision) break
+        this.updateSessionListData((items) => sortSessionRecords([...items, event.record], folderIds))
         const data = this.queryClient.getQueryData<InfiniteSessionData>(QueryKeys.ChatSessionsList)
         const lastPage = data?.pages[data.pages.length - 1]
         if (
           refreshPending ||
           (lastPage && lastPage.nextCursor !== null && lastPage.items.at(-1)?.id === event.record.id)
-        ) {
+        )
           await this.refreshVisibleSessionList()
-        }
         break
       }
-      case 'session-updated':
-        if (event.preserveCachedGeneratingMessages) {
-          this.queryClient.setQueryData(QueryKeys.ChatSession(event.session.id), (cached: Session | null | undefined) =>
-            mergeCachedGeneratingMessages(event.session, cached)
-          )
-        } else {
-          this.queryClient.setQueryData(QueryKeys.ChatSession(event.session.id), event.session)
-        }
-        if (event.meta) {
-          const refreshPending = this.visibleListRefreshPending
-          const cached = this.getCachedSessionsMeta().find((item) => item.id === event.session.id)
-          // Pin state changes the global starred/unstarred window. Patching the
-          // already-loaded pages leaves a stale prefix, so the next page overlaps
-          // and the same chat repeats until the app restarts.
-          const starredChanged = cached !== undefined && Boolean(cached.starred) !== Boolean(event.session.starred)
-          if (starredChanged || refreshPending) {
-            this.invalidateVisibleListRefresh()
-          }
-          this.updateSessionListData((items) =>
-            sortSessionRecords(items.map((item) => (item.id === event.session.id ? { ...item, ...event.meta } : item)))
-          )
-          if (starredChanged || refreshPending) {
-            await this.refreshVisibleSessionList()
-          }
-        }
-        break
       case 'session-deleted': {
         const refreshPending = this.visibleListRefreshPending
         const ids = new Set(event.ids)
         this.invalidateVisibleListRefresh()
         for (const sessionId of ids) {
-          this.queryClient.setQueryData(QueryKeys.ChatSession(sessionId), null)
+          this.commandRevisions.delete(sessionId)
+          this.metaRevisions.delete(sessionId)
+          this.generationControlVersions.delete(sessionId)
+          for (const key of this.sessionKeys(sessionId)) {
+            void this.queryClient.cancelQueries({ queryKey: key })
+            this.queryClient.removeQueries({ queryKey: key })
+          }
+          this.queryClient.setQueryData(QueryKeys.ChatSessionHeader(sessionId), null)
+          for (const controller of this.windows.get(sessionId) ?? []) controller.close()
         }
         this.updateSessionListData((items) => items.filter((item) => !ids.has(item.id)))
         this.updateArchivedSessionListData((items) => items.filter((item) => !ids.has(item.id)))
-        if (refreshPending) {
-          await this.refreshVisibleSessionList()
-        }
+        if (refreshPending) await this.refreshVisibleSessionList()
         break
       }
+      case 'session-folders-changed':
+        this.queryClient.setQueryData<SessionFolder[]>(QueryKeys.SessionFolders, event.folders)
+        break
       case 'session-list-reset':
         if (event.visible) {
           this.invalidateVisibleListRefresh()
@@ -261,6 +476,8 @@ export class SessionQueryBridge {
         }
         if (event.archived) this.resetArchivedSessionList(event.archived)
         break
+      case 'session-derived-data-patched':
+      case 'session-text-tokens-cached':
       case 'session-will-delete':
         break
     }

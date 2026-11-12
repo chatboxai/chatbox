@@ -18,7 +18,7 @@ describe('defaults', () => {
     expect(result.showWordCount).toBe(false)
     expect(result.showTokenCount).toBe(false)
     expect(result.showTokenUsed).toBe(true)
-    expect(result.messageLayout).toBe('bubble')
+    expect(result.messageLayout).toBe('classic')
   })
 
   it('settings() returns allowReportingAndTracking as true', () => {

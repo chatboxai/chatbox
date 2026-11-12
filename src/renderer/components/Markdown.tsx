@@ -1,6 +1,8 @@
 import { sanitizeUrl } from '@braintree/sanitize-url'
 import { useTheme } from '@mui/material'
+import katex from 'katex'
 import type { Code, Root } from 'mdast'
+import type { Math as MathNode } from 'mdast-util-math'
 import {
   type ComponentProps,
   type CSSProperties,
@@ -11,6 +13,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useMemo,
   useState,
 } from 'react'
@@ -55,13 +58,17 @@ import {
   IconJson,
   IconPlayerPlayFilled,
   type IconProps,
+  IconTextWrap,
+  IconTextWrapDisabled,
   IconWorldUpload,
 } from '@tabler/icons-react'
 import clsx from 'clsx'
 import { visit } from 'unist-util-visit'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { useCopied } from '@/hooks/useCopied'
+import { uiStore, useUIStore } from '@/stores/uiStore'
 import { highlight, highlightSync, preloadLanguage, type ShikiTheme } from '../packages/shiki'
+import { rehypeTranscriptBlocks } from './chat/transcript-markdown-blocks'
 import { ScalableIcon } from './common/ScalableIcon'
 import { ImageViewer, ImageViewerItem } from './ImageViewer'
 import IconDart from './icons/Dart'
@@ -77,7 +84,7 @@ type RehypePlugins = NonNullable<ComponentProps<typeof ReactMarkdown>['rehypePlu
 type RemarkPlugins = NonNullable<ComponentProps<typeof ReactMarkdown>['remarkPlugins']>
 type CodeNodeData = NonNullable<Code['data']> & { hProperties?: Record<string, unknown> }
 
-function isUnclosedFencedCode(node: Code, source: string): boolean {
+function isUnclosedFencedBlock(node: Code | MathNode, source: string, openingPattern: RegExp): boolean {
   const startOffset = node.position?.start.offset
   const endOffset = node.position?.end.offset
   if (startOffset === undefined || endOffset !== source.length) return false
@@ -86,15 +93,62 @@ function isUnclosedFencedCode(node: Code, source: string): boolean {
   const openingLine = source
     .slice(startOffset, openingLineEnd === -1 ? source.length : openingLineEnd)
     .replace(/\r$/, '')
-  const openingFence = openingLine.match(/^ {0,3}(`{3,}|~{3,})/)
+  const openingFence = openingLine.match(openingPattern)
   if (!openingFence) return false
   if (node.position?.start.line === node.position?.end.line) return true
 
   const fence = openingFence[1]
   const endingLineStart = source.lastIndexOf('\n', Math.max(startOffset, endOffset - 1)) + 1
-  const endingLine = source.slice(endingLineStart, endOffset).replace(/\r$/, '')
-  const closingFence = new RegExp(`^ {0,3}${fence[0]}{${fence.length},}[\\t ]*$`)
+  const openingLineStart = source.lastIndexOf('\n', startOffset - 1) + 1
+  const quoteDepth = source.slice(openingLineStart, startOffset).match(/>/g)?.length ?? 0
+  let endingLine = source.slice(endingLineStart, endOffset).replace(/\r$/, '')
+  // Remove enclosing quote markers while preserving any markers inside the fenced content.
+  for (let depth = 0; depth < quoteDepth; depth++) endingLine = endingLine.replace(/^[\t ]*>[\t ]?/, '')
+  const closingFence = new RegExp(`^ {0,3}\\${fence[0]}{${fence.length},}[\\t ]*$`)
   return !closingFence.test(endingLine)
+}
+
+function isUnclosedFencedCode(node: Code, source: string): boolean {
+  return isUnclosedFencedBlock(node, source, /^ {0,3}(`{3,}|~{3,})/)
+}
+
+function isUnclosedMathBlock(node: MathNode, source: string): boolean {
+  return isUnclosedFencedBlock(node, source, /^ {0,3}(\${2,})/)
+}
+
+function canRenderDisplayMath(value: string): boolean {
+  try {
+    katex.renderToString(value, { displayMode: true, throwOnError: true })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * While generating, the trailing `$$` block is still being written and its partial source often fails to parse.
+ * Show the last source that rendered so the formula does not flip between rendered math and a one-line error.
+ */
+function remarkHoldGeneratingMath(options: { generating?: boolean; renderedMath: Map<number, string> }) {
+  return (tree: Root, file: { value: unknown }) => {
+    if (!options.generating) {
+      options.renderedMath.clear()
+      return
+    }
+    const source = typeof file.value === 'string' ? file.value : ''
+    visit(tree, 'math', (node: MathNode) => {
+      const start = node.position?.start.offset
+      if (start === undefined || !isUnclosedMathBlock(node, source)) return
+      if (canRenderDisplayMath(node.value)) {
+        options.renderedMath.set(start, node.value)
+        return
+      }
+      const held = options.renderedMath.get(start) ?? ''
+      node.value = held
+      const code = node.data?.hChildren?.[0]
+      if (code?.type === 'element') code.children = [{ type: 'text', value: held }]
+    })
+  }
 }
 
 function remarkAddCodeIndex(options: { generating?: boolean } = {}) {
@@ -149,23 +203,32 @@ function Markdown(props: {
     onPreviewWebpage,
   } = props
 
+  const fallbackId = useId()
   const processedChildren = useMemo(
     () => (enableLaTeXRendering ? latex.processLaTeX(children) : children),
     [children, enableLaTeXRendering]
   )
+  const [renderedMath] = useState(() => new Map<number, string>())
   const remarkPlugins = useMemo<RemarkPlugins>(
     () =>
       enableLaTeXRendering
-        ? [remarkGfm, remarkMath, remarkBreaks, [remarkAddCodeIndex, { generating }]]
+        ? [
+            remarkGfm,
+            remarkMath,
+            [remarkHoldGeneratingMath, { generating, renderedMath }],
+            remarkBreaks,
+            [remarkAddCodeIndex, { generating }],
+          ]
         : [remarkGfm, remarkBreaks, [remarkAddCodeIndex, { generating }]],
-    [enableLaTeXRendering, generating]
+    [enableLaTeXRendering, generating, renderedMath]
   )
   const streamingSegments = useStreamingTextSegments(processedChildren, generating, uniqueId)
-  const rehypePlugins = useMemo<RehypePlugins>(
-    () =>
-      streamingSegments.length > 0 ? [rehypeKatex, [rehypeWrapStreamingSegments, streamingSegments]] : [rehypeKatex],
-    [streamingSegments]
-  )
+  const rehypePlugins = useMemo<RehypePlugins>(() => {
+    const plugins: RehypePlugins = [rehypeKatex]
+    if (streamingSegments.length > 0) plugins.push([rehypeWrapStreamingSegments, streamingSegments])
+    plugins.push([rehypeTranscriptBlocks, { sourceId: uniqueId ?? fallbackId }])
+    return plugins
+  }, [streamingSegments, uniqueId, fallbackId])
 
   return (
     <ImageViewer>
@@ -185,6 +248,7 @@ function Markdown(props: {
                 <CodeRenderer
                   {...props}
                   uniqueId={uniqueId ? `${uniqueId}-code-${codeIndex}` : undefined}
+                  wrapStateId={`${uniqueId || fallbackId}-code-${codeIndex}`}
                   sessionId={sessionId}
                   hiddenCodeActions={hiddenCodeActions}
                   hiddenCodeCopyButton={hiddenCodeCopyButton}
@@ -223,9 +287,16 @@ function Markdown(props: {
               )
             },
             img: ({ node, ...props }) => <MarkdownImage {...props} />,
+            // Wide tables scroll inside their own box so the surrounding reply keeps its width.
+            table: ({ node, ...props }) => (
+              <div className="markdown-table-scroll">
+                <table {...props} />
+              </div>
+            ),
           }),
           [
             uniqueId,
+            fallbackId,
             sessionId,
             hiddenCodeActions,
             hiddenCodeCopyButton,
@@ -303,6 +374,7 @@ export const CodeRenderer = memo(
     children: string
     className?: string
     uniqueId?: string
+    wrapStateId?: string
     sessionId?: string
     hiddenCodeActions?: boolean
     hiddenCodeCopyButton?: boolean
@@ -336,6 +408,7 @@ export const CodeRenderer = memo(
       <>
         <BlockCode
           uniqueId={props.uniqueId}
+          wrapStateId={props.wrapStateId}
           sessionId={props.sessionId}
           hiddenCodeActions={hiddenCodeActions}
           hiddenCodeCopyButton={hiddenCodeCopyButton}
@@ -374,6 +447,8 @@ const InlineCode = memo((props: { children: string; className?: string }) => {
 
 // Define the Context type
 interface BlockCodeCollapsedStateContextType {
+  wrappedStates: Record<string, boolean>
+  toggleWrap: (id: string) => void
   collapsedStates: Record<string, boolean>
   toggleCollapse: (id: string) => void
   setCollapse: (id: string, collapsed: boolean) => void
@@ -395,6 +470,16 @@ export const BlockCodeCollapsedStateProvider: React.FC<BlockCodeCollapsedStatePr
   children,
   defaultCollapsed = false,
 }) => {
+  const [wrappedStates, setWrappedStates] = useState<Record<string, boolean>>({})
+  const toggleWrap = useCallback(
+    (id: string) => {
+      const { codeBlockWrap, setCodeBlockWrap } = uiStore.getState()
+      const wrapped = !(wrappedStates[id] ?? codeBlockWrap)
+      setWrappedStates((previous) => ({ ...previous, [id]: wrapped }))
+      setCodeBlockWrap(wrapped)
+    },
+    [wrappedStates]
+  )
   const [collapsedStates, setCollapsedStates] = useState<Record<string, boolean>>({})
 
   // Toggle collapse state
@@ -429,21 +514,24 @@ export const BlockCodeCollapsedStateProvider: React.FC<BlockCodeCollapsedStatePr
 
   const value: BlockCodeCollapsedStateContextType = useMemo(
     () => ({
+      wrappedStates,
+      toggleWrap,
       collapsedStates,
       toggleCollapse,
       setCollapse,
       isCollapsed,
       resetAll,
     }),
-    [collapsedStates, toggleCollapse, setCollapse, isCollapsed, resetAll]
+    [wrappedStates, toggleWrap, collapsedStates, toggleCollapse, setCollapse, isCollapsed, resetAll]
   )
 
   return <BlockCodeCollapsedStateContext.Provider value={value}>{children}</BlockCodeCollapsedStateContext.Provider>
 }
 
 // Custom hook
-export const useBlockCodeCollapsedState = (messageId: string) => {
+export const useBlockCodeCollapsedState = (messageId: string, wrapStateId = messageId) => {
   const context = useContext(BlockCodeCollapsedStateContext)
+  const codeBlockWrap = useUIStore((state) => state.codeBlockWrap)
 
   if (context === undefined) {
     throw new Error('useBlockCodeCollapsedState must be used within a BlockCodeCollapsedStateProvider')
@@ -454,6 +542,8 @@ export const useBlockCodeCollapsedState = (messageId: string) => {
   }
 
   return {
+    wrapped: context.wrappedStates[wrapStateId] ?? codeBlockWrap,
+    toggleWrap: () => context.toggleWrap(wrapStateId),
     collapsed: context.isCollapsed(messageId),
     toggleCollapsed: () => context.toggleCollapse(messageId),
     setCollapsed: (collapsed: boolean) => context.setCollapse(messageId, collapsed),
@@ -464,6 +554,7 @@ type BlockCodeProps = {
   language: string
   children: string
   uniqueId?: string
+  wrapStateId?: string
   sessionId?: string
   hiddenCodeActions?: boolean
   hiddenCodeCopyButton?: boolean
@@ -625,6 +716,7 @@ const BlockCode = memo(
   ({
     children,
     uniqueId,
+    wrapStateId,
     sessionId,
     hiddenCodeActions,
     hiddenCodeCopyButton,
@@ -635,6 +727,7 @@ const BlockCode = memo(
     onPreviewWebpage,
   }: BlockCodeProps) => {
     const { t } = useTranslation()
+    const fallbackId = useId()
     const computedColorScheme = useComputedColorScheme()
     const colorScheme = forceColorScheme || computedColorScheme
     const shikiTheme: ShikiTheme = colorScheme !== 'light' ? 'one-dark-pro' : 'one-light'
@@ -688,7 +781,12 @@ const BlockCode = memo(
       () => !!uniqueId && children.split('\n').length > CODE_BLOCK_COLLAPSE_LINE_THRESHOLD,
       [uniqueId, children]
     )
-    const { collapsed, toggleCollapsed } = useBlockCodeCollapsedState(uniqueId || '')
+    const {
+      collapsed,
+      toggleCollapsed,
+      wrapped: wrapCode,
+      toggleWrap,
+    } = useBlockCodeCollapsedState(uniqueId || fallbackId, wrapStateId || uniqueId || fallbackId)
     const onClickCollapse = (event: React.MouseEvent) => {
       event.stopPropagation()
       event.preventDefault()
@@ -699,6 +797,7 @@ const BlockCode = memo(
       <Stack
         gap={0}
         className="code-block-container w-full max-w-full min-w-0 bg-chatbox-background-primary rounded-md overflow-hidden"
+        data-wrap-code={wrapCode}
       >
         <Flex
           justify="space-between"
@@ -720,6 +819,22 @@ const BlockCode = memo(
 
           {!hiddenCodeActions && (
             <Flex gap="xs" align="center">
+              <Tooltip label={wrapCode ? t('Auto wrap') : t('Preserve line breaks')} withArrow openDelay={1000}>
+                <ActionIcon
+                  variant="transparent"
+                  color="chatbox-tertiary"
+                  size={18}
+                  aria-label={t('Auto wrap')}
+                  aria-pressed={wrapCode}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    event.preventDefault()
+                    toggleWrap()
+                  }}
+                >
+                  {wrapCode ? <IconTextWrap size={14} /> : <IconTextWrapDisabled size={14} />}
+                </ActionIcon>
+              </Tooltip>
               {!hiddenCodeCopyButton && (
                 <Tooltip label={t('copy')} withArrow openDelay={1000}>
                   <ActionIcon

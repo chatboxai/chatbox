@@ -65,8 +65,7 @@ vi.mock('@/app/renderer-application', async () => {
   return {
     rendererApplication: {
       queryClient: new QueryClient(),
-      sessions: { updateSessionWithMessages: vi.fn() },
-      sessionQueryBridge: { getSession: vi.fn() },
+      sessions: {},
     },
   }
 })

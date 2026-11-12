@@ -1,271 +1,210 @@
-import { isActionAvailableInMode, resolveSessionMode } from '@chatbox/core/session/mode-policy'
+import type { SessionSearchHit } from '@chatbox/core/application/session'
 import { Dialog, DialogContent, useTheme } from '@mui/material'
 import { TestId } from '@shared/automation/testids'
-import type { Session } from '@shared/types'
 import { useAtomValue } from 'jotai'
 import { Loader2, ScanSearch } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import Message from '@/components/chat/Message'
 import Mark from '@/components/common/Mark'
-import { BlockCodeCollapsedStateProvider } from '@/components/Markdown'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { cn } from '@/lib/utils'
 import { currentSessionIdAtom } from '@/stores/atoms'
-import { getSessionAgentModeEntry } from '@/stores/session/agent-mode'
+import { switchCurrentSession } from '@/stores/session/crud'
+import { prepareSessionSearchTarget } from '@/stores/session-search-target'
 import { searchSessions } from '@/stores/sessionHelpers'
 import { useSettingsStore } from '@/stores/settingsStore'
-import { useUIStore } from '@/stores/uiStore'
-import * as scrollActions from '../stores/scrollActions'
-import { switchCurrentSession } from '../stores/session/crud'
+import { uiStore, useUIStore } from '@/stores/uiStore'
 
-type Props = {}
-
-function resolveSearchResultSessionMode(session: Session) {
-  return resolveSessionMode(getSessionAgentModeEntry(session.id, session).value)
-}
-
-// Hidden system prompts render as an invisible 1px placeholder in the chat, so a search hit
-// pointing at one would jump to nothing; keep those hits out of the result list instead.
-// Work Mode hides the prompt on its own, so its sessions are filtered whatever the setting says.
-export function filterHiddenSystemPromptHits(results: Session[], hideSystemPromptMessage?: boolean): Session[] {
-  const visible: Session[] = []
-  let changed = false
-  for (const session of results) {
-    const hidesSystemPrompt =
-      hideSystemPromptMessage ||
-      !isActionAvailableInMode('session-system-prompt', resolveSearchResultSessionMode(session))
-    const messages = hidesSystemPrompt
-      ? session.messages.filter((message) => message.role !== 'system')
-      : session.messages
-    if (messages.length === session.messages.length) {
-      visible.push(session)
-      continue
-    }
-    changed = true
-    if (messages.length > 0) {
-      visible.push({ ...session, messages })
-    }
-  }
-  return changed ? visible : results
-}
-
-export default function SearchDialog(props: Props) {
+export default function SearchDialog() {
   const isSmallScreen = useIsSmallScreen()
   const open = useUIStore((s) => s.openSearchDialog)
   const setOpen = useUIStore((s) => s.setOpenSearchDialog)
   const globalOnly = useUIStore((s) => s.searchDialogGlobalOnly)
   const [mode, setMode] = useState<'command' | 'search-result'>('command')
-  const [loading, setLoading] = useState<boolean>(false)
-  const [searchInput, _setSearchInput] = useState('')
-  const [searchResult, setSearchResult] = useState<Session[]>([])
-  const [searchResultMarks, setSearchResultMarks] = useState<string[]>([])
+  const [loading, setLoading] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const [searchInput, setSearchInput] = useState('')
+  const [searchResult, setSearchResult] = useState<SessionSearchHit[]>([])
+  const [searchMark, setSearchMark] = useState('')
+  const request = useRef<AbortController | null>(null)
   const theme = useTheme()
   const { t } = useTranslation()
   const ref = useRef<HTMLInputElement>(null)
-
   const currentSessionId = useAtomValue(currentSessionIdAtom)
   const hideSystemPromptMessage = useSettingsStore((s) => s.hideSystemPromptMessage)
-  const visibleSearchResult = filterHiddenSystemPromptHits(searchResult, hideSystemPromptMessage)
-
-  useEffect(() => {
-    if (open) {
-      setTimeout(() => {
-        ref.current?.focus()
-        ref.current?.select() // 全选
-      }, 200) // 延迟200毫秒，等待组件元素挂载完成
-    }
-  }, [open])
-  const onSearchInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const input = e.currentTarget.value
-    setMode('command')
-    _setSearchInput(input)
+  const groups = new Map<string, SessionSearchHit[]>()
+  for (const hit of searchResult) {
+    const group = groups.get(hit.sessionId) ?? []
+    group.push(hit)
+    groups.set(hit.sessionId, group)
   }
-  const onSearchClick = (flag: 'current-session' | 'global') => {
-    if (!searchInput.trim()) return
-    setMode('search-result')
-    setSearchResult([])
-    setLoading(true)
-    if (flag === 'current-session' && !currentSessionId) {
+
+  const cancelSearch = () => {
+    request.current?.abort()
+    request.current = null
+  }
+  useEffect(() => {
+    if (!open) {
+      request.current?.abort()
+      request.current = null
       setLoading(false)
       return
     }
-    searchSessions(searchInput, flag === 'current-session' ? (currentSessionId ?? undefined) : undefined, (batches) => {
-      setSearchResult((prev) => [...prev, ...batches])
-    })
-    setSearchResultMarks([searchInput])
+    const timer = setTimeout(() => {
+      ref.current?.focus()
+      ref.current?.select()
+    }, 200)
+    return () => {
+      clearTimeout(timer)
+      request.current?.abort()
+      request.current = null
+    }
+  }, [open])
+
+  const close = () => {
+    cancelSearch()
     setLoading(false)
-    ref.current?.select() // 搜索后全选输入框，方便删除回退
+    setOpen(false)
   }
-  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (globalOnly && e.key === 'Enter' && searchInput.trim()) {
-      e.preventDefault()
-      onSearchClick('global')
+  const onSearchInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    cancelSearch()
+    setLoading(false)
+    setFailed(false)
+    setMode('command')
+    setSearchInput(e.currentTarget.value)
+  }
+  const onSearchClick = async (flag: 'current-session' | 'global') => {
+    const query = searchInput.trim()
+    if (!query || (flag === 'current-session' && !currentSessionId)) return
+    cancelSearch()
+    const controller = new AbortController()
+    request.current = controller
+    const isCurrent = () => request.current === controller && !controller.signal.aborted
+    setMode('search-result')
+    setSearchResult([])
+    setFailed(false)
+    setLoading(true)
+    setSearchMark(query)
+    ref.current?.select()
+    try {
+      const result = await searchSessions(query, {
+        sessionId: flag === 'current-session' ? (currentSessionId ?? undefined) : undefined,
+        hideSystemPromptMessage,
+        signal: controller.signal,
+        onProgress: (progress) => {
+          if (!isCurrent()) return
+          setSearchResult(progress.hits)
+          setFailed(progress.failedSessionIds.length > 0)
+        },
+      })
+      if (isCurrent()) {
+        setSearchResult(result.hits)
+        setFailed(result.failedSessionIds.length > 0)
+      }
+    } catch {
+      if (isCurrent()) setFailed(true)
+    } finally {
+      if (isCurrent()) {
+        request.current = null
+        setLoading(false)
+      }
     }
   }
+  const selectHit = (hit: SessionSearchHit) => {
+    if (currentSessionId !== hit.sessionId) {
+      if (hit.messageId) prepareSessionSearchTarget(hit.sessionId, hit.messageId)
+      void switchCurrentSession(hit.sessionId)
+    } else if (hit.messageId) {
+      const navigation = uiStore.getState().transcriptNavigation
+      if (navigation?.sessionId === hit.sessionId) void navigation.openSearch(hit.messageId)
+    }
+    close()
+  }
+
   return (
-    <Dialog
-      keepMounted
-      open={open}
-      onClose={() => setOpen(false)}
-      fullWidth
-      maxWidth={mode === 'search-result' ? 'md' : 'sm'}
-    >
+    <Dialog keepMounted open={open} onClose={close} fullWidth maxWidth={mode === 'search-result' ? 'md' : 'sm'}>
       <DialogContent sx={{ padding: '0.5rem' }}>
-        <Command shouldFilter={false} filter={(value, search) => 1}>
+        <Command shouldFilter={false}>
           <CommandInput
             ref={ref}
             autoFocus={!isSmallScreen}
             value={searchInput}
             onInput={onSearchInput}
-            onKeyDown={onKeyDown}
+            onKeyDown={(event) => {
+              if (globalOnly && event.key === 'Enter' && searchInput.trim()) {
+                event.preventDefault()
+                void onSearchClick('global')
+              }
+            }}
             data-testid={TestId.session.searchInput}
             className={cn('border-none', 'shadow-none', theme.palette.mode === 'dark' ? 'text-white' : 'text-black')}
-            placeholder={globalOnly ? t('Search conversations') + '...' : t('Type a command or search') + '...'}
+            placeholder={globalOnly ? `${t('Search conversations')}...` : `${t('Type a command or search')}...`}
           />
           {mode === 'command' && !globalOnly && (
             <CommandList>
-              <CommandEmpty>{t('No results found')}</CommandEmpty>
               <CommandGroup heading={t('Search')}>
-                <CommandItem
-                  value="search-current-session"
-                  data-testid={TestId.session.searchCurrent}
-                  className={cn(
-                    theme.palette.mode === 'dark' ? 'aria-selected:bg-slate-500' : 'aria-selected:bg-slate-100'
-                  )}
-                  onSelect={() => onSearchClick('current-session')}
-                >
-                  <ScanSearch className="mr-2 h-4 w-4" />
-                  <span>
-                    {t('Search in Current Conversation')}
-                    {searchInput.length > 0 ? ` "${searchInput}"` : ''}
-                  </span>
-                </CommandItem>
-                <CommandItem
-                  value="search-global"
-                  data-testid={TestId.session.searchAll}
-                  className={cn(
-                    theme.palette.mode === 'dark' ? 'aria-selected:bg-slate-500' : 'aria-selected:bg-slate-100'
-                  )}
-                  onSelect={() => onSearchClick('global')}
-                >
-                  <ScanSearch className="mr-2 h-4 w-4" />
-                  <span>
-                    {t('Search All Conversations')}
-                    {searchInput.length > 0 ? ` "${searchInput}"` : ''}
-                  </span>
-                </CommandItem>
+                {(['current-session', 'global'] as const).map((flag) => (
+                  <CommandItem
+                    key={flag}
+                    value={`search-${flag}`}
+                    data-testid={flag === 'global' ? TestId.session.searchAll : TestId.session.searchCurrent}
+                    className={
+                      theme.palette.mode === 'dark' ? 'aria-selected:bg-slate-500' : 'aria-selected:bg-slate-100'
+                    }
+                    onSelect={() => void onSearchClick(flag)}
+                  >
+                    <ScanSearch className="mr-2 h-4 w-4" />
+                    <span>
+                      {t(flag === 'global' ? 'Search All Conversations' : 'Search in Current Conversation')}
+                      {searchInput.length > 0 ? ` "${searchInput}"` : ''}
+                    </span>
+                  </CommandItem>
+                ))}
               </CommandGroup>
-              {/* <CommandGroup heading="对话">
-                            <CommandItem>
-                                <ScanSearch className="mr-2 h-4 w-4" />
-                                <span>创建新对话</span>
-                            </CommandItem>
-                            <CommandItem>
-                                <ScanSearch className="mr-2 h-4 w-4" />
-                                <span>清空当前对话</span>
-                            </CommandItem>
-                        </CommandGroup>
-                        <CommandSeparator />
-                        <CommandGroup heading="Settings">
-                            <CommandItem>
-                                <User className="mr-2 h-4 w-4" />
-                                <span>Profile</span>
-                                <CommandShortcut>⌘P</CommandShortcut>
-                            </CommandItem>
-                            <CommandItem>
-                                <CreditCard className="mr-2 h-4 w-4" />
-                                <span>Billing</span>
-                                <CommandShortcut>⌘B</CommandShortcut>
-                            </CommandItem>
-                            <CommandItem>
-                                <Settings className="mr-2 h-4 w-4" />
-                                <span>Settings</span>
-                                <CommandShortcut>⌘S</CommandShortcut>
-                            </CommandItem>
-                        </CommandGroup> */}
             </CommandList>
           )}
-          {mode === 'search-result' && loading && (
-            <div className="flex justify-center items-center">
-              <Loader2 className="animate-spin" />
-            </div>
-          )}
-          {mode === 'search-result' && !loading && (
-            <BlockCodeCollapsedStateProvider defaultCollapsed={true}>
-              <Mark marks={[searchInput]}>
+          {mode === 'search-result' && (
+            <>
+              {loading && (
+                <div role="status" aria-label={String(t('Search'))} className="flex justify-center items-center py-2">
+                  <Loader2 className="animate-spin" />
+                </div>
+              )}
+              {failed && (
+                <div role="alert" className="px-2 py-1">
+                  {t('Error')}
+                </div>
+              )}
+              <Mark marks={[searchMark]}>
                 <CommandList>
-                  <CommandEmpty>{t('No results found')}</CommandEmpty>
-                  {visibleSearchResult.map((result, i) => (
+                  {!loading && !failed && <CommandEmpty>{t('No results found')}</CommandEmpty>}
+                  {[...groups].map(([sessionId, hits], groupIndex) => (
                     <CommandGroup
-                      key={i}
-                      heading={`${t('Chat')} "${result.name}":`}
+                      key={sessionId}
+                      heading={`${t('Chat')} "${hits[0].sessionName}":`}
                       className={cn('[&_[cmdk-group-heading]]:font-bold', '[&_[cmdk-group-heading]]:opacity-50')}
                     >
-                      {result.messages.map((message, j) => (
+                      {hits.map((hit, hitIndex) => (
                         <CommandItem
-                          key={`${i}-${j}`}
-                          value={`result-${i}-${j}`}
+                          key={JSON.stringify([hit.sessionId, hit.messageId])}
+                          value={`result-${groupIndex}-${hitIndex}`}
                           className={cn(
-                            theme.palette.mode === 'dark' ? 'bg-slate-600' : 'bg-slate-50',
-                            theme.palette.mode === 'dark' ? 'aria-selected:bg-slate-500' : 'aria-selected:bg-slate-200',
-                            'my-1',
-                            'cursor-pointer',
-                            'bg-opacity-50'
+                            theme.palette.mode === 'dark'
+                              ? 'bg-slate-600 aria-selected:bg-slate-500'
+                              : 'bg-slate-50 aria-selected:bg-slate-200',
+                            'my-1 cursor-pointer bg-opacity-50'
                           )}
-                          onSelect={() => {
-                            const targetSessionId = result.id
-                            const targetMessageId = message.id
-                            const needsSwitch = currentSessionId !== targetSessionId
-
-                            if (needsSwitch) {
-                              switchCurrentSession(targetSessionId)
-                            }
-
-                            setOpen(false)
-
-                            // Scroll with retry mechanism to ensure message is visible
-                            const tryScroll = async (attempt = 0, maxAttempts = 10) => {
-                              const delay = needsSwitch ? (attempt === 0 ? 300 : 200) : 100
-                              await new Promise((resolve) => setTimeout(resolve, delay))
-
-                              const success = await scrollActions.scrollToMessage(targetSessionId, targetMessageId)
-
-                              if (!success && attempt < maxAttempts) {
-                                tryScroll(attempt + 1, maxAttempts)
-                              }
-                            }
-
-                            tryScroll()
-                          }}
+                          onSelect={() => selectHit(hit)}
                         >
-                          {/* 下面这个隐藏元素，是为了避免这个问题：
-                                                        当搜索结果列表中出现重复的元素（相同的消息），此时键盘上下键选中第二条重复消息，继续按向下键会错误切换到第一条重复消息；并且当选中其中一条消息时，重复的消息同样会有选中的显示样式。
-                                                        这些异常都会影响使用。我猜测可能和默认行为是根据元素内容进行判断的，因此加上这个唯一的隐藏元素可以规避问题。 */}
-                          <span className="hidden">
-                            {result.id}-{message.id}-{i}-{j}
-                          </span>
-                          <Message
-                            id={message.id}
-                            key={'msg-' + message.id}
-                            sessionId={result.id}
-                            sessionType={result.type || 'chat'}
-                            msg={message}
-                            className="w-full"
-                            buttonGroup="none"
-                            sessionMode={resolveSearchResultSessionMode(result)}
-                            small
-                            assistantAvatarKey={result.assistantAvatarKey}
-                            sessionPicUrl={result.picUrl}
-                          />
+                          <span className="w-full whitespace-pre-wrap break-words">{hit.preview}</span>
                         </CommandItem>
                       ))}
                     </CommandGroup>
                   ))}
                 </CommandList>
               </Mark>
-            </BlockCodeCollapsedStateProvider>
+            </>
           )}
         </Command>
       </DialogContent>

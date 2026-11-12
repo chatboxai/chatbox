@@ -31,7 +31,8 @@ const needRoomForWinControlsAtom = atom((get) => {
 
   return {
     needRoomForMacWindowControls: platformType === 'darwin' && !isFullscreen,
-    needRoomForWindowsWindowControls: platformType === 'win32' || platformType === 'linux',
+    needRoomForWindowsWindowControls:
+      platformType === 'win32' || platformType === 'linux' || platformType === 'harmony',
   }
 })
 

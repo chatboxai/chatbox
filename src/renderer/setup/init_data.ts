@@ -1,9 +1,8 @@
+import { SessionHeaderSchema } from '@shared/types'
+import { sessionRepository } from '@/app/renderer-application'
 import { defaultSessionsForCN, defaultSessionsForEN } from '@/packages/initial_data'
 import platform from '@/platform'
-import storage from '@/storage'
-import { StorageKeyGenerator } from '@/storage/StoreStorage'
-import { getMetaStorage } from '@/stores/sessionHelpers'
-import { getSessionMeta } from '@/stores/sessionHelpers'
+import { getMetaStorage, getSessionMeta } from '@/stores/sessionHelpers'
 import { createSessionMetaRecordsFromLegacyList } from '@/utils/session-utils'
 
 export async function initData() {
@@ -21,7 +20,7 @@ async function initSessionsIfNeeded() {
   const defaultSessions = lang.startsWith('zh') ? defaultSessionsForCN : defaultSessionsForEN
 
   for (const session of defaultSessions) {
-    await storage.setItemNow(StorageKeyGenerator.session(session.id), session)
+    await sessionRepository.createSessionRows(SessionHeaderSchema.parse(session), session.messages)
   }
 
   const records = createSessionMetaRecordsFromLegacyList(defaultSessions.map(getSessionMeta))

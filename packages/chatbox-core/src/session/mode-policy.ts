@@ -1,4 +1,4 @@
-import type { AgentModeValue, MessageRole, Session } from '../types'
+import type { AgentModeValue, MessageRole } from '../types'
 
 /**
  * Static capability policy for the chat/work mode split (see
@@ -74,26 +74,4 @@ export function isActionAvailableInMode(action: ModePolicyAction, mode: SessionM
  */
 export function shouldRestrictMessageEditToLastOutput(mode: SessionMode, role: MessageRole): boolean {
   return mode === 'work' && role !== 'user'
-}
-
-/**
- * Work Mode does not create or expose an empty Thread History surface.
- * Sessions with archived threads keep their stored conversation boundaries
- * visible so the transcript does not present separate topics as one
- * continuous exchange.
- */
-export function isThreadHistoryAvailable(session: Pick<Session, 'threads'>, mode: SessionMode): boolean {
-  return isActionAvailableInMode('thread-history', mode) || Boolean(session.threads?.length)
-}
-
-/**
- * Whether the session has left the "brand new chat" state that still allows
- * manual cross-mode switching. Threads are checked too: clearing context
- * archives the exchanged messages into a thread while `messages` resets.
- */
-export function hasConversationStarted(session: Pick<Session, 'messages' | 'threads'>): boolean {
-  if (session.messages.some((message) => message.role === 'user')) {
-    return true
-  }
-  return session.threads?.some((thread) => thread.messages.some((message) => message.role === 'user')) ?? false
 }

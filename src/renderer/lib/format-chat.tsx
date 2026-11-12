@@ -1,17 +1,18 @@
 import {
   collectToolCallSummaries,
   type ExportableThread,
+  type SessionChatExport,
   getAttachmentNames,
   stringifyDataForExport,
   type ToolCallSummary,
 } from '@chatbox/core/utils/chat-export'
-import type { Message, Session } from '@shared/types'
 import { MantineProvider } from '@mantine/core'
+import type { Message } from '@shared/types'
 import { escape as escapeHtml } from 'lodash'
 import ReactDOMServer from 'react-dom/server'
+import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
 import Markdown, { BlockCodeCollapsedStateProvider } from '@/components/Markdown'
 import * as base64 from '@/packages/base64'
-import storage from '@/storage'
 
 // Plain-text Markdown / TXT exporters are shared with the native mobile shell.
 export { formatChatAsMarkdown, formatChatAsTxt } from '@chatbox/core/utils/chat-export'
@@ -69,7 +70,7 @@ async function renderMessageHtml(message: Message): Promise<string> {
       )
     } else if (part.type === 'image' && part.storageKey) {
       let url = ''
-      const b64 = await storage.getBlob(part.storageKey)
+      const b64 = await currentBlobStorage.get(part.storageKey)
       if (b64) {
         let { type, data } = base64.parseImage(b64)
         if (type === '') {
@@ -139,77 +140,22 @@ function renderHtmlDocument(sessionName: string, content: string, interactiveScr
 `
 }
 
-export async function formatChatAsHtml(sessionName: string, threads: ExportableThread[]) {
+export async function formatChatAsHtml(
+  sessionName: string,
+  threads: AsyncIterable<ExportableThread> | Iterable<ExportableThread>
+) {
   let content = '<div class="prose-sm">\n'
-  for (let i = 0; i < threads.length; i++) {
-    const thread = threads[i]
-    content += `<h2>${i + 1}. ${escapeHtml(thread.name)}</h2>\n`
-    for (const msg of thread.messages) {
+  let i = 0
+  for await (const thread of threads) {
+    i++
+    content += `<h2>${i}. ${escapeHtml(thread.name)}</h2>\n`
+    for await (const msg of thread.messages) {
       content += await renderMessageHtml(msg)
     }
     content += '<hr />\n'
   }
   content += '</div>\n'
   return renderHtmlDocument(sessionName, content)
-}
-
-type InteractiveHtmlMessage = {
-  html: string
-  id: string
-  isSummary: boolean
-}
-
-type InteractiveHtmlFork = {
-  id: string
-  lists: Array<{ id: string; messages: string[] }>
-  position: number
-}
-
-type InteractiveHtmlExportData = {
-  forks: InteractiveHtmlFork[]
-  messages: InteractiveHtmlMessage[]
-  threads: Array<{ messages: string[]; name: string }>
-}
-
-function collectInteractiveHtmlData(
-  threads: ExportableThread[],
-  messageForksHash: Session['messageForksHash']
-): { forks: InteractiveHtmlFork[]; messages: Map<string, Message> } {
-  const messages = new Map<string, Message>()
-  const forkIds = new Set<string>()
-
-  const visitMessages = (sequence: Message[]) => {
-    for (const message of sequence) {
-      messages.set(message.id, message)
-      const fork = messageForksHash?.[message.id]
-      if (!fork || forkIds.has(message.id)) {
-        continue
-      }
-      forkIds.add(message.id)
-      for (const branch of fork.lists) {
-        visitMessages(branch.messages)
-      }
-    }
-  }
-
-  for (const thread of threads) {
-    visitMessages(thread.messages)
-  }
-
-  return {
-    messages,
-    forks: Array.from(forkIds, (id) => {
-      const fork = messageForksHash?.[id]
-      return {
-        id,
-        position: fork?.position ?? 0,
-        lists: (fork?.lists ?? []).map((list) => ({
-          id: list.id,
-          messages: list.messages.map((message) => message.id),
-        })),
-      }
-    }),
-  }
 }
 
 function serializeHtmlJson(value: unknown): string {
@@ -352,35 +298,45 @@ const interactiveHtmlController = `
 })()
 </script>`
 
-/**
- * HTML all-branch export keeps the stored fork representation intact. Each
- * unique message is rendered once into the payload; the page only inserts the
- * currently selected path into the DOM and applies the same tail swap used by
- * the application when a fork changes.
- */
+/** Each body is rendered once into the exported document, then released. */
 export async function formatChatAsInteractiveHtml(
-  sessionName: string,
-  threads: ExportableThread[],
-  messageForksHash: Session['messageForksHash']
+  source: SessionChatExport,
+  includeArchived: boolean
 ): Promise<string> {
-  const collected = collectInteractiveHtmlData(threads, messageForksHash)
-  const renderedMessages: InteractiveHtmlMessage[] = []
-  for (const message of collected.messages.values()) {
-    renderedMessages.push({
-      id: message.id,
-      html: await renderMessageHtml(message),
-      isSummary: Boolean(message.isSummary),
-    })
+  let messages = ''
+  let forks = ''
+  let threads = ''
+  for await (const thread of source.threads(includeArchived)) {
+    let selectedIds = ''
+    for await (const row of source.path(thread))
+      selectedIds += (selectedIds ? ',' : '') + serializeHtmlJson(row.messageId)
+    threads +=
+      (threads ? ',' : '') + `{"name":${serializeHtmlJson(source.threadName(thread))},"messages":[${selectedIds}]}`
+    for await (const row of source.allRows(thread)) {
+      const message = await source.message(row.messageId)
+      messages +=
+        (messages ? ',' : '') +
+        serializeHtmlJson({
+          id: message.id,
+          html: await renderMessageHtml(message),
+          isSummary: Boolean(message.isSummary),
+        })
+      const fork = await source.fork(row)
+      if (!fork) continue
+      let lists = ''
+      for await (const branch of fork.branches) {
+        let ids = ''
+        if (!branch.selected)
+          for await (const child of source.path(thread, branch.firstMessageId))
+            ids += (ids ? ',' : '') + serializeHtmlJson(child.messageId)
+        lists += (lists ? ',' : '') + `{"id":${serializeHtmlJson(branch.branchId)},"messages":[${ids}]}`
+      }
+      forks +=
+        (forks ? ',' : '') + `{"id":${serializeHtmlJson(fork.pivotId)},"position":${fork.position},"lists":[${lists}]}`
+    }
   }
-
-  const data: InteractiveHtmlExportData = {
-    messages: renderedMessages,
-    forks: collected.forks,
-    threads: threads.map((thread) => ({
-      name: thread.name,
-      messages: thread.messages.map((message) => message.id),
-    })),
-  }
-  const dataScript = `<div id="chatbox-export-root" class="prose-sm"></div>\n<script id="chatbox-export-data" type="application/json">${serializeHtmlJson(data)}</script>`
-  return renderHtmlDocument(sessionName, dataScript, interactiveHtmlController)
+  await source.assertCurrent()
+  const data = `{"messages":[${messages}],"forks":[${forks}],"threads":[${threads}]}`
+  const dataScript = `<div id="chatbox-export-root" class="prose-sm"></div>\n<script id="chatbox-export-data" type="application/json">${data}</script>`
+  return renderHtmlDocument(source.header.name, dataScript, interactiveHtmlController)
 }

@@ -18,6 +18,9 @@ patchedDependencies:
   '@capacitor-community/sqlite@7.0.3':
     hash: 714626a06eaef2dec1723452aa557fb2e018fb0c4718ffe87d6ecdc51f5a062c
     path: patches/@capacitor-community__sqlite@7.0.3.patch
+  '@mastra/libsql@0.13.2':
+    hash: 0b1e964010dea45bc8e88656e2c9e0e280044a4de69bcf251411a0cb0820f302
+    path: patches/@mastra__libsql@0.13.2.patch
   '@openrouter/ai-sdk-provider@3.0.0':
     hash: b8a3493eeb2cfd616629811f918296d35763470eba94c0bc3a3dd738b63143fc
     path: patches/@openrouter__ai-sdk-provider@3.0.0.patch
@@ -43,7 +46,7 @@ importers:
         version: 0.13.2(encoding@0.1.13)(openapi-types@12.1.3)(react@18.3.1)(zod@4.3.6)
       '@mastra/libsql':
         specifier: 0.13.2
-        version: 0.13.2(@mastra/core@0.13.2(encoding@0.1.13)(openapi-types@12.1.3)(react@18.3.1)(zod@4.3.6))
+        version: 0.13.2(patch_hash=0b1e964010dea45bc8e88656e2c9e0e280044a4de69bcf251411a0cb0820f302)(@mastra/core@0.13.2(encoding@0.1.13)(openapi-types@12.1.3)(react@18.3.1)(zod@4.3.6))
       '@mastra/rag':
         specifier: 1.0.8
         version: 1.0.8(@mastra/core@0.13.2(encoding@0.1.13)(openapi-types@12.1.3)(react@18.3.1)(zod@4.3.6))(ai@7.0.93(zod@4.3.6))(encoding@0.1.13)
@@ -17669,7 +17672,7 @@ snapshots:
       - valibot
       - zod-openapi
 
-  '@mastra/libsql@0.13.2(@mastra/core@0.13.2(encoding@0.1.13)(openapi-types@12.1.3)(react@18.3.1)(zod@4.3.6))':
+  '@mastra/libsql@0.13.2(patch_hash=0b1e964010dea45bc8e88656e2c9e0e280044a4de69bcf251411a0cb0820f302)(@mastra/core@0.13.2(encoding@0.1.13)(openapi-types@12.1.3)(react@18.3.1)(zod@4.3.6))':
     dependencies:
       '@libsql/client': 0.15.15
       '@mastra/core': 0.13.2(encoding@0.1.13)(openapi-types@12.1.3)(react@18.3.1)(zod@4.3.6)

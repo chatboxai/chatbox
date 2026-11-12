@@ -6,6 +6,7 @@ import QwenColor from '@lobehub/icons/es/Qwen/components/Color'
 import XiaomiMiMoMono from '@lobehub/icons/es/XiaomiMiMo/components/Mono'
 import ZhipuColor from '@lobehub/icons/es/Zhipu/components/Color'
 import { type ModelProvider, ModelProviderEnum } from '@shared/types'
+import wallyIcon from '../../static/icons/providers/wally.png'
 import BrandGithub from './BrandGithub'
 
 export default function ProviderIcon(props: { className?: string; size?: number; provider: ModelProvider | string }) {
@@ -41,6 +42,10 @@ export default function ProviderIcon(props: { className?: string; size?: number;
 
   if (provider === ModelProviderEnum.ZhipuGLMCodingPlan) {
     return <ZhipuColor className={className} size={size} />
+  }
+
+  if (provider === ModelProviderEnum.Wally) {
+    return <img src={wallyIcon} alt="" className={className} style={{ width: size, height: size }} />
   }
 
   return (

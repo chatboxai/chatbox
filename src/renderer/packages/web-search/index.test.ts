@@ -38,6 +38,17 @@ vi.mock('./tavily', () => {
   }
 })
 
+vi.mock('./outcrawl', () => {
+  return {
+    OutcrawlSearch: class {
+      constructor(private readonly apiKey: string) {}
+      search = vi.fn().mockImplementation(async () => ({
+        items: [{ title: `Outcrawl Result ${this.apiKey}`, snippet: 'test', link: 'https://example.com' }],
+      }))
+    },
+  }
+})
+
 vi.mock('./searxng', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./searxng')>()
   return {
@@ -101,6 +112,24 @@ describe('webSearchExecutor', () => {
 
     // Both should return same results (cached)
     expect(result1.searchResults).toEqual(result2.searchResults)
+  })
+
+  it('routes the Outcrawl provider with its API key and requires one', async () => {
+    mockGetExtensionSettings.mockReturnValue({
+      webSearch: { provider: 'outcrawl', outcrawlApiKey: 'oc-key' },
+    } as ReturnType<typeof getExtensionSettings>)
+
+    const result = await webSearchExecutor({ query: 'outcrawl query' }, {})
+    expect(result.searchResults).toHaveLength(1)
+    expect(result.searchResults[0].title).toBe('Outcrawl Result oc-key')
+
+    mockGetExtensionSettings.mockReturnValue({
+      webSearch: { provider: 'outcrawl', outcrawlApiKey: '' },
+    } as ReturnType<typeof getExtensionSettings>)
+
+    await expect(webSearchExecutor({ query: 'missing key' }, {})).rejects.toMatchObject({
+      code: 20048,
+    })
   })
 
   it('uses a distinct cache key for the SearXNG provider', async () => {

@@ -118,6 +118,9 @@ function _errorI18nKeys(t: (key: string) => string) {
   t(
     'You have selected SearXNG as the search provider, but an instance URL has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your SearXNG instance URL, or choose a different search provider.'
   )
+  t(
+    'You have selected Firecrawl as the search provider, but an API key has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your API key, or choose a different search provider.'
+  )
   t('Failed to read webpage content. Please try again later or use a different URL.')
   t(
     'The current search provider does not support reading webpages. Please <OpenExtensionSettingButton>choose a different search provider</OpenExtensionSettingButton> that supports this capability.'

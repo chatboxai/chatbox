@@ -13,6 +13,7 @@ import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { PROVIDERS_WITH_PARSE_LINK } from '@/packages/web-search'
 import { BochaSearch } from '@/packages/web-search/bocha'
 import { WEB_SEARCH_PROVIDERS, type WebSearchProviderValue } from '@/packages/web-search/constants'
+import { FirecrawlSearch } from '@/packages/web-search/firecrawl'
 import { QUERIT_SEARCH_URL } from '@/packages/web-search/querit'
 import { SearxngSearch } from '@/packages/web-search/searxng'
 import platform from '@/platform'
@@ -162,6 +163,21 @@ export function RouteComponent() {
             check={checkQuerit}
             failureMessage={t('API key invalid!')}
             getKeyUrl="https://www.querit.ai"
+          />
+        )}
+        {provider === 'firecrawl' && (
+          <CheckedFieldRow
+            key="firecrawl"
+            id="firecrawl-api-key"
+            label={t('Firecrawl API Key')}
+            secret
+            value={webSearch.firecrawlApiKey}
+            onChange={(firecrawlApiKey) => updateWebSearch({ firecrawlApiKey })}
+            check={async (apiKey) => {
+              await new FirecrawlSearch(apiKey).search('Chatbox')
+            }}
+            failureMessage={t('API key invalid!')}
+            getKeyUrl="https://www.firecrawl.dev/signin?utm_source=chatbox&utm_medium=integration&redirect=%2Fapp%2Fapi-keys"
           />
         )}
       </SettingsSection>

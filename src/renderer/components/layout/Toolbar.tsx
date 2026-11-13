@@ -14,7 +14,7 @@ import {
   IconSettings,
   IconTrash,
 } from '@tabler/icons-react'
-import { useCallback } from 'react'
+import { useCallback, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { rendererApplication } from '@/app/renderer-application'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -23,7 +23,13 @@ import { copyToClipboard } from '@/packages/navigator'
 import { confirmSessionDeletion } from '@/presentation/session/session-deletion-confirmation'
 import { router } from '@/router'
 import { useSessionAgentMode } from '@/stores/session/agent-mode'
-import { clear as clearSession, copyAndSwitchSession, deleteSession } from '@/stores/session/crud'
+import {
+  clear as clearSession,
+  copyAndSwitchSession,
+  deleteSession,
+  isSessionCopyInFlight,
+  subscribeSessionCopies,
+} from '@/stores/session/crud'
 import { exportSessionJson } from '@/stores/session/export'
 import * as toastActions from '@/stores/toastActions'
 import { useUIStore } from '@/stores/uiStore'
@@ -85,9 +91,19 @@ export function SessionMenu({
     }
   }, [sessionId, t])
 
+  const copying = useSyncExternalStore(subscribeSessionCopies, () => isSessionCopyInFlight(sessionId))
   const handleCopySession = useCallback(async () => {
-    await copyAndSwitchSession(sessionId)
-  }, [sessionId])
+    if (isSessionCopyInFlight(sessionId)) return
+    const progressToast = toastActions.add(t('Duplicating conversation…'), null)
+    try {
+      await copyAndSwitchSession(sessionId)
+    } catch (error) {
+      console.error('Failed to duplicate conversation:', error)
+      toastActions.add(t('Failed to duplicate conversation'))
+    } finally {
+      toastActions.remove(progressToast)
+    }
+  }, [sessionId, t])
 
   const handleCopySessionId = useCallback(() => {
     copyToClipboard(sessionId)
@@ -129,6 +145,7 @@ export function SessionMenu({
       text: t('Duplicate Conversation'),
       icon: IconCopy,
       testId: TestId.session.duplicate,
+      disabled: copying,
       onClick: handleCopySession,
     },
     {

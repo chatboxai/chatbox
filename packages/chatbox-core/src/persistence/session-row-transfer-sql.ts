@@ -145,28 +145,35 @@ export async function createSqlRowWriter(
   const check = () => {
     if (published || disposed || failed) throw new Error('Row candidate is not writable')
   }
-  const append = async (statements: Iterable<SessionRowSqlStatement>) => {
+  // Staged rows are buffered across appends so a native write carries many rows;
+  // the buffer plus one message being serialized is the memory bound.
+  let pending: SessionRowSqlStatement[] = [],
+    pendingBytes = 0
+  const guard = async (work: () => Promise<void>) => {
     check()
     try {
-      // A single message is the memory bound; each native request is independently bounded.
-      let batch: SessionRowSqlStatement[] = [],
-        bytes = 0
-      for (const statement of statements) {
-        const size = encoder.encode(JSON.stringify(statement)).byteLength
-        if (batch.length && (bytes + size > 384 * 1024 || batch.length >= 128)) {
-          await database.executeBatch(batch)
-          batch = []
-          bytes = 0
-        }
-        batch.push(statement)
-        bytes += size
-      }
-      if (batch.length) await database.executeBatch(batch)
+      await work()
     } catch (error) {
       failed = true
       throw error
     }
   }
+  const flush = async () => {
+    if (!pending.length) return
+    const batch = pending
+    pending = []
+    pendingBytes = 0
+    await database.executeBatch(batch)
+  }
+  const append = (statements: Iterable<SessionRowSqlStatement>) =>
+    guard(async () => {
+      for (const statement of statements) {
+        const size = encoder.encode(JSON.stringify(statement)).byteLength
+        if (pending.length && (pendingBytes + size > 384 * 1024 || pending.length >= 128)) await flush()
+        pending.push(statement)
+        pendingBytes += size
+      }
+    })
   const cleanup: SessionRowSqlStatement[] = [
     { sql: 'DELETE FROM session_row_local_metadata WHERE mutation_id=?', params: [mutation] },
     ...['messages', 'threads'].map((table) => ({
@@ -206,7 +213,7 @@ export async function createSqlRowWriter(
       messageCount += 1
     },
     async publish() {
-      check()
+      await guard(flush)
       try {
         await projectSelectedPaths(database, mutation, commit, messageCount)
         await database.executeBatch(
@@ -244,6 +251,8 @@ export async function createSqlRowWriter(
     },
     async dispose() {
       if (disposed || published) return
+      pending = []
+      pendingBytes = 0
       await database.executeBatch(cleanup)
       disposed = true
     },

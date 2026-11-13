@@ -1,5 +1,9 @@
-import { storageRowFixture } from '../ports/testing/session-row-fixtures'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { RowBackedSessionRepository } from '../application/session/RowBackedSessionRepository'
+import { SessionRowWriteQueue } from '../application/session/SessionRowWriteQueue'
+import { storageRowFixture } from '../ports/testing/session-row-fixtures'
+import type { Message } from '../types'
+import { InMemorySessionRecordStore } from './memory-session-record-store'
 import { type NodeSessionRowSqlDatabase, openNodeSessionRowDatabase } from './node-sqlite.test-support'
 import { contextSnapshot as contextFactsSnapshot } from './session-context-read.test-support'
 import { SqlSessionRowStore } from './session-row-sql'
@@ -69,7 +73,12 @@ describe('SQL row transfer', () => {
     for (const thread of next.rows.threads) await writer.appendThread(thread)
     for (const message of next.rows.messages) await writer.appendMessage(message)
     await expect(
-      kind === 'thread' ? writer.appendThread(next.rows.threads[0]) : writer.appendMessage(next.rows.messages[0])
+      (async () => {
+        await (kind === 'thread'
+          ? writer.appendThread(next.rows.threads[0])
+          : writer.appendMessage(next.rows.messages[0]))
+        await writer.publish()
+      })()
     ).rejects.toThrow()
     await expect(writer.publish()).rejects.toThrow('not writable')
     await writer.dispose()
@@ -141,6 +150,99 @@ describe('SQL row transfer', () => {
       expect(sql).not.toMatch(/message_json|row_metadata_json|compaction_points_json|json_each/i)
   })
 
+  it('stages many messages in bounded batches and publishes them unchanged', async () => {
+    const { database, store } = setup()
+    const next = manyMessages(300)
+    const writer = await store.stageRows(next, null)
+    database.reset()
+    for (const thread of next.rows.threads) await writer.appendThread(thread)
+    for (const message of next.rows.messages) await writer.appendMessage(message)
+    expect(database.batchCount).toBeLessThanOrEqual(Math.ceil(300 / 128) + 2)
+    await writer.publish()
+    await writer.dispose()
+    const rows = []
+    for await (const row of store.iterateRows({ sessionId: 's', expectedRevision: 1 })) rows.push(row)
+    expect(rows.filter((row) => row.kind === 'message').map((row) => row.message)).toEqual(next.rows.messages)
+    expect(await database.query('SELECT COUNT(*) AS n FROM session_messages_staging')).toEqual([{ n: 0 }])
+  })
+
+  it('keeps each oversized message insert ahead of its chunk updates across batches', async () => {
+    const { database, store } = setup()
+    const next = manyMessages(40, 'large😀'.repeat(6000))
+    const writer = await store.stageRows(next, null)
+    database.reset()
+    for (const thread of next.rows.threads) await writer.appendThread(thread)
+    for (const message of next.rows.messages) await writer.appendMessage(message)
+    await writer.publish()
+    const rows = []
+    for await (const row of store.iterateRows({ sessionId: 's', expectedRevision: 1 })) rows.push(row)
+    expect(rows.filter((row) => row.kind === 'message').map((row) => row.message)).toEqual(next.rows.messages)
+    expect(database.batchCount).toBeLessThanOrEqual(next.rows.messages.length / 4)
+  })
+
+  it('discards buffered rows on dispose without writing them', async () => {
+    const { database, store } = setup()
+    const next = fixture('small')
+    const writer = await store.stageRows(next, null)
+    database.reset()
+    for (const thread of next.rows.threads) await writer.appendThread(thread)
+    for (const message of next.rows.messages) await writer.appendMessage(message)
+    await writer.dispose()
+    expect(database.executed.some((sql) => sql.startsWith('INSERT INTO session_messages_staging'))).toBe(false)
+    expect(await database.query('SELECT COUNT(*) AS n FROM session_row_staging_mutations')).toEqual([{ n: 0 }])
+    expect(await store.hasRows('s')).toBe(false)
+    await expect(writer.publish()).rejects.toThrow('not writable')
+  })
+
+  it('closes the candidate when a buffered flush fails', async () => {
+    const { database, store } = setup()
+    const next = manyMessages(300)
+    const writer = await store.stageRows(next, null)
+    vi.spyOn(database, 'executeBatch').mockRejectedValueOnce(new Error('synthetic flush failure'))
+    await expect(
+      (async () => {
+        for (const thread of next.rows.threads) await writer.appendThread(thread)
+        for (const message of next.rows.messages) await writer.appendMessage(message)
+      })()
+    ).rejects.toThrow('synthetic flush failure')
+    await expect(writer.appendMessage(next.rows.messages[299])).rejects.toThrow('not writable')
+    await expect(writer.publish()).rejects.toThrow('not writable')
+    vi.mocked(database.executeBatch).mockRestore()
+    await writer.dispose()
+    expect(await store.hasRows('s')).toBe(false)
+    expect(await database.query('SELECT COUNT(*) AS n FROM session_messages_staging')).toEqual([{ n: 0 }])
+  })
+
+  it('copies a large session with batched staging writes', async () => {
+    const { database, store } = setup()
+    const repository = new RowBackedSessionRepository({
+      rows: store,
+      records: new InMemorySessionRecordStore(),
+      writes: new SessionRowWriteQueue((_id, run) => run()),
+    })
+    const messages: Message[] = Array.from({ length: 300 }, (_, index) => ({
+      id: `m${index}`,
+      role: index % 2 ? 'assistant' : 'user',
+      contentParts: [{ type: 'text', text: `message ${index}` }],
+    }))
+    await repository.createSessionRows({ id: 'source', name: 'Source' }, messages)
+    const revision = await store.getRevision('source')
+    database.reset()
+    await repository.copySessionRows({
+      sessionId: 'source',
+      expectedRevision: revision!,
+      targetSessionId: 'copy',
+      createdAt: 1,
+      scope: { type: 'session' },
+    })
+    expect(database.batchCount).toBeLessThanOrEqual(10)
+    const bodies = async (sessionId: string) =>
+      (await store.readSnapshot(sessionId))?.rows.messages
+        .map(({ siblingOrder, message: { contentParts } }) => JSON.stringify({ siblingOrder, contentParts }))
+        .sort()
+    expect(await bodies('copy')).toEqual(await bodies('source'))
+  })
+
   it('checks cancellation and revision changes during row iteration', async () => {
     const { store } = setup()
     const next = fixture('small')
@@ -156,6 +258,18 @@ describe('SQL row transfer', () => {
     await expect(other.next()).rejects.toMatchObject({ name: 'SessionRowConflictError' })
   })
 })
+
+function manyMessages(count: number, text = 'small') {
+  return contextSnapshot({
+    id: 's',
+    name: 'Many messages',
+    messages: Array.from({ length: count }, (_, index) => ({
+      id: `m${index}`,
+      role: index % 2 ? ('assistant' as const) : ('user' as const),
+      contentParts: [{ type: 'text' as const, text: `${text} ${index}` }],
+    })),
+  })
+}
 
 function contextSnapshot(...args: Parameters<typeof contextFactsSnapshot>) {
   return storageRowFixture(contextFactsSnapshot(...args))

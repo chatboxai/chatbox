@@ -177,14 +177,21 @@ describe('SQL row imports', () => {
     for (const message of fixture('copy').rows.messages) await ordinary.appendMessage(message)
     const staged = () => db.query('SELECT payload_id FROM session_messages_staging ORDER BY payload_id')
     const protectedRows = await staged()
-    expect(protectedRows).toHaveLength(4)
+    // Ordinary copy candidates buffer their rows until publish, so only the pending import is staged.
+    expect(protectedRows).toHaveLength(2)
+    const mutations = () => db.query('SELECT mutation_id FROM session_row_staging_mutations')
+    const protectedMutations = await mutations()
+    expect(protectedMutations).toHaveLength(1)
     await writer.dispose()
     await writer.dispose()
     expect(await staged()).toEqual(protectedRows)
+    expect(await mutations()).toEqual(protectedMutations)
     await pending.dispose()
-    expect(await staged()).toHaveLength(2)
+    expect(await staged()).toEqual([])
+    expect(await mutations()).toHaveLength(1)
     await ordinary.dispose()
     expect(await staged()).toEqual([])
+    expect(await mutations()).toEqual([])
     expect(await store.readMessages({ sessionId: 's', messageIds: ['a'] })).toMatchObject({
       messages: [{ message: { contentParts: [{ text: 'new' }] } }],
     })

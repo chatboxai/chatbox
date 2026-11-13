@@ -118,7 +118,8 @@ export interface Toast {
     settingsPath?: string
     onClick?: () => void
   }
-  duration?: number
+  /** Milliseconds before the toast hides; null keeps it until it is removed. */
+  duration?: number | null
 }
 
 export interface RemoteConfig {

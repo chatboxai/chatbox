@@ -20,6 +20,7 @@ export enum ModelProviderEnum {
   Groq = 'groq',
   DeepSeek = 'deepseek',
   SiliconFlow = 'siliconflow',
+  TokenLab = 'tokenlab',
   VolcEngine = 'volcengine',
   MistralAI = 'mistral-ai',
   LMStudio = 'lm-studio',

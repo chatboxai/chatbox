@@ -2088,5 +2088,8 @@
   "Allow compute points billing in the image creator on this device before using this command.": "请先在此设备的图片生成器中允许使用计算点数生图，再使用此命令。",
   "Could not save your preference. Permission applies only to this generation.": "无法保存偏好，本次允许仅对当前生图生效。",
   "The active license changed. Please try again.": "当前套餐已切换，请重试。",
-  "This request will use compute points: {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.": "本次请求将消耗计算点数：{{images}} 张 × {{points}} 点/张 = {{total}} 点。批准即表示同意本次扣除。"
+  "This request will use compute points: {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.": "本次请求将消耗计算点数：{{images}} 张 × {{points}} 点/张 = {{total}} 点。批准即表示同意本次扣除。",
+  "This request may use remaining image quota first, with any additional images charged in compute points.": "本次可能先消耗剩余图片额度，超出部分将按张消耗计算点数。",
+  "This request will consume {{count}} image quota.": "本次将消耗 {{count}} 张图片额度。",
+  "This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.": "本次将先消耗 {{quota}} 张图片额度，其余 {{images}} 张按 {{points}} 点/张计为 {{total}} 点。批准即表示同意本次扣除。"
 }

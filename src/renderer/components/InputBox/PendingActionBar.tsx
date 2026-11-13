@@ -160,6 +160,10 @@ const ImageGenerationApprovalBody: FC<{ details: ImageGenerationApprovalDetails;
   const usesChatboxQuota = details.billing === 'chatbox_quota'
   const computePointsRemainingRatio = quota?.computePointsRemainingRatio
   const pointsCharge = usesChatboxQuota ? quota?.pointsCharge : undefined
+  // `quota` is present only after a successful live refresh; until then the card stays on the points variant.
+  const quotaCoversRequest =
+    usesChatboxQuota && !pointsCharge && quota?.imageQuota !== undefined && quota.imageQuota.remaining >= details.count
+  const quotaUsedFirst = pointsCharge && quota?.imageQuota ? quota.imageQuota.remaining : 0
 
   return (
     <>
@@ -180,14 +184,24 @@ const ImageGenerationApprovalBody: FC<{ details: ImageGenerationApprovalDetails;
         </Text>
         {pointsCharge?.sufficient ? (
           <Text size="xs" fw={600} c="chatbox-primary">
-            {t(
-              'This request will use compute points: {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.',
-              {
-                images: pointsCharge.chargedImages.toLocaleString(),
-                points: pointsCharge.pointsPerImage.toLocaleString(),
-                total: pointsCharge.totalPoints.toLocaleString(),
-              }
-            )}
+            {quotaUsedFirst > 0
+              ? t(
+                  'This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.',
+                  {
+                    quota: quotaUsedFirst.toLocaleString(),
+                    images: pointsCharge.chargedImages.toLocaleString(),
+                    points: pointsCharge.pointsPerImage.toLocaleString(),
+                    total: pointsCharge.totalPoints.toLocaleString(),
+                  }
+                )
+              : t(
+                  'This request will use compute points: {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.',
+                  {
+                    images: pointsCharge.chargedImages.toLocaleString(),
+                    points: pointsCharge.pointsPerImage.toLocaleString(),
+                    total: pointsCharge.totalPoints.toLocaleString(),
+                  }
+                )}
           </Text>
         ) : pointsCharge ? (
           <Text size="xs" c="chatbox-error">
@@ -195,9 +209,17 @@ const ImageGenerationApprovalBody: FC<{ details: ImageGenerationApprovalDetails;
           </Text>
         ) : (
           <Text size="xs" c="chatbox-tertiary">
-            {usesChatboxQuota
-              ? t('Image quota is used first. Once it runs out, you can use compute points to generate more images.')
-              : t('This request may incur charges from {{provider}}.', { provider: details.provider })}
+            {!usesChatboxQuota
+              ? t('This request may incur charges from {{provider}}.', { provider: details.provider })
+              : quotaCoversRequest
+                ? t('This request will consume {{count}} image quota.', { count: details.count })
+                : quota
+                  ? t(
+                      'Image quota is used first. Once it runs out, you can use compute points to generate more images.'
+                    )
+                  : t(
+                      'This request may use remaining image quota first, with any additional images charged in compute points.'
+                    )}
           </Text>
         )}
         {usesChatboxQuota && quota?.imageQuota && (
@@ -208,7 +230,7 @@ const ImageGenerationApprovalBody: FC<{ details: ImageGenerationApprovalDetails;
             })}
           </Text>
         )}
-        {usesChatboxQuota && computePointsRemainingRatio !== undefined && (
+        {usesChatboxQuota && !quotaCoversRequest && computePointsRemainingRatio !== undefined && (
           <Text size="xs" c="chatbox-tertiary">
             {t('Compute points remaining: {{points}}', {
               points: pointsCharge
@@ -218,7 +240,7 @@ const ImageGenerationApprovalBody: FC<{ details: ImageGenerationApprovalDetails;
           </Text>
         )}
       </Group>
-      {usesChatboxQuota && (
+      {usesChatboxQuota && !quotaCoversRequest && (
         <Text size="xs" c="chatbox-tertiary">
           {t('For detailed points usage, see')}{' '}
           <LinkTargetBlank

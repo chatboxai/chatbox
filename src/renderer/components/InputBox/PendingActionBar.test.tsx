@@ -45,7 +45,8 @@ vi.mock('react-i18next', async (importOriginal) => ({
     t: (key: string, values?: Record<string, string>) =>
       key.startsWith('Image quota remaining:') ||
       key.startsWith('Compute points remaining:') ||
-      key.startsWith('This request will use compute points:')
+      key.startsWith('This request will use ') ||
+      key.startsWith('This request will consume ')
         ? key.replace(/\{\{(\w+)\}\}/g, (_, name: string) => values?.[name] ?? '')
         : key,
     i18n: { language: 'en' },
@@ -193,7 +194,10 @@ const imageApproval = pausedPart({
 })
 const alwaysAllowLabel = 'Always allow this license to use compute points for images on this device'
 const chargeLine =
-  'This request will use compute points: 2 × 27,000 points/image = 54,000 points. Approving confirms this charge.'
+  'This request will use 1 image quota first, then charge 2 × 27,000 points/image = 54,000 points. Approving confirms this charge.'
+const quotaOnlyLine = 'This request will consume 1 image quota.'
+const pointsFallbackLine =
+  'This request may use remaining image quota first, with any additional images charged in compute points.'
 const realtimeQuota = {
   plan: 'pro',
   image_total_quota: 200,
@@ -304,15 +308,22 @@ describe('PendingActionBar', () => {
     }
   )
 
-  it('does not show a points charge or always-allow when image quota covers the request', async () => {
+  it('charges every image in points when no image quota remains', async () => {
+    vi.mocked(refreshImageLicense).mockResolvedValue({ ...realtimeQuota, image_used_count: 200 })
+    renderBar(makeSession([withImageCount(2)]))
+    await screen.findByText(
+      'This request will use compute points: 2 × 27,000 points/image = 54,000 points. Approving confirms this charge.'
+    )
+    expect(screen.queryByText(/image quota first/)).toBeNull()
+    expect(screen.getByRole('checkbox', { name: alwaysAllowLabel })).toBeTruthy()
+  })
+
+  it('shows only the image quota consumption when image quota covers the request', async () => {
     renderBar(makeSession([imageApproval]))
     await screen.findByText('Image quota remaining: 5 / 200')
-    expect(
-      screen.getByText(
-        'Image quota is used first. Once it runs out, you can use compute points to generate more images.'
-      )
-    ).toBeTruthy()
-    expect(screen.queryByText(/This request will use compute points/)).toBeNull()
+    expect(screen.getByText(quotaOnlyLine)).toBeTruthy()
+    expect(screen.queryByText(/compute points/i)).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Model pricing' })).toBeNull()
     expect(screen.queryByRole('checkbox')).toBeNull()
     expect(getChatboxAIModelList).not.toHaveBeenCalled()
     armBar()
@@ -399,6 +410,9 @@ describe('PendingActionBar', () => {
         },
       ])
     )
+    expect(screen.getByText('This request may incur charges from {{provider}}.')).toBeTruthy()
+    expect(screen.queryByText(/image quota/i)).toBeNull()
+    expect(screen.queryByText(/compute points/i)).toBeNull()
     expect(screen.queryByRole('checkbox')).toBeNull()
     expect(refreshImageLicense).not.toHaveBeenCalled()
     armBar()
@@ -424,7 +438,8 @@ describe('PendingActionBar', () => {
     expect(refreshImageLicense).toHaveBeenCalledWith('license-a', expect.any(AbortSignal))
     await act(async () => resolve(realtimeQuota))
     await screen.findByText('Image quota remaining: 5 / 200')
-    expect(screen.getByText('Compute points remaining: 30%')).toBeTruthy()
+    expect(screen.getByText(quotaOnlyLine)).toBeTruthy()
+    expect(screen.queryByText(/compute points/i)).toBeNull()
     expect((screen.getByTestId(TestId.toolCall.approve) as HTMLButtonElement).disabled).toBe(false)
   })
 
@@ -432,12 +447,32 @@ describe('PendingActionBar', () => {
     vi.mocked(refreshImageLicense).mockRejectedValueOnce(new Error('network unavailable'))
     renderBar(makeSession([imageApproval]))
     await screen.findByText('Unable to check image billing. Please try again.')
+    expect(screen.getByText(pointsFallbackLine)).toBeTruthy()
+    expect(screen.queryByText(quotaOnlyLine)).toBeNull()
+    expect(screen.queryByText('Image quota remaining: 0 / 100')).toBeNull()
+    expect((screen.getByTestId(TestId.toolCall.approve) as HTMLButtonElement).disabled).toBe(true)
     armBar()
     fireEvent.click(screen.getByTestId(TestId.toolCall.approve))
     expect(withImagePointsApproval).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
     await screen.findByText('Image quota remaining: 5 / 200')
+    expect(screen.getByText(quotaOnlyLine)).toBeTruthy()
+    expect(screen.queryByText(pointsFallbackLine)).toBeNull()
     expect(refreshImageLicense).toHaveBeenCalledTimes(2)
+  })
+
+  it('follows live quota with the points variant after a failed refresh is retried', async () => {
+    vi.mocked(refreshImageLicense).mockRejectedValueOnce(new Error('network unavailable'))
+    vi.mocked(refreshImageLicense).mockResolvedValue(chargedQuota)
+    renderBar(makeSession([chargedImageApproval]))
+    await screen.findByText('Unable to check image billing. Please try again.')
+    expect(screen.getByText(pointsFallbackLine)).toBeTruthy()
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    await screen.findByText(chargeLine)
+    expect(screen.queryByText(pointsFallbackLine)).toBeNull()
+    expect(screen.getByRole('checkbox', { name: alwaysAllowLabel })).toBeTruthy()
+    expect((screen.getByTestId(TestId.toolCall.approve) as HTMLButtonElement).disabled).toBe(false)
   })
 
   it('refreshes on every approval and ignores a late response for the previous license', async () => {

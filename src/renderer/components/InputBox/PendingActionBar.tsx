@@ -32,9 +32,16 @@ import {
   formatComputePointsRemainingRatio,
   getComputePointsRemainingRatio,
 } from '@/packages/chatbox-cli/compute-points'
-import { refreshImageLicense, remainingImageQuota, withImagePointsApproval } from '@/packages/image-points-billing'
+import {
+  getImagePointsCharge,
+  type ImagePointsCharge,
+  imagePointsChargeNeeded,
+  refreshImageLicense,
+  remainingImageQuota,
+  withImagePointsApproval,
+} from '@/packages/image-points-billing'
 import { getFileMutationDisplayStats } from '@/packages/model-calls/toolsets/file-mutation-stats'
-import { buildChatboxUrl } from '@/packages/remote'
+import { buildChatboxUrl, getChatboxAIModelList } from '@/packages/remote'
 import { pulsePendingActionBar, revealPausedStep, usePendingActionBarPulseToken } from '@/stores/approvalAttentionStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import * as toastActions from '@/stores/toastActions'
@@ -140,7 +147,10 @@ const ExplanationText: FC<{ children: string } & ExplanationToggle> = ({ childre
   )
 }
 
-type ImageApprovalQuota = Pick<ImageGenerationApprovalDetails, 'imageQuota' | 'computePointsRemainingRatio'>
+type ImageApprovalQuota = Pick<ImageGenerationApprovalDetails, 'imageQuota' | 'computePointsRemainingRatio'> & {
+  /** Present only when this request spends compute points. */
+  pointsCharge?: ImagePointsCharge
+}
 
 const ImageGenerationApprovalBody: FC<{ details: ImageGenerationApprovalDetails; quota?: ImageApprovalQuota }> = ({
   details,
@@ -149,6 +159,7 @@ const ImageGenerationApprovalBody: FC<{ details: ImageGenerationApprovalDetails;
   const { t, i18n } = useTranslation()
   const usesChatboxQuota = details.billing === 'chatbox_quota'
   const computePointsRemainingRatio = quota?.computePointsRemainingRatio
+  const pointsCharge = usesChatboxQuota ? quota?.pointsCharge : undefined
 
   return (
     <>
@@ -167,11 +178,28 @@ const ImageGenerationApprovalBody: FC<{ details: ImageGenerationApprovalDetails;
           {details.aspectRatio ? ` · ${details.aspectRatio}` : ''}
           {details.style ? ` · ${details.style}` : ''}
         </Text>
-        <Text size="xs" c="chatbox-tertiary">
-          {usesChatboxQuota
-            ? t('Image quota is used first. Once it runs out, you can use compute points to generate more images.')
-            : t('This request may incur charges from {{provider}}.', { provider: details.provider })}
-        </Text>
+        {pointsCharge?.sufficient ? (
+          <Text size="xs" fw={600} c="chatbox-primary">
+            {t(
+              'This request will use compute points: {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.',
+              {
+                images: pointsCharge.chargedImages.toLocaleString(),
+                points: pointsCharge.pointsPerImage.toLocaleString(),
+                total: pointsCharge.totalPoints.toLocaleString(),
+              }
+            )}
+          </Text>
+        ) : pointsCharge ? (
+          <Text size="xs" c="chatbox-error">
+            {t('Insufficient points')}
+          </Text>
+        ) : (
+          <Text size="xs" c="chatbox-tertiary">
+            {usesChatboxQuota
+              ? t('Image quota is used first. Once it runs out, you can use compute points to generate more images.')
+              : t('This request may incur charges from {{provider}}.', { provider: details.provider })}
+          </Text>
+        )}
         {usesChatboxQuota && quota?.imageQuota && (
           <Text size="xs" c="chatbox-tertiary">
             {t('Image quota remaining: {{remaining}} / {{total}}', {
@@ -183,7 +211,9 @@ const ImageGenerationApprovalBody: FC<{ details: ImageGenerationApprovalDetails;
         {usesChatboxQuota && computePointsRemainingRatio !== undefined && (
           <Text size="xs" c="chatbox-tertiary">
             {t('Compute points remaining: {{points}}', {
-              points: formatComputePointsRemainingRatio(computePointsRemainingRatio, i18n.language),
+              points: pointsCharge
+                ? pointsCharge.availablePoints.toLocaleString()
+                : formatComputePointsRemainingRatio(computePointsRemainingRatio, i18n.language),
             })}
           </Text>
         )}
@@ -466,6 +496,7 @@ const PendingActionBarContent: FC<PendingActionContentProps> = ({ sessionId, mes
   const current: PendingPauseInteraction | undefined = interactions[0]
   const currentKey = current ? getInteractionKey(current) : undefined
   const licenseKey = useSettingsStore((state) => state.licenseKey ?? '')
+  const language = useSettingsStore((state) => state.language)
   const imageDetails = current?.kind === 'approval' ? getImageGenerationDetails(current.pauseReason) : undefined
   const needsImageQuota = imageDetails?.provider === 'chatbox-ai'
   const imageQuota = useQuery({
@@ -474,10 +505,18 @@ const PendingActionBarContent: FC<PendingActionContentProps> = ({ sessionId, mes
     queryFn: async ({ signal }): Promise<ImageApprovalQuota> => {
       if (!licenseKey) throw new Error('Missing license')
       const detail = await refreshImageLicense(licenseKey, signal)
-      return {
+      const quota: ImageApprovalQuota = {
         imageQuota: { remaining: remainingImageQuota(detail), total: detail.image_total_quota },
         computePointsRemainingRatio: getComputePointsRemainingRatio(detail),
       }
+      // Same charge condition as authorizeImagePoints, so Approve is consent to exactly this charge.
+      const quantity = imageDetails?.count || 1
+      if (imageDetails && imagePointsChargeNeeded(detail, quantity)) {
+        const models = await getChatboxAIModelList({ licenseKey, language }, signal)
+        const price = models.imageModels.find((model) => model.modelId === imageDetails.modelId)?.points_per_image
+        quota.pointsCharge = getImagePointsCharge(detail, quantity, price)
+      }
+      return quota
     },
     staleTime: 0,
     gcTime: 0,
@@ -489,7 +528,8 @@ const PendingActionBarContent: FC<PendingActionContentProps> = ({ sessionId, mes
   const pointsChoiceKey = JSON.stringify([currentKey, licenseKey])
   const [pointsChoice, setPointsChoice] = useState({ key: pointsChoiceKey, alwaysAllow: false })
   if (pointsChoice.key !== pointsChoiceKey) setPointsChoice({ key: pointsChoiceKey, alwaysAllow: false })
-  const alwaysAllowPoints = pointsChoice.key === pointsChoiceKey && pointsChoice.alwaysAllow
+  const offersAlwaysAllowPoints = !imageQuotaUnavailable && imageQuota.data?.pointsCharge?.sufficient === true
+  const alwaysAllowPoints = offersAlwaysAllowPoints && pointsChoice.key === pointsChoiceKey && pointsChoice.alwaysAllow
 
   // Input protection: (re)arm whenever the displayed decision changes, including
   // first mount. Written during render so no click can land before an effect runs.
@@ -738,7 +778,7 @@ const PendingActionBarContent: FC<PendingActionContentProps> = ({ sessionId, mes
             )}
           </Group>
         )}
-        {needsImageQuota && (
+        {offersAlwaysAllowPoints && (
           <Checkbox
             size="xs"
             label={t('Always allow this license to use compute points for images on this device')}

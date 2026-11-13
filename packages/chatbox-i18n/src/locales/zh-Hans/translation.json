@@ -2087,5 +2087,6 @@
   "Unable to check image billing. Please try again.": "无法检查生图额度，请重试。",
   "Allow compute points billing in the image creator on this device before using this command.": "请先在此设备的图片生成器中允许使用计算点数生图，再使用此命令。",
   "Could not save your preference. Permission applies only to this generation.": "无法保存偏好，本次允许仅对当前生图生效。",
-  "The active license changed. Please try again.": "当前套餐已切换，请重试。"
+  "The active license changed. Please try again.": "当前套餐已切换，请重试。",
+  "This request will use compute points: {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.": "本次请求将消耗计算点数：{{images}} 张 × {{points}} 点/张 = {{total}} 点。批准即表示同意本次扣除。"
 }

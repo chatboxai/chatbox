@@ -34,6 +34,8 @@ vi.mock('@/stores/settingsStore', () => ({
 import {
   authorizeImagePoints,
   availableImagePoints,
+  getImagePointsCharge,
+  imagePointsChargeNeeded,
   imagePointsConsentKey,
   withImagePointsApproval,
 } from './image-points-billing'
@@ -179,6 +181,34 @@ describe('image points authorization', () => {
     expect(mocks.show).toHaveBeenCalledOnce()
     mocks.state.licenseKey = 'license-b'
     await expect(runWork()).rejects.toThrow('image creator')
+  })
+  it.each<[string, Partial<ChatboxAILicenseDetail>]>([
+    ['remaining image quota covers the request', { image_used_count: 99 }],
+    ['the plan is Free', { plan: 'free' }],
+  ])('does not remember work-mode always-allow when %s', async (_case, patch) => {
+    mocks.detail.mockResolvedValue({ data: detail(patch) })
+    await withImagePointsApproval(workParams, 'license-a', true, () => runWork())
+    expect(localStorage.length).toBe(0)
+    expect(mocks.show).not.toHaveBeenCalled()
+  })
+  it('computes the points charge only for images beyond the remaining quota', () => {
+    const pro = detail({ image_used_count: 99, expansion_pack_limit: 27000, unified_token_usage_details: [] })
+    expect(imagePointsChargeNeeded(pro, 1)).toBe(false)
+    expect(imagePointsChargeNeeded(detail({ plan: 'free' }), 1)).toBe(false)
+    expect(imagePointsChargeNeeded(pro, 3)).toBe(true)
+    expect(getImagePointsCharge(pro, 3, 27000)).toEqual({
+      chargedImages: 2,
+      pointsPerImage: 27000,
+      totalPoints: 54000,
+      availablePoints: 27000,
+      sufficient: false,
+    })
+    expect(getImagePointsCharge(pro, 2, 27000)).toMatchObject({
+      chargedImages: 1,
+      totalPoints: 27000,
+      sufficient: true,
+    })
+    expect(() => getImagePointsCharge(pro, 2, 0)).toThrow('Unable to check')
   })
   it('does not authorize another tool call or changed image request', async () => {
     await withImagePointsApproval(workParams, 'license-a', false, async () => {

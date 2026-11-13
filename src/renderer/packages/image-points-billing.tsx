@@ -84,6 +84,39 @@ export function availableImagePoints(detail: ChatboxAILicenseDetail, now = Date.
   return available
 }
 
+const POINTS_PLANS = ['lite', 'pro', 'pro_plus', 'quota_pack']
+
+/** Whether a Chatbox AI image request of `quantity` images exceeds the remaining quota on a paid plan. */
+export function imagePointsChargeNeeded(detail: ChatboxAILicenseDetail, quantity: number): boolean {
+  if (!Number.isInteger(quantity) || quantity < 1) throw checkFailed()
+  if (remainingImageQuota(detail) >= quantity || detail.plan === 'free') return false
+  if (!detail.plan || !POINTS_PLANS.includes(detail.plan)) throw checkFailed()
+  return true
+}
+
+export type ImagePointsCharge = {
+  chargedImages: number
+  pointsPerImage: number
+  totalPoints: number
+  availablePoints: number
+  sufficient: boolean
+}
+
+/** Points spent by a request that `imagePointsChargeNeeded` reports as charged. */
+export function getImagePointsCharge(
+  detail: ChatboxAILicenseDetail,
+  quantity: number,
+  pointsPerImage: number | undefined
+): ImagePointsCharge {
+  if (pointsPerImage === undefined || !Number.isSafeInteger(pointsPerImage) || pointsPerImage <= 0) {
+    throw checkFailed()
+  }
+  const chargedImages = quantity - remainingImageQuota(detail)
+  const totalPoints = chargedImages * pointsPerImage
+  const availablePoints = availableImagePoints(detail)
+  return { chargedImages, pointsPerImage, totalPoints, availablePoints, sufficient: availablePoints >= totalPoints }
+}
+
 // Separate browser storage is device-local and is not included in settings backup/sync.
 export async function imagePointsConsentKey(licenseKey: string): Promise<string> {
   const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(licenseKey))
@@ -125,20 +158,12 @@ export async function authorizeImagePoints(
   const detail = await refreshImageLicense(licenseKey, signal)
   assertCurrent()
   const quantity = params.imageGenerateNum || 1
-  if (!Number.isInteger(quantity) || quantity < 1) throw checkFailed()
+  if (!imagePointsChargeNeeded(detail, quantity)) return
   const remaining = remainingImageQuota(detail)
-  if (remaining >= quantity || detail.plan === 'free') {
-    if (workApproval?.active && workApproval.alwaysAllow && detail.plan !== 'free') {
-      rememberImagePointsConsent(consentKey)
-    }
-    return
-  }
-  if (!detail.plan || !['lite', 'pro', 'pro_plus', 'quota_pack'].includes(detail.plan)) throw checkFailed()
   const models = await getChatboxAIModelList({ licenseKey, language: settingsStore.getState().language }, signal)
   assertCurrent()
   const price = models.imageModels.find((model) => model.modelId === params.model.modelId)?.points_per_image
-  if (price === undefined || !Number.isSafeInteger(price) || price <= 0) throw checkFailed()
-  if (availableImagePoints(detail) < (quantity - remaining) * price) {
+  if (!getImagePointsCharge(detail, quantity, price).sufficient) {
     throw ChatboxAIAPIError.fromCodeName('', 'image_points_insufficient') || checkFailed()
   }
   if (workApproval?.active) {

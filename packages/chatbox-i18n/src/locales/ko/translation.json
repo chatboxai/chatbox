@@ -2087,5 +2087,6 @@
   "Unable to check image billing. Please try again.": "Unable to check image billing. Please try again.",
   "Allow compute points billing in the image creator on this device before using this command.": "Allow compute points billing in the image creator on this device before using this command.",
   "Could not save your preference. Permission applies only to this generation.": "Could not save your preference. Permission applies only to this generation.",
-  "The active license changed. Please try again.": "The active license changed. Please try again."
+  "The active license changed. Please try again.": "The active license changed. Please try again.",
+  "This request will use compute points: {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.": "이 요청은 컴퓨팅 포인트를 사용합니다: {{images}} × {{points}} 포인트/이미지 = {{total}} 포인트. 승인하면 이 차감에 동의하는 것입니다."
 }

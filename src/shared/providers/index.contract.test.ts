@@ -38,12 +38,23 @@ describe('provider control-plane contracts', () => {
       'xiaomi-mimo',
       'longcat',
       'zhipu-glm-coding-plan',
+      'ionet',
     ])
   })
 
   it('registers providers with unique ids', () => {
     const ids = getAllProviders().map((provider) => provider.id)
     expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  it('exposes IO Intelligence provider defaults', () => {
+    const provider = getAllProviders().find((current) => current.id === 'ionet')
+    expect(provider?.name).toBe('IO Intelligence')
+    expect(provider?.defaultSettings?.apiHost).toBe('https://api.intelligence.io.solutions/api/v1')
+    const models = provider?.defaultSettings?.models ?? []
+    expect(models).toHaveLength(10)
+    expect(models[0]?.modelId).toBe('deepseek-ai/DeepSeek-V4.1-Flash')
+    expect(models[0]?.capabilities).toEqual(['reasoning', 'tool_use'])
   })
 
   it('keeps models.dev mapping aligned with provider definitions', () => {

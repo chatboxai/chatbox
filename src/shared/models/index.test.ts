@@ -1,5 +1,6 @@
 import { settings as getDefaultSettings, newConfigs } from 'src/shared/defaults'
 import { getModel } from 'src/shared/providers'
+import Ionet from 'src/shared/providers/definitions/models/ionet'
 import LongCat from 'src/shared/providers/definitions/models/longcat'
 import OpenAI from 'src/shared/providers/definitions/models/openai'
 import OpenAIResponses from 'src/shared/providers/definitions/models/openai-responses'
@@ -206,6 +207,7 @@ describe('getModel', () => {
       'https://open.bigmodel.cn/api/coding/paas/v4',
       ZhipuGLMCodingPlan,
     ],
+    [ModelProviderEnum.Ionet, 'deepseek-ai/DeepSeek-V4.1-Flash', 'https://api.intelligence.io.solutions/api/v1', Ionet],
   ])('returns OpenAI-compatible model instances for %s', (provider, modelId, apiHost, expectedModelClass) => {
     const sessionSettings: SessionSettings = {
       provider,

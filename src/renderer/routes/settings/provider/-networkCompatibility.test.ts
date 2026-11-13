@@ -8,6 +8,7 @@ describe('provider network compatibility switch', () => {
     ModelProviderEnum.OpenCodeZen,
     ModelProviderEnum.GLM,
     ModelProviderEnum.ZhipuGLMCodingPlan,
+  ModelProviderEnum.Ionet,
   ])('shows %s only on web', (id) => {
     expect(showsNetworkCompatibility({ id }, 'web')).toBe(true)
     for (const platformType of ['desktop', 'mobile'] as const) {

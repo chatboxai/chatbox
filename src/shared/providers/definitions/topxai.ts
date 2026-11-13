@@ -2,19 +2,19 @@ import { ModelProviderEnum, ModelProviderType } from '../../types'
 import { defineProvider } from '../registry'
 import TopxAI from './models/topxai'
 
-const TOPXAI_API_HOST = 'https://ai.topxea.com/v1'
+const TOPXAI_API_HOST = 'https://api.topxai.xyz/v1'
 
 // Model ids, context windows and output limits as the live catalogue lists
-// them: https://ai.topxea.com/api/pricing (read 2026-11-09).
+// them: https://api.topxai.xyz/api/pricing (read 2026-11-09).
 export const topxAIProvider = defineProvider({
   id: ModelProviderEnum.TopxAI,
   name: 'TopxAI',
   type: ModelProviderType.OpenAI,
   urls: {
-    website: 'https://ai.topxea.com',
-    apiKey: 'https://ai.topxea.com/keys',
-    docs: 'https://ai.topxea.com/docs',
-    models: 'https://ai.topxea.com/pricing',
+    website: 'https://api.topxai.xyz',
+    apiKey: 'https://api.topxai.xyz/keys',
+    docs: 'https://api.topxai.xyz/docs',
+    models: 'https://api.topxai.xyz/pricing',
   },
   defaultSettings: {
     apiHost: TOPXAI_API_HOST,

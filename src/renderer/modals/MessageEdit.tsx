@@ -13,6 +13,7 @@ import { getSessionLockStateNow } from '@/stores/session/action-guard'
 import { saveAndResendMessage } from '@/stores/session/generation'
 import { modifyMessage } from '@/stores/session/messages'
 import * as toastActions from '@/stores/toastActions'
+import { prepareTranscriptBranchCreation } from '@/utils/prepare-transcript-branch-creation'
 import { notifySessionLockBlocked } from '@/utils/session-lock-copy'
 
 const MessageEdit = NiceModal.create(
@@ -244,8 +245,13 @@ const MessageEditModal = ({
         void notifySessionLockBlocked(gate.reason, t)
         return
       }
+      const savedMessage = buildSavedMessage()
+      if (!(await prepareTranscriptBranchCreation(sessionId))) {
+        setSubmitFailed(true)
+        return
+      }
       onClose()
-      void saveAndResendMessage(sessionId, buildSavedMessage())
+      void saveAndResendMessage(sessionId, savedMessage)
     })
 
   const onContentPartInput = (index: number, text: string) => {

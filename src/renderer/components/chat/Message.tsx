@@ -64,6 +64,7 @@ import { countWord } from '@/packages/word-count'
 import { lockSessionAgentMode, setSessionAgentMode } from '@/stores/session/agent-mode'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { uiStore, useUIStore } from '@/stores/uiStore'
+import { prepareTranscriptBranchCreation } from '@/utils/prepare-transcript-branch-creation'
 import '../../static/Block.css'
 import { GLASS_FILL_CLASS, GLASS_SURFACE_CLASS } from '@/lib/glass-surface'
 import { generate, regenerateInNewFork, retryFromLastToolCallAfterApiError } from '@/stores/session/generation'
@@ -298,6 +299,7 @@ const _Message: FC<Props> = (props) => {
       return
     }
     if (msg.generating && !(await handleStop())) return
+    if (!(await prepareTranscriptBranchCreation(sessionId))) return
     await regenerateInNewFork(sessionId, msg)
   }, [sessionLocks, handleStop, msg, notifyActionBlocked, sessionId])
   // Every retry of this reply (whole message or last step, from any surface)

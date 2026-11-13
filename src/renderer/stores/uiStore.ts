@@ -17,6 +17,7 @@ import { safeStorage } from './safeStorage'
 export interface TranscriptNavigation {
   readonly owner: symbol
   readonly sessionId: string
+  prepareBranchCreation(): Promise<boolean>
   navigateMessage(messageId: string): Promise<boolean>
   openSearch(messageId: string): Promise<boolean>
   viewThread(threadId: string): Promise<boolean>

@@ -27,6 +27,7 @@ const h = vi.hoisted(() => ({
   } as Record<string, unknown>,
   removeMessage: vi.fn(),
   regenerateInNewFork: vi.fn(),
+  prepareBranchCreation: vi.fn<() => Promise<boolean>>(),
   showModal: vi.fn(),
 }))
 
@@ -56,6 +57,9 @@ vi.mock('@/stores/uiStore', () => ({
   uiStore: { getState: () => ({}) },
   useUIStore: (selector: (state: Record<string, unknown>) => unknown) =>
     selector({ setQuote: vi.fn(), widthFull: false }),
+}))
+vi.mock('@/utils/prepare-transcript-branch-creation', () => ({
+  prepareTranscriptBranchCreation: h.prepareBranchCreation,
 }))
 vi.mock('@/hooks/useGenerationStop', () => ({ useMessageGenerationStop: () => ({ status: 'idle', stop: vi.fn() }) }))
 vi.mock('@/stores/session/generation', () => ({
@@ -145,6 +149,7 @@ beforeEach(() => {
   h.settings.messageLayout = 'bubble'
   h.removeMessage.mockReset()
   h.regenerateInNewFork.mockReset()
+  h.prepareBranchCreation.mockReset().mockResolvedValue(true)
   h.showModal.mockReset()
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
@@ -199,6 +204,51 @@ describe.each(['bubble', 'classic'] as const)('small-screen message action bar i
     renderMessage(reply())
     fireEvent.click(screen.getByTestId(TestId.message.actionBarRetry))
     await vi.waitFor(() => expect(h.regenerateInNewFork).toHaveBeenCalledTimes(1))
+    expect(h.prepareBranchCreation).toHaveBeenCalledExactlyOnceWith('session')
+  })
+
+  test('Reply Again waits for the old branch to reach the tail and ignores repeated clicks', async () => {
+    let reachTail!: (ready: boolean) => void
+    h.prepareBranchCreation.mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        reachTail = resolve
+      })
+    )
+    renderMessage(reply())
+    const retry = screen.getByTestId(TestId.message.actionBarRetry)
+    fireEvent.click(retry)
+    fireEvent.click(retry)
+    await vi.waitFor(() => expect(h.prepareBranchCreation).toHaveBeenCalledTimes(1))
+    expect(h.regenerateInNewFork).not.toHaveBeenCalled()
+    await act(async () => {
+      reachTail(true)
+    })
+    expect(h.regenerateInNewFork).toHaveBeenCalledExactlyOnceWith('session', reply())
+  })
+
+  test('Reply Again does not create a branch when preparing the tail is canceled', async () => {
+    h.prepareBranchCreation.mockResolvedValue(false)
+    renderMessage(reply())
+    fireEvent.click(screen.getByTestId(TestId.message.actionBarRetry))
+    await vi.waitFor(() => expect(h.prepareBranchCreation).toHaveBeenCalledTimes(1))
+    expect(h.regenerateInNewFork).not.toHaveBeenCalled()
+  })
+
+  test('Reply Again continues when tail navigation recycles the original message row', async () => {
+    let reachTail!: (ready: boolean) => void
+    h.prepareBranchCreation.mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        reachTail = resolve
+      })
+    )
+    renderMessage(reply())
+    fireEvent.click(screen.getByTestId(TestId.message.actionBarRetry))
+    await vi.waitFor(() => expect(h.prepareBranchCreation).toHaveBeenCalledTimes(1))
+    cleanup()
+    await act(async () => {
+      reachTail(true)
+    })
+    expect(h.regenerateInNewFork).toHaveBeenCalledExactlyOnceWith('session', reply())
   })
 
   test('More lists every reply action and deletes the reply', async () => {

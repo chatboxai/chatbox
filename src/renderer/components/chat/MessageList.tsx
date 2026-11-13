@@ -76,6 +76,7 @@ const followOutputToBottom = () => 'auto' as const
 export interface MessageListRef {
   scrollToTop(): void
   scrollToBottom(): void
+  prepareBranchCreation(): Promise<boolean>
   /**
    * Captures, at send time, whether the send should follow the tail. Mobile layouts always follow; wide layouts follow
    * only when the user is at the tail (or has just asked for it) and return null while reading history. The returned
@@ -256,6 +257,15 @@ const MessageList = forwardRef<
   const [followOutput, setFollowOutputState] = useState(false)
   const followOutputRef = useMemo(() => ({ current: false }), [controller])
   const branchFollow = useMemo(() => ({ paused: false, operationId: 0, downwardScroll: false }), [controller])
+  const branchCreation = useMemo(() => ({ active: true, cancel: null as (() => void) | null }), [controller, owner])
+  const cancelBranchCreation = useCallback(() => branchCreation.cancel?.(), [branchCreation])
+  useLayoutEffect(() => {
+    branchCreation.active = true
+    return () => {
+      branchCreation.active = false
+      branchCreation.cancel?.()
+    }
+  }, [branchCreation])
   const setFollowOutput = useCallback(
     (value: boolean) => {
       followOutputRef.current = value
@@ -278,12 +288,13 @@ const MessageList = forwardRef<
     if (transcript.hasNewer) setFollowOutput(false)
   }, [transcript.hasNewer, setFollowOutput])
   const leaveTail = useCallback(() => {
+    cancelBranchCreation()
     sendFollowIntent.leaveTail()
     atBottomRef.current = false
     if (controller.getSnapshot().operation?.branchMode === 'create') branchFollow.paused = true
     branchFollow.downwardScroll = false
     setFollowOutput(false)
-  }, [atBottomRef, branchFollow, controller, sendFollowIntent, setFollowOutput])
+  }, [atBottomRef, branchFollow, cancelBranchCreation, controller, sendFollowIntent, setFollowOutput])
   useLayoutEffect(() => {
     const synchronizeBranchFollow = () => {
       const state = controller.getSnapshot()
@@ -325,6 +336,7 @@ const MessageList = forwardRef<
 
   const navigate = useCallback(
     (origin: 'head' | 'tail' | { messageId: string }) => {
+      cancelBranchCreation()
       if (origin === 'tail') {
         branchFollow.paused = false
         branchFollow.downwardScroll = false
@@ -334,8 +346,108 @@ const MessageList = forwardRef<
       if (typeof origin === 'object') setHighlighted(origin.messageId)
       return controller.navigate(origin)
     },
-    [branchFollow, controller, leaveTail, sendFollowIntent, setFollowOutput]
+    [branchFollow, cancelBranchCreation, controller, leaveTail, sendFollowIntent, setFollowOutput]
   )
+  const prepareBranchCreation = useCallback((): Promise<boolean> => {
+    cancelBranchCreation()
+    if (!branchCreation.active) return Promise.resolve(false)
+    setIsNewMessage(false)
+    branchFollow.paused = false
+    branchFollow.downwardScroll = false
+    sendFollowIntent.requestTail()
+    setFollowOutput(true)
+    return new Promise((resolve) => {
+      const token = {}
+      let frame = 0
+      let finished = false
+      let loaded = false
+      let seek: { geometry: string; done: boolean } | null = null
+      let requestId: number | undefined
+      let bottomGeometry: string | null = null
+      const finish = (success: boolean) => {
+        if (finished) return
+        finished = true
+        clearTimeout(timeout)
+        cancelAnimationFrame(frame)
+        branchCreation.cancel = null
+        if (!success) {
+          controller.cancelNavigation(token)
+          sendFollowIntent.leaveTail()
+          followOutputRef.current = false
+          if (branchCreation.active) setFollowOutput(false)
+        }
+        resolve(success)
+      }
+      const timeout = setTimeout(() => finish(false), 10_000)
+      branchCreation.cancel = () => finish(false)
+      const check = () => {
+        if (finished) return
+        const state = controller.getSnapshot()
+        if (!branchCreation.active || (state.operation && state.operation.requestId !== requestId)) {
+          finish(false)
+          return
+        }
+        const element = scroller.current
+        if (
+          loaded &&
+          !state.operation &&
+          !state.layout &&
+          !state.hasNewer &&
+          live.current.transcript.windowEpoch === state.windowEpoch &&
+          measuredEpoch.current === state.windowEpoch &&
+          element?.isConnected &&
+          element.clientHeight > 0 &&
+          virtuoso.current
+        ) {
+          const geometry = `${state.windowEpoch}:${element.scrollHeight}:${element.clientHeight}`
+          const atTail = Math.abs(Math.max(0, element.scrollHeight - element.clientHeight) - element.scrollTop) <= 4
+          // A seek can complete before a measurement retry. Observe the old tail on consecutive frames before creating rows.
+          if (seek?.done && atTail) {
+            if (bottomGeometry === geometry) {
+              setFollowOutput(true)
+              finish(true)
+              return
+            }
+            bottomGeometry = geometry
+          } else {
+            bottomGeometry = null
+            if ((!seek || seek.done) && seek?.geometry !== geometry) {
+              const request = { geometry, done: false }
+              seek = request
+              virtuoso.current.scrollIntoView({
+                index: live.current.items.length - 1,
+                align: 'end',
+                behavior: 'auto',
+                calculateViewLocation: ({ locationParams }) => (finished ? null : locationParams),
+                done: () => {
+                  request.done = true
+                },
+              })
+            }
+          }
+        } else bottomGeometry = null
+        frame = requestAnimationFrame(check)
+      }
+      const navigating = controller.navigate('tail', undefined, { owner: token })
+      requestId = controller.getSnapshot().operation?.requestId
+      void navigating.then(
+        (success) => {
+          loaded = success
+          if (!success) finish(false)
+        },
+        () => finish(false)
+      )
+      frame = requestAnimationFrame(check)
+    })
+  }, [
+    branchCreation,
+    branchFollow,
+    cancelBranchCreation,
+    controller,
+    followOutputRef,
+    sendFollowIntent,
+    setFollowOutput,
+  ])
   useImperativeHandle(
     ref,
     () => ({
@@ -345,6 +457,7 @@ const MessageList = forwardRef<
       scrollToBottom: () => {
         void navigate('tail')
       },
+      prepareBranchCreation,
       captureSendFollow: () => {
         if (sendFromHistoryFollowsTail({ platformType: platform.type, isSmallScreen }))
           return sendFollowIntent.capture(true)
@@ -359,13 +472,14 @@ const MessageList = forwardRef<
       scrollToMessage: (messageId) => navigate({ messageId }),
       setIsNewMessage,
     }),
-    [atBottomRef, controller, followOutputRef, isSmallScreen, navigate, sendFollowIntent]
+    [atBottomRef, controller, followOutputRef, isSmallScreen, navigate, prepareBranchCreation, sendFollowIntent]
   )
   useEffect(() => {
     uiStore.getState().setMessageListElement(container)
     uiStore.getState().setTranscriptNavigation({
       owner,
       sessionId: session.id,
+      prepareBranchCreation,
       navigateMessage: async (messageId) => {
         leaveTail()
         setHighlighted(messageId)
@@ -381,6 +495,7 @@ const MessageList = forwardRef<
         return controller.viewThread(threadId)
       },
       scrollToIndex: ({ index, align, behavior }) => {
+        cancelBranchCreation()
         if (index === 0 || index === 'LAST') navigate(index === 0 ? 'head' : 'tail')
         else if (virtuoso.current && scroller.current) scrollToItem(index, align, behavior)
         return true
@@ -392,12 +507,13 @@ const MessageList = forwardRef<
         uiStore.getState().setMessageListElement(null)
       }
     }
-  }, [owner, session.id, controller, leaveTail, navigate, scrollToItem])
+  }, [owner, session.id, controller, cancelBranchCreation, leaveTail, navigate, prepareBranchCreation, scrollToItem])
 
   const userInput = useCallback(() => {
+    cancelBranchCreation()
     const state = controller.getSnapshot()
     if (state.layout && state.firstWindowReady) controller.cancelLayout(state.layout.requestId)
-  }, [controller])
+  }, [cancelBranchCreation, controller])
   const applyLayout = useCallback(() => {
     const state = live.current.transcript
     const layout = state.layout

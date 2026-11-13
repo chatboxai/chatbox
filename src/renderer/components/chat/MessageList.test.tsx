@@ -11,6 +11,7 @@ import type { Message as Body } from '@shared/types'
 import { act, cleanup, fireEvent, render, waitFor, within } from '@testing-library/react'
 import { getDefaultStore } from 'jotai'
 import { createRef, type ReactNode } from 'react'
+import type { FlatScrollIntoViewLocation } from 'react-virtuoso'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { platformTypeAtom } from '@/hooks/useNeedRoomForWinControls'
 import type { TranscriptNavigation } from '@/stores/uiStore'
@@ -966,6 +967,41 @@ describe('send follow intent', () => {
     return messages.at(-1)!.messageId
   }
 
+  test('clears the new-message top intent before a prepared branch appends its reply', async () => {
+    const { listRef, view } = await openAtTail()
+    view.rerender(
+      <Host listRef={listRef} read={{ ...header, summary: { ...header.summary, lastUserMessageId: 'm218' } }} />
+    )
+    act(() => listRef.current!.setIsNewMessage(true))
+    h.scrollIntoView.mockImplementation((location: FlatScrollIntoViewLocation) => location.done?.())
+    let prepared: boolean | undefined
+    act(() => {
+      void listRef.current!.prepareBranchCreation().then((value) => {
+        prepared = value
+      })
+    })
+    await waitFor(() => expect(prepared).toBe(true))
+    await createBranch()
+    h.scrollToIndex.mockClear()
+    const controller = h.controller!
+    const state = controller.getSnapshot()
+    const last = state.rows.at(-1)!
+    const appended = { ...last, messageId: 'next-reply', message: { ...last.message, id: 'next-reply' } }
+    act(() =>
+      expect(
+        controller.applyRows(
+          { record: state.pages[0].record, revision: state.revision! + 1 },
+          state.revision,
+          [appended],
+          [appended.messageId],
+          true
+        )
+      ).toBe(true)
+    )
+    expect(h.followOutput).not.toBe(false)
+    expect(h.scrollToIndex).not.toHaveBeenCalled()
+  })
+
   test.each([1, 2])('keeps following a %i-message created branch when generation starts at the tail', async (count) => {
     const { viewport } = await openAtTail()
     const replyId = await createBranch('m218', count)
@@ -1342,6 +1378,205 @@ describe('send follow intent', () => {
     fireEvent.touchStart(viewport, { touches: [{ clientY: 100 }] })
     fireEvent.touchMove(viewport, { touches: [{ clientY: 160 }] })
     expect(stillFollowing?.()).toBe(false)
+  })
+})
+
+describe('branch creation preparation', () => {
+  async function open(search?: string) {
+    const listRef = createRef<MessageListRef>()
+    const view = render(<Host listRef={listRef} search={search} />)
+    await waitFor(() => {
+      expect(h.firstReady).toBe(true)
+      expect(h.controller!.getSnapshot().layout).toBeNull()
+    })
+    return { listRef, view, viewport: view.getByTestId('virtuoso') }
+  }
+
+  test('waits for the old transcript to reach the physical tail after the public seek completes', async () => {
+    const { listRef, viewport } = await open()
+    viewport.scrollTop = 100
+    fireEvent.wheel(viewport, { deltaY: -100 })
+    h.scrollToIndex.mockImplementation(() => {})
+    let done: (() => void) | undefined
+    h.scrollIntoView.mockImplementation((location: FlatScrollIntoViewLocation) => {
+      done = location.done
+    })
+    let result: boolean | undefined
+    act(() => {
+      void listRef.current!.prepareBranchCreation().then((value) => {
+        result = value
+      })
+    })
+    await waitFor(() => expect(h.scrollIntoView).toHaveBeenCalled())
+    expect(h.scrollIntoView).toHaveBeenLastCalledWith(
+      expect.objectContaining({ index: 99, align: 'end', behavior: 'auto' })
+    )
+    act(() => {
+      h.atBottom?.(true)
+      done?.()
+    })
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 30)))
+    expect(result).toBeUndefined()
+    expect(h.controller!.getSnapshot().rows.at(-1)?.messageId).toBe('m219')
+    viewport.scrollTop = 400
+    await waitFor(() => expect(result).toBe(true))
+    expect(h.followOutput).not.toBe(false)
+    expect(h.scrollBy).not.toHaveBeenCalled()
+    expect(h.scrollTo).not.toHaveBeenCalled()
+  })
+
+  test('loads and measures the old tail before resolving preparation from a paged history window', async () => {
+    const { listRef } = await open('m0')
+    let release!: (page: SessionTranscriptPage) => void
+    h.read.mockImplementationOnce(
+      () =>
+        new Promise<SessionTranscriptPage>((resolve) => {
+          release = resolve
+        })
+    )
+    let result: boolean | undefined
+    let done: (() => void) | undefined
+    h.scrollIntoView.mockImplementation((location: FlatScrollIntoViewLocation) => {
+      done = location.done
+    })
+    act(() => {
+      void listRef.current!.prepareBranchCreation().then((value) => {
+        result = value
+      })
+    })
+    expect(h.controller!.getSnapshot().hasNewer).toBe(true)
+    expect(h.scrollIntoView).not.toHaveBeenCalled()
+    h.acknowledgeMeasurements = false
+    await act(async () => {
+      release(page(h.read.mock.calls.at(-1)![0]))
+    })
+    expect(result).toBeUndefined()
+    expect(h.scrollIntoView).not.toHaveBeenCalled()
+    act(() => h.itemsRendered?.([{ size: 20 }]))
+    await waitFor(() => expect(h.scrollIntoView).toHaveBeenCalled())
+    expect(result).toBeUndefined()
+    expect(h.controller!.getSnapshot().hasNewer).toBe(false)
+    act(() => done?.())
+    await waitFor(() => expect(result).toBe(true))
+  })
+
+  test('uses an instant tail seek while the scrolling observer is still active', async () => {
+    h.platformType = 'mobile'
+    getDefaultStore().set(platformTypeAtom, 'ios')
+    const { listRef } = await open()
+    act(() => h.isScrolling?.(true))
+    let result: boolean | undefined
+    h.scrollIntoView.mockImplementation((location: FlatScrollIntoViewLocation) => location.done?.())
+    act(() => {
+      void listRef.current!.prepareBranchCreation().then((value) => {
+        result = value
+      })
+    })
+    await waitFor(() => expect(result).toBe(true))
+    expect(h.scrollIntoView).toHaveBeenCalledTimes(1)
+  })
+
+  test('seeks again after the viewport changes during preparation', async () => {
+    const { listRef, viewport } = await open()
+    let result: boolean | undefined
+    let done: (() => void) | undefined
+    h.scrollIntoView.mockImplementation((location: FlatScrollIntoViewLocation) => {
+      done = location.done
+    })
+    act(() => {
+      void listRef.current!.prepareBranchCreation().then((value) => {
+        result = value
+      })
+    })
+    await waitFor(() => expect(h.scrollIntoView).toHaveBeenCalledOnce())
+    h.measuredHeight = 1200
+    act(() => done?.())
+    await waitFor(() => expect(h.scrollIntoView).toHaveBeenCalledTimes(2))
+    expect(result).toBeUndefined()
+    viewport.scrollTop = 600
+    act(() => done?.())
+    await waitFor(() => expect(result).toBe(true))
+  })
+
+  test.each(['input', 'unmount', 'navigate', 'session', 'index'] as const)(
+    'cancels preparation on %s and ignores a late seek completion',
+    async (cancel) => {
+      const { listRef, view, viewport } = await open()
+      let done: (() => void) | undefined
+      h.scrollIntoView.mockImplementation((location: FlatScrollIntoViewLocation) => {
+        done = location.done
+      })
+      let preparing!: Promise<boolean>
+      let result: boolean | undefined
+      act(() => {
+        preparing = listRef.current!.prepareBranchCreation()
+        void preparing.then((value) => {
+          result = value
+        })
+      })
+      await waitFor(() => expect(h.scrollIntoView).toHaveBeenCalled())
+      await act(async () => {
+        if (cancel === 'input') fireEvent.wheel(viewport, { deltaY: -40 })
+        else if (cancel === 'unmount') view.unmount()
+        else if (cancel === 'navigate') await h.navigation!.navigateMessage('m120')
+        else if (cancel === 'index') h.navigation!.scrollToIndex({ index: 3, align: 'start', behavior: 'auto' })
+        else view.rerender(<Host listRef={listRef} read={{ ...header, header: { ...header.header, id: 'other' } }} />)
+      })
+      expect(result).toBe(false)
+      await expect(preparing).resolves.toBe(false)
+      act(() => done?.())
+      expect(h.scrollBy).not.toHaveBeenCalled()
+    }
+  )
+
+  test('cancels a pending tail read when the user resumes browsing', async () => {
+    const { listRef, viewport } = await open('m0')
+    let release!: (page: SessionTranscriptPage) => void
+    h.read.mockImplementationOnce(
+      () =>
+        new Promise<SessionTranscriptPage>((resolve) => {
+          release = resolve
+        })
+    )
+    let preparing!: Promise<boolean>
+    act(() => {
+      preparing = listRef.current!.prepareBranchCreation()
+    })
+    fireEvent.wheel(viewport, { deltaY: -40 })
+    await expect(preparing).resolves.toBe(false)
+    await act(async () => {
+      release(page(h.read.mock.calls.at(-1)![0]))
+    })
+    expect(h.controller!.getSnapshot().rows[0]?.messageId).toBe('m0')
+    expect(h.scrollIntoView).not.toHaveBeenCalled()
+  })
+
+  test('fails preparation when a public tail seek never completes', async () => {
+    const { listRef } = await open()
+    vi.useFakeTimers()
+    try {
+      let preparing!: Promise<boolean>
+      await act(async () => {
+        preparing = listRef.current!.prepareBranchCreation()
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_000)
+      })
+      await expect(preparing).resolves.toBe(false)
+      expect(h.scrollIntoView).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('does not prepare a branch when the tail page cannot be loaded', async () => {
+    const { listRef } = await open('m0')
+    h.read.mockRejectedValueOnce(new Error('tail read failed'))
+    await act(async () => {
+      expect(await listRef.current!.prepareBranchCreation()).toBe(false)
+    })
+    expect(h.scrollIntoView).not.toHaveBeenCalled()
+    expect(h.followOutput).toBe(false)
   })
 })
 

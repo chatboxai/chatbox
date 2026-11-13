@@ -184,19 +184,18 @@ export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
       [chatboxAIExcludedModels, modelFilter]
     )
 
-    const chatboxGroups = useMemo(() => {
-      if (!chatboxAIModelList) return []
-      return buildChatboxAIGroupViews({
-        catalog: chatboxAIModelList,
-        search,
-        expandedAdvanced: advancedExpanded,
-        collapsedGroupIds,
-        modelFilter: (modelId) => {
-          const model = chatboxAIModelList.models[modelId]
-          return model ? chatboxFilter(model) : false
-        },
-      })
-    }, [advancedExpanded, chatboxAIModelList, collapsedGroupIds, search, chatboxFilter])
+    const chatboxGroups = chatboxAIModelList
+      ? buildChatboxAIGroupViews({
+          catalog: chatboxAIModelList,
+          search,
+          expandedAdvanced: advancedExpanded,
+          collapsedGroupIds,
+          modelFilter: (modelId) => {
+            const model = chatboxAIModelList.models[modelId]
+            return model ? chatboxFilter(model) : false
+          },
+        })
+      : []
 
     const clearDesktopDetailCloseTimer = () => {
       if (desktopDetailCloseTimerRef.current) {

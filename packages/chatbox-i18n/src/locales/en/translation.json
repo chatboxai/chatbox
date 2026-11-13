@@ -106,6 +106,8 @@
   "AI Explain": "AI Explain",
   "AI explanation consumes additional tokens": "AI explanation consumes additional tokens",
   "ai provider no implemented paint tips": "The current AI model provider({{aiProvider}}) does not support painting capabilities at this time. Currently, only Chatbox AI, OpenAI and Azure OpenAI offer this feature. If needed, please <0>go to settings</0> and switch the AI model provider.",
+  "AI vs AI: confirm the next turn. Stops automatically if not confirmed within 10 minutes.": "AI vs AI: confirm the next turn. Stops automatically if not confirmed within 10 minutes.",
+  "AI vs AI: let AI play the user side (input text becomes its persona)": "AI vs AI: let AI play the user side (input text becomes its persona)",
   "AI can be wrong. Verify key facts.": "AI can be wrong. Verify key facts.",
   "AI-generated images may not be accurate. Review output carefully.": "AI-generated images may not be accurate. Review output carefully.",
   "AIHubMix integration in Chatbox offers 10% discount": "AIHubMix integration in Chatbox offers 10% discount",

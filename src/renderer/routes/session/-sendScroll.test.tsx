@@ -103,6 +103,7 @@ vi.mock('@/stores/defaultChatModel', () => ({ applyChatboxLicenseDefaultModelToS
 vi.mock('@/stores/lastUsedModelStore', () => ({ lastUsedModelStore: {} }))
 vi.mock('@/stores/session/agent-mode', () => ({ useSessionAgentMode: () => ({ value: 'off' }) }))
 vi.mock('@/stores/session/crud', () => ({ switchCurrentSession: vi.fn() }))
+vi.mock('@/stores/session/generation', () => ({ startAutoDialogue: vi.fn() }))
 vi.mock('@/stores/session/messages', () => ({ submitNewUserMessage: h.submit }))
 vi.mock('@/stores/session/threads', () => ({ startNewThread: vi.fn() }))
 vi.mock('@/stores/session-search-target', () => ({

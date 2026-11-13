@@ -17,6 +17,9 @@ const mocks = vi.hoisted(() => ({
   setCurrentRecordId: vi.fn(),
   setCurrentGeneratingId: vi.fn(),
   submit: vi.fn(),
+  authorize: vi.fn(),
+  refreshLicense: vi.fn(),
+  licenseKey: 'license',
   poll: vi.fn(),
   getModel: vi.fn(),
   getImage: vi.fn(),
@@ -41,6 +44,11 @@ vi.mock('@shared/providers', () => ({ getModel: mocks.getModel }))
 vi.mock('@/adapters', () => ({ createModelDependencies: async () => ({ storage: { getImage: mocks.getImage } }) }))
 vi.mock('@/adapters/CurrentBlobStorage', () => ({ currentBlobStorage: mocks.blobs }))
 vi.mock('@/packages/image-model-catalog', () => ({ getImageModelCapabilities: mocks.capabilities }))
+vi.mock('@/packages/image-points-billing', () => ({
+  authorizeImagePoints: mocks.authorize,
+  refreshImageLicense: mocks.refreshLicense,
+}))
+vi.mock('@/i18n', () => ({ default: { t: (key: string) => key } }))
 vi.mock('@/packages/remote', () => ({ submitImageGeneration: mocks.submit, pollImageTask: mocks.poll }))
 vi.mock('@/platform', () => ({
   default: { getConfig: async () => mocks.config, getImageGenerationStorage: () => mocks.storage },
@@ -57,7 +65,7 @@ vi.mock('./imageGenerationStore', () => ({
 }))
 vi.mock('./queryClient', () => ({ queryClient: {} }))
 vi.mock('./settingsStore', () => ({
-  settingsStore: { getState: () => ({ licenseKey: 'license', getSettings: () => mocks.settings }) },
+  settingsStore: { getState: () => ({ licenseKey: mocks.licenseKey, getSettings: () => mocks.settings }) },
 }))
 vi.mock('@/analytics/plausible', () => ({
   normalizePlausibleProvider: (provider: string) => provider,
@@ -84,6 +92,9 @@ const params = { prompt: 'bird', referenceImages: [], model: { provider: 'chatbo
 describe('renderer image-generation facade', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.licenseKey = 'license'
+    mocks.authorize.mockResolvedValue(undefined)
+    mocks.refreshLicense.mockResolvedValue(undefined)
     mocks.service.getSnapshot.mockReturnValue({ currentGeneratingId: null, phase: 'idle' })
     mocks.service.start.mockResolvedValue({ recordId: 'record', startedAt: 123, completion: Promise.resolve(null) })
   })
@@ -98,11 +109,12 @@ describe('renderer image-generation facade', () => {
   it('forwards source, the durable-record callback and completion without changing the CLI contract', async () => {
     const onRecordCreated = vi.fn()
     const source = { type: 'chatbox_cli' as const, sessionId: 'session', toolCallId: 'tool' }
-    const handle = await startImageGeneration({ ...params, source }, { onRecordCreated })
-    expect(mocks.service.start).toHaveBeenCalledWith({ ...params, source }, { onRecordCreated })
+    const handle = await startImageGeneration({ ...params, source }, { interactive: false, onRecordCreated })
+    expect(mocks.service.start).toHaveBeenCalledWith({ ...params, source }, { interactive: false, onRecordCreated })
     expect(mocks.setCurrentRecordId).toHaveBeenCalledWith('record')
     expect(handle.completion).toBeInstanceOf(Promise)
     await expect(createAndGenerate(params)).resolves.toBe('record')
+    expect(mocks.service.start).toHaveBeenLastCalledWith(params, { interactive: true })
   })
 
   it('delegates stop, retry, resume, loading and browsing without replacing the active job', async () => {
@@ -115,7 +127,7 @@ describe('renderer image-generation facade', () => {
     await loadRecord('history')
     clearCurrentRecord()
     expect(mocks.service.cancel).toHaveBeenCalledOnce()
-    expect(mocks.service.retry).toHaveBeenCalledWith('retry')
+    expect(mocks.service.retry).toHaveBeenCalledWith('retry', { interactive: true })
     expect(mocks.setCurrentRecordId.mock.calls).toEqual([['history'], [null]])
     mocks.service.getSnapshot.mockReturnValue({ currentGeneratingId: 'task', phase: 'generating' })
     expect(isGenerating()).toBe(true)
@@ -130,11 +142,16 @@ describe('renderer image-generation facade', () => {
       style: 'vivid' as const,
       quantity: 1,
     }
-    await mocks.options?.asyncClient.submit(request)
     const signal = new AbortController().signal
+    await mocks.options?.authorizeRequest?.(params, signal, true)
+    expect(mocks.authorize).toHaveBeenCalledWith(params, signal, true)
+    await mocks.options?.asyncClient.submit(request)
     await mocks.options?.asyncClient.poll('task', signal)
     expect(mocks.submit).toHaveBeenCalledWith(request, 'license')
     expect(mocks.poll).toHaveBeenCalledWith('task', 'license', signal)
+    mocks.licenseKey = 'another-license'
+    expect(() => mocks.options?.asyncClient.submit(request)).toThrow('The active license changed')
+    expect(mocks.submit).toHaveBeenCalledOnce()
   })
 
   it('uses the renderer model factory, storage resolver and current catalog validation', async () => {

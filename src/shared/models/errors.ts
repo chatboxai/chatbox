@@ -16,6 +16,7 @@ export const MESSAGE_ERROR_CODES = {
   FILE_PREPROCESS_FAILED: 20041,
   FILE_STORAGE_QUOTA_EXCEEDED: 20042,
   EMPTY_ATTACHMENT_CONTENT: 20043,
+  IMAGE_POINTS_INSUFFICIENT: 20049,
   CHATBOX_AI_OCR_QUOTA_EXHAUSTED: 20044,
   CHATBOX_AI_FREE_OCR_QUOTA_EXHAUSTED: 20045,
 } as const
@@ -107,6 +108,11 @@ export class ChatboxAIAPIError extends BaseError {
       code: MESSAGE_ERROR_CODES.CHATBOX_AI_QUOTA_EXHAUSTED, // 小于 20000 是为了兼容旧版本
       i18nKey:
         'You have used up your monthly Chatbox AI quota. Please <OpenSettingButton>go to Settings</OpenSettingButton> to view your quota usage or upgrade your plan.',
+    },
+    image_points_insufficient: {
+      name: 'image_points_insufficient',
+      code: MESSAGE_ERROR_CODES.IMAGE_POINTS_INSUFFICIENT,
+      i18nKey: 'Insufficient points',
     },
     // 超出每日免费配额
     free_token_quota_exhausted: {

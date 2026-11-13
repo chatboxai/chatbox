@@ -15,13 +15,21 @@ export interface ImageModelOption {
   modelId: string
   displayName: string
   description?: string
+  pointsPerImage?: number
   capabilities?: ImageModelCapabilities
 }
 
 const imageModelManifestResponseSchema = z.object({
   data: z.object({
     imageModels: z
-      .array(z.object({ modelId: z.string(), modelName: z.string().optional(), description: z.string().optional() }))
+      .array(
+        z.object({
+          modelId: z.string(),
+          modelName: z.string().optional(),
+          description: z.string().optional(),
+          points_per_image: z.number().int().positive().optional().catch(undefined),
+        })
+      )
       .optional()
       .default([]),
   }),
@@ -32,6 +40,7 @@ export function parseImageModelManifestResponse(payload: unknown): ImageModelOpt
     modelId: model.modelId,
     displayName: model.modelName || model.modelId,
     ...(model.description ? { description: model.description } : {}),
+    ...(model.points_per_image !== undefined ? { pointsPerImage: model.points_per_image } : {}),
   }))
 }
 
@@ -51,11 +60,14 @@ export interface ImageModelGroup {
 
 export type RemoteImageModels = Partial<Record<ModelProviderEnum, readonly ImageModelOption[]>>
 
-export function manualImageModelToOption(model: ProviderModelInfo & { description?: string }): ImageModelOption {
+export function manualImageModelToOption(
+  model: ProviderModelInfo & { description?: string; pointsPerImage?: number }
+): ImageModelOption {
   return {
     modelId: model.modelId,
     displayName: model.nickname || model.modelId,
     ...(model.description ? { description: model.description } : {}),
+    ...(model.pointsPerImage !== undefined ? { pointsPerImage: model.pointsPerImage } : {}),
   }
 }
 

@@ -222,3 +222,20 @@ describe('Chatbox AI entitlement refresh', () => {
     expect(result.current.locked).toBe(true)
   })
 })
+
+it('uses backend image prices and descriptions from model_list, not legacy manifest prices', async () => {
+  mocks.getModelManifest.mockResolvedValue({
+    models: [],
+    imageModels: [{ modelId: 'image', modelName: 'Old', points_per_image: 1 }],
+  })
+  mocks.getChatboxAIModelList.mockResolvedValue({
+    ...catalog('pro'),
+    imageModels: [{ modelId: 'image', modelName: 'Image', description: 'Image model', points_per_image: 27000 }],
+  })
+  const { result } = mount(proDetail)
+  await waitFor(() =>
+    expect(result.current.chatboxAIImageModels).toEqual([
+      expect.objectContaining({ nickname: 'Image', description: 'Image model', pointsPerImage: 27000 }),
+    ])
+  )
+})

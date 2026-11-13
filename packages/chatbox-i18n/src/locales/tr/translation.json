@@ -2071,5 +2071,21 @@
   "Failed to claim the trial. Please try again later.": "Deneme alınamadı. Lütfen daha sonra tekrar deneyin.",
   "Congratulations, your trial is unlocked": "Tebrikler, denemeniz etkinleştirildi",
   "Claimed successfully. Go try the advanced models!": "Başarıyla alındı. Gelişmiş modelleri hemen deneyin!",
-  "Advanced models are unlocked, and the bonus points have been added to your account.": "Gelişmiş modellerin kilidi açıldı ve bonus puanlar hesabınıza eklendi."
+  "Advanced models are unlocked, and the bonus points have been added to your account.": "Gelişmiş modellerin kilidi açıldı ve bonus puanlar hesabınıza eklendi.",
+  "Use compute points to generate images?": "Use compute points to generate images?",
+  "Your image quota is used up. Continuing will use compute points from your plan.": "Your image quota is used up. Continuing will use compute points from your plan.",
+  "Your image quota is insufficient. Additional images will use compute points from your plan.": "Your image quota is insufficient. Additional images will use compute points from your plan.",
+  "For detailed points usage, see": "For detailed points usage, see",
+  "Model pricing": "Model pricing",
+  "Continue generating": "Continue generating",
+  "Always allow this license to use compute points for images on this device": "Always allow this license to use compute points for images on this device",
+  "Insufficient points": "Insufficient points",
+  "Your monthly image quota is used up, and you do not have enough compute points to generate images.\nPlease upgrade your plan or buy an expansion pack.": "Your monthly image quota is used up, and you do not have enough compute points to generate images.\nPlease upgrade your plan or buy an expansion pack.",
+  "Your monthly image quota is used up, and you do not have enough compute points to generate images.\nPlease buy an expansion pack for more points.": "Your monthly image quota is used up, and you do not have enough compute points to generate images.\nPlease buy an expansion pack for more points.",
+  "Compute points / image": "Compute points / image",
+  "Image quota is used first. Once it runs out, you can use compute points to generate more images.": "Image quota is used first. Once it runs out, you can use compute points to generate more images.",
+  "Unable to check image billing. Please try again.": "Unable to check image billing. Please try again.",
+  "Allow compute points billing in the image creator on this device before using this command.": "Allow compute points billing in the image creator on this device before using this command.",
+  "Could not save your preference. Permission applies only to this generation.": "Could not save your preference. Permission applies only to this generation.",
+  "The active license changed. Please try again.": "The active license changed. Please try again."
 }

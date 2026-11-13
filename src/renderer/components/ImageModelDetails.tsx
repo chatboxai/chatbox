@@ -15,6 +15,7 @@ export function getImageModelDetail(group: ImageModelGroup, model: ImageModelOpt
     modelId: model.modelId,
     name: model.displayName,
     description: model.description?.trim() || undefined,
+    pointsPerImage: model.pointsPerImage,
     type: 'image',
   }
 }
@@ -35,6 +36,7 @@ export function ImageModelDetailDrawer({
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 bg-chatbox-background-mask-overlay" />
         <Drawer.Content
+          aria-describedby={undefined}
           className={`fixed bottom-0 left-0 right-0 rounded-t-[16px] border border-b-0 border-solid outline-none ${MODEL_SELECTOR_SURFACE_CLASS}`}
           style={DRAWER_SURFACE_STYLE}
           onCloseAutoFocus={(event) => {

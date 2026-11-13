@@ -119,17 +119,19 @@ const useChatboxAIModels = () => {
 
   const chatboxAIImageModels = useMemo(
     () =>
-      data?.imageModels.map(
+      (data?.modelList?.imageModels.length ? data.modelList.imageModels : data?.imageModels)?.map(
         (item) =>
           ({
             modelId: item.modelId,
             nickname: item.modelName,
             description: item.description,
+            pointsPerImage: data?.modelList?.imageModels.find((model) => model.modelId === item.modelId)
+              ?.points_per_image,
             labels: item.labels,
             capabilities: item.capabilities,
             type: item.type || 'image',
             contextWindow: item.contextWindow || undefined,
-          }) satisfies ProviderModelInfo & { description?: string }
+          }) satisfies ProviderModelInfo & { description?: string; pointsPerImage?: number }
       ) || [],
     [data]
   )

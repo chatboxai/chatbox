@@ -1,4 +1,3 @@
-import { visitSelectedSessionMessages } from './session-row-scan'
 import { supportsImageReferenceInput } from '@chatbox/core/application/image-generation'
 import { type ImageGeneration, ModelProviderEnum } from '@shared/types'
 import { requestAppActionApproval } from '@/packages/app-action-approval'
@@ -11,6 +10,7 @@ import { getAcceptedImageBackgroundTaskResult } from './background-task-result'
 import { getComputePointsRemainingRatio } from './compute-points'
 import { queueImageTaskCompletion, queueImageTaskCompletionError } from './image-task-follow-up'
 import { ChatboxCliUsageError, integerFlag, stringFlag } from './parser'
+import { visitSelectedSessionMessages } from './session-row-scan'
 import type { ChatboxCliCommandContext, ChatboxCliCommandDefinition } from './types'
 
 const MAX_REFERENCE_LENGTH = 1_000
@@ -520,6 +520,7 @@ async function generateImage(context: ChatboxCliCommandContext): Promise<Record<
         },
       },
       {
+        interactive: false,
         onRecordCreated: async (record) => {
           await storage.setItemNow<PersistedImageExecution>(persistedExecutionKey, {
             version: 1,

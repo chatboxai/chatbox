@@ -18,6 +18,7 @@ function _errorI18nKeys(t: (key: string) => string) {
   t(
     'You have used up your monthly Chatbox AI quota. Please <OpenSettingButton>go to Settings</OpenSettingButton> to view your quota usage or upgrade your plan.'
   )
+  t('Insufficient points')
   t(
     'You have used up your daily Chatbox AI quota. Please <OpenSettingButton>go to Settings</OpenSettingButton> to view your quota usage or upgrade your plan.'
   )

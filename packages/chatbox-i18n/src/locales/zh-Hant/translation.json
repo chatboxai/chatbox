@@ -2071,5 +2071,21 @@
   "Failed to claim the trial. Please try again later.": "領取失敗，請稍後再試。",
   "Congratulations, your trial is unlocked": "恭喜，已解鎖試用",
   "Claimed successfully. Go try the advanced models!": "領取成功，快去試用進階模型吧",
-  "Advanced models are unlocked, and the bonus points have been added to your account.": "進階模型已解鎖，獎勵點數已計入你的帳戶"
+  "Advanced models are unlocked, and the bonus points have been added to your account.": "進階模型已解鎖，獎勵點數已計入你的帳戶",
+  "Use compute points to generate images?": "使用計算點數生圖？",
+  "Your image quota is used up. Continuing will use compute points from your plan.": "圖片額度已用完，繼續生成將消耗套餐中的計算點數。",
+  "Your image quota is insufficient. Additional images will use compute points from your plan.": "圖片額度不足，超出額度的圖片將消耗套餐中的計算點數。",
+  "For detailed points usage, see": "具體點數消耗參考",
+  "Model pricing": "模型定價",
+  "Continue generating": "繼續生成",
+  "Always allow this license to use compute points for images on this device": "在此裝置上，始終允許此套餐使用計算點數生圖",
+  "Insufficient points": "點數不足",
+  "Your monthly image quota is used up, and you do not have enough compute points to generate images.\nPlease upgrade your plan or buy an expansion pack.": "本月生圖額度已用完，且因點數不足無法消耗計算點數生圖。\n請升級套餐或購買擴充包。",
+  "Your monthly image quota is used up, and you do not have enough compute points to generate images.\nPlease buy an expansion pack for more points.": "本月生圖額度已用完，且因點數不足無法消耗計算點數生圖。\n請購買擴充包獲得更多點數。",
+  "Compute points / image": "計算點數 / 張",
+  "Image quota is used first. Once it runs out, you can use compute points to generate more images.": "優先使用圖片額度，消耗完後可使用計算點數繼續生圖",
+  "Unable to check image billing. Please try again.": "無法檢查生圖額度，請重試。",
+  "Allow compute points billing in the image creator on this device before using this command.": "請先在此裝置的圖片生成器中允許使用計算點數生圖，再使用此命令。",
+  "Could not save your preference. Permission applies only to this generation.": "無法儲存偏好，本次允許僅對目前生圖生效。",
+  "The active license changed. Please try again.": "目前方案已切換，請重試。"
 }

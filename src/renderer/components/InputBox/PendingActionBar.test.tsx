@@ -3,10 +3,25 @@
 import { MantineProvider } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import type { Message, MessageToolCallPart, Session } from '@shared/types'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const rowReads = vi.hoisted(() => ({ message: undefined as Message | undefined }))
+const settings = vi.hoisted(() => ({ licenseKey: 'license-a' }))
+vi.mock('@/stores/settingsStore', () => ({
+  useSettingsStore: (selector: (state: typeof settings) => unknown) => selector(settings),
+}))
+vi.mock('@/packages/image-points-billing', () => ({
+  withImagePointsApproval: vi.fn((_params, _license, _always, resume: () => Promise<void>) => resume()),
+  refreshImageLicense: vi.fn(),
+  remainingImageQuota: (detail: { image_total_quota: number; image_used_count: number }) =>
+    Math.max(detail.image_total_quota - detail.image_used_count, 0),
+}))
+vi.mock('@/packages/remote', () => ({ buildChatboxUrl: (path: string) => `https://chatboxai.app${path}` }))
+vi.mock('@/components/common/Link', () => ({
+  default: ({ children, href }: { children: React.ReactNode; href: string }) => <a href={href}>{children}</a>,
+}))
 vi.mock('@/app/renderer-application', () => ({
   rendererApplication: {
     sessionHooks: {
@@ -20,7 +35,10 @@ vi.mock('@/app/renderer-application', () => ({
 vi.mock('react-i18next', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react-i18next')>()),
   useTranslation: () => ({
-    t: (key: string) => key,
+    t: (key: string, values?: Record<string, string>) =>
+      key.startsWith('Image quota remaining:') || key.startsWith('Compute points remaining:')
+        ? key.replace(/\{\{(\w+)\}\}/g, (_, name: string) => values?.[name] ?? '')
+        : key,
     i18n: { language: 'en' },
   }),
 }))
@@ -47,6 +65,7 @@ vi.mock('@/stores/toastActions', () => ({ add: vi.fn() }))
 
 import { APPROVAL_RESPONSE_TIMEOUT_MS } from '@chatbox/core/message-approval'
 import { currentGenerationService } from '@/adapters/CurrentGenerationService'
+import { refreshImageLicense, withImagePointsApproval } from '@/packages/image-points-billing'
 import { pulsePendingActionBar } from '@/stores/approvalAttentionStore'
 import RowPendingActionBar, { PENDING_ACTION_ARMING_MS } from './PendingActionBar'
 
@@ -90,8 +109,13 @@ function PendingActionBar({ session }: { session: Session }) {
 }
 
 function renderBar(session: Session) {
+  const queryClient = new QueryClient()
   return render(<PendingActionBar session={session} />, {
-    wrapper: ({ children }) => <MantineProvider>{children}</MantineProvider>,
+    wrapper: ({ children }) => (
+      <QueryClientProvider client={queryClient}>
+        <MantineProvider>{children}</MantineProvider>
+      </QueryClientProvider>
+    ),
   })
 }
 
@@ -138,6 +162,33 @@ const limitPause = pausedPart({
   pauseReason: { type: 'tool_call_limit', maxToolCalls: 25 },
 })
 
+const imageApproval = pausedPart({
+  toolCallId: 'tc-image',
+  toolName: 'chatbox_cli',
+  pauseReason: {
+    type: 'app_action_approval',
+    action: 'image.generate',
+    title: 'Generate image',
+    preview: 'cat',
+    details: {
+      type: 'image_generation',
+      provider: 'chatbox-ai',
+      modelId: 'image',
+      prompt: 'cat',
+      count: 1,
+      billing: 'chatbox_quota',
+      imageQuota: { remaining: 0, total: 100 },
+    },
+  },
+})
+const alwaysAllowLabel = 'Always allow this license to use compute points for images on this device'
+const realtimeQuota = {
+  image_total_quota: 200,
+  image_used_count: 195,
+  unified_token_limit: 100000,
+  unified_token_usage: 70000,
+} as Awaited<ReturnType<typeof refreshImageLicense>>
+
 describe('PendingActionBar', () => {
   beforeAll(() => {
     Object.defineProperty(window, 'matchMedia', {
@@ -157,6 +208,8 @@ describe('PendingActionBar', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    settings.licenseKey = 'license-a'
+    vi.mocked(refreshImageLicense).mockResolvedValue(realtimeQuota)
     // Only Date is faked: the arming guard compares timestamps, while real timers
     // keep Mantine and Testing Library behavior untouched.
     vi.useFakeTimers({ toFake: ['Date'] })
@@ -174,6 +227,156 @@ describe('PendingActionBar', () => {
   it('renders nothing without pending interactions', () => {
     renderBar(makeSession([pausedPart({ state: 'result', pauseReason: undefined })]))
     expect(screen.queryByTestId(TestId.toolCall.actionBar)).toBeNull()
+  })
+
+  it.each([false, true])(
+    'approves the reviewed image and its points together, always allow: %s',
+    async (alwaysAllow) => {
+      renderBar(makeSession([imageApproval]))
+      await waitFor(() =>
+        expect((screen.getByTestId(TestId.toolCall.approve) as HTMLButtonElement).disabled).toBe(false)
+      )
+      expect(screen.getByRole('link', { name: 'Model pricing' }).getAttribute('href')).toBe(
+        'https://chatboxai.app/en/model-pricing#image-models'
+      )
+      if (alwaysAllow) fireEvent.click(screen.getByRole('checkbox', { name: alwaysAllowLabel }))
+      expect(withImagePointsApproval).not.toHaveBeenCalled()
+      expect(pulsePendingActionBar).not.toHaveBeenCalled()
+      armBar()
+      fireEvent.click(screen.getByRole('button', { name: 'Approve and generate' }))
+      expect(withImagePointsApproval).toHaveBeenCalledWith(
+        {
+          prompt: 'cat',
+          referenceImages: [],
+          model: { provider: 'chatbox-ai', modelId: 'image' },
+          imageGenerateNum: 1,
+          source: { type: 'chatbox_cli', sessionId: 'session-1', toolCallId: 'tc-image' },
+          aspectRatio: undefined,
+          dalleStyle: undefined,
+        },
+        'license-a',
+        alwaysAllow,
+        expect.any(Function)
+      )
+      expect(currentGenerationService.continuePausedToolCall).toHaveBeenCalledWith('session-1', 'msg-1', 'tc-image')
+    }
+  )
+
+  it('does not grant points permission when the checked image approval is cancelled', () => {
+    renderBar(makeSession([imageApproval]))
+    fireEvent.click(screen.getByRole('checkbox', { name: alwaysAllowLabel }))
+    armBar()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(withImagePointsApproval).not.toHaveBeenCalled()
+    expect(currentGenerationService.continuePausedToolCall).not.toHaveBeenCalled()
+    expect(currentGenerationService.stopPausedToolCall).toHaveBeenCalledWith('session-1', 'msg-1', 'tc-image', {
+      denyReason: 'user',
+    })
+  })
+
+  it('resets the always-allow choice for another request or license', () => {
+    const { rerender } = renderBar(makeSession([imageApproval]))
+    fireEvent.click(screen.getByRole('checkbox', { name: alwaysAllowLabel }))
+    settings.licenseKey = 'license-b'
+    rerender(<PendingActionBar session={makeSession([imageApproval])} />)
+    expect((screen.getByRole('checkbox', { name: alwaysAllowLabel }) as HTMLInputElement).checked).toBe(false)
+    settings.licenseKey = 'license-a'
+    rerender(<PendingActionBar session={makeSession([imageApproval])} />)
+    expect((screen.getByRole('checkbox', { name: alwaysAllowLabel }) as HTMLInputElement).checked).toBe(false)
+    fireEvent.click(screen.getByRole('checkbox', { name: alwaysAllowLabel }))
+    rerender(<PendingActionBar session={makeSession([{ ...imageApproval, toolCallId: 'other' }])} />)
+    expect((screen.getByRole('checkbox', { name: alwaysAllowLabel }) as HTMLInputElement).checked).toBe(false)
+  })
+
+  it('does not show or grant points consent for a generic work-mode approval', () => {
+    renderBar(makeSession([commandApproval]))
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    armBar()
+    fireEvent.click(screen.getByTestId(TestId.toolCall.approve))
+    expect(withImagePointsApproval).not.toHaveBeenCalled()
+    expect(refreshImageLicense).not.toHaveBeenCalled()
+  })
+
+  it('keeps BYOK approval independent of Chatbox quota and consent', () => {
+    if (
+      imageApproval.pauseReason?.type !== 'app_action_approval' ||
+      imageApproval.pauseReason.details?.type !== 'image_generation'
+    ) {
+      throw new Error('Image approval fixture is missing')
+    }
+    renderBar(
+      makeSession([
+        {
+          ...imageApproval,
+          pauseReason: {
+            ...imageApproval.pauseReason,
+            details: { ...imageApproval.pauseReason.details, provider: 'openai', billing: 'provider' },
+          },
+        },
+      ])
+    )
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    expect(refreshImageLicense).not.toHaveBeenCalled()
+    armBar()
+    fireEvent.click(screen.getByTestId(TestId.toolCall.approve))
+    expect(withImagePointsApproval).not.toHaveBeenCalled()
+    expect(currentGenerationService.continuePausedToolCall).toHaveBeenCalledWith('session-1', 'msg-1', 'tc-image')
+  })
+
+  it('waits for real-time quota and replaces the persisted approval snapshot', async () => {
+    let resolve!: (value: typeof realtimeQuota) => void
+    vi.mocked(refreshImageLicense).mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done
+        })
+    )
+    renderBar(makeSession([imageApproval]))
+    expect(screen.getByText('Loading license details...')).toBeTruthy()
+    expect(screen.queryByText('Image quota remaining: 0 / 100')).toBeNull()
+    armBar()
+    fireEvent.click(screen.getByTestId(TestId.toolCall.approve))
+    expect(withImagePointsApproval).not.toHaveBeenCalled()
+    expect(refreshImageLicense).toHaveBeenCalledWith('license-a', expect.any(AbortSignal))
+    await act(async () => resolve(realtimeQuota))
+    await screen.findByText('Image quota remaining: 5 / 200')
+    expect(screen.getByText('Compute points remaining: 30%')).toBeTruthy()
+    expect((screen.getByTestId(TestId.toolCall.approve) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('blocks approval on refresh failure and allows retrying the quota request', async () => {
+    vi.mocked(refreshImageLicense).mockRejectedValueOnce(new Error('network unavailable'))
+    renderBar(makeSession([imageApproval]))
+    await screen.findByText('Unable to check image billing. Please try again.')
+    armBar()
+    fireEvent.click(screen.getByTestId(TestId.toolCall.approve))
+    expect(withImagePointsApproval).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    await screen.findByText('Image quota remaining: 5 / 200')
+    expect(refreshImageLicense).toHaveBeenCalledTimes(2)
+  })
+
+  it('refreshes on every approval and ignores a late response for the previous license', async () => {
+    let resolve!: (value: typeof realtimeQuota) => void
+    vi.mocked(refreshImageLicense).mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done
+        })
+    )
+    const { rerender, unmount } = renderBar(makeSession([imageApproval]))
+    const firstSignal = vi.mocked(refreshImageLicense).mock.calls[0][1]
+    settings.licenseKey = 'license-b'
+    rerender(<PendingActionBar session={makeSession([imageApproval])} />)
+    await screen.findByText('Image quota remaining: 5 / 200')
+    expect(firstSignal?.aborted).toBe(true)
+    await act(async () => resolve({ ...realtimeQuota, image_used_count: 0 }))
+    expect(screen.queryByText('Image quota remaining: 200 / 200')).toBeNull()
+    rerender(<PendingActionBar session={makeSession([{ ...imageApproval, toolCallId: 'other' }])} />)
+    await waitFor(() => expect(refreshImageLicense).toHaveBeenCalledTimes(3))
+    unmount()
+    renderBar(makeSession([imageApproval]))
+    await waitFor(() => expect(refreshImageLicense).toHaveBeenCalledTimes(4))
   })
 
   it('shows a command approval and routes Approve/Deny to the generation service', () => {

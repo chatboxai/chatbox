@@ -152,6 +152,7 @@ describe('ChatboxAIAPIError', () => {
     [20050, 'deepseek_parser_api_key_required'],
     [20051, 'deepseek_insufficient_balance'],
     [20052, 'deepseek_parser_file_too_large'],
+    [20049, 'image_points_insufficient'],
     [MESSAGE_ERROR_CODES.FILE_PREPROCESS_FAILED, 'file_preprocess_failed'],
     [MESSAGE_ERROR_CODES.FILE_STORAGE_QUOTA_EXCEEDED, 'file_storage_quota_exceeded'],
     [MESSAGE_ERROR_CODES.EMPTY_ATTACHMENT_CONTENT, 'empty_attachment_content'],

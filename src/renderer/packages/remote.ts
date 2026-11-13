@@ -399,8 +399,11 @@ export interface LicenseDetailResponse {
   error?: LicenseDetailError
 }
 
-export function getLicenseDetailRealtime(params: { licenseKey: string }): Promise<LicenseDetailResponse> {
-  return fetchLicenseDetail(params, 'realtime')
+export function getLicenseDetailRealtime(
+  params: { licenseKey: string },
+  signal?: AbortSignal
+): Promise<LicenseDetailResponse> {
+  return fetchLicenseDetail(params, 'realtime', signal)
 }
 
 export function getLicenseDetailForInspection(params: { licenseKey: string }): Promise<LicenseDetailResponse> {
@@ -409,7 +412,8 @@ export function getLicenseDetailForInspection(params: { licenseKey: string }): P
 
 async function fetchLicenseDetail(
   params: { licenseKey: string },
-  endpoint: 'realtime' | 'all_status'
+  endpoint: 'realtime' | 'all_status',
+  signal?: AbortSignal
 ): Promise<LicenseDetailResponse> {
   type Response = {
     data: ChatboxAILicenseDetail | null
@@ -419,6 +423,7 @@ async function fetchLicenseDetail(
   let capturedError: LicenseDetailError | undefined
   try {
     const res = await ofetch<Response>(`${getAPIOrigin()}/api/license/detail/${endpoint}`, {
+      signal,
       retry: 5,
       headers: {
         Authorization: params.licenseKey,
@@ -645,6 +650,7 @@ const RemoteModelInfoSchema = z.object({
   modelId: z.string(),
   modelName: z.string(),
   description: z.string().optional(),
+  points_per_image: z.number().int().positive().optional().catch(undefined),
   labels: z.array(z.string()).optional(),
   type: z.enum(['chat', 'embedding', 'rerank', 'image']).optional(),
   apiStyle: z.enum(['google', 'openai', 'openai-responses', 'anthropic']).optional(),
@@ -774,11 +780,12 @@ const ChatboxAIModelListResponseSchema = z.object({
 
 export type ChatboxAIModelList = z.infer<typeof ChatboxAIModelListResponseSchema>['data']
 
-export async function getChatboxAIModelList(params: { licenseKey?: string; language?: string }) {
+export async function getChatboxAIModelList(params: { licenseKey?: string; language?: string }, signal?: AbortSignal) {
   const afetch = await getAfetch()
   const res = await afetch(
     `${getAPIOrigin()}/api/chatbox_ai/model_list`,
     {
+      signal,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

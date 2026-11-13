@@ -334,6 +334,22 @@ export function DetailCard({
       {model.type !== 'image' && model.providerId === ModelProviderEnum.ChatboxAI && (
         <CostLevelIndicator costLevel={model.costLevel} costLabel={costLabel} t={t} />
       )}
+      {model.type === 'image' &&
+        model.providerId === ModelProviderEnum.ChatboxAI &&
+        model.pointsPerImage !== undefined && (
+          <Stack gap={10} className="border-0 border-y border-solid border-chatbox-border-primary py-4">
+            <Text size="xs" fw={750} c="chatbox-primary" className="uppercase tracking-[0.08em]">
+              {t('Pricing')}
+            </Text>
+            <PriceMetric
+              label={t('Compute points / image')}
+              value={model.pointsPerImage.toLocaleString(isCN ? 'zh-CN' : 'en-US')}
+            />
+            <Text size="xs" c="chatbox-tertiary" lh={1.6}>
+              {t('Image quota is used first. Once it runs out, you can use compute points to generate more images.')}
+            </Text>
+          </Stack>
+        )}
       {/* Temporarily hide model pricing information. */}
       {showPricing && <PricingBlock model={model} mobile={mobile} t={t} isCN={isCN} />}
       {model.type !== 'image' && (

@@ -5,7 +5,7 @@ import {
   listPendingPauseInteractions,
   type PendingPauseInteraction,
 } from '@chatbox/core/message-approval'
-import { Box, Button, Group, Loader, Menu, Spoiler, Text, UnstyledButton } from '@mantine/core'
+import { Box, Button, Checkbox, Group, Loader, Menu, Spoiler, Text, UnstyledButton } from '@mantine/core'
 import { AutomationStateAttr, TestId } from '@shared/automation/testids'
 import type { ImageGenerationApprovalDetails, Message } from '@shared/types'
 import {
@@ -17,18 +17,26 @@ import {
   IconPlayerPause,
   IconX,
 } from '@tabler/icons-react'
+import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { type FC, type MouseEvent, memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { currentGenerationService } from '@/adapters/CurrentGenerationService'
 import { rendererApplication } from '@/app/renderer-application'
 import { ImageGenerationResultGallery } from '@/components/chat/ImageGenerationResultGallery'
+import LinkTargetBlank from '@/components/common/Link'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { GLASS_TINT_CLASS } from '@/lib/glass-surface'
 import { getLogger } from '@/lib/utils'
-import { formatComputePointsRemainingRatio } from '@/packages/chatbox-cli/compute-points'
+import {
+  formatComputePointsRemainingRatio,
+  getComputePointsRemainingRatio,
+} from '@/packages/chatbox-cli/compute-points'
+import { refreshImageLicense, remainingImageQuota, withImagePointsApproval } from '@/packages/image-points-billing'
 import { getFileMutationDisplayStats } from '@/packages/model-calls/toolsets/file-mutation-stats'
+import { buildChatboxUrl } from '@/packages/remote'
 import { pulsePendingActionBar, revealPausedStep, usePendingActionBarPulseToken } from '@/stores/approvalAttentionStore'
+import { useSettingsStore } from '@/stores/settingsStore'
 import * as toastActions from '@/stores/toastActions'
 import { FileEditPreview } from './FileEditPreview'
 import {
@@ -132,10 +140,15 @@ const ExplanationText: FC<{ children: string } & ExplanationToggle> = ({ childre
   )
 }
 
-const ImageGenerationApprovalBody: FC<{ details: ImageGenerationApprovalDetails }> = ({ details }) => {
+type ImageApprovalQuota = Pick<ImageGenerationApprovalDetails, 'imageQuota' | 'computePointsRemainingRatio'>
+
+const ImageGenerationApprovalBody: FC<{ details: ImageGenerationApprovalDetails; quota?: ImageApprovalQuota }> = ({
+  details,
+  quota,
+}) => {
   const { t, i18n } = useTranslation()
   const usesChatboxQuota = details.billing === 'chatbox_quota'
-  const computePointsRemainingRatio = details.computePointsRemainingRatio ?? details.computePointsRemaining
+  const computePointsRemainingRatio = quota?.computePointsRemainingRatio
 
   return (
     <>
@@ -156,14 +169,14 @@ const ImageGenerationApprovalBody: FC<{ details: ImageGenerationApprovalDetails 
         </Text>
         <Text size="xs" c="chatbox-tertiary">
           {usesChatboxQuota
-            ? t('This request will consume {{count}} image quota and compute points.', { count: details.count })
+            ? t('Image quota is used first. Once it runs out, you can use compute points to generate more images.')
             : t('This request may incur charges from {{provider}}.', { provider: details.provider })}
         </Text>
-        {usesChatboxQuota && details.imageQuota && (
+        {usesChatboxQuota && quota?.imageQuota && (
           <Text size="xs" c="chatbox-tertiary">
             {t('Image quota remaining: {{remaining}} / {{total}}', {
-              remaining: details.imageQuota.remaining.toLocaleString(),
-              total: details.imageQuota.total.toLocaleString(),
+              remaining: quota.imageQuota.remaining.toLocaleString(),
+              total: quota.imageQuota.total.toLocaleString(),
             })}
           </Text>
         )}
@@ -175,6 +188,16 @@ const ImageGenerationApprovalBody: FC<{ details: ImageGenerationApprovalDetails 
           </Text>
         )}
       </Group>
+      {usesChatboxQuota && (
+        <Text size="xs" c="chatbox-tertiary">
+          {t('For detailed points usage, see')}{' '}
+          <LinkTargetBlank
+            href={buildChatboxUrl(`/${i18n.language.startsWith('zh') ? 'zh' : 'en'}/model-pricing#image-models`)}
+          >
+            {t('Model pricing')}
+          </LinkTargetBlank>
+        </Text>
+      )}
     </>
   )
 }
@@ -218,13 +241,14 @@ const FileMutationBody: FC<{ pauseReason: Extract<ApprovalPauseReason, { type: '
 }
 
 /** Body only — what the decision is about lives in the heading. */
-const ApprovalBody: FC<{ pauseReason: ApprovalPauseReason; explanation: ExplanationToggle }> = ({
-  pauseReason,
-  explanation,
-}) => {
+const ApprovalBody: FC<{
+  pauseReason: ApprovalPauseReason
+  explanation: ExplanationToggle
+  imageQuota?: ImageApprovalQuota
+}> = ({ pauseReason, explanation, imageQuota }) => {
   const { t } = useTranslation()
   const imageDetails = getImageGenerationDetails(pauseReason)
-  if (imageDetails) return <ImageGenerationApprovalBody details={imageDetails} />
+  if (imageDetails) return <ImageGenerationApprovalBody details={imageDetails} quota={imageQuota} />
 
   switch (pauseReason.type) {
     case 'user_exec_approval':
@@ -441,6 +465,31 @@ const PendingActionBarContent: FC<PendingActionContentProps> = ({ sessionId, mes
   const interactionKeys = useMemo(() => interactions.map(getInteractionKey), [interactions])
   const current: PendingPauseInteraction | undefined = interactions[0]
   const currentKey = current ? getInteractionKey(current) : undefined
+  const licenseKey = useSettingsStore((state) => state.licenseKey ?? '')
+  const imageDetails = current?.kind === 'approval' ? getImageGenerationDetails(current.pauseReason) : undefined
+  const needsImageQuota = imageDetails?.provider === 'chatbox-ai'
+  const imageQuota = useQuery({
+    queryKey: ['work-image-approval-quota', sessionId, currentKey, licenseKey],
+    enabled: needsImageQuota,
+    queryFn: async ({ signal }): Promise<ImageApprovalQuota> => {
+      if (!licenseKey) throw new Error('Missing license')
+      const detail = await refreshImageLicense(licenseKey, signal)
+      return {
+        imageQuota: { remaining: remainingImageQuota(detail), total: detail.image_total_quota },
+        computePointsRemainingRatio: getComputePointsRemainingRatio(detail),
+      }
+    },
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: false,
+    retry: false,
+  })
+  const imageQuotaUnavailable = needsImageQuota && (imageQuota.isFetching || imageQuota.isError || !imageQuota.data)
+  const pointsChoiceKey = JSON.stringify([currentKey, licenseKey])
+  const [pointsChoice, setPointsChoice] = useState({ key: pointsChoiceKey, alwaysAllow: false })
+  if (pointsChoice.key !== pointsChoiceKey) setPointsChoice({ key: pointsChoiceKey, alwaysAllow: false })
+  const alwaysAllowPoints = pointsChoice.key === pointsChoiceKey && pointsChoice.alwaysAllow
 
   // Input protection: (re)arm whenever the displayed decision changes, including
   // first mount. Written during render so no click can land before an effect runs.
@@ -523,7 +572,7 @@ const PendingActionBarContent: FC<PendingActionContentProps> = ({ sessionId, mes
   const hasCountdown = current?.kind === 'approval'
   const countdownRemainingMs = useApprovalCountdown(
     currentKey,
-    hasCountdown && !isExplanationExpanded && !isActing,
+    hasCountdown && !isExplanationExpanded && !isActing && !imageQuotaUnavailable,
     () => {
       if (current?.kind === 'approval') runAction(current, 'deny', 'timeout')
     }
@@ -537,12 +586,32 @@ const PendingActionBarContent: FC<PendingActionContentProps> = ({ sessionId, mes
     denyReason: ApprovalDenyReason = 'user'
   ) {
     if (acting) return
+    if (isResolveAction(action) && imageQuotaUnavailable) return
     if (Date.now() < (armingRef.current?.until ?? 0)) return
     const interactionKey = getInteractionKey(interaction)
     lastActionRef.current = action
     setActing({ interactionKey, action })
+    const imageDetails =
+      interaction.kind === 'approval' ? getImageGenerationDetails(interaction.pauseReason) : undefined
+    const continueGeneration = () =>
+      currentGenerationService.continuePausedToolCall(sessionId, interaction.messageId, interaction.toolCallId)
     const request = isResolveAction(action)
-      ? currentGenerationService.continuePausedToolCall(sessionId, interaction.messageId, interaction.toolCallId)
+      ? imageDetails?.provider === 'chatbox-ai'
+        ? withImagePointsApproval(
+            {
+              prompt: imageDetails.prompt,
+              referenceImages: imageDetails.referenceImages ?? [],
+              model: { provider: imageDetails.provider, modelId: imageDetails.modelId },
+              imageGenerateNum: imageDetails.count,
+              aspectRatio: imageDetails.aspectRatio,
+              dalleStyle: imageDetails.style,
+              source: { type: 'chatbox_cli', sessionId, toolCallId: interaction.toolCallId },
+            },
+            licenseKey,
+            alwaysAllowPoints,
+            continueGeneration
+          )
+        : continueGeneration()
       : currentGenerationService.stopPausedToolCall(sessionId, interaction.messageId, interaction.toolCallId, {
           denyReason,
         })
@@ -586,7 +655,7 @@ const PendingActionBarContent: FC<PendingActionContentProps> = ({ sessionId, mes
   // Clicks that miss the buttons are the user reaching for the input that this
   // bar replaced; pulse instead of silently swallowing them.
   const handleSurfaceClick = (event: MouseEvent<HTMLDivElement>) => {
-    if ((event.target as HTMLElement).closest('button, a, [role="menuitem"]')) return
+    if ((event.target as HTMLElement).closest('button, a, input, label, [role="menuitem"]')) return
     pulsePendingActionBar()
   }
 
@@ -641,6 +710,7 @@ const PendingActionBarContent: FC<PendingActionContentProps> = ({ sessionId, mes
         {current.kind === 'approval' ? (
           <ApprovalBody
             pauseReason={current.pauseReason}
+            imageQuota={imageQuotaUnavailable ? undefined : imageQuota.data}
             explanation={{
               expanded: isExplanationExpanded,
               onExpandedChange: (expanded) => setExpandedExplanationKey(expanded ? (currentKey ?? null) : null),
@@ -652,6 +722,30 @@ const PendingActionBarContent: FC<PendingActionContentProps> = ({ sessionId, mes
               count: current.maxToolCalls,
             })}
           </MutedText>
+        )}
+        {needsImageQuota && imageQuotaUnavailable && (
+          <Group gap="xs">
+            {imageQuota.isFetching ? <Loader size="xs" /> : null}
+            <Text size="xs" c="chatbox-secondary" role="status">
+              {imageQuota.isFetching
+                ? t('Loading license details...')
+                : t('Unable to check image billing. Please try again.')}
+            </Text>
+            {!imageQuota.isFetching && (
+              <Button variant="subtle" size="compact-xs" onClick={() => void imageQuota.refetch()}>
+                {t('Retry')}
+              </Button>
+            )}
+          </Group>
+        )}
+        {needsImageQuota && (
+          <Checkbox
+            size="xs"
+            label={t('Always allow this license to use compute points for images on this device')}
+            checked={alwaysAllowPoints}
+            disabled={Boolean(acting)}
+            onChange={(event) => setPointsChoice({ key: pointsChoiceKey, alwaysAllow: event.currentTarget.checked })}
+          />
         )}
       </Box>
 
@@ -736,7 +830,7 @@ const PendingActionBarContent: FC<PendingActionContentProps> = ({ sessionId, mes
               leftSection={<IconCheck size={15} stroke={2.5} />}
               color="chatbox-brand"
               loading={isActing && acting?.action === 'approve'}
-              disabled={isActing && acting?.action !== 'approve'}
+              disabled={imageQuotaUnavailable || (isActing && acting?.action !== 'approve')}
               onClick={() => runAction(current, 'approve')}
             >
               {isImageApproval ? t('Approve and generate') : t('Approve')}

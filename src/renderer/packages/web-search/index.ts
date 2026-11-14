@@ -11,6 +11,7 @@ import { BochaSearch } from './bocha'
 import { ChatboxSearch } from './chatbox-search'
 import { QueritSearch } from './querit'
 import { normalizeSearxngBaseUrl, SearxngSearch } from './searxng'
+import { SpecStreamSearch } from './specstream'
 import { TavilySearch } from './tavily'
 
 const MAX_CONTEXT_ITEMS = 10
@@ -63,6 +64,12 @@ function getSearchProviders() {
           settings.webSearch.queritTimeRange
         )
       )
+      break
+    case 'specstream':
+      if (!settings.webSearch.specstreamApiKey) {
+        throw new Error('SpecStream API key is required. Add it in Web Search settings.')
+      }
+      selectedProviders.push(new SpecStreamSearch(settings.webSearch.specstreamApiKey))
       break
     case 'searxng': {
       const searxngBaseUrl = normalizeSearxngBaseUrl(settings.webSearch.searxngBaseUrl ?? '')

@@ -15,6 +15,7 @@ import { BochaSearch } from '@/packages/web-search/bocha'
 import { WEB_SEARCH_PROVIDERS, type WebSearchProviderValue } from '@/packages/web-search/constants'
 import { QUERIT_SEARCH_URL } from '@/packages/web-search/querit'
 import { SearxngSearch } from '@/packages/web-search/searxng'
+import { SpecStreamSearch } from '@/packages/web-search/specstream'
 import platform from '@/platform'
 import { useSettingsStore } from '@/stores/settingsStore'
 
@@ -162,6 +163,22 @@ export function RouteComponent() {
             check={checkQuerit}
             failureMessage={t('API key invalid!')}
             getKeyUrl="https://www.querit.ai"
+          />
+        )}
+        {provider === 'specstream' && (
+          <CheckedFieldRow
+            key="specstream"
+            id="specstream-api-key"
+            label={t('SpecStream API Key')}
+            secret
+            value={webSearch.specstreamApiKey}
+            onChange={(specstreamApiKey) => updateWebSearch({ specstreamApiKey })}
+            placeholder={t('Enter your SpecStream API Key') ?? undefined}
+            check={async (apiKey) => {
+              await new SpecStreamSearch(apiKey).search('Chatbox')
+            }}
+            failureMessage={t('API key invalid!')}
+            getKeyUrl="https://specstream.ai"
           />
         )}
       </SettingsSection>

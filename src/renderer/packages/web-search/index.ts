@@ -164,7 +164,7 @@ export const webSearchExecutor = async (
  * Single source of truth: which configured providers offer the parse_link tool.
  * Keep in sync with the provider classes' `supportsParseLink` flags.
  */
-export const PROVIDERS_WITH_PARSE_LINK: ReadonlySet<string> = new Set(['build-in', 'tavily'])
+export const PROVIDERS_WITH_PARSE_LINK: ReadonlySet<string> = new Set(['build-in', 'deepseek', 'tavily'])
 
 /**
  * Returns the first configured search provider that supports parseLink.

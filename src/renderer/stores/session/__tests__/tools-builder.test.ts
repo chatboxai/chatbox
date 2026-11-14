@@ -931,6 +931,19 @@ describe('buildToolsForSession', () => {
     expect(result.instructions).not.toContain('## web_search')
   })
 
+  test('webBrowsing=true exposes parse_link for DeepSeek search', async () => {
+    webSearchProvider.current = 'deepseek'
+    const model = createMockModel()
+
+    const result = await buildToolsForSession(model, {
+      webBrowsing: true,
+      messages: [],
+      agentMode: 'off',
+    })
+
+    expect(result.tools.parse_link).toBeDefined()
+  })
+
   test('webBrowsing=true does not expose parse_link when configured search provider does not support it', async () => {
     webSearchProvider.current = 'bing'
     const model = createMockModel()

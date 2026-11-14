@@ -19,6 +19,7 @@ describe('deepseekProvider', () => {
         maxOutput: 384_000,
         capabilities: ['reasoning', 'tool_use'],
       },
+      { modelId: 'deepseek-asr', nickname: 'DeepSeek ASR', type: 'transcription' },
     ])
   })
 })

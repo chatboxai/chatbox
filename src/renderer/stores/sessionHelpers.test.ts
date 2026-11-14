@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   blobStore,
@@ -28,7 +28,10 @@ const {
   const licenseActivation = { method: 'manual' as 'login' | 'manual' | undefined }
   const authTokens = { hasTokens: true }
   const sessionRagCapability = { enabled: true }
-  const parser = { type: 'local' as 'local' | 'chatbox-ai' | 'none' | 'mineru' }
+  const parser = {
+    type: 'local' as 'local' | 'chatbox-ai' | 'none' | 'mineru' | 'deepseek',
+    deepseekApiKey: 'ds-key',
+  }
   const defaultEmbeddingModel = {
     value: undefined as { provider: string; model: string } | undefined,
   }
@@ -119,6 +122,7 @@ vi.mock('./settingsStore', () => ({
       extension: {
         documentParser: { type: parserState.type, mineru: { apiToken: 'mineru-token' } },
       },
+      providers: { deepseek: { apiKey: parserState.deepseekApiKey } },
     }),
   },
   getPlatformDefaultDocumentParser: () => ({ type: 'local' }),
@@ -205,6 +209,7 @@ describe('preprocessFile local parser fallback', () => {
     authTokensState.hasTokens = true
     sessionRagCapabilityState.enabled = true
     parserState.type = 'local'
+    parserState.deepseekApiKey = 'ds-key'
     defaultEmbeddingModelState.value = undefined
     mockParseFileLocally.mockReset()
     mockParseFileWithMineru.mockReset()
@@ -610,6 +615,107 @@ describe('preprocessFile local parser fallback', () => {
         }),
       })
     )
+  })
+
+  describe('DeepSeek parser', () => {
+    function stubDeepSeekResponse(body: string, status = 200) {
+      const fetch = vi.fn(async (_url: string, _init: RequestInit) => new Response(body, { status }))
+      vi.stubGlobal('fetch', fetch)
+      return fetch
+    }
+
+    beforeEach(() => {
+      parserState.type = 'deepseek'
+    })
+
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
+    it('parses documents through DeepSeek OCR with the DeepSeek provider key', async () => {
+      const fetch = stubDeepSeekResponse(
+        '\n{"object":"ocr.result","page_count":1,"pages":[{"index":0,"text":"<｜ref｜>Report<｜/ref｜><｜box｜>[[1, 2, 3, 4]]<｜/box｜> body","finish_reason":"stop"}]}'
+      )
+
+      const result = await prepareFileAttachment(createFile('report.pdf'), { provider: '', modelId: '' })
+
+      expect(result.error).toBeUndefined()
+      expect(result.content).toBe('Report body')
+      expect(result.parserType).toBe('deepseek')
+      expect(fetch.mock.calls[0][0]).toBe('https://api.deepseek.com/v1/tools/ocr')
+      expect((fetch.mock.calls[0][1].headers as Record<string, string>).Authorization).toBe('Bearer ds-key')
+      expect(mockParseFileLocally).not.toHaveBeenCalled()
+      expect(mockUploadAndCreateUserFile).not.toHaveBeenCalled()
+    })
+
+    it('requires the DeepSeek API key before uploading', async () => {
+      parserState.deepseekApiKey = ' '
+      const fetch = stubDeepSeekResponse('{}')
+
+      const result = await prepareFileAttachment(createFile('report.pdf'), { provider: '', modelId: '' })
+
+      expect(result.error).toBe('deepseek_parser_api_key_required')
+      expect(fetch).not.toHaveBeenCalled()
+      expect(mockReportError).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ['insufficient balance', 'deepseek_insufficient_balance', '{"error":{"message":"Insufficient Balance"}}', 402],
+      [
+        'a file over 100 MiB',
+        'deepseek_parser_file_too_large',
+        '{"error":{"message":"file is too large: max 100 MiB"}}',
+        413,
+      ],
+      [
+        'more than 1000 pages',
+        'deepseek_parser_file_too_large',
+        '\n{"error":{"message":"Failed to recognize the file: the document has more than 1000 pages"}}',
+        200,
+      ],
+      [
+        'a password-protected file',
+        'pdf_password_protected',
+        '\n{"error":{"message":"The file is password-protected and cannot be processed. Remove the password and upload it again."}}',
+        200,
+      ],
+      [
+        'a recognition timeout',
+        'third_party_parser_failed',
+        '\n{"error":{"message":"OCR did not finish in time"}}',
+        200,
+      ],
+      ['an invalid API key', 'third_party_parser_failed', '{"error":{"message":"Authentication Fails"}}', 401],
+    ])('maps %s to %s', async (_label, expected, body, status) => {
+      stubDeepSeekResponse(body, status)
+
+      const result = await prepareFileAttachment(createFile('report.pdf'), { provider: '', modelId: '' })
+
+      expect(result.error).toBe(expected)
+      expect(mockReportError).not.toHaveBeenCalled()
+    })
+
+    it('rejects recognized documents without text', async () => {
+      stubDeepSeekResponse(
+        '{"object":"ocr.result","page_count":1,"pages":[{"index":0,"text":"  ","finish_reason":"stop"}]}'
+      )
+
+      const result = await prepareFileAttachment(createFile('blank.pdf'), { provider: '', modelId: '' })
+
+      expect(result.error).toBe('empty_attachment_content')
+    })
+
+    it('parses formats DeepSeek OCR does not accept with the local parser', async () => {
+      const fetch = stubDeepSeekResponse('{}')
+      blobStore.set('sheet-local', 'Sheet text')
+      mockParseFileLocally.mockResolvedValueOnce({ isSupported: true, key: 'sheet-local' })
+
+      const result = await prepareFileAttachment(createFile('sheet.xlsx'), { provider: '', modelId: '' })
+
+      expect(result.content).toBe('Sheet text')
+      expect(result.parserType).toBe('local')
+      expect(fetch).not.toHaveBeenCalled()
+    })
   })
 
   it('rejects whitespace-only content returned by MinerU', async () => {

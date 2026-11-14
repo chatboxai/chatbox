@@ -109,6 +109,11 @@ function _errorI18nKeys(t: (key: string) => string) {
     'MinerU API token is required. Please go to <OpenDocumentParserSettingButton>Settings</OpenDocumentParserSettingButton> and configure your MinerU API token.'
   )
   t(
+    'You have selected DeepSeek as the document parser, but no DeepSeek API key is set up yet. Please <OpenDeepSeekProviderSettingButton>add it in the DeepSeek model provider settings</OpenDeepSeekProviderSettingButton>, or choose a different <OpenDocumentParserSettingButton>document parser</OpenDocumentParserSettingButton>.'
+  )
+  t('Your DeepSeek account balance is insufficient. Please top up your DeepSeek account and try again.')
+  t('This file exceeds the DeepSeek document parsing limits (100 MiB and 1,000 pages). Please upload a smaller file.')
+  t(
     'This file type requires a document parser. Please go to <OpenDocumentParserSettingButton>Settings</OpenDocumentParserSettingButton> and enable Chatbox AI document parsing.'
   )
   t('Storage is full. Delete some old conversations or large attachments, or free up device space, then try again.')
@@ -119,7 +124,7 @@ function _errorI18nKeys(t: (key: string) => string) {
     'You have selected SearXNG as the search provider, but an instance URL has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your SearXNG instance URL, or choose a different search provider.'
   )
   t(
-    'You have selected DeepSeek as the search provider, but a DeepSeek API key has not been entered yet. DeepSeek search uses the same API key as the DeepSeek model provider. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your API key, or choose a different search provider.'
+    'You have selected DeepSeek as the search provider, but no DeepSeek API key is set up yet. Please <OpenDeepSeekProviderSettingButton>add it in the DeepSeek model provider settings</OpenDeepSeekProviderSettingButton>, or choose a different <OpenExtensionSettingButton>search provider</OpenExtensionSettingButton>.'
   )
   t('Failed to read webpage content. Please try again later or use a different URL.')
   t(
@@ -227,6 +232,7 @@ function _otherI18nKeys(t: (key: string) => string) {
   // src/renderer/components/settings/DocumentParserSettings.tsx
   t('Local')
   t('MinerU')
+  t('DeepSeek')
   t('No points consumed')
   t(
     'Only supports basic text files (.txt, .md, .json, code files, etc.). For PDF and Office files, please switch to Chatbox AI.'
@@ -244,6 +250,9 @@ function _otherI18nKeys(t: (key: string) => string) {
     'Tries local parsing first without consuming compute points. If local parsing fails, Chatbox AI cloud parsing will be used and compute points will be consumed.'
   )
   t('Third-party cloud parsing service, supports PDF and most Office files. Requires API token.')
+  t(
+    'DeepSeek OCR reads PDF, Word, PowerPoint and image files; other files are parsed locally. Uses the API key configured for the DeepSeek model provider and is billed by DeepSeek per page.'
+  )
 
   // src/renderer/modals/FileParseError.tsx
   t('<OpenSettingButton>Sign in to Chatbox AI</OpenSettingButton> to use your account license.')
@@ -311,7 +320,7 @@ function _otherI18nKeys(t: (key: string) => string) {
   t('Tavily API key is missing')
   t('Add a Tavily API key in Web Search settings.')
   t('DeepSeek API key is missing')
-  t('Add a DeepSeek API key in Web Search or DeepSeek model provider settings. Both share the same key.')
+  t('Add a DeepSeek API key in DeepSeek model provider settings.')
   t('BoCha API key is missing')
   t('Add a BoCha API key in Web Search settings.')
   t('Querit API key is missing')

@@ -87,6 +87,8 @@ const CHATBOX_DEFAULT_ORIGIN = 'https://api.chatboxai.app'
 const DEFAULT_MAX_RESULTS = 8
 /** DeepSeek search accepts queries of at most 128 characters. */
 const DEEPSEEK_MAX_QUERY_LENGTH = 128
+/** DeepSeek fetch accepts URLs of at most 8192 characters. */
+const DEEPSEEK_MAX_FETCH_URL_LENGTH = 8192
 
 interface TavilyResponseItem {
   title?: string
@@ -519,4 +521,57 @@ async function searchNativeDeepSeek(
       ? [{ title, link, snippet: nonEmptyString(result.summary) ?? nonEmptyString(result.snippet) ?? '' }]
       : []
   })
+}
+
+export interface NativeWebPage {
+  url: string
+  title: string
+  content: string
+}
+
+/**
+ * Reads one web page as Markdown through the DeepSeek Fetch API. The URL must be an HTTP(S) URL with a host,
+ * without a username or password, and at most 8192 characters long. An untitled page is labeled by its hostname.
+ */
+export async function fetchNativeDeepSeekPage(
+  url: string,
+  options: Pick<NativeWebSearchOptions, 'apiKey' | 'signal' | 'fetchFn'>
+): Promise<NativeWebPage> {
+  const target = url.trim()
+  let parsed: URL | null = null
+  try {
+    parsed = new URL(target)
+  } catch {}
+  if (
+    !parsed ||
+    (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') ||
+    !parsed.hostname ||
+    parsed.username ||
+    parsed.password ||
+    target.length > DEEPSEEK_MAX_FETCH_URL_LENGTH
+  ) {
+    throw new Error(
+      `DeepSeek fetch only accepts HTTP or HTTPS URLs with a host, without a username or password, and at most ${DEEPSEEK_MAX_FETCH_URL_LENGTH} characters long`
+    )
+  }
+  const apiKey = options.apiKey?.trim()
+  if (!apiKey) throw new Error('DeepSeek API key is required')
+  const response = await (options.fetchFn ?? fetch)('https://api.deepseek.com/v1/tools/fetch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({ url: target }),
+    signal: options.signal as NativeFetchInit['signal'],
+  })
+  const payload = (await response.json().catch(() => null)) as {
+    title?: unknown
+    content?: unknown
+    error?: { message?: unknown }
+  } | null
+  const detail = nonEmptyString(payload?.error?.message)
+  if (!response.ok) {
+    throw new Error(`DeepSeek fetch failed with status ${response.status}${detail ? `: ${detail}` : ''}`)
+  }
+  if (payload?.error) throw new Error(`DeepSeek fetch failed${detail ? `: ${detail}` : ''}`)
+  if (typeof payload?.content !== 'string') throw new Error('DeepSeek returned an invalid fetch response')
+  return { url: target, title: nonEmptyString(payload.title) ?? parsed.hostname, content: payload.content }
 }

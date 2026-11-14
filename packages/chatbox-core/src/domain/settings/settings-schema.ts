@@ -17,11 +17,12 @@ export { ModelProviderType } from '../../types/provider'
  * - local: Local parsing using built-in libraries (desktop default)
  * - chatbox-ai: Local-first parsing with Chatbox cloud fallback (mobile/web default)
  * - mineru: Third-party MinerU parsing service (desktop only)
+ * - deepseek: DeepSeek OCR, authenticated with the DeepSeek model provider API key
  */
-export type DocumentParserType = 'none' | 'local' | 'chatbox-ai' | 'mineru'
+export type DocumentParserType = 'none' | 'local' | 'chatbox-ai' | 'mineru' | 'deepseek'
 
 export const DocumentParserConfigSchema = z.object({
-  type: z.enum(['none', 'local', 'chatbox-ai', 'mineru']),
+  type: z.enum(['none', 'local', 'chatbox-ai', 'mineru', 'deepseek']),
   mineru: z
     .object({
       apiToken: z.string(),

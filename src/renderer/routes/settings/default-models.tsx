@@ -133,6 +133,7 @@ const PARSER_OPTION_LABELS: Record<string, string> = {
   'chatbox-ai': 'Chatbox AI',
   local: 'Built-in parser',
   mineru: 'MinerU',
+  deepseek: 'DeepSeek',
 }
 
 function isChatType(model: ProviderModelInfo) {
@@ -762,7 +763,7 @@ function sourceForSlot(
   parser: DocumentParserType
 ) {
   if (slotId === 'parser')
-    return parser === 'mineru'
+    return parser === 'mineru' || parser === 'deepseek'
       ? 'Remote service'
       : parser === 'local'
         ? 'Built-in parsing. Image recognition may use the selected OCR provider.'

@@ -316,6 +316,8 @@ export function getParserDisplayName(
       return t('Parser: {{parser}}', { parser: 'Chatbox AI' })
     case 'mineru':
       return t('Parser: {{parser}}', { parser: 'MinerU' })
+    case 'deepseek':
+      return t('Parser: {{parser}}', { parser: 'DeepSeek' })
     default:
       return undefined
   }

@@ -31,6 +31,12 @@ export {
   parseNativeChatboxAIDocument,
 } from '@shared/services/native-document-parser'
 export {
+  DEEPSEEK_OCR_MAX_FILE_SIZE,
+  getDeepSeekParserErrorCode,
+  isDeepSeekOcrFile,
+  recognizeDocumentWithDeepSeek,
+} from '@shared/services/deepseek-ocr'
+export {
   activateNativeLicense,
   deactivateNativeLicense,
   fetchNativeLicenseDetail,

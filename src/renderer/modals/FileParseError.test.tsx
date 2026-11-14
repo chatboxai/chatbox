@@ -44,9 +44,15 @@ vi.mock('react-i18next', () => ({
     const documentParserLabel = i18nKey.match(
       /<OpenDocumentParserSettingButton>(.*?)<\/OpenDocumentParserSettingButton>/
     )?.[1]
+    const deepSeekProviderLabel = i18nKey.match(
+      /<OpenDeepSeekProviderSettingButton>(.*?)<\/OpenDeepSeekProviderSettingButton>/
+    )?.[1]
     return (
       <span>
         {i18nKey}
+        {components?.OpenDeepSeekProviderSettingButton && deepSeekProviderLabel
+          ? cloneElement(components.OpenDeepSeekProviderSettingButton, {}, deepSeekProviderLabel)
+          : null}
         {components?.OpenSettingButton && openSettingLabel
           ? cloneElement(components.OpenSettingButton, {}, openSettingLabel)
           : null}
@@ -175,6 +181,15 @@ describe('FileParseError', () => {
     fireEvent.click(openSettings)
 
     expect(mockNavigateToSettings).toHaveBeenCalledWith('/chatbox-ai')
+  })
+
+  test('sends a missing DeepSeek parser key to the DeepSeek model provider settings', async () => {
+    showFileParseError('deepseek_parser_api_key_required', 'scan.pdf')
+
+    expect(await screen.findByText('File: scan.pdf')).toBeTruthy()
+    fireEvent.click(screen.getByText('add it in the DeepSeek model provider settings'))
+
+    expect(mockNavigateToSettings).toHaveBeenCalledWith('/provider/deepseek')
   })
 
   test.each(['web', 'mobile'])(

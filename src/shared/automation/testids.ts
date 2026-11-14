@@ -36,7 +36,7 @@ export const AutomationStateAttr = {
   messageLayout: 'data-message-layout',
 } as const
 
-export type AutomationReasoningLevel = 'default' | 'off' | 'low' | 'medium' | 'high'
+export type AutomationReasoningLevel = 'default' | 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
 export const TestId = {
   chat: {

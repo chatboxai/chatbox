@@ -12,7 +12,8 @@ import {
 
 // 'default' sends no reasoning-related parameters at all (the provider's server-side
 // default applies); 'off' force-sends the provider's explicit disable parameters.
-export type ReasoningControlLevel = 'default' | 'off' | 'low' | 'medium' | 'high'
+type ReasoningEffortLevel = 'low' | 'medium' | 'high'
+export type ReasoningControlLevel = 'default' | 'off' | ReasoningEffortLevel | 'xhigh' | 'max'
 
 /**
  * Session-level storage for reasoning provider options. `providerOptionsByModel`
@@ -95,7 +96,7 @@ export interface ReasoningControlCapabilities {
 
 export interface ReasoningControlOption {
   level: ReasoningControlLevel
-  label: 'default' | 'off' | 'on' | 'low' | 'medium' | 'high'
+  label: ReasoningControlLevel | 'on'
 }
 
 const DEFAULT_CAPABILITIES: ReasoningControlCapabilities = {
@@ -103,7 +104,6 @@ const DEFAULT_CAPABILITIES: ReasoningControlCapabilities = {
   kind: 'toggle',
 }
 
-type ReasoningEffortLevel = Exclude<ReasoningControlLevel, 'default' | 'off'>
 type DeepSeekReasoningEffort = 'low' | 'high' | 'max'
 
 const CLAUDE_BUDGET_BY_LEVEL: Record<ReasoningEffortLevel, number> = {
@@ -154,7 +154,12 @@ const OPENAI_NO_EFFORT_PARAM_MODELS = [/(?:^|\/)o1-(?:preview|mini)(?:[.-]|$)/i]
 // down to 'minimal'. Match any dotted gpt-5.x so future versions default to 'none'.
 const OPENAI_NONE_EFFORT_MODELS = [/(?:^|\/)gpt-5\.[1-9]\d*(?:[.-]|$)/i]
 const CLAUDE_EFFORT_MODELS = [/(?:^|\/)claude-opus-4-5(?:[.-]|$)/i]
-const CLAUDE_ADAPTIVE_EFFORT_MODELS = [/(?:^|\/)claude-opus-4-(?:7|8)(?:[.-]|$)/i, /(?:^|\/)claude-opus-5(?:[.-]|$)/i]
+const CLAUDE_EXTENDED_EFFORT_MODELS = [/(?:^|\/)claude-(?:fable-5[.-]2|opus-5[.-]5|sonnet-5[.-]5)(?:[.-]|$)/i]
+const CLAUDE_ADAPTIVE_EFFORT_MODELS = [
+  ...CLAUDE_EXTENDED_EFFORT_MODELS,
+  /(?:^|\/)claude-opus-4-(?:7|8)(?:[.-]|$)/i,
+  /(?:^|\/)claude-opus-5(?:[.-]|$)/i,
+]
 const CLAUDE_BUDGET_MODELS = [
   /(?:^|\/)claude-3-7-sonnet/i,
   /(?:^|\/)claude-sonnet-4/i,
@@ -244,9 +249,11 @@ export function normalizeClaudeReasoningOptions(
   if (!claude) return undefined
   if (usesClaudeEffortControl(modelId)) {
     if (!claude.effort) return undefined
-    // 'xhigh'/'max' are DeepSeek-Anthropic-only values; clamp to the strongest
-    // level Claude effort models accept.
-    return { effort: claude.effort === 'xhigh' || claude.effort === 'max' ? 'high' : claude.effort }
+    const { effort } = claude
+    if ((effort === 'xhigh' || effort === 'max') && !matchesAny(modelId, CLAUDE_EXTENDED_EFFORT_MODELS)) {
+      return { effort: 'high' }
+    }
+    return { effort }
   }
   // Budget-style models reject enabled thinking without budget_tokens (a shape only
   // the DeepSeek-Anthropic writer produces); treat it as 'default' instead.
@@ -751,7 +758,8 @@ function deriveReasoningControlLevel(
   }
   if (effectiveProvider === ModelProviderEnum.Claude) {
     if (capabilities.kind === 'anthropic-adaptive-effort' || capabilities.kind === 'anthropic-effort') {
-      return normalizeEffortToLevel(providerOptions?.claude?.effort)
+      const effort = normalizeClaudeReasoningOptions(model?.modelId || '', providerOptions?.claude)?.effort
+      return effort ?? 'default'
     }
     const thinking = providerOptions?.claude?.thinking
     if (!thinking) return 'default'
@@ -830,6 +838,13 @@ export function getReasoningControlOptions(
     { level: 'low', label: 'low' },
     { level: 'medium', label: 'medium' },
     { level: 'high', label: 'high' },
+    ...(capabilities.kind === 'anthropic-adaptive-effort' &&
+    matchesAny(model?.modelId || '', CLAUDE_EXTENDED_EFFORT_MODELS)
+      ? ([
+          { level: 'xhigh', label: 'xhigh' },
+          { level: 'max', label: 'max' },
+        ] as const)
+      : []),
   ]
 }
 
@@ -841,6 +856,15 @@ export function getReasoningProviderOptions(
 ): ProviderOptions | undefined {
   const capabilities = getReasoningControlCapabilities(provider, model)
   if (!capabilities.supported) return previous
+  if (level === 'xhigh' || level === 'max') {
+    if (
+      capabilities.kind !== 'anthropic-adaptive-effort' ||
+      !matchesAny(model?.modelId || '', CLAUDE_EXTENDED_EFFORT_MODELS)
+    ) {
+      return previous
+    }
+    return { ...previous, claude: { effort: level } }
+  }
 
   const effectiveProvider = getEffectiveProvider(provider, model)
 

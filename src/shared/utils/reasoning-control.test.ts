@@ -1054,9 +1054,13 @@ describe('reasoning-control', () => {
       ).toEqual({ thinking: { type: 'enabled', budgetTokens: 1024 } })
     })
 
-    it('clamps DeepSeek-only Claude effort values on effort-style models', () => {
+    it('clamps extended effort values for Claude models that lack extended controls', () => {
       expect(normalizeClaudeReasoningOptions('claude-opus-4-5', { effort: 'max' })).toEqual({ effort: 'high' })
       expect(normalizeClaudeReasoningOptions('claude-opus-4-8', { effort: 'xhigh' })).toEqual({ effort: 'high' })
+      const previous = { claude: { effort: 'low' } } as const
+      expect(getReasoningProviderOptions(ModelProviderEnum.Claude, model('claude-opus-5'), 'max', previous)).toBe(
+        previous
+      )
     })
 
     it('rejects the DeepSeek-only max effort for OpenAI models', () => {

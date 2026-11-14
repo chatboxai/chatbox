@@ -14,6 +14,8 @@ describe('native web search', () => {
     expect(hasNativeWebSearchConfiguration({ provider: 'tavily', apiKey: '' })).toBe(false)
     expect(hasNativeWebSearchConfiguration({ provider: 'tavily', apiKey: '  ' })).toBe(false)
     expect(hasNativeWebSearchConfiguration({ provider: 'tavily', apiKey: 'tvly-key' })).toBe(true)
+    expect(hasNativeWebSearchConfiguration({ provider: 'outcrawl', apiKey: ' ' })).toBe(false)
+    expect(hasNativeWebSearchConfiguration({ provider: 'outcrawl', apiKey: 'oc-key' })).toBe(true)
     expect(hasNativeWebSearchConfiguration({ provider: 'bing', apiKey: '' })).toBe(true)
     expect(hasNativeWebSearchConfiguration({ provider: 'build-in', apiKey: '' })).toBe(false)
     expect(hasNativeWebSearchConfiguration({ provider: 'build-in', apiKey: '' }, 'license-1')).toBe(true)
@@ -93,6 +95,49 @@ describe('native web search', () => {
     expect(url).toBe('http://10.0.2.2:8091/search')
     expect(JSON.parse((init as RequestInit).body as string).query).toBe('chatbox')
     expect((init as RequestInit).headers).toMatchObject({ Authorization: 'Bearer key-1' })
+  })
+
+  it('searches Outcrawl with a bearer key and maps hits', async () => {
+    const fetchFn = mockFetchResponse({
+      hits: [
+        { title: 'One', url: 'https://one.test', snippet: 'first snippet', rank: 1 },
+        { title: 'Two', url: 'https://two.test', snippet: 'second snippet', rank: 2 },
+        { url: 'https://three.test', rank: 3 },
+      ],
+    })
+    const items = await searchNativeWeb('chatbox', { provider: 'outcrawl', apiKey: 'oc-key', fetchFn })
+    expect(items).toEqual([
+      { title: 'One', link: 'https://one.test', snippet: 'first snippet' },
+      { title: 'Two', link: 'https://two.test', snippet: 'second snippet' },
+      { title: '', link: 'https://three.test', snippet: '' },
+    ])
+    const [url, init] = (fetchFn as unknown as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect(url).toBe('https://api.outcrawl.ai/v1/search')
+    expect((init as RequestInit).method).toBe('POST')
+    expect((init as RequestInit).headers).toMatchObject({ Authorization: 'Bearer oc-key' })
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ query: 'chatbox' })
+  })
+
+  it('passes maxResults to Outcrawl as the limit and trims the response', async () => {
+    const fetchFn = mockFetchResponse({
+      hits: [
+        { title: 'One', url: 'https://one.test', snippet: 'a' },
+        { title: 'Two', url: 'https://two.test', snippet: 'b' },
+      ],
+    })
+    const items = await searchNativeWeb('chatbox', { provider: 'outcrawl', apiKey: 'oc-key', maxResults: 1, fetchFn })
+    expect(items).toEqual([{ title: 'One', link: 'https://one.test', snippet: 'a' }])
+    const [, init] = (fetchFn as unknown as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ query: 'chatbox', limit: 1 })
+  })
+
+  it('returns no items when Outcrawl sends no hits and throws on a failed request', async () => {
+    await expect(
+      searchNativeWeb('q', { provider: 'outcrawl', apiKey: 'oc-key', fetchFn: mockFetchResponse({}) })
+    ).resolves.toEqual([])
+    await expect(
+      searchNativeWeb('q', { provider: 'outcrawl', apiKey: 'bad', fetchFn: mockFetchResponse({}, false, 401) })
+    ).rejects.toThrow('Outcrawl search failed with status 401')
   })
 
   it('searches a SearXNG JSON endpoint with the configured instance URL', async () => {

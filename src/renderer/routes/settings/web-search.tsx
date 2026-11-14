@@ -13,6 +13,7 @@ import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { PROVIDERS_WITH_PARSE_LINK } from '@/packages/web-search'
 import { BochaSearch } from '@/packages/web-search/bocha'
 import { WEB_SEARCH_PROVIDERS, type WebSearchProviderValue } from '@/packages/web-search/constants'
+import { OutcrawlSearch } from '@/packages/web-search/outcrawl'
 import { QUERIT_SEARCH_URL } from '@/packages/web-search/querit'
 import { SearxngSearch } from '@/packages/web-search/searxng'
 import platform from '@/platform'
@@ -162,6 +163,21 @@ export function RouteComponent() {
             check={checkQuerit}
             failureMessage={t('API key invalid!')}
             getKeyUrl="https://www.querit.ai"
+          />
+        )}
+        {provider === 'outcrawl' && (
+          <CheckedFieldRow
+            key="outcrawl"
+            id="outcrawl-api-key"
+            label={t('Outcrawl API Key')}
+            secret
+            value={webSearch.outcrawlApiKey}
+            onChange={(outcrawlApiKey) => updateWebSearch({ outcrawlApiKey })}
+            check={async (apiKey) => {
+              await new OutcrawlSearch(apiKey).search('Chatbox')
+            }}
+            failureMessage={t('API key invalid!')}
+            getKeyUrl="https://outcrawl.ai/console?utm_source=chatbox"
           />
         )}
       </SettingsSection>

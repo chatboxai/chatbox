@@ -18,7 +18,7 @@ export interface NativeWebSearchResultItem {
 }
 
 /** Same provider set the renderer's Web Search settings expose. */
-export type NativeWebSearchProvider = 'build-in' | 'bing' | 'tavily' | 'bocha' | 'querit' | 'searxng'
+export type NativeWebSearchProvider = 'build-in' | 'bing' | 'tavily' | 'bocha' | 'querit' | 'outcrawl' | 'searxng'
 
 export const nativeWebSearchProviderOptions: Array<{ id: NativeWebSearchProvider; label: string }> = [
   { id: 'build-in', label: 'Chatbox AI' },
@@ -26,6 +26,7 @@ export const nativeWebSearchProviderOptions: Array<{ id: NativeWebSearchProvider
   { id: 'tavily', label: 'Tavily' },
   { id: 'bocha', label: 'BoCha' },
   { id: 'querit', label: 'Querit' },
+  { id: 'outcrawl', label: 'Outcrawl' },
   { id: 'searxng', label: 'SearXNG' },
 ]
 
@@ -94,7 +95,12 @@ export function hasNativeWebSearchConfiguration(
   settings: Pick<NativeWebSearchSettings, 'provider' | 'apiKey'> & Partial<Pick<NativeWebSearchSettings, 'apiHost'>>,
   licenseKey?: string
 ): boolean {
-  if (settings.provider === 'tavily' || settings.provider === 'bocha' || settings.provider === 'querit') {
+  if (
+    settings.provider === 'tavily' ||
+    settings.provider === 'bocha' ||
+    settings.provider === 'querit' ||
+    settings.provider === 'outcrawl'
+  ) {
     return Boolean(settings.apiKey.trim())
   }
   if (settings.provider === 'build-in') return Boolean(licenseKey?.trim())
@@ -111,6 +117,7 @@ export async function searchNativeWeb(
   if (provider === 'build-in') return searchNativeChatbox(query, options)
   if (provider === 'bocha') return searchNativeBocha(query, options)
   if (provider === 'querit') return searchNativeQuerit(query, options)
+  if (provider === 'outcrawl') return searchNativeOutcrawl(query, options)
   if (provider === 'searxng') return searchNativeSearxng(query, options)
   return searchNativeTavily(query, options)
 }
@@ -272,6 +279,45 @@ async function searchNativeQuerit(
     link: result.url,
     snippet: result.snippet,
   }))
+}
+
+export const OUTCRAWL_API_URL = 'https://api.outcrawl.ai/v1'
+const OUTCRAWL_SEARCH_URL = `${OUTCRAWL_API_URL}/search`
+
+interface OutcrawlSearchHit {
+  title?: string
+  url?: string
+  snippet?: string
+}
+
+// Outcrawl search: `POST /v1/search` with a bearer key returns `{ hits: [{ title, url, snippet }] }`.
+async function searchNativeOutcrawl(
+  query: string,
+  options: NativeWebSearchOptions
+): Promise<NativeWebSearchResultItem[]> {
+  const fetchFn = options.fetchFn ?? fetch
+  const maxResults = options.maxResults
+  const response = await fetchFn(OUTCRAWL_SEARCH_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${options.apiKey ?? ''}`,
+    },
+    body: JSON.stringify(maxResults !== undefined ? { query, limit: maxResults } : { query }),
+    signal: options.signal as NativeFetchInit['signal'],
+  } as NativeFetchInit)
+  if (!response.ok) {
+    throw new Error(`Outcrawl search failed with status ${response.status}`)
+  }
+
+  const payload = (await response.json()) as { hits?: OutcrawlSearchHit[] }
+  const hits = Array.isArray(payload.hits) ? payload.hits : []
+  const items = hits.map((hit) => ({
+    title: hit.title ?? '',
+    link: hit.url ?? '',
+    snippet: hit.snippet ?? '',
+  }))
+  return maxResults !== undefined ? items.slice(0, maxResults) : items
 }
 
 async function searchNativeTavily(

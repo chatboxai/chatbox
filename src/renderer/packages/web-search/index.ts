@@ -9,6 +9,7 @@ import { BingSearch } from './bing'
 import { BingNewsSearch } from './bing-news'
 import { BochaSearch } from './bocha'
 import { ChatboxSearch } from './chatbox-search'
+import { OutcrawlSearch } from './outcrawl'
 import { QueritSearch } from './querit'
 import { normalizeSearxngBaseUrl, SearxngSearch } from './searxng'
 import { TavilySearch } from './tavily'
@@ -63,6 +64,12 @@ function getSearchProviders() {
           settings.webSearch.queritTimeRange
         )
       )
+      break
+    case 'outcrawl':
+      if (!settings.webSearch.outcrawlApiKey) {
+        throw ChatboxAIAPIError.fromCodeName('outcrawl_api_key_required', 'outcrawl_api_key_required')
+      }
+      selectedProviders.push(new OutcrawlSearch(settings.webSearch.outcrawlApiKey))
       break
     case 'searxng': {
       const searxngBaseUrl = normalizeSearxngBaseUrl(settings.webSearch.searxngBaseUrl ?? '')
@@ -153,7 +160,7 @@ export const webSearchExecutor = async (
  * Single source of truth: which configured providers offer the parse_link tool.
  * Keep in sync with the provider classes' `supportsParseLink` flags.
  */
-export const PROVIDERS_WITH_PARSE_LINK: ReadonlySet<string> = new Set(['build-in', 'tavily'])
+export const PROVIDERS_WITH_PARSE_LINK: ReadonlySet<string> = new Set(['build-in', 'tavily', 'outcrawl'])
 
 /**
  * Returns the first configured search provider that supports parseLink.

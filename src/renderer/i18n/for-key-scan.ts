@@ -84,6 +84,9 @@ function _errorI18nKeys(t: (key: string) => string) {
     'You have selected Tavily as the search provider, but an API key has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your API key, or choose a different search provider.'
   )
   t(
+    'You have selected Outcrawl as the search provider, but an API key has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your API key, or choose a different search provider.'
+  )
+  t(
     'Tool use is not enabled for Model {{model}}. Please enable it in <OpenSettingButton>provider settings</OpenSettingButton> or switch to a model that supports tool use.'
   )
   t(
@@ -311,6 +314,8 @@ function _otherI18nKeys(t: (key: string) => string) {
   t('Add a BoCha API key in Web Search settings.')
   t('Querit API key is missing')
   t('Add a Querit API key in Web Search settings.')
+  t('Outcrawl API key is missing')
+  t('Add an Outcrawl API key in Web Search settings.')
   t('SearXNG URL is missing')
   t('Add a SearXNG instance URL in Web Search settings.')
   t('Activate Chatbox AI, or pick an image model from another provider.')

@@ -83,6 +83,7 @@ export function createDefaultSettings(): Settings {
         queritApiKey: '',
         queritMaxResults: 5,
         queritTimeRange: 'none',
+        outcrawlApiKey: '',
         searxngBaseUrl: '',
       },
       knowledgeBase: {

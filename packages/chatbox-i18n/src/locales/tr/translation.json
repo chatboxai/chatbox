@@ -626,6 +626,8 @@
   "It will also invalidate the model's cached context, so the next reply may cost more and take longer.": "Ayrıca modelin önbelleğe alınmış bağlamını geçersiz kılar; bu nedenle sonraki yanıt daha pahalıya gelebilir ve daha uzun sürebilir.",
   "iWork files (Pages, Keynote) are not supported. Please export to PDF or Office format.": "iWork dosyaları (Pages, Keynote) desteklenmiyor. Lütfen PDF veya Office biçimine aktarın.",
   "Jump to message {{index}}": "{{index}}. mesaja git",
+  "Keenable API Key": "Keenable API Anahtarı",
+  "Keenable works without an API key. Adding one only raises the rate limit.": "Keenable API anahtarı olmadan çalışır. Anahtar eklemek yalnızca istek sınırını yükseltir.",
   "Keep only the Top <input /> Conversations in List and Archive the Rest": "Listede yalnızca en üstteki <input /> konuşmayı tut ve gerisini arşivle",
   "Keyboard Shortcuts": "Klavye Kısayolları",
   "Knowledge Base": "Bilgi Tabanı",

@@ -30,7 +30,10 @@ export function getWebSearchConfigurationIssue(
       return configuration.queritApiKey ? null : 'querit-api-key'
     case 'searxng':
       return configuration.searxngBaseUrl?.trim() ? null : 'searxng-instance'
+    // Bing needs no credentials, and Keenable's key is optional: it only lifts
+    // the rate limit, so a missing one is never a configuration issue.
     case 'bing':
+    case 'keenable':
       return null
   }
 }

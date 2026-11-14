@@ -6,6 +6,9 @@ describe('getWebSearchConfigurationIssue', () => {
     expect(getWebSearchConfigurationIssue({ provider: 'build-in' })).toBe('chatbox-ai-sign-in')
     expect(getWebSearchConfigurationIssue({ provider: 'build-in' }, 'license-key')).toBeNull()
     expect(getWebSearchConfigurationIssue({ provider: 'bing' })).toBeNull()
+    // Keenable's key is optional (it only lifts the rate limit), so an unset
+    // one is never a configuration issue.
+    expect(getWebSearchConfigurationIssue({ provider: 'keenable' })).toBeNull()
   })
 
   it('reports missing third-party provider configuration', () => {

@@ -13,6 +13,7 @@ import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { PROVIDERS_WITH_PARSE_LINK } from '@/packages/web-search'
 import { BochaSearch } from '@/packages/web-search/bocha'
 import { WEB_SEARCH_PROVIDERS, type WebSearchProviderValue } from '@/packages/web-search/constants'
+import { KeenableSearch } from '@/packages/web-search/keenable'
 import { QUERIT_SEARCH_URL } from '@/packages/web-search/querit'
 import { SearxngSearch } from '@/packages/web-search/searxng'
 import platform from '@/platform'
@@ -120,6 +121,23 @@ export function RouteComponent() {
               await new SearxngSearch(url).search('Chatbox')
             }}
             failureMessage={t('Connection failed!')}
+          />
+        )}
+        {provider === 'keenable' && (
+          <CheckedFieldRow
+            key="keenable"
+            id="keenable-api-key"
+            label={t('Keenable API Key')}
+            description={t('Keenable works without an API key. Adding one only raises the rate limit.')}
+            secret
+            value={webSearch.keenableApiKey}
+            onChange={(keenableApiKey) => updateWebSearch({ keenableApiKey })}
+            check={async (apiKey) => {
+              const { items } = await new KeenableSearch(apiKey).search('Chatbox')
+              if (items.length === 0) throw new Error('Keenable returned no results')
+            }}
+            failureMessage={t('API key invalid!')}
+            getKeyUrl="https://keenable.ai?utm_source=chatbox"
           />
         )}
         {provider === 'tavily' && (

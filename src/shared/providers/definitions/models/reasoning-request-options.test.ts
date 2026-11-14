@@ -1,7 +1,12 @@
 import type { LanguageModelV4CallOptions } from '@ai-sdk/provider'
 import type { CallChatCompletionOptions } from '@shared/models/types'
-import type { ProviderModelInfo } from '@shared/types'
+import { ModelProviderEnum, type ProviderModelInfo } from '@shared/types'
 import type { ModelDependencies } from '@shared/types/adapters'
+import {
+  getReasoningControlLevel,
+  getReasoningControlOptions,
+  getReasoningProviderOptions,
+} from '@shared/utils/reasoning-control'
 import type { SentryScope } from '@shared/utils/sentry_adapter'
 import { describe, expect, it, vi } from 'vitest'
 import Claude from './claude'
@@ -204,55 +209,76 @@ describe('reasoning request options', () => {
     })
   })
 
-  it('omits deprecated sampling parameters from Claude Opus 5 requests', async () => {
-    let requestBody: Record<string, unknown> | undefined
-    const baseFetch: typeof globalThis.fetch = (_input, init) => {
-      requestBody = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined
-      return Promise.resolve(
-        new Response(
-          JSON.stringify({
-            type: 'message',
-            id: 'msg_test',
-            model: 'claude-opus-5',
-            content: [{ type: 'text', text: 'ok' }],
-            stop_reason: 'end_turn',
-            stop_sequence: null,
-            usage: { input_tokens: 1, output_tokens: 1 },
-          }),
-          { headers: { 'content-type': 'application/json' } }
+  it.each([
+    ['claude-fable-5-2', ['low', 'medium', 'high', 'xhigh', 'max']],
+    ['claude-opus-5-5', ['low', 'medium', 'high', 'xhigh', 'max']],
+    ['claude-sonnet-5-5', ['low', 'medium', 'high', 'xhigh', 'max']],
+    ['claude-opus-5', ['low', 'medium', 'high']],
+  ] as const)(
+    'sends the selected adaptive effort and omits deprecated sampling parameters for %s',
+    async (modelId, levels) => {
+      let requestBody: Record<string, unknown> | undefined
+      const baseFetch: typeof globalThis.fetch = (_input, init) => {
+        requestBody = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              type: 'message',
+              id: 'msg_test',
+              model: modelId,
+              content: [{ type: 'text', text: 'ok' }],
+              stop_reason: 'end_turn',
+              stop_sequence: null,
+              usage: { input_tokens: 1, output_tokens: 1 },
+            }),
+            { headers: { 'content-type': 'application/json' } }
+          )
         )
+      }
+      const model = reasoningModel(modelId)
+      const provider = ModelProviderEnum.Claude
+      const claude = new TestClaude(
+        {
+          claudeApiKey: 'test-key',
+          claudeApiHost: 'https://api.anthropic.com/v1',
+          model,
+          temperature: 0.7,
+          topP: 0.9,
+          maxOutputTokens: 128,
+          customFetch: baseFetch,
+        },
+        createDependencies()
       )
+
+      expect(getReasoningControlOptions(provider, model).map(({ level }) => level)).toEqual(['default', ...levels])
+      for (const level of levels) {
+        const providerOptions = getReasoningProviderOptions(provider, model, level)
+        expect(getReasoningControlLevel(provider, model, providerOptions)).toBe(level)
+        const callSettings = claude.exposeCallSettings({ providerOptions })
+        const request = {
+          prompt: [{ role: 'user' as const, content: [{ type: 'text' as const, text: 'Hello' }] }],
+          temperature: callSettings.temperature,
+          topP: 0.9,
+          topK: 5,
+          maxOutputTokens: callSettings.maxOutputTokens,
+          providerOptions: callSettings.providerOptions,
+        } satisfies LanguageModelV4CallOptions
+
+        expect(callSettings.temperature).toBe(0.7)
+        await claude.exposeChatModel().doGenerate(request)
+
+        expect(requestBody).toMatchObject({
+          model: modelId,
+          max_tokens: 128,
+          output_config: { effort: level },
+          thinking: { type: 'adaptive', display: 'summarized' },
+        })
+        expect(requestBody).not.toHaveProperty('temperature')
+        expect(requestBody).not.toHaveProperty('top_p')
+        expect(requestBody).not.toHaveProperty('top_k')
+      }
     }
-    const claude = new TestClaude(
-      {
-        claudeApiKey: 'test-key',
-        claudeApiHost: 'https://api.anthropic.com/v1',
-        model: reasoningModel('claude-opus-5'),
-        temperature: 0.7,
-        topP: 0.9,
-        maxOutputTokens: 128,
-        customFetch: baseFetch,
-      },
-      createDependencies()
-    )
-    const callSettings = claude.exposeCallSettings({})
-    const request = {
-      prompt: [{ role: 'user' as const, content: [{ type: 'text' as const, text: 'Hello' }] }],
-      temperature: callSettings.temperature,
-      topP: 0.9,
-      topK: 5,
-      maxOutputTokens: callSettings.maxOutputTokens,
-      providerOptions: callSettings.providerOptions,
-    } satisfies LanguageModelV4CallOptions
-
-    expect(callSettings.temperature).toBe(0.7)
-    await claude.exposeChatModel().doGenerate(request)
-
-    expect(requestBody).toMatchObject({ model: 'claude-opus-5', max_tokens: 128 })
-    expect(requestBody).not.toHaveProperty('temperature')
-    expect(requestBody).not.toHaveProperty('top_p')
-    expect(requestBody).not.toHaveProperty('top_k')
-  })
+  )
 
   it.each(['deepseek-v4-pro', 'deepseek-flash'])(
     'passes %s thinking toggle and official effort levels to provider options',

@@ -68,6 +68,29 @@ describe('ReasoningControlButton', () => {
     expect(screen.queryByTestId(TestId.reasoning.level('off'))).toBeNull()
   })
 
+  test.each([
+    ['xhigh', 'Extra High'],
+    ['max', 'Maximum'],
+  ] as const)('shows and selects %s effort for Claude Fable 5.2', async (level, label) => {
+    const onChange = vi.fn()
+    render(
+      <MantineProvider>
+        <ReasoningControlButton
+          provider={ModelProviderEnum.Claude}
+          model={{ modelId: 'claude-fable-5-2' }}
+          iconSize={22}
+          onChange={onChange}
+        />
+      </MantineProvider>
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Thinking: Default' }))
+    const item = await screen.findByTestId(TestId.reasoning.level(level))
+    expect(item.textContent).toContain(label)
+    fireEvent.click(item)
+    expect(onChange).toHaveBeenCalledWith(level)
+  })
+
   test('shows a state icon instead of the level text', () => {
     const view = renderButton()
 

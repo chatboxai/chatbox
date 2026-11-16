@@ -2088,5 +2088,8 @@
   "Allow compute points billing in the image creator on this device before using this command.": "Allow compute points billing in the image creator on this device before using this command.",
   "Could not save your preference. Permission applies only to this generation.": "Could not save your preference. Permission applies only to this generation.",
   "The active license changed. Please try again.": "The active license changed. Please try again.",
-  "This request will use compute points: {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.": "Esta solicitud usará puntos de cómputo: {{images}} × {{points}} puntos/imagen = {{total}} puntos. Al aprobar, confirmas este cargo."
+  "This request will use compute points: {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.": "Esta solicitud usará puntos de cómputo: {{images}} × {{points}} puntos/imagen = {{total}} puntos. Al aprobar, confirmas este cargo.",
+  "This request may use remaining image quota first, with any additional images charged in compute points.": "This request may use remaining image quota first, with any additional images charged in compute points.",
+  "This request will consume {{count}} image quota.": "This request will consume {{count}} image quota.",
+  "This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.": "This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge."
 }

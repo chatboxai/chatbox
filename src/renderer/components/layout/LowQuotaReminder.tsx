@@ -24,9 +24,9 @@ export function SidebarLowQuotaReminder() {
     queryFn: async () => (await getLicenseDetailRealtime({ licenseKey: licenseKey ?? '' })).data,
     enabled: !!licenseKey,
     staleTime: 30_000,
-    // Poll fast once points get close to the threshold so the bar moves while a reply is generating.
+    // Poll fast only below 5% so the bar moves while a reply is generating.
     refetchInterval: (query) =>
-      query.state.data && getComputePointsRemainingRatio(query.state.data) <= LOW_QUOTA_RATIO * 2 ? 30_000 : 5 * 60_000,
+      query.state.data && getComputePointsRemainingRatio(query.state.data) < 0.05 ? 30_000 : 8 * 60_000,
     refetchOnWindowFocus: 'always',
   })
 

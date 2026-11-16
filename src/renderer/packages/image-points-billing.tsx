@@ -25,7 +25,7 @@ function workImageApprovalKey(params: GenerateImageParams, licenseKey: string): 
     prompt: params.prompt,
     referenceImages: params.referenceImages,
     count: params.imageGenerateNum || 1,
-    aspectRatio: params.aspectRatio,
+    aspectRatio: params.aspectRatio === 'auto' ? undefined : params.aspectRatio,
     style: params.dalleStyle,
   })
 }

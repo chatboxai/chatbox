@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { webcrypto } from 'node:crypto'
-import type { GenerateImageParams } from '@chatbox/core/application/image-generation'
+import { type GenerateImageParams, ImageGenerationService } from '@chatbox/core/application/image-generation'
 import { ChatboxAIAPIError } from '@shared/models/errors'
-import type { ChatboxAILicenseDetail } from '@shared/types'
+import type { ChatboxAILicenseDetail, ImageGeneration } from '@shared/types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -164,6 +164,59 @@ describe('image points authorization', () => {
     expect(localStorage.length).toBe(0)
     await run()
     expect(mocks.show).toHaveBeenCalledOnce()
+  })
+  it.each([
+    { aspectRatio: 'auto', alwaysAllow: false },
+    { aspectRatio: 'auto', alwaysAllow: true },
+    { aspectRatio: undefined, alwaysAllow: false },
+    { aspectRatio: '16:9', alwaysAllow: false },
+  ])('preserves work approval through service normalization: %j', async ({ aspectRatio, alwaysAllow }) => {
+    let record: ImageGeneration | null = null
+    const completed = {
+      task_id: 'task',
+      is_finished: true,
+      items: [{ uuid: 'image', status: 'completed' as const, image_url: 'https://images.test/cat.png' }],
+    }
+    const submit = vi.fn().mockResolvedValue(completed)
+    const service = new ImageGenerationService({
+      storage: {
+        initialize: async () => {},
+        create: async (value) => {
+          record = value
+        },
+        update: async (_id, updates) => {
+          record = record ? { ...record, ...updates } : null
+          return record
+        },
+        getById: async () => record,
+        delete: async () => {
+          record = null
+        },
+        getPage: async () => ({ items: [], total: 0, nextCursor: null }),
+        getTotal: async () => (record ? 1 : 0),
+      },
+      blobStorage: { get: async () => null, set: async () => {}, remove: async () => {}, keys: async () => [] },
+      asyncClient: { submit, poll: vi.fn().mockResolvedValue(completed) },
+      createModel: vi.fn(),
+      resolveReferenceImage: async () => null,
+      authorizeRequest: authorizeImagePoints,
+    })
+    const request = { ...workParams, aspectRatio }
+    await withImagePointsApproval(request, 'license-a', alwaysAllow, async () => {
+      const handle = await service.start(request)
+      await expect(handle.completion).resolves.toMatchObject({ status: 'done' })
+    })
+    expect(submit).toHaveBeenCalledOnce()
+    expect(submit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        aspect_ratio: aspectRatio === 'auto' ? undefined : aspectRatio,
+      })
+    )
+    expect(mocks.show).not.toHaveBeenCalled()
+    expect(localStorage.getItem(await imagePointsConsentKey('license-a'))).toBe(alwaysAllow ? 'true' : null)
+    if (alwaysAllow) await run()
+    else await expect(runWork(request)).rejects.toThrow('image creator')
+    expect(mocks.show).not.toHaveBeenCalled()
   })
   it('shares always-allow consent in both directions between work mode and image creator', async () => {
     await withImagePointsApproval(workParams, 'license-a', true, async () => {

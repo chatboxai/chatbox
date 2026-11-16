@@ -17,6 +17,7 @@ vi.mock('@/packages/image-points-billing', async (importOriginal) => {
   return {
     withImagePointsApproval: vi.fn((_params, _license, _always, resume: () => Promise<void>) => resume()),
     refreshImageLicense: vi.fn(),
+    hasImagePointsConsent: vi.fn().mockResolvedValue(false),
     remainingImageQuota: actual.remainingImageQuota,
     imagePointsChargeNeeded: actual.imagePointsChargeNeeded,
     getImagePointsCharge: actual.getImagePointsCharge,
@@ -75,7 +76,7 @@ vi.mock('@/stores/toastActions', () => ({ add: vi.fn() }))
 
 import { APPROVAL_RESPONSE_TIMEOUT_MS } from '@chatbox/core/message-approval'
 import { currentGenerationService } from '@/adapters/CurrentGenerationService'
-import { refreshImageLicense, withImagePointsApproval } from '@/packages/image-points-billing'
+import { hasImagePointsConsent, refreshImageLicense, withImagePointsApproval } from '@/packages/image-points-billing'
 import { getChatboxAIModelList } from '@/packages/remote'
 import { pulsePendingActionBar } from '@/stores/approvalAttentionStore'
 import RowPendingActionBar, { PENDING_ACTION_ARMING_MS } from './PendingActionBar'
@@ -245,6 +246,7 @@ describe('PendingActionBar', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     settings.licenseKey = 'license-a'
+    vi.mocked(hasImagePointsConsent).mockResolvedValue(false)
     vi.mocked(refreshImageLicense).mockResolvedValue(realtimeQuota)
     vi.mocked(getChatboxAIModelList).mockResolvedValue({
       imageModels: [{ modelId: 'image', points_per_image: 27000 }],
@@ -307,6 +309,40 @@ describe('PendingActionBar', () => {
       expect(currentGenerationService.continuePausedToolCall).toHaveBeenCalledWith('session-1', 'msg-1', 'tc-image')
     }
   )
+
+  it.each([199, 200])(
+    'shows saved points permission with %s images used while still requiring approval',
+    async (used) => {
+      vi.mocked(hasImagePointsConsent).mockResolvedValue(true)
+      vi.mocked(refreshImageLicense).mockResolvedValue({
+        ...chargedQuota,
+        image_used_count: used,
+        expansion_pack_limit: 100000,
+      })
+      renderBar(makeSession([chargedImageApproval]))
+      await screen.findByText(/Already allowed to use compute points/)
+      expect(screen.queryByRole('checkbox', { name: alwaysAllowLabel })).toBeNull()
+      expect(screen.queryByText(/Approving confirms this charge/)).toBeNull()
+      expect(screen.getByText(used === 199 ? /54,000 points/ : /81,000 points/)).toBeTruthy()
+      expect(hasImagePointsConsent).toHaveBeenCalledWith('license-a')
+      expect(currentGenerationService.continuePausedToolCall).not.toHaveBeenCalled()
+      armBar()
+      fireEvent.click(screen.getByRole('button', { name: 'Approve and generate' }))
+      expect(currentGenerationService.continuePausedToolCall).toHaveBeenCalledOnce()
+    }
+  )
+
+  it('loads the saved permission for each license', async () => {
+    vi.mocked(hasImagePointsConsent).mockImplementation(async (license) => license === 'license-a')
+    vi.mocked(refreshImageLicense).mockResolvedValue(chargedQuota)
+    const { rerender } = renderBar(makeSession([chargedImageApproval]))
+    await screen.findByText(/Already allowed to use compute points/)
+    settings.licenseKey = 'license-b'
+    rerender(<PendingActionBar session={makeSession([chargedImageApproval])} />)
+    await screen.findByRole('checkbox', { name: alwaysAllowLabel })
+    expect(screen.queryByText(/Already allowed to use compute points/)).toBeNull()
+    expect(hasImagePointsConsent).toHaveBeenCalledWith('license-b')
+  })
 
   it('charges every image in points when no image quota remains', async () => {
     vi.mocked(refreshImageLicense).mockResolvedValue({ ...realtimeQuota, image_used_count: 200 })

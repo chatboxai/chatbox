@@ -36,6 +36,7 @@ import {
   getImagePointsCharge,
   type ImagePointsCharge,
   imagePointsChargeNeeded,
+  hasImagePointsConsent,
   refreshImageLicense,
   remainingImageQuota,
   withImagePointsApproval,
@@ -150,6 +151,7 @@ const ExplanationText: FC<{ children: string } & ExplanationToggle> = ({ childre
 type ImageApprovalQuota = Pick<ImageGenerationApprovalDetails, 'imageQuota' | 'computePointsRemainingRatio'> & {
   /** Present only when this request spends compute points. */
   pointsCharge?: ImagePointsCharge
+  pointsAllowed?: boolean
 }
 
 const ImageGenerationApprovalBody: FC<{ details: ImageGenerationApprovalDetails; quota?: ImageApprovalQuota }> = ({
@@ -186,7 +188,9 @@ const ImageGenerationApprovalBody: FC<{ details: ImageGenerationApprovalDetails;
           <Text size="xs" fw={600} c="chatbox-primary">
             {quotaUsedFirst > 0
               ? t(
-                  'This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.',
+                  quota?.pointsAllowed
+                    ? 'This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. Already allowed to use compute points.'
+                    : 'This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.',
                   {
                     quota: quotaUsedFirst.toLocaleString(),
                     images: pointsCharge.chargedImages.toLocaleString(),
@@ -195,7 +199,9 @@ const ImageGenerationApprovalBody: FC<{ details: ImageGenerationApprovalDetails;
                   }
                 )
               : t(
-                  'This request will use compute points: {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.',
+                  quota?.pointsAllowed
+                    ? 'This request will use compute points: {{images}} × {{points}} points/image = {{total}} points. Already allowed to use compute points.'
+                    : 'This request will use compute points: {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.',
                   {
                     images: pointsCharge.chargedImages.toLocaleString(),
                     points: pointsCharge.pointsPerImage.toLocaleString(),
@@ -537,6 +543,7 @@ const PendingActionBarContent: FC<PendingActionContentProps> = ({ sessionId, mes
         const models = await getChatboxAIModelList({ licenseKey, language }, signal)
         const price = models.imageModels.find((model) => model.modelId === imageDetails.modelId)?.points_per_image
         quota.pointsCharge = getImagePointsCharge(detail, quantity, price)
+        quota.pointsAllowed = await hasImagePointsConsent(licenseKey)
       }
       return quota
     },
@@ -550,7 +557,8 @@ const PendingActionBarContent: FC<PendingActionContentProps> = ({ sessionId, mes
   const pointsChoiceKey = JSON.stringify([currentKey, licenseKey])
   const [pointsChoice, setPointsChoice] = useState({ key: pointsChoiceKey, alwaysAllow: false })
   if (pointsChoice.key !== pointsChoiceKey) setPointsChoice({ key: pointsChoiceKey, alwaysAllow: false })
-  const offersAlwaysAllowPoints = !imageQuotaUnavailable && imageQuota.data?.pointsCharge?.sufficient === true
+  const offersAlwaysAllowPoints =
+    !imageQuotaUnavailable && imageQuota.data?.pointsCharge?.sufficient === true && !imageQuota.data.pointsAllowed
   const alwaysAllowPoints = offersAlwaysAllowPoints && pointsChoice.key === pointsChoiceKey && pointsChoice.alwaysAllow
 
   // Input protection: (re)arm whenever the displayed decision changes, including

@@ -2091,5 +2091,7 @@
   "This request will use compute points: {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.": "이 요청은 컴퓨팅 포인트를 사용합니다: {{images}} × {{points}} 포인트/이미지 = {{total}} 포인트. 승인하면 이 차감에 동의하는 것입니다.",
   "This request may use remaining image quota first, with any additional images charged in compute points.": "This request may use remaining image quota first, with any additional images charged in compute points.",
   "This request will consume {{count}} image quota.": "This request will consume {{count}} image quota.",
-  "This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.": "This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge."
+  "This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.": "This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.",
+  "This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. Already allowed to use compute points.": "This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. 컴퓨팅 포인트 사용이 이미 허용되었습니다.",
+  "This request will use compute points: {{images}} × {{points}} points/image = {{total}} points. Already allowed to use compute points.": "이 요청은 컴퓨팅 포인트를 사용합니다: {{images}} × {{points}} 포인트/이미지 = {{total}} 포인트. 컴퓨팅 포인트 사용이 이미 허용되었습니다."
 }

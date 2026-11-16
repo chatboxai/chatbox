@@ -2091,5 +2091,7 @@
   "This request will use compute points: {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.": "本次请求将消耗计算点数：{{images}} 张 × {{points}} 点/张 = {{total}} 点。批准即表示同意本次扣除。",
   "This request may use remaining image quota first, with any additional images charged in compute points.": "本次可能先消耗剩余图片额度，超出部分将按张消耗计算点数。",
   "This request will consume {{count}} image quota.": "本次将消耗 {{count}} 张图片额度。",
-  "This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.": "本次将先消耗 {{quota}} 张图片额度，其余 {{images}} 张按 {{points}} 点/张计为 {{total}} 点。批准即表示同意本次扣除。"
+  "This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.": "本次将先消耗 {{quota}} 张图片额度，其余 {{images}} 张按 {{points}} 点/张计为 {{total}} 点。批准即表示同意本次扣除。",
+  "This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. Already allowed to use compute points.": "本次将先消耗 {{quota}} 张图片额度，其余 {{images}} 张按 {{points}} 点/张计为 {{total}} 点。已允许使用计算点数。",
+  "This request will use compute points: {{images}} × {{points}} points/image = {{total}} points. Already allowed to use compute points.": "本次请求将消耗计算点数：{{images}} 张 × {{points}} 点/张 = {{total}} 点。已允许使用计算点数。"
 }

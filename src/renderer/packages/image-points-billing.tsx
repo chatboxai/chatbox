@@ -123,6 +123,18 @@ export async function imagePointsConsentKey(licenseKey: string): Promise<string>
   return `image-points-consent:${Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, '0')).join('')}`
 }
 
+function readImagePointsConsent(consentKey: string): boolean {
+  try {
+    return localStorage.getItem(consentKey) === 'true'
+  } catch {
+    return false
+  }
+}
+
+export async function hasImagePointsConsent(licenseKey: string): Promise<boolean> {
+  return readImagePointsConsent(await imagePointsConsentKey(licenseKey))
+}
+
 export async function refreshImageLicense(licenseKey: string, signal?: AbortSignal): Promise<ChatboxAILicenseDetail> {
   const { data, error } = await getLicenseDetailRealtime({ licenseKey }, signal)
   if (!data) {
@@ -150,11 +162,7 @@ export async function authorizeImagePoints(
   if (workApprovalKey) workImageApprovals.delete(workApprovalKey)
   const consentKey = await imagePointsConsentKey(licenseKey)
   assertCurrent()
-  try {
-    if (localStorage.getItem(consentKey) === 'true') return
-  } catch {
-    // Unavailable local storage must never imply consent.
-  }
+  if (readImagePointsConsent(consentKey)) return
   const detail = await refreshImageLicense(licenseKey, signal)
   assertCurrent()
   const quantity = params.imageGenerateNum || 1

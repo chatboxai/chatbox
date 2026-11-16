@@ -35,6 +35,7 @@ import {
   authorizeImagePoints,
   availableImagePoints,
   getImagePointsCharge,
+  hasImagePointsConsent,
   imagePointsChargeNeeded,
   imagePointsConsentKey,
   withImagePointsApproval,
@@ -75,6 +76,20 @@ beforeEach(() => {
 })
 
 describe('image points authorization', () => {
+  it('reads saved permission for the matching license and fails closed if storage is unavailable', async () => {
+    localStorage.setItem(await imagePointsConsentKey('license-a'), 'true')
+    expect(await hasImagePointsConsent('license-a')).toBe(true)
+    expect(await hasImagePointsConsent('license-b')).toBe(false)
+    const read = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('Storage unavailable')
+    })
+    try {
+      expect(await hasImagePointsConsent('license-a')).toBe(false)
+    } finally {
+      read.mockRestore()
+    }
+  })
+
   it('bypasses BYOK and uses remaining images or Free without a confirmation', async () => {
     await run({ model: { provider: 'openai', modelId: 'image' } })
     expect(mocks.detail).not.toHaveBeenCalled()

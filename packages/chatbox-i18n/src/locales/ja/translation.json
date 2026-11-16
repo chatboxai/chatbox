@@ -2091,5 +2091,7 @@
   "This request will use compute points: {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.": "このリクエストでは計算ポイントを使用します：{{images}} × {{points}} ポイント/枚 = {{total}} ポイント。承認するとこの消費に同意したことになります。",
   "This request may use remaining image quota first, with any additional images charged in compute points.": "This request may use remaining image quota first, with any additional images charged in compute points.",
   "This request will consume {{count}} image quota.": "This request will consume {{count}} image quota.",
-  "This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.": "This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge."
+  "This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.": "This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.",
+  "This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. Already allowed to use compute points.": "This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.。計算ポイントの使用は許可済みです。",
+  "This request will use compute points: {{images}} × {{points}} points/image = {{total}} points. Already allowed to use compute points.": "このリクエストでは計算ポイントを使用します：{{images}} × {{points}} ポイント/枚 = {{total}} ポイント。計算ポイントの使用は許可済みです。"
 }

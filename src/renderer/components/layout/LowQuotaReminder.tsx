@@ -10,7 +10,7 @@ import platform from '@/platform'
 import { useLanguage, useSettingsStore } from '@/stores/settingsStore'
 import { uiStore, useUIStore } from '@/stores/uiStore'
 
-const LOW_QUOTA_RATIO = 0.1
+const LOW_QUOTA_RATIO = 0.05
 
 /** Sidebar card for low license points when no expansion-pack points remain. */
 export function SidebarLowQuotaReminder() {
@@ -24,9 +24,9 @@ export function SidebarLowQuotaReminder() {
     queryFn: async () => (await getLicenseDetailRealtime({ licenseKey: licenseKey ?? '' })).data,
     enabled: !!licenseKey,
     staleTime: 30_000,
-    // Poll fast only below 5% so the bar moves while a reply is generating.
+    // Use the reminder threshold for frequent quota refreshes.
     refetchInterval: (query) =>
-      query.state.data && getComputePointsRemainingRatio(query.state.data) < 0.05 ? 30_000 : 8 * 60_000,
+      query.state.data && getComputePointsRemainingRatio(query.state.data) <= LOW_QUOTA_RATIO ? 30_000 : 8 * 60_000,
     refetchOnWindowFocus: 'always',
   })
 

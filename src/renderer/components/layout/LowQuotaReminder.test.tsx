@@ -73,7 +73,7 @@ describe('SidebarLowQuotaReminder', () => {
   describe('quota polling', () => {
     beforeEach(() => vi.useFakeTimers())
 
-    it.each([50, 20, 10, 5.01, 5])('polls every eight minutes with %s percent points remaining', async (remaining) => {
+    it.each([50, 20, 10, 5.01])('polls every eight minutes with %s percent points remaining', async (remaining) => {
       mocks.getLicenseDetailRealtime.mockResolvedValue({
         data: { ...lowQuota, unified_token_usage: lowQuota.unified_token_limit * (1 - remaining / 100) },
       })
@@ -87,7 +87,7 @@ describe('SidebarLowQuotaReminder', () => {
       expect(mocks.getLicenseDetailRealtime).toHaveBeenCalledTimes(2)
     })
 
-    it.each([4.99, 0])('polls every thirty seconds with %s percent points remaining', async (remaining) => {
+    it.each([5, 4.99, 0])('polls every thirty seconds with %s percent points remaining', async (remaining) => {
       mocks.getLicenseDetailRealtime.mockResolvedValue({
         data: { ...lowQuota, unified_token_usage: lowQuota.unified_token_limit * (1 - remaining / 100) },
       })
@@ -165,13 +165,20 @@ describe('SidebarLowQuotaReminder', () => {
     expect(screen.queryByText('Points running low')).toBeNull()
   })
 
-  it('hides the reminder above the threshold and retains the 10% boundary', async () => {
-    mocks.getLicenseDetailRealtime.mockResolvedValue({ data: { ...lowQuota, unified_token_usage: 26_000_000 } })
+  it.each([10, 5.01])('hides the reminder with %s percent points remaining', async (remaining) => {
+    mocks.getLicenseDetailRealtime.mockResolvedValue({
+      data: { ...lowQuota, unified_token_usage: lowQuota.unified_token_limit * (1 - remaining / 100) },
+    })
     mount()
     await waitFor(() => expect(client.getQueryState(['sidebar-low-quota', 'active-key'])?.status).toBe('success'))
     expect(screen.queryByText('Points running low')).toBeNull()
-    mocks.getLicenseDetailRealtime.mockResolvedValue({ data: { ...lowQuota, unified_token_usage: 27_000_000 } })
-    act(() => client.getQueryCache().onFocus())
+  })
+
+  it.each([5, 4.99])('shows the reminder with %s percent points remaining', async (remaining) => {
+    mocks.getLicenseDetailRealtime.mockResolvedValue({
+      data: { ...lowQuota, unified_token_usage: lowQuota.unified_token_limit * (1 - remaining / 100) },
+    })
+    mount()
     expect(await screen.findByText('Points running low')).toBeTruthy()
   })
 

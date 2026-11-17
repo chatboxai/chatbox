@@ -67,6 +67,7 @@ import { lockSessionAgentMode, setSessionAgentMode } from '@/stores/session/agen
 import { useSettingsStore } from '@/stores/settingsStore'
 import { uiStore, useUIStore } from '@/stores/uiStore'
 import { prepareTranscriptBranchCreation } from '@/utils/prepare-transcript-branch-creation'
+import { DeepSeekInfo } from './DeepSeekInfo'
 import '../../static/Block.css'
 import { GLASS_FILL_CLASS, GLASS_SURFACE_CLASS } from '@/lib/glass-surface'
 import { generate, regenerateInNewFork, retryFromLastToolCallAfterApiError } from '@/stores/session/generation'
@@ -942,6 +943,10 @@ const _Message: FC<Props> = (props) => {
                         />
                       )}
                     </div>
+                  ) : item.type === 'info' &&
+                    typeof item.values?.kind === 'string' &&
+                    item.values.kind.startsWith('deepseek-') ? (
+                    <DeepSeekInfo key={`info-${index}`} part={item} />
                   ) : item.type === 'info' ? (
                     <Flex key={`info-${item.text}`} className="mb-2 ">
                       <Flex

@@ -55,6 +55,7 @@
     "./backup-v3": "./src/backup-v3/index.ts",
     "./backup-host": "./src/backup-host/index.ts",
     "./backup-import": "./src/backup-import/index.ts",
+    "./importers/deepseek": "./src/importers/deepseek/index.ts",
     "./backup-export": "./src/backup-export/index.ts"
   },
   "scripts": {

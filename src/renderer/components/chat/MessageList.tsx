@@ -692,7 +692,7 @@ const MessageList = forwardRef<
     const row = rowsById.get(message.id)!
     const thread = threadById.get(row.threadId)
     const showThread = showThreadLabels && row.messageId === thread?.rootMessageId
-    const hidden = hideSystemPrompt && message.role === 'system'
+    const hidden = message.role === 'system' && (hideSystemPrompt || (message.contentParts.length === 0 && !!row.fork))
     const spacing = first ? 'pt-4' : last ? '!pb-4' : ''
     // Small screens let each message own the 20px gap above it; wide layouts add space around user turns here.
     return (

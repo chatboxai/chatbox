@@ -1,6 +1,6 @@
 # 数据备份与恢复边界
 
-> Last updated: 2026-10-23
+> Last updated: 2026-11-17
 
 Renderer 与 RN 的数据设置支持 V1 JSON、V2 ZIP 和 V3 ZIP 导入，默认导出 V3；V2/V1 位于默认收起的“导出给旧版本使用”区域。三种导出格式均支持选择全部或部分会话。V3/V2 可同时选择设置、Copilot 和凭据，附件随所选数据的引用导出；V1 仅导出核心对话数据。V3 会话按 `sessions/[sessionId].jsonl` 保存完整行，配置分别写入 `settings.json`、`copilots.json`、`session-settings.json`，受管附件和 `resources.jsonl` 索引独立存放。本客户端导入按原 ID 覆盖会话及资源，其他本地会话保留。
 
@@ -14,6 +14,7 @@ Renderer 与 RN 的数据设置支持 V1 JSON、V2 ZIP 和 V3 ZIP 导入，默�
 | 诊断日志 | 各平台 logger/exporter 负责；RN 数据设置中未接入的日志输出显示不可用 |
 | 本地数据升级 | 将正式发布版本的本地完整 Session 转换为规范行，失败时保留来源并允许重试 |
 | 会话复制、历史线程迁出 | 行传输接口读取固定 revision，隐藏暂存目标并原子发布；分支变换由复制业务校验当前线程结构 |
+| [DeepSeek 对话导入](./deepseek-import.md) | 从 V3 导出 ZIP 或下载链接追加新会话；保留分支，允许部分导入，取消不回滚已提交会话 |
 
 普通文件输出、Blob 存储、资源引用扫描及会话写入不依赖归档模块。消息以完整 `Message` 行保存，资源继续由各宿主的 Blob owner 管理，见 [App 存储地图](./storage-map.md)。
 

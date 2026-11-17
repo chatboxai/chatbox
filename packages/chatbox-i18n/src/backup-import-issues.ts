@@ -55,3 +55,16 @@ export function getBackupImportIssueMessage(
       return issue.message
   }
 }
+export function getDeepSeekImportIssueMessage(issue: { code: string }, t: (key: string) => string): string {
+  switch (issue.code) {
+    case 'missing-attachment':
+    case 'invalid-attachment':
+      return t('An attachment could not be imported.')
+    case 'skipped-session':
+      return t('This conversation could not be imported.')
+    case 'session-list':
+      return t('Conversation data was saved. Recover the conversation list if it is missing.')
+    default:
+      return t('Some content could not be imported.')
+  }
+}

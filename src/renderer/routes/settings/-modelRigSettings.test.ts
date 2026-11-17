@@ -249,7 +249,6 @@ describe('DeepSeek document parser', () => {
       pingChat: () => Promise.reject(new Error('should not ping')),
       testMineru: () => Promise.reject(new Error('should not test MinerU')),
       searchWeb: async () => undefined,
-      getSystemSpeechStatus: async () => UNSUPPORTED_SYSTEM_SPEECH,
     }
   }
 

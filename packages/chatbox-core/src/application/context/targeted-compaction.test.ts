@@ -2,11 +2,9 @@ import { selectContextMessages } from '@shared/context'
 import { describe, expect, test, vi } from 'vitest'
 import { InMemorySessionRepository } from '../../testing/InMemorySessionRepository'
 import type { CompactionPoint, Message, Session, SessionSettings, Settings } from '../../types'
-import { getCompactionBudget } from '../token-estimation/math'
 import { CompactionService, type CompactionSummaryPort } from './CompactionService'
 
 const SESSION_ID = 'session-1'
-const budget = getCompactionBudget(16_384)!
 
 function message(id: string, role: Message['role'], overrides: Partial<Message> = {}): Message {
   return { id, role, contentParts: [{ type: 'text', text: `text of ${id}` }], ...overrides }
@@ -62,7 +60,6 @@ function createHarness(
     settings: { getSettings: () => globalSettings },
     policy: {
       measure: () => Promise.resolve(null),
-      getBudget: () => budget,
       // The renderer's selection: the send window with the current-input slot reserved.
       getCompactionContext(source, settings) {
         const currentInput: Message = { id: 'compaction-current-input', role: 'user', contentParts: [] }

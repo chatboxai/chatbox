@@ -5,7 +5,7 @@ import TopxAI from './models/topxai'
 const TOPXAI_API_HOST = 'https://api.topxai.xyz/v1'
 
 // Model ids, context windows and output limits as the live catalogue lists
-// them: https://api.topxai.xyz/api/pricing (read 2026-11-09).
+// them: https://api.topxai.xyz/api/pricing (GPT-6.2 upgrade, 2026-11-18).
 export const topxAIProvider = defineProvider({
   id: ModelProviderEnum.TopxAI,
   name: 'TopxAI',
@@ -48,16 +48,16 @@ export const topxAIProvider = defineProvider({
         maxOutput: 128_000,
       },
       {
-        modelId: 'gpt-6.1-sol',
-        nickname: 'GPT-6.1 Sol',
+        modelId: 'gpt-6.2-sol',
+        nickname: 'GPT-6.2 Sol',
         capabilities: ['vision', 'reasoning', 'tool_use'],
         contextWindow: 1_050_000,
         maxOutput: 128_000,
       },
       {
-        modelId: 'gpt-6-astra',
-        nickname: 'GPT-6 Astra',
-        capabilities: ['reasoning', 'tool_use'],
+        modelId: 'gpt-6.2-astra',
+        nickname: 'GPT-6.2 Astra',
+        capabilities: ['vision', 'reasoning', 'tool_use'],
         contextWindow: 1_050_000,
         maxOutput: 128_000,
       },

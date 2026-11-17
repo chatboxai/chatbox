@@ -1311,6 +1311,7 @@ const AgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProps>(fun
         <Stack
           key={page}
           ref={subPanelRef}
+          data-native-view-overlay
           gap={0}
           py="xs"
           className={`absolute overflow-y-auto bg-[var(--mantine-color-body)] shadow-lg border-[var(--mantine-color-default-border)] ${GLASS_SURFACE_CLASS} ${

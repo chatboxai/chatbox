@@ -462,6 +462,20 @@ describe('AgentModePanel submenu hover behavior', () => {
     expect(screen.getAllByText('Skills')).toHaveLength(2)
   })
 
+  test('marks the desktop fly-out submenu as a native view overlay', () => {
+    renderPanel()
+
+    const panel = screen.getByRole('button', { name: 'Skills' }).closest('.relative')
+    expect(panel).not.toBeNull()
+    expect((panel as Element).querySelector('[data-native-view-overlay]')).toBeNull()
+
+    fireEvent.mouseEnter(screen.getByRole('button', { name: 'Skills' }))
+
+    const subPanel = (panel as Element).querySelector('.absolute')
+    expect(subPanel).not.toBeNull()
+    expect(subPanel?.hasAttribute('data-native-view-overlay')).toBe(true)
+  })
+
   test('closes the submenu after the pointer stays outside the whole panel', () => {
     renderPanel()
 

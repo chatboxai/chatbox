@@ -23,6 +23,8 @@ describe('extractReadableContent', () => {
 
     const result = extractReadableContent({ html, url: 'https://example.com/guide', visibleText })
 
+    expect(result.mode).toBe('article')
+    expect(result.title).toBe('Guide - Example')
     expect(result.content).toContain('Paragraph 0 explains')
     expect(result.content).toContain('Paragraph 7 explains')
     expect(result.content).not.toContain('Pricing')

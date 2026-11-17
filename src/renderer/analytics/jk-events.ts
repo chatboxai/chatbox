@@ -1,5 +1,6 @@
 export const JK_EVENTS = {
   ONBOARDING_CHOICE_CLICK: 'onboarding_choice_click',
+  ONBOARDING_IMPORT_CHOICE_CLICK: 'onboarding_import_choice_click',
   LOGIN_BUTTON_CLICK: 'login_button_click',
   FREE_LICENSE_CLAIM_CLICK: 'free_license_claim_click',
   KEY_VERIFY_SUCCESS: 'key_verify_success',

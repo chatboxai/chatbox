@@ -61,6 +61,16 @@ export function generateMessageId(): string {
   return `guide-msg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 }
 
+export function createImportConversationsToolPart(toolCallId: string, allowSkip: boolean): GuideToolPart {
+  return {
+    type: 'tool-show_import_conversations',
+    toolCallId,
+    toolName: 'show_import_conversations',
+    state: 'result',
+    result: { allowSkip },
+  }
+}
+
 /**
  * Check if guide language is fully ready before rendering fixed onboarding text.
  * We need both settings hydration and i18n runtime language switch to be complete.

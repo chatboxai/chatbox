@@ -1,4 +1,4 @@
-import type { LanguageModelV3ToolCall } from '@ai-sdk/provider'
+import type { LanguageModelV4ToolCall } from '@ai-sdk/provider'
 import { parsePartialJson, type ToolCallRepairFunction, type ToolSet } from 'ai'
 
 function stripCodeFence(input: string): string {
@@ -32,8 +32,8 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
 }
 
 export async function repairToolCallJsonInput(
-  toolCall: LanguageModelV3ToolCall
-): Promise<LanguageModelV3ToolCall | null> {
+  toolCall: LanguageModelV4ToolCall
+): Promise<LanguageModelV4ToolCall | null> {
   for (const candidate of buildRepairCandidates(toolCall.input)) {
     const result = await parsePartialJson(candidate)
     if ((result.state === 'successful-parse' || result.state === 'repaired-parse') && isJsonObject(result.value)) {
@@ -46,6 +46,11 @@ export async function repairToolCallJsonInput(
   return null
 }
 
-export const repairToolCallJson: ToolCallRepairFunction<ToolSet> = ({ toolCall }) => {
-  return repairToolCallJsonInput(toolCall)
+export const repairToolCallJson: ToolCallRepairFunction<ToolSet> = async ({ toolCall, tools }) => {
+  const tool = tools[toolCall.toolName]
+  if (!tool) return null
+  const repaired = await repairToolCallJsonInput(toolCall)
+  if (!repaired || repaired.input === toolCall.input) return null
+  // The SDK validates this candidate again before execution, including after JSON syntax repair.
+  return repaired
 }

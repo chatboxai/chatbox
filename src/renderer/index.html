@@ -9,10 +9,29 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="chatbox" />
     <meta name="theme-color" content="#000000" />
-    <meta name="description" content="chatbox" />
+    <meta
+      name="description"
+      content="Chat with GPT 6 Astra, Claude Fable 5.1, Gemini 3.8 Flash, Grok-4.6, Kimi-K3, DeepSeek V4 Pro, and more in one AI chat app. Start online in your browser, or download Chatbox for desktop and mobile."
+    />
     <link rel="apple-touch-icon" href="/logo192.png" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
-    <title>Chatbox</title>
+    <title>Chatbox Web App: AI Chat Online with GPT, Claude &amp; More</title>
+    <script>
+      // The source HTML is a Vite entry and cannot run when opened as file:// in a browser.
+      // Electron also loads this file through file://, so its preload bridge must bypass this guard.
+      // Show a useful message instead of leaving the splash screen on screen forever.
+      if (window.location.protocol === 'file:' && !window.electronAPI) {
+        window.addEventListener('DOMContentLoaded', function () {
+          var root = document.getElementById('root')
+          var splash = document.querySelector('.splash-screen')
+          if (splash) splash.remove()
+          if (root) {
+            root.innerHTML =
+              '<div class="startup-error">Chatbox Web App needs to be started through a web server. Run <code>pnpm dev:web:standalone</code> and open <code>http://localhost:1212</code>.</div>'
+          }
+        })
+      }
+    </script>
     <!-- Google tag (gtag.js) -->
     <script
       async
@@ -118,6 +137,17 @@
         to {
           opacity: 0;
         }
+      }
+
+      .startup-error {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        padding: 24px;
+        color: #495057;
+        font: 16px/1.5 system-ui, sans-serif;
+        text-align: center;
       }
     </style>
   </head>

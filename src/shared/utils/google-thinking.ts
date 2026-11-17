@@ -8,12 +8,12 @@ export interface GoogleThinkingConfig {
 }
 
 const GOOGLE_THINKING_LEVELS_BY_MODEL: Array<[RegExp, GoogleThinkingLevel[]]> = [
-  // Per official Gemini thinking docs:
-  // - Pro models support low/medium/high (no minimal)
-  // - Flash and Flash-Lite models support minimal/low/medium/high
-  [/^gemini-3\.?[\d]*-pro(?!-image)/i, ['low', 'medium', 'high']],
-  [/^gemini-3\.?[\d]*-flash-lite/i, ['minimal', 'low', 'medium', 'high']],
-  [/^gemini-3\.?[\d]*-flash(?!-(lite|image))/i, ['minimal', 'low', 'medium', 'high']],
+  // https://ai.google.dev/gemini-api/docs/generate-content/thinking
+  // Only documented model families opt into minimal; other matched models start at low.
+  [/^gemini-3\.?\d*-pro(?!-image)/i, ['low', 'medium', 'high']],
+  [/^gemini-3\.[15]-flash-lite(?:-|$)/i, ['minimal', 'low', 'medium', 'high']],
+  [/^gemini-3(?:\.[56])?-flash(?!-(lite|image))(?:-|$)/i, ['minimal', 'low', 'medium', 'high']],
+  [/^gemini-3\.?\d*-flash(?:-|$)/i, ['low', 'medium', 'high']],
 ]
 
 export function getGoogleThinkingMode(modelId: string): GoogleThinkingMode {
@@ -61,6 +61,17 @@ export function getDefaultGoogleThinkingLevel(modelId: string): GoogleThinkingLe
   return supportedLevels.at(-1)
 }
 
+export function normalizeGoogleThinkingLevel(
+  modelId: string,
+  thinkingLevel: GoogleThinkingLevel | undefined
+): GoogleThinkingLevel | undefined {
+  if (thinkingLevel !== 'minimal') {
+    return thinkingLevel
+  }
+
+  return getSupportedGoogleThinkingLevels(modelId).at(0) ?? thinkingLevel
+}
+
 export function normalizeGoogleThinkingConfig(
   modelId: string,
   thinkingConfig?: GoogleThinkingConfig
@@ -84,19 +95,17 @@ export function normalizeGoogleThinkingConfig(
 
   if (mode === 'level') {
     const supportedLevels = getSupportedGoogleThinkingLevels(modelId)
-    const thinkingLevel = thinkingConfig.thinkingLevel
 
-    // Fix: strip thinkingLevel for Gemini 3 models not in the supported list (e.g. image models),
-    // so stale levels from a previous model selection are not sent to the API.
+    // Strip stale levels for Gemini 3 models outside the supported families.
     if (supportedLevels.length === 0) {
       return thinkingConfig.includeThoughts !== undefined
         ? { includeThoughts: thinkingConfig.includeThoughts }
         : undefined
     }
 
-    // Use the saved level if valid, otherwise explicitly send the default ("high").
+    const thinkingLevel = normalizeGoogleThinkingLevel(modelId, thinkingConfig.thinkingLevel)
     const effectiveLevel =
-      thinkingLevel && supportedLevels.includes(thinkingLevel) ? thinkingLevel : getDefaultGoogleThinkingLevel(modelId)
+      thinkingLevel && supportedLevels.includes(thinkingLevel) ? thinkingLevel : supportedLevels.at(-1)
 
     return {
       ...(effectiveLevel ? { thinkingLevel: effectiveLevel } : {}),

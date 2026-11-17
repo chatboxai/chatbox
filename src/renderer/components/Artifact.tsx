@@ -2,22 +2,20 @@ import NiceModal from '@ebay/nice-modal-react'
 import ReplayOutlinedIcon from '@mui/icons-material/ReplayOutlined'
 import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined'
 import { ButtonGroup, IconButton } from '@mui/material'
-import type { Message } from '@shared/types/session'
 import { debounce } from 'lodash'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { cn } from '@/lib/utils'
-import { getMessageThreadContext } from '@/stores/session/generation'
-import { getMessageText } from '../../shared/utils/message'
+import { rendererApplication } from '@/app/renderer-application'
+import { appendArtifactMarkdown, createArtifactCode, renderArtifactCode, type ArtifactCode } from './artifact-code'
 import ArrowRightIcon from './icons/ArrowRightIcon'
 import FullscreenIcon from './icons/FullscreenIcon'
 
 const RENDERABLE_CODE_LANGUAGES = ['html'] as const
 export type RenderableCodeLanguage = (typeof RENDERABLE_CODE_LANGUAGES)[number]
 
-const CODE_BLOCK_LANGUAGES = [...RENDERABLE_CODE_LANGUAGES, 'js', 'javascript', 'css'] as const
-export type CodeBlockLanguage = (typeof CODE_BLOCK_LANGUAGES)[number]
+export type { CodeBlockLanguage } from './artifact-code'
 
 export function isContainRenderableCode(markdown: string): boolean {
   if (!markdown) {
@@ -42,47 +40,111 @@ export function MessageArtifact(props: {
 }) {
   const { sessionId, messageId, messageContent, preview, setPreview } = props
 
-  const [contextMessages, setContextMessages] = useState<Message[]>([])
+  const { t } = useTranslation()
+  const key = JSON.stringify([sessionId, messageId])
+  const mounted = useRef(false)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
+  const current = useRef({ key, messageContent })
+  current.current = { key, messageContent }
+  const cached = useRef<{ key: string; code: ArtifactCode }>()
+  const pending = useRef<{ key: string; abort: AbortController; promise: Promise<ArtifactCode> }>()
+  const [history, setHistory] = useState<{ key: string; code: ArtifactCode }>()
+  const [loadingKey, setLoadingKey] = useState<string>()
+  const [errorKey, setErrorKey] = useState<string>()
+
+  const loadHistory = useCallback((): Promise<ArtifactCode> => {
+    if (cached.current?.key === key) return Promise.resolve(cached.current.code)
+    if (pending.current?.key === key) return pending.current.promise
+    pending.current?.abort.abort()
+    const abort = new AbortController()
+    setLoadingKey(key)
+    setErrorKey(undefined)
+    const promise = (async () => {
+      const code = createArtifactCode()
+      for await (const markdown of rendererApplication.sessions.iterateSessionArtifactMarkdown({
+        sessionId,
+        messageId,
+        signal: abort.signal,
+      })) {
+        if (abort.signal.aborted || !mounted.current || current.current.key !== key)
+          throw new Error('Artifact request canceled')
+        appendArtifactMarkdown(code, markdown)
+      }
+      if (abort.signal.aborted || !mounted.current || current.current.key !== key)
+        throw new Error('Artifact request canceled')
+      cached.current = { key, code }
+      setHistory({ key, code })
+      return code
+    })()
+      .catch((error: unknown) => {
+        if (!abort.signal.aborted && current.current.key === key) setErrorKey(key)
+        throw error
+      })
+      .finally(() => {
+        if (pending.current?.abort === abort) {
+          pending.current = undefined
+          setLoadingKey(undefined)
+        }
+      })
+    pending.current = { key, abort, promise }
+    return promise
+  }, [key, sessionId, messageId])
 
   useEffect(() => {
-    async function fetchContextMessages(): Promise<Message[]> {
-      if (!sessionId || !messageId) {
-        return []
-      }
-      const messageList = await getMessageThreadContext(sessionId, messageId)
-      const index = messageList.findIndex((m) => m.id === messageId)
-
-      return messageList.slice(0, index)
+    if (preview) void loadHistory().catch(() => {})
+    return () => {
+      pending.current?.abort.abort()
+      pending.current = undefined
+      setLoadingKey(undefined)
     }
-    void fetchContextMessages().then((msgs) => {
-      setContextMessages(msgs)
-    })
-  }, [messageId, sessionId])
+  }, [preview, loadHistory])
 
-  const htmlCode = useMemo(() => {
-    return generateHtml([...contextMessages.map((m) => getMessageText(m)), messageContent])
-  }, [contextMessages, messageContent])
+  const resolveHtmlCode = async () => {
+    try {
+      const code = await loadHistory()
+      if (!mounted.current || current.current.key !== key) return null
+      return renderArtifactCode(code, current.current.messageContent)
+    } catch {
+      return null
+    }
+  }
+  const htmlCode = useMemo(
+    () => renderArtifactCode(history?.key === key ? history.code : createArtifactCode(), messageContent),
+    [history, key, messageContent]
+  )
 
   return (
-    <ArtifactWithButtons
-      htmlCode={htmlCode}
-      preview={preview}
-      setPreview={setPreview}
-      sessionId={sessionId}
-      uniqueId={`${messageId}-artifact`}
-    />
+    <>
+      <ArtifactWithButtons
+        htmlCode={htmlCode}
+        resolveHtmlCode={resolveHtmlCode}
+        loading={loadingKey === key}
+        preview={preview}
+        setPreview={setPreview}
+        sessionId={sessionId}
+        uniqueId={`${messageId}-artifact`}
+      />
+      {errorKey === key && <div role="alert">{t('Something went wrong')}</div>}
+    </>
   )
 }
 
 export function ArtifactWithButtons(props: {
   htmlCode: string
+  resolveHtmlCode?: () => Promise<string | null>
+  loading?: boolean
   previewUrl?: string
   preview: boolean
   setPreview: (preview: boolean) => void
   sessionId?: string
   uniqueId?: string
 }) {
-  const { htmlCode, previewUrl, preview, setPreview, sessionId, uniqueId } = props
+  const { htmlCode, resolveHtmlCode, loading, previewUrl, preview, setPreview, sessionId, uniqueId } = props
   const { t } = useTranslation()
   const [reloadSign, setReloadSign] = useState(0)
   const isSmallScreen = useIsSmallScreen()
@@ -98,8 +160,11 @@ export function ArtifactWithButtons(props: {
     setPreview(false)
   }
   const onOpenFullscreen = async () => {
+    if (loading) return
+    const content = resolveHtmlCode ? await resolveHtmlCode() : htmlCode
+    if (content === null) return
     await NiceModal.show('artifact-preview', {
-      htmlCode,
+      htmlCode: content,
       previewUrl,
       sessionId,
       uniqueId,
@@ -110,6 +175,7 @@ export function ArtifactWithButtons(props: {
       <div
         className="w-full my-1 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-all duration-300 cursor-pointer overflow-hidden group"
         onClick={onPreview}
+        aria-busy={loading}
       >
         <div className="flex items-center justify-between p-4">
           <div className="flex items-center space-x-3">
@@ -128,19 +194,22 @@ export function ArtifactWithButtons(props: {
               </svg>
             </div>
             <span className="text-lg font-semibold text-gray-700 dark:text-gray-300 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors duration-300">
-              {t('Preview')}
+              {loading ? t('Loading...') : t('Preview')}
             </span>
           </div>
           <div className="flex items-center justify-center">
-            <FullscreenIcon
-              className="mr-1 hover:bg-white hover:rounded  hover:text-gray-500
-                            p-1 w-8 h-8 text-gray-400 dark:text-gray-500 group-hover:text-blue-500 dark:group-hover:text-blue-400"
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
+            <button
+              type="button"
+              aria-label={String(t('Fullscreen'))}
+              disabled={loading}
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
                 void onOpenFullscreen()
               }}
-            />
+            >
+              <FullscreenIcon className="mr-1 hover:bg-white hover:rounded hover:text-gray-500 p-1 w-8 h-8 text-gray-400 dark:text-gray-500 group-hover:text-blue-500" />
+            </button>
             <ArrowRightIcon
               className="hover:bg-white hover:rounded  hover:text-gray-500
                             p-1 w-8 h-8 text-gray-400 dark:text-gray-500 group-hover:text-blue-500 dark:group-hover:text-blue-400"
@@ -160,7 +229,13 @@ export function ArtifactWithButtons(props: {
         isSmallScreen ? 'flex-col-reverse' : 'flex-row'
       )}
     >
-      <Artifact htmlCode={htmlCode} previewUrl={previewUrl} reloadSign={reloadSign} />
+      {loading ? (
+        <div role="status" className="w-full p-4">
+          {t('Loading...')}
+        </div>
+      ) : (
+        <Artifact htmlCode={htmlCode} previewUrl={previewUrl} reloadSign={reloadSign} />
+      )}
       <ButtonGroup
         orientation={isSmallScreen ? 'horizontal' : 'vertical'}
         className={cn(
@@ -171,7 +246,7 @@ export function ArtifactWithButtons(props: {
         <IconButton onClick={onReplay} color="primary">
           <ReplayOutlinedIcon />
         </IconButton>
-        <IconButton onClick={onOpenFullscreen} color="primary">
+        <IconButton onClick={onOpenFullscreen} color="primary" aria-label={String(t('Fullscreen'))} disabled={loading}>
           <FullscreenIcon className="w-5 h-5" />
         </IconButton>
         <IconButton onClick={onStopPreview} color="error">
@@ -227,70 +302,4 @@ export function Artifact(props: { htmlCode: string; previewUrl?: string; reloadS
       ref={ref}
     />
   )
-}
-
-function generateHtml(markdowns: string[]): string {
-  const codeBlocks: Record<CodeBlockLanguage, string[]> = {
-    html: [],
-    js: [],
-    javascript: [],
-    css: [],
-  }
-  const languages = Array.from(Object.keys(codeBlocks)) as (keyof typeof codeBlocks)[]
-  let currentType: keyof typeof codeBlocks | null = null
-  let currentContent = ''
-  for (const markdown of markdowns) {
-    for (let line of markdown.split('\n')) {
-      line = line.trimStart()
-      const lang = languages.find((l) => `\`\`\`${l}` === line)
-      if (lang) {
-        currentType = lang
-        continue
-      }
-      if (line === '```') {
-        if (currentContent && currentType) {
-          codeBlocks[currentType].push(currentContent)
-          currentContent = ''
-          currentType = null
-          continue
-        } else {
-          continue
-        }
-      }
-      if (currentType) {
-        currentContent += `${line}\n`
-      }
-    }
-  }
-  // 仅保留最后一个
-  // const htmlWholes = codeBlocks.html.filter(c => c.includes('</html>'))
-  // codeBlocks.html = [
-  //     htmlWholes[htmlWholes.length - 1],
-  //     ...codeBlocks.html.filter(c => !c.includes('</html>'))
-  // ]
-
-  codeBlocks.html = codeBlocks.html.slice(-1)
-  codeBlocks.css = codeBlocks.css.slice(-1)
-  codeBlocks.javascript = codeBlocks.javascript.slice(-1)
-  codeBlocks.js = codeBlocks.js.slice(-1)
-
-  if (codeBlocks.html.length === 0) {
-    return ''
-  }
-
-  const srcDoc = `
-<script src="https://cdn.tailwindcss.com?plugins=forms,typography,aspect-ratio,line-clamp,container-queries"></script>
-
-${codeBlocks.html.join('\n')}
-
-<style>
-${codeBlocks.css.join('\n')}
-</style>
-
-<script>
-${codeBlocks.js.join('\n\n// ----------- \n\n')}
-${codeBlocks.javascript.join('\n\n// ----------- \n\n')}
-</script>
-    `
-  return srcDoc
 }

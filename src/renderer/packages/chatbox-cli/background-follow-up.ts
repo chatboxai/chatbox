@@ -1,9 +1,10 @@
 import { withSessionGenerationLock } from '@chatbox/core/generation'
-import { createMessage, type Message, type MessageBackgroundTask, type Session } from '@shared/types'
+import { createMessage, type Message, type MessageBackgroundTask } from '@shared/types'
 import { countMessageWords } from '@shared/utils/message'
 import { getLogger } from '@/lib/utils'
 import { estimateTokensFromMessages } from '@/packages/token'
 import { rendererApplication } from '@/app/renderer-application'
+import { visitSelectedSessionMessages } from './session-row-scan'
 
 const log = getLogger('chatbox-cli-background-follow-up')
 const RETRY_DELAY_MS = 1_000
@@ -20,8 +21,6 @@ interface QueuedNotification {
   deferrals: number
   reservedAssistantMessage?: Message
 }
-
-class BackgroundFollowUpTargetNotFoundError extends Error {}
 
 const queues = new Map<string, QueuedNotification[]>()
 const timers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -61,40 +60,6 @@ function containsToolCall(message: Message, toolCallId: string): boolean {
   return message.contentParts.some((part) => part.type === 'tool-call' && part.toolCallId === toolCallId)
 }
 
-function originBatchHasPausedToolCalls(session: Session, originToolCallId: string): boolean {
-  const messageLists = [session.messages, ...(session.threads?.map((thread) => thread.messages) ?? [])]
-  for (const messages of messageLists) {
-    const originMessage = messages.find((message) => containsToolCall(message, originToolCallId))
-    if (!originMessage) continue
-    return originMessage.contentParts.some((part) => part.type === 'tool-call' && part.state === 'paused')
-  }
-  return false
-}
-
-function prepareMessagesForFollowUp(messages: Message[], originToolCallId: string): Message[] {
-  const now = Date.now()
-  return messages.map((message) => {
-    const isOriginMessage = containsToolCall(message, originToolCallId)
-    const contentParts = isOriginMessage
-      ? message.contentParts.map((part) =>
-          part.type === 'tool-call' && part.state === 'call'
-            ? {
-                ...part,
-                state: 'error' as const,
-                result: { error: 'Tool execution was interrupted before its result was persisted.' },
-                pauseReason: undefined,
-                duration: part.startTime ? now - part.startTime : undefined,
-              }
-            : part
-        )
-      : message.contentParts
-
-    return message.generating || contentParts !== message.contentParts
-      ? { ...message, contentParts, generating: false }
-      : message
-  })
-}
-
 function prepareMessage(message: Message): Message {
   return {
     ...message,
@@ -103,76 +68,39 @@ function prepareMessage(message: Message): Message {
   }
 }
 
-function appendFollowUpMessages(
-  session: Session,
-  originToolCallId: string,
-  userMessage: Message,
-  assistantMessage: Message
-): Session {
-  // The session generation lock is held while this updater runs, so no live
-  // generation can be active here. Any persisted generating flag is stale
-  // crash/interruption state and must not block a completed-task callback.
-  const messages = prepareMessagesForFollowUp(session.messages, originToolCallId)
-  const threads = session.threads?.map((thread) => ({
-    ...thread,
-    messages: prepareMessagesForFollowUp(thread.messages, originToolCallId),
-  }))
-
-  if (messages.some((message) => containsToolCall(message, originToolCallId))) {
-    return { ...session, messages: [...messages, userMessage, assistantMessage], threads }
-  }
-
-  const targetThread = threads?.find((thread) =>
-    thread.messages.some((message) => containsToolCall(message, originToolCallId))
-  )
-  if (!targetThread) {
-    throw new BackgroundFollowUpTargetNotFoundError(`Origin tool call not found: ${originToolCallId}`)
-  }
-
-  return {
-    ...session,
-    messages,
-    threads: threads?.map((thread) =>
-      thread.id === targetThread.id
-        ? { ...thread, messages: [...thread.messages, userMessage, assistantMessage] }
-        : thread
-    ),
-  }
-}
-
 function deliverNotification(
   sessionId: string,
   queued: QueuedNotification
 ): Promise<'delivered' | 'deferred' | 'target-missing' | 'discard'> {
   return withSessionGenerationLock(sessionId, async () => {
-    const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
-    if (!session) return 'discard'
-    // A completion callback must not start a potentially long model follow-up while another
-    // tool call is still waiting for approval. A persisted `call` cannot still be executing
-    // after this lock is acquired; appendFollowUpMessages settles that interrupted state.
-    if (originBatchHasPausedToolCalls(session, queued.originToolCallId)) return 'deferred'
-
+    const source = await rendererApplication.sessions.getSessionHeader(sessionId)
+    if (!source) return 'discard'
+    let origin: Message | undefined
+    await visitSelectedSessionMessages(sessionId, (row) => {
+      if (!containsToolCall(row.message, queued.originToolCallId)) return false
+      origin = row.message
+      return true
+    })
+    if (!origin) return 'target-missing'
+    if (origin.contentParts.some((part) => part.type === 'tool-call' && part.state === 'paused')) return 'deferred'
     if (!queued.reservedAssistantMessage) {
       const userMessage = prepareMessage({
         ...createMessage('user', formatBackgroundTaskNotification(queued.notification)),
         backgroundTask: queued.notification,
       })
       const assistantMessage = prepareMessage({ ...createMessage('assistant', ''), generating: true })
-
-      try {
-        await rendererApplication.sessions.updateSessionWithMessages(sessionId, (session) => {
-          if (!session) throw new Error(`Session ${sessionId} not found`)
-          return appendFollowUpMessages(session, queued.originToolCallId, userMessage, assistantMessage)
-        })
-        queued.reservedAssistantMessage = assistantMessage
-      } catch (error) {
-        if (error instanceof BackgroundFollowUpTargetNotFoundError) return 'target-missing'
-        const latestSession = await rendererApplication.sessionQueryBridge.getSession(sessionId)
-        if (!latestSession) return 'discard'
-        throw error
-      }
+      const result = await rendererApplication.sessions.executeStructureCommand(sessionId, {
+        action: 'background-follow-up',
+        originMessageId: origin.id,
+        originToolCallId: queued.originToolCallId,
+        userMessage,
+        assistantMessage,
+        now: Date.now(),
+      })
+      if (result?.backgroundFollowUpStatus === 'deferred') return 'deferred'
+      if (!result?.applied) return 'target-missing'
+      queued.reservedAssistantMessage = assistantMessage
     }
-
     const { _generateWithoutSessionLock } = await import('@/stores/session/generation')
     await _generateWithoutSessionLock(sessionId, queued.reservedAssistantMessage, {
       operationType: 'send_message',

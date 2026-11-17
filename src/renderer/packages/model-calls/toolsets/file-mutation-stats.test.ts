@@ -68,3 +68,13 @@ describe('getFileMutationDisplayStats', () => {
     expect(getFileMutationDisplayStats({ title: 'Edit file: x', preview: 'legacy secret', stats })).toEqual(stats)
   })
 })
+
+it('falls back explicitly when the aggregate snippet budget is exhausted', () => {
+  expect(buildEditStats([{ old_text: 'a'.repeat(60_000), new_text: 'b'.repeat(60_000) }])).toEqual({
+    mode: 'edit',
+    edits: 1,
+    addedLines: 1,
+    removedLines: 1,
+    approximate: true,
+  })
+})

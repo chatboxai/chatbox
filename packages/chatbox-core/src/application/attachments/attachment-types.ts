@@ -1,5 +1,8 @@
 import type { SessionAttachmentAvailability } from '../../types'
 
+// Per-draft UI limit. Providers can also limit total request bytes and images in conversation history.
+export const MAX_CHAT_IMAGE_ATTACHMENTS = 20
+
 /**
  * Host-neutral representation of a file selected by the user.
  *

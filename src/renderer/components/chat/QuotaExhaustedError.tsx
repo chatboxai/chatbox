@@ -12,7 +12,7 @@ import { QuotaExhaustedCard } from './QuotaExhaustedCard'
 
 type QuotaPresentation = Extract<MessageErrorPresentation, { kind: 'quota' }>
 
-const useSession = (sessionId: string | null) => rendererApplication.sessionHooks.useSession(sessionId)
+const useSessionHeader = (sessionId: string | null) => rendererApplication.sessionHooks.useSessionHeader(sessionId)
 
 export function QuotaExhaustedError(props: {
   msg: Message
@@ -22,7 +22,7 @@ export function QuotaExhaustedError(props: {
 }) {
   const { msg, sessionId, licensePlan, presentation } = props
   const language = useLanguage()
-  const sessionQuery = useSession(sessionId ?? null)
+  const sessionQuery = useSessionHeader(sessionId ?? null)
   const trackingMode = sessionQuery.isFetched
     ? sessionQuery.session?.settings?.agentMode?.value === 'on'
       ? 'work_mode'

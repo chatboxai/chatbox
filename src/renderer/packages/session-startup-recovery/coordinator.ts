@@ -1,5 +1,6 @@
 import { getDefaultStore } from 'jotai'
 import { currentSessionIdAtom } from '@/stores/atoms/sessionAtoms'
+import { createStartupDiagnostic, diagnosticSignature, type SessionStartupDiagnostic } from './diagnostics'
 
 const INFLIGHT_KEY = 'chatbox.sessionStartupInflight'
 const FAILED_KEY = 'chatbox.sessionStartupFailed'
@@ -52,6 +53,7 @@ function isRecoverableSessionId(sessionId: string | null | undefined): sessionId
 export class SessionStartupRecoveryCoordinator {
   private activeAttemptSessionId: string | null = null
   private listeners = new Set<Listener>()
+  private diagnostics = new Map<string, SessionStartupDiagnostic>()
   private snapshot: RecoverySnapshot = { retrySessionId: null, revision: 0 }
 
   subscribe = (listener: Listener) => {
@@ -100,6 +102,7 @@ export class SessionStartupRecoveryCoordinator {
   settle(sessionId: string) {
     if (!isRecoverableSessionId(sessionId)) return
     this.abandon(sessionId)
+    this.diagnostics.delete(sessionId)
     writeJson(
       FAILED_KEY,
       this.readFailedSessionIds().filter((id) => id !== sessionId)
@@ -107,9 +110,29 @@ export class SessionStartupRecoveryCoordinator {
     if (!this.clearRetry(sessionId)) this.publish()
   }
 
-  fail(sessionId: string) {
+  getDiagnostic(sessionId: string) {
+    return this.diagnostics.get(sessionId)
+  }
+
+  setReportId(sessionId: string, diagnostic: SessionStartupDiagnostic, reportId: string) {
+    if (this.diagnostics.get(sessionId) !== diagnostic) return
+    this.diagnostics.set(sessionId, { ...diagnostic, reportId })
+    this.publish()
+  }
+
+  fail(sessionId: string, error?: unknown, phase: SessionStartupDiagnostic['phase'] = 'read') {
     if (!isRecoverableSessionId(sessionId)) return
     this.abandon(sessionId)
+    if (error !== undefined) {
+      const diagnostic = createStartupDiagnostic(error, phase)
+      const previous = this.diagnostics.get(sessionId)
+      if (!previous || diagnosticSignature(previous) !== diagnosticSignature(diagnostic)) {
+        this.diagnostics.delete(sessionId)
+        this.diagnostics.set(sessionId, diagnostic)
+        const oldest = this.diagnostics.keys().next().value
+        if (this.diagnostics.size > 20 && oldest !== undefined) this.diagnostics.delete(oldest)
+      }
+    }
     const failed = new Set(this.readFailedSessionIds())
     failed.add(sessionId)
     writeJson(FAILED_KEY, [...failed])
@@ -160,6 +183,7 @@ export class SessionStartupRecoveryCoordinator {
 
   forget(sessionIds: Iterable<string>) {
     const ids = new Set(sessionIds)
+    for (const id of ids) this.diagnostics.delete(id)
     if (ids.size === 0) return
     if (this.activeAttemptSessionId && ids.has(this.activeAttemptSessionId)) {
       this.activeAttemptSessionId = null
@@ -178,6 +202,7 @@ export class SessionStartupRecoveryCoordinator {
   }
 
   clearForTests() {
+    this.diagnostics.clear()
     removeKey(INFLIGHT_KEY)
     removeKey(FAILED_KEY)
     this.activeAttemptSessionId = null

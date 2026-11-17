@@ -5,6 +5,15 @@ import { createCollapsedDisplayGroups, createMessageTimelineLayout } from './mes
 const reasoning = { type: 'reasoning' as const, text: 'Private reasoning' }
 const answer = { type: 'text' as const, text: 'Final answer' }
 
+const toolCall = (toolCallId: string): MessageContentParts[number] => ({
+  type: 'tool-call',
+  state: 'result',
+  toolCallId,
+  toolName: 'read_file',
+  args: {},
+  result: 'done',
+})
+
 describe('createMessageTimelineLayout', () => {
   test('preserves v1.21 rendering order for non-streaming text followed by reasoning', () => {
     const contentParts: MessageContentParts = [answer, reasoning]
@@ -103,6 +112,7 @@ describe('createMessageTimelineLayout', () => {
     const result = createMessageTimelineLayout(contentParts, true)
 
     expect(result.orderedContentParts).toEqual([toolCall])
+    expect(result.lastWorkStep).toEqual(toolCall)
     expect(result.lastStepIndex).toBe(0)
     expect(result.groupedContentParts).toEqual([{ type: 'step_group', parts: [toolCall] }])
   })
@@ -131,28 +141,43 @@ describe('createCollapsedDisplayGroups', () => {
     const image = { type: 'image' as const, storageKey: 'img-1' }
     const contentParts: MessageContentParts = [image, reasoning, answer]
 
-    const { orderedContentParts, lastStepIndex } = createMessageTimelineLayout(contentParts, true)
+    const { orderedContentParts, lastWorkStep } = createMessageTimelineLayout(contentParts, true)
 
-    expect(createCollapsedDisplayGroups(orderedContentParts, lastStepIndex)).toEqual([image, answer])
+    expect(createCollapsedDisplayGroups(orderedContentParts, lastWorkStep)).toEqual([image, answer])
   })
 
   test('hides process steps, including image generation tool calls shown as artifacts', () => {
     const contentParts: MessageContentParts = [imageToolCall, answer]
 
-    const { orderedContentParts, lastStepIndex } = createMessageTimelineLayout(contentParts, true)
+    const { orderedContentParts, lastWorkStep } = createMessageTimelineLayout(contentParts, true)
 
-    expect(createCollapsedDisplayGroups(orderedContentParts, lastStepIndex)).toEqual([answer])
+    expect(createCollapsedDisplayGroups(orderedContentParts, lastWorkStep)).toEqual([answer])
   })
 
   test('falls back to the last step when the message ends on one', () => {
     const image = { type: 'image' as const, storageKey: 'img-1' }
     const contentParts: MessageContentParts = [image, reasoning]
 
-    const { orderedContentParts, lastStepIndex } = createMessageTimelineLayout(contentParts, true)
+    const { orderedContentParts, lastWorkStep } = createMessageTimelineLayout(contentParts, true)
 
-    expect(createCollapsedDisplayGroups(orderedContentParts, lastStepIndex)).toEqual([
+    expect(createCollapsedDisplayGroups(orderedContentParts, lastWorkStep)).toEqual([
       image,
       { type: 'step_group', parts: [reasoning] },
     ])
+  })
+
+  test('singles out the message’s last step when an image splits the run', () => {
+    const readA = toolCall('call-1')
+    const readB = toolCall('call-2')
+    const image = { type: 'image' as const, storageKey: 'img-1' }
+    // The image splits the run, so the group before it ends on `readB`, while the
+    // message itself carries on to the answer.
+    const contentParts: MessageContentParts = [readA, readB, image, answer]
+
+    const { orderedContentParts, lastWorkStep } = createMessageTimelineLayout(contentParts, true)
+
+    expect(lastWorkStep).toEqual(readB)
+    // `readB` no longer ends the process, so it folds; the answer stays visible.
+    expect(createCollapsedDisplayGroups(orderedContentParts, lastWorkStep)).toEqual([image, answer])
   })
 })

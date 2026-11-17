@@ -1,5 +1,5 @@
 import type { AttachmentResolver } from '@shared/context/types'
-import storage from '@/storage'
+import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
 
 /**
  * Create an AttachmentResolver backed by the app's storage layer
@@ -7,8 +7,8 @@ import storage from '@/storage'
  */
 export function createAttachmentResolver(): AttachmentResolver {
   return {
-    async read(attachmentId: string): Promise<string | null> {
-      return storage.getBlob(attachmentId).catch(() => null)
+    read(attachmentId: string): Promise<string | null> {
+      return currentBlobStorage.get(attachmentId).catch(() => null)
     },
   }
 }

@@ -2,21 +2,24 @@
 
 import { MantineProvider } from '@mantine/core'
 import { getDefaultCompactionPrompt } from '@shared/prompts'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { runCompaction, settings } = vi.hoisted(() => ({
-  runCompaction: vi.fn(),
+const { requestCompaction, addToast, settings } = vi.hoisted(() => ({
+  requestCompaction: vi.fn(),
+  addToast: vi.fn(),
   settings: { language: 'en', compactionPrompt: undefined as string | undefined },
 }))
-vi.mock('@/packages/context-management/compaction', () => ({ runCompactionWithUIState: runCompaction }))
+vi.mock('@/packages/context-management/compaction', () => ({ requestManualCompaction: requestCompaction }))
+vi.mock('@/stores/toastActions', () => ({ add: addToast }))
 vi.mock('@/stores/settingsStore', () => ({
   useSettingsStore: (selector: (state: typeof settings) => unknown) => selector(settings),
 }))
 vi.mock('@/i18n/locales', () => ({ languageNameMap: { en: 'English' } }))
 vi.mock('@/hooks/useScreenChange', () => ({ useIsSmallScreen: () => false }))
-vi.mock('../layout/Overlay', () => ({
+vi.mock('../layout/Overlay', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../layout/Overlay')>()),
   Modal: ({ opened, children }: { opened: boolean; children: ReactNode }) => (opened ? <div>{children}</div> : null),
 }))
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
@@ -35,6 +38,7 @@ function modal(opened: boolean, onClose = vi.fn()) {
 beforeEach(() => {
   vi.clearAllMocks()
   settings.compactionPrompt = undefined
+  requestCompaction.mockResolvedValue('started')
   Object.defineProperty(window, 'matchMedia', {
     configurable: true,
     value: vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
@@ -43,7 +47,7 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('CompressionModal', () => {
-  it('shows the built-in prompt and combines edits with additional instructions for one run', () => {
+  it('shows the built-in prompt and combines edits with additional instructions for one run', async () => {
     const close = vi.fn()
     render(modal(true, close))
     expect((screen.getByLabelText('Compaction Prompt') as HTMLTextAreaElement).value).toBe(
@@ -52,9 +56,56 @@ describe('CompressionModal', () => {
     fireEvent.change(screen.getByLabelText('Compaction Prompt'), { target: { value: 'Retain decisions.' } })
     fireEvent.change(screen.getByLabelText('Additional Instructions'), { target: { value: 'Keep exact paths.' } })
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
-    expect(runCompaction).toHaveBeenCalledWith('s1', { force: true, prompt: 'Retain decisions.\n\nKeep exact paths.' })
+    await waitFor(() =>
+      expect(requestCompaction).toHaveBeenCalledWith('s1', {
+        force: true,
+        prompt: 'Retain decisions.\n\nKeep exact paths.',
+      })
+    )
     expect(close).toHaveBeenCalledOnce()
     expect(settings.compactionPrompt).toBeUndefined()
+    expect(addToast).not.toHaveBeenCalled()
+  })
+
+  it('tells the user that a busy session runs the compression later', async () => {
+    requestCompaction.mockResolvedValue('queued')
+    render(modal(true))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith('Compression queued, it runs when the session is idle'))
+  })
+
+  it('keeps the prompts on screen when the request is rejected outright', async () => {
+    requestCompaction.mockRejectedValue(new Error('session work lock held elsewhere'))
+    const close = vi.fn()
+    render(modal(true, close))
+    fireEvent.change(screen.getByLabelText('Compaction Prompt'), { target: { value: 'Retain decisions.' } })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    await waitFor(() => expect(screen.getByText('Compression could not start')).toBeTruthy())
+    expect(close).not.toHaveBeenCalled()
+    expect((screen.getByLabelText('Compaction Prompt') as HTMLTextAreaElement).value).toBe('Retain decisions.')
+  })
+
+  it.each([
+    ['queue-full', 'Message queue is full'],
+    ['queue-failed', 'Failed to queue the compression'],
+  ] as const)('keeps the prompts on screen when the queue answers %s', async (outcome, message) => {
+    requestCompaction.mockResolvedValue(outcome)
+    const close = vi.fn()
+    render(modal(true, close))
+    fireEvent.change(screen.getByLabelText('Compaction Prompt'), { target: { value: 'Retain decisions.' } })
+    fireEvent.change(screen.getByLabelText('Additional Instructions'), { target: { value: 'Keep exact paths.' } })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    await waitFor(() => expect(screen.getByText(message)).toBeTruthy())
+    expect(close).not.toHaveBeenCalled()
+    expect(addToast).not.toHaveBeenCalled()
+    expect((screen.getByLabelText('Compaction Prompt') as HTMLTextAreaElement).value).toBe('Retain decisions.')
+    expect((screen.getByLabelText('Additional Instructions') as HTMLTextAreaElement).value).toBe('Keep exact paths.')
   })
 
   it('discards canceled edits and loads the latest saved prompt when reopened', () => {
@@ -64,7 +115,7 @@ describe('CompressionModal', () => {
     fireEvent.change(screen.getByLabelText('Compaction Prompt'), { target: { value: 'Unsaved edit' } })
     fireEvent.change(screen.getByLabelText('Additional Instructions'), { target: { value: 'Unsaved extra' } })
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-    expect(runCompaction).not.toHaveBeenCalled()
+    expect(requestCompaction).not.toHaveBeenCalled()
     view.rerender(modal(false))
     settings.compactionPrompt = 'Updated saved prompt'
     view.rerender(modal(true))

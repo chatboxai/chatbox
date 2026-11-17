@@ -1,0 +1,94 @@
+{
+  "tag": "v1.23.5",
+  "commit": "b1939944ff0fd69360e8bee0eac70ad96976952f",
+  "synthetic": true,
+  "createdFrom": "Exact tagged exportBackupArchive, legacy-import, shared/core schemas; local esbuild/fflate/zod runtime dependencies",
+  "outputs": [
+    {
+      "directory": "v2-released",
+      "sessions": 1,
+      "messages": 3,
+      "physicalResources": 2,
+      "resourceKeys": 4,
+      "includedGlobalKeys": [
+        "settings",
+        "myCopilots",
+        "chat-session-settings",
+        "picture-session-settings",
+        "agent-memories",
+        "copilot-memories",
+        "copilot-memory-owners",
+        "copilot-memory-state-tokens"
+      ],
+      "entries": {
+        "settings.json": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "copilots.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "session-settings.json": "c0a123f14a16d80027db5de3c62c0220ee02bd1226e85f9b015772d0627207c9",
+        "sessions/released-v1235-session/session.json": "e144a4ac8e92ae7573ebf60f4b2cc59934b27783bb89c84160c5722a2d7bc97e",
+        "sessions/released-v1235-session/resources/resource-000001.txt": "78111f42b7121987cf3b1fec6337358b767913b0f455c6da73e15306b123c2c4",
+        "sessions/released-v1235-session/resources/resource-000002.png": "d79ef991a7581a3d7708a726bf5aba8b43fa1b075185268bb89d88781592fc6e",
+        "manifest.json": "bf8577cbc4a9558ab90451a65e18226a589e1ed84865c6f570f19f5488bb743f"
+      }
+    },
+    {
+      "directory": "v2-released-missing-settings",
+      "sessions": 1,
+      "messages": 3,
+      "physicalResources": 2,
+      "resourceKeys": 4,
+      "includedGlobalKeys": [],
+      "entries": {
+        "sessions/released-v1235-session/session.json": "e144a4ac8e92ae7573ebf60f4b2cc59934b27783bb89c84160c5722a2d7bc97e",
+        "sessions/released-v1235-session/resources/resource-000001.txt": "78111f42b7121987cf3b1fec6337358b767913b0f455c6da73e15306b123c2c4",
+        "sessions/released-v1235-session/resources/resource-000002.png": "d79ef991a7581a3d7708a726bf5aba8b43fa1b075185268bb89d88781592fc6e",
+        "manifest.json": "22c45659eee05786618776ca855abb77122ecfc83694f0d8a6ed81e9c66c90a2"
+      }
+    },
+    {
+      "file": "v1-released.json",
+      "sessions": 1,
+      "messages": 3,
+      "resourceKeys": 4,
+      "includedGlobalKeys": [],
+      "validatedBy": "v1.23.5 importLegacyJsonBackup with current-configVersion input; migration intentionally not needed",
+      "sha256": "761463831d52a3d2372400ee1cf9be6b7a4f2062b0a6c1b267cd63a2d4ea15f4"
+    },
+    {
+      "file": "v1-released-empty-settings.json",
+      "sessions": 1,
+      "messages": 3,
+      "resourceKeys": 4,
+      "includedGlobalKeys": [
+        "settings",
+        "myCopilots",
+        "chat-session-settings",
+        "picture-session-settings",
+        "agent-memories",
+        "copilot-memories",
+        "copilot-memory-owners",
+        "copilot-memory-state-tokens"
+      ],
+      "validatedBy": "v1.23.5 importLegacyJsonBackup with current-configVersion input; migration intentionally not needed",
+      "sha256": "69f9f54a48cebcbcac2983b7868765a48a1b52b9076544dffe618197b75941db"
+    }
+  ],
+  "sourceSha256": {
+    "src/renderer/packages/backup/export-backup.ts": "592afa8558c16bd0279be62d4a7dc4165b43a56c7f695c643df9a407b299e60b",
+    "src/renderer/packages/backup/legacy-import.ts": "074fc59e337443417768a0d19c140b7003ad0a12f3b6b2fdd92f3a47222050c8",
+    "src/renderer/packages/backup/archive-layout.ts": "d70523943fb756f4da7bf789a8c2963e7d6e7be5d8e345558d5064211e382726",
+    "src/renderer/packages/backup/resources.ts": "0001225541f84ee72dcd21682a4a71189d4d8d23e838cf5e276748f52e276b70",
+    "src/renderer/packages/backup/types.ts": "6832794050121f9a38d5e8391d87d12cb1921d34a945b7bc80df1198140a7f6d",
+    "src/renderer/packages/backup/codec.ts": "e7ecfbfaf868e65c6b640d6680d3f3e3223a1d2b5cddb9294b48c799cfe75851",
+    "src/renderer/packages/backup/zip.ts": "5bceff898d05c333ae08b00cd1dcda9648ed6018bd51b4e1f5b189d93a29472a",
+    "src/renderer/packages/backup/storage-keys.ts": "c9000fded63f7344b05f288933772616a7708893f3c9ae21f3e7ebd07e61f3ad",
+    "src/shared/types.ts": "e0c9a4b04d00eb850338fbed160b3395ed828af802d951322652d5b9983f2488",
+    "src/shared/types/session.ts": "5255f16bbbf69716f7c1d3cda779fe717c81394f318766a9d04fdfa98bf62ab7",
+    "src/shared/types/settings.ts": "8c18dab5a3755150e6ab37239522ce291043926e905b6611bd6d4bb1ff2f8fe4",
+    "src/shared/utils/backup.ts": "3a9a1b85b18becd9435c893209c8c4c4ea0f6be03354fda72d17d372fd8f67b8"
+  },
+  "toolVersions": {
+    "esbuild": "0.27.2",
+    "zod": "4.3.6",
+    "fflate": "0.8.3"
+  }
+}

@@ -37,7 +37,7 @@ describe('buildMessageRenderItems', () => {
       makeMessage('a2', 'assistant'),
     ])
     expect(items.map((item) => item.type)).toEqual(['group', 'message'])
-    expect(items[1].messages[0].id).toBe('a2')
+    expect(items[1].messages?.[0]?.id).toBe('a2')
   })
 
   it('keeps the last-turn group key stable when the assistant reply arrives', () => {

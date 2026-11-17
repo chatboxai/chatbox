@@ -11,6 +11,8 @@ export interface AdaptiveSelectProps extends Omit<MantineSelectProps, 'onChange'
 export function AdaptiveSelect(props: AdaptiveSelectProps) {
   const isSmallScreen = useIsSmallScreen()
   const [drawerOpened, setDrawerOpened] = useState(false)
+  // A select labelled by the row around it names its drawer with its accessible name.
+  const title = props.label ?? props['aria-label']
 
   return isSmallScreen ? (
     <Drawer.NestedRoot open={drawerOpened} onOpenChange={(open) => setDrawerOpened(open)} noBodyStyles>
@@ -22,9 +24,9 @@ export function AdaptiveSelect(props: AdaptiveSelectProps) {
 
         <Drawer.Content className="flex flex-col h-fit fixed bottom-0 left-0 right-0 outline-none bg-chatbox-background-primary rounded-t-lg max-h-[80vh] overflow-hidden select-none">
           <Drawer.Handle />
-          {props.label && (
+          {title && (
             <Text c="chatbox-tertiary" size="xs" className="text-center my-xxs">
-              {props.label}
+              {title}
             </Text>
           )}
           <Stack gap="xs" p="sm" pb={0} className="overflow-y-auto">

@@ -66,6 +66,10 @@ vi.mock('./AgentModePanel', () => ({
   ),
 }))
 
+vi.mock('./MobileAgentModePanel', () => ({
+  default: () => <div>Agent mode menu</div>,
+}))
+
 import AgentModeButton from './AgentModeButton'
 
 function renderButton({
@@ -158,6 +162,14 @@ describe('AgentModeButton', () => {
     expect(screen.getByText('Agent mode menu')).toBeTruthy()
   })
 
+  test('hosts the desktop panel glass in a clear dropdown so the panel and its submenu each blur the page', async () => {
+    renderButton({ layout: 'desktop' })
+
+    fireEvent.mouseEnter(screen.getByRole('button', { name: 'Work Mode' }))
+    const panel = await screen.findByText('Agent mode menu')
+    expect(panel.closest('.chatbox-glass-host')).not.toBeNull()
+  })
+
   test('keeps the message input blurred after changing Web Search in the touch sheet', () => {
     const input = document.createElement('textarea')
     input.id = 'message-input'
@@ -186,7 +198,7 @@ describe('AgentModeButton', () => {
     )
     renderButton({ layout: 'touch' })
 
-    const trigger = screen.getByRole('button', { name: 'Chat Mode' })
+    const trigger = screen.getByRole('button', { name: 'Work Mode' })
     fireEvent.click(trigger)
     await waitFor(() => expect(mocks.addBackButtonListener).toHaveBeenCalledOnce())
     fireEvent.click(trigger)

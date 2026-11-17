@@ -1,5 +1,7 @@
+import type { FileEditRequest, FileEditResult } from '@shared/file-edits'
 /** biome-ignore-all lint/suspicious/noExplicitAny: <any> */
 
+import type { SessionRowStorePort } from '@chatbox/core/ports'
 import type { AnalyticsEventParams } from '@shared/analytics'
 import type { ElectronIPC } from '@shared/electron-types'
 import type {
@@ -17,12 +19,15 @@ import { parseLocale } from '@/i18n/parser'
 import { getLogger } from '@/lib/utils'
 import { type ImageGenerationStorage, IndexedDBImageGenerationStorage } from '@/storage/ImageGenerationStorage'
 import { IndexedDBSessionMetaStorage, type SessionMetaStorage } from '@/storage/SessionMetaStorage'
+import { IndexedDBSessionRowStore } from '@/storage/SessionRowStorage'
 import { rememberFileNativePath } from '@/utils/file-native-path'
 import { getOS } from '../packages/navigator'
-import type { Platform, PlatformType } from './interfaces'
+import { DesktopBuiltInBrowser } from './desktop-built-in-browser'
+import type { Exporter, Platform, PlatformType } from './interfaces'
 import DesktopKnowledgeBaseController from './knowledge-base/desktop-controller'
 import DesktopSessionAttachmentRagController from './session-attachment-rag/desktop-controller'
-import WebExporter from './web_exporter'
+import DesktopExporter from './desktop_exporter'
+import { desktopResourceFiles } from './desktop-resource-files'
 import { parseTextFileLocally } from './web_platform_utils'
 
 const log = getLogger('desktop-platform')
@@ -33,16 +38,22 @@ export default class DesktopPlatform implements Platform {
   public type: PlatformType = 'desktop'
   public readonly isDesktopLike = true
 
-  public exporter = new WebExporter()
+  public exporter: Exporter
+  public resourceFiles: ReturnType<typeof desktopResourceFiles>
+  public builtInBrowser?: DesktopBuiltInBrowser
 
   private _kbController?: DesktopKnowledgeBaseController
   private _sessionAttachmentRagController?: DesktopSessionAttachmentRagController
   private _imageGenerationStorage: ImageGenerationStorage | null = null
   private _sessionMetaStorage: SessionMetaStorage | null = null
+  private _sessionRowStore: SessionRowStorePort | null = null
 
   public ipc: ElectronIPC
   constructor(ipc: ElectronIPC) {
     this.ipc = ipc
+    this.exporter = new DesktopExporter(ipc)
+    this.resourceFiles = desktopResourceFiles(ipc)
+    this.builtInBrowser = new DesktopBuiltInBrowser(ipc)
   }
 
   public getStorageType(): string {
@@ -311,12 +322,7 @@ export default class DesktopPlatform implements Platform {
     return this.ipc.invoke('fs:write', params)
   }
 
-  async fsEdit(params: {
-    filePath: string
-    search?: string
-    replace?: string
-    edits?: Array<{ search: string; replace: string }>
-  }) {
+  async fsEdit(params: FileEditRequest): Promise<FileEditResult> {
     return this.ipc.invoke('fs:edit', params)
   }
 
@@ -391,6 +397,13 @@ export default class DesktopPlatform implements Platform {
     return this._sessionMetaStorage
   }
 
+  public getSessionRowStore(): SessionRowStorePort {
+    if (!this._sessionRowStore) {
+      this._sessionRowStore = new IndexedDBSessionRowStore()
+    }
+    return this._sessionRowStore
+  }
+
   public async sandboxExecCode(params: {
     code: string
     language: SandboxExecLanguage
@@ -425,13 +438,7 @@ export default class DesktopPlatform implements Platform {
     return this.ipc.invoke('sandbox:write', params)
   }
 
-  public async sandboxEdit(params: {
-    filePath: string
-    search?: string
-    replace?: string
-    edits?: Array<{ search: string; replace: string }>
-    sessionId?: string
-  }) {
+  public async sandboxEdit(params: FileEditRequest & { sessionId?: string }): Promise<FileEditResult> {
     return this.ipc.invoke('sandbox:edit', params)
   }
 
@@ -551,6 +558,18 @@ export default class DesktopPlatform implements Platform {
 
   public unmaximize() {
     return this.ipc.invoke('window:unmaximize')
+  }
+
+  public setTaskCloseProtection(active: boolean): Promise<void> {
+    return this.ipc.invoke('task-operation:set-active', active)
+  }
+
+  public onTaskCloseRequest(callback: () => void): () => void {
+    return this.ipc.onTaskCloseRequest(callback)
+  }
+
+  public finishTaskClose(confirmed: boolean): Promise<void> {
+    return this.ipc.invoke('task-operation:finish-close', confirmed)
   }
 
   public closeWindow() {

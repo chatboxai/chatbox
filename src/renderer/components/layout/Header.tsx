@@ -1,99 +1,100 @@
-import NiceModal from '@ebay/nice-modal-react'
-import { ActionIcon, Flex, Text } from '@mantine/core'
-import type { Session } from '@shared/types'
-import { IconLayoutSidebarLeftExpand, IconMenu2 } from '@tabler/icons-react'
-import clsx from 'clsx'
-import { PencilIcon } from 'lucide-react'
+import type { SessionHeader } from '@chatbox/core/ports'
+import { Flex, Text, UnstyledButton } from '@mantine/core'
+import { TestId } from '@shared/automation/testids'
+import { IconChevronDown, IconPencil, IconPlus } from '@tabler/icons-react'
+import { useNavigate } from '@tanstack/react-router'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import useNeedRoomForWinControls from '@/hooks/useNeedRoomForWinControls'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
-import { syncSessionAutoTitle } from '@/stores/session/naming'
-import { useUIStore } from '@/stores/uiStore'
-import Divider from '../common/Divider'
-import Toolbar from './Toolbar'
-import WindowControls from './WindowControls'
+import { syncSessionAutoTitleOnOpen } from '@/stores/session/naming'
+import { uiStore } from '@/stores/uiStore'
+import { ICON_SIZE, ICON_STROKE_WIDTH, IconButton } from '../common/IconButton'
+import { ScalableIcon } from '../common/ScalableIcon'
+import { PageHeader } from './Page'
+import Toolbar, { SessionMenu } from './Toolbar'
 
-export default function Header(props: { session: Session }) {
+export default function Header(props: { session: SessionHeader }) {
   const { t } = useTranslation()
-  const showSidebar = useUIStore((s) => s.showSidebar)
-  const setShowSidebar = useUIStore((s) => s.setShowSidebar)
-
+  const navigate = useNavigate()
   const isSmallScreen = useIsSmallScreen()
-  const { needRoomForMacWindowControls } = useNeedRoomForWinControls()
 
   const { session: currentSession } = props
   const visibleSessionId = currentSession.id
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: sync only when the visible session id changes; message-driven naming is handled by session-updated in registerSessionUiEffects
+  // biome-ignore lint/correctness/useExhaustiveDependencies: run opening-time naming only when the visible session id changes
   useEffect(() => {
-    syncSessionAutoTitle(currentSession)
+    let active = true
+    void syncSessionAutoTitleOnOpen(currentSession, () => active)
+    return () => {
+      active = false
+    }
   }, [visibleSessionId])
 
   const editCurrentSession = () => {
     if (!currentSession) {
       return
     }
-    NiceModal.show('session-settings', { session: currentSession })
+    uiStore.getState().openSessionPanel(currentSession.id, 'settings')
+  }
+
+  if (isSmallScreen) {
+    return (
+      <PageHeader
+        title={
+          <SessionMenu session={currentSession} onEditSettings={editCurrentSession}>
+            <UnstyledButton className="controls min-w-0" data-testid={TestId.session.headerMenuTrigger}>
+              <Flex align="center" gap={4} miw={0}>
+                <Text component="span" fw={600} fz={16} lh="24px" truncate="end" className="min-w-0">
+                  {currentSession?.name}
+                </Text>
+                <ScalableIcon
+                  icon={IconChevronDown}
+                  size={ICON_SIZE.inline}
+                  strokeWidth={ICON_STROKE_WIDTH}
+                  className="shrink-0 text-chatbox-tertiary"
+                />
+              </Flex>
+            </UnstyledButton>
+          </SessionMenu>
+        }
+        right={
+          <IconButton
+            icon={IconPlus}
+            size="lg"
+            iconSize={ICON_SIZE.touch}
+            aria-label={t('New Chat')}
+            onClick={() => navigate({ to: '/' })}
+          />
+        }
+      />
+    )
   }
 
   return (
-    <>
-      <Flex
-        h={48}
-        align="center"
-        px="md"
-        className={clsx('flex-none title-bar border-0', isSmallScreen ? 'bg-chatbox-background-primary' : '')}
-      >
-        {(!showSidebar || isSmallScreen) && (
-          <Flex align="center" className={needRoomForMacWindowControls ? 'pl-20' : ''}>
-            <ActionIcon
-              className="controls"
-              variant="subtle"
-              size={isSmallScreen ? 24 : 20}
-              color={isSmallScreen ? 'chatbox-secondary' : 'chatbox-tertiary'}
-              mr="xs"
-              onClick={() => setShowSidebar(!showSidebar)}
-            >
-              {isSmallScreen ? <IconMenu2 /> : <IconLayoutSidebarLeftExpand />}
-            </ActionIcon>
-          </Flex>
-        )}
-
-        <Flex
-          align="center"
-          flex={1}
-          className="min-w-0"
-          {...(isSmallScreen ? { justify: 'center', pl: 28, pr: 8 } : {})}
-        >
-          <Text fw={600} fz={18} lh="24px" truncate="end" className="min-w-0">
+    <PageHeader
+      title={
+        <Flex align="center" miw={0}>
+          <Text component="h1" m={0} fw={600} fz={14} lh="20px" truncate="end" className="min-w-0">
             {currentSession?.name}
           </Text>
           <Tooltip>
             <TooltipTrigger asChild>
-              <ActionIcon
+              <IconButton
                 className="controls"
-                variant="subtle"
+                icon={IconPencil}
+                iconSize={ICON_SIZE.inline}
                 color="chatbox-tertiary"
-                size={isSmallScreen ? 20 : 16}
                 ml={4}
                 aria-label={t('Customize settings for the current conversation')}
                 onClick={editCurrentSession}
-              >
-                <PencilIcon size={12} />
-              </ActionIcon>
+              />
             </TooltipTrigger>
             <TooltipContent>{t('Customize settings for the current conversation')}</TooltipContent>
           </Tooltip>
         </Flex>
-
-        <Toolbar session={currentSession} />
-
-        <WindowControls className="-mr-3 ml-2" />
-      </Flex>
-
-      {isSmallScreen && <Divider />}
-    </>
+      }
+      right={<Toolbar session={currentSession} />}
+    />
   )
 }

@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto'
-import { beforeEach, describe, expect, it } from 'vitest'
 import type { SessionMetaRecord } from '@shared/types'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { IndexedDBSessionMetaStorage } from '../SessionMetaStorage'
 
 function makeRecord(overrides: Partial<SessionMetaRecord> & { id: string }): SessionMetaRecord {
@@ -66,6 +66,30 @@ describe('IndexedDBSessionMetaStorage', () => {
     storage = new TestSessionMetaStorage(`test-db-${++dbCounter}`)
   })
 
+  it('iterates all identities in bounded key-only pages including hidden and archived records', async () => {
+    const records = Array.from({ length: 257 }, (_, index) =>
+      makeRecord({
+        id: `session-${String(index).padStart(3, '0')}`,
+        hidden: index % 2 === 0,
+        ...(index % 3 === 0 ? { archivedAt: 1 } : {}),
+      })
+    )
+    await storage.createMany(records)
+    const values = vi.spyOn(IDBObjectStore.prototype, 'getAll')
+    const keys = vi.spyOn(IDBObjectStore.prototype, 'getAllKeys')
+    try {
+      const ids: string[] = []
+      for await (const id of storage.iterateIds!()) ids.push(id)
+      expect(ids).toEqual(records.map((record) => record.id))
+      expect(values).not.toHaveBeenCalled()
+      expect(keys.mock.calls.every(([, limit]) => limit === 128)).toBe(true)
+      expect(keys).toHaveBeenCalledTimes(4)
+    } finally {
+      values.mockRestore()
+      keys.mockRestore()
+    }
+  })
+
   it('create and getById', async () => {
     const record = makeRecord({ id: 'test-1', name: 'Hello' })
     await storage.create(record)
@@ -108,6 +132,16 @@ describe('IndexedDBSessionMetaStorage', () => {
     const tx = db.transaction('records', 'readonly')
     const store = tx.objectStore('records')
     expect(store.indexNames.contains('archivedAt')).toBe(false)
+  })
+
+  it('round-trips hasPausedToolCall on session meta records', async () => {
+    const record = makeRecord({ id: 'paused-1', name: 'Waiting', hasPausedToolCall: true })
+    await storage.create(record)
+
+    await expect(storage.getById('paused-1')).resolves.toMatchObject({
+      id: 'paused-1',
+      hasPausedToolCall: true,
+    })
   })
 
   it('update existing record', async () => {
@@ -204,6 +238,31 @@ describe('IndexedDBSessionMetaStorage', () => {
     expect(secondPage.items.map((record) => record.id)).toEqual(['archived-1'])
     expect(secondPage.nextCursor).toBeNull()
     expect(secondPage.total).toBe(3)
+  })
+
+  it('getArchivedPage and getArchivedTotal read only the archived index', async () => {
+    await storage.createMany([
+      ...Array.from({ length: 30 }, (_, i) => makeRecord({ id: `visible-${i}`, sortOrder: i })),
+      ...Array.from({ length: 30 }, (_, i) => makeRecord({ id: `hidden-${i}`, sortOrder: 100 + i, hidden: true })),
+      ...Array.from({ length: 5 }, (_, i) =>
+        makeRecord({ id: `archived-${i}`, sortOrder: 200 + i, hidden: true, archivedAt: 1000 + i })
+      ),
+    ])
+    const storeCursor = vi.spyOn(IDBObjectStore.prototype, 'openCursor')
+    const storeGetAll = vi.spyOn(IDBObjectStore.prototype, 'getAll')
+
+    const page = await storage.getArchivedPage(2, 2)
+
+    expect(page).toEqual({
+      items: [expect.objectContaining({ id: 'archived-2' }), expect.objectContaining({ id: 'archived-1' })],
+      nextCursor: 4,
+      total: 5,
+    })
+    expect(await storage.getArchivedPage(5, 2)).toEqual({ items: [], nextCursor: null, total: 5 })
+    expect(storeCursor).not.toHaveBeenCalled()
+    expect(storeGetAll).not.toHaveBeenCalled()
+    storeCursor.mockRestore()
+    storeGetAll.mockRestore()
   })
 
   it('getArchivedPage falls back to sorted scans when archivedAt index is missing', async () => {
@@ -312,6 +371,216 @@ describe('IndexedDBSessionMetaStorage', () => {
       expect(page1.items.map((r) => r.id)).toEqual(['p1', 'r1'])
       expect(page2.items.map((r) => r.id)).toEqual(['r2'])
       expect(page2.nextCursor).toBeNull()
+    })
+
+    it('pages in folder display order when folders exist', async () => {
+      await storage.create(makeRecord({ id: 'loose', sortOrder: 500 }))
+      await storage.create(makeRecord({ id: 'home', sortOrder: 400, folderId: 'f-home' }))
+      await storage.create(makeRecord({ id: 'work', sortOrder: 100, folderId: 'f-work' }))
+      await storage.create(makeRecord({ id: 'orphan', sortOrder: 300, folderId: 'deleted' }))
+      await storage.create(makeRecord({ id: 'pinned', sortOrder: 50, starred: true, folderId: 'f-home' }))
+      await storage.create(makeRecord({ id: 'hidden', sortOrder: 900, hidden: true, folderId: 'f-work' }))
+
+      const folderIds = ['f-work', 'f-home']
+      const page1 = await storage.getPage(0, 3, folderIds)
+      const page2 = await storage.getPage(3, 3, folderIds)
+
+      expect(page1.items.map((r) => r.id)).toEqual(['pinned', 'work', 'home'])
+      expect(page1.nextCursor).toBe(3)
+      expect(page2.items.map((r) => r.id)).toEqual(['loose', 'orphan'])
+      expect(page2.nextCursor).toBeNull()
+      expect(page2.total).toBe(5)
+    })
+
+    it('reads the store once for consecutive folder pages', async () => {
+      for (const [id, sortOrder] of [
+        ['a', 400],
+        ['b', 300],
+        ['c', 200],
+        ['d', 100],
+      ] as const) {
+        await storage.create(makeRecord({ id, sortOrder, folderId: 'f' }))
+      }
+      const getAll = vi.spyOn(IDBObjectStore.prototype, 'getAll')
+
+      await storage.getPage(0, 2, ['f'])
+      await storage.getPage(2, 2, ['f'])
+
+      expect(getAll).toHaveBeenCalledTimes(1)
+      getAll.mockRestore()
+    })
+
+    it('serves pages and the visible count from one read when many sessions are hidden', async () => {
+      await storage.createMany([
+        makeRecord({ id: 'pinned', sortOrder: 100, starred: true }),
+        makeRecord({ id: 'new', sortOrder: 300 }),
+        makeRecord({ id: 'old', sortOrder: 200 }),
+        ...Array.from({ length: 20 }, (_, i) =>
+          makeRecord({ id: `archived-${i}`, sortOrder: 1000 + i, hidden: true, archivedAt: 1000 + i })
+        ),
+      ])
+      const getAll = vi.spyOn(IDBObjectStore.prototype, 'getAll')
+      const openCursor = vi.spyOn(IDBObjectStore.prototype, 'openCursor')
+
+      const page1 = await storage.getPage(0, 2)
+      const page2 = await storage.getPage(2, 2)
+      const total = await storage.getTotal()
+
+      expect(page1).toMatchObject({ nextCursor: 2, total: 3 })
+      expect([...page1.items, ...page2.items].map((r) => r.id)).toEqual(['pinned', 'new', 'old'])
+      expect(page2.nextCursor).toBeNull()
+      expect(total).toBe(3)
+      expect(getAll).toHaveBeenCalledTimes(1)
+      expect(openCursor).not.toHaveBeenCalled()
+      getAll.mockRestore()
+      openCursor.mockRestore()
+    })
+
+    it('keeps the visible count current across writes', async () => {
+      await storage.create(makeRecord({ id: 'a', sortOrder: 100 }))
+      expect(await storage.getTotal()).toBe(1)
+
+      await storage.create(makeRecord({ id: 'b', sortOrder: 200 }))
+      await storage.update('a', { hidden: true, archivedAt: 1000 })
+      await storage.createMany([makeRecord({ id: 'c', sortOrder: 300 })])
+      expect(await storage.getTotal()).toBe(2)
+
+      await storage.update('a', { hidden: false, archivedAt: undefined })
+      await storage.deleteMany(['c'])
+      expect(await storage.getTotal()).toBe(2)
+      expect((await storage.getPage(0, 10)).items.map((r) => r.id)).toEqual(['b', 'a'])
+    })
+
+    it('sorts another folder order from the snapshot without rereading the store', async () => {
+      await storage.create(makeRecord({ id: 'loose', sortOrder: 300 }))
+      await storage.create(makeRecord({ id: 'filed', sortOrder: 100, folderId: 'f' }))
+      const getAll = vi.spyOn(IDBObjectStore.prototype, 'getAll')
+
+      const folderPage = await storage.getPage(0, 10, ['f'])
+      const flatPage = await storage.getPage(0, 10)
+      await storage.create(makeRecord({ id: 'new', sortOrder: 400 }))
+      const folderPageAgain = await storage.getPage(0, 10, ['f'])
+      const flatPageAgain = await storage.getPage(0, 10)
+
+      expect(folderPage.items.map((r) => r.id)).toEqual(['filed', 'loose'])
+      expect(flatPage.items.map((r) => r.id)).toEqual(['loose', 'filed'])
+      expect(folderPageAgain.items.map((r) => r.id)).toEqual(['filed', 'new', 'loose'])
+      expect(flatPageAgain.items.map((r) => r.id)).toEqual(['new', 'loose', 'filed'])
+      expect(getAll).toHaveBeenCalledTimes(1)
+      getAll.mockRestore()
+    })
+
+    it('rereads pages after another tab writes', async () => {
+      const dbName = `test-db-${++dbCounter}`
+      const tabA = new TestSessionMetaStorage(dbName)
+      const tabB = new TestSessionMetaStorage(dbName)
+      await tabA.create(makeRecord({ id: 'a', sortOrder: 100 }))
+      expect((await tabA.getPage(0, 10)).total).toBe(1)
+
+      await tabB.create(makeRecord({ id: 'b', sortOrder: 200 }))
+      await vi.waitFor(async () => expect(await tabA.getTotal()).toBe(2))
+      expect((await tabA.getPage(0, 10)).items.map((r) => r.id)).toEqual(['b', 'a'])
+    })
+
+    it('does not patch pages for a write whose transaction aborts after the request succeeded', async () => {
+      await storage.create(makeRecord({ id: 'a', sortOrder: 100 }))
+      await storage.getPage(0, 10)
+      const add = IDBObjectStore.prototype.add
+      const abortAfterAdd = vi.spyOn(IDBObjectStore.prototype, 'add').mockImplementation(function (
+        this: IDBObjectStore,
+        ...args: Parameters<IDBObjectStore['add']>
+      ) {
+        const request = add.apply(this, args)
+        request.addEventListener('success', () => this.transaction.abort())
+        return request
+      })
+
+      await expect(storage.create(makeRecord({ id: 'b', sortOrder: 200 }))).rejects.toBeTruthy()
+      abortAfterAdd.mockRestore()
+
+      expect(await storage.getById('b')).toBeNull()
+      expect((await storage.getPage(0, 10)).items.map((r) => r.id)).toEqual(['a'])
+    })
+
+    it('returns records that callers can change without changing later pages', async () => {
+      await storage.create(makeRecord({ id: 'a', sortOrder: 100, name: 'Original' }))
+      const page = await storage.getPage(0, 10)
+      page.items[0].name = 'Changed by caller'
+      page.items[0].hidden = true
+
+      const again = await storage.getPage(0, 10)
+      expect(again.items.map((r) => [r.id, r.name])).toEqual([['a', 'Original']])
+    })
+
+    it('reflects writes and folder order changes in later folder pages', async () => {
+      await storage.create(makeRecord({ id: 'a', sortOrder: 300, folderId: 'f1' }))
+      await storage.create(makeRecord({ id: 'b', sortOrder: 200, folderId: 'f2' }))
+      await storage.getPage(0, 10, ['f1', 'f2'])
+
+      await storage.update('b', { folderId: 'f1' })
+      await storage.create(makeRecord({ id: 'c', sortOrder: 100, folderId: 'f2' }))
+      expect((await storage.getPage(0, 10, ['f1', 'f2'])).items.map((r) => r.id)).toEqual(['a', 'b', 'c'])
+      expect((await storage.getPage(0, 10, ['f2', 'f1'])).items.map((r) => r.id)).toEqual(['c', 'a', 'b'])
+
+      await storage.delete('a')
+      expect((await storage.getPage(0, 10, ['f2', 'f1'])).items.map((r) => r.id)).toEqual(['c', 'b'])
+    })
+
+    it('patches folder order pages after writes without rereading the store', async () => {
+      await storage.create(makeRecord({ id: 'a', sortOrder: 300, folderId: 'f1' }))
+      await storage.create(makeRecord({ id: 'b', sortOrder: 200, folderId: 'f2' }))
+      await storage.getPage(0, 10, ['f1', 'f2'])
+      const getAll = vi.spyOn(IDBObjectStore.prototype, 'getAll')
+
+      await storage.update('a', { name: 'Renamed' })
+      await storage.update('b', { folderId: 'f1' })
+      await storage.createMany([makeRecord({ id: 'c', sortOrder: 250, folderId: 'f1' })])
+      await storage.update('a', { hidden: true })
+      await storage.deleteMany(['missing'])
+      const page = await storage.getPage(0, 10, ['f1', 'f2'])
+
+      expect(getAll).not.toHaveBeenCalled()
+      expect(page.items.map((r) => r.id)).toEqual(['c', 'b'])
+      getAll.mockRestore()
+
+      await storage.clear()
+      expect((await storage.getPage(0, 10, ['f1', 'f2'])).items).toEqual([])
+    })
+
+    it('rereads folder order pages after a failed write', async () => {
+      await storage.create(makeRecord({ id: 'a', sortOrder: 300, folderId: 'f1' }))
+      await storage.getPage(0, 10, ['f1'])
+      await expect(storage.create(makeRecord({ id: 'a', sortOrder: 100 }))).rejects.toBeTruthy()
+      const getAll = vi.spyOn(IDBObjectStore.prototype, 'getAll')
+
+      expect((await storage.getPage(0, 10, ['f1'])).items.map((r) => r.id)).toEqual(['a'])
+      expect(getAll).toHaveBeenCalledTimes(1)
+      getAll.mockRestore()
+    })
+
+    it('does not keep a folder order read that overlapped a write', async () => {
+      await storage.create(makeRecord({ id: 'a', sortOrder: 300, folderId: 'f1' }))
+      await storage.create(makeRecord({ id: 'b', sortOrder: 200, folderId: 'f2' }))
+
+      const internals = storage as unknown as { getAllRecords: () => Promise<SessionMetaRecord[]> }
+      const readAll = internals.getAllRecords.bind(storage)
+      let releaseRead = () => {}
+      const readGate = new Promise<void>((resolve) => {
+        releaseRead = resolve
+      })
+      internals.getAllRecords = async () => {
+        const records = await readAll()
+        await readGate
+        return records
+      }
+      const reading = storage.getPage(0, 10, ['f1', 'f2'])
+      await storage.update('b', { folderId: 'f1' })
+      releaseRead()
+      await reading
+      internals.getAllRecords = readAll
+
+      const page = await storage.getPage(0, 10, ['f1', 'f2'])
+      expect(page.items.find((r) => r.id === 'b')?.folderId).toBe('f1')
     })
   })
 

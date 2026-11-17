@@ -2,6 +2,16 @@ import { Box, Button, Divider, Stack } from '@mantine/core'
 import { IconArrowDown, IconChevronDown, IconChevronsDown, IconChevronsUp, IconChevronUp } from '@tabler/icons-react'
 import { clsx } from 'clsx'
 import { type CSSProperties, type FC, memo, useCallback, useRef } from 'react'
+import { GLASS_SURFACE_CLASS } from '@/lib/glass-surface'
+
+/**
+ * Floating round buttons over the transcript: the page fill comes from a class so the glass rules can
+ * replace it over a chat wallpaper, and the filled variant's hover keeps that fill instead of the brand color.
+ */
+export const FLOATING_BUTTON_GLASS_PROPS = {
+  className: `bg-chatbox-background-primary ${GLASS_SURFACE_CLASS}`,
+  style: { '--button-hover': 'var(--chatbox-background-primary)' } as CSSProperties,
+}
 
 export type MessageNavigationProps = {
   visible: boolean
@@ -52,7 +62,7 @@ export const MessageNavigation: FC<MessageNavigationProps> = ({
       <Stack
         gap={6}
         p={'xxs'}
-        className="rounded border border-solid border-chatbox-border-primary bg-chatbox-background-primary [&>.mantine-Divider-root]:border-chatbox-border-primary"
+        className={`rounded border border-solid border-chatbox-border-primary bg-chatbox-background-primary [&>.mantine-Divider-root]:border-chatbox-border-primary ${GLASS_SURFACE_CLASS}`}
       >
         <MessageNavigationButton icon={<IconChevronsUp />} onClick={onScrollToTop} />
         <Divider />
@@ -93,11 +103,10 @@ export const ScrollToBottomButton = ({ onClick, style }: { onClick?(): void; sty
         h={38}
         radius="lg"
         p={0}
-        bg="var(--chatbox-background-primary)"
         c="chatbox-primary"
-        className="shadow-xl border-chatbox-border-primary"
+        className={clsx('shadow-xl border-chatbox-border-primary', FLOATING_BUTTON_GLASS_PROPS.className)}
         onClick={onClick}
-        style={style}
+        style={{ ...FLOATING_BUTTON_GLASS_PROPS.style, ...style }}
       >
         <IconArrowDown size={20} />
       </Button>

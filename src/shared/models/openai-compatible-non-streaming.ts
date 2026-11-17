@@ -1,4 +1,4 @@
-import type { LanguageModelV3, LanguageModelV3Content } from '@ai-sdk/provider'
+import type { LanguageModelV4, LanguageModelV4Content } from '@ai-sdk/provider'
 import { type LanguageModelMiddleware, simulateStreamingMiddleware, wrapLanguageModel } from 'ai'
 
 /**
@@ -12,8 +12,8 @@ import { type LanguageModelMiddleware, simulateStreamingMiddleware, wrapLanguage
  * the provider's original ordering.
  */
 export function normalizeOpenAICompatibleNonStreamingContent(
-  content: LanguageModelV3Content[]
-): LanguageModelV3Content[] {
+  content: LanguageModelV4Content[]
+): LanguageModelV4Content[] {
   if (content.length !== 2 || content[0].type !== 'text' || content[1].type !== 'reasoning') {
     return content
   }
@@ -23,7 +23,7 @@ export function normalizeOpenAICompatibleNonStreamingContent(
 
 function normalizeOpenAICompatibleNonStreamingReasoningMiddleware(): LanguageModelMiddleware {
   return {
-    specificationVersion: 'v3',
+    specificationVersion: 'v4',
     wrapGenerate: async ({ doGenerate }) => {
       const result = await doGenerate()
       const content = normalizeOpenAICompatibleNonStreamingContent(result.content)
@@ -36,7 +36,7 @@ function normalizeOpenAICompatibleNonStreamingReasoningMiddleware(): LanguageMod
  * Normalize doGenerate() before simulateStreamingMiddleware() replays its
  * ordered content as stream chunks.
  */
-export function wrapOpenAICompatibleNonStreamingModel(model: LanguageModelV3): LanguageModelV3 {
+export function wrapOpenAICompatibleNonStreamingModel(model: LanguageModelV4): LanguageModelV4 {
   const normalizedModel = wrapLanguageModel({
     model,
     middleware: normalizeOpenAICompatibleNonStreamingReasoningMiddleware(),

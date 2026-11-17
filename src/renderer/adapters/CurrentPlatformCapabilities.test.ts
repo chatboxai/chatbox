@@ -8,6 +8,10 @@ describe('CurrentPlatformCapabilities', () => {
     expect(capabilities.supports('agent-mode')).toBe(true)
   })
 
+  test('enables local work mode on Capacitor', () => {
+    expect(new CurrentPlatformCapabilities({ isDesktopLike: false, type: 'mobile' }).supports('agent-mode')).toBe(true)
+  })
+
   test('disables the Agent Mode capability for non-desktop hosts', () => {
     const capabilities = new CurrentPlatformCapabilities({ isDesktopLike: false })
 

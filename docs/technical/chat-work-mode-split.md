@@ -1,10 +1,10 @@
 # 聊天/工作模式分化（Chat / Work Mode Split）
 
-> Last updated: 2026-09
+> Last updated: 2026-10
 
 本文档记录聊天模式与工作模式在**消息结构操作自由度**上的分化设计：聊天模式放开结构自由（平铺追加回答、生成中切换分支、自由编辑删除），工作模式收紧结构手术（禁止平铺追加、删除分支等；助手消息可编辑但多 step 只改最后一段输出文本），同时保留单条消息删除、消息队列与 steering。涵盖动机、分阶段设计、性能与兼容性决策。
 
-相关文档：[会话管理系统](./session-management.md)（fork 数据模型）、[状态管理](./state-management.md)（生成锁与并发控制）。
+相关文档：[会话管理系统](./session-management.md)（fork 数据模型）、状态管理（生成锁与并发控制）。
 
 ---
 
@@ -57,7 +57,7 @@
 - **action-gates**：临时锁（流式中 / compaction / 待审批），UI 表现为禁用 + toast 解释"为什么暂时不行"。
 - **mode-policy**：静态能力（该模式下没有这个功能），UI 表现为**隐藏入口**，不解释、不禁用。
 
-唯一需要同时看两者的动作是"生成中切换分支"：它是临时锁的模式化例外，因此实现为 `getSessionActionGate('switch-fork', locks, { sessionMode })` 的 context 参数——`sessionMode: 'chat'` 时不再被 generating 锁阻挡（compaction 锁不变），`'work'` 或未传时保持旧行为。未传参保守化的目的是让尚未适配的宿主（mobile-native）自动维持旧语义。
+唯一需要同时看两者的动作是"生成中切换分支"：它是临时锁的模式化例外，因此实现为 `getSessionActionGate('switch-fork', locks, { sessionMode })` 的 context 参数——`sessionMode: 'chat'` 时不再被 generating 锁阻挡（compaction 锁不变），`'work'` 或未传时保持旧行为。Renderer 与 RN 都传入从会话 header 解析的模式；未传模式时采用保守锁策略。
 
 策略执行采用与 `guardSessionAction` 相同的双层防御：UI 按策略隐藏入口；store 动作入口（如 `generateMore`）内做后备检查，拦下陈旧界面/新增调用面的漏网请求。**模式策略是客户端 UX 约束，不是数据不变量**——旧版本客户端与同步端不强制执行，任何数据层逻辑不得假设"工作模式会话的消息不可变"。
 
@@ -65,17 +65,17 @@
 
 ### 阶段一：在下方回答回退平铺插入
 
-`generateMore` 从"创建 inactive fork + 隔离上下文生成"回退为 `insertMessageAfter` + 直接生成（即原 fallback 路径转正）。要点：
+`generateMore` 委托共享 `ChatMessageService.replyBelow`，通过 `message-insert-after` 行命令在指定消息后插入生成占位，再启动生成。要点：
 
-- **不包 session 生成锁**，保持多条候选并发生成的能力（与旧行为一致；入口内部由 orchestrate 统一等待 unsettled stream drains）。
-- 回退后**所有生成流都回到活跃路径**（root 或 thread 尾部），"流式写入非活跃容器"不再是常规流程（仅在阶段四的生成中切换后出现）。
+- **不包 session 生成锁**，允许多条候选并发生成；准备阶段持有 runtime preparation lease，插入命令再次校验锚点和动作锁。
+- 回复插入目标消息所属的选中路径，按稳定 message ID 持续写入；用户随后切换分支，不改变这条生成流的持久化目标。
 - **单条停止按钮恢复**：主列表中生成中的消息在并发数 >1 时显示独立停止（复用 `shouldShowConcurrentReplyStop`，单条流式时维持"输入框停止"的无按钮设计）。
 - picture 会话的"在下方生成更多图片"走同一入口，一并回退。
 - 下一轮请求中连续多条 assistant 消息由 `sequenceMessages` 合并（平铺时代既有管线，未拆除）。
 
 **接受的代价**：未删除的候选回答会进入后续轮次上下文（token 开销 + 插入点一次性 cache 失效）。这是目标用户群体主动管理的行为（对比后删除多余候选），且被限定在聊天模式内。
 
-**存量数据**：fork 时代产生的候选分支继续由 ForkGroup 渲染，无迁移。shared 的 `buildCreateInactiveForkPatch` 保留（mobile-native 仍在引用，等 native 同步回退后再删）。
+**存量数据**：候选分支与平铺回复都转换为 thread 内的消息行关系。ForkGroup 按独立分支选项页和正文页展示未选中的分支；历史格式的升级边界见[会话管理系统](./session-management.md)。
 
 ### 阶段二：模式策略与切换收口
 
@@ -90,50 +90,50 @@
 - `getSubmitAction` / `getSubmitControl` 增加 `queueEnabled` 参数：聊天模式下生成中提交返回 `'block'`（弹既有 `'generating'` 锁提示），控件保持 Stop 不再切换为入队。
 - 队列 UI（QueuedMessagesBar 的立即发送等）按模式隐藏新增入口；**存量已排队消息只出不进**——继续按序送达直到清空（队列不变量"用户文本永不丢"保持）。
 - steering consumer 对聊天模式生成不注册。
-- 该阶段同时消掉两个已知语义洞：排队消息在分支切换后投递到另一条分支的歧义；steering 锚点被切换挪进 fork list 触发 `MessageAnchorNotFoundError`（`applyMessageInsert` 的 `requireAnchor` 退化为纯防御断言）。
+- 该阶段同时消掉两个已知语义洞：排队消息在分支切换后投递到另一条分支的歧义；steering 锚点被切换挪进 fork list 触发 `MessageAnchorNotFoundError`（`message-insert-after` 命令的 `requireAnchor` 仍在提交前校验目标关系）。
 
 ### 阶段四：聊天模式生成中放开切换分支
 
 `action-gates` 中 `switch-fork` 的 generating 锁按 `sessionMode` 分化（chat 放开，work / 未知保守维持）。`delete-fork` 与 compaction 锁在两个模式下均不变。
 
-数据层无需改动，依据是既有机制已经容器无关：
+生成与列表窗口通过稳定身份协作：
 
-- 流式 chunk 缓存更新与 2s/终态落盘均经 `applyMessageUpdate` 按 id 寻址（root → threads → fork lists 全搜）。
-- 每次 fork 写入携带 `preserveCachedGeneratingMessages`，`mergeCachedGeneratingMessages` 两侧扫描全部三种容器。
-- 生成锁由可达遍历推导（`getGenerationControlMessages`），流式消息被切进分支后 session 仍保持 generating 锁——不会误解锁导致跨分支并发新生成。
-- 全局停止（`stopAllMessageGenerations`）= runtime 表全停 + 可达图扫尾（占位窗口墓碑），天然覆盖被切走的后台流。
-- 崩溃残留的 `generating:true` 由 `recoverSessionOnLoad` 在加载时对全部容器修复。
+- 流式缓冲和正文检查点按 message ID 更新；行命令只读取目标及所需局部关系，生成目标可以位于未选分支或历史 thread。
+- `SessionService` 发布已提交的行 delta，`SessionQueryBridge` 将最终正文和关系元数据投影到已加载行与点查询。分支切换保留已加载公共前缀及其它生成消息的 live overlay。
+- `readSessionGenerationControl` 结合 thread 控制投影、持久化生成状态及 runtime ID 集合提供精确锁信息；列表窗口之外的生成也参与判定。
+- 全局停止先协调 runtime 与准备中的生成，再读取相关生成 ID 和少量目标正文，逐条完成终态行写入。读取冲突可以有界重试，已经提交的终态写入不能重放。
+- 首窗读取后异步调用 `recoverInterruptedGenerations`，按持久化生成 ID 执行 `message-recover` 行命令；当前 runtime 正在运行的消息不会被恢复任务终止。
 
-UI 补丁：ForkGroup 对包含生成中消息的非活跃分支强制 reveal（切换保存回 slot 时 list id 不变，原有"新 id 才展开"的逻辑覆盖不到）。分支卡片除首条回复外还渲染 follow-up 尾部的流式候选（先平铺多条候选、再切走更早的分支时，live 流在 `firstReply` 之后）——否则卡片看起来已完成且没有单条停止入口；候选完成后保持可见（与分支级 sticky reveal 一致），折叠或切换分支时回到仅计数摘要，follow-up 计数只统计未展示的消息。
+ForkGroup 的计数和当前分支来自消息行的轻量 fork 投影。展开时分页读取分支选项，再按需读取选定分支的有界正文；未选分支内的运行中消息通过精确的 runtime 归属和点查询展示，并保留单条停止入口。
 
 ### 阶段五：Save & Resend 消息版本化
 
-编辑用户消息后重发采用**消息版本化**，两个模式共用（工作模式下它仍是用户消息的唯一编辑路径）：`buildSaveAndResendForkPatch`（shared）把 **[原消息, ...旧尾巴]** 整段存为**前驱消息**下的分支（pivot 跳过 summary，与 `regenerateInNewFork` 的既有约定一致），编辑后的内容以**新 id** 作为新活跃尾巴的开头再生成回复——每条时间线各自携带自己的 prompt，切回旧分支看到的仍是它当初回应的那句提问。fork + 替换在一次 session 写内完成，避免 prompt 在两次写之间闪断；fork 切换器因此落在前驱消息上（通常是上一条助手回复）。
+编辑用户消息后重发采用**消息版本化**，两个模式共用（工作模式下它仍是用户消息的唯一编辑路径）：`ForkService.saveAndResend` 提交 `fork-save-resend` 行命令，把 **[原消息, ...旧尾巴]** 的既有行关系保留为**前驱消息**下的分支（pivot 跳过 summary，与 `regenerateInNewFork` 的既有约定一致），编辑后的内容以**新 id** 作为新活跃尾巴的开头再生成回复——每条时间线各自携带自己的 prompt，切回旧分支看到的仍是它当初回应的那句提问。分支关系与新正文在一次 revision/CAS 提交内完成，避免 prompt 在两次写之间闪断；fork 切换器因此落在前驱消息上（通常是上一条助手回复）。
 
-pivot 必须是前驱而非被编辑消息自身，这是数据模型强制的：分支只保存 pivot **之后**的尾巴，pivot 本身是各分支共享的主线，以被编辑消息为 pivot 会让改写后的 prompt 成为所有分支的共同前缀。同类产品的选型一致——pi 的会话树、ChatGPT / Open WebUI / LibreChat 的消息版本化、Claude Code / Codex CLI 的 rewind、deepseek-harness 的纯 append-only，没有一家把 prompt 覆写与"旧回复留作可切分支"并存。
+有合法前驱时，pivot 使用该前驱：分支保留 pivot **之后**的路径，pivot 本身是各分支共享的主线。因此编辑后的 prompt 与旧 prompt 各自属于自己的分支。首条消息遵循下述共享 pivot 约定。
 
 边界与回退（口径统一为**用户文本永不丢**）：
 
 - 无合法前驱（会话首条消息，或前面只有 summary）：就地覆写 + 在被编辑消息自身建分支。
-- guard 拦截、锁内 session 读失败、fork 写失败：仅就地保存编辑，不重发。编辑弹窗在交出内容后即关闭并 void-call 该动作，因此这条路径上的失败一律吞掉，不外抛未处理 rejection。
-- fork 写入的"部分成功"（session 数据已落盘、仅列表元数据投影失败）按成功处理并照常重发：分支此时已按原 id 持有原提问，就地保存反而会把归档的提问覆写成编辑后的文本。`createSaveAndResendFork` 因此只在**什么都没落盘**时才 reject。
+- guard 拦截、锁内行读取失败、fork 提交失败：仅就地保存编辑，不重发。编辑弹窗在交出内容后即关闭并 void-call 该动作，因此这条路径上的失败一律吞掉，不外抛未处理 rejection。
+- fork 行事务成功、后置列表元数据投影失败时，按已提交处理并照常重发：分支此时已按原 id 持有原提问，就地保存反而会把归档的提问覆写成编辑后的文本。`createSaveAndResendFork` 因此只在**什么都没落盘**时才 reject。
 
-**共享 RAG 附件所有权**：版本化让原消息与副本引用同一条 `session_attachment` 索引行，而该行按 `message_id` 单一归属。删消息 / 删分支时先按 `planAttachmentOwnershipTransfers` 把幸存者仍引用的行 `rebindAttachment` 过去，再执行按 owner 的删除；孤儿维护则以"是否仍被活跃消息引用"而非"owner 是否可达"判定（`planOrphanCleanup`），被引用的行改为修复归属而不是删除。因此转移失败只影响时效，不会让幸存分支丢掉索引文件。
+**共享 RAG 附件所有权**：版本化让原消息与副本引用同一条 `session_attachment` 索引行，而该行按 `message_id` 单一归属。消息或分支删除提交后，`cleanupSessionAttachments` 通过 `collectSessionAttachmentOwnership` 读取所有 thread 和分支的归属 facts；完整扫描成功后，先 `rebindAttachment` 到幸存引用；单消息删除传入 `removedMessageId` 时，再删除该旧 owner 的附件记录。分支删除调用只重新绑定幸存引用，资源回收由后续清理处理。读取或重新绑定失败时保留资源，避免让幸存分支丢掉索引文件。
 
 ## 性能考量
 
-聊天模式重度用户的会话可达**数十 MB 文本、大量分支与 threads**，以下是各改动的性能账：
+聊天模式会话可达数十 MB 文本，并包含大量分支与 thread。数据读取和 UI 工作量按用途约束：
 
-1. **锁推导（每 chunk 重跑）**：`useSessionLockState` 在每个流式 chunk 后对新 session 快照重新推导。可达遍历为 O(全部消息数) 的 Set 操作，已由 PR 1011 的两项机制兜底——per-snapshot WeakMap 缓存（一个渲染周期所有消费者共享一次遍历）与 `sessionLockStatesEqual` 引用稳定（值不变时 memo 组件零重渲）。本设计**没有改变推导逻辑**（遍历本来就含 fork 分支），边际成本为零。
-2. **禁止新增 per-row 订阅**：`sessionMode` 在 MessageList / InputBox 层解析一次后以 prop 下发（字符串，引用稳定）。数千行消息的会话里，任何加在 Message 行内的 store 订阅都会在每个 chunk 触发全行选择器求值，明确禁止。
-3. **模式策略为纯函数**：`isActionAvailableInMode` 无状态无分配，可在渲染路径任意调用。
-4. **全局停止的写放大**：停止 N 条并发流产生 N 次串行全量 session 落盘（coordinator RMW）。大会话单次写 10-50ms，N≤5 时总计 <250ms 异步 I/O，为既有行为非本次引入；若未来 profile 命中，收敛方向是把 N 个终态合并为一次 `updateSessionWithMessages` 批量写。
-5. **平铺候选的渲染**：主列表为 Virtuoso 虚拟化，行数增加不改变可见窗口渲染成本；ForkGroup 卡片路径反而减少。
-6. **上下文构建**：候选进入后续轮次会提高 token 估算与 context-pressure 输入规模，属既有 O(消息数) 管线的自然增长，无新增热点。
+1. **生成锁与模式**：模式来自独立 header，锁来自控制投影与 runtime 身份。流式 chunk 不需要重新构造或遍历完整会话；界面通过共享控制查询消费结果。
+2. **流式写入与停止**：检查点及终态写入只提交目标消息和必要派生信息。停止多条流会处理各自目标，成本与涉及的生成消息及关系操作有关，不按每条流重复序列化历史正文。
+3. **模式策略**：`isActionAvailableInMode` 是纯函数；列表与输入区将解析后的模式传给动作控件。
+4. **列表与分支**：Virtuoso 和 FlashList 只接收已加载的正文窗口。Electron/Web 每页100条，RN/Capacitor 每页20条。连续浏览保留已加载分页，明确跳转可替换窗口；分支切换保留公共前缀。分支选项与未选分支正文分别分页。
+5. **上下文构建**：先在关系与消息 facts 上应用压缩边界、上下文条数等选择规则，再读取所需正文。平铺候选只有进入选定上下文时才增加请求内容；无限上下文是显式设置。
+6. **Token 与导航**：历史 Token 任务在首窗可交互后独立分批执行；minimap 从正文窗口消息生成预览并共用分页。二者都按有界数据工作。
 
 ## 兼容性
 
-- **数据零迁移**：Session 结构（`messageForksHash` / threads / queue 持久化）不变；新旧两种候选形态（fork 分支 / 平铺）长期共存渲染。
-- **同步与旧客户端**：模式策略不写入数据层，旧客户端对工作模式会话仍可编辑删除——接受（策略是 UX 约束）。
-- **mobile-native**：shared 的 fork patch 函数与 core 的 `contextMessages` 生成选项保留不删；`SessionActionContext.sessionMode` 未传时 switch-fork 维持旧锁语义，native 未适配前行为不变。native 需跟进的两项：在下方回答回退、mode-policy 接入（跟踪于 native 复用审计）。
-- **HarmonyOS**：runtime shell 包裹 web renderer，随 renderer 生效。
+- 模式策略是客户端 UX 约束。行命令仍须校验身份、关系和 revision，不能把“工作模式不允许某操作”当成持久化数据永远不变的保证。
+- 历史 JSON 及旧行格式在升级或导入边界转换并验证；发布后以行数据为权威。消息、thread、分支和队列的业务路径使用独立行接口，完整 `Session` 只作为历史输入格式解析。版本保护、候选发布与失败恢复见[会话管理系统](./session-management.md)。
+- Renderer 与 RN 共用 Chat/Fork 服务、模式策略和行命令，按各宿主能力提供操作入口。查看工作模式会话时仍遵循其模式限制。
+- HarmonyOS 的 runtime shell 使用 web renderer，遵循同一模式策略和行存储接口。

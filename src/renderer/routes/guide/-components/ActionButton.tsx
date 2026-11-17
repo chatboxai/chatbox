@@ -1,3 +1,4 @@
+import { accountLicenseFromApi, selectAccountLicense } from '@shared/utils/account-license'
 /**
  * ActionButton - Reusable button for login and provider settings actions
  */
@@ -36,6 +37,7 @@ export function LoginButton({ onLoginSuccess }: LoginButtonProps) {
   const language = useLanguage()
   const [showLicenseModal, setShowLicenseModal] = useState(false)
   const [licenses, setLicenses] = useState<UserLicense[]>([])
+  const [accountEmail, setAccountEmail] = useState<string>()
   const [selectedLicenseKey, setSelectedLicenseKey] = useState('')
   const [activatingLicense, setActivatingLicense] = useState(false)
   // Remember success state to keep showing success UI even after new messages are added
@@ -43,10 +45,13 @@ export function LoginButton({ onLoginSuccess }: LoginButtonProps) {
   const [loginModalOpened, setLoginModalOpened] = useState(false)
 
   const activateLicense = useCallback(
-    async (licenseKey: string) => {
+    async (licenseKey: string, email?: string) => {
       setActivatingLicense(true)
       try {
-        const result = await premiumActions.activate(licenseKey, 'login', { pageName: JK_PAGE_NAMES.HELP_PAGE })
+        const result = await premiumActions.activate(licenseKey, 'login', {
+          pageName: JK_PAGE_NAMES.HELP_PAGE,
+          accountEmail: email,
+        })
         if (result.valid) {
           setHasSucceeded(true)
           onLoginSuccess()
@@ -77,22 +82,21 @@ export function LoginButton({ onLoginSuccess }: LoginButtonProps) {
       try {
         const [fetchedLicenses, userProfile] = await Promise.all([listLicensesByUser(), getUserProfile()])
 
-        if (fetchedLicenses.length === 1) {
-          // Auto-activate single license
-          await activateLicense(fetchedLicenses[0].key)
-        } else if (fetchedLicenses.length > 1) {
-          // Check for previously selected license
-          const lastSelected = settingsStore.getState().lastSelectedLicenseByUser?.[userProfile.email]
-          const isLastSelectedValid = lastSelected && fetchedLicenses.some((l: UserLicense) => l.key === lastSelected)
-
-          if (isLastSelectedValid) {
-            await activateLicense(lastSelected)
-          } else {
-            // Multiple licenses - show selection modal
-            setLicenses(fetchedLicenses)
-            setSelectedLicenseKey(fetchedLicenses[0].key)
-            setShowLicenseModal(true)
-          }
+        const selection = selectAccountLicense(
+          fetchedLicenses.map(accountLicenseFromApi),
+          settingsStore.getState(),
+          userProfile.email,
+          true
+        )
+        setAccountEmail(userProfile.email)
+        if (selection.selected && (selection.preferred || selection.eligible.length === 1)) {
+          await activateLicense(selection.selected.key, userProfile.email)
+        } else if (selection.eligible.length > 1) {
+          setLicenses(
+            selection.eligible.map((candidate) => fetchedLicenses.find((license) => license.key === candidate.key)!)
+          )
+          setSelectedLicenseKey(selection.selected?.key ?? '')
+          setShowLicenseModal(true)
         } else {
           // No licenses but logged in - still mark as success
           setHasSucceeded(true)
@@ -110,9 +114,9 @@ export function LoginButton({ onLoginSuccess }: LoginButtonProps) {
 
   const handleLicenseConfirm = useCallback(() => {
     if (selectedLicenseKey) {
-      void activateLicense(selectedLicenseKey)
+      void activateLicense(selectedLicenseKey, accountEmail)
     }
-  }, [selectedLicenseKey, activateLicense])
+  }, [selectedLicenseKey, activateLicense, accountEmail])
 
   const trackLoginButtonClick = useCallback(() => {
     trackJkClickEvent(JK_EVENTS.LOGIN_BUTTON_CLICK, {

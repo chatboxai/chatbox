@@ -1,5 +1,4 @@
 import { SESSION_ATTACHMENT_RAG_LOG_PREFIX } from '../../shared/session-attachment-rag/logging'
-import { sentry } from '../adapters/sentry'
 import { getLogger } from '../util'
 import { initializeDatabase } from './db'
 import { startWorkerLoop } from './file-loaders'
@@ -22,12 +21,6 @@ async function initializeSessionAttachmentRag() {
   } catch (error) {
     const duration = Date.now() - startTime
     log.error(`${SESSION_ATTACHMENT_RAG_LOG_PREFIX} Failed to initialize after ${duration}ms:`, error)
-    sentry.withScope((scope) => {
-      scope.setTag('component', 'session-attachment-rag')
-      scope.setTag('operation', 'initialization')
-      scope.setExtra('duration', duration)
-      sentry.captureException(error)
-    })
     throw error
   }
 }

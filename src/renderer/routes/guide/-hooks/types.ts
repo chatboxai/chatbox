@@ -67,7 +67,7 @@ export interface UseGuideSessionReturn {
   /** Called when user clicks Claim Free Plan; renders the awaiting card and the polling lifecycle begins inside it. */
   onClaimStart: () => Promise<void>
   /** Called by useClaimPolling when a license is detected; activates locally and renders the celebration. */
-  onClaimDetected: (license: import('@/packages/remote').UserLicense) => Promise<void>
+  onClaimDetected: (license: import('@/packages/remote').UserLicense, email: string) => Promise<void>
   handleConfigComplete: () => void
   clearSession: () => void
   debugResetGuide: () => void

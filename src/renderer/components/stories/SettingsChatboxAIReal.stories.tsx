@@ -111,6 +111,32 @@ const userLicenses: UserLicense[] = [
   },
 ]
 
+const selectionLicenses: UserLicense[] = [
+  ...userLicenses,
+  {
+    ...userLicenses[0],
+    id: 103,
+    key: 'cbai-story-expiring-license-7890abcd',
+    product_name: 'Chatbox AI Lite',
+    expires_at: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+    recurring_canceled: true,
+  },
+  {
+    ...userLicenses[0],
+    id: 104,
+    key: 'cbai-story-quota-used-license-4567efgh',
+    product_name: 'Chatbox AI Plus',
+    unified_token_usage: 1000000,
+  },
+  {
+    ...userLicenses[0],
+    id: 105,
+    key: 'cbai-story-refunded-license-0123ijkl',
+    status: 'refunded',
+    product_name: 'Chatbox AI Pro',
+  },
+]
+
 const chatboxAIModels: ProviderModelInfo[] = [
   {
     modelId: 'chatboxai-4',
@@ -249,7 +275,12 @@ export const LicenseSelectionModalStates: StoryObj = {
       title="LicenseSelectionModal"
       description="Actual modal shown when an account has multiple licenses to choose from."
     >
-      <LicenseSelectionModal opened licenses={userLicenses} onConfirm={() => undefined} onCancel={() => undefined} />
+      <LicenseSelectionModal
+        opened
+        licenses={selectionLicenses}
+        onConfirm={() => undefined}
+        onCancel={() => undefined}
+      />
     </SettingsSurface>
   ),
 }

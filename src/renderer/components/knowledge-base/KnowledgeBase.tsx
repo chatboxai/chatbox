@@ -1,4 +1,4 @@
-import { Alert, Button, Flex, Group, Paper, Pill, Stack, Text, Title } from '@mantine/core'
+import { Alert, Button, Flex, Group, Pill, Stack, Text } from '@mantine/core'
 import { SystemProviders } from '@shared/defaults'
 import type { KnowledgeBase, ProviderModelInfo } from '@shared/types'
 import type { DocumentParserConfig, DocumentParserType } from '@shared/types/settings'
@@ -10,6 +10,7 @@ import type React from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Modal } from '@/components/layout/Overlay'
+import { SettingsListItem, SettingsPage, SettingsSection } from '@/components/settings/SettingsLayout'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { useProviders } from '@/hooks/useProviders'
 import { navigateToSettings } from '@/modals/settings-navigation'
@@ -410,19 +411,21 @@ const KnowledgeBasePage: React.FC = () => {
   }
 
   return (
-    <Stack p="md" gap="xl">
-      <Group justify="space-between" align="center">
-        <Title order={5}>{t('Knowledge Base')}</Title>
-        <Button variant="outline" onClick={() => setShowCreate(true)} disabled={isUnsupportedPlatform}>
-          <Group gap="xs">
-            <ScalableIcon icon={IconPlus} size={16} />
-            <Text size="sm" c="chatbox-brand" fw={400}>
-              {t('Add')}
-            </Text>
-          </Group>
+    <SettingsPage
+      title={t('Knowledge Base')}
+      description={t('Documents the model can search when a knowledge base is attached to a chat.')}
+      action={
+        <Button
+          variant="light"
+          size="compact-sm"
+          leftSection={<ScalableIcon icon={IconPlus} size={14} />}
+          onClick={() => setShowCreate(true)}
+          disabled={isUnsupportedPlatform}
+        >
+          {t('Add')}
         </Button>
-      </Group>
-
+      }
+    >
       {isUnsupportedPlatform && (
         <Alert
           variant="light"
@@ -536,135 +539,126 @@ const KnowledgeBasePage: React.FC = () => {
           </Group>
         </Stack>
       </Modal>
-      {!isUnsupportedPlatform && (
-        <Stack gap="xl">
-          {chatboxAIKbNeedsLogin && (
-            <Alert
+      {!isUnsupportedPlatform && chatboxAIKbNeedsLogin && (
+        <Alert variant="light" color="orange" icon={<IconAlertTriangle size={16} />} title={t('Sign in to Chatbox AI')}>
+          <Text size="sm">
+            {t(
+              'Your Chatbox AI knowledge base requires an active login. Please sign in to Chatbox AI to use this knowledge base.'
+            )}
+          </Text>
+          <Group mt="sm">
+            <Button
+              size="xs"
               variant="light"
-              color="orange"
-              icon={<IconAlertTriangle size={16} />}
-              title={t('Sign in to Chatbox AI')}
+              leftSection={<IconLogin size={14} />}
+              onClick={() => navigateToSettings('chatbox-ai')}
             >
-              <Text size="sm">
+              {t('Log in to Chatbox AI')}
+            </Button>
+          </Group>
+        </Alert>
+      )}
+      {!isUnsupportedPlatform && kbList.length === 0 && (
+        <SettingsSection>
+          <SettingsListItem className="!flex-col !items-center !py-8 text-center">
+            <ScalableIcon icon={IconInfoCircle} size={40} color="var(--chatbox-tint-tertiary)" />
+            <Stack gap="xs" align="center">
+              <Text fw={500}>{t('No Knowledge Base Yet')}</Text>
+              <Text size="sm" c="chatbox-tertiary" maw={400}>
                 {t(
-                  'Your Chatbox AI knowledge base requires an active login. Please sign in to Chatbox AI to use this knowledge base.'
+                  'Create your first knowledge base to start adding documents and enhance your AI conversations with contextual information.'
                 )}
               </Text>
-              <Group mt="sm">
-                <Button
-                  size="xs"
-                  variant="light"
-                  leftSection={<IconLogin size={14} />}
-                  onClick={() => navigateToSettings('chatbox-ai')}
-                >
-                  {t('Log in to Chatbox AI')}
-                </Button>
-              </Group>
-            </Alert>
-          )}
-          {kbList.length === 0 ? (
-            <Paper withBorder p="xl" style={{ textAlign: 'center' }}>
-              <Stack gap="md" align="center">
-                <ScalableIcon icon={IconInfoCircle} size={48} color="var(--chatbox-tint-tertiary)" />
-                <Stack gap="xs" align="center">
-                  <Text fw={500} size="lg">
-                    {t('No Knowledge Base Yet')}
-                  </Text>
-                  <Text size="sm" c="dimmed" style={{ maxWidth: 400 }}>
-                    {t(
-                      'Create your first knowledge base to start adding documents and enhance your AI conversations with contextual information.'
-                    )}
-                  </Text>
-                </Stack>
-                <Button variant="outline" onClick={() => setShowCreate(true)} size="sm">
-                  <Group gap="xs">
-                    <ScalableIcon icon={IconPlus} size={16} />
-                    {t('Create First Knowledge Base')}
-                  </Group>
-                </Button>
-              </Stack>
-            </Paper>
-          ) : (
-            kbList.map((kb) => (
-              <Paper key={kb.id} withBorder p="md">
-                <Stack gap="md">
-                  <Stack gap="0">
-                    <Group justify="space-between" align="center">
-                      <Text fw={600} size="lg">
-                        {kb.name}
-                      </Text>
-                      <Button size="xs" variant="subtle" onClick={() => handleEditKb(kb)}>
-                        {t('Edit')}
-                      </Button>
-                    </Group>
-                    <Group gap="xs" wrap="wrap" align="center">
-                      {isChatboxAIKnowledgeBase(kb) ? (
-                        <>
-                          <Text size="xs" c="dimmed">
-                            {t('Models')}:
-                          </Text>
-                          <ModelPill
-                            modelValue={'Chatbox AI'}
-                            formatModelName={() => 'Chatbox AI'}
-                            isProviderAvailable={() => canUseChatboxAIProvider}
-                            type="embedding"
-                            t={t}
-                            unavailableTooltip={
-                              !isLoggedIn
-                                ? String(t('Sign in to Chatbox AI to use this knowledge base'))
-                                : String(t('Provider unavailable'))
-                            }
-                            onUnavailableClick={!isLoggedIn ? () => navigateToSettings('chatbox-ai') : undefined}
-                          />
-                        </>
-                      ) : (
-                        <>
-                          <Text size="xs" c="dimmed">
-                            {t('Parser')}:
-                          </Text>
-                          <Pill>{formatParserType(kb.documentParser?.type)}</Pill>
-                          <Text size="xs" c="dimmed">
-                            {t('Embedding')}:
-                          </Text>
-                          <ModelPill
-                            modelValue={kb.embeddingModel}
-                            formatModelName={formatModelName}
-                            isProviderAvailable={isProviderAvailable}
-                            type="embedding"
-                            t={t}
-                          />
-                          <Text size="xs" c="dimmed">
-                            {t('Rerank')}:
-                          </Text>
-                          <ModelPill
-                            modelValue={kb.rerankModel}
-                            formatModelName={formatModelName}
-                            isProviderAvailable={isProviderAvailable}
-                            type="rerank"
-                            t={t}
-                          />
-                          <Text size="xs" c="dimmed">
-                            {t('Vision')}:
-                          </Text>
-                          <ModelPill
-                            modelValue={kb.visionModel}
-                            formatModelName={formatModelName}
-                            isProviderAvailable={isProviderAvailable}
-                            type="vision"
-                            t={t}
-                          />
-                        </>
-                      )}
-                    </Group>
-                  </Stack>
-                  <KnowledgeBaseDocuments knowledgeBase={kb} />
-                </Stack>
-              </Paper>
-            ))
-          )}
-        </Stack>
+            </Stack>
+            <Button
+              variant="light"
+              size="sm"
+              leftSection={<ScalableIcon icon={IconPlus} size={16} />}
+              onClick={() => setShowCreate(true)}
+            >
+              {t('Create First Knowledge Base')}
+            </Button>
+          </SettingsListItem>
+        </SettingsSection>
       )}
-    </Stack>
+      {!isUnsupportedPlatform &&
+        kbList.map((kb) => (
+          <SettingsSection
+            key={kb.id}
+            title={kb.name}
+            description={
+              <Group gap="xs" wrap="wrap" align="center" mt={4}>
+                {isChatboxAIKnowledgeBase(kb) ? (
+                  <>
+                    <Text span size="xs" c="chatbox-tertiary">
+                      {t('Models')}:
+                    </Text>
+                    <ModelPill
+                      modelValue={'Chatbox AI'}
+                      formatModelName={() => 'Chatbox AI'}
+                      isProviderAvailable={() => canUseChatboxAIProvider}
+                      type="embedding"
+                      t={t}
+                      unavailableTooltip={
+                        !isLoggedIn
+                          ? String(t('Sign in to Chatbox AI to use this knowledge base'))
+                          : String(t('Provider unavailable'))
+                      }
+                      onUnavailableClick={!isLoggedIn ? () => navigateToSettings('chatbox-ai') : undefined}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Text span size="xs" c="chatbox-tertiary">
+                      {t('Parser')}:
+                    </Text>
+                    <Pill>{formatParserType(kb.documentParser?.type)}</Pill>
+                    <Text span size="xs" c="chatbox-tertiary">
+                      {t('Embedding')}:
+                    </Text>
+                    <ModelPill
+                      modelValue={kb.embeddingModel}
+                      formatModelName={formatModelName}
+                      isProviderAvailable={isProviderAvailable}
+                      type="embedding"
+                      t={t}
+                    />
+                    <Text span size="xs" c="chatbox-tertiary">
+                      {t('Rerank')}:
+                    </Text>
+                    <ModelPill
+                      modelValue={kb.rerankModel}
+                      formatModelName={formatModelName}
+                      isProviderAvailable={isProviderAvailable}
+                      type="rerank"
+                      t={t}
+                    />
+                    <Text span size="xs" c="chatbox-tertiary">
+                      {t('Vision')}:
+                    </Text>
+                    <ModelPill
+                      modelValue={kb.visionModel}
+                      formatModelName={formatModelName}
+                      isProviderAvailable={isProviderAvailable}
+                      type="vision"
+                      t={t}
+                    />
+                  </>
+                )}
+              </Group>
+            }
+            action={
+              <Button size="compact-sm" variant="subtle" color="chatbox-gray" onClick={() => handleEditKb(kb)}>
+                {t('Edit')}
+              </Button>
+            }
+          >
+            <SettingsListItem className="!block">
+              <KnowledgeBaseDocuments knowledgeBase={kb} />
+            </SettingsListItem>
+          </SettingsSection>
+        ))}
+    </SettingsPage>
   )
 }
 

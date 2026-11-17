@@ -1,3 +1,4 @@
+import type { SessionRowStorePort } from '@chatbox/core/ports'
 import { type AnalyticsEventParams, GOOGLE_ANALYTICS_MEASUREMENT_ID } from '@shared/analytics'
 import * as defaults from '@shared/defaults'
 import type { Config, Settings, ShortcutSetting } from '@shared/types'
@@ -6,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { parseLocale } from '@/i18n/parser'
 import { type ImageGenerationStorage, IndexedDBImageGenerationStorage } from '@/storage/ImageGenerationStorage'
 import { IndexedDBSessionMetaStorage, type SessionMetaStorage } from '@/storage/SessionMetaStorage'
+import { IndexedDBSessionRowStore } from '@/storage/SessionRowStorage'
 import { getBrowser, getOS } from '../packages/navigator'
 import type { Platform, PlatformType } from './interfaces'
 import type { KnowledgeBaseController } from './knowledge-base/interface'
@@ -23,6 +25,7 @@ export default class WebPlatform extends IndexedDBStorage implements Platform {
 
   private imageGenerationStorage: ImageGenerationStorage | null = null
   private sessionMetaStorage: SessionMetaStorage | null = null
+  private sessionRowStore: SessionRowStorePort | null = null
 
   constructor() {
     super()
@@ -210,6 +213,13 @@ export default class WebPlatform extends IndexedDBStorage implements Platform {
       this.sessionMetaStorage = new IndexedDBSessionMetaStorage()
     }
     return this.sessionMetaStorage
+  }
+
+  public getSessionRowStore(): SessionRowStorePort {
+    if (!this.sessionRowStore) {
+      this.sessionRowStore = new IndexedDBSessionRowStore()
+    }
+    return this.sessionRowStore
   }
 
   public minimize() {

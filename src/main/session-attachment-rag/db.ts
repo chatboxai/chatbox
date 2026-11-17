@@ -308,6 +308,7 @@ export async function initializeDatabase() {
     sentry.withScope((scope) => {
       scope.setTag('component', 'session-attachment-rag-db')
       scope.setTag('operation', 'vector_store_initialization')
+      scope.setTag('arch', process.arch)
       scope.setExtra('dbPath', dbPath)
       scope.setExtra('vectorDbPath', vectorDbPath)
       sentry.captureException(error)
@@ -319,11 +320,6 @@ export async function initializeDatabase() {
 export function getDatabase(): Client {
   if (!db) {
     const error = new Error('Session attachment rag database not initialized')
-    sentry.withScope((scope) => {
-      scope.setTag('component', 'session-attachment-rag-db')
-      scope.setTag('operation', 'database_access')
-      sentry.captureException(error)
-    })
     throw error
   }
   return db
@@ -332,11 +328,6 @@ export function getDatabase(): Client {
 export function getVectorStore(): LibSQLVector {
   if (!vectorStore) {
     const error = new Error('Session attachment rag vector store not initialized')
-    sentry.withScope((scope) => {
-      scope.setTag('component', 'session-attachment-rag-db')
-      scope.setTag('operation', 'vector_store_access')
-      sentry.captureException(error)
-    })
     throw error
   }
   return vectorStore

@@ -11,8 +11,10 @@ export function registerSandboxHandlers() {
   cleanupStaleSandboxDirs()
   cleanupStaleCommandOutputCaptures()
   // Kill running sandbox processes and clean up sessions on app quit
-  app.on('before-quit', () => {
-    stopSandboxHtmlPreviewServer()
-    void resetAllSessions()
-  })
+  app.on('before-quit', cleanupSandboxResources)
+}
+
+export function cleanupSandboxResources(): void {
+  stopSandboxHtmlPreviewServer()
+  resetAllSessions()
 }

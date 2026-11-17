@@ -22,14 +22,21 @@ export const generationStreamFixture = {
       toolCallId: 'tool-1',
       result: { title: 'Chatbox', found: true },
     }),
+    chunk('finish-step'),
     chunk('text-delta', { text: 'The result is ready.' }),
     chunk('finish', {
       finishReason: 'stop',
-      totalUsage: { promptTokens: 12, completionTokens: 8, totalTokens: 20 },
+      totalUsage: {
+        inputTokens: 12,
+        inputTokenDetails: { noCacheTokens: 7, cacheReadTokens: 5, cacheWriteTokens: undefined },
+        outputTokens: 8,
+        outputTokenDetails: { textTokens: 8, reasoningTokens: undefined },
+        totalTokens: 20,
+      },
     }),
   ],
   expectedContentParts: [
-    { type: 'text', text: 'I will check. ' },
+    { type: 'text', text: 'I will check. ', stepIndex: 0 },
     {
       type: 'tool-call',
       state: 'result',
@@ -39,8 +46,8 @@ export const generationStreamFixture = {
       result: { title: 'Chatbox', found: true },
       stepIndex: 0,
     },
-    { type: 'text', text: 'The result is ready.' },
+    { type: 'text', text: 'The result is ready.', stepIndex: 1 },
   ] satisfies MessageContentParts,
-  expectedUsage: { promptTokens: 12, completionTokens: 8, totalTokens: 20 },
+  expectedUsage: { inputTokens: 12, outputTokens: 8, totalTokens: 20, cachedInputTokens: 5 },
   expectedFinishReason: 'stop',
 }

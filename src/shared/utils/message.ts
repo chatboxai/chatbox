@@ -343,7 +343,9 @@ export function sequenceMessages(msgs: Message[]): Message[] {
  * transform is idempotent, which lets both context construction (before message
  * limits/compaction) and final request sequencing apply it safely.
  */
-export function orderSteeredMessagesForModel(messages: Message[]): Message[] {
+export function orderSteeredMessagesForModel<
+  T extends Pick<Message, 'role' | 'steered' | 'isSummary' | 'finishReason'>,
+>(messages: T[]): T[] {
   const ordered = [...messages]
   for (let index = 1; index < ordered.length; index += 1) {
     const message = ordered[index]

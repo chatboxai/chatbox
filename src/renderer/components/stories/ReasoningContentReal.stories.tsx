@@ -3,7 +3,7 @@ import type { Message, MessageReasoningPart } from '@shared/types'
 import { MessageRoleEnum } from '@shared/types/session'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type React from 'react'
-import { ReasoningContentUI } from '../message-parts/ToolCallPartUI'
+import { ReasoningContentUI } from '../message-parts/StepTimelineUI'
 
 const meta: Meta<typeof ReasoningContentUI> = {
   title: 'Real Components/ReasoningContentUI',
@@ -12,7 +12,7 @@ const meta: Meta<typeof ReasoningContentUI> = {
     docs: {
       description: {
         component:
-          'The actual `ReasoningContentUI` component from `src/renderer/components/message-parts/ToolCallPartUI.tsx`. ' +
+          'The actual `ReasoningContentUI` component from `src/renderer/components/message-parts/StepTimelineUI.tsx`. ' +
           'Renders reasoning/thinking content in a minimal inline style with expandable detail.',
       },
     },

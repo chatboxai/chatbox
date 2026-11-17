@@ -35,13 +35,13 @@ export class RendererRequestAdapter implements RequestAdapter {
   apiRequest(options: ApiRequestOptions): Promise<Response> {
     if (options.method === 'POST') {
       return this.apiRequestClient.post(options.url, options.headers || {}, options.body, {
-        signal: options.signal,
+        signal: options.signal as AbortSignal | undefined,
         retry: options.retry,
         useProxy: options.useProxy,
       })
     }
     return this.apiRequestClient.get(options.url, options.headers || {}, {
-      signal: options.signal,
+      signal: options.signal as AbortSignal | undefined,
       retry: options.retry,
       useProxy: options.useProxy,
     })

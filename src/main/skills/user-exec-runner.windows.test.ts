@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -12,7 +13,7 @@ vi.mock('../util', () => ({
   getLogger: () => logger,
 }))
 
-import { executeUserExecCommand } from './user-exec-runner'
+import { cancelUserExecCommand, executeUserExecCommand } from './user-exec-runner'
 
 describe.skipIf(process.platform !== 'win32')('user_exec on native Windows', () => {
   let workDir: string
@@ -25,6 +26,54 @@ describe.skipIf(process.platform !== 'win32')('user_exec on native Windows', () 
     rmSync(workDir, { recursive: true, force: true })
     resetWindowsPowerShellResolutionCache()
     vi.clearAllMocks()
+  })
+
+  test('settles when the command leaves a daemon holding the tool pipes', async () => {
+    const pidPath = path.join(workDir, 'daemon-pid.txt')
+    const quotedPidPath = `'${pidPath.replaceAll("'", "''")}'`
+    const startedAt = Date.now()
+    const result = await executeUserExecCommand({
+      command: [
+        '$psi = New-Object System.Diagnostics.ProcessStartInfo',
+        '$psi.FileName = "$env:SystemRoot\\System32\\ping.exe"',
+        "$psi.Arguments = '-n 30 127.0.0.1'",
+        '$psi.UseShellExecute = $false',
+        '$psi.CreateNoWindow = $true',
+        '$psi.WorkingDirectory = $env:TEMP',
+        '$daemon = [System.Diagnostics.Process]::Start($psi)',
+        `[IO.File]::WriteAllText(${quotedPidPath}, "$($daemon.Id)", [Text.UTF8Encoding]::new($false))`,
+        "'started'",
+      ].join('\n'),
+      cwd: workDir,
+      injectBundledNode: false,
+      toolCallId: 'daemon-pipe-leak',
+    })
+
+    try {
+      // The background `ping` inherits the tool's stdout pipe and holds it for its whole life, so
+      // `close` cannot arrive until it exits. Only `exit` reflects that the command itself is over.
+      expect(Date.now() - startedAt).toBeLessThan(10_000)
+      expect(result).toMatchObject({ success: true, exitCode: 0 })
+      expect(result.stdout).toMatch(/started/)
+    } finally {
+      // The daemon outlives the tool call on purpose; stop it so the fixture stays disposable.
+      spawnSync('taskkill', ['/PID', readFileSync(pidPath, 'utf8').trim(), '/T', '/F'], { stdio: 'ignore' })
+      await new Promise((resolve) => setTimeout(resolve, 1_000))
+    }
+  })
+
+  test('terminates a running command by session and tool-call identity', async () => {
+    const params = {
+      command: 'Start-Sleep -Seconds 30',
+      sessionId: 'cancel-session',
+      toolCallId: 'cancel-tool',
+    }
+    const execution = executeUserExecCommand(params)
+    await new Promise((resolve) => setTimeout(resolve, 500))
+
+    expect(cancelUserExecCommand(params)).toEqual({ killed: true })
+    await expect(execution).resolves.toMatchObject({ success: false, cancelled: true })
+    expect(cancelUserExecCommand(params)).toEqual({ killed: false })
   })
 
   test('captures a single PowerShell stdout statement without the bundled node shim', async () => {

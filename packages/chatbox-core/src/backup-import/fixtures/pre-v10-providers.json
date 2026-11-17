@@ -1,0 +1,43 @@
+{
+  "configVersion": 9,
+  "settings": {
+    "aiProvider": "custom",
+    "selectedCustomProviderId": "legacy-one",
+    "customProviders": [
+      {
+        "id": "legacy-one",
+        "name": "Fixture One",
+        "api": "openai",
+        "host": "https://one.example.test",
+        "path": "/chat/completions",
+        "key": "fixture-one",
+        "model": "model-one",
+        "modelOptions": ["model-one", "model-extra", "model-one"],
+        "useProxy": true
+      },
+      {
+        "id": "legacy-two",
+        "name": "Fixture Two",
+        "api": "openai",
+        "host": "https://two.example.test",
+        "path": "/responses",
+        "key": "fixture-two",
+        "model": "model-two",
+        "modelOptions": ["model-two"],
+        "useProxy": false
+      }
+    ]
+  },
+  "session:local-model": {
+    "id": "local-model",
+    "type": "chat",
+    "name": "Local model fixture",
+    "messages": [],
+    "settings": {
+      "aiProvider": "custom",
+      "selectedCustomProviderId": "legacy-two",
+      "customProviders": [{ "id": "legacy-two", "model": "session-model" }]
+    }
+  },
+  "session:global-model": { "id": "global-model", "type": "chat", "name": "Global model fixture", "messages": [] }
+}

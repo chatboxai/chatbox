@@ -1,7 +1,8 @@
-import type { CopilotDetail, Session } from '@shared/types'
+import type { CopilotDetail } from '@shared/types'
 import { getDefaultStore } from 'jotai'
-import { collectGlobalResourceReferences, collectSessionResourceReferences } from '@/packages/backup/resources'
-import { StorageKey, StorageKeyGenerator } from '@/storage/StoreStorage'
+import { sessionRepository } from '@/app/renderer-application'
+import { collectGlobalResourceReferences } from '@chatbox/core/resources'
+import { StorageKey } from '@/storage/StoreStorage'
 import { inputBoxPreConstructedMessageFamily } from '@/stores/atoms/uiAtoms'
 import { getMetaStorage } from '@/stores/sessionHelpers'
 import { settingsStore } from '@/stores/settingsStore'
@@ -47,15 +48,54 @@ type CleanupOptions = {
   deadlineMs?: number
 }
 
-// 启动时执行消息图片清理
-// 只有网页版本需要清理，桌面版本存在本地、空间足够大无需清理
-// 同时也避免了桌面端疑似出现的“图片丢失”问题（可能不是bug，与开发环境有关？）
-if (platform.type !== 'desktop') {
-  setTimeout(() => {
-    cleanupOrphanedBlobs({ deadlineMs: STARTUP_CLEANUP_DEADLINE_MS }).catch((e) =>
-      console.error('storage_clear: startup cleanup failed', e)
-    )
-  }, 10 * 1000) // 防止水合状态
+interface StartupStorageCleanupOptions {
+  sessionMigrationReady: Promise<boolean>
+  delayMs?: number
+  schedule?: (run: () => void, delayMs: number) => () => void
+  cleanup?: () => Promise<unknown>
+}
+
+export interface StartupStorageCleanupHandle {
+  stop(): void
+}
+
+/**
+ * Starts the web/mobile startup cleanup after the row migration has drained.
+ * The scan never migrates: it deletes nothing while any listed session still
+ * needs migration, so running it earlier would only abort.
+ */
+export function startStartupStorageCleanup(options: StartupStorageCleanupOptions): StartupStorageCleanupHandle {
+  const delayMs = options.delayMs ?? 10 * 1000
+  const schedule =
+    options.schedule ??
+    ((run: () => void, delay: number) => {
+      const timer = setTimeout(run, delay)
+      return () => clearTimeout(timer)
+    })
+  const cleanup =
+    options.cleanup ?? (() => cleanupOrphanedBlobs({ deadlineMs: STARTUP_CLEANUP_DEADLINE_MS }).then(() => undefined))
+  let stopped = false
+  let cancelPending: (() => void) | null = null
+
+  void options.sessionMigrationReady
+    .catch((error: unknown) => {
+      console.error('storage_clear: session migration wait failed', error)
+    })
+    .then((ready) => {
+      if (stopped || !ready) return
+      cancelPending = schedule(() => {
+        cancelPending = null
+        void cleanup().catch((error: unknown) => console.error('storage_clear: startup cleanup failed', error))
+      }, delayMs)
+    })
+
+  return {
+    stop(): void {
+      stopped = true
+      cancelPending?.()
+      cancelPending = null
+    },
+  }
 }
 
 /**
@@ -139,6 +179,7 @@ async function doCleanupOrphanedBlobs(options?: CleanupOptions): Promise<number>
   // 因此逐会话让出事件循环并受总时限约束。
   const metaStorage = await getMetaStorage()
   const allSessionsMeta = await metaStorage.getAllIncludingHidden()
+  const listedSessionIds = new Set(allSessionsMeta.map((session) => session.id))
   for (const sessionMeta of allSessionsMeta) {
     // 孤儿判定必须建立在全量扫描之上：扫描超时只能安全放弃（不删任何东西），
     // 留待下一次运行重新扫描。
@@ -149,13 +190,18 @@ async function doCleanupOrphanedBlobs(options?: CleanupOptions): Promise<number>
       return 0
     }
     await yieldIfNeeded()
-    // 不从 atom 中获取，避免水合状态
-    const session = await storage.getItem<Session | null>(StorageKeyGenerator.session(sessionMeta.id), null)
-    if (!session) {
-      continue
+    // 清理不触发迁移：会话没有行提交（尚未迁移，或行数据已缺失）时整次清理放弃删除；
+    // 未迁移的会话由后台迁移或打开会话完成升级。
+    if (await sessionRepository.requiresSessionMigration({ id: sessionMeta.id })) {
+      console.warn(
+        `storage_clear: session ${sessionMeta.id} has no row commit (unmigrated or missing), aborting without deleting`
+      )
+      return 0
     }
-    for (const reference of collectSessionResourceReferences(session).references) {
+    for await (const reference of sessionRepository.iterateSessionResourceReferences(sessionMeta.id)) {
+      if (Date.now() > deadline) return 0
       needDeletedSet.delete(reference.storageKey)
+      await yieldIfNeeded()
     }
     if (needDeletedSet.size === 0) return 0
   }
@@ -194,6 +240,29 @@ async function doCleanupOrphanedBlobs(options?: CleanupOptions): Promise<number>
   } catch (e) {
     console.error('storage_clear: failed to scan image generation storage', e)
     return 0
+  }
+
+  // Enumerate after the metadata snapshot so a concurrent migration cannot add an
+  // identity to the scan's metadata boundary. An unlisted id that still has a legacy
+  // record is unmigrated or mid-migration (rows can be published before its metadata),
+  // and newly published metadata requires a fresh scan.
+  const sessionIds = await sessionRepository.getAllSessionIds()
+  const recordIds = new Set(await sessionRepository.listSessionRecordIds())
+  for (const id of sessionIds) {
+    if (Date.now() > deadline) {
+      console.warn(
+        `storage_clear: reference scan exceeded its time budget (${sessionIds.length} session identities), aborting without deleting`
+      )
+      return 0
+    }
+    await yieldIfNeeded()
+    if (listedSessionIds.has(id)) continue
+    if (recordIds.has(id) || (await metaStorage.getById(id))) {
+      console.warn(
+        `storage_clear: session ${id} is outside the metadata snapshot and needs a fresh scan, aborting without deleting`
+      )
+      return 0
+    }
   }
 
   // 扫描可能耗时较长，而 file:<name>-<size>-<mtime> 是确定性 key：扫描期间用户重新

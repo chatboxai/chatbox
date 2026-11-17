@@ -1,4 +1,4 @@
-import { getProviderDefinition, getSystemProviders } from '@shared/providers'
+import { getProviderDefinition, getProviderDisplayName, getSystemProviders } from '@shared/providers'
 import {
   type ModelProvider,
   ModelProviderEnum,
@@ -32,4 +32,9 @@ export function getModelDisplayName(settings: SessionSettings, globalSettings: S
   const util = getModelSettingUtil(provider, providerBaseInfo?.isCustom ? providerBaseInfo.type : undefined)
   const providerSettings = globalSettings.providers?.[provider]
   return util.getCurrentModelDisplayName(model, sessionType, providerSettings, providerBaseInfo)
+}
+
+/** Provider display name recorded on a reply generated with these settings. */
+export function getMessageProviderName(settings: SessionSettings, globalSettings: Settings): string | undefined {
+  return getProviderDisplayName(settings.provider ?? ModelProviderEnum.ChatboxAI, globalSettings.customProviders)
 }

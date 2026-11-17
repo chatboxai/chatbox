@@ -53,6 +53,7 @@ const electronHandler: ElectronIPC = {
     ipcRenderer.on('window:focused', callback)
     return () => ipcRenderer.off('window:focused', callback)
   },
+  onTaskCloseRequest: createListener('task-operation:close-requested'),
   onWindowShow: (callback: () => void) => {
     ipcRenderer.on('window-show', callback)
     return () => ipcRenderer.off('window-show', callback)
@@ -76,6 +77,7 @@ const electronHandler: ElectronIPC = {
     }
   },
   onSkillsBuiltinUpdated: createListener('skills:builtin-updated'),
+  onBuiltInBrowserTabs: createListener('built-in-browser:tabs'),
 
   // Auto-updater events
   onUpdaterChecking: createListener('updater:checking'),

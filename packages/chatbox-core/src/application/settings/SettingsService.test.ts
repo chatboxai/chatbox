@@ -18,6 +18,21 @@ class MemorySettingsStorage implements SettingsStoragePort {
 }
 
 describe('SettingsService', () => {
+  test('reloads external settings changes before the next user edit', async () => {
+    const storage = new MemorySettingsStorage({
+      ...createDefaultSettings(),
+      language: 'en',
+      __version: SETTINGS_PERSIST_VERSION,
+    })
+    const service = new SettingsService(storage, { isDesktopLike: false })
+    await service.hydrate()
+    storage.value = { ...createDefaultSettings(), language: 'zh-Hans', __version: SETTINGS_PERSIST_VERSION }
+    await service.reloadFromStorage()
+    service.updateSettings({ fontSize: 18 })
+    await service.flushPersistence()
+    expect(storage.value).toMatchObject({ language: 'zh-Hans', fontSize: 18 })
+  })
+
   test('hydrates once and writes the current envelope on the next update', async () => {
     const defaults = createDefaultSettings()
     const storage = new MemorySettingsStorage({
@@ -112,6 +127,18 @@ describe('SettingsService', () => {
 
     service.updateSettings({ memoryEnabled: true })
     expect(service.getSettings().memoryStateToken).toBe(enabledToken)
+  })
+
+  test('replaces the complete settings snapshot so omitted credentials are cleared', async () => {
+    const storage = new MemorySettingsStorage()
+    const initialSettings = { ...createDefaultSettings(), licenseKey: 'license-to-clear' }
+    const service = new SettingsService(storage, { initialSettings, isDesktopLike: false })
+
+    service.replaceSettings(createDefaultSettings())
+    await service.flushPersistence()
+
+    expect(service.getSettings().licenseKey).toBeUndefined()
+    expect(storage.value).not.toHaveProperty('licenseKey')
   })
 
   test('logs failed writes, exposes the failure to flush and continues the persistence queue', async () => {

@@ -584,9 +584,9 @@ Chatbox is an **all-in-one AI chat client** that supports 30+ mainstream models 
    * the license is real, the user can re-validate via Settings later.
    */
   const onClaimDetected = useCallback(
-    async (license: import('@/packages/remote').UserLicense) => {
+    async (license: import('@/packages/remote').UserLicense, email: string) => {
       try {
-        await premiumActions.activate(license.key, 'login')
+        await premiumActions.activate(license.key, 'login', { accountEmail: email })
       } catch (err) {
         console.error('[guide] auto-activate after free-plan claim failed:', err)
       }

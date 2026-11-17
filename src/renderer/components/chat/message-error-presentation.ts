@@ -25,8 +25,9 @@ export type MessageErrorPresentation = MessageErrorDetails &
     | { kind: 'context-limit' }
     | { kind: 'ocr-failed'; provider: string }
     | { kind: 'api'; providerId?: string; httpStatusCode?: number }
-    | { kind: 'network'; host: string }
+    | { kind: 'network'; host: string; providerId?: string }
     | { kind: 'paint-not-supported'; providerId?: string }
+    | { kind: 'provider-missing' }
     | { kind: 'known-chatbox-api'; errorCode: number }
     | { kind: 'unknown' }
   )
@@ -114,6 +115,11 @@ function resolveQuotaCardKind(msg: Message): QuotaCardKind | undefined {
   return undefined
 }
 
+export function resolveQuotaCardAction(cardKind: QuotaCardKind, licensePlan?: ChatboxAIPlanType): QuotaCardAction {
+  const freeQuota = cardKind === 'free-quota-exhausted' || cardKind === 'free-ocr-quota-exhausted'
+  return licensePlan === 'pro_plus' && !freeQuota ? 'buy-expansion-pack' : 'upgrade-plan'
+}
+
 export function resolveMessageErrorPresentation(
   msg: Message,
   options: { licensePlan?: ChatboxAIPlanType } = {}
@@ -124,13 +130,11 @@ export function resolveMessageErrorPresentation(
   }
   const cardKind = resolveQuotaCardKind(msg)
   if (cardKind) {
-    const freeQuota = cardKind === 'free-quota-exhausted' || cardKind === 'free-ocr-quota-exhausted'
-    const action = options.licensePlan === 'pro_plus' && !freeQuota ? 'buy-expansion-pack' : 'upgrade-plan'
     return {
       ...details,
       kind: 'quota',
       cardKind,
-      action,
+      action: resolveQuotaCardAction(cardKind, options.licensePlan),
     }
   }
 
@@ -154,17 +158,21 @@ export function resolveMessageErrorPresentation(
   }
   if (msg.errorCode === 10002 || msg.error?.startsWith('Network Error')) {
     const host = msg.errorExtra?.host
-    return { ...details, kind: 'network', host: typeof host === 'string' ? host : 'AI Provider' }
+    return {
+      ...details,
+      kind: 'network',
+      host: typeof host === 'string' ? host : 'AI Provider',
+      providerId: msg.aiProvider,
+    }
   }
   if (msg.errorCode === 10003) {
     return { ...details, kind: 'paint-not-supported', providerId: msg.aiProvider }
+  }
+  if (msg.errorCode === MESSAGE_ERROR_CODES.MODEL_PROVIDER_NOT_FOUND) {
+    return { ...details, kind: 'provider-missing' }
   }
   if (msg.errorCode && ChatboxAIAPIError.getDetail(msg.errorCode)) {
     return { ...details, kind: 'known-chatbox-api', errorCode: msg.errorCode }
   }
   return { ...details, kind: 'unknown' }
-}
-
-export function isMessageReminderPresentation(presentation: MessageErrorPresentation): boolean {
-  return presentation.kind === 'quota' || presentation.kind === 'agent-mode-reward'
 }

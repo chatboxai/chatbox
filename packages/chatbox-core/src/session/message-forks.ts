@@ -1,1 +1,4 @@
-export * from '@shared/session/message-forks'
+export interface ForkIdentityPort {
+  createId(): string
+  now(): number
+}

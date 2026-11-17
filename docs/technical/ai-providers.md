@@ -12,7 +12,7 @@ Chatbox 的 AI 供应商（Provider）系统负责对接 30+ 家 AI 模型服务
 - **可扩展性**：新增内置供应商只需 4 个文件改动；用户自建供应商通过 `createCustomProviderModel()` 动态支持。
 - **关注点分离**：供应商定义（definition）与模型实现（model class）解耦，分别位于 `definitions/` 和 `definitions/models/`。
 
-关于此架构选型的决策记录，参见 [关键决策 #2：Registry 模式](./key-decisions.md)。
+关于此架构选型的决策记录，参见 关键决策 #2：Registry 模式。
 
 ## 注册表架构
 

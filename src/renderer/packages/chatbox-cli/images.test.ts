@@ -1,3 +1,4 @@
+import type { Message } from '@shared/types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
@@ -25,8 +26,11 @@ const {
 }))
 
 vi.mock('@/packages/app-action-approval', () => ({ requestAppActionApproval: requestAppActionApprovalMock }))
-vi.mock('@/app/renderer-application', () => ({
-  rendererApplication: { sessionQueryBridge: { getSession: getSessionMock } },
+vi.mock('./session-row-scan', () => ({
+  visitSelectedSessionMessages: async (id: string, visit: (row: { message: Message }) => boolean) => {
+    const session = await getSessionMock(id)
+    for (const message of session?.messages ?? []) if (visit({ message })) break
+  },
 }))
 vi.mock('@/packages/image-model-catalog', () => ({
   getAvailableImageModels: getAvailableImageModelsMock,
@@ -39,7 +43,10 @@ vi.mock('@/platform', () => ({
     }),
   },
 }))
-vi.mock('@/stores/imageGenerationActions', () => ({ startImageGeneration: startImageGenerationMock }))
+vi.mock('@/stores/imageGenerationActions', () => ({
+  startImageGeneration: startImageGenerationMock,
+  getImageGenerationService: () => ({ getRecord: getImageGenerationByIdMock, getPage: getImageGenerationPageMock }),
+}))
 vi.mock('@/stores/imageGenerationStore', () => ({
   imageGenerationStore: { getState: () => ({ currentGeneratingId: null }) },
 }))
@@ -189,6 +196,95 @@ describe('Chatbox CLI image commands', () => {
         elapsedMs: expect.any(Number),
       })
     )
+  })
+
+  it('starts the selected catalog model with user generation parameters', async () => {
+    const capabilities = {
+      aspectRatio: { values: ['1:1'] },
+      inputReferences: { min: 0, max: 2 },
+    }
+    getAvailableImageModelsMock.mockResolvedValue([
+      { provider: 'openrouter', modelId: 'seedream', nickname: 'Seedream', capabilities },
+    ])
+    const approvalDetails = {
+      type: 'image_generation' as const,
+      provider: 'openrouter',
+      modelId: 'seedream',
+      prompt: 'red fox',
+      count: 1,
+      billing: 'provider' as const,
+    }
+    startImageGenerationMock.mockResolvedValue({
+      recordId: 'record-capabilities',
+      startedAt: 1_000,
+      monitoring: { mode: 'direct' },
+      completion: Promise.resolve(null),
+    })
+
+    const approvalRequired = new Error('approval required')
+    requestAppActionApprovalMock.mockRejectedValueOnce(approvalRequired)
+    await expect(
+      command('generate').execute(
+        context(['--prompt', 'red fox'], { approved: false, toolCallId: 'tool-capability-approval' })
+      )
+    ).rejects.toBe(approvalRequired)
+    const visibleApprovalSummary = requestAppActionApprovalMock.mock.calls[0]?.[3]
+    const visibleApprovalDetails = requestAppActionApprovalMock.mock.calls[0]?.[4]
+    expect(visibleApprovalSummary).not.toContain('capabilit')
+    expect(visibleApprovalDetails).not.toHaveProperty('modelCapabilities')
+    expect(visibleApprovalDetails).not.toHaveProperty('capabilities')
+
+    await command('generate').execute(context(['--prompt', 'red fox'], { approvalDetails }))
+
+    expect(startImageGenerationMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: { provider: 'openrouter', modelId: 'seedream' },
+      }),
+      expect.anything()
+    )
+  })
+
+  it('binds reference images to approval and forwards them to generation', async () => {
+    const referenceImages = ['picture:uploaded-1', 'https://example.com/reference.png']
+    const argv = ['--prompt', 'red fox', '--reference-images', JSON.stringify(referenceImages)]
+    requestAppActionApprovalMock.mockRejectedValueOnce(new Error('approval required'))
+    await expect(command('generate').execute(context(argv, { approved: false }))).rejects.toThrow('approval required')
+    const approvalDetails = requestAppActionApprovalMock.mock.calls[0][4]
+    expect(approvalDetails.referenceImages).toEqual(referenceImages)
+    startImageGenerationMock.mockResolvedValue({
+      recordId: 'reference-record',
+      startedAt: 1000,
+      monitoring: { mode: 'direct' },
+      completion: Promise.resolve(null),
+    })
+    await command('generate').execute(context(argv, { approvalDetails }))
+    expect(startImageGenerationMock).toHaveBeenCalledWith(
+      expect.objectContaining({ referenceImages }),
+      expect.anything()
+    )
+    await expect(command('generate').execute(context(['--prompt', 'red fox'], { approvalDetails }))).rejects.toThrow(
+      'changed after approval'
+    )
+  })
+
+  it.each(['["data:image/png;base64,abc"]', '["file:///tmp/image.png"]', '{}', 'invalid'])(
+    'rejects invalid reference input %s',
+    async (references) => {
+      await expect(
+        command('generate').execute(context(['--prompt', 'fox', '--reference-images', references]))
+      ).rejects.toThrow('--reference-images')
+      expect(startImageGenerationMock).not.toHaveBeenCalled()
+    }
+  )
+
+  it('rejects references when the model does not support them', async () => {
+    getAvailableImageModelsMock.mockResolvedValue([{ provider: 'openai', modelId: 'dall-e-3', nickname: 'DALL-E' }])
+    await expect(
+      command('generate').execute(
+        context(['--prompt', 'fox', '--reference-images', '["picture:ref"]'], { approved: false })
+      )
+    ).rejects.toThrow('No image models')
+    expect(requestAppActionApprovalMock).not.toHaveBeenCalled()
   })
 
   it('requires a tool-call anchor', async () => {
@@ -438,59 +534,63 @@ describe('Chatbox CLI image commands', () => {
     )
   })
 
-  it('reuses the durable image record after the in-memory execution cache is lost', async () => {
-    const approvalDetails = {
-      type: 'image_generation' as const,
-      provider: 'chatbox-ai',
-      modelId: 'manifest-image',
-      prompt: 'red fox',
-      count: 1,
-      billing: 'chatbox_quota' as const,
-    }
-    const createdRecord: ImageGeneration = {
-      id: 'record-persisted',
-      prompt: 'red fox',
-      referenceImages: [],
-      generatedImages: [],
-      createdAt: 1_000,
-      model: { provider: 'chatbox-ai', modelId: 'manifest-image' },
-      imageGenerateNum: 1,
-      status: 'generating',
-      taskId: 'task-persisted',
-    }
-    startImageGenerationMock.mockImplementationOnce(
-      async (_params: unknown, options: { onRecordCreated?: (record: ImageGeneration) => Promise<void> }) => {
-        await options.onRecordCreated?.(createdRecord)
-        return {
-          recordId: createdRecord.id,
-          startedAt: createdRecord.createdAt,
-          monitoring: { mode: 'polling', intervalMs: 2_000 },
-          completion: Promise.resolve(null),
-        }
+  it.each(['generating', 'error'] as const)(
+    'reuses a %s image record after the in-memory execution cache is lost',
+    async (status) => {
+      const approvalDetails = {
+        type: 'image_generation' as const,
+        provider: 'chatbox-ai',
+        modelId: 'manifest-image',
+        prompt: 'red fox',
+        count: 1,
+        billing: 'chatbox_quota' as const,
       }
-    )
+      const createdRecord: ImageGeneration = {
+        id: 'record-persisted',
+        prompt: 'red fox',
+        referenceImages: [],
+        generatedImages: [],
+        createdAt: 1_000,
+        model: { provider: 'chatbox-ai', modelId: 'manifest-image' },
+        imageGenerateNum: 1,
+        status,
+        ...(status === 'error' ? { errorCode: 'image_task_persistence_failed' } : {}),
+        taskId: 'task-persisted',
+      }
+      startImageGenerationMock.mockImplementationOnce(
+        async (_params: unknown, options: { onRecordCreated?: (record: ImageGeneration) => Promise<void> }) => {
+          await options.onRecordCreated?.(createdRecord)
+          return {
+            recordId: createdRecord.id,
+            startedAt: createdRecord.createdAt,
+            monitoring: { mode: 'polling', intervalMs: 2_000 },
+            completion: Promise.resolve(null),
+          }
+        }
+      )
 
-    await command('generate').execute(context(['--prompt', 'red fox'], { approvalDetails }))
-    expect(setStorageItemNowMock).toHaveBeenCalledOnce()
+      await command('generate').execute(context(['--prompt', 'red fox'], { approvalDetails }))
+      expect(setStorageItemNowMock).toHaveBeenCalledOnce()
 
-    resetImageCommandExecutionsForTests()
-    const catalogCallsBeforeRestore = getAvailableImageModelsMock.mock.calls.length
-    getAvailableImageModelsMock.mockRejectedValue(new Error('catalog unavailable'))
-    getImageGenerationByIdMock.mockResolvedValueOnce(createdRecord)
+      resetImageCommandExecutionsForTests()
+      const catalogCallsBeforeRestore = getAvailableImageModelsMock.mock.calls.length
+      getAvailableImageModelsMock.mockRejectedValue(new Error('catalog unavailable'))
+      getImageGenerationByIdMock.mockResolvedValueOnce(createdRecord)
 
-    await expect(command('generate').execute(context(['--prompt', 'red fox']))).resolves.toMatchObject({
-      restored: true,
-      recordId: 'record-persisted',
-      status: 'generating',
-      wait: {
-        mode: 'manual_resume',
-        managedBy: 'chatbox',
-        modelShouldPoll: false,
-      },
-    })
-    expect(startImageGenerationMock).toHaveBeenCalledTimes(1)
-    expect(getAvailableImageModelsMock).toHaveBeenCalledTimes(catalogCallsBeforeRestore)
-  })
+      await expect(command('generate').execute(context(['--prompt', 'red fox']))).resolves.toMatchObject({
+        restored: true,
+        recordId: 'record-persisted',
+        status,
+        wait: {
+          mode: 'manual_resume',
+          managedBy: 'chatbox',
+          modelShouldPoll: false,
+        },
+      })
+      expect(startImageGenerationMock).toHaveBeenCalledTimes(1)
+      expect(getAvailableImageModelsMock).toHaveBeenCalledTimes(catalogCallsBeforeRestore)
+    }
+  )
 
   it('uses the shared image model catalog for model discovery', async () => {
     getAvailableImageModelsMock.mockResolvedValueOnce([
@@ -506,6 +606,56 @@ describe('Chatbox CLI image commands', () => {
       defaultModel: { provider: 'chatbox-ai', modelId: 'server-default', nickname: 'Server Default' },
     })
     expect(getAvailableImageModelsMock).toHaveBeenCalledOnce()
+  })
+
+  it('lists reference models but rejects them for prompt-only generation', async () => {
+    getAvailableImageModelsMock.mockResolvedValue([
+      {
+        provider: 'openrouter',
+        modelId: 'recraft-required-reference',
+        nickname: 'Recraft Required Reference',
+        capabilities: { aspectRatio: null, inputReferences: { min: 1, max: 1 } },
+      },
+      {
+        provider: 'openrouter',
+        modelId: 'prompt-or-reference',
+        nickname: 'Prompt or Reference',
+        capabilities: { aspectRatio: null, inputReferences: { min: 0, max: 2 } },
+      },
+    ])
+
+    await expect(command('models').execute(context([]))).resolves.toEqual({
+      models: [
+        {
+          provider: 'openrouter',
+          modelId: 'recraft-required-reference',
+          nickname: 'Recraft Required Reference',
+          capabilities: { aspectRatio: null, inputReferences: { min: 1, max: 1 } },
+        },
+        {
+          provider: 'openrouter',
+          modelId: 'prompt-or-reference',
+          nickname: 'Prompt or Reference',
+          capabilities: { aspectRatio: null, inputReferences: { min: 0, max: 2 } },
+        },
+      ],
+      defaultModel: {
+        provider: 'openrouter',
+        modelId: 'prompt-or-reference',
+        nickname: 'Prompt or Reference',
+        capabilities: { aspectRatio: null, inputReferences: { min: 0, max: 2 } },
+      },
+    })
+
+    await expect(
+      command('generate').execute(
+        context(['--prompt', 'red fox', '--provider', 'openrouter', '--model', 'recraft-required-reference'], {
+          approved: false,
+        })
+      )
+    ).rejects.toThrow('Image model is not available')
+    expect(requestAppActionApprovalMock).not.toHaveBeenCalled()
+    expect(startImageGenerationMock).not.toHaveBeenCalled()
   })
 
   it('marks an orphaned pending task for manual recovery instead of promising a callback', async () => {
@@ -706,5 +856,25 @@ describe('Chatbox CLI image commands', () => {
       nextCursor: null,
       total: 0,
     })
+  })
+  it('reports manual resume for a submitted task retained by the service after persistence fails', async () => {
+    getImageGenerationByIdMock.mockResolvedValue({
+      id: 'unsaved-task',
+      prompt: 'image',
+      referenceImages: [],
+      generatedImages: [],
+      createdAt: 1,
+      model: { provider: 'chatbox-ai', modelId: 'gpt-image-1' },
+      status: 'error',
+      taskId: 'submitted-task',
+      errorCode: 'image_task_persistence_failed',
+      error: 'An image task was submitted but could not be saved.',
+    })
+    await expect(command('status').execute(context(['unsaved-task']))).resolves.toMatchObject({
+      taskId: 'submitted-task',
+      status: 'error',
+      wait: { mode: 'manual_resume', modelShouldPoll: false },
+    })
+    expect(startImageGenerationMock).not.toHaveBeenCalled()
   })
 })

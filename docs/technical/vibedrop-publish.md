@@ -1,11 +1,14 @@
 # HTML Artifact 发布：VibeDrop 集成设计
 
-> 状态：实施中（分支 `feat/vibedrop-publish`，三 repo 并行 worktree）
+> Last updated: 2026-07
+>
+> Status: Implemented；三个仓库的交付 PR 已合并，运行时集成仍依赖部署环境中的服务绑定与密钥。
+>
 > 替换原 EdgeOne MCP 匿名发布，改为可登录、可管理的 VibeDrop 集成。
 
 ## 背景与目标
 
-当前 HTML artifact 的「发布」走 EdgeOne（`src/renderer/packages/edgeone.ts`，纯 renderer 直连 `mcp.edgeone.site`），**完全匿名**——只带随机 `X-Installation-ID`，无用户身份，用户发布后无法管理已发布的站点。
+改造前 HTML artifact 的「发布」走 EdgeOne（`src/renderer/packages/edgeone.ts`，纯 renderer 直连 `mcp.edgeone.site`），**完全匿名**——只带随机 `X-Installation-ID`，无用户身份，用户发布后无法管理已发布的站点。
 
 目标：
 - 登录 chatboxai 的用户可直接发布到 VibeDrop，之后在 VibeDrop 用同一邮箱登录即可管理发布过的站点。
@@ -76,7 +79,7 @@ chatbox-backend：email 为主键身份（邮箱验证码登录，email 已验�
 - settings 缓存 key（按邮箱），账号切换/登出清理。
 - `src/renderer/modals/VibedropPublish.tsx`：未登录引导 / 无邮箱提示 / 可见性选择（默认 unlisted）/ 成功态 URL + 管理入口。
 - `src/renderer/components/Markdown.tsx`：`onClickDeploy` 改打开新 modal；首发 slug 存消息元数据，再发复用 slug 覆盖更新。
-- 删除 edgeone 相关（`edgeone.ts`、`EdgeOneDeploySuccess.tsx`、builtin MCP edgeone 项）。
+- HTML artifact 发布按钮由 `vibedrop.ts` 和 `VibedropPublish.tsx` 承接；builtin `edgeone-pages` MCP 作为独立的模型侧发布工具继续保留。
 - i18n：源码加 key，`pnpm translate` 生成，勿手改 locale JSON。
 
 ## 接口契约
@@ -113,9 +116,9 @@ M6 vibedrop 广场 explore + 举报下架
 - **vibedrop api**：secret `PARTNER_KEYS="chatbox:<secret>"`、`ALIYUN_GREEN_AK`/`ALIYUN_GREEN_SECRET`（可选 `ALIYUN_GREEN_REGION`/`ALIYUN_GREEN_ENDPOINT`）；binding `PREVIEW_QUEUE`（producer，队列 `vibedrop-preview`）；迁移 `0004`、`0005`。
 - **vibedrop processor**（新 worker `apps/processor`）：consumer 绑定 `vibedrop-preview` + DLQ；R2 `SITES`、KV `META`、D1 `DB`；Browser Rendering `BROWSER`；Workers AI `AI`。
 
-## 实施状态（2026-06）
+## 实施状态（2026-07）
 
-三个 repo 均在 `feat/vibedrop-publish` 分支，已开 PR：
+三个 repo 的 `feat/vibedrop-publish` 交付 PR 均已合并：
 - chatbox-backend [#473](https://github.com/chatboxai/chatbox-backend/pull/473)
 - vibedrop-server [#1](https://github.com/themez/vibedrop-server/pull/1)
 - chatbox-pro [#796](https://github.com/chatboxai/chatbox-pro/pull/796)

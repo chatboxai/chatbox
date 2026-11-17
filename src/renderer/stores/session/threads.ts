@@ -5,28 +5,28 @@ import type { SessionThread } from '@shared/types'
 import { v4 as uuidv4 } from 'uuid'
 import { rendererApplication } from '@/app/renderer-application'
 import * as dom from '@/hooks/dom'
-import * as scrollActions from '../scrollActions'
 import { getSessionAgentModeEntry } from './agent-mode'
-import { _copySession as copySession, switchCurrentSession } from './crud'
+import { getSessionHeader } from './session-settings'
+import { switchCurrentSession } from './crud'
 
 const threadService = new ThreadService({
   sessions: {
-    getSession: (sessionId) => rendererApplication.sessionQueryBridge.getSession(sessionId),
-    updateSession: (sessionId, updater) => rendererApplication.sessions.updateSession(sessionId, updater),
-    updateSessionWithMessages: (sessionId, updater) =>
-      rendererApplication.sessions.updateSessionWithMessages(sessionId, updater),
+    getCurrentThreadIdentity: (id) => rendererApplication.sessions.getCurrentThreadIdentity(id),
+    executeStructureCommand: (id, operation, onCommitted) =>
+      rendererApplication.sessions.executeStructureCommand(id, operation, onCommitted),
+    getSessionHeader: (id) => rendererApplication.sessions.getSessionHeader(id),
+    readSessionThread: (request) => rendererApplication.sessions.readSessionThread(request),
   },
   createId: uuidv4,
   now: Date.now,
   getDefaultSystemPrompt: defaults.getDefaultPrompt,
-  cancelMessages: (sessionId, messages) => {
-    for (const message of messages) {
-      if (message.generating || rendererApplication.generationRuntime.get(sessionId, message.id)) {
-        rendererApplication.generationRuntime.requestAbort(sessionId, message.id, 'thread-changed')
-      }
-    }
+  getLiveMessageIds: (sessionId) =>
+    new Set(rendererApplication.generationRuntime.list(sessionId).map((entry) => entry.messageId)),
+  subscribeGenerationRuntime: (listener) => rendererApplication.generationRuntime.subscribe(listener),
+  cancelMessageIds: (sessionId, messageIds) => {
+    for (const id of messageIds) rendererApplication.generationRuntime.requestAbort(sessionId, id, 'thread-changed')
   },
-  copySession: (source) => copySession(source),
+  copyThread: (source) => rendererApplication.sessions.copySessionThread(source),
 })
 
 export function editThread(sessionId: string, threadId: string, newThread: Pick<Partial<SessionThread>, 'name'>) {
@@ -38,13 +38,11 @@ export function removeThread(sessionId: string, threadId: string, expectedCurren
 }
 
 export async function switchThread(sessionId: string, threadId: string) {
-  if (await threadService.switch(sessionId, threadId)) {
-    setTimeout(() => scrollActions.scrollToBottom('smooth'), 300)
-  }
+  await threadService.switch(sessionId, threadId)
 }
 
 async function createThreadWithRollback(sessionId: string) {
-  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
+  const session = await getSessionHeader(sessionId)
   if (!session) return false
   // Mode-policy backstop: work mode is a single linear conversation and has
   // no New Thread. Compaction still archives via compressAndCreate.
@@ -64,7 +62,6 @@ export async function startNewThread(sessionId: string) {
   const target = await createThreadWithRollback(sessionId)
   if (!target) return
   setTimeout(() => {
-    scrollActions.scrollToBottom()
     dom.focusMessageInput()
   }, 100)
   return () => threadService.rollbackCreated(target)
@@ -77,7 +74,6 @@ export function removeCurrentThread(sessionId: string) {
 export async function compressAndCreateThread(sessionId: string, summary: string) {
   if (await threadService.compressAndCreate(sessionId, summary)) {
     setTimeout(() => {
-      scrollActions.scrollToBottom()
       dom.focusMessageInput()
     }, 100)
   }

@@ -1,0 +1,1 @@
+{"id":"fixture-session","name":"Fixture conversation","settings":{},"messages":[{"id":"fixture-message","role":"user","contentParts":[{"type":"text","text":"Hello 你好"}]}]}

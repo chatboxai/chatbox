@@ -26,6 +26,22 @@ describe('getSubmitAction', () => {
     expect(getSubmitAction({ ...base, generating: true })).toBe('queue')
   })
 
+  it('queues while a compression runs (work mode)', () => {
+    expect(getSubmitAction({ ...base, compactionBlocking: true })).toBe('queue')
+  })
+
+  it('queues behind pending items while a compression runs', () => {
+    expect(getSubmitAction({ ...base, compactionBlocking: true, queueLength: 2 })).toBe('queue-resume')
+  })
+
+  it('blocks instead of queueing during a compression when the queue is disabled (chat mode)', () => {
+    expect(getSubmitAction({ ...base, compactionBlocking: true, queueEnabled: false })).toBe('block')
+  })
+
+  it('keeps the historical no-op for "insert without reply" during a compression', () => {
+    expect(getSubmitAction({ ...base, compactionBlocking: true, needGenerating: false })).toBe('block')
+  })
+
   it('blocks instead of queueing while generating when the queue is disabled (chat mode)', () => {
     expect(getSubmitAction({ ...base, generating: true, queueEnabled: false })).toBe('block')
   })
@@ -79,6 +95,17 @@ describe('getSubmitControl', () => {
     expect(getSubmitControl(controlBase)).toBe('queue')
   })
 
+  it('shows the queue control while a compression runs (work mode)', () => {
+    expect(getSubmitControl({ ...controlBase, generating: false, compactionBlocking: true })).toBe('queue')
+  })
+
+  it('keeps the (disabled) send control during a compression when queueing is unavailable', () => {
+    // Nothing is streaming to stop, so chat mode falls back to send + hard block.
+    expect(getSubmitControl({ ...controlBase, generating: false, compactionBlocking: true, queueEnabled: false })).toBe(
+      'send'
+    )
+  })
+
   it('keeps stop available when a non-empty draft cannot be queued', () => {
     expect(getSubmitControl({ ...controlBase, canQueueDraft: false })).toBe('stop')
   })
@@ -105,12 +132,27 @@ describe('getComposerPlaceholder', () => {
   })
 
   it('shows the hard block reason regardless of streaming', () => {
-    expect(getComposerPlaceholder({ ...placeholderBase, blockReason: 'compaction' })).toEqual({
+    expect(getComposerPlaceholder({ ...placeholderBase, blockReason: 'compaction', queueEnabled: false })).toEqual({
       kind: 'locked',
       reason: 'compaction',
     })
     expect(
       getComposerPlaceholder({ ...placeholderBase, blockReason: 'awaiting-pause-decision', generating: true })
+    ).toEqual({
+      kind: 'locked',
+      reason: 'awaiting-pause-decision',
+    })
+  })
+
+  it('offers the queue hint while a compression runs in work mode', () => {
+    // The draft queues behind the compression, so the queue hint — not the
+    // compression lock notice — is what pressing Enter actually does.
+    expect(getComposerPlaceholder({ ...placeholderBase, blockReason: 'compaction' })).toEqual({ kind: 'queue' })
+  })
+
+  it('keeps the awaiting-pause-decision lock even in work mode', () => {
+    expect(
+      getComposerPlaceholder({ ...placeholderBase, blockReason: 'awaiting-pause-decision', queueEnabled: true })
     ).toEqual({
       kind: 'locked',
       reason: 'awaiting-pause-decision',

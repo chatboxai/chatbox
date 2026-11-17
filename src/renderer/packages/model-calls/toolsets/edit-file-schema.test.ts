@@ -37,10 +37,10 @@ describe('edit file tool schemas', () => {
     const schema = getJsonSchema(tools.edit_file.inputSchema)
 
     assertOpenAiCompatibleFunctionSchema(schema)
-    expect(schema.required).toEqual(['file_path'])
+    expect(schema.required).toEqual(['file_path', 'edits'])
     expect(schema.properties).toHaveProperty('edits')
-    expect(schema.properties).toHaveProperty('old_text')
-    expect(schema.properties).toHaveProperty('new_text')
+    expect(schema.properties).not.toHaveProperty('old_text')
+    expect(schema.properties).not.toHaveProperty('new_text')
   })
 
   test('filesystem edit_file rejects calls without edit content', async () => {

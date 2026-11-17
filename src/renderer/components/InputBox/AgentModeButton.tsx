@@ -7,6 +7,7 @@ import { type FC, useCallback, useEffect, useMemo, useRef, useState } from 'reac
 import { useTranslation } from 'react-i18next'
 import { Drawer } from 'vaul'
 import { blurMessageInput } from '@/hooks/dom'
+import { GLASS_HOST_CLASS } from '@/lib/glass-surface'
 import { getWebSearchConfigurationIssue } from '@/packages/web-search/configuration-issue'
 import platform from '@/platform'
 import { useSessionAgentMode } from '@/stores/session/agent-mode'
@@ -16,6 +17,8 @@ import AgentModeStatusIcon from './AgentModeStatusIcon'
 import { getAgentModeUIState } from './agentModeState'
 import { useComposerMenuStore } from './composerMenuStore'
 import { type ComposerMenuLayout, resolveComposerMenuLayout, useComposerTouchLayout } from './composerTouchLayout'
+import MobileAgentModePanel from './MobileAgentModePanel'
+import { getStatusBadgeCutoutStyle } from './status-badge-cutout'
 
 interface AgentModeButtonProps {
   sessionId: string
@@ -24,6 +27,7 @@ interface AgentModeButtonProps {
   iconSize?: number
   /** Small screens render the mode as an icon status badge instead of a text label. */
   compact?: boolean
+  hasDraftAttachments?: boolean
   modelSupportsAgentMode?: boolean
   webBrowsingMode: boolean
   onWebBrowsingChange: (enabled: boolean) => void
@@ -52,6 +56,7 @@ const AgentModeButton: FC<AgentModeButtonProps> = ({
   iconSize = 18,
   compact = false,
   modelSupportsAgentMode = true,
+  hasDraftAttachments = false,
   webBrowsingMode,
   onWebBrowsingChange,
   currentKnowledgeBaseId,
@@ -191,13 +196,15 @@ const AgentModeButton: FC<AgentModeButtonProps> = ({
     [isTouchLayout, onWebBrowsingChange]
   )
 
+  const ModePanel = platform.type === 'mobile' ? MobileAgentModePanel : AgentModePanel
   const panel = opened ? (
-    <AgentModePanel
+    <ModePanel
       ref={panelRef}
       sessionId={sessionId}
       providerId={providerId}
       modelId={modelId}
       modelSupportsAgentMode={modelSupportsAgentMode}
+      hasDraftAttachments={hasDraftAttachments}
       webBrowsingMode={webBrowsingMode}
       onWebBrowsingChange={handleWebBrowsingChange}
       currentKnowledgeBaseId={currentKnowledgeBaseId}
@@ -283,6 +290,7 @@ const AgentModeButton: FC<AgentModeButtonProps> = ({
       </Popover.Target>
       <Popover.Dropdown
         p={0}
+        className={GLASS_HOST_CLASS}
         style={{ overflow: 'visible' }}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
@@ -299,12 +307,10 @@ function CompactAgentModeIcon({ mode, size }: { mode: AgentModeValue; size: numb
 
   return (
     <span className="relative inline-flex shrink-0" style={{ width: size, height: size }} data-agent-mode={mode}>
-      <IconRobot size={size} strokeWidth={1.8} />
-      <AgentModeStatusIcon
-        mode={mode}
-        size={statusSize}
-        className="absolute -bottom-0.5 -right-0.5 bg-[var(--chatbox-background-secondary)]"
-      />
+      <span className="inline-flex" style={getStatusBadgeCutoutStyle(size, statusSize)}>
+        <IconRobot size={size} strokeWidth={1.8} />
+      </span>
+      <AgentModeStatusIcon mode={mode} size={statusSize} className="absolute -bottom-0.5 -right-0.5" />
     </span>
   )
 }

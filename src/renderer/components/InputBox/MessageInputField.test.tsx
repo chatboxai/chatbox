@@ -114,6 +114,33 @@ describe('MessageInputField', () => {
     expect(onUserInput).toHaveBeenCalledTimes(2)
   })
 
+  test.each(['Escape', 'Enter', 'ArrowUp', 'ArrowDown', 'Tab'])('leaves %s to the IME while composing', (key) => {
+    const onKeyDown = vi.fn()
+    const onValueChange = vi.fn()
+    renderField({ onKeyDown, onValueChange })
+    const input = screen.getByRole('textbox')
+    fireEvent.input(input, { target: { value: 'prefix ' } })
+    fireEvent.compositionStart(input)
+    fireEvent.input(input, { target: { value: 'prefix ni' }, isComposing: true })
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+    fireEvent(input, event)
+    expect(event.defaultPrevented).toBe(false)
+    expect(onKeyDown).not.toHaveBeenCalled()
+    expect(onValueChange).not.toHaveBeenCalledWith('prefix ni')
+    fireEvent.input(input, { target: { value: 'prefix ' }, isComposing: true })
+    fireEvent.compositionEnd(input, { data: '' })
+    expect(textareaValue(input)).toBe('prefix ')
+    fireEvent.keyDown(input, { key: 'Escape' })
+    expect(onKeyDown).toHaveBeenCalledTimes(1)
+  })
+
+  test.each([{ isComposing: true }, { keyCode: 229 }])('honors native IME key metadata %j', (metadata) => {
+    const onKeyDown = vi.fn()
+    renderField({ onKeyDown })
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape', ...metadata })
+    expect(onKeyDown).not.toHaveBeenCalled()
+  })
+
   test('does not persist composing nine-key digits as the committed value', () => {
     const onValueChange = vi.fn()
     renderField({ onValueChange })

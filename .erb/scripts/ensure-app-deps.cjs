@@ -10,7 +10,9 @@
  *
  * This script runs `npm ci --omit=dev` in release/app/
  * to create a complete, flat node_modules/ before packaging,
- * then removes dev-only artifacts that shouldn't ship.
+ * then removes dev-only artifacts that shouldn't ship. It uses the effective
+ * registry from the workspace root so local and CI installs follow the same
+ * registry selection as the root pnpm install.
  */
 const { execSync } = require('child_process')
 const path = require('path')
@@ -19,6 +21,7 @@ const { verifyInstalledRuntimeDeps } = require('./runtime-deps.cjs')
 
 exports.default = async function ensureAppDeps(context) {
   const appDir = path.join(__dirname, '..', '..', 'release', 'app')
+  const projectDir = path.join(appDir, '..', '..')
   const nodeModulesDir = path.join(appDir, 'node_modules')
 
   // Remove pnpm's incomplete hoisted node_modules if it exists
@@ -30,7 +33,7 @@ exports.default = async function ensureAppDeps(context) {
   execSync('npm ci --omit=dev --ignore-scripts', {
     cwd: appDir,
     stdio: 'inherit',
-    env: { ...process.env, npm_config_registry: 'https://registry.npmmirror.com' },
+    env: { ...process.env, npm_config_registry: getProjectRegistry(projectDir) },
   })
 
   verifyInstalledRuntimeDeps(appDir)
@@ -49,6 +52,25 @@ exports.default = async function ensureAppDeps(context) {
   }
 
   console.log('[ensure-app-deps] Done.')
+}
+
+function readProjectNpmrc(projectDir) {
+  return fs.readFileSync(path.join(projectDir, '.npmrc'), 'utf8')
+}
+
+function getProjectRegistry(projectDir, options = {}) {
+  const readNpmrc = options.readNpmrc || readProjectNpmrc
+  let registry = ''
+  for (const line of readNpmrc(projectDir).split(/\r?\n/)) {
+    const separator = line.indexOf('=')
+    if (separator >= 0 && line.slice(0, separator).trim() === 'registry') {
+      registry = line.slice(separator + 1).trim()
+    }
+  }
+  if (!registry) {
+    throw new Error('[ensure-app-deps] workspace .npmrc must configure a default registry')
+  }
+  return registry
 }
 
 /**
@@ -144,3 +166,4 @@ function verifyVersionsMatchPnpmWorkspace(appDir, options = {}) {
 }
 
 exports.verifyVersionsMatchPnpmWorkspace = verifyVersionsMatchPnpmWorkspace
+exports.getProjectRegistry = getProjectRegistry

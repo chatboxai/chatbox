@@ -40,6 +40,18 @@ describe('QuotaExhaustedCard', () => {
     expect(onUpgrade).toHaveBeenCalledOnce()
   })
 
+  test('is a translucent glass fill whose background comes from classes, not inline styles', () => {
+    render(
+      <MantineProvider>
+        <QuotaExhaustedCard kind="quota-exhausted" action="upgrade-plan" onAction={vi.fn()} />
+      </MantineProvider>
+    )
+    const card = screen.getByRole('status')
+    expect(card.classList).toContain('chatbox-glass-fill')
+    expect(card.style.background).toBe('')
+    expect(card.style.backgroundColor).toBe('')
+  })
+
   test('offers an expansion pack after Pro+ quota is exhausted', () => {
     const onAction = vi.fn()
     render(

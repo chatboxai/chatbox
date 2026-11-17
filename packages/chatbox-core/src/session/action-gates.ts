@@ -1,6 +1,4 @@
-import { hasPendingPauseInteraction } from '../message-approval'
-import type { Session, SessionType } from '../types'
-import { countCancellableGeneratingAssistantMessages, getGenerationControlMessages } from './generation-state'
+import type { SessionType } from '../types'
 import type { SessionMode } from './mode-policy'
 
 /**
@@ -61,6 +59,8 @@ export type SessionActionGate =
   | { allowed: false; reason: SessionActionBlockReason }
 
 export type SessionAction =
+  /** Insert a flat alternative reply while other chat replies may stream. */
+  | 'reply-below'
   /** Reply Again / retry, whole message or last tool step — regenerate-class. */
   | 'regenerate'
   /** Open the message editor for a plain save. */
@@ -79,6 +79,8 @@ export type SessionAction =
 export type SessionActionContext = {
   /** Whether the message the action targets is itself still streaming. */
   messageGenerating?: boolean
+  /** Stop-all has closed admission for new flat replies until persistence settles. */
+  sessionStopRequested?: boolean
   /**
    * Resolved session mode (see mode-policy). Only switch-fork consults it:
    * chat mode may switch branches while replies stream. Hosts that do not
@@ -91,34 +93,6 @@ const ALLOWED: SessionActionGate = { allowed: true }
 
 function blocked(reason: SessionActionBlockReason): SessionActionGate {
   return { allowed: false, reason }
-}
-
-/**
- * Build the lock snapshot from session data plus runtime flags the host
- * tracks outside the session (compaction progress lives in host state, not on
- * the persisted session).
- */
-export function deriveSessionLockState(
-  session: Session,
-  runtime: {
-    compactionRunning?: boolean
-    activeGenerationMessageIds?: ReadonlySet<string>
-  } = {}
-): SessionLockState {
-  const activeGenerationMessageIds = runtime.activeGenerationMessageIds ?? new Set<string>()
-  // Locks are derived from durable `generating` messages only. A runtime id with
-  // no reachable message is NOT treated as generation: paused/stopping runtimes
-  // deliberately outlive `finishActive`, and deleting their message would then
-  // lock the session with nothing left to Stop. The steering split keeps a
-  // generating message visible at every instant instead (see
-  // GenerationService.splitTargetMessageForSteering).
-  const controlMessages = getGenerationControlMessages(session, activeGenerationMessageIds)
-  return {
-    generatingReplyCount: countCancellableGeneratingAssistantMessages(controlMessages, activeGenerationMessageIds),
-    anyReplyGenerating: controlMessages.some((message) => message.generating === true),
-    compactionRunning: runtime.compactionRunning ?? false,
-    awaitingPauseDecision: hasPendingPauseInteraction(session.messages),
-  }
 }
 
 export function isGenerationLocked(locks: SessionLockState): boolean {
@@ -144,6 +118,11 @@ export function getSessionActionGate(
 ): SessionActionGate {
   const generationLocked = isGenerationLocked(locks)
   switch (action) {
+    case 'reply-below':
+      if (context.sessionStopRequested) return blocked('generating')
+      if (context.messageGenerating) return blocked('message-streaming')
+      if (locks.compactionRunning) return blocked('compaction')
+      return locks.awaitingPauseDecision ? blocked('awaiting-pause-decision') : ALLOWED
     case 'regenerate':
       return generationLocked ? blocked('generating') : ALLOWED
     case 'edit-message':
@@ -167,13 +146,14 @@ export function getSessionActionGate(
       // docs/technical/chat-work-mode-split.md. Work mode (and hosts that do
       // not pass sessionMode) keeps the conservative lock: a live agent run's
       // tool side effects cannot be forked by moving it between branches.
-      if (generationLocked && context.sessionMode !== 'chat') {
+      if ((generationLocked || locks.anyReplyGenerating) && context.sessionMode !== 'chat') {
         return blocked('generating')
       }
       // Switching branches while a compaction summary streams would move the
       // pending boundary off the active path and waste the summary run
       // (commit would route it back to the stored branch).
-      return locks.compactionRunning ? blocked('compaction') : ALLOWED
+      if (locks.compactionRunning) return blocked('compaction')
+      return locks.awaitingPauseDecision ? blocked('awaiting-pause-decision') : ALLOWED
     case 'delete-fork':
       // Destructive in every mode while replies stream: the deleted branch
       // may hold a live stream, and runtime discard is a last resort.

@@ -1,0 +1,34 @@
+diff --git a/dist/index.js b/dist/index.js
+index 5ebd3756860e75d89ef13b683310a4fe066bdd62..6af8c1566c565cbb32be5dd446180539fe02fbac 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -4957,7 +4957,8 @@ var OpenRouterImageResponseSchema = z10.object({
+   created: z10.number().optional(),
+   data: z10.array(
+     z10.object({
+-      b64_json: z10.string()
++      b64_json: z10.string(),
++      media_type: z10.string().optional()
+     }).passthrough()
+   ),
+   usage: z10.object({
+@@ -5027,6 +5028,11 @@ var OpenRouterImageModel = class {
+       });
+     }
+     const images = responseValue.data.map((item) => item.b64_json);
++    const providerMetadata = {
++      openrouter: {
++        images: responseValue.data.map((item) => item.media_type === void 0 ? {} : { mediaType: item.media_type })
++      }
++    };
+     const usage = responseValue.usage ? {
+       inputTokens: responseValue.usage.prompt_tokens,
+       outputTokens: responseValue.usage.completion_tokens,
+@@ -5035,6 +5041,7 @@ var OpenRouterImageModel = class {
+     return {
+       images,
+       warnings,
++      providerMetadata,
+       response: {
+         timestamp: /* @__PURE__ */ new Date(),
+         modelId: this.modelId,

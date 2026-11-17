@@ -17,6 +17,10 @@ describe('native web search', () => {
     expect(hasNativeWebSearchConfiguration({ provider: 'bing', apiKey: '' })).toBe(true)
     expect(hasNativeWebSearchConfiguration({ provider: 'build-in', apiKey: '' })).toBe(false)
     expect(hasNativeWebSearchConfiguration({ provider: 'build-in', apiKey: '' }, 'license-1')).toBe(true)
+    expect(hasNativeWebSearchConfiguration({ provider: 'searxng', apiKey: '', apiHost: '' })).toBe(false)
+    expect(hasNativeWebSearchConfiguration({ provider: 'searxng', apiKey: '', apiHost: 'https://search.test' })).toBe(
+      true
+    )
   })
 
   it('searches through the chatbox build-in endpoint with the license key and injected headers', async () => {
@@ -89,6 +93,25 @@ describe('native web search', () => {
     expect(url).toBe('http://10.0.2.2:8091/search')
     expect(JSON.parse((init as RequestInit).body as string).query).toBe('chatbox')
     expect((init as RequestInit).headers).toMatchObject({ Authorization: 'Bearer key-1' })
+  })
+
+  it('searches a SearXNG JSON endpoint with the configured instance URL', async () => {
+    const fetchFn = mockFetchResponse({
+      results: [
+        { title: 'One', url: 'https://one.test', content: 'first snippet' },
+        { title: '', url: 'https://invalid.test', content: 'ignored' },
+      ],
+    })
+    const items = await searchNativeWeb('chatbox mobile', {
+      provider: 'searxng',
+      apiHost: 'https://search.test/',
+      fetchFn,
+    })
+
+    expect(items).toEqual([{ title: 'One', link: 'https://one.test', snippet: 'first snippet' }])
+    const [url, init] = (fetchFn as unknown as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect(url).toBe('https://search.test/search?q=chatbox%20mobile&format=json')
+    expect((init as RequestInit).headers).toEqual({ Accept: 'application/json' })
   })
 
   it('throws on non-ok responses', async () => {

@@ -1,4 +1,10 @@
-import { SettingsService, type SettingsStoragePort } from '@chatbox/core'
+import {
+  createDefaultSettings,
+  encodePersistedSettings,
+  SETTINGS_PERSIST_VERSION,
+  SettingsService,
+  type SettingsStoragePort,
+} from '@chatbox/core'
 import { describe, expect, test } from 'vitest'
 import { createSettingsStore } from './createSettingsStore'
 
@@ -17,6 +23,31 @@ class MemorySettingsStorage implements SettingsStoragePort {
   remove() {
     this.value = null
     return Promise.resolve()
+  }
+}
+
+class DeferredSettingsStorage extends MemorySettingsStorage {
+  private readonly readPromise: Promise<unknown>
+  private resolveReadPromise: (value: unknown) => void = () => undefined
+
+  constructor() {
+    super()
+    this.readPromise = new Promise((resolve) => {
+      this.resolveReadPromise = resolve
+    })
+  }
+
+  override read() {
+    return this.readPromise
+  }
+
+  onReadResolved(callback: () => void) {
+    void this.readPromise.then(callback)
+  }
+
+  resolveRead(value: unknown) {
+    this.value = value
+    this.resolveReadPromise(value)
   }
 }
 
@@ -47,28 +78,83 @@ describe('createSettingsStore', () => {
       language: 'ja',
       showWordCount: true,
       theme: 1,
-      __version: 6,
+      __version: SETTINGS_PERSIST_VERSION,
     })
 
     store.getState().destroy()
     service.dispose()
   })
-  test('preserves store actions when a settings update includes the projected state', async () => {
+
+  test('removes omitted optional settings while preserving actions and hydration metadata', async () => {
     const storage = new MemorySettingsStorage()
+    const service = new SettingsService(storage, {
+      isDesktopLike: false,
+      initialSettings: {
+        ...createDefaultSettings(),
+        licenseKey: 'license-to-remove',
+        providers: { openai: { apiKey: 'provider-key' } },
+      },
+    })
+    const store = createSettingsStore(service)
+
+    await store.getState().hydrate()
+    const actions = {
+      destroy: store.getState().destroy,
+      getSettings: store.getState().getSettings,
+      hydrate: store.getState().hydrate,
+      setSettings: store.getState().setSettings,
+    }
+
+    service.replaceSettings(createDefaultSettings())
+
+    const state = store.getState()
+    expect(Object.hasOwn(state, 'licenseKey')).toBe(false)
+    expect(Object.hasOwn(state, 'providers')).toBe(false)
+    expect(state.hydrationStatus).toBe('hydrated')
+    expect(state.hydrationError).toBeNull()
+    expect({
+      destroy: state.destroy,
+      getSettings: state.getSettings,
+      hydrate: state.hydrate,
+      setSettings: state.setSettings,
+    }).toEqual(actions)
+
+    state.setSettings({ language: 'zh-Hans' })
+    expect(store.getState().language).toBe('zh-Hans')
+    expect(store.getState().hydrationStatus).toBe('hydrated')
+
+    state.destroy()
+    service.dispose()
+  })
+
+  test('does not restore stale optional settings when replacement races hydration completion', async () => {
+    const storage = new DeferredSettingsStorage()
     const service = new SettingsService(storage, { isDesktopLike: false })
     const store = createSettingsStore(service)
-    await store.getState().hydrate()
-    const getSettings = store.getState().getSettings
-    const hydrate = store.getState().hydrate
+    const replacement = { ...createDefaultSettings(), language: 'zh-Hans' as const }
 
-    service.updateSettings({ ...store.getState(), language: 'ja' })
+    const hydration = store.getState().hydrate()
+    storage.onReadResolved(() => {
+      expect(store.getState().hydrationStatus).toBe('hydrating')
+      service.replaceSettings(replacement)
+      expect(Object.hasOwn(store.getState(), 'licenseKey')).toBe(false)
+    })
+    storage.resolveRead(
+      encodePersistedSettings({
+        ...createDefaultSettings(),
+        licenseKey: 'stale-license',
+        providers: { openai: { apiKey: 'stale-provider-key' } },
+      })
+    )
 
-    expect(store.getState().getSettings).toBe(getSettings)
-    expect(store.getState().hydrate).toBe(hydrate)
-    expect(store.getState().getSettings().language).toBe('ja')
-    store.getState().setSettings({ theme: 1 })
-    expect(store.getState().getSettings().theme).toBe(1)
+    await expect(hydration).resolves.toEqual(replacement)
+    expect(service.getSettings()).toEqual(replacement)
+    expect(Object.hasOwn(store.getState(), 'licenseKey')).toBe(false)
+    expect(Object.hasOwn(store.getState(), 'providers')).toBe(false)
+    expect(store.getState().language).toBe('zh-Hans')
     expect(store.getState().hydrationStatus).toBe('hydrated')
+    expect(store.getState().hydrationError).toBeNull()
+
     await service.flushPersistence()
     store.getState().destroy()
     service.dispose()

@@ -1,0 +1,85 @@
+{
+  "configVersion": 15,
+  "chat-sessions-list": [
+    {
+      "id": "released-v1235-session",
+      "name": "Released fixture 你好",
+      "sortOrder": 3,
+      "createdAt": 1
+    }
+  ],
+  "session:released-v1235-session": {
+    "id": "released-v1235-session",
+    "name": "Released fixture 你好",
+    "settings": {},
+    "messages": [
+      {
+        "id": "released-v1235-user",
+        "role": "user",
+        "contentParts": [
+          {
+            "type": "text",
+            "text": "Released backup 你好 🌍"
+          },
+          {
+            "type": "image",
+            "storageKey": "picture:released-a"
+          }
+        ],
+        "files": [
+          {
+            "id": "released-file",
+            "name": "notes.md",
+            "fileType": "text/markdown",
+            "storageKey": "file:released-text"
+          }
+        ]
+      },
+      {
+        "id": "released-v1235-assistant",
+        "role": "assistant",
+        "contentParts": [
+          {
+            "type": "text",
+            "text": "Preserve duplicate resource keys."
+          },
+          {
+            "type": "image",
+            "storageKey": "picture:released-b"
+          }
+        ],
+        "links": [
+          {
+            "id": "released-link",
+            "url": "https://example.invalid/fixture",
+            "title": "Synthetic link",
+            "storageKey": "link:released-text"
+          }
+        ]
+      }
+    ],
+    "threads": [
+      {
+        "id": "released-v1235-history",
+        "name": "Earlier thread",
+        "createdAt": 1,
+        "messages": [
+          {
+            "id": "released-v1235-history-message",
+            "role": "user",
+            "contentParts": [
+              {
+                "type": "text",
+                "text": "Historical thread 过去"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "picture:released-a": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9YGnHnoAAAAASUVORK5CYII=",
+  "picture:released-b": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9YGnHnoAAAAASUVORK5CYII=",
+  "file:released-text": "Synthetic parsed text 资料\n",
+  "link:released-text": "Synthetic parsed text 资料\n"
+}

@@ -1,6 +1,7 @@
 import { App } from '@capacitor/app'
 import { Browser } from '@capacitor/browser'
 import { Device } from '@capacitor/device'
+import type { SessionRowStorePort } from '@chatbox/core/ports'
 import { type AnalyticsEventParams, GOOGLE_ANALYTICS_MEASUREMENT_ID } from '@shared/analytics'
 import * as defaults from '@shared/defaults'
 import type { Config, Settings, ShortcutSetting } from '@shared/types'
@@ -11,6 +12,7 @@ import type { ImageGenerationStorage } from '@/storage/ImageGenerationStorage'
 import type { SessionMetaStorage } from '@/storage/SessionMetaStorage'
 import { SQLiteImageGenerationStorage } from '@/storage/SQLiteImageGenerationStorage'
 import { SQLiteSessionMetaStorage } from '@/storage/SQLiteSessionMetaStorage'
+import { SQLiteSessionRowStore } from '@/storage/SQLiteSessionRowStorage'
 import { CHATBOX_BUILD_PLATFORM } from '@/variables'
 import { getBrowser, getOS } from '../packages/navigator'
 import type { Platform, PlatformType } from './interfaces'
@@ -30,6 +32,7 @@ export default class MobilePlatform extends MobileSQLiteStorage implements Platf
   private navigationCallback: ((path: string) => void) | null = null
   private _imageGenerationStorage: ImageGenerationStorage | null = null
   private _sessionMetaStorage: SessionMetaStorage | null = null
+  private _sessionRowStore: SessionRowStorePort | null = null
 
   constructor() {
     super()
@@ -277,6 +280,21 @@ export default class MobilePlatform extends MobileSQLiteStorage implements Platf
   }
 
   async parseFileLocally(file: File): Promise<{ key?: string; isSupported: boolean; errorCode?: string }> {
+    if (/\.(docx|xlsx|pptx)$/i.test(file.name)) {
+      const { capacitorExecution } = await import('@/packages/mobile-work-mode/execution-service')
+      if (file.size > 10 * 1024 * 1024) return { isSupported: false, errorCode: 'local_parser_file_too_large' }
+      const bytes = new Uint8Array(await file.arrayBuffer())
+      let binary = ''
+      for (let offset = 0; offset < bytes.length; offset += 8192)
+        binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192))
+      const parsed = await capacitorExecution.parseDocument(file.name, btoa(binary), new AbortController().signal)
+      const key = `parseFile-${uuidv4()}`
+      await this.setStoreBlob(
+        key,
+        parsed.text + (parsed.truncated ? '\n[Document text truncated at the local parsing limit.]' : '')
+      )
+      return { key, isSupported: true }
+    }
     const result = await parseFileLocallyInBrowser(file)
     if (!result.isSupported) {
       return { isSupported: false, errorCode: result.errorCode }
@@ -287,7 +305,7 @@ export default class MobilePlatform extends MobileSQLiteStorage implements Platf
   }
 
   getLocalFilePath(file: File): string {
-    return file.path || ''
+    return 'path' in file && typeof file.path === 'string' ? file.path : ''
   }
 
   public async parseUrl(url: string): Promise<{ key: string; title: string }> {
@@ -326,6 +344,13 @@ export default class MobilePlatform extends MobileSQLiteStorage implements Platf
       this._sessionMetaStorage = new SQLiteSessionMetaStorage()
     }
     return this._sessionMetaStorage
+  }
+
+  public getSessionRowStore(): SessionRowStorePort {
+    if (!this._sessionRowStore) {
+      this._sessionRowStore = new SQLiteSessionRowStore()
+    }
+    return this._sessionRowStore
   }
 
   public minimize() {

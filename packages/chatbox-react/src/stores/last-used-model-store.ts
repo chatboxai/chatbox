@@ -17,6 +17,7 @@ export interface LastUsedModelState {
 }
 
 export interface LastUsedModelActions {
+  clearChatModel(expected?: LastUsedModel): void
   setChatModel(provider: string, modelId: string): void
   setPictureModel(provider: string, modelId: string): void
   setTaskModel(provider: string, modelId: string): void
@@ -36,6 +37,14 @@ export function createLastUsedModelStore(options: CreateLastUsedModelStoreOption
         chat: undefined,
         picture: undefined,
         task: undefined,
+        clearChatModel(expected) {
+          set((state) => {
+            if (expected && (state.chat?.provider !== expected.provider || state.chat.modelId !== expected.modelId)) {
+              return state
+            }
+            return { chat: undefined }
+          })
+        },
         setChatModel(provider, modelId) {
           set({ chat: { provider, modelId } })
         },

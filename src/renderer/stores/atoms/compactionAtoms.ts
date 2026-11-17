@@ -7,6 +7,8 @@ export interface CompactionUIState {
   error: string | null
   streamingText: string
   summaryMessageId: string | null
+  /** Custom summary prompt of the failed request, reused when the user retries it. */
+  retryPrompt?: string
 }
 
 const defaultCompactionUIState: CompactionUIState = {

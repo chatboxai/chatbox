@@ -15,6 +15,8 @@ export type SubmitControl = 'send' | 'queue' | 'stop'
 
 export function getSubmitControl(params: {
   generating: boolean
+  /** A compaction summary is streaming (see getSubmitAction). */
+  compactionBlocking?: boolean
   hasDraft: boolean
   canQueueDraft: boolean
   /** Mode policy: chat mode has no queue, so streaming keeps the Stop control. */
@@ -22,18 +24,27 @@ export function getSubmitControl(params: {
   sessionType?: SessionType
   hasModel: boolean
 }): SubmitControl {
-  if (!params.generating) return 'send'
-  return params.queueEnabled &&
+  const queueable =
+    params.queueEnabled &&
     params.hasDraft &&
     params.canQueueDraft &&
     params.sessionType !== 'picture' &&
     params.hasModel
-    ? 'queue'
-    : 'stop'
+  if (queueable && (params.generating || params.compactionBlocking)) return 'queue'
+  // Nothing to stop while a compression runs, so a non-queueable draft keeps
+  // the (disabled) send control instead of a dead Stop.
+  if (params.generating) return 'stop'
+  return 'send'
 }
 
 export function getSubmitAction(params: {
   generating: boolean
+  /**
+   * A compaction summary is streaming. It holds the session generation lock,
+   * so a queued draft simply delivers once the summary settles — the same
+   * behind-the-current-work contract as queueing during a reply.
+   */
+  compactionBlocking?: boolean
   needGenerating: boolean
   sessionType?: SessionType
   queueLength: number
@@ -46,14 +57,29 @@ export function getSubmitAction(params: {
   queueEnabled: boolean
   hasModel: boolean
 }): SubmitAction {
-  const { generating, needGenerating, sessionType, queueLength, blockedForOtherReasons, queueEnabled, hasModel } =
-    params
+  const {
+    generating,
+    compactionBlocking,
+    needGenerating,
+    sessionType,
+    queueLength,
+    blockedForOtherReasons,
+    queueEnabled,
+    hasModel,
+  } = params
   if (sessionType === 'picture') return 'block'
   if (blockedForOtherReasons || !hasModel) return 'block'
   if (generating) {
     // "Insert without reply" during generation keeps its historical no-op behavior.
     if (!needGenerating) return 'block'
     return queueEnabled ? 'queue' : 'block'
+  }
+  if (compactionBlocking) {
+    if (!needGenerating) return 'block'
+    if (!queueEnabled) return 'block'
+    // Same order preservation as the idle branch: the draft lines up behind
+    // queued items (possibly a queued compression) instead of jumping them.
+    return queueLength > 0 ? 'queue-resume' : 'queue'
   }
   if (needGenerating && queueLength > 0) return 'queue-resume'
   return 'send'
@@ -75,6 +101,11 @@ export function getComposerPlaceholder(params: {
   /** Mode policy: chat mode has no queue. */
   queueEnabled: boolean
 }): ComposerPlaceholder {
+  if (params.blockReason === 'compaction' && params.queueEnabled) {
+    // Work mode keeps the composer typable while a compression runs: the draft
+    // queues behind it, so the queue hint is the honest placeholder.
+    return { kind: 'queue' }
+  }
   if (params.blockReason !== undefined) return { kind: 'locked', reason: params.blockReason }
   if (!params.generating) return { kind: 'idle' }
   // Chat mode keeps the composer typable while replies stream but rejects the

@@ -65,6 +65,14 @@ export class SettingsService implements SettingsRepositoryPort {
     return this.hydrationPromise
   }
 
+  /** Refresh subscribers after an external storage update. */
+  async reloadFromStorage(): Promise<Settings> {
+    this.assertActive()
+    await this.flushPersistence()
+    this.hydrationPromise = this.hydrateOnce()
+    return this.hydrationPromise
+  }
+
   getSettings(): Settings {
     return this.snapshot
   }
@@ -91,6 +99,13 @@ export class SettingsService implements SettingsRepositoryPort {
       nextRecord.memoryStateToken = createMemoryStateToken()
     }
     const next = nextRecord as unknown as Settings
+    this.publish(next)
+    this.enqueuePersistence(next)
+  }
+
+  replaceSettings(settings: Settings): void {
+    this.assertActive()
+    const next = SettingsSchema.parse(settings)
     this.publish(next)
     this.enqueuePersistence(next)
   }

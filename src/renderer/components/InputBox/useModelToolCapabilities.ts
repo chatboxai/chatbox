@@ -63,5 +63,7 @@ export function useModelToolCapabilities(
     modelSupportsAgentMode: model ? (query.isSuccess ? query.data.agentMode : true) : true,
     modelSupportToolUseForFile: query.isSuccess ? query.data.readFile : false,
     isModelToolCapabilityFetched: query.isSuccess,
+    isModelToolCapabilityLoading: query.isLoading,
+    isModelToolCapabilityError: query.isError,
   }
 }

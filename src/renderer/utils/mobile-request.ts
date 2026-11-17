@@ -1,8 +1,33 @@
 import { CapacitorHttp } from '@capacitor/core'
-import { createNativeReadableStream } from '@/native/stream-http'
+import { backgroundStreamFetch, isBackgroundStreamRequest } from '@shared/utils/background-stream'
+import {
+  backgroundStreamBridge,
+  backgroundStreamPrototypeEnabled,
+  subscribeBackgroundStreamResume,
+} from '@/native/background-stream'
+import { createNativeResponse } from '@/native/stream-http'
 import { ApiError } from '../../shared/models/errors'
 
-export async function handleMobileRequest(
+export function handleMobileRequest(
+  url: string,
+  method: string,
+  headers: Headers,
+  body?: RequestInit['body'],
+  signal?: AbortSignal
+): Promise<Response> {
+  if (backgroundStreamPrototypeEnabled && isBackgroundStreamRequest(url, body, headers)) {
+    return backgroundStreamFetch(
+      backgroundStreamBridge,
+      url,
+      { method, headers, body, signal },
+      subscribeBackgroundStreamResume,
+      () => handleDefaultMobileRequest(url, method, headers, body, signal)
+    )
+  }
+  return handleDefaultMobileRequest(url, method, headers, body, signal)
+}
+
+async function handleDefaultMobileRequest(
   url: string,
   method: string,
   headers: Headers,
@@ -17,35 +42,22 @@ export async function handleMobileRequest(
   const isStreaming = body && typeof body === 'string' && JSON.parse(body).stream === true
 
   if (isStreaming) {
-    try {
-      // Add SSE Accept header for proper content negotiation
-      const streamHeaders = {
-        ...headerObj,
-        Accept: 'text/event-stream',
-      }
-
-      const stream = createNativeReadableStream(
-        {
-          url,
-          method,
-          headers: streamHeaders,
-          body: body as string,
-        },
-        { signal }
+    const response = await createNativeResponse(
+      { url, method, headers: { ...headerObj, Accept: 'text/event-stream' }, body: body as string },
+      { signal }
+    )
+    if (!response.ok) {
+      const errorBody = await readErrorBody(response)
+      if (signal?.aborted) throw signal.reason ?? new DOMException('Aborted', 'AbortError')
+      throw new ApiError(
+        `Status Code ${response.status}`,
+        errorBody,
+        response.status,
+        undefined,
+        response.headers.get('retry-after') ?? undefined
       )
-
-      // TODO: Once native plugin supports returning status/headers,
-      // use them instead of hardcoded values
-      return new Response(stream, {
-        status: 200,
-        headers: {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-        },
-      })
-    } catch (err) {
-      console.warn('Native streaming unavailable, falling back', err)
     }
+    return response
   }
 
   const response = await CapacitorHttp.request({
@@ -59,25 +71,45 @@ export async function handleMobileRequest(
   const rawData = typeof response.data === 'string' ? response.data : JSON.stringify(response.data)
   // Treat status 0 or < 200 as errors, in addition to >= 400
   if (response.status === 0 || response.status < 200 || response.status >= 400) {
-    throw new ApiError(`Status Code ${response.status}`, rawData, response.status)
+    throw new ApiError(
+      `Status Code ${response.status}`,
+      rawData,
+      response.status,
+      undefined,
+      new Headers(response.headers).get('retry-after') ?? undefined
+    )
   }
   const responseData = rawData
 
-  if (isStreaming) {
-    const stream = new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode(responseData))
-        controller.close()
-      },
-    })
-    return new Response(stream, {
-      status: response.status,
-      headers: { ...response.headers, 'Content-Type': 'text/event-stream' },
-    })
-  }
-
-  return new Response(responseData, {
+  return new Response([204, 205, 304].includes(response.status) ? null : responseData, {
     status: response.status,
     headers: response.headers,
   })
+}
+
+async function readErrorBody(response: Response): Promise<string> {
+  const reader = response.body?.getReader()
+  if (!reader) return ''
+  const decoder = new TextDecoder()
+  let remaining = 64 * 1024
+  let text = ''
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => resolve(undefined), 5_000)
+  })
+  try {
+    while (remaining > 0) {
+      const result = await Promise.race([reader.read(), timeout])
+      if (!result || result.done) break
+      const chunk = result.value.subarray(0, remaining)
+      text += decoder.decode(chunk, { stream: true })
+      remaining -= chunk.byteLength
+    }
+  } catch {
+    // The HTTP status remains useful when the error response body is interrupted.
+  } finally {
+    clearTimeout(timer)
+    void reader.cancel().catch(() => undefined)
+  }
+  return text + decoder.decode()
 }

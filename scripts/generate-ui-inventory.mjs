@@ -73,7 +73,7 @@ function detectArea(file) {
   if (relative.includes('/components/layout/')) return 'layout'
   if (relative.includes('/components/common/')) return 'common'
   if (relative.includes('/components/knowledge-base/')) return 'knowledge-base'
-  if (relative.includes('/components/ModelSelector/')) return 'model-selector'
+  if (relative.includes('/components/ModelSelectorV2/')) return 'model-selector'
   if (relative.includes('/components/message-parts/')) return 'message-parts'
   if (relative.includes('/routes/image-creator/')) return 'image-creator'
   if (relative.includes('/routes/guide/')) return 'guide'

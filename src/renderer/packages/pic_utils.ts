@@ -93,9 +93,18 @@ export function svgCodeToBase64(svgCode: string) {
 export interface SvgRasterizeOptions {
   /** Maximum width or height of the allocated output canvas. */
   maxOutputDimension?: number
+  /** Maximum width × height of the allocated output canvas; defaults to the smallest mobile WebView limit. */
+  maxOutputArea?: number
   /** Restrict SVG content to elements and references that cannot load nested resources. */
   strictResourceIsolation?: boolean
 }
+
+/**
+ * iOS 17 WebKit refuses to allocate a canvas over 4096 × 4096 pixels of area and returns an empty image
+ * instead of throwing; iOS 18 doubled each side and Android WebView allows 16384 × 16384. Staying inside
+ * the smallest limit keeps exports working on every supported device.
+ */
+export const MAX_CANVAS_AREA = 4096 * 4096
 
 export function calculateSvgRasterSize(
   sourceWidth: number,
@@ -106,10 +115,21 @@ export function calculateSvgRasterSize(
     throw new Error('SVG has invalid dimensions')
   }
   const maxOutputDimension = options.maxOutputDimension ?? Number.POSITIVE_INFINITY
-  if (Number.isNaN(maxOutputDimension) || maxOutputDimension <= 0) {
+  const maxOutputArea = options.maxOutputArea ?? MAX_CANVAS_AREA
+  if (
+    Number.isNaN(maxOutputDimension) ||
+    maxOutputDimension <= 0 ||
+    Number.isNaN(maxOutputArea) ||
+    maxOutputArea <= 0
+  ) {
     throw new Error('SVG raster limit must be positive')
   }
-  const scale = Math.min(2, maxOutputDimension / sourceWidth, maxOutputDimension / sourceHeight)
+  const scale = Math.min(
+    2,
+    maxOutputDimension / sourceWidth,
+    maxOutputDimension / sourceHeight,
+    Math.sqrt(maxOutputArea / (sourceWidth * sourceHeight))
+  )
   return {
     width: Math.max(1, Math.floor(sourceWidth * scale)),
     height: Math.max(1, Math.floor(sourceHeight * scale)),
@@ -279,6 +299,11 @@ export async function svgToPngBase64(svgBase64: string, options: SvgRasterizeOpt
       ctx.drawImage(img, 0, 0, rasterSize.width, rasterSize.height)
       try {
         const pngBase64 = canvas.toDataURL('image/png', 1.0) // 使用最高质量设置
+        // Browsers hand back "data:," instead of throwing when the canvas exceeds their size limit.
+        if (!pngBase64.startsWith('data:image/png')) {
+          reject(new Error(`SVG is too large to rasterize (${rasterSize.width}x${rasterSize.height})`))
+          return
+        }
         resolve(pngBase64)
       } catch (error) {
         reject(error)

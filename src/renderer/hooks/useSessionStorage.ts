@@ -3,16 +3,9 @@ import { QueryKeys } from '@chatbox/react/query'
 import { rendererApplication } from '@/app/renderer-application'
 import { getSessionSettings } from '@/stores/session/session-settings'
 
-export function useSession(sessionId: string | undefined) {
-  return useQuery({
-    queryKey: QueryKeys.ChatSession(sessionId ?? ''),
-    queryFn: () => {
-      if (!sessionId) return null
-      return rendererApplication.sessionQueryBridge.getSession(sessionId)
-    },
-    enabled: !!sessionId,
-    staleTime: Number.POSITIVE_INFINITY,
-  })
+export function useSessionHeader(sessionId: string | undefined) {
+  const query = rendererApplication.sessionHooks.useSessionHeader(sessionId ?? null)
+  return { ...query, data: query.session }
 }
 
 export function useSessionSettings(sessionId: string | undefined) {

@@ -126,7 +126,7 @@ const displayNames = new Intl.DisplayNames(['en'], { type: 'language' })
 
 async function translateFile(locale, instruction) {
   const targetLanguage = displayNames.of(locale) || locale
-  const path = `src/renderer/i18n/locales/${locale}/translation.json`
+  const path = `packages/chatbox-i18n/src/locales/${locale}/translation.json`
 
   // Combine CLI instruction with per-locale glossary rules
   const allInstructions = [instruction, ...translateAsRules(locale)].filter(Boolean).join('\n')
@@ -197,7 +197,7 @@ async function translateFile(locale, instruction) {
 }
 
 // Build the key→file index and screen groups once (locale-independent).
-const enJson = JSON.parse(await fs.readFile('src/renderer/i18n/locales/en/translation.json', 'utf-8'))
+const enJson = JSON.parse(await fs.readFile('packages/chatbox-i18n/src/locales/en/translation.json', 'utf-8'))
 const enKeys = Object.keys(enJson)
 // The text to translate is the English VALUE. For ~99% of keys it equals the key
 // (flat-key i18n); for slug keys (e.g. 'network error tips') the real message — with
@@ -239,7 +239,7 @@ try {
 } catch (error) {
   console.error('\n✗ Translation failed:', error.message)
   console.error(
-    '\nTip: If files were corrupted, restore them with: git checkout src/renderer/i18n/locales/*/translation.json'
+    '\nTip: If files were corrupted, restore them with: git checkout packages/chatbox-i18n/src/locales/*/translation.json'
   )
   process.exit(1)
 }

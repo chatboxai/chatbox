@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
-const { platformName, storageValues } = vi.hoisted(() => ({
+const { platformName, storageValues, storageWrites } = vi.hoisted(() => ({
   platformName: { current: 'darwin' },
   storageValues: new Map<string, unknown>(),
+  storageWrites: vi.fn(),
 }))
 
 vi.mock('@/platform', () => ({
@@ -11,11 +12,17 @@ vi.mock('@/platform', () => ({
 
 vi.mock('@/storage', () => ({
   default: {
+    getItemRaw: vi.fn((key: string) => Promise.resolve(storageValues.get(key) ?? null)),
     getItem: vi.fn((key: string, initialValue: unknown) => {
       if (!storageValues.has(key)) storageValues.set(key, initialValue)
       return Promise.resolve(storageValues.get(key))
     }),
+    setItem: vi.fn((key: string, value: unknown) => {
+      storageValues.set(key, value)
+      return Promise.resolve()
+    }),
     setItemNow: vi.fn((key: string, value: unknown) => {
+      storageWrites(key, value)
       storageValues.set(key, value)
       return Promise.resolve()
     }),
@@ -134,6 +141,13 @@ describe('soul mutation serialization', () => {
     expect('record' in first).toBe(true)
     expect('record' in second).toBe(true)
     expect((await readSoul()).content).toBe('gamma delta')
+  })
+
+  test('updateSoul preserves the record and performs no write for unchanged content', async () => {
+    const current = await writeSoul('stable content')
+    storageWrites.mockClear()
+    expect(await updateSoul((content) => content)).toEqual({ record: current })
+    expect(storageWrites).not.toHaveBeenCalled()
   })
 
   test('updateSoul surfaces updater errors without writing', async () => {

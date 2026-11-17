@@ -2,6 +2,8 @@ import { createStore, useStore } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import storage from '@/storage'
 
+const ONBOARDING_STORAGE_KEY = 'onboarding'
+
 export interface OnboardingState {
   /** Whether the user has completed the onboarding guide */
   completed: boolean
@@ -24,7 +26,7 @@ export const onboardingStore = createStore<OnboardingState & OnboardingActions>(
       reset: () => set({ completed: false }),
     }),
     {
-      name: 'onboarding',
+      name: ONBOARDING_STORAGE_KEY,
       storage: createJSONStorage(() => ({
         getItem: async (key) => {
           const res = await storage.getItem<OnboardingState | null>(key, null)
@@ -33,11 +35,11 @@ export const onboardingStore = createStore<OnboardingState & OnboardingActions>(
           }
           return null
         },
-        setItem: async (name, value) => {
+        setItem: async (_name, value) => {
           const { state } = JSON.parse(value) as { state: OnboardingState }
-          await storage.setItem(name, state)
+          await storage.setItem(ONBOARDING_STORAGE_KEY, state)
         },
-        removeItem: async (name) => await storage.removeItem(name),
+        removeItem: async () => await storage.removeItem(ONBOARDING_STORAGE_KEY),
       })),
       skipHydration: true,
     }

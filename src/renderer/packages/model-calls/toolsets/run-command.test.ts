@@ -1,4 +1,6 @@
 import type { SandboxProvider } from '@shared/sandbox-provider'
+import type { CommandApprovalMode } from '@shared/types/command-execution'
+import { asSchema } from 'ai'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 const {
@@ -176,7 +178,7 @@ describe('run_command', () => {
       success: false,
       sandboxed: true,
       retryAvailable: true,
-      ignoredHostRetryFields: true,
+      escalationIgnored: 'no_matching_failure',
     })
     await expect(toModelOutput(tool, result)).resolves.toEqual({
       type: 'text',
@@ -502,6 +504,65 @@ describe('run_command', () => {
     })
   })
 
+  test('runs directly on the host under full access and reports ignored retry fields', async () => {
+    userExecMock.mockResolvedValueOnce({
+      success: false,
+      exitCode: 1,
+      stdout: '',
+      stderr: 'ls: /Users/example/Documents: Operation not permitted',
+      cwd: '/workspace/project',
+    })
+    const runCommand = vi.fn()
+    const { tool, description } = buildRunCommandTool({
+      sessionId: 'session-1',
+      platform: 'darwin',
+      provider: createProvider(runCommand),
+      ensureSandbox: vi.fn().mockResolvedValue({ success: true }),
+      workingDirectories: ['/workspace/project'],
+      approvalMode: 'full_access',
+      requestSmartApproval: vi.fn(),
+    })
+    if (!tool.execute) throw new Error('run_command execute missing')
+
+    expect(tool.description).toContain('Full Access, so commands run directly on the host')
+    expect(tool.description).not.toContain('sandbox first')
+    expect(description).toContain('Full Access is enabled: commands run directly on the host without an approval step')
+    expect(description).not.toContain('there is no file sandbox')
+    expect(description).not.toContain('commands run in the file sandbox first')
+    const inputSchema = (await asSchema(tool.inputSchema).jsonSchema) as {
+      properties?: Record<string, { description?: string }>
+    }
+    expect(inputSchema.properties).not.toHaveProperty('sandbox_permissions')
+    expect(inputSchema.properties).not.toHaveProperty('justification')
+
+    const result = await tool.execute(
+      {
+        command: 'ls /Users/example/Documents',
+        sandbox_permissions: 'danger-full-access',
+        justification: 'The listing is only available on the host.',
+      },
+      { toolCallId: 'tool-full-access-escalation', messages: [] } as never
+    )
+
+    expect(runCommand).not.toHaveBeenCalled()
+    expect(resolveCommandRetryMock).not.toHaveBeenCalled()
+    expect(userExecMock).toHaveBeenCalledWith('ls /Users/example/Documents', {
+      cwd: '/workspace/project',
+      timeout: 120_000,
+      sessionId: 'session-1',
+      toolCallId: 'tool-full-access-escalation',
+      approvalSource: 'full_access',
+      baseCwd: '/workspace/project',
+      injectBundledNode: true,
+    })
+    expect(result).toMatchObject({ success: false, sandboxed: false, escalationIgnored: 'full_access' })
+    expect(result).not.toHaveProperty('retryAvailable')
+    await expect(toModelOutput(tool, result)).resolves.toEqual({
+      type: 'text',
+      value: expect.stringContaining('Host retry fields were ignored: this session has Full Access'),
+    })
+  })
+
   test('uses smart approval for Windows host commands', async () => {
     const requestSmartApproval = vi.fn().mockResolvedValue('ai')
     const { tool } = buildRunCommandTool({
@@ -534,4 +595,119 @@ describe('run_command', () => {
       })
     )
   })
+})
+
+describe('run_command capability contract', () => {
+  const platforms = ['win32', 'darwin', 'linux'] as const
+  const approvalModes: CommandApprovalMode[] = ['smart', 'always_ask', 'full_access']
+  const capabilities = ['available', 'no-provider', 'no-run-command', 'no-initializer'] as const
+  const cases = platforms.flatMap((platform) =>
+    approvalModes.flatMap((approvalMode) => capabilities.map((capability) => ({ platform, approvalMode, capability })))
+  )
+
+  test.each(cases)(
+    '$platform / $approvalMode / $capability advertises only supported execution paths',
+    async ({ platform, approvalMode, capability }) => {
+      const runCommand = vi.fn().mockResolvedValue({ exitCode: 0, stdout: 'sandbox ok', stderr: '' })
+      const requestSmartApproval = vi.fn().mockResolvedValue('ai')
+      const { tool, description } = buildRunCommandTool({
+        sessionId: 'session-1',
+        platform,
+        provider:
+          capability === 'no-provider'
+            ? undefined
+            : createProvider(capability === 'no-run-command' ? undefined : runCommand),
+        ensureSandbox: capability === 'no-initializer' ? undefined : vi.fn().mockResolvedValue({ success: true }),
+        workingDirectories: [platform === 'win32' ? 'C:\\workspace\\project' : '/workspace/project'],
+        approvalMode,
+        requestSmartApproval,
+      })
+      const supportsRetry = platform !== 'win32' && approvalMode !== 'full_access' && capability === 'available'
+      const schema = asSchema(tool.inputSchema)
+      const jsonSchema = await schema.jsonSchema
+      const shell = platform === 'win32' ? 'powershell' : 'bash'
+      const command = platform === 'win32' ? 'Get-Location' : 'pwd'
+      const input = { command, shell }
+      expect((await schema.validate?.(input))?.success).toBe(true)
+      expect(jsonSchema.properties?.shell).toMatchObject({ enum: [shell] })
+      if (platform === 'win32') {
+        expect(description).toContain('Bash is unavailable')
+        expect(description).toContain('forward slashes, such as C:/Users/name, are valid in PowerShell')
+        expect(description).toContain('do not prepend cd or Set-Location')
+      } else {
+        expect(description).not.toContain('PowerShell syntax')
+        expect(description).not.toContain('Set-Location')
+      }
+      if (supportsRetry) {
+        expect(tool.description).toContain('Commands run in the sandbox first')
+        expect(description).toContain('Request full host access only after a real failed sandbox call')
+        expect(jsonSchema.properties).toHaveProperty('sandbox_permissions')
+        expect(jsonSchema.properties).toHaveProperty('justification')
+      } else {
+        expect(description).not.toContain('commands run in the file sandbox first')
+        expect(description).not.toContain('Request full host access only after a real failed sandbox call')
+        expect(jsonSchema.properties).not.toHaveProperty('sandbox_permissions')
+        expect(jsonSchema.properties).not.toHaveProperty('justification')
+        if (approvalMode === 'full_access') {
+          expect(tool.description).toContain('Full Access')
+          expect(description).toContain('without an approval step')
+        } else {
+          expect(tool.description).toContain('No OS command sandbox is available in this session')
+          expect(description).toContain('No OS command sandbox is available in this session')
+          expect(description).toContain('following the session approval policy')
+        }
+      }
+      expect(
+        (
+          await schema.validate?.({
+            ...input,
+            sandbox_permissions: 'danger-full-access',
+            justification: 'The command needs host access.',
+          })
+        )?.success
+      ).toBe(supportsRetry)
+
+      if (!tool.execute) throw new Error('run_command execute missing')
+      const execution = tool.execute(input, { toolCallId: 'tool-capability', messages: [] } as never)
+      if (!supportsRetry && approvalMode === 'always_ask') {
+        await expect(execution).rejects.toMatchObject({ name: 'UserExecApprovalPausedError' })
+        expect(userExecMock).not.toHaveBeenCalled()
+        expect(requestSmartApproval).not.toHaveBeenCalled()
+      } else {
+        await expect(execution).resolves.toMatchObject({ success: true, sandboxed: supportsRetry })
+        if (supportsRetry) {
+          expect(runCommand).toHaveBeenCalledOnce()
+          expect(userExecMock).not.toHaveBeenCalled()
+          expect(requestSmartApproval).not.toHaveBeenCalled()
+        } else {
+          expect(userExecMock).toHaveBeenCalledWith(
+            command,
+            expect.objectContaining({
+              approvalSource: approvalMode === 'full_access' ? 'full_access' : 'ai',
+            })
+          )
+          expect(requestSmartApproval).toHaveBeenCalledTimes(approvalMode === 'full_access' ? 0 : 1)
+        }
+      }
+      if (!supportsRetry) expect(runCommand).not.toHaveBeenCalled()
+      expect(resolveCommandRetryMock).not.toHaveBeenCalled()
+    }
+  )
+})
+
+describe('run_command input schema', () => {
+  test.each([{ cmd: 'pwd' }, { command: 123 }, { command: 'pwd', timeout: '1000' }])(
+    'rejects invalid arguments %j using the command tool schema',
+    async (input) => {
+      const { tool } = buildRunCommandTool({
+        sessionId: 'session-1',
+        platform: 'darwin',
+        workingDirectories: [],
+        approvalMode: 'smart',
+        requestSmartApproval: vi.fn(),
+      })
+      const schema = asSchema(tool.inputSchema)
+      expect((await schema.validate?.(input))?.success).toBe(false)
+    }
+  )
 })

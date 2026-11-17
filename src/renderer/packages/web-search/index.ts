@@ -126,6 +126,10 @@ async function _searchRelatedResults(query: string, signal?: AbortSignal) {
   }))
 }
 
+export async function testWebSearchConnection(signal?: AbortSignal): Promise<void> {
+  await _searchRelatedResults('Chatbox', signal)
+}
+
 const cache = new Map()
 
 export const webSearchExecutor = async (

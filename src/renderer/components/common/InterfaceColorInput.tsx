@@ -13,11 +13,14 @@ export function InterfaceColorInput({
   value,
   isColorAllowed,
   onCommit,
+  onDraftChange,
 }: {
   label: string
   value: string
   isColorAllowed?: (value: string) => boolean
   onCommit: (value: string) => void
+  /** Called with each complete, allowed color while the value is still being picked or typed. */
+  onDraftChange?: (value: string) => void
 }) {
   const [draftValue, setDraftValue] = useState(value)
   const draftValueRef = useRef(value)
@@ -32,6 +35,10 @@ export function InterfaceColorInput({
   const updateDraftValue = (nextValue: string) => {
     draftValueRef.current = nextValue
     setDraftValue(nextValue)
+    const normalizedValue = nextValue.toLowerCase()
+    if (/^#[0-9a-f]{6}$/.test(normalizedValue) && (!isColorAllowed || isColorAllowed(normalizedValue))) {
+      onDraftChange?.(normalizedValue)
+    }
   }
 
   const commitValue = (nextValue: string) => {

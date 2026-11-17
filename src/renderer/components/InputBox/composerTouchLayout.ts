@@ -1,19 +1,13 @@
 import { useEffect, useState } from 'react'
 import platform from '@/platform'
+import { shouldUseTouchLayout } from '@/utils/touch-layout'
 
 export type ComposerMenuLayout = 'desktop' | 'touch'
 
 const SMALL_SCREEN_QUERY = '(max-width: 639px)'
 const COARSE_POINTER_QUERY = '(pointer: coarse)'
 
-export function shouldUseComposerTouchLayout(options: {
-  platformType: string
-  isDesktopLike: boolean
-  isSmallScreen: boolean
-  coarsePointer: boolean
-}): boolean {
-  return options.platformType === 'mobile' || options.isSmallScreen || (!options.isDesktopLike && options.coarsePointer)
-}
+export const shouldUseComposerTouchLayout = shouldUseTouchLayout
 
 function readMediaQuery(query: string): boolean {
   return typeof window !== 'undefined' && window.matchMedia(query).matches

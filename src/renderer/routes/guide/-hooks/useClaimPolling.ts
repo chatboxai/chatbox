@@ -1,3 +1,5 @@
+import { accountLicenseFromApi, selectAccountLicense } from '@shared/utils/account-license'
+import { settingsStore } from '@/stores/settingsStore'
 /**
  * useClaimPolling — polls the backend for the user's free-plan license to appear.
  *
@@ -6,14 +8,14 @@
  */
 
 import { useEffect, useRef } from 'react'
-import { listLicensesByUser, type UserLicense } from '@/packages/remote'
+import { getUserProfile, listLicensesByUser, type UserLicense } from '@/packages/remote'
 
 const POLL_INTERVAL_MS = 10_000
 const TIMEOUT_MS = 10 * 60 * 1000
 
 interface UseClaimPollingArgs {
   enabled: boolean
-  onClaimed: (license: UserLicense) => void
+  onClaimed: (license: UserLicense, email: string) => void
   onTimeout: () => void
 }
 
@@ -44,8 +46,17 @@ export function useClaimPolling({ enabled, onClaimed, onTimeout }: UseClaimPolli
         const licenses = await listLicensesByUser()
         if (stopped) return
         if (licenses.length > 0) {
+          const profile = await getUserProfile()
+          if (stopped) return
+          const selection = selectAccountLicense(
+            licenses.map(accountLicenseFromApi),
+            settingsStore.getState(),
+            profile.email,
+            true
+          )
+          if (!selection.selected) return
           stopped = true
-          onClaimedRef.current(licenses[0])
+          onClaimedRef.current(licenses.find((license) => license.key === selection.selected?.key)!, profile.email)
         }
       } catch (err) {
         console.warn('[claim-polling] poll failed:', err)

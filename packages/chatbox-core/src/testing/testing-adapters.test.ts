@@ -4,15 +4,21 @@ import type { Session, Settings } from '../types'
 import {
   InMemoryBlobStorage,
   InMemorySessionRepository,
+  InMemorySessionRowStore,
   InMemorySettingsRepository,
   InMemorySettingsStorage,
   MockModelFactory,
   runSessionRepositoryContract,
+  runSessionRowStoreContract,
 } from './index'
 
 describe('portable testing adapters', () => {
   test('provides a reusable SessionRepository contract suite', async () => {
     await runSessionRepositoryContract(() => new InMemorySessionRepository())
+  })
+
+  test('provides a reusable SessionRowStore contract suite', async () => {
+    await runSessionRowStoreContract(() => new InMemorySessionRowStore())
   })
 
   test('retain sessions, metadata, raw settings and blobs in memory', async () => {
@@ -22,7 +28,7 @@ describe('portable testing adapters', () => {
     const session = { id: 'session', name: 'Test', type: 'chat', messages: [] } satisfies Session
 
     await sessions.initialize()
-    await sessions.setSession(session)
+    await sessions.seedSession(session)
     await sessions.meta.create({
       id: session.id,
       name: session.name,
@@ -33,7 +39,9 @@ describe('portable testing adapters', () => {
     await settings.write({ language: 'en' })
     await blobs.set('result', 'value')
 
-    await expect(sessions.getSession(session.id)).resolves.toBe(session)
+    await expect(sessions.getSessionHeader(session.id)).resolves.toMatchObject({
+      header: { id: session.id, name: session.name },
+    })
     await expect(sessions.meta.getById(session.id)).resolves.toMatchObject({ id: session.id })
     expect(settings.snapshot()).toEqual({ language: 'en' })
     await expect(blobs.get('result')).resolves.toBe('value')

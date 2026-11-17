@@ -6,6 +6,12 @@ import { z } from 'zod'
 export const ImageGenerationStatusSchema = z.enum(['pending', 'generating', 'done', 'error'])
 export type ImageGenerationStatus = z.infer<typeof ImageGenerationStatusSchema>
 
+/** Model-advertised constraints. Null means unsupported; omitted capabilities are unknown. */
+export interface ImageModelCapabilities {
+  aspectRatio: { values?: string[] } | null
+  inputReferences: { min?: number; max?: number } | null
+}
+
 // Model info for image generation
 export const ImageGenerationModelSchema = z.object({
   provider: z.string(),

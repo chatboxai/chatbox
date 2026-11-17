@@ -20,7 +20,7 @@ Feature: 旧版工具回退 (不支持工具调用的模型)
     And 用户在会话设置中关联了该知识库
     When 用户发送与知识库文档相关的问题
     Then 助手消息中应该出现工具调用部件 (ToolCallPartUI)
-    And 工具调用部件的工具名应为 "query_knowledge_base"
+    And 工具调用部件的工具名应为 "knowledge_base"，命令为 "search"
     And 状态应该为 "result"
     And 助手的文本回复应该包含基于知识库内容的信息
 

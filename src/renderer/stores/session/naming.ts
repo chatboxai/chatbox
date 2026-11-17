@@ -1,5 +1,6 @@
-import type { Session } from '@chatbox/core'
+import { shouldBackfillThreadName, UNTITLED_SESSION_NAME } from '@chatbox/core'
 import { SessionNamingService } from '@chatbox/core/application/session'
+import type { SessionHeader } from '@chatbox/core/ports'
 import { currentModelFactory } from '@/adapters/CurrentModelFactory'
 import { rendererApplication } from '@/app/renderer-application'
 import { languageNameMap } from '@/i18n/locales'
@@ -9,16 +10,23 @@ import { reportError } from '@/utils/sentry'
 
 const namingService = new SessionNamingService({
   sessions: {
-    getSession: (sessionId) => rendererApplication.sessionQueryBridge.getSession(sessionId),
-    updateSession: (sessionId, updater) => rendererApplication.sessions.updateSession(sessionId, updater),
-    updateSessionWithMessages: (sessionId, updater) =>
-      rendererApplication.sessions.updateSessionWithMessages(sessionId, updater),
+    getSessionHeader: (sessionId) => rendererApplication.sessions.getSessionHeader(sessionId),
+    readSessionNamingMessages: (request) => rendererApplication.sessions.readSessionNamingMessages(request),
+    updateSessionHeader: (sessionId, updater) => rendererApplication.sessions.updateSessionHeader(sessionId, updater),
+    executeStructureCommand: (sessionId, operation, onCommitted) =>
+      rendererApplication.sessions.executeStructureCommand(sessionId, operation, onCommitted),
   },
   settings: settingsService,
   models: currentModelFactory,
   scheduler: {
     schedule(callback, delayMs) {
-      const timeout = setTimeout(callback, delayMs)
+      const timeout = setTimeout(() => {
+        void Promise.resolve()
+          .then(callback)
+          .catch((error: unknown) => {
+            reportError(error, { domain: 'ai-generation', operation: 'generate_session_name' })
+          })
+      }, delayMs)
       return { cancel: () => clearTimeout(timeout) }
     },
   },
@@ -33,16 +41,28 @@ const namingService = new SessionNamingService({
   },
 })
 
-export function modifyNameAndThreadName(sessionId: string, name: string) {
+export async function modifyNameAndThreadName(sessionId: string, name: string) {
   return namingService.modifyNameAndThreadName(sessionId, name)
 }
 
-export function modifyThreadName(sessionId: string, threadName: string) {
+export async function modifyThreadName(sessionId: string, threadName: string) {
   return namingService.modifyThreadName(sessionId, threadName)
 }
 
-export function syncSessionAutoTitle(session: Session) {
-  namingService.syncAutoTitle(session, { messages: session.messages })
+export function syncSessionAutoTitle(sessionId: string) {
+  return namingService.syncAutoTitle(sessionId).catch((error: unknown) => {
+    reportError(error, { domain: 'ai-generation', operation: 'generate_session_name' })
+  })
+}
+
+export async function syncSessionAutoTitleOnOpen(session: SessionHeader, isCurrent: () => boolean): Promise<void> {
+  if (
+    !shouldBackfillThreadName(session) &&
+    (settingsService.getSettings().autoGenerateTitle === false ||
+      (session.name !== UNTITLED_SESSION_NAME && session.threadName))
+  )
+    return
+  if (isCurrent()) await syncSessionAutoTitle(session.id)
 }
 
 export function clearSessionNameGenerationState(sessionId: string): void {

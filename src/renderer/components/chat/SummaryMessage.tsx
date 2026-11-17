@@ -9,6 +9,7 @@ import { type FC, memo, useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Markdown from '@/components/Markdown'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
+import { GLASS_FILL_CLASS } from '@/lib/glass-surface'
 import { cn } from '@/lib/utils'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { dismissPromptCacheBreakConfirm, isPromptCacheBreakConfirmDismissed } from '@/utils/prompt-cache-confirm'
@@ -25,7 +26,7 @@ interface SummaryMessageProps {
   /** Resolved by the list container; both modes keep latest-summary edit and delete. */
   sessionMode?: SessionMode
   /** Resolve prompt-cache delete policy when the delete dialog opens. */
-  shouldConfirmPromptCacheDelete?: (messageId: string, target: PromptCacheDeleteTarget) => boolean
+  shouldConfirmPromptCacheDelete?: (messageId: string, target: PromptCacheDeleteTarget) => boolean | Promise<boolean>
 }
 
 const SummaryMessage: FC<SummaryMessageProps> = ({
@@ -60,10 +61,10 @@ const SummaryMessage: FC<SummaryMessageProps> = ({
     onDelete?.()
   }
 
-  const handleDeleteClick = () => {
+  const handleDeleteClick = async () => {
     const shouldExplain =
       !isPromptCacheBreakConfirmDismissed('delete-summary') &&
-      shouldConfirmPromptCacheDelete?.(msg.id, 'summary') === true
+      (await shouldConfirmPromptCacheDelete?.(msg.id, 'summary')) === true
     setExplainPromptCacheBreak(shouldExplain)
     setDontShowAgain(false)
     setShowDeleteConfirm(true)
@@ -110,7 +111,9 @@ const SummaryMessage: FC<SummaryMessageProps> = ({
       </Flex>
 
       <Collapse in={expanded}>
-        <div className="msg-block mt-3 mx-4 p-3 rounded-lg bg-chatbox-background-secondary border border-solid border-chatbox-border-primary">
+        <div
+          className={`msg-block mt-3 mx-4 p-3 rounded-lg bg-chatbox-background-secondary border border-solid border-chatbox-border-primary ${GLASS_FILL_CLASS}`}
+        >
           {enableMarkdownRendering ? (
             <Markdown
               uniqueId={`summary-${msg.id}`}

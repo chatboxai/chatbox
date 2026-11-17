@@ -6,10 +6,10 @@ import { getOS } from '@/packages/navigator'
 import platform from '@/platform'
 import type { PlatformType } from '@/platform/interfaces'
 import { settingsService } from '@/settings-runtime'
-import storage from '@/storage'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import * as settingActions from '@/stores/settingActions'
 import { apiRequest } from '@/utils/request'
+import { currentBlobStorage } from './CurrentBlobStorage'
 import { type ModelBlobStorage, RendererModelStorageAdapter } from './RendererModelStorageAdapter'
 import { type OAuthIpcInvoker, RendererOAuthAdapter } from './RendererOAuthAdapter'
 import { type RendererApiRequestClient, RendererRequestAdapter } from './RendererRequestAdapter'
@@ -36,6 +36,11 @@ export interface CreateModelDependenciesOptions {
   oauthIpc?: OAuthIpcInvoker
 }
 
+const defaultModelBlobStorage: ModelBlobStorage = {
+  getBlob: (key) => currentBlobStorage.get(key),
+  setBlob: (key, value) => currentBlobStorage.set(key, value),
+}
+
 async function createDefaultPlatformInfo(): Promise<ModelDependencyPlatformInfo> {
   return {
     type: platform.type,
@@ -48,7 +53,7 @@ async function createDefaultPlatformInfo(): Promise<ModelDependencyPlatformInfo>
 function createStorageAdapter(options: CreateModelDependenciesOptions): StorageAdapter {
   if (options.storage) return options.storage
   return new RendererModelStorageAdapter(
-    options.blobStorage ?? storage,
+    options.blobStorage ?? defaultModelBlobStorage,
     options.createPictureStorageKey ?? StorageKeyGenerator.picture
   )
 }

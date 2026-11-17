@@ -115,7 +115,7 @@ test('continues streaming when Anthropic switches to a server-side fallback mode
   })
 
   const chunks = []
-  for await (const chunk of result.fullStream) {
+  for await (const chunk of result.stream) {
     chunks.push(chunk)
   }
 

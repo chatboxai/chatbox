@@ -1,6 +1,6 @@
 import { ActionIcon, Button, Divider, Flex, Group, Stack, Text, UnstyledButton } from '@mantine/core'
 import type { CommandApprovalMode } from '@shared/types'
-import { IconCheck, IconFile, IconFolder, IconTrash } from '@tabler/icons-react'
+import { IconCheck, IconFile, IconFolder, IconX } from '@tabler/icons-react'
 import { PlusIcon } from 'lucide-react'
 import type { FC } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -123,19 +123,21 @@ export const WorkingDirectoryContent: FC<{
               </Text>
             </Tooltip>
           </Flex>
-          <ActionIcon
-            variant="subtle"
-            size={20}
-            color="red"
-            disabled={disabled}
-            aria-label={t('Remove')}
-            onClick={() => {
-              if (disabled) return
-              onRemove(dir)
-            }}
-          >
-            <IconTrash size={14} />
-          </ActionIcon>
+          <Tooltip label={t('Deselect folder')} withArrow zIndex={3000}>
+            <ActionIcon
+              variant="subtle"
+              size={20}
+              color="gray"
+              disabled={disabled}
+              aria-label={t('Deselect folder')}
+              onClick={() => {
+                if (disabled) return
+                onRemove(dir)
+              }}
+            >
+              <IconX size={14} />
+            </ActionIcon>
+          </Tooltip>
         </Flex>
       ))}
       {availableRecentDirectories.length > 0 && (

@@ -13,6 +13,7 @@ import { IconBrain, IconCircleOff, IconSparkles } from '@tabler/icons-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
+import { getStatusBadgeCutoutStyle } from './status-badge-cutout'
 
 interface ReasoningControlButtonProps {
   provider?: string
@@ -129,12 +130,10 @@ function CompactReasoningLevelIcon({ level, size }: { level: ReasoningControlLev
 
   return (
     <span className="relative inline-flex shrink-0" style={{ width: size, height: size }} data-reasoning-level={level}>
-      <IconBrain size={size} strokeWidth={1.8} />
-      <ReasoningLevelStatusIcon
-        level={level}
-        size={statusSize}
-        className="absolute -bottom-0.5 -right-0.5 bg-[var(--chatbox-background-secondary)]"
-      />
+      <span className="inline-flex" style={getStatusBadgeCutoutStyle(size, statusSize)}>
+        <IconBrain size={size} strokeWidth={1.8} />
+      </span>
+      <ReasoningLevelStatusIcon level={level} size={statusSize} className="absolute -bottom-0.5 -right-0.5" />
     </span>
   )
 }

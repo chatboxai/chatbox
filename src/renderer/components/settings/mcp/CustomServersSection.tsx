@@ -1,16 +1,19 @@
-import { ActionIcon, Anchor, Badge, Flex, Paper, SimpleGrid, Switch, Text } from '@mantine/core'
+import { Anchor, Badge, Button, Flex, Switch, Text } from '@mantine/core'
 import { spotlight } from '@mantine/spotlight'
 import { IconPlus } from '@tabler/icons-react'
-import { type FC, useCallback, useEffect, useState } from 'react'
+import { type FC, type ReactNode, useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { v4 as uuid } from 'uuid'
 import { bucketPlausibleCount } from '@/analytics/plausible'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
-import { useToggleMCPServer } from '@/hooks/mcp'
+import MCPStatus from '@/components/mcp/MCPStatus'
+import { SettingRow, SettingsListItem, SettingsSection } from '@/components/settings/SettingsLayout'
+import { useMCPServerStatus, useToggleMCPServer } from '@/hooks/mcp'
 import { mcpController } from '@/packages/mcp/controller'
 import type { MCPServerConfig } from '@/packages/mcp/types'
 import { toastError } from '@/packages/toast'
+import platform from '@/platform'
 import { useMcpSettings, useSettingsStore } from '@/stores/settingsStore'
 import { trackEvent } from '@/utils/track'
 import { ConfigModal } from './ConfigModal'
@@ -18,34 +21,56 @@ import type { MCPRegistryEntry } from './registries'
 import ServerRegistrySpotlight from './ServerRegistrySpotlight'
 import { parseServersFromJson } from './utils'
 
-const ServerCard: FC<{
+const ServerRow: FC<{
   config: MCPServerConfig
   triggerEdit: (serverConfig: MCPServerConfig) => void
   onEnabledChange: (id: string, enabled: boolean) => void
 }> = (props) => {
   const { t } = useTranslation()
   const { config, triggerEdit, onEnabledChange } = props
+  const status = useMCPServerStatus(config.id)
+  const unsupported = platform.type === 'mobile' && config.transport.type === 'stdio'
   return (
-    <Paper shadow="xs" radius="lg" withBorder p="sm">
-      <Flex justify="space-between" align="center">
-        <Text size="sm" fw={600}>
-          {config.name}
-        </Text>
-        <Switch
-          size="xs"
-          checked={config.enabled}
-          onChange={(e) => onEnabledChange(config.id, e.currentTarget.checked)}
-        />
-      </Flex>
-      <Flex justify="space-between" align="center" mt="lg">
-        <Badge size="sm" variant="light" color="chatbox-brand">
-          {config.transport.type}
-        </Badge>
-        <Anchor size="xs" c="chatbox-brand" onClick={() => triggerEdit(config)}>
-          {t('Edit')}
-        </Anchor>
-      </Flex>
-    </Paper>
+    <SettingRow
+      id={`mcp-server-${config.id}`}
+      label={
+        <div className="flex items-center gap-2 min-w-0">
+          <MCPStatus status={status} />
+          <span className="truncate">{config.name}</span>
+        </div>
+      }
+      status={
+        <Flex align="center" gap="xs" wrap="wrap" mt={2}>
+          <Badge size="sm" variant="light" color="chatbox-brand">
+            {config.transport.type}
+          </Badge>
+          {unsupported && (
+            <Text fz={12} c="chatbox-tertiary">
+              {t('Local MCP servers are only available on desktop')}
+            </Text>
+          )}
+          {config.enabled && !unsupported && status?.state !== 'running' && status?.state !== 'starting' && (
+            <Anchor component="button" fz={12} onClick={() => onEnabledChange(config.id, true)}>
+              {t('Connect')}
+            </Anchor>
+          )}
+        </Flex>
+      }
+      control={
+        <Flex align="center" gap="xs">
+          <Button variant="subtle" color="chatbox-gray" size="compact-sm" onClick={() => triggerEdit(config)}>
+            {t('Edit')}
+          </Button>
+          <Switch
+            size="md"
+            aria-label={config.name}
+            checked={config.enabled}
+            disabled={unsupported}
+            onChange={(e) => onEnabledChange(config.id, e.currentTarget.checked)}
+          />
+        </Flex>
+      }
+    />
   )
 }
 
@@ -58,7 +83,29 @@ const CustomServersSection: FC<Props> = (props) => {
   const setSettings = useSettingsStore((state) => state.setSettings)
   const mcpSettings = useMcpSettings()
   const onEnabledChange = useToggleMCPServer()
-  const [modal, setModal] = useState<{ config: MCPServerConfig; mode: 'add' | 'edit' } | null>(null)
+  const [modal, setModal] = useState<{ config: MCPServerConfig; mode: 'add' | 'edit'; help?: ReactNode } | null>(null)
+  const presets = [
+    {
+      name: t('Wolters Kluwer China'),
+      description: t(
+        'Search Chinese laws, cases, and legal citations. Sign in with OAuth on desktop, or set Authorization=Bearer <YOUR_TOKEN> in HTTP Header.'
+      ),
+      documentationUrl: 'https://mcp.wkinfo.com.cn/docs',
+      transport: { type: 'http', url: 'https://mcp.wkinfo.com.cn/mcp-servers/integrated/' } as const,
+    },
+    {
+      name: t('Eastmoney MX'),
+      description: t(
+        'Access Eastmoney financial data. Enter your API key as em_api_key=<YOUR_API_KEY> in HTTP Header.'
+      ),
+      documentationUrl: 'https://choice.eastmoney.com/mcp/guide',
+      transport: {
+        type: 'http',
+        url: 'https://mxapi.eastmoney.com/mxds/mcp',
+        headers: { em_api_key: `<${t('Please enter your own MX API KEY here')}>` },
+      } as const,
+    },
+  ]
 
   useEffect(() => {
     if (props.installConfig) {
@@ -126,7 +173,13 @@ const CustomServersSection: FC<Props> = (props) => {
   }, [])
 
   const triggerImportJson = async () => {
-    const content = await navigator.clipboard.readText()
+    let content: string
+    try {
+      content = await navigator.clipboard.readText()
+    } catch {
+      toastError(t('Failed to read from clipboard'))
+      return
+    }
     const servers = parseServersFromJson(content)
     trackEvent('import_mcp_servers_from_json', { count: bucketPlausibleCount(servers.length) })
     if (!servers.length) {
@@ -143,44 +196,78 @@ const CustomServersSection: FC<Props> = (props) => {
 
   return (
     <>
-      <Text size="sm" fw={600} mb={12}>
-        {t('Custom MCP Servers')}
-      </Text>
-      <SimpleGrid type="container" cols={{ base: 1, '450px': 2, '800px': 3, '1200px': 4 }}>
-        <Paper
-          tabIndex={-1}
-          shadow="xs"
-          radius="lg"
-          withBorder
-          bd="1px dashed var(--chatbox-border-primary)"
-          p="sm"
-          className="cursor-pointer"
-          onClick={spotlight.open}
-        >
-          <Flex direction="column" justify="center" align="center" h="100%" gap={4}>
-            <ActionIcon variant="filled" size="sm">
-              <ScalableIcon icon={IconPlus} />
-            </ActionIcon>
-            <Text size="xs" c="chatbox-brand">
-              {t('Add Server')}
-            </Text>
-          </Flex>
-        </Paper>
-        {mcpSettings.servers.map((server) => {
+      <SettingsSection
+        title={t('Custom MCP Servers')}
+        action={
+          <Button
+            variant="light"
+            size="compact-sm"
+            leftSection={<ScalableIcon icon={IconPlus} size={14} />}
+            onClick={spotlight.open}
+          >
+            {t('Add Server')}
+          </Button>
+        }
+      >
+        {presets.map((preset) => {
+          const help = (
+            <>
+              {preset.description}{' '}
+              <Anchor href={preset.documentationUrl} target="_blank" rel="noopener noreferrer" fz="inherit">
+                {t('Setup guide')}
+              </Anchor>
+            </>
+          )
           return (
-            <ServerCard
-              key={server.id}
-              config={server}
-              triggerEdit={(config) => setModal({ mode: 'edit', config })}
-              onEnabledChange={onEnabledChange}
+            <SettingRow
+              key={preset.transport.url}
+              label={preset.name}
+              description={help}
+              control={
+                <Button
+                  variant="light"
+                  size="compact-sm"
+                  onClick={() =>
+                    setModal({
+                      mode: 'add',
+                      config: {
+                        id: uuid(),
+                        name: preset.name,
+                        enabled: true,
+                        protocolMode: 'auto',
+                        transport: preset.transport,
+                      },
+                      help,
+                    })
+                  }
+                >
+                  {t('Add')}
+                </Button>
+              }
             />
           )
         })}
-      </SimpleGrid>
+        {mcpSettings.servers.length === 0 && (
+          <SettingsListItem>
+            <Text fz={14} c="chatbox-tertiary">
+              {t('No custom servers yet. Add one manually, from the registry, or from JSON in your clipboard.')}
+            </Text>
+          </SettingsListItem>
+        )}
+        {mcpSettings.servers.map((server) => (
+          <ServerRow
+            key={server.id}
+            config={server}
+            triggerEdit={(config) => setModal({ mode: 'edit', config })}
+            onEnabledChange={onEnabledChange}
+          />
+        ))}
+      </SettingsSection>
       <ServerRegistrySpotlight triggerAddServer={triggerAddServer} triggerImportJson={triggerImportJson} />
       <ConfigModal
         mode={modal?.mode}
         config={modal ? modal.config : null}
+        help={modal?.help}
         onClose={() => setModal(null)}
         onSave={handleServerUpdate}
         onDelete={handleServerDelete}

@@ -1,5 +1,5 @@
 import { ActionIcon, Flex, Text } from '@mantine/core'
-import { TestId } from '@shared/automation/testids'
+import { AutomationAdjacentAttr, TestId } from '@shared/automation/testids'
 import type { ProviderModelInfo } from '@shared/types'
 import { IconBulb, IconEye, IconInfoCircle, IconLock, IconStar, IconStarFilled } from '@tabler/icons-react'
 import clsx from 'clsx'
@@ -69,7 +69,7 @@ export function ModelRow({
     <div
       data-testid={TestId.model.option}
       data-provider-id={detail.providerId}
-      data-model-id={detail.modelId}
+      {...{ [AutomationAdjacentAttr.modelId]: detail.modelId }}
       data-selected={selected ? 'true' : 'false'}
       role="button"
       tabIndex={0}

@@ -1,11 +1,11 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import storage from '@/storage'
+import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
 
 export function useSaveBlob() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async ({ key, value }: { key: string; value: string }) => {
-      await storage.setBlob(key, value)
+      await currentBlobStorage.set(key, value)
       return key
     },
     onMutate: async ({ key, value }) => {

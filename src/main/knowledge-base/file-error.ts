@@ -16,7 +16,7 @@ export function normalizeKnowledgeBaseFileError(errorMessage: string): string {
       const errorCode = parsed.error?.code
 
       if (errorCode && ChatboxAIAPIError.codeNameMap[errorCode]) {
-        return ChatboxAIAPIError.codeNameMap[errorCode].i18nKey
+        return errorCode
       }
       if (parsed.error?.detail) {
         return parsed.error.detail

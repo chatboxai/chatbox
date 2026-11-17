@@ -28,8 +28,7 @@ export interface AgentModeUIState {
 
 export function getAgentModeUIState(entry: AgentModeEntry, modelSupportsAgentMode: boolean): AgentModeUIState {
   const modelUnsupported = !modelSupportsAgentMode
-  // Agent mode requires desktop platform (sandbox is not available on mobile/web)
-  const platformUnsupported = platform.type !== 'desktop'
+  const platformUnsupported = !platform.isDesktopLike && platform.type !== 'mobile'
   const displayValue: AgentModeValue = entry.value === 'on' && !modelUnsupported && !platformUnsupported ? 'on' : 'off'
 
   // Work Mode capabilities (code execution, skills, MCP, agent-mode file handling)

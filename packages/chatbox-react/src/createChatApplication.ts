@@ -14,7 +14,6 @@ import type { QueryClient } from '@tanstack/react-query'
 import type { ChatboxReactApplication } from './application-context'
 import { createGenerationHooks } from './generation-hooks'
 import { createChatQueryClient } from './query/query-client'
-import { QueryKeys } from './query/query-keys'
 import { createSessionHooks } from './query/session-hooks'
 import { SessionQueryBridge } from './query/session-query-bridge'
 import { createSettingsStore } from './stores/createSettingsStore'
@@ -59,28 +58,14 @@ export function createChatApplication(options: CreateChatApplicationOptions): Ch
   const ownsQueryClient = options.queryClient === undefined
   const queryClient: QueryClient = options.queryClient ?? createChatQueryClient()
   const sessionEvents = new SessionEventBus(options.sessionEventLogger)
-  let sessionQueryBridgeReference: SessionQueryBridge | null = null
   let disposed = false
   let bootstrapPromise: Promise<void> | null = null
 
-  const sessionWrites = new SessionWriteCoordinator(options.sessionRepository, {
-    readCurrentSession: async (sessionId) => {
-      const cached = sessionQueryBridgeReference?.getCachedSession(sessionId)
-      if (cached !== undefined) return cached
-
-      // A query read can repair stale generation state through this same write
-      // coordinator. Waiting for it here would deadlock, while letting it finish
-      // later could overwrite the write cache with its older snapshot.
-      await queryClient.cancelQueries({ queryKey: QueryKeys.ChatSession(sessionId), exact: true })
-      const cachedAfterCancellation = sessionQueryBridgeReference?.getCachedSession(sessionId)
-      return cachedAfterCancellation !== undefined
-        ? cachedAfterCancellation
-        : options.sessionRepository.getSession(sessionId)
-    },
-    discardCurrentSession: (sessionId) => sessionQueryBridgeReference?.discardSessionCache(sessionId),
-  })
+  const generationRuntime = new GenerationRuntimeStore()
+  const sessionWrites = new SessionWriteCoordinator(options.sessionRepository)
   const sessions = new SessionService(options.sessionRepository, sessionWrites, sessionEvents, {
     ...options.session,
+    getActiveGenerationMessageIds: (sessionId) => generationRuntime.getActiveMessageIds(sessionId),
     getLastUsedModels:
       options.session.getLastUsedModels ??
       (() => {
@@ -89,12 +74,9 @@ export function createChatApplication(options: CreateChatApplicationOptions): Ch
       }),
   })
   const sessionQueryBridge = new SessionQueryBridge(queryClient, sessions, sessionEvents)
-  sessionQueryBridgeReference = sessionQueryBridge
 
   const settings = new SettingsService(options.settingsStorage, options.settings)
   const settingsStore = createSettingsStore(settings)
-  const generationRuntime = new GenerationRuntimeStore()
-
   return {
     authInfoStore: options.authInfoStore,
     lastUsedModelStore: options.lastUsedModelStore,
@@ -125,6 +107,7 @@ export function createChatApplication(options: CreateChatApplicationOptions): Ch
       if (disposed) return
       disposed = true
       sessionQueryBridge.dispose()
+      sessions.dispose()
       settingsStore.getState().destroy()
       settings.dispose()
       generationRuntime.dispose()

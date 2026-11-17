@@ -1,3 +1,8 @@
+import {
+  prepareLicenseActivation,
+  licenseActivationSettings,
+  licenseDeactivationSettings,
+} from '@shared/services/license-activation'
 import omit from 'lodash/omit'
 import { FetchError } from 'ofetch'
 import { useEffect } from 'react'
@@ -62,7 +67,9 @@ export function initLoginLicenseStateReconciliation() {
 export function useAutoValidate(): boolean {
   const licenseKey = useSettingsStore((state) => state.licenseKey)
   const licenseInstances = useSettingsStore((state) => state.licenseInstances)
-  const clearValidatedData = () => {
+  const clearValidatedData = (key: string, instance: string) => {
+    const current = settingsStore.getState()
+    if (current.licenseKey !== key || current.licenseInstances?.[key] !== instance) return
     settingsStore.setState((state) => ({
       licenseKey: '',
       licenseInstances: omit(state.licenseInstances, state.licenseKey || ''),
@@ -86,14 +93,14 @@ export function useAutoValidate(): boolean {
           instanceId: instanceId,
         })
         if (result.valid === false) {
-          clearValidatedData()
+          clearValidatedData(licenseKey, instanceId)
           log.info(`clear license validated data due to invalid result: ${JSON.stringify(result)}`)
           return
         }
       } catch (err) {
         // 如果错误码为 401 或 403，则清除数据
         if (err instanceof FetchError && err.status && [401, 403, 404].includes(err.status)) {
-          clearValidatedData()
+          clearValidatedData(licenseKey, instanceId)
           log.info(`clear license validated data due to respones status: ${err.status}`)
         } else if (!(err instanceof FetchError)) {
           // Expected API/network failures keep the current validation state and stay out of Sentry.
@@ -104,7 +111,7 @@ export function useAutoValidate(): boolean {
         }
       }
     })()
-  }, [licenseKey])
+  }, [licenseKey, licenseInstances?.[licenseKey || '']])
   // licenseKey 且对应的 instanceId 都存在时，表示验证通过
   if (!licenseKey || !licenseInstances) {
     return false
@@ -127,11 +134,7 @@ export async function deactivate(clearLoginState = true) {
 
   // 更新本地状态
   settingsStore.setState((settings) => ({
-    licenseKey: '',
-    licenseDetail: undefined,
-    licensePlanName: undefined,
-    licenseActivationMethod: undefined,
-    licenseInstances: omit(settings.licenseInstances, settings.licenseKey || ''),
+    ...licenseDeactivationSettings(settings),
     mcp: {
       ...settings.mcp,
       enabledBuiltinServers: [],
@@ -161,85 +164,48 @@ export async function deactivate(clearLoginState = true) {
 export async function activate(
   licenseKey: string,
   method: 'login' | 'manual' = 'manual',
-  options?: { pageName?: string }
+  options?: { pageName?: string; accountEmail?: string }
 ) {
-  console.log('Enter acticate')
   const pageName = options?.pageName ?? JK_PAGE_NAMES.SETTING_PAGE
   const shouldTrackKeyVerifyEvent = method !== 'login'
-  const settings = settingsStore.getState()
-
-  // 互斥逻辑：manual方式激活时，清除login状态
-  if (method === 'manual') {
-    const { authInfoStore } = await import('./authInfoStore')
-    authInfoStore.getState().clearTokens()
-    log.info('🔓 Cleared login tokens due to manual license activation')
-  }
-
-  // 取消激活已存在的 license
-  if (settings.licenseKey) {
-    // 如果是登录状态下，从一个 license 切换到另一个 license，不清除登录状态
-    const isSwitchingLicense = method === 'login' && settings.licenseActivationMethod === 'login'
-    await deactivate(!isSwitchingLicense)
-  }
-  // 激活新的 license key，获取 instanceId
-  const result = await remote.activateLicense({
-    licenseKey,
-    instanceName: await platform.getInstanceName(),
+  const result = await prepareLicenseActivation(licenseKey, {
+    activate: async (key) =>
+      remote.activateLicense({ licenseKey: key, instanceName: await platform.getInstanceName() }),
+    getDetail: async (key) => {
+      const response = await remote.getLicenseDetailRealtime({ licenseKey: key })
+      return { detail: response.data ?? null, error: response.error }
+    },
   })
   if (!result.valid) {
     if (shouldTrackKeyVerifyEvent) {
       trackJkClickEvent(JK_EVENTS.KEY_VERIFY_FAILED, {
         pageName,
-        content: result.error || 'activation_failed',
+        content: result.error,
         contentType: 'Chatbox AI',
         props: { content_add_info: { content: 'Chatbox AI' } },
       })
     }
     return result
   }
-  // 获取 license 详情
-  const licenseDetailResponse = await remote.getLicenseDetailRealtime({ licenseKey })
-  // 如果获取详情返回错误（如过期、额度用尽），返回错误码
-  if (licenseDetailResponse.error) {
-    console.log(`licenseDetailResponse.error: ${licenseDetailResponse.error.code}`)
-    const error = licenseDetailResponse.error.code || 'license_error'
-    // if expired
-    if (error === 'expired' || error === 'expired_license') settingsStore.setState({ hasExpiredLicense: true })
-    // 即使有错误，也保存 license 详情数据（quota_exceeded 等错误仍会返回 data）
-    if (licenseDetailResponse.data) {
-      settingsStore.setState({
-        licenseDetail: licenseDetailResponse.data,
-        licensePlanName: licenseDetailResponse.data.name,
+  const previous = settingsStore.getState()
+  const switching = !!previous.licenseKey && previous.licenseKey !== result.licenseKey
+  settingsStore.setState((current) => ({
+    ...licenseActivationSettings(current, result, method, options?.accountEmail),
+    ...(switching ? { mcp: { ...current.mcp, enabledBuiltinServers: [] } } : {}),
+  }))
+  if (switching) {
+    previous.mcp.enabledBuiltinServers.forEach((serverId) => {
+      mcpController.stopServer(serverId).catch(console.error)
+    })
+    const oldKey = previous.licenseKey!
+    const oldInstance = previous.licenseInstances?.[oldKey]
+    if (oldInstance) {
+      void remote.deactivateLicense({ licenseKey: oldKey, instanceId: oldInstance }).catch(() => {
+        log.warn('Failed to deactivate the previous license remotely')
       })
-    }
-    if (shouldTrackKeyVerifyEvent) {
-      trackJkClickEvent(JK_EVENTS.KEY_VERIFY_FAILED, {
-        pageName,
-        content: error,
-        contentType: 'Chatbox AI',
-        props: { content_add_info: { content: 'Chatbox AI' } },
-      })
-    }
-    return {
-      valid: false,
-      error,
     }
   }
-  // 设置本地的 license 数据
-  settingsStore.setState((settings) => ({
-    licenseKey,
-    licenseActivationMethod: method,
-    licenseInstances: {
-      ...(settings.licenseInstances || {}),
-      [licenseKey]: result.instanceId,
-    },
-    licenseDetail: licenseDetailResponse.data || undefined,
-    licensePlanName: licenseDetailResponse.data?.name,
-    defaultEmbeddingModel: undefined,
-    defaultRerankModel: undefined,
-    // 同步更新手动激活的 license key 显示值（用于设置页面输入框回显）
-    ...(method === 'manual' ? { memorizedManualLicenseKey: licenseKey } : {}),
-  }))
+  if (method === 'manual') authInfoStore.getState().clearTokens()
   remote.invalidateSessionRagConfigCache()
   if (shouldTrackKeyVerifyEvent) {
     trackJkClickEvent(JK_EVENTS.KEY_VERIFY_SUCCESS, {

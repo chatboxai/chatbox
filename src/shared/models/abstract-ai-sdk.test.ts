@@ -1,4 +1,4 @@
-import type { LanguageModelV3, LanguageModelV3CallOptions } from '@ai-sdk/provider'
+import type { ImageModelV4, LanguageModelV4, LanguageModelV4CallOptions } from '@ai-sdk/provider'
 import { jsonSchema, type ModelMessage, type PrepareStepFunction, type Provider, type ToolSet } from 'ai'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ModelDependencies } from '../types/adapters'
@@ -8,6 +8,7 @@ import { ApiError, ChatboxAIAPIError, MidStreamApiError } from './errors'
 import type { CallChatCompletionOptions, CallSettings } from './types'
 
 const aiMocks = vi.hoisted(() => ({
+  generateImage: vi.fn(),
   streamText: vi.fn(),
 }))
 
@@ -15,17 +16,26 @@ vi.mock('ai', async (importOriginal) => {
   const actual = await importOriginal<typeof import('ai')>()
   return {
     ...actual,
+    generateImage: aiMocks.generateImage,
     streamText: aiMocks.streamText,
   }
 })
 
-const languageModel: LanguageModelV3 = {
-  specificationVersion: 'v3',
+const languageModel: LanguageModelV4 = {
+  specificationVersion: 'v4',
   provider: 'test',
   modelId: 'test-model',
   supportedUrls: {},
   doGenerate: vi.fn(),
   doStream: vi.fn(),
+}
+
+const imageModel: ImageModelV4 = {
+  specificationVersion: 'v4',
+  provider: 'test',
+  modelId: 'test-image-model',
+  maxImagesPerCall: 1,
+  doGenerate: vi.fn(),
 }
 
 class TestModel extends AbstractAISDKModel {
@@ -39,12 +49,18 @@ class TestModel extends AbstractAISDKModel {
     }
   }
 
-  protected getChatModel(_options: CallChatCompletionOptions): LanguageModelV3 {
+  protected getChatModel(_options: CallChatCompletionOptions): LanguageModelV4 {
     return languageModel
   }
 
   protected override getCallSettings(): CallSettings {
     return this.callSettings
+  }
+}
+
+class TestImageModel extends TestModel {
+  protected getImageModel() {
+    return imageModel
   }
 }
 
@@ -88,7 +104,7 @@ function createModel(modelId = 'test-model', callSettings: CallSettings = {}): T
 
 function mockEmptyStream(): void {
   aiMocks.streamText.mockReturnValue({
-    fullStream: {
+    stream: {
       [Symbol.asyncIterator]() {
         return { next: () => Promise.resolve({ done: true as const, value: undefined }) }
       },
@@ -126,6 +142,43 @@ describe('AbstractAISDKModel max output tokens', () => {
   })
 })
 
+function createImageModel(): TestImageModel {
+  return new TestImageModel(
+    {
+      model: {
+        modelId: 'test-image-model',
+        type: 'image',
+      },
+    },
+    createDependencies()
+  )
+}
+
+describe('AbstractAISDKModel image generation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('forwards the selected aspect ratio to the image model', async () => {
+    aiMocks.generateImage.mockResolvedValue({ images: [] })
+
+    await createImageModel().paint({
+      prompt: 'wide landscape',
+      num: 1,
+      aspectRatio: '16:9',
+    })
+
+    expect(aiMocks.generateImage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: imageModel,
+        prompt: 'wide landscape',
+        n: 1,
+        aspectRatio: '16:9',
+      })
+    )
+  })
+})
+
 describe('AbstractAISDKModel tool errors', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -134,7 +187,7 @@ describe('AbstractAISDKModel tool errors', () => {
   it('creates an error tool-call part with provider metadata when no call chunk preceded the error', async () => {
     const providerMetadata = { google: { thoughtSignature: 'signature-1' } }
     aiMocks.streamText.mockReturnValue({
-      fullStream: (async function* () {
+      stream: (async function* () {
         yield {
           type: 'tool-error',
           toolCallId: 'tc1',
@@ -176,7 +229,7 @@ describe('AbstractAISDKModel tool errors', () => {
     const callMetadata = { google: { thoughtSignature: 'signature-1' } }
     const errorMetadata = { google: { errorDetail: 'detail-1' } }
     aiMocks.streamText.mockReturnValue({
-      fullStream: (async function* () {
+      stream: (async function* () {
         yield {
           type: 'tool-call',
           toolCallId: 'tc1',
@@ -217,7 +270,7 @@ describe('AbstractAISDKModel tool errors', () => {
       'chatbox_search_license_key_required'
     )
     aiMocks.streamText.mockReturnValue({
-      fullStream: (async function* () {
+      stream: (async function* () {
         yield {
           type: 'tool-error',
           toolCallId: 'tc1',
@@ -254,7 +307,7 @@ describe('AbstractAISDKModel completed response normalization', () => {
   it('normalizes the completed direct chat result and its final callback update', async () => {
     const onResultChange = vi.fn()
     aiMocks.streamText.mockReturnValue({
-      fullStream: (function* () {
+      stream: (function* () {
         yield { type: 'reasoning-delta', text: 'Recovered answer' }
       })(),
       totalUsage: Promise.resolve({ inputTokens: 10, outputTokens: 20, totalTokens: 30 }),
@@ -280,12 +333,29 @@ describe('AbstractAISDKModel chatStream closure', () => {
     vi.clearAllMocks()
   })
 
+  it.each(['mobile', 'desktop', 'web', undefined] as const)(
+    'disables SDK tracing for both streaming entry points on %s hosts',
+    async (platformType) => {
+      mockEmptyStream()
+      const model = new TestModel(
+        { model: { modelId: 'test-model', type: 'chat' } },
+        { ...createDependencies(), platformType }
+      )
+      await model.chatStream([], {}).next()
+      await model.chat([], {})
+      expect(aiMocks.streamText).toHaveBeenCalledTimes(2)
+      for (const [options] of aiMocks.streamText.mock.calls) {
+        expect(options.telemetry).toEqual({ isEnabled: false })
+      }
+    }
+  )
+
   it('closes the underlying provider stream when the consumer closes chatStream early', async () => {
     // Consumers close chatStream early on Stop drains and chunk-processing failures;
     // that closure must propagate to the SDK stream so provider/tool work stops too.
     let providerStreamClosed = false
     aiMocks.streamText.mockReturnValue({
-      fullStream: (async function* () {
+      stream: (async function* () {
         try {
           yield { type: 'text-delta', id: 't1', text: 'hello' }
           yield { type: 'text-delta', id: 't1', text: ' world' }
@@ -306,6 +376,49 @@ describe('AbstractAISDKModel chatStream closure', () => {
     expect(providerStreamClosed).toBe(true)
   })
 
+  it.each(['close', 'resume'] as const)(
+    'handles an aborted prefetched read while the consumer is paused before %s',
+    async (action) => {
+      const abortError = new Error('provider aborted')
+      let rejectPrefetch: (error: Error) => void = () => {}
+      const prefetch = new Promise<IteratorResult<unknown>>((_resolve, reject) => {
+        rejectPrefetch = reject
+      })
+      const providerReturn = vi.fn(async () => ({ done: true as const, value: undefined }))
+      aiMocks.streamText.mockReturnValue({
+        stream: {
+          [Symbol.asyncIterator]() {
+            let firstRead = true
+            return {
+              next() {
+                if (!firstRead) return prefetch
+                firstRead = false
+                return Promise.resolve({ done: false, value: { type: 'text-delta', id: 't1', text: 'hello' } })
+              },
+              return: providerReturn,
+            }
+          },
+        },
+      })
+      const unhandled: unknown[] = []
+      const onUnhandled = (error: unknown) => unhandled.push(error)
+      process.on('unhandledRejection', onUnhandled)
+      const stream = createModel().chatStream([], {})
+      try {
+        expect((await stream.next()).value).toMatchObject({ type: 'text-delta', text: 'hello' })
+        rejectPrefetch(abortError)
+        await new Promise<void>((resolve) => setTimeout(resolve, 0))
+        if (action === 'close') await stream.return(undefined)
+        else await expect(stream.next()).rejects.toBe(abortError)
+        expect(unhandled).toEqual([])
+        expect(providerReturn).toHaveBeenCalledOnce()
+      } finally {
+        process.off('unhandledRejection', onUnhandled)
+        await stream.return(undefined)
+      }
+    }
+  )
+
   it('awaits the resolved-request checkpoint before the provider stream starts', async () => {
     const checkpointError = new Error('checkpoint failed')
     const onRequestResolved = vi.fn(() => Promise.reject(checkpointError))
@@ -316,13 +429,18 @@ describe('AbstractAISDKModel chatStream closure', () => {
       tool_b: { inputSchema: jsonSchema({ type: 'object' }) },
     }
     aiMocks.streamText.mockImplementation((options: { prepareStep?: PrepareStepFunction<ToolSet> }) => ({
-      fullStream: (async function* () {
+      stream: (async function* () {
         await options.prepareStep?.({
           steps: [],
           stepNumber: 0,
           model: languageModel,
           messages: [{ role: 'user', content: 'original' }],
-          experimental_context: undefined,
+          initialMessages: [{ role: 'user', content: 'original' }],
+          responseMessages: [],
+          instructions: undefined,
+          initialInstructions: undefined,
+          toolsContext: {},
+          runtimeContext: {},
         })
         providerStarted()
         yield* []
@@ -354,17 +472,22 @@ describe('AbstractAISDKModel chatStream closure', () => {
       return Promise.resolve({ stream: new ReadableStream() })
     })
     aiMocks.streamText.mockImplementation(
-      (options: { model: LanguageModelV3; prepareStep?: PrepareStepFunction<ToolSet> }) => ({
-        fullStream: (async function* () {
+      (options: { model: LanguageModelV4; prepareStep?: PrepareStepFunction<ToolSet> }) => ({
+        stream: (async function* () {
           for (const stepNumber of [0, 1]) {
             await options.prepareStep?.({
               steps: [],
               stepNumber,
               model: languageModel,
               messages: [{ role: 'user', content: `step-${stepNumber}` }],
-              experimental_context: undefined,
+              initialMessages: [{ role: 'user', content: `step-${stepNumber}` }],
+              responseMessages: [],
+              instructions: undefined,
+              initialInstructions: undefined,
+              toolsContext: {},
+              runtimeContext: {},
             })
-            await options.model.doStream({ prompt: [] } as LanguageModelV3CallOptions)
+            await options.model.doStream({ prompt: [] } as LanguageModelV4CallOptions)
           }
           yield* []
         })(),

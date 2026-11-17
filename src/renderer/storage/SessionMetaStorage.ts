@@ -1,30 +1,18 @@
 import type { SessionMetaRepositoryPort } from '@chatbox/core/ports'
-import { sortSessionRecords } from '@chatbox/core/utils/session-sort'
+import { applySortedSessionRecord, sortSessionRecords } from '@chatbox/core/utils/session-sort'
 import type { SessionMetaPage, SessionMetaRecord } from '@shared/types'
 import { reportDbOpenSucceeded, toDbOpenError, watchDbOpenBlocked, watchDbVersionChange } from './db-schema-guard'
 
 const DB_NAME = 'chatbox-session-meta'
 const STORE_NAME = 'records'
 const DEFAULT_PAGE_SIZE = 50
+// Instances in other tabs of the same origin post here after each write, so
+// their snapshots of the list are rebuilt from storage.
+const CHANGE_CHANNEL_NAME = 'chatbox-session-meta-changes'
+// One order for the sidebar list and one for flat reads such as search.
+const MAX_SNAPSHOTS = 2
 
-export interface SessionMetaStorage extends SessionMetaRepositoryPort {
-  initialize(): Promise<void>
-  create(record: SessionMetaRecord): Promise<void>
-  createMany(records: SessionMetaRecord[]): Promise<void>
-  update(id: string, updates: Partial<SessionMetaRecord>): Promise<SessionMetaRecord | null>
-  getById(id: string): Promise<SessionMetaRecord | null>
-  delete(id: string): Promise<void>
-  deleteMany(ids: string[]): Promise<void>
-  getAll(): Promise<SessionMetaRecord[]>
-  getAllIncludingHidden(): Promise<SessionMetaRecord[]>
-  getArchived(): Promise<SessionMetaRecord[]>
-  getArchivedPage(cursor: number, limit?: number): Promise<SessionMetaPage>
-  getPage(cursor: number, limit?: number): Promise<SessionMetaPage>
-  getTotal(): Promise<number>
-  getAllTotal(): Promise<number>
-  getArchivedTotal(): Promise<number>
-  clear(): Promise<void>
-}
+export type SessionMetaStorage = SessionMetaRepositoryPort
 
 // Sort logic shared with the native mobile shell.
 export { sortSessionRecords }
@@ -38,6 +26,83 @@ function sortArchivedSessionRecords(records: SessionMetaRecord[]): SessionMetaRe
 export class IndexedDBSessionMetaStorage implements SessionMetaStorage {
   private db: IDBDatabase | null = null
   private initPromise: Promise<void> | null = null
+  // Visible records in list display order, keyed by folder order. Hidden records
+  // (archived, sub-agent and other hidden sessions) can outnumber visible ones many
+  // times over and no index excludes them, so one full read serves every page and
+  // count; another folder order is sorted from a snapshot already in memory, and
+  // writes through this instance patch every snapshot.
+  private visibleSnapshots = new Map<string, { folderIds: readonly string[]; records: SessionMetaRecord[] }>()
+  private writeGeneration = 0
+  private changeChannel: BroadcastChannel | null = null
+
+  constructor() {
+    if (typeof BroadcastChannel === 'undefined') return
+    this.changeChannel = new BroadcastChannel(CHANGE_CHANNEL_NAME)
+    this.changeChannel.onmessage = () => {
+      this.visibleSnapshots.clear()
+      // A read in flight may predate the other tab's write.
+      this.writeGeneration += 1
+    }
+  }
+
+  /**
+   * Runs a write and applies `patch` to each visible snapshot once it has
+   * committed. A failed write drops the snapshots, since the stored state is
+   * then unknown.
+   */
+  private async write<T>(
+    operation: () => Promise<T>,
+    patch: (records: SessionMetaRecord[], result: T, folderIds: readonly string[]) => void
+  ): Promise<T> {
+    this.writeGeneration += 1
+    try {
+      const result = await operation()
+      for (const snapshot of this.visibleSnapshots.values()) patch(snapshot.records, result, snapshot.folderIds)
+      return result
+    } catch (error) {
+      this.visibleSnapshots.clear()
+      throw error
+    } finally {
+      this.writeGeneration += 1
+      this.changeChannel?.postMessage('changed')
+    }
+  }
+
+  private async getVisibleRecords(folderIds: readonly string[]): Promise<SessionMetaRecord[]> {
+    const key = folderIds.join('\u0000')
+    const cached = this.visibleSnapshots.get(key)
+    if (cached) {
+      this.visibleSnapshots.delete(key)
+      this.visibleSnapshots.set(key, cached)
+      return cached.records
+    }
+    const generation = this.writeGeneration
+    const inMemory = this.visibleSnapshots.values().next().value
+    const records = sortSessionRecords(inMemory ? [...inMemory.records] : await this.getAllRecords(), folderIds)
+    // A write that landed during the read may be missing from `records`.
+    if (generation === this.writeGeneration) {
+      this.visibleSnapshots.set(key, { folderIds: [...folderIds], records })
+      if (this.visibleSnapshots.size > MAX_SNAPSHOTS) {
+        const oldest = this.visibleSnapshots.keys().next().value
+        if (oldest !== undefined) this.visibleSnapshots.delete(oldest)
+      }
+    }
+    return records
+  }
+
+  /** Runs one read-write transaction and settles once it has committed or failed. */
+  private async commit<T>(run: (store: IDBObjectStore) => T): Promise<T> {
+    await this.initialize()
+    if (!this.db) throw new Error('Database not initialized')
+    const tx = this.db.transaction(STORE_NAME, 'readwrite')
+    const result = run(tx.objectStore(STORE_NAME))
+    return new Promise((resolve, reject) => {
+      tx.oncomplete = () => resolve(result)
+      // The failing request's error reaches the transaction before tx.error is set.
+      tx.onerror = (event) => reject((event.target as IDBRequest | null)?.error ?? tx.error)
+      tx.onabort = () => reject(tx.error ?? new DOMException('Transaction aborted', 'AbortError'))
+    })
+  }
 
   initialize(): Promise<void> {
     if (!this.initPromise) {
@@ -104,43 +169,45 @@ export class IndexedDBSessionMetaStorage implements SessionMetaStorage {
     return tx.objectStore(STORE_NAME)
   }
 
-  async create(record: SessionMetaRecord): Promise<void> {
-    await this.initialize()
-    return new Promise((resolve, reject) => {
-      const store = this.getStore('readwrite')
-      const request = store.add(record)
-      request.onsuccess = () => resolve()
-      request.onerror = () => reject(request.error)
-    })
+  create(record: SessionMetaRecord): Promise<void> {
+    return this.write(
+      () =>
+        this.commit((store) => {
+          store.add(record)
+        }),
+      (records, _result, folderIds) => applySortedSessionRecord(records, { ...record }, folderIds)
+    )
   }
 
-  async createMany(records: SessionMetaRecord[]): Promise<void> {
-    await this.initialize()
-    if (records.length === 0) return
-    return new Promise((resolve, reject) => {
-      if (!this.db) throw new Error('Database not initialized')
-      const tx = this.db.transaction(STORE_NAME, 'readwrite')
-      const store = tx.objectStore(STORE_NAME)
-      tx.oncomplete = () => resolve()
-      tx.onerror = () => reject(tx.error)
-      for (const record of records) {
-        store.put(record)
+  createMany(records: SessionMetaRecord[]): Promise<void> {
+    return this.write(
+      async () => {
+        if (records.length === 0) return
+        await this.commit((store) => {
+          for (const record of records) store.put(record)
+        })
+      },
+      (snapshot, _result, folderIds) => {
+        for (const record of records) applySortedSessionRecord(snapshot, { ...record }, folderIds)
       }
-    })
+    )
   }
 
-  async update(id: string, updates: Partial<SessionMetaRecord>): Promise<SessionMetaRecord | null> {
-    await this.initialize()
-    const existing = await this.getById(id)
-    if (!existing) return null
-
-    const updated = { ...existing, ...updates }
-    return new Promise((resolve, reject) => {
-      const store = this.getStore('readwrite')
-      const request = store.put(updated)
-      request.onsuccess = () => resolve(updated)
-      request.onerror = () => reject(request.error)
-    })
+  update(id: string, updates: Partial<SessionMetaRecord>): Promise<SessionMetaRecord | null> {
+    return this.write(
+      async () => {
+        const existing = await this.getById(id)
+        if (!existing) return null
+        const updated = { ...existing, ...updates }
+        await this.commit((store) => {
+          store.put(updated)
+        })
+        return updated
+      },
+      (records, updated, folderIds) => {
+        if (updated) applySortedSessionRecord(records, { ...updated }, folderIds)
+      }
+    )
   }
 
   async getById(id: string): Promise<SessionMetaRecord | null> {
@@ -153,29 +220,36 @@ export class IndexedDBSessionMetaStorage implements SessionMetaStorage {
     })
   }
 
-  async delete(id: string): Promise<void> {
-    await this.initialize()
-    return new Promise((resolve, reject) => {
-      const store = this.getStore('readwrite')
-      const request = store.delete(id)
-      request.onsuccess = () => resolve()
-      request.onerror = () => reject(request.error)
-    })
+  delete(id: string): Promise<void> {
+    return this.write(
+      () =>
+        this.commit((store) => {
+          store.delete(id)
+        }),
+      (records) => {
+        const index = records.findIndex((record) => record.id === id)
+        if (index >= 0) records.splice(index, 1)
+      }
+    )
   }
 
-  async deleteMany(ids: string[]): Promise<void> {
-    await this.initialize()
-    if (ids.length === 0) return
-    return new Promise((resolve, reject) => {
-      if (!this.db) throw new Error('Database not initialized')
-      const tx = this.db.transaction(STORE_NAME, 'readwrite')
-      const store = tx.objectStore(STORE_NAME)
-      tx.oncomplete = () => resolve()
-      tx.onerror = () => reject(tx.error)
-      for (const id of ids) {
-        store.delete(id)
+  deleteMany(ids: string[]): Promise<void> {
+    return this.write(
+      async () => {
+        if (ids.length === 0) return
+        await this.commit((store) => {
+          for (const id of ids) store.delete(id)
+        })
+      },
+      (records) => {
+        const deleted = new Set(ids)
+        let kept = 0
+        for (const record of records) {
+          if (!deleted.has(record.id)) records[kept++] = record
+        }
+        records.length = kept
       }
-    })
+    )
   }
 
   async getAll(): Promise<SessionMetaRecord[]> {
@@ -188,6 +262,27 @@ export class IndexedDBSessionMetaStorage implements SessionMetaStorage {
     await this.initialize()
     const records = await this.getAllRecords()
     return records.sort((a, b) => b.sortOrder - a.sortOrder)
+  }
+
+  async *iterateIds(): AsyncGenerator<string> {
+    await this.initialize()
+    let after: IDBValidKey | undefined
+    for (;;) {
+      const ids = await new Promise<IDBValidKey[]>((resolve, reject) => {
+        const tx = this.db!.transaction(STORE_NAME, 'readonly')
+        const request = tx
+          .objectStore(STORE_NAME)
+          .getAllKeys(after === undefined ? undefined : IDBKeyRange.lowerBound(after, true), 128)
+        tx.oncomplete = () => resolve(request.result)
+        tx.onabort = tx.onerror = () => reject(tx.error ?? new Error('Session identity iteration failed'))
+      })
+      if (!ids.length) return
+      for (const id of ids) {
+        if (typeof id !== 'string') throw new Error('Invalid stored session identity')
+        yield id
+      }
+      after = ids[ids.length - 1]
+    }
   }
 
   async getArchived(): Promise<SessionMetaRecord[]> {
@@ -206,13 +301,7 @@ export class IndexedDBSessionMetaStorage implements SessionMetaStorage {
     }
 
     const [items, total] = await Promise.all([
-      this.getRecordsPage({
-        cursor,
-        limit,
-        indexName: 'archivedAt',
-        direction: 'prev',
-        filter: (record) => record.archivedAt !== undefined,
-      }),
+      this.getIndexPage('archivedAt', 'prev', cursor, limit),
       this.getArchivedTotal(),
     ])
     const nextCursor = cursor + items.length < total ? cursor + items.length : null
@@ -236,16 +325,25 @@ export class IndexedDBSessionMetaStorage implements SessionMetaStorage {
     })
   }
 
-  async getPage(cursor: number = 0, limit: number = DEFAULT_PAGE_SIZE): Promise<SessionMetaPage> {
+  async getPage(
+    cursor: number = 0,
+    limit: number = DEFAULT_PAGE_SIZE,
+    folderIds: readonly string[] = []
+  ): Promise<SessionMetaPage> {
     await this.initialize()
-    const [items, total] = await Promise.all([this.getVisibleRecordsPage(cursor, limit), this.getTotal()])
-    const nextCursor = cursor + items.length < total ? cursor + items.length : null
-    return { items, nextCursor, total }
+    const visible = await this.getVisibleRecords(folderIds)
+    // Copies, so a caller changing a returned record cannot change the snapshot.
+    const items = visible.slice(cursor, cursor + limit).map((record) => ({ ...record }))
+    const nextCursor = cursor + items.length < visible.length ? cursor + items.length : null
+    return { items, nextCursor, total: visible.length }
   }
 
   async getTotal(): Promise<number> {
     await this.initialize()
-    return await this.countRecords((record) => !record.hidden)
+    // The visible count does not depend on folder order, so any snapshot answers it.
+    const snapshot = this.visibleSnapshots.values().next().value
+    const visible = await this.getVisibleRecords(snapshot?.folderIds ?? [])
+    return visible.length
   }
 
   async getAllTotal(): Promise<number> {
@@ -260,105 +358,26 @@ export class IndexedDBSessionMetaStorage implements SessionMetaStorage {
 
   async getArchivedTotal(): Promise<number> {
     await this.initialize()
-    return await this.countRecords((record) => record.archivedAt !== undefined)
-  }
-
-  private async getVisibleRecordsPage(cursor: number, limit: number): Promise<SessionMetaRecord[]> {
-    const items: SessionMetaRecord[] = []
-    let skipped = 0
-
-    skipped = await this.collectRecordsPage({
-      items,
-      skipped,
-      cursor,
-      limit,
-      indexName: 'sortOrder',
-      direction: 'prev',
-      filter: (record) => !record.hidden && record.starred === true,
-    })
-
-    if (items.length < limit) {
-      await this.collectRecordsPage({
-        items,
-        skipped,
-        cursor,
-        limit,
-        indexName: 'sortOrder',
-        direction: 'prev',
-        filter: (record) => !record.hidden && record.starred !== true,
-      })
-    }
-
-    return items
-  }
-
-  private collectRecordsPage({
-    items,
-    skipped,
-    cursor,
-    limit,
-    indexName,
-    direction,
-    filter,
-  }: {
-    items: SessionMetaRecord[]
-    skipped: number
-    cursor: number
-    limit: number
-    indexName: string
-    direction: IDBCursorDirection
-    filter: (record: SessionMetaRecord) => boolean
-  }): Promise<number> {
+    if (!this.hasIndex('archivedAt')) return (await this.getArchived()).length
+    // The archivedAt index holds exactly the records that have archivedAt.
     return new Promise((resolve, reject) => {
-      const store = this.getStore('readonly')
-      const source = store.indexNames.contains(indexName) ? store.index(indexName) : store
-      const request = source.openCursor(null, direction)
-      let skippedCount = skipped
-
-      request.onsuccess = () => {
-        const cursorResult = request.result
-        if (!cursorResult || items.length >= limit) {
-          resolve(skippedCount)
-          return
-        }
-
-        const record = cursorResult.value as SessionMetaRecord
-        if (!filter(record)) {
-          cursorResult.continue()
-          return
-        }
-        if (skippedCount < cursor) {
-          skippedCount += 1
-          cursorResult.continue()
-          return
-        }
-
-        items.push(record)
-        cursorResult.continue()
-      }
+      const request = this.getStore('readonly').index('archivedAt').count()
+      request.onsuccess = () => resolve(request.result)
       request.onerror = () => reject(request.error)
     })
   }
 
-  private getRecordsPage({
-    cursor,
-    limit,
-    indexName,
-    direction,
-    filter,
-  }: {
-    cursor: number
+  /** One page of an index in `direction` order, skipping the first `cursor` entries without reading them. */
+  private getIndexPage(
+    indexName: string,
+    direction: IDBCursorDirection,
+    cursor: number,
     limit: number
-    indexName: string
-    direction: IDBCursorDirection
-    filter: (record: SessionMetaRecord) => boolean
-  }): Promise<SessionMetaRecord[]> {
+  ): Promise<SessionMetaRecord[]> {
     return new Promise((resolve, reject) => {
-      const store = this.getStore('readonly')
-      const source = store.indexNames.contains(indexName) ? store.index(indexName) : store
-      const request = source.openCursor(null, direction)
+      const request = this.getStore('readonly').index(indexName).openCursor(null, direction)
       const items: SessionMetaRecord[] = []
-      let skipped = 0
+      let skipped = cursor === 0
 
       request.onsuccess = () => {
         const cursorResult = request.result
@@ -366,53 +385,27 @@ export class IndexedDBSessionMetaStorage implements SessionMetaStorage {
           resolve(items)
           return
         }
-
-        const record = cursorResult.value as SessionMetaRecord
-        if (!filter(record)) {
-          cursorResult.continue()
+        if (!skipped) {
+          skipped = true
+          cursorResult.advance(cursor)
           return
         }
-        if (skipped < cursor) {
-          skipped += 1
-          cursorResult.continue()
-          return
-        }
-
-        items.push(record)
+        items.push(cursorResult.value as SessionMetaRecord)
         cursorResult.continue()
       }
       request.onerror = () => reject(request.error)
     })
   }
 
-  private countRecords(filter: (record: SessionMetaRecord) => boolean): Promise<number> {
-    return new Promise((resolve, reject) => {
-      const store = this.getStore('readonly')
-      const request = store.openCursor()
-      let total = 0
-
-      request.onsuccess = () => {
-        const cursorResult = request.result
-        if (!cursorResult) {
-          resolve(total)
-          return
-        }
-        if (filter(cursorResult.value as SessionMetaRecord)) {
-          total += 1
-        }
-        cursorResult.continue()
+  clear(): Promise<void> {
+    return this.write(
+      () =>
+        this.commit((store) => {
+          store.clear()
+        }),
+      (records) => {
+        records.length = 0
       }
-      request.onerror = () => reject(request.error)
-    })
-  }
-
-  async clear(): Promise<void> {
-    await this.initialize()
-    return new Promise((resolve, reject) => {
-      const store = this.getStore('readwrite')
-      const request = store.clear()
-      request.onsuccess = () => resolve()
-      request.onerror = () => reject(request.error)
-    })
+    )
   }
 }

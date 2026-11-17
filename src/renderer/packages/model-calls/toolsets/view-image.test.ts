@@ -1,4 +1,10 @@
+import type { LanguageModelV4Prompt, LanguageModelV4StreamPart } from '@ai-sdk/provider'
 import type { SandboxProvider } from '@shared/sandbox-provider'
+import { convertToModelMessages } from '@shared/services/model-message-converter'
+import { viewImageAttachmentNotice } from '@shared/tools/view-image'
+import type { MessageContentToolCallPart } from '@shared/types'
+import { isStepCount, jsonSchema, streamText } from 'ai'
+import { convertArrayToReadableStream, MockLanguageModelV4 } from 'ai/test'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 const fsReadImage = vi.fn(
@@ -43,7 +49,7 @@ vi.mock('@/utils/image', () => ({
   saveImage: (category: string, dataUrl: string) => saveImage(category, dataUrl),
 }))
 
-import { buildViewImageToolSet } from './view-image'
+import { buildViewImageToolSet, withImageFileReading } from './view-image'
 
 // Minimal PNG header with a readable IHDR size.
 const PNG_BYTES = Uint8Array.from([
@@ -235,7 +241,7 @@ describe('view_image toModelOutput', () => {
       type: 'content',
       value: [
         { type: 'text', text: 'Viewed image: chart.png' },
-        { type: 'image-data', data: 'UkVTSVpFRA==', mediaType: 'image/webp' },
+        { type: 'file', data: { type: 'data', data: 'UkVTSVpFRA==' }, mediaType: 'image/webp' },
       ],
     })
     expect(getStoreBlob).not.toHaveBeenCalled()
@@ -254,7 +260,7 @@ describe('view_image toModelOutput', () => {
       type: 'content',
       value: [
         { type: 'text', text: 'Viewed image: chart.png' },
-        { type: 'image-data', data: 'UkVTSVpFRA==', mediaType: 'image/png' },
+        { type: 'file', data: { type: 'data', data: 'UkVTSVpFRA==' }, mediaType: 'image/png' },
       ],
     })
     await toModelOutput(tool, result)
@@ -320,7 +326,7 @@ describe('view_image without tool-result image support (user-message injection)'
             type: 'tool-result' as const,
             toolCallId: 'tool-call-id',
             toolName: 'view_image',
-            output: { type: 'text' as const, value: 'notice' },
+            output: { type: 'text' as const, value: viewImageAttachmentNotice('charts/output.png') },
           },
         ],
       },
@@ -339,9 +345,62 @@ describe('view_image without tool-result image support (user-message injection)'
     // prepareStep runs again for every agent step; the per-generation image remains
     // memory-backed instead of re-reading IndexedDB on each rewrite.
     await toolSet.injectImagesIntoStepMessages?.(messages as never)
+    expect(await toolSet.injectImagesIntoStepMessages?.(injected ?? [])).toEqual(injected)
     expect(getStoreBlob).not.toHaveBeenCalled()
     // Pure: input array untouched, and unrelated tool results are ignored.
     expect(messages).toHaveLength(2)
+  })
+
+  test('images recorded by another image-viewing tool are injected under its label', async () => {
+    const toolSet = buildToolSet({ toolResultImages: false })
+    const result = await toolSet.imageResults.record({
+      toolCallId: 'shot-call',
+      label: 'https://example.com/',
+      dataUrl: 'data:image/jpeg;base64,SlBFRw==',
+    })
+    expect(result).toEqual({
+      file_path: 'https://example.com/',
+      image_storage_key: 'picture:view-image:session-id:uuid',
+      media_type: 'image/jpeg',
+    })
+    expect(await toolSet.imageResults.toModelOutput({ toolCallId: 'shot-call', output: result })).toEqual({
+      type: 'text',
+      value:
+        'Viewed image: https://example.com/. The image is attached in the user message directly after this tool result.',
+    })
+
+    const messages = [
+      {
+        role: 'assistant' as const,
+        content: [
+          {
+            type: 'tool-call' as const,
+            toolCallId: 'shot-call',
+            toolName: 'browser',
+            input: { command: 'screenshot' },
+          },
+        ],
+      },
+      {
+        role: 'tool' as const,
+        content: [
+          {
+            type: 'tool-result' as const,
+            toolCallId: 'shot-call',
+            toolName: 'browser',
+            output: { type: 'text' as const, value: viewImageAttachmentNotice('https://example.com/') },
+          },
+        ],
+      },
+    ]
+    const injected = await toolSet.injectImagesIntoStepMessages?.(messages as never)
+    expect(injected?.[2]).toEqual({
+      role: 'user',
+      content: [
+        { type: 'text', text: '[Image from view_image tool: https://example.com/]' },
+        { type: 'image', image: 'SlBFRw==', mediaType: 'image/jpeg' },
+      ],
+    })
   })
 
   test('injectImagesIntoStepMessages leaves messages untouched for unknown tool calls', async () => {
@@ -363,7 +422,7 @@ describe('view_image without tool-result image support (user-message injection)'
     expect(injected).toEqual(messages)
   })
 
-  test('caps current-generation image replay and downgrades older notices to compact json', async () => {
+  test('caps consumed image replay and explicitly marks omitted pixels', async () => {
     const toolSet = buildToolSet({ toolResultImages: false })
     const toolParts = []
     for (let index = 0; index < 6; index += 1) {
@@ -372,17 +431,19 @@ describe('view_image without tool-result image support (user-message injection)'
         type: 'tool-result' as const,
         toolCallId: 'call-0',
         toolName: 'view_image',
-        output: { type: 'text' as const, value: 'image attached next' },
+        output: { type: 'text' as const, value: viewImageAttachmentNotice(`chart-${index}.png`) },
       })
     }
 
     const bounded = await toolSet.injectImagesIntoStepMessages?.([
       { role: 'tool' as const, content: toolParts },
+      { role: 'assistant', content: 'Images inspected.' },
     ] as never)
 
-    expect(bounded).toHaveLength(2)
+    expect(bounded).toHaveLength(3)
     const boundedToolParts = bounded?.[0].content as Array<{ output: { type: string } }>
-    expect(boundedToolParts[0].output.type).toBe('json')
+    expect(boundedToolParts[0].output.type).toBe('text')
+    expect(JSON.stringify(boundedToolParts[0])).toContain('Historical image pixels omitted')
     expect(boundedToolParts.slice(1).every((part) => part.output.type === 'text')).toBe(true)
     const injectedParts = bounded?.[1].content as Array<{ type: string; text?: string }>
     expect(injectedParts.filter((part) => part.type === 'image')).toHaveLength(5)
@@ -391,7 +452,7 @@ describe('view_image without tool-result image support (user-message injection)'
     )
   })
 
-  test('applies one image limit across history and current-generation results', async () => {
+  test('keeps the historical image window in addition to pending results', async () => {
     const toolSet = buildToolSet({ toolResultImages: false })
     await execute(toolSet.tools.view_image, { file_path: 'current.png' }, 'current-call')
     const historicalContent = Array.from({ length: 5 }, (_, index) => [
@@ -413,6 +474,7 @@ describe('view_image without tool-result image support (user-message injection)'
         })),
       },
       { role: 'user' as const, content: historicalContent },
+      { role: 'assistant', content: 'Inspect current.png next.' },
       {
         role: 'tool' as const,
         content: [
@@ -420,7 +482,7 @@ describe('view_image without tool-result image support (user-message injection)'
             type: 'tool-result' as const,
             toolCallId: 'current-call',
             toolName: 'view_image',
-            output: { type: 'text' as const, value: 'image attached next' },
+            output: { type: 'text' as const, value: viewImageAttachmentNotice('current.png') },
           },
         ],
       },
@@ -431,11 +493,11 @@ describe('view_image without tool-result image support (user-message injection)'
         ? message.content.filter((part) => part.type === 'image')
         : []
     )
-    expect(images).toHaveLength(5)
-    expect(JSON.stringify(bounded)).not.toContain('"image":"history-0"')
+    expect(images).toHaveLength(6)
+    expect(JSON.stringify(bounded)).toContain('"image":"history-0"')
     expect(JSON.stringify(bounded)).toContain('current.png')
     const historicalToolResults = bounded?.[0].content as Array<{ output: { value: string } }>
-    expect(historicalToolResults[0].output.value).toContain('Image omitted from this replay')
+    expect(historicalToolResults[0].output.value).toContain('attached in the user message')
     expect(historicalToolResults[1].output.value).toContain('attached in the user message')
   })
 
@@ -450,9 +512,12 @@ describe('view_image without tool-result image support (user-message injection)'
       type: 'tool-result' as const,
       toolCallId: `call-${index}`,
       toolName: 'view_image',
-      output: { type: 'text' as const, value: 'image attached next' },
+      output: { type: 'text' as const, value: viewImageAttachmentNotice(`chart-${index}.png`) },
     }))
-    await toolSet.injectImagesIntoStepMessages?.([{ role: 'tool' as const, content: toolParts }] as never)
+    await toolSet.injectImagesIntoStepMessages?.([
+      { role: 'tool' as const, content: toolParts },
+      { role: 'assistant', content: 'Inspected.' },
+    ] as never)
     getStoreBlob.mockResolvedValue('data:image/webp;base64,UkVTSVpFRA==')
 
     await toModelOutput(toolSet.tools.view_image, results[0], 'call-0')
@@ -462,5 +527,337 @@ describe('view_image without tool-result image support (user-message injection)'
 
   test('toolResultImages=true still exposes the replay-bounding transform', () => {
     expect(buildToolSet({ toolResultImages: true }).injectImagesIntoStepMessages).toBeDefined()
+  })
+})
+
+test('reserved uploaded paths never reach image filesystem sinks', async () => {
+  fsReadImage.mockClear()
+  sandboxReadFileBytes.mockClear()
+  expect(await execute(getViewImageTool(), { file_path: '/__chatbox__/files/unknown' })).toMatchObject({
+    error: expect.stringContaining('virtual path'),
+  })
+  expect(fsReadImage).not.toHaveBeenCalled()
+  expect(sandboxReadFileBytes).not.toHaveBeenCalled()
+})
+
+test.each([true, false])('SDK delivers a bounded batch before trimming history (native=%s)', async (native) => {
+  const toolSet = buildToolSet({ toolResultImages: native })
+  for (let i = 0; i < 9; i++) saveImage.mockResolvedValueOnce(`picture:sdk-${i}`)
+  const prompts: LanguageModelV4Prompt[] = []
+  const usage = {
+    inputTokens: { total: 1, noCache: 1, cacheRead: 1, cacheWrite: 0 },
+    outputTokens: { total: 1, text: 1, reasoning: 0 },
+  }
+  const model = new MockLanguageModelV4({
+    doStream: async ({ prompt }) => {
+      prompts.push(prompt)
+      const paths =
+        prompts.length === 1
+          ? Array.from({ length: 9 }, (_, i) => `batch-${i}.png`)
+          : prompts.length === 2
+            ? ['next.png']
+            : []
+      const chunks: LanguageModelV4StreamPart[] = [
+        { type: 'stream-start', warnings: [] },
+        ...paths.map((file_path) => ({
+          type: 'tool-call' as const,
+          toolCallId: file_path,
+          toolName: 'view_image',
+          input: JSON.stringify({ file_path }),
+        })),
+        { type: 'finish', finishReason: { unified: paths.length ? 'tool-calls' : 'stop', raw: undefined }, usage },
+      ]
+      return { stream: convertArrayToReadableStream(chunks) }
+    },
+  })
+  await streamText({
+    model,
+    prompt: 'Inspect the images.',
+    tools: toolSet.tools,
+    stopWhen: isStepCount(3),
+    // Mirrors AbstractAISDKModel, which prepares every step from the full transcript.
+    prepareStep: async ({ initialMessages, responseMessages }) => ({
+      messages: await toolSet.injectImagesIntoStepMessages?.([...initialMessages, ...responseMessages]),
+    }),
+  }).consumeStream()
+  const imageCount = (prompt: LanguageModelV4Prompt) =>
+    prompt.reduce((count, message) => {
+      if (message.role === 'tool')
+        return (
+          count +
+          message.content.reduce(
+            (n, part) =>
+              n +
+              (part.type === 'tool-result' && part.output.type === 'content'
+                ? part.output.value.filter((p) => p.type === 'file' && p.mediaType.startsWith('image')).length
+                : 0),
+            0
+          )
+        )
+      if (message.role === 'user') return count + message.content.filter((p) => p.type === 'file').length
+      return count
+    }, 0)
+  expect(prompts).toHaveLength(3)
+  expect(imageCount(prompts[1])).toBe(8)
+  expect(JSON.stringify(prompts[1])).toContain('Image not read: at most 8 images can be viewed or captured per step')
+  expect(imageCount(prompts[2])).toBe(6)
+  expect(JSON.stringify(prompts[2])).toContain('next.png')
+  expect(saveImage).toHaveBeenCalledTimes(9)
+})
+
+test('rejects oversized normalized images before saving a successful result', async () => {
+  getImageBase64AndResize.mockResolvedValueOnce(`data:image/webp;base64,${'A'.repeat(3 * 1024 * 1024)}`)
+  expect(await execute(getViewImageTool(), { file_path: 'large.png' })).toMatchObject({
+    error: expect.stringContaining('request image limit'),
+  })
+  expect(saveImage).not.toHaveBeenCalled()
+})
+
+test.each([true, false])('SDK trims resumed image history after an unrelated tool step (native=%s)', async (native) => {
+  const toolSet = buildToolSet({ toolResultImages: native })
+  const images: MessageContentToolCallPart[] = Array.from({ length: 8 }, (_, index) => ({
+    type: 'tool-call',
+    state: 'result',
+    toolCallId: `resume-${index}`,
+    toolName: 'view_image',
+    stepIndex: 0,
+    args: { file_path: `page-${index}.png` },
+    result: { file_path: `page-${index}.png`, media_type: 'image/png' },
+    resultImageStorageKey: `picture:${index}`,
+  }))
+  const messages = await convertToModelMessages(
+    [
+      {
+        id: 'resume',
+        role: 'assistant',
+        contentParts: [...images, { type: 'text', text: 'Inspecting.', stepIndex: 0 }],
+      },
+    ],
+    async () => 'data:image/png;base64,aW1hZ2U=',
+    { modelSupportVision: true, supportToolResultImages: native }
+  )
+  const prompts: LanguageModelV4Prompt[] = []
+  const model = new MockLanguageModelV4({
+    doStream: async ({ prompt }) => {
+      prompts.push(prompt)
+      const chunks: LanguageModelV4StreamPart[] = [
+        { type: 'stream-start', warnings: [] },
+        ...(prompts.length === 1
+          ? [{ type: 'tool-call' as const, toolCallId: 'other', toolName: 'other', input: '{}' }]
+          : []),
+        {
+          type: 'finish',
+          finishReason: { unified: prompts.length === 1 ? 'tool-calls' : 'stop', raw: undefined },
+          usage: {
+            inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+            outputTokens: { total: 1, text: 1, reasoning: 0 },
+          },
+        },
+      ]
+      return { stream: convertArrayToReadableStream(chunks) }
+    },
+  })
+  await streamText({
+    model,
+    messages,
+    tools: {
+      ...toolSet.tools,
+      other: { inputSchema: jsonSchema({ type: 'object', properties: {} }), execute: async () => 'done' },
+    },
+    stopWhen: isStepCount(2),
+    // Mirrors AbstractAISDKModel, which prepares every step from the full transcript.
+    prepareStep: async ({ initialMessages, responseMessages }) => ({
+      messages: await toolSet.injectImagesIntoStepMessages?.([...initialMessages, ...responseMessages]),
+    }),
+  }).consumeStream()
+  const count = (prompt: LanguageModelV4Prompt) =>
+    prompt.reduce((total, message) => {
+      if (message.role === 'user') return total + message.content.filter((part) => part.type === 'file').length
+      if (message.role === 'tool')
+        return (
+          total +
+          message.content.reduce(
+            (n, part) =>
+              n +
+              (part.type === 'tool-result' && part.output.type === 'content'
+                ? part.output.value.filter((value) => value.type === 'file' && value.mediaType.startsWith('image'))
+                    .length
+                : 0),
+            0
+          )
+        )
+      return total
+    }, 0)
+  expect(prompts.map(count)).toEqual([8, 5])
+  expect(saveImage).not.toHaveBeenCalled()
+})
+
+describe('read_file with image file reading', () => {
+  const baseExecute = vi.fn((_input: unknown, _options: unknown) => Promise.resolve({ content: 'text body' }))
+  const baseToModelOutput = vi.fn((_options: unknown) =>
+    Promise.resolve({ type: 'text' as const, value: 'text output' })
+  )
+  const baseReadFile = {
+    description: 'Read a file.',
+    inputSchema: jsonSchema({ type: 'object' }),
+    execute: baseExecute,
+    toModelOutput: baseToModelOutput,
+  }
+
+  function buildReadFile(context: Partial<Parameters<typeof buildViewImageToolSet>[0]> = {}) {
+    const toolSet = buildToolSet(context)
+    return { toolSet, readFile: withImageFileReading(baseReadFile as never, toolSet) }
+  }
+
+  async function readWith(tool: unknown, input: unknown, toolCallId = 'read-call') {
+    const readFile = tool as {
+      execute: (input: unknown, options: { toolCallId: string; messages: [] }) => Promise<unknown>
+      toModelOutput: (options: { toolCallId: string; input: unknown; output: unknown }) => Promise<unknown>
+    }
+    const output = await readFile.execute(input, { toolCallId, messages: [] })
+    return { output, modelOutput: await readFile.toModelOutput({ toolCallId, input, output }) }
+  }
+
+  beforeEach(() => {
+    baseExecute.mockClear()
+    baseToModelOutput.mockClear()
+  })
+
+  test('returns image files as visual input through the view_image pipeline', async () => {
+    const { readFile } = buildReadFile()
+
+    const { output, modelOutput } = await readWith(readFile, { file_path: 'charts/output.JPG' })
+
+    expect(output).toEqual({
+      file_path: 'charts/output.JPG',
+      image_storage_key: 'picture:view-image:session-id:uuid',
+      media_type: 'image/webp',
+    })
+    expect(modelOutput).toEqual({
+      type: 'content',
+      value: [
+        { type: 'text', text: 'Viewed image: charts/output.JPG' },
+        { type: 'file', data: { type: 'data', data: 'UkVTSVpFRA==' }, mediaType: 'image/webp' },
+      ],
+    })
+    expect(baseExecute).not.toHaveBeenCalled()
+    expect((readFile as { description?: string }).description).toContain('returned as real visual input')
+  })
+
+  test.each(['notes.md', 'icon.svg', '/__chatbox__/files/photo.png'])(
+    'keeps the original read_file behavior for %s',
+    async (filePath) => {
+      const { readFile } = buildReadFile()
+
+      const { output, modelOutput } = await readWith(readFile, { file_path: filePath })
+
+      expect(output).toEqual({ content: 'text body' })
+      expect(modelOutput).toEqual({ type: 'text', value: 'text output' })
+      expect(sandboxReadFileBytes).not.toHaveBeenCalled()
+      expect(saveImage).not.toHaveBeenCalled()
+    }
+  )
+
+  test('reads an image when a paused call is resumed outside a model step', async () => {
+    const { readFile } = buildReadFile()
+    const resumable = readFile as unknown as {
+      execute: (input: unknown, options: { toolCallId: string; approved: boolean }) => Promise<unknown>
+    }
+
+    const output = await resumable.execute({ file_path: 'photo.png' }, { toolCallId: 'resumed-call', approved: true })
+
+    expect(output).toEqual({
+      file_path: 'photo.png',
+      image_storage_key: 'picture:view-image:session-id:uuid',
+      media_type: 'image/webp',
+    })
+  })
+
+  test('a text result reusing an image call ID does not claim that image', async () => {
+    const { toolSet, readFile } = buildReadFile({ toolResultImages: false })
+    await readWith(readFile, { file_path: 'photo.png' }, 'call_0')
+    const textOutput = await readWith(readFile, { file_path: 'notes.md' }, 'call_0')
+
+    const messages = [
+      {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: 'call_0',
+            toolName: 'read_file',
+            output: { type: 'text', value: viewImageAttachmentNotice('photo.png') },
+          },
+        ],
+      },
+      { role: 'assistant', content: [{ type: 'tool-call', toolCallId: 'call_0', toolName: 'read_file', input: {} }] },
+      {
+        role: 'tool',
+        content: [{ type: 'tool-result', toolCallId: 'call_0', toolName: 'read_file', output: textOutput.modelOutput }],
+      },
+    ]
+    const injected = await toolSet.injectImagesIntoStepMessages?.(messages as never)
+
+    expect(injected?.map((message) => message.role)).toEqual(['tool', 'user', 'assistant', 'tool'])
+    expect(injected?.[1]).toEqual({
+      role: 'user',
+      content: [
+        { type: 'text', text: '[Image from view_image tool: photo.png]' },
+        { type: 'image', image: 'UkVTSVpFRA==', mediaType: 'image/webp' },
+      ],
+    })
+    expect(injected?.[3]).toEqual(messages[2])
+  })
+
+  test('text content quoting an image notice does not claim that image', async () => {
+    const { toolSet, readFile } = buildReadFile({ toolResultImages: false })
+    await readWith(readFile, { file_path: 'photo.png' }, 'call_0')
+
+    const injected = await toolSet.injectImagesIntoStepMessages?.([
+      {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: 'call_0',
+            toolName: 'read_file',
+            output: { type: 'text', value: `${viewImageAttachmentNotice('photo.png')}\n\n[Showing lines 1-1 of 1.]` },
+          },
+        ],
+      },
+    ] as never)
+
+    expect(injected?.map((message) => message.role)).toEqual(['tool'])
+  })
+
+  test('injects the image after a read_file result on protocols without tool-result media', async () => {
+    const { toolSet, readFile } = buildReadFile({ toolResultImages: false })
+    await readWith(readFile, { file_path: 'photo.png' })
+
+    const injected = await toolSet.injectImagesIntoStepMessages?.([
+      {
+        role: 'assistant',
+        content: [{ type: 'tool-call', toolCallId: 'read-call', toolName: 'read_file', input: {} }],
+      },
+      {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: 'read-call',
+            toolName: 'read_file',
+            output: { type: 'text', value: viewImageAttachmentNotice('photo.png') },
+          },
+        ],
+      },
+    ] as never)
+
+    expect(injected?.[2]).toEqual({
+      role: 'user',
+      content: [
+        { type: 'text', text: '[Image from view_image tool: photo.png]' },
+        { type: 'image', image: 'UkVTSVpFRA==', mediaType: 'image/webp' },
+      ],
+    })
   })
 })

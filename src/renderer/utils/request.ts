@@ -1,4 +1,6 @@
+import { isBackgroundStreamRequest } from '@shared/utils/background-stream'
 import platform from '@/platform'
+import { backgroundStreamPrototypeEnabled } from '@/native/background-stream'
 import { ApiError, BaseError, NetworkError } from '../../shared/models/errors'
 import { isLocalHost } from '../../shared/utils/network_utils'
 import { desktopDirectRequestFromWindow } from './desktop-direct-request'
@@ -56,6 +58,8 @@ async function doRequest(url: string, options: RequestOptions): Promise<Response
   const { signal, retry = 3, useProxy = false, body, method } = options
   let requestUrl = url
   const headers = buildHeaders(options, url)
+  const nativeBackgroundStream =
+    platform.type === 'mobile' && backgroundStreamPrototypeEnabled && isBackgroundStreamRequest(url, body, headers)
 
   if (useProxy && !isLocalHost(url) && platform.type !== 'mobile' && platform.type !== 'desktop') {
     const version = await platform.getVersion()
@@ -65,7 +69,7 @@ async function doRequest(url: string, options: RequestOptions): Promise<Response
 
   const makeRequest = async () => {
     let res: Response
-    if (platform.type === 'mobile' && useProxy) {
+    if (platform.type === 'mobile' && (useProxy || nativeBackgroundStream)) {
       res = await handleMobileRequest(requestUrl, method, headers, body, signal)
     } else if (platform.type === 'desktop' && useProxy && !isLocalHost(url)) {
       res = await desktopDirectRequestFromWindow(requestUrl, method, headers, body, signal)
@@ -75,12 +79,18 @@ async function doRequest(url: string, options: RequestOptions): Promise<Response
 
     if (!res.ok) {
       const err = await res.text().catch(() => null)
-      throw new ApiError(`Status Code ${res.status}`, err ?? undefined)
+      throw new ApiError(
+        `Status Code ${res.status}`,
+        err ?? undefined,
+        res.status,
+        undefined,
+        res.headers.get('retry-after') ?? undefined
+      )
     }
     return res
   }
 
-  return retryRequest(makeRequest, retry, requestUrl)
+  return retryRequest(makeRequest, nativeBackgroundStream ? 0 : retry, requestUrl)
 }
 
 export const apiRequest = {

@@ -7,8 +7,14 @@ const metaStorage = vi.hoisted(() => ({
   createMany: vi.fn(),
 }))
 
-const storageMock = vi.hoisted(() => ({
-  setItemNow: vi.fn(),
+const sessionRepositoryMock = vi.hoisted(() => ({
+  createSessionRows: vi.fn(),
+}))
+
+vi.mock('@/adapters/CurrentSessionRepository', () => ({
+  CurrentSessionRepository: class {
+    createSessionRows = sessionRepositoryMock.createSessionRows
+  },
 }))
 
 vi.mock('@/packages/initial_data', () => ({
@@ -29,16 +35,6 @@ vi.mock('@/platform', () => ({
   },
 }))
 
-vi.mock('@/storage', () => ({
-  default: storageMock,
-}))
-
-vi.mock('@/storage/StoreStorage', () => ({
-  StorageKeyGenerator: {
-    session: (id: string) => `session:${id}`,
-  },
-}))
-
 vi.mock('@/stores/sessionHelpers', () => ({
   getMetaStorage: vi.fn(() => Promise.resolve(metaStorage)),
   getSessionMeta: (session: { id: string; name: string; type: 'chat' | 'picture' }) => ({
@@ -52,7 +48,7 @@ describe('initData', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     metaStorage.createMany.mockResolvedValue(undefined)
-    storageMock.setItemNow.mockResolvedValue(undefined)
+    sessionRepositoryMock.createSessionRows.mockResolvedValue(undefined)
   })
 
   it('uses all session meta records to decide whether default sessions are needed', async () => {
@@ -61,7 +57,7 @@ describe('initData', () => {
     await initData()
 
     expect(metaStorage.getAllTotal).toHaveBeenCalledTimes(1)
-    expect(storageMock.setItemNow).not.toHaveBeenCalled()
+    expect(sessionRepositoryMock.createSessionRows).not.toHaveBeenCalled()
     expect(metaStorage.createMany).not.toHaveBeenCalled()
   })
 
@@ -70,8 +66,24 @@ describe('initData', () => {
 
     await initData()
 
-    expect(storageMock.setItemNow).toHaveBeenCalled()
+    expect(sessionRepositoryMock.createSessionRows).toHaveBeenCalledWith(
+      {
+        id: 'default-session',
+        name: 'Default Session',
+        type: 'chat',
+      },
+      []
+    )
     expect(metaStorage.createMany).toHaveBeenCalled()
+  })
+
+  it('does not publish metadata when creating default rows fails', async () => {
+    metaStorage.getAllTotal.mockResolvedValue(0)
+    sessionRepositoryMock.createSessionRows.mockRejectedValueOnce(new Error('session write failed'))
+
+    await expect(initData()).rejects.toThrow('session write failed')
+
+    expect(metaStorage.createMany).not.toHaveBeenCalled()
   })
 })
 

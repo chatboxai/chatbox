@@ -164,8 +164,8 @@ vi.mock('@/stores/toastActions', () => ({ add: mocks.toastAddMock }))
 
 vi.mock('@/app/renderer-application', () => ({
   rendererApplication: {
-    sessions: { updateSession: vi.fn() },
-    sessionHooks: { useSession: () => ({ session: undefined }) },
+    sessions: { updateSessionHeader: vi.fn() },
+    sessionHooks: { useSessionHeader: () => ({ read: undefined, session: undefined }) },
   },
 }))
 vi.mock('@/stores/session/session-settings', () => ({
@@ -242,6 +242,40 @@ beforeEach(() => {
 })
 
 describe('AgentModePanel mode buttons', () => {
+  test('shows immediate pending feedback until a mode change is persisted', async () => {
+    let resolveSave: () => void = () => undefined
+    mocks.setSessionAgentModeMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSave = resolve
+        })
+    )
+    renderPanel()
+    fireEvent.click(screen.getByRole('button', { name: 'Chat Mode' }))
+
+    expect((screen.getByRole('button', { name: 'Chat Mode' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByRole('button', { name: 'Chat Mode' }).hasAttribute('data-loading')).toBe(true)
+    expect((screen.getByRole('button', { name: 'Work Mode' }) as HTMLButtonElement).disabled).toBe(true)
+
+    await act(async () => {
+      resolveSave()
+    })
+
+    expect(screen.getByRole('button', { name: 'Chat Mode' }).hasAttribute('data-loading')).toBe(false)
+  })
+
+  test('reports a failed mode save and releases the pending controls', async () => {
+    mocks.setSessionAgentModeMock.mockRejectedValueOnce(new Error('Disk unavailable'))
+    renderPanel()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Chat Mode' }))
+    })
+
+    expect(mocks.toastAddMock).toHaveBeenCalledWith('Failed to save settings')
+    expect((screen.getByRole('button', { name: 'Chat Mode' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
   test('label the chat and work mode buttons with the same status icons as the composer button', () => {
     const view = renderPanel()
 
@@ -330,6 +364,32 @@ describe('AgentModePanel mode buttons', () => {
     expect(mocks.uiState.setAgentModeSmartSwitchingDefault).toHaveBeenCalledWith(true)
     expect(mocks.setSessionAgentModeMock).toHaveBeenCalledWith('new', 'auto')
     expect(mocks.uiState.setAgentModeLastSelected).not.toHaveBeenCalled()
+  })
+})
+
+describe('AgentModePanel glass over a chat wallpaper', () => {
+  test('on desktop the main list and the open submenu are separate glass surfaces; the open row is a tint', () => {
+    const view = renderPanel()
+    fireEvent.mouseEnter(screen.getByRole('button', { name: 'Skills' }))
+
+    const surfaces = view.container.querySelectorAll('.chatbox-glass-surface')
+    expect(surfaces).toHaveLength(2)
+    expect(surfaces[0].contains(surfaces[1])).toBe(false)
+    expect(surfaces[1].contains(surfaces[0])).toBe(false)
+    expect(screen.getByRole('button', { name: 'Skills' }).classList).toContain('chatbox-glass-tint')
+  })
+
+  test('in the touch drawer the drawer is the surface, and the mode card and open row are tints', () => {
+    mocks.platform.type = 'web'
+    mocks.platform.isDesktopLike = false
+    mocks.agentModeEntry.value = 'off'
+    const view = renderPanel({ modelSupportsAgentMode: false, layout: 'touch' })
+
+    expect(view.container.querySelector('.chatbox-glass-surface')).toBeNull()
+    const card = screen
+      .getByText('This app currently supports Chat Mode only. Use Work Mode on the desktop app.')
+      .closest('.chatbox-glass-tint')
+    expect(card).not.toBeNull()
   })
 })
 

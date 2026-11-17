@@ -7,6 +7,8 @@ import platform from '@/platform'
 
 const BLOB_KEY = 'model-registry-cache-v2'
 const CACHE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
+/** Skip another models.dev fetch for unknown model ids after a recent attempt. */
+export const UNKNOWN_MODEL_REFRESH_COOLDOWN_MS = 60 * 60 * 1000 // 1 hour
 const FETCH_TIMEOUT_MS = 15_000 // 15 seconds
 const API_URL = 'https://models.dev/api.json'
 
@@ -17,6 +19,7 @@ interface CacheEntry {
 
 let memoryCache: ModelRegistryData | null = null
 let fetchPromise: Promise<ModelRegistryData> | null = null
+let lastNetworkAttemptAt = 0
 let registryVersion = 0
 const listeners = new Set<() => void>()
 
@@ -69,8 +72,9 @@ export function getRegistrySync(): ModelRegistryData {
 }
 
 /**
- * Get registry data, triggering a fetch if cache is stale.
- * Returns the best available data immediately if cache is valid.
+ * Get registry data, triggering a fetch if the 7-day catalog cache is stale.
+ * A still-valid catalog is returned as-is. Lookups for a missing model id call
+ * `requestUnknownModelRegistryRefresh()`.
  */
 export async function getRegistry(): Promise<ModelRegistryData> {
   if (memoryCache) return memoryCache
@@ -97,6 +101,7 @@ export function fetchAndUpdateRegistry(
 ): Promise<ModelRegistryData> {
   if (fetchPromise) return fetchPromise
 
+  lastNetworkAttemptAt = Date.now()
   fetchPromise = (async () => {
     try {
       const controller = new AbortController()
@@ -138,6 +143,20 @@ export async function prefetchModelRegistry(): Promise<void> {
   fetchAndUpdateRegistry(cached?.data ?? MODELS_DEV_SNAPSHOT).catch((error: unknown) => {
     console.error('[model-registry] Prefetch failed:', error)
   })
+}
+
+/**
+ * Fetch models.dev even when the 7-day catalog cache is still valid.
+ * Used when a lookup misses a model id (newly published models, custom ids).
+ * In-flight fetches are joined; a recent attempt is cooled down so unknown
+ * ids do not hit the network on every request.
+ */
+export function requestUnknownModelRegistryRefresh(): Promise<ModelRegistryData> | null {
+  if (fetchPromise) return fetchPromise
+  if (lastNetworkAttemptAt > 0 && Date.now() - lastNetworkAttemptAt < UNKNOWN_MODEL_REFRESH_COOLDOWN_MS) {
+    return null
+  }
+  return fetchAndUpdateRegistry()
 }
 
 /**

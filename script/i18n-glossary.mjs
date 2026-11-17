@@ -100,7 +100,7 @@ function entryIssues(source, translation, locale) {
 }
 
 // --- CLI 公共工具 ---
-const DIR = 'src/renderer/i18n/locales'
+const DIR = 'packages/chatbox-i18n/src/locales'
 const readLocale = (locale) => JSON.parse(fs.readFileSync(`${DIR}/${locale}/translation.json`, 'utf8'))
 // flag 后面的位置参数即指定语言；没指定则取除 en 外全部语言。
 function localeArgs(flag) {

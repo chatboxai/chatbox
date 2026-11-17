@@ -1,13 +1,13 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
-import storage from '@/storage'
+import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
 
 export function useBlob(storageKey: string | undefined) {
   return useQuery({
     queryKey: ['blob', storageKey],
     queryFn: () => {
       if (!storageKey) return null
-      return storage.getBlob(storageKey).catch(() => null)
+      return currentBlobStorage.get(storageKey).catch(() => null)
     },
     enabled: !!storageKey,
     staleTime: Number.POSITIVE_INFINITY,
@@ -22,7 +22,7 @@ export function useFetchBlob() {
     (key: string) =>
       queryClient.fetchQuery({
         queryKey: ['blob', key],
-        queryFn: () => storage.getBlob(key).catch(() => null),
+        queryFn: () => currentBlobStorage.get(key).catch(() => null),
         staleTime: Number.POSITIVE_INFINITY,
         gcTime: 60 * 1000,
       }),

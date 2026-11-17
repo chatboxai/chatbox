@@ -1,10 +1,10 @@
+import { visitSelectedSessionMessages } from './session-row-scan'
+import { supportsImageReferenceInput } from '@chatbox/core/application/image-generation'
 import { type ImageGeneration, ModelProviderEnum } from '@shared/types'
 import { requestAppActionApproval } from '@/packages/app-action-approval'
 import { type AvailableImageModel, getAvailableImageModels } from '@/packages/image-model-catalog'
-import platform from '@/platform'
 import storage from '@/storage'
-import { rendererApplication } from '@/app/renderer-application'
-import { startImageGeneration } from '@/stores/imageGenerationActions'
+import { getImageGenerationService, startImageGeneration } from '@/stores/imageGenerationActions'
 import { imageGenerationStore } from '@/stores/imageGenerationStore'
 import { settingsStore } from '@/stores/settingsStore'
 import { getAcceptedImageBackgroundTaskResult } from './background-task-result'
@@ -27,10 +27,6 @@ interface PersistedImageExecution {
 interface ImageExecutionSignature {
   provider: string
   modelId: string
-}
-
-function imageExecutionStorageKey(sessionId: string, toolCallId: string): string {
-  return `${IMAGE_EXECUTION_STORAGE_PREFIX}:${sessionId}:${toolCallId}`
 }
 
 function isPersistedImageExecution(value: unknown): value is PersistedImageExecution {
@@ -72,6 +68,14 @@ function describeAvailableImageModels(models: AvailableImageModel[]): string {
       ? `, and ${models.length - MAX_MODELS_IN_ERROR} more via "chatbox image models"`
       : ''
   return `Available image models: ${entries.join(', ')}${suffix}.`
+}
+
+function supportsPromptOnlyGeneration(model: AvailableImageModel): boolean {
+  return (model.capabilities?.inputReferences?.min ?? 0) === 0
+}
+
+function promptOnlyImageModels(models: AvailableImageModel[]): AvailableImageModel[] {
+  return models.filter(supportsPromptOnlyGeneration)
 }
 
 // Ignore case and punctuation so "GPT Image 2" and "gpt-image-2" reference the same model.
@@ -161,21 +165,37 @@ function displayCandidateToolCallId(record: ImageGeneration, currentSessionId: s
     : undefined
 }
 
-async function getDisplayedImageToolCallIds(sessionId: string): Promise<ReadonlySet<string>> {
-  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
+async function getDisplayedImageToolCallIds(
+  sessionId: string,
+  candidates: readonly string[]
+): Promise<ReadonlySet<string>> {
+  const pending = new Set(candidates)
   const ids = new Set<string>()
-  for (const message of session?.messages ?? []) {
-    for (const part of message.contentParts ?? []) {
-      if (part.type === 'tool-call' && getAcceptedImageBackgroundTaskResult(part.result) !== null) {
-        ids.add(part.toolCallId)
+  await visitSelectedSessionMessages(
+    sessionId,
+    ({ message }) => {
+      for (const part of message.contentParts) {
+        if (
+          part.type === 'tool-call' &&
+          pending.has(part.toolCallId) &&
+          getAcceptedImageBackgroundTaskResult(part.result) !== null
+        ) {
+          ids.add(part.toolCallId)
+          pending.delete(part.toolCallId)
+        }
       }
-    }
-  }
+      return pending.size === 0
+    },
+    true
+  )
   return ids
 }
 
 function compactRecord(record: ImageGeneration, options?: { displayedInline?: boolean }): Record<string, unknown> {
-  const waitingForCompletion = record.status === 'pending' || record.status === 'generating'
+  const waitingForCompletion =
+    record.status === 'pending' ||
+    record.status === 'generating' ||
+    record.errorCode === 'image_task_persistence_failed'
   const hasActiveRunner = imageGenerationStore.getState().currentGeneratingId === record.id
   const displayedInline = options?.displayedInline === true && record.generatedImages.length > 0
   return {
@@ -217,7 +237,10 @@ function compactRecord(record: ImageGeneration, options?: { displayedInline?: bo
 }
 
 function restoredExecutionResult(record: ImageGeneration): Record<string, unknown> {
-  const waitingForCompletion = record.status === 'pending' || record.status === 'generating'
+  const waitingForCompletion =
+    record.status === 'pending' ||
+    record.status === 'generating' ||
+    record.errorCode === 'image_task_persistence_failed'
   const hasActiveRunner = imageGenerationStore.getState().currentGeneratingId === record.id
 
   if (waitingForCompletion && hasActiveRunner) {
@@ -287,6 +310,30 @@ async function generateImage(context: ChatboxCliCommandContext): Promise<Record<
   if (!requestedPrompt) throw new ChatboxCliUsageError('Missing --prompt.')
   if (requestedPrompt.length > 8_000) throw new ChatboxCliUsageError('Prompt must be at most 8000 characters.')
 
+  const referenceFlag = stringFlag(context.parsed, 'reference-images')
+  let referenceImages: string[] = []
+  if (referenceFlag !== undefined) {
+    let value: unknown
+    try {
+      value = JSON.parse(referenceFlag)
+    } catch {
+      throw new ChatboxCliUsageError('--reference-images must be a JSON array of image storage keys or HTTP(S) URLs.')
+    }
+    if (
+      !Array.isArray(value) ||
+      value.length > 16 ||
+      !value.every(
+        (entry: unknown) =>
+          typeof entry === 'string' && entry.length <= 2000 && /^(picture:[^\s]+|https?:\/\/[^\s]+)$/.test(entry)
+      )
+    ) {
+      throw new ChatboxCliUsageError(
+        '--reference-images accepts at most 16 image storage keys or HTTP(S) URLs; inline image data is not supported.'
+      )
+    }
+    referenceImages = value
+  }
+
   const requestedProvider = stringFlag(context.parsed, 'provider')
   const requestedModelId = stringFlag(context.parsed, 'model')
   const requestedCount = integerFlag(context.parsed, 'count', { defaultValue: 1, min: 1, max: 4 })
@@ -303,7 +350,13 @@ async function generateImage(context: ChatboxCliCommandContext): Promise<Record<
   const settings = settingsStore.getState()
   let availableModels: AvailableImageModel[] | undefined
   const ensureAvailableModels = async () => {
-    availableModels ??= await getAvailableImageModels(settings)
+    availableModels ??= (await getAvailableImageModels(settings)).filter((model) =>
+      referenceImages.length === 0
+        ? supportsPromptOnlyGeneration(model)
+        : supportsImageReferenceInput(model, model.capabilities) &&
+          referenceImages.length >= (model.capabilities?.inputReferences?.min ?? 0) &&
+          referenceImages.length <= (model.capabilities?.inputReferences?.max ?? 16)
+    )
     return availableModels
   }
 
@@ -327,6 +380,7 @@ async function generateImage(context: ChatboxCliCommandContext): Promise<Record<
   if (
     approvedRequest &&
     (approvedRequest.prompt !== requestedPrompt ||
+      JSON.stringify(approvedRequest.referenceImages ?? []) !== JSON.stringify(referenceImages) ||
       approvedRequest.count !== requestedCount ||
       approvedRequest.aspectRatio !== requestedAspectRatio ||
       approvedRequest.style !== parsedStyle ||
@@ -342,7 +396,7 @@ async function generateImage(context: ChatboxCliCommandContext): Promise<Record<
   const dalleStyle = approvedRequest?.style ?? parsedStyle
 
   const cacheKey = `${sessionId}:${toolCallId}`
-  const persistedExecutionKey = imageExecutionStorageKey(sessionId, toolCallId)
+  const persistedExecutionKey = `${IMAGE_EXECUTION_STORAGE_PREFIX}:${sessionId}:${toolCallId}`
   const existing = executionCache.get(cacheKey)
   const persistedExecutionValue = existing ? null : await storage.getItem<unknown>(persistedExecutionKey, null)
   if (persistedExecutionValue !== null && !isPersistedImageExecution(persistedExecutionValue)) {
@@ -370,7 +424,15 @@ async function generateImage(context: ChatboxCliCommandContext): Promise<Record<
         : 'No image models are configured. Configure a Chatbox license or an image-capable provider in Chatbox Settings, then retry.'
     )
   }
-  const signature = JSON.stringify({ prompt, provider, modelId, count, aspectRatio, dalleStyle })
+  const signature = JSON.stringify({
+    prompt,
+    provider,
+    modelId,
+    count,
+    aspectRatio,
+    dalleStyle,
+    ...(referenceImages.length ? { referenceImages } : {}),
+  })
   if (existing) {
     if (existing.signature !== signature) {
       throw new Error(`Tool call ${cacheKey} was reused with different image arguments.`)
@@ -382,7 +444,7 @@ async function generateImage(context: ChatboxCliCommandContext): Promise<Record<
     if (persistedExecutionValue.signature !== signature) {
       throw new Error(`Tool call ${cacheKey} was reused with different image arguments.`)
     }
-    const persistedRecord = await platform.getImageGenerationStorage().getById(persistedExecutionValue.recordId)
+    const persistedRecord = await getImageGenerationService().getRecord(persistedExecutionValue.recordId)
     if (!persistedRecord) {
       throw new Error(
         'The image record linked to this approved tool call no longer exists. Start a new request and ask the user to approve it again.'
@@ -395,7 +457,8 @@ async function generateImage(context: ChatboxCliCommandContext): Promise<Record<
     throw new ChatboxCliUsageError(`Image model is disabled in settings: ${provider}/${modelId}`)
   }
   const catalog = await ensureAvailableModels()
-  if (!catalog.some((model) => model.provider === provider && model.modelId === modelId)) {
+  const selectedCatalogModel = catalog.find((model) => model.provider === provider && model.modelId === modelId)
+  if (!selectedCatalogModel) {
     throw new ChatboxCliUsageError(
       `Image model is not available: ${provider}/${modelId}. ${describeAvailableImageModels(catalog)}`
     )
@@ -423,6 +486,7 @@ async function generateImage(context: ChatboxCliCommandContext): Promise<Record<
         count,
         aspectRatio,
         style: dalleStyle,
+        referenceImages,
         billing: provider === ModelProviderEnum.ChatboxAI ? 'chatbox_quota' : 'provider',
         ...(provider === ModelProviderEnum.ChatboxAI && licenseDetail
           ? {
@@ -444,7 +508,7 @@ async function generateImage(context: ChatboxCliCommandContext): Promise<Record<
     const handle = await startImageGeneration(
       {
         prompt,
-        referenceImages: [],
+        referenceImages,
         model: { provider, modelId },
         imageGenerateNum: count,
         aspectRatio,
@@ -497,9 +561,9 @@ export const imageCommands: ChatboxCliCommandDefinition[] = [
   {
     path: ['image', 'generate'],
     description:
-      'Request approval, then start a callback-driven image background task. Never poll for completion. When the user names a model, pass --model (model id or display name); without --model the first catalog model is used.',
+      'Request approval, then start a callback-driven image background task. Never poll for completion. When the user names a model, pass --model (model id or display name); without --model the first compatible catalog model is used. Pass --reference-images as a JSON array of picture storage keys from chat attachments or HTTP(S) image URLs. Never pass base64 image data.',
     usage:
-      'chatbox image generate --prompt <text> [--provider <id>] [--model <id-or-name>] [--count 1] [--aspect-ratio <ratio>]',
+      'chatbox image generate --prompt <text> [--provider <id>] [--model <id-or-name>] [--count 1] [--aspect-ratio <ratio>] [--reference-images <json-array>]',
     execute: generateImage,
   },
   {
@@ -509,13 +573,13 @@ export const imageCommands: ChatboxCliCommandDefinition[] = [
     async execute({ parsed, sessionId }) {
       const recordId = parsed.positionals[0]
       if (!recordId) throw new ChatboxCliUsageError('Missing image generation record id.')
-      const record = await platform.getImageGenerationStorage().getById(recordId)
+      const record = await getImageGenerationService().getRecord(recordId)
       if (!record) throw new ChatboxCliUsageError(`Image generation record not found: ${recordId}`)
       const candidateToolCallId = displayCandidateToolCallId(record, sessionId)
       const displayedInline =
         candidateToolCallId !== undefined &&
         sessionId !== undefined &&
-        (await getDisplayedImageToolCallIds(sessionId)).has(candidateToolCallId)
+        (await getDisplayedImageToolCallIds(sessionId, [candidateToolCallId])).has(candidateToolCallId)
       return compactRecord(record, { displayedInline })
     },
   },
@@ -526,11 +590,14 @@ export const imageCommands: ChatboxCliCommandDefinition[] = [
     async execute({ parsed, sessionId }) {
       const limit = integerFlag(parsed, 'limit', { defaultValue: 10, min: 1, max: 20 })
       const cursor = integerFlag(parsed, 'cursor', { defaultValue: 0, min: 0, max: 10_000_000 })
-      const page = await platform.getImageGenerationStorage().getPage(cursor, limit)
+      const page = await getImageGenerationService().getPage(cursor, limit)
       const candidateIds = page.items.map((item) => displayCandidateToolCallId(item, sessionId))
       const displayedToolCallIds =
         sessionId !== undefined && candidateIds.some((id) => id !== undefined)
-          ? await getDisplayedImageToolCallIds(sessionId)
+          ? await getDisplayedImageToolCallIds(
+              sessionId,
+              candidateIds.filter((id): id is string => id !== undefined)
+            )
           : undefined
       return {
         scope: 'global',
@@ -548,13 +615,13 @@ export const imageCommands: ChatboxCliCommandDefinition[] = [
   {
     path: ['image', 'models'],
     description:
-      'List configured image-capable models without exposing provider credentials. Run this when the user asks which models exist or names a model you cannot resolve.',
+      'List configured image models and reference-input capabilities without exposing provider credentials. Run this when the user asks which models exist or names a model you cannot resolve.',
     usage: 'chatbox image models',
     async execute() {
       const models = await getAvailableImageModels()
       return {
         models,
-        defaultModel: models[0] ?? null,
+        defaultModel: promptOnlyImageModels(models)[0] ?? null,
       }
     },
   },

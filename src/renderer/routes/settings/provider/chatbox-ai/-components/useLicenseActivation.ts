@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { type LicenseDetailError, getLicenseDetailRealtime } from '@/packages/remote'
+import { useRefreshChatboxAIModelsOnLicenseChange } from '@/hooks/useChatboxAIModels'
+import { getLicenseDetailRealtime, type LicenseDetailError } from '@/packages/remote'
 import * as premiumActions from '@/stores/premiumActions'
 import { settingsStore } from '@/stores/settingsStore'
 
@@ -53,6 +54,8 @@ export function useLicenseActivation({ settings, onActivationSuccess }: UseLicen
   // 合并两种错误来源：1) API 返回 200 但带有 error 字段  2) API 返回 4xx/5xx 被 ofetch 抛出
   const licenseDetailError: LicenseDetailError | undefined =
     licenseDetailResponse?.error || (queryError as any)?.data?.error || (queryError as any)?.error
+
+  useRefreshChatboxAIModelsOnLicenseChange(memorizedManualLicenseKey, licenseDetailError ? undefined : licenseDetail)
 
   const activate = useCallback(async () => {
     try {

@@ -111,3 +111,51 @@ export function withColorOpacity(color: string, opacity: number): string {
   const alpha = Math.round(Math.min(Math.max(opacity, 0), 1) * 255)
   return `${color}${alpha.toString(16).padStart(2, '0')}`
 }
+
+export type DarkSurfaceColors = {
+  raised: string
+  composer: string
+}
+
+// Mix ratios toward white; the Default dark primary #242424 yields #383838 raised and #454545 composer.
+const DARK_RAISED_MIX = 0.09
+const DARK_COMPOSER_MIX = 0.15
+
+function parseHexColor(color: string): [number, number, number] | null {
+  const match = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color.trim())
+  if (!match) return null
+  const hex = match[1].length === 3 ? [...match[1]].map((digit) => digit + digit).join('') : match[1]
+  return [0, 2, 4].map((index) => Number.parseInt(hex.slice(index, index + 2), 16)) as [number, number, number]
+}
+
+function mixTowardWhite(channels: [number, number, number], ratio: number): string {
+  return `#${channels
+    .map((channel) =>
+      Math.round(channel + (255 - channel) * ratio)
+        .toString(16)
+        .padStart(2, '0')
+    )
+    .join('')}`
+}
+
+export function deriveDarkSurfaceColors(backgroundPrimary: string): DarkSurfaceColors | null {
+  const channels = parseHexColor(backgroundPrimary)
+  if (!channels) return null
+  return {
+    raised: mixTowardWhite(channels, DARK_RAISED_MIX),
+    composer: mixTowardWhite(channels, DARK_COMPOSER_MIX),
+  }
+}
+
+/**
+ * Raised and composer surfaces to set inline for a custom dark palette. Built-in dark presets and
+ * light mode return null so the stylesheet surfaces apply.
+ */
+export function resolveDarkSurfaceOverrides(colors: InterfaceColors, theme: InterfaceTheme): DarkSurfaceColors | null {
+  if (theme !== 'dark') return null
+  const backgroundPrimary = colors.dark.backgroundPrimary.toLowerCase()
+  const isBuiltInPreset = INTERFACE_COLOR_PRESETS.some(
+    (preset) => preset.colors.dark.backgroundPrimary.toLowerCase() === backgroundPrimary
+  )
+  return isBuiltInPreset ? null : deriveDarkSurfaceColors(backgroundPrimary)
+}

@@ -294,4 +294,224 @@ describe('normalizeErrorForSentry', () => {
     expect(normalizeErrorForSentry(Number.POSITIVE_INFINITY).message).toBe('Non-Error exception (number)')
     expect(normalizeErrorForSentry(Number.NEGATIVE_INFINITY).message).toBe('Non-Error exception (number)')
   })
+
+  test('collapses install-specific frame paths to app:/// so one defect groups as one issue', () => {
+    const windowsEvent = {
+      exception: {
+        values: [
+          {
+            stacktrace: {
+              frames: [
+                {
+                  abs_path:
+                    'file:///C:/Users/someone/AppData/Local/Programs/Chatbox/resources/app.asar/dist/renderer/js/index.BDXOn_9F.js',
+                  filename:
+                    '/C:/Users/someone/AppData/Local/Programs/Chatbox/resources/app.asar/dist/renderer/js/index.BDXOn_9F.js',
+                },
+              ],
+            },
+          },
+        ],
+      },
+    }
+    const macEvent = {
+      exception: {
+        values: [
+          {
+            stacktrace: {
+              frames: [
+                {
+                  abs_path:
+                    'file:///private/var/folders/ym/abc/T/AppTranslocation/D5725DA4/d/Chatbox.app/Contents/Resources/app.asar/dist/renderer/js/index.BDXOn_9F.js',
+                  filename:
+                    '/Applications/Chatbox 2.app/Contents/Resources/app.asar/dist/renderer/js/index.BDXOn_9F.js',
+                },
+              ],
+            },
+          },
+        ],
+      },
+    }
+    const portableEvent = {
+      exception: {
+        values: [
+          {
+            stacktrace: {
+              frames: [{ abs_path: 'file:///F:/AI/chatbox/resources/app.asar/dist/renderer/js/index.BDXOn_9F.js' }],
+            },
+          },
+        ],
+      },
+    }
+
+    createProcessor()(windowsEvent)
+    createProcessor()(macEvent)
+    createProcessor()(portableEvent)
+
+    const expected = 'app:///dist/renderer/js/index.BDXOn_9F.js'
+    expect(windowsEvent.exception.values[0].stacktrace.frames[0].abs_path).toBe(expected)
+    expect(windowsEvent.exception.values[0].stacktrace.frames[0].filename).toBe(expected)
+    expect(macEvent.exception.values[0].stacktrace.frames[0].abs_path).toBe(expected)
+    expect(macEvent.exception.values[0].stacktrace.frames[0].filename).toBe(expected)
+    expect(portableEvent.exception.values[0].stacktrace.frames[0].abs_path).toBe(expected)
+  })
+
+  test('resolves relative source-mapped frames and rewrites module to match', () => {
+    const event = {
+      exception: {
+        values: [
+          {
+            stacktrace: {
+              frames: [
+                {
+                  abs_path:
+                    '/F:/AI/chatbox/resources/app.asar/dist/renderer/js/../../../src/renderer/packages/token-estimation/analyzer.ts',
+                  filename: '../../../src/renderer/packages/token-estimation/analyzer.ts',
+                  module: 'pplications.Chatbox.app.Contents.Resources.app.asar.dist.main',
+                },
+                {
+                  filename: '..\\..\\..\\node_modules\\react\\cjs\\react.production.min.js',
+                },
+              ],
+            },
+          },
+        ],
+      },
+    }
+
+    createProcessor()(event)
+
+    const [appFrame, vendorFrame] = event.exception.values[0].stacktrace.frames
+    expect(appFrame.abs_path).toBe('app:///src/renderer/packages/token-estimation/analyzer.ts')
+    expect(appFrame.filename).toBe('app:///src/renderer/packages/token-estimation/analyzer.ts')
+    expect(appFrame.module).toBe('src.renderer.packages.token-estimation:analyzer')
+    expect(vendorFrame.filename).toBe('app:///node_modules/react/cjs/react.production.min.js')
+  })
+
+  test('normalizes mobile origins and leaves non-path frames alone', () => {
+    const event = {
+      exception: {
+        values: [
+          {
+            stacktrace: {
+              frames: [
+                { filename: 'capacitor://localhost/js/index.abc123.js' },
+                { filename: 'http://localhost:1212/src/renderer/main.tsx' },
+                { filename: 'http://localhost/' },
+                { filename: '<anonymous>' },
+              ],
+            },
+          },
+        ],
+      },
+    }
+
+    createProcessor()(event)
+
+    const frames = event.exception.values[0].stacktrace.frames
+    expect(frames[0].filename).toBe('app:///js/index.abc123.js')
+    expect(frames[1].filename).toBe('app:///src/renderer/main.tsx')
+    expect(frames[2].filename).toBe('http://localhost/')
+    expect(frames[3].filename).toBe('<anonymous>')
+  })
+
+  test('still redacts credentials and user names inside frame paths', () => {
+    const event = {
+      exception: {
+        values: [
+          {
+            stacktrace: {
+              frames: [{ filename: '/Users/someone/Desktop/notes.ts' }],
+            },
+          },
+        ],
+      },
+    }
+
+    createProcessor()(event)
+
+    expect(event.exception.values[0].stacktrace.frames[0].filename).not.toContain('someone')
+  })
+
+  test('takes the module basis from abs_path when filename is a bare basename', () => {
+    const event = {
+      exception: {
+        values: [
+          {
+            stacktrace: {
+              frames: [
+                {
+                  filename: 'main.js',
+                  abs_path: '/Applications/Chatbox.app/Contents/Resources/app.asar/dist/main/main.js',
+                  module: 'Applications.Chatbox.app.Contents.Resources.app.asar.dist.main.main',
+                },
+              ],
+            },
+          },
+        ],
+      },
+    }
+
+    createProcessor()(event)
+
+    const frame = event.exception.values[0].stacktrace.frames[0]
+    expect(frame.abs_path).toBe('app:///dist/main/main.js')
+    expect(frame.module).toBe('dist.main:main')
+  })
+
+  test('leaves remote scripts and unrelated local paths outside the app layout alone', () => {
+    const untouched = [
+      'https://cdn.jsdelivr.net/npm/some-lib/dist/x.js',
+      '/Users/someone/Desktop/mysrc/app.js',
+      '/Users/someone/myapps/thing/main.js',
+      '/Users/someone/work/other-project/src/index.ts',
+    ]
+    const event = {
+      exception: { values: [{ stacktrace: { frames: untouched.map((filename) => ({ filename })) } }] },
+    }
+
+    createProcessor()(event)
+
+    const frames = event.exception.values[0].stacktrace.frames
+    expect(frames.map((frame) => frame.filename)).toEqual([
+      'https://cdn.jsdelivr.net/npm/some-lib/dist/x.js',
+      '/Users/[redacted]/Desktop/mysrc/app.js',
+      '/Users/[redacted]/myapps/thing/main.js',
+      '/Users/[redacted]/work/other-project/src/index.ts',
+    ])
+  })
+
+  test('keeps an app source path whose own directory is named resources', () => {
+    const event = {
+      exception: {
+        values: [{ stacktrace: { frames: [{ filename: 'app:///src/renderer/resources/foo.ts' }] } }],
+      },
+    }
+
+    createProcessor()(event)
+
+    expect(event.exception.values[0].stacktrace.frames[0].filename).toBe('app:///src/renderer/resources/foo.ts')
+  })
+
+  test('drops cache-busting queries so fingerprints survive a rebuild', () => {
+    const event = {
+      exception: {
+        values: [
+          {
+            stacktrace: {
+              frames: [
+                {
+                  filename: 'file:///Applications/Chatbox.app/Contents/Resources/app.asar/dist/main/main.js?v=1#L20',
+                },
+              ],
+            },
+          },
+        ],
+      },
+    }
+
+    createProcessor()(event)
+
+    expect(event.exception.values[0].stacktrace.frames[0].filename).toBe('app:///dist/main/main.js')
+  })
 })

@@ -3,16 +3,15 @@ import { mergeProviderSettings } from './providerSettings'
 
 describe('mergeProviderSettings', () => {
   it('preserves sibling provider settings when updating one provider', () => {
-    const result = mergeProviderSettings(
-      {
-        providers: {
-          openai: { apiKey: 'sk-openai', apiHost: 'https://api.openai.com' },
-          claude: { apiKey: 'sk-claude' },
-        },
+    const openAISettings = { apiKey: 'sk-openai', apiHost: 'https://api.openai.com' }
+    const claudeSettings = { apiKey: 'sk-claude' }
+    const currentSettings = {
+      providers: {
+        openai: openAISettings,
+        claude: claudeSettings,
       },
-      'openai',
-      { apiPath: '/v1/responses' }
-    )
+    }
+    const result = mergeProviderSettings(currentSettings, 'openai', { apiPath: '/v1/responses' })
 
     expect(result).toEqual({
       providers: {
@@ -24,6 +23,9 @@ describe('mergeProviderSettings', () => {
         claude: { apiKey: 'sk-claude' },
       },
     })
+    expect(result.providers).not.toBe(currentSettings.providers)
+    expect(result.providers?.openai).not.toBe(openAISettings)
+    expect(result.providers?.claude).toBe(claudeSettings)
   })
 
   it('supports functional updates using the previous provider settings', () => {

@@ -1,10 +1,20 @@
-import { atom } from 'jotai'
-import { atomWithStorage } from 'jotai/utils'
-import type { Session } from '../../../shared/types'
+import { atomWithStorage, createJSONStorage } from 'jotai/utils'
 
-// current sessionId
-export const currentSessionIdAtom = atomWithStorage<string | null>('_currentSessionIdCachedAtom', null)
+const browserStorage = createJSONStorage<string | null>()
+const currentSessionStorage = {
+  ...browserStorage,
+  setItem: (key: string, value: string | null) => {
+    try {
+      return browserStorage.setItem(key, value)
+    } catch (error) {
+      if (!(error instanceof DOMException) || error.name !== 'QuotaExceededError') throw error
+      console.warn('Could not persist the current session: browser storage quota exceeded')
+    }
+  },
+}
 
-// Related UI state
-export const sessionCleanDialogAtom = atom<Session | null>(null) // 清空会话的弹窗
-export const showThreadHistoryDrawerAtom = atom<boolean | string>(false) // 显示会话历史主题的抽屉
+export const currentSessionIdAtom = atomWithStorage<string | null>(
+  '_currentSessionIdCachedAtom',
+  null,
+  currentSessionStorage
+)

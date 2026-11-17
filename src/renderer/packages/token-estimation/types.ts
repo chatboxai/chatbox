@@ -1,3 +1,5 @@
+import type { SessionTextTokenSource } from '@chatbox/core/ports'
+
 /**
  * Token Estimation System Types
  *
@@ -62,6 +64,7 @@ export type AttachmentType = 'file' | 'link'
  * A computation task for token estimation
  */
 export interface ComputationTask {
+  textSource?: SessionTextTokenSource | 'read-current'
   /** Unique task identifier */
   id: string
   /** Type of computation */
@@ -78,6 +81,8 @@ export interface ComputationTask {
   tokenizerType: TokenizerType
   /** Digest of the message text projection this task describes. */
   textDigest?: string
+  /** Exact analyzed text projection, held only in the in-memory queue and bound to textDigest. */
+  textSnapshot?: string
   /** Number of accepted sampling fallbacks for this text projection. */
   retryAttempt?: number
   /** Content mode (full or preview, for attachments) */
@@ -98,12 +103,15 @@ export interface ComputationTask {
 export interface TaskResult {
   /** Whether the computation succeeded */
   success: boolean
+  /** Transient reads may retry within the queue's bounded attempt budget. */
+  retryable?: boolean
   /** Error message if failed */
   error?: string
   /** Whether to suppress error logging */
   silent?: boolean
   /** Computation result (if successful) */
   result?: {
+    textSource?: SessionTextTokenSource
     /** Type of computation */
     type: ComputationTaskType
     /** Session ID */
@@ -114,6 +122,8 @@ export interface TaskResult {
     attachmentId?: string
     /** Attachment type (for attachment tasks) */
     attachmentType?: AttachmentType
+    sourceStorageKey?: string
+    sourceName?: string
     /** Tokenizer used */
     tokenizerType: TokenizerType
     /** Content mode used */

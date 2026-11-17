@@ -4,13 +4,13 @@ import { sandboxAttachmentParsedRelPath, sandboxAttachmentRelPath } from '@share
 import { SANDBOX_EXEC_ERROR_CODES } from '@shared/sandbox-provider'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
-const { sandboxKillMock } = vi.hoisted(() => ({ sandboxKillMock: vi.fn() }))
+const { sandboxKillMock, fsReadMock } = vi.hoisted(() => ({ sandboxKillMock: vi.fn(), fsReadMock: vi.fn() }))
 
 vi.mock('@/lib/utils', () => ({
   getLogger: () => ({ info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }))
 vi.mock('@/platform', () => ({
-  default: { type: 'desktop', sandboxKill: sandboxKillMock },
+  default: { type: 'desktop', sandboxKill: sandboxKillMock, fsRead: fsReadMock },
 }))
 
 import { buildCodeExecutionTools } from './code-execution'
@@ -73,6 +73,8 @@ describe('buildCodeExecutionTools', () => {
     expect(result.description).toContain('<ATTACHMENT_FILE>')
     expect(result.description).toContain('<SANDBOX_PATH>')
     expect(result.description).toContain('<PARSED_SANDBOX_PATH>')
+    expect(result.description).toContain('read PARSED_SANDBOX_PATH sequentially')
+    expect(result.description).toContain('Use retrieval only to supplement specific gaps')
   })
 
   test('returns code_execution tool', () => {
@@ -317,12 +319,17 @@ describe('buildCodeExecutionTools', () => {
       execute: (input: Record<string, unknown>, opts: Record<string, unknown>) => Promise<Record<string, unknown>>
     }
 
-    await expect(tool.execute({ file_path: 'note.txt' }, {})).resolves.toEqual({
+    const result = await tool.execute({ file_path: 'note.txt' }, {})
+    expect(result).toEqual({
       file_path: 'note.txt',
       content: 'single line without newline',
       startLine: 1,
       endLine: 1,
       totalLines: 1,
+    })
+    await expect(toModelOutput(tool, result)).resolves.toEqual({
+      type: 'text',
+      value: 'single line without newline\n\n[Showing lines 1-1 of 1.]',
     })
   })
 
@@ -363,8 +370,105 @@ describe('buildCodeExecutionTools', () => {
     expect(result).toMatchObject({ content: '', startLine: 1, endLine: 1, totalLines: 1 })
     await expect(toModelOutput(tool, result)).resolves.toEqual({
       type: 'text',
-      value: '[Selected lines are blank.]',
+      value: '[Selected lines are blank.]\n\n[Showing lines 1-1 of 1.]',
     })
+  })
+
+  test.each(['sandbox', 'host'])(
+    'read_file exposes long-line recovery instructions on the final page for %s reads',
+    async (source) => {
+      const response = {
+        success: true,
+        content: `${'x'.repeat(1997)}...`,
+        startLine: 2,
+        endLine: 2,
+        totalLines: 2,
+        truncatedLineCount: 1,
+      }
+      mockProvider.readFileOut.mockResolvedValue(response)
+      fsReadMock.mockResolvedValue(response)
+      const { tools } = buildCodeExecutionTools({ sessionId: 'test-session', files: [], provider: mockProvider })
+      const filePath = source === 'host' ? '/outside/long.txt' : 'long.txt'
+      const result = await tools.read_file.execute({ file_path: filePath, offset: 2, limit: 1 }, {})
+      expect(result).toMatchObject({ truncatedLineCount: 1, startLine: 2, endLine: 2, totalLines: 2 })
+      const output = await toModelOutput(tools.read_file, result)
+      expect(output.value).toContain('[Showing lines 2-2 of 2.]')
+      expect(output.value).toContain('Reducing limit cannot recover')
+      expect(output.value).toContain('bounded character chunks')
+      expect(output.value).not.toContain('Use offset=3 to continue')
+      if (source === 'host') expect(fsReadMock).toHaveBeenCalledWith({ filePath, offset: 2, limit: 1 })
+    }
+  )
+
+  test.each([
+    { scriptTool: undefined, reader: 'code_execution' },
+    { scriptTool: 'code_execution', reader: 'code_execution' },
+    { scriptTool: 'run_command', reader: 'a Node.js script run through run_command' },
+  ])('read_file recovery guidance names the registered script tool ($scriptTool)', async ({ scriptTool, reader }) => {
+    const { tools } = buildCodeExecutionTools({
+      sessionId: 'test-session',
+      files: [],
+      provider: mockProvider,
+      scriptTool,
+    })
+    expect(tools.read_file.description).toContain(`read them in character chunks with ${reader}.`)
+
+    mockProvider.readFileOut.mockResolvedValue({
+      success: true,
+      content: `${'x'.repeat(1997)}...`,
+      startLine: 1,
+      endLine: 1,
+      totalLines: 1,
+      truncatedLineCount: 1,
+    })
+    const shortenedLine = await toModelOutput(
+      tools.read_file,
+      await tools.read_file.execute({ file_path: 'long.txt' }, {})
+    )
+    expect(shortenedLine.value).toContain(`Use ${reader} to read the same text file`)
+
+    mockProvider.readFileOut.mockResolvedValue({
+      success: true,
+      content: 'x'.repeat(60_000),
+      startLine: 1,
+      endLine: 100,
+      totalLines: 200,
+    })
+    const shortenedOutput = await toModelOutput(
+      tools.read_file,
+      await tools.read_file.execute({ file_path: 'long.txt' }, {})
+    )
+    expect(shortenedOutput.value).toContain(`use ${reader} to read bounded character chunks`)
+
+    if (scriptTool === 'run_command') {
+      for (const text of [tools.read_file.description, shortenedLine.value, shortenedOutput.value]) {
+        expect(text).not.toContain('code_execution')
+      }
+    }
+    expect(tools.create_download.description).not.toContain('code_execution')
+    expect(tools.create_download.description).toContain('Never present sandbox paths as download links')
+  })
+
+  test('description leaves platform shell guidance to the working-directory section', () => {
+    const { description } = buildCodeExecutionTools({ sessionId: 'test-session', files: [], provider: mockProvider })
+    expect(description).not.toContain('On Windows')
+    expect(description).toContain('refer the user to the download card')
+  })
+
+  test('read_file requests a retry before advancing when the total output is shortened', async () => {
+    mockProvider.readFileOut.mockResolvedValue({
+      success: true,
+      content: 'x'.repeat(60_000),
+      startLine: 1,
+      endLine: 100,
+      totalLines: 200,
+    })
+    const { tools } = buildCodeExecutionTools({ sessionId: 'test-session', files: [], provider: mockProvider })
+    const result = await tools.read_file.execute({ file_path: 'long.txt' }, {})
+    expect(result.contentTruncated).toBe(true)
+    const output = await toModelOutput(tools.read_file, result)
+    expect(output.value).toContain('Reread offset=1 with a smaller limit before advancing')
+    expect(output.value).not.toContain('Use offset=101 to continue')
   })
 
   test('read_file returns provider errors without invoking Bash', async () => {
@@ -376,6 +480,24 @@ describe('buildCodeExecutionTools', () => {
 
     await expect(tool.execute({ file_path: 'missing.txt' }, {})).resolves.toEqual({ error: 'read failed' })
     expect(mockProvider.exec).not.toHaveBeenCalled()
+  })
+
+  test('read_file rejects raster images instead of decoding them as text', async () => {
+    const { tools } = buildCodeExecutionTools({ sessionId: 'test-session', files: [], provider: mockProvider })
+
+    const result = await tools.read_file.execute({ file_path: '/Users/me/Desktop/Chart.PNG' }, {})
+
+    expect(result.error).toContain('image files cannot be viewed in this session')
+    expect(mockProvider.readFileOut).not.toHaveBeenCalled()
+    expect(fsReadMock).not.toHaveBeenCalled()
+  })
+
+  test('read_file keeps reading SVG files as text', async () => {
+    const { tools } = buildCodeExecutionTools({ sessionId: 'test-session', files: [], provider: mockProvider })
+
+    await tools.read_file.execute({ file_path: 'icon.svg' }, {})
+
+    expect(mockProvider.readFileOut).toHaveBeenCalledWith('icon.svg', expect.anything())
   })
 
   test('code_execution tool handles non-zero exit code', async () => {
@@ -565,4 +687,20 @@ describe('buildCodeExecutionTools', () => {
       expect(mockProvider.exec).not.toHaveBeenCalled()
     })
   })
+})
+
+test('reserved virtual paths cannot reach standalone filesystem readers or downloads', async () => {
+  const provider = createMockProvider()
+  const { tools } = buildCodeExecutionTools({ sessionId: 'virtual', files: [], provider })
+  for (const name of ['read_file', 'create_download']) {
+    expect(
+      await tools[name].execute(
+        { file_path: '/__chatbox__/files/unknown', display_name: 'file' },
+        { toolCallId: 'v', messages: [] }
+      )
+    ).toMatchObject({ error: expect.stringContaining('virtual path') })
+  }
+  expect(provider.readFileOut).not.toHaveBeenCalled()
+  expect(provider.persistArtifact).not.toHaveBeenCalled()
+  expect(provider.exec).not.toHaveBeenCalled()
 })

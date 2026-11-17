@@ -1,0 +1,20 @@
+.list {
+  flex: 1;
+  min-height: 80px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: 12px;
+  padding: 4px;
+}
+.row {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+}
+.row:hover {
+  background: var(--mantine-color-default-hover);
+}
+.row[data-checked] {
+  background: var(--mantine-primary-color-light);
+}

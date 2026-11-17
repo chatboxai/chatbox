@@ -1,6 +1,15 @@
+import type { FileEditRequest, FileEditResult } from '@shared/file-edits'
 /** biome-ignore-all lint/suspicious/noExplicitAny: <any> */
+
+import type { SessionRowStorePort } from '@chatbox/core/ports'
 import type { LocalMemoryScanResult } from '@shared/agent-persona/memory-import'
 import type { AnalyticsEventParams } from '@shared/analytics'
+import type {
+  BuiltInBrowserRequest,
+  BuiltInBrowserResults,
+  BuiltInBrowserTabs,
+  BuiltInBrowserViewRequest,
+} from '@shared/built-in-browser'
 import type { PlatformType as SharedPlatformType } from '@shared/platform'
 import type {
   SandboxExecLanguage,
@@ -18,6 +27,12 @@ import type { SessionAttachmentRagController } from './session-attachment-rag/in
 export type PlatformType = SharedPlatformType
 
 export interface Storage {
+  /** Copy a value inside the backend; returns false when the source is absent. */
+  copyStoreValue?(source: string, destination: string): Promise<boolean>
+  /** Return unused storage pages to the file system. */
+  compactStore?(): Promise<void>
+  /** Removes several keys at once; the batch is atomic where the backend supports transactions. */
+  delStoreValues?(keys: string[]): Promise<void>
   getStorageType(): string
   setStoreValue(key: string, value: any): Promise<void>
   getStoreValue(key: string): Promise<any>
@@ -27,12 +42,44 @@ export interface Storage {
   setAllStoreValues(data: { [key: string]: any }): Promise<void>
 }
 
+/** One tab of a conversation's built-in browser, as the side panel drives it. */
+export interface BuiltInBrowserTabControls {
+  navigate(url: string): Promise<void>
+  goBack(): Promise<void>
+  goForward(): Promise<void>
+  reload(): Promise<void>
+  stop(): Promise<void>
+  /** Snapshot requests resolve to a still of the page; visible captures keep the page shown. */
+  setView(request: BuiltInBrowserViewRequest): Promise<string | null>
+}
+
+/** Desktop-only browser with its own persistent profile for reading rendered or signed-in pages. */
+export interface BuiltInBrowser {
+  /** Performs one request on the conversation's pages; aborting `signal` cancels it. */
+  request<Request extends BuiltInBrowserRequest>(
+    request: Request,
+    options?: { timeoutMs?: number; signal?: AbortSignal }
+  ): Promise<BuiltInBrowserResults[Request['kind']]>
+  getTabs(): Promise<BuiltInBrowserTabs>
+  onTabsChange(callback: (tabs: BuiltInBrowserTabs) => void): () => void
+  /** Opens an empty tab and resolves to its id. */
+  openTab(): Promise<string>
+  closeTab(tabId: string): Promise<void>
+  tab(tabId: string): BuiltInBrowserTabControls
+  /** Closes every conversation's tabs and clears the shared website profile, signing out of websites. */
+  clearData(): Promise<void>
+  /** Closes the conversation's tabs and removes the files its runs downloaded. */
+  dispose(): Promise<void>
+}
+
 export interface Platform extends Storage {
   type: PlatformType
+  builtInBrowser?: BuiltInBrowser & { forSession(sessionId: string): BuiltInBrowser }
   /** Whether this platform is backed by the Electron main/preload bridge. */
   isDesktopLike: boolean
 
   exporter: Exporter
+  resourceFiles?: ResourceFileStorage
 
   // 系统相关
 
@@ -63,6 +110,9 @@ export interface Platform extends Storage {
   onUpdaterDownloaded?(callback: (data: { version: string }) => void): () => void
   onUpdaterError?(callback: (data: { message: string }) => void): () => void
   checkForUpdate?(): Promise<{ started: boolean }>
+  setTaskCloseProtection?(active: boolean): Promise<void>
+  onTaskCloseRequest?(callback: () => void): () => void
+  finishTaskClose?(confirmed: boolean): Promise<void>
   onNavigate?(callback: (path: string) => void): () => void
   openLink(url: string): Promise<void>
   getDeviceName(): Promise<string>
@@ -109,6 +159,7 @@ export interface Platform extends Storage {
     startLine?: number
     endLine?: number
     totalLines?: number
+    truncatedLineCount?: number
     error?: string
   }>
   readWorkspaceInstructions?(directories: string[]): Promise<WorkspaceInstructionsResult>
@@ -122,12 +173,7 @@ export interface Platform extends Storage {
   /** Read host image bytes (read-only, size-capped in the main process). */
   fsReadImage?(params: { filePath: string }): Promise<{ success: boolean; bytes?: ArrayBuffer; error?: string }>
   fsWrite?(params: { filePath: string; content: string }): Promise<{ success: boolean; error?: string }>
-  fsEdit?(params: {
-    filePath: string
-    search?: string
-    replace?: string
-    edits?: Array<{ search: string; replace: string }>
-  }): Promise<{ success: boolean; error?: string }>
+  fsEdit?(params: FileEditRequest): Promise<FileEditResult>
 
   // Parse file using MinerU service (Desktop only)
   parseFileWithMineru?(
@@ -150,6 +196,8 @@ export interface Platform extends Storage {
   getImageGenerationStorage(): ImageGenerationStorage
 
   getSessionMetaStorage(): SessionMetaStorage
+
+  getSessionRowStore(): SessionRowStorePort
 
   // Sandbox operations (Desktop only)
   // Single code-execution entry point for all platforms: code is fed to the sandboxed process
@@ -180,13 +228,7 @@ export interface Platform extends Storage {
     content: string
     sessionId?: string
   }): Promise<{ success: boolean; error?: string }>
-  sandboxEdit?(params: {
-    filePath: string
-    search?: string
-    replace?: string
-    edits?: Array<{ search: string; replace: string }>
-    sessionId?: string
-  }): Promise<{ success: boolean; error?: string }>
+  sandboxEdit?(params: FileEditRequest & { sessionId?: string }): Promise<FileEditResult>
   sandboxLs?(params: { dirPath: string; sessionId?: string }): Promise<SandboxOperationResult>
   sandboxSearch?(params: {
     pattern: string
@@ -272,8 +314,15 @@ export interface Platform extends Storage {
   onMaximizedChange(callback: (isMaximized: boolean) => void): () => void
 }
 
+/** Raw bytes in managed resource files, including their stored text or data URL encoding. */
+export interface ResourceFileStorage {
+  open(key: string): Promise<import('@chatbox/core/io').ClosableByteSource | null>
+  create(key: string): Promise<import('@chatbox/core/io').ByteSink>
+}
+
 export interface StreamingExportResult {
   boundedMemory: boolean
+  delivery?: 'share-sheet'
   pendingDownload?: {
     filename: string
     blob: Blob
@@ -285,11 +334,11 @@ export interface Exporter {
   exportTextFile: (filename: string, content: string) => Promise<void>
   exportImageFile: (basename: string, base64: string) => Promise<void>
   exportByUrl: (filename: string, url: string) => Promise<void>
-  exportStreamingJson: (filename: string, dataCallback: () => AsyncGenerator<string, void, unknown>) => Promise<void>
   exportStreamingFile: (
     filename: string,
     dataCallback: () => AsyncGenerator<Uint8Array, void, unknown>,
     mimeType: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    requirements?: { requiresStreaming: boolean; estimatedBytes?: number }
   ) => Promise<StreamingExportResult>
 }

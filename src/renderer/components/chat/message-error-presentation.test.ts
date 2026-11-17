@@ -1,7 +1,7 @@
 import { ChatboxAIAPIError, MESSAGE_ERROR_CODES } from '@shared/models/errors'
 import type { Message } from '@shared/types'
 import { describe, expect, it } from 'vitest'
-import { isMessageReminderPresentation, resolveMessageErrorPresentation } from './message-error-presentation'
+import { resolveMessageErrorPresentation } from './message-error-presentation'
 
 function message(overrides: Partial<Message>): Message {
   return {
@@ -14,6 +14,13 @@ function message(overrides: Partial<Message>): Message {
 }
 
 describe('resolveMessageErrorPresentation', () => {
+  it.each([20003, 20004])('routes Chatbox AI license error %s to account guidance', (errorCode) => {
+    expect(resolveMessageErrorPresentation(message({ errorCode }))).toMatchObject({
+      kind: 'known-chatbox-api',
+      errorCode,
+    })
+  })
+
   it.each([
     [MESSAGE_ERROR_CODES.CHATBOX_AI_QUOTA_EXHAUSTED, 'quota-exhausted'],
     [MESSAGE_ERROR_CODES.CHATBOX_AI_FREE_QUOTA_EXHAUSTED, 'free-quota-exhausted'],
@@ -68,7 +75,6 @@ describe('resolveMessageErrorPresentation', () => {
       const presentation = resolveMessageErrorPresentation(message({ error: error?.message, errorCode: error?.code }))
 
       expect(presentation).toMatchObject({ kind: 'known-chatbox-api', errorCode: error?.code })
-      expect(isMessageReminderPresentation(presentation)).toBe(false)
     }
   )
 
@@ -79,17 +85,26 @@ describe('resolveMessageErrorPresentation', () => {
       )
     ).toMatchObject({ kind: 'api', httpStatusCode: 429 })
     expect(
-      resolveMessageErrorPresentation(message({ error: 'offline', errorCode: 10002, errorExtra: { host: 'api.test' } }))
-    ).toMatchObject({ kind: 'network', host: 'api.test' })
+      resolveMessageErrorPresentation(
+        message({ error: 'offline', errorCode: 10002, aiProvider: 'custom-provider', errorExtra: { host: 'api.test' } })
+      )
+    ).toMatchObject({ kind: 'network', host: 'api.test', providerId: 'custom-provider' })
     expect(resolveMessageErrorPresentation(message({ error: 'OCR failed', errorCode: 10006 }))).toMatchObject({
       kind: 'ocr-failed',
     })
+  })
+
+  it('maps a removed provider to the provider-missing presentation', () => {
+    const presentation = resolveMessageErrorPresentation(
+      message({ errorCode: MESSAGE_ERROR_CODES.MODEL_PROVIDER_NOT_FOUND })
+    )
+
+    expect(presentation.kind).toBe('provider-missing')
   })
 
   it('keeps unrelated failures in the unknown presentation', () => {
     const presentation = resolveMessageErrorPresentation(message({ errorCode: 99999 }))
 
     expect(presentation.kind).toBe('unknown')
-    expect(isMessageReminderPresentation(presentation)).toBe(false)
   })
 })

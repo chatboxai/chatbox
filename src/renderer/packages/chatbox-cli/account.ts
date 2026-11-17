@@ -109,22 +109,24 @@ export const accountCommands: ChatboxCliCommandDefinition[] = [
     path: ['account', 'refresh'],
     description: 'Refresh license and quota details from Chatbox API.',
     usage: 'chatbox account refresh',
-    async execute() {
-      const licenseKey = settingsStore.getState().licenseKey
-      if (!licenseKey) return { refreshed: false, error: 'No Chatbox license is configured.', status: accountStatus() }
-
-      const response = await remote.getLicenseDetailRealtime({ licenseKey })
-      const isExpired = response.error?.code === 'expired' || response.error?.code === 'expired_license'
-      if (response.data) {
-        settingsStore.setState({
-          licenseDetail: response.data,
-          licensePlanName: response.data.name,
-          hasExpiredLicense: isExpired,
-        })
-      } else if (isExpired) {
-        settingsStore.setState({ hasExpiredLicense: true })
-      }
-      return { refreshed: Boolean(response.data), error: response.error, status: accountStatus() }
-    },
+    execute: refreshChatboxAccount,
   },
 ]
+
+export async function refreshChatboxAccount() {
+  const licenseKey = settingsStore.getState().licenseKey
+  if (!licenseKey) return { refreshed: false, error: 'No Chatbox license is configured.', status: accountStatus() }
+
+  const response = await remote.getLicenseDetailRealtime({ licenseKey })
+  const isExpired = response.error?.code === 'expired' || response.error?.code === 'expired_license'
+  if (response.data) {
+    settingsStore.setState({
+      licenseDetail: response.data,
+      licensePlanName: response.data.name,
+      hasExpiredLicense: isExpired,
+    })
+  } else if (isExpired) {
+    settingsStore.setState({ hasExpiredLicense: true })
+  }
+  return { refreshed: Boolean(response.data), error: response.error, status: accountStatus() }
+}

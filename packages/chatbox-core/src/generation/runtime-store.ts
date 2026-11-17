@@ -1,3 +1,4 @@
+import type { Message } from '../types'
 export type GenerationRuntimePhase = 'preparing' | 'streaming' | 'paused' | 'stopping'
 
 export interface GenerationRuntimeState {
@@ -32,6 +33,7 @@ export interface GenerationRuntimeStoreOptions {
  * in this in-memory store.
  */
 export class GenerationRuntimeStore {
+  private readonly liveMessages = new WeakMap<AbortController, Message>()
   private readonly states = new Map<string, Map<string, GenerationRuntimeState>>()
   private readonly pendingAbortReasons = new Map<string, Map<string, unknown>>()
   private readonly sessionStopGates = new Map<string, GenerationSessionStopGate>()
@@ -78,6 +80,18 @@ export class GenerationRuntimeStore {
     return state
   }
 
+  /** Active stream state is independent of mounted transcript pages. */
+  setLiveMessage(sessionId: string, message: Message): void {
+    const state = this.get(sessionId, message.id)
+    if (state && state.phase !== 'stopping') this.liveMessages.set(state.abortController, message)
+  }
+
+  getLiveMessage(sessionId: string, messageId: string): Message | undefined {
+    const state = this.get(sessionId, messageId)
+    const message = state && this.liveMessages.get(state.abortController)
+    return message?.id === messageId ? message : undefined
+  }
+
   get(sessionId: string, messageId?: string): GenerationRuntimeState | undefined {
     const sessionStates = this.states.get(sessionId)
     if (!sessionStates) return undefined
@@ -87,6 +101,12 @@ export class GenerationRuntimeStore {
 
   list(sessionId: string): readonly GenerationRuntimeState[] {
     return [...(this.states.get(sessionId)?.values() ?? [])]
+  }
+
+  getGeneratingSessionIds(): readonly string[] {
+    return [...this.states]
+      .filter(([, states]) => [...states.values()].some((state) => state.phase !== 'paused'))
+      .map(([id]) => id)
   }
 
   getActiveMessageIds(sessionId: string): ReadonlySet<string> {
@@ -117,8 +137,9 @@ export class GenerationRuntimeStore {
     return true
   }
 
-  isSessionStopRequested(sessionId: string): boolean {
-    return this.sessionStopGates.has(sessionId)
+  isSessionStopRequested(sessionId: string, expected?: GenerationSessionStopGate): boolean {
+    const current = this.sessionStopGates.get(sessionId)
+    return current !== undefined && (!expected || current === expected)
   }
 
   acquireGenerationPreparationLease(sessionId: string): GenerationPreparationLease | undefined {
@@ -144,6 +165,7 @@ export class GenerationRuntimeStore {
     const waiters = this.preparationWaiters.get(lease.sessionId)
     this.preparationWaiters.delete(lease.sessionId)
     for (const resolve of waiters ?? []) resolve()
+    this.notify()
     return true
   }
 
@@ -318,6 +340,7 @@ export class GenerationRuntimeStore {
       if (drains.size === 0 && this.unsettledStreamDrains.get(sessionId) === drains) {
         this.unsettledStreamDrains.delete(sessionId)
       }
+      this.notify()
     }
     drain.then(cleanup, cleanup)
   }
@@ -332,6 +355,35 @@ export class GenerationRuntimeStore {
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
+  }
+
+  /** Waits for active replies and accepted preparation/persistence work; paused tools are idle. */
+  waitForIdle(signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const cancel = () => {
+        unsubscribe()
+        signal?.removeEventListener('abort', cancel)
+        const error = new Error('Waiting for generation was canceled')
+        error.name = 'AbortError'
+        reject(signal?.reason ?? error)
+      }
+      const check = () => {
+        if (signal?.aborted) {
+          cancel()
+          return
+        }
+        if (this.preparationLeases.size || this.unsettledStreamDrains.size) return
+        for (const states of this.states.values()) {
+          if ([...states.values()].some((state) => state.phase !== 'paused')) return
+        }
+        unsubscribe()
+        signal?.removeEventListener('abort', cancel)
+        resolve()
+      }
+      const unsubscribe = this.subscribe(check)
+      signal?.addEventListener('abort', cancel, { once: true })
+      check()
+    })
   }
 
   getVersion(): number {

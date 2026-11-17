@@ -1,13 +1,20 @@
 import { sandboxAttachmentParsedRelPath, sandboxAttachmentRelPath } from '@shared/sandbox/attachment-path'
 import type { CompactionPoint, Message } from '@shared/types'
+import { uploadedFilePath } from '@shared/uploaded-file-tools'
 import { describe, expect, it, vi } from 'vitest'
 import { buildContext } from './builder'
+import { buildCompactionHandoff, getContextHistoryStartNote } from './compaction-handoff'
+import { CONTEXT_HISTORY_START_MESSAGE_ID } from './model-projection'
 import type { AttachmentResolver } from './types'
 
 function createMockResolver(contents: Map<string, string> = new Map()): AttachmentResolver {
   return {
     read: vi.fn().mockImplementation(async (key: string) => contents.get(key) ?? null),
   }
+}
+
+function historyIds(messages: Message[]): string[] {
+  return messages.map((message) => message.id).filter((id) => id !== CONTEXT_HISTORY_START_MESSAGE_ID)
 }
 
 function createMessage(overrides: Partial<Message> & { id: string; role: Message['role'] }): Message {
@@ -26,7 +33,7 @@ describe('buildContext', () => {
         createMessage({ id: '2', role: 'assistant', contentParts: [], generating: true }),
       ]
 
-      const result = await buildContext(messages, { attachmentResolver: createMockResolver(), toolCleanupMode: 'none' })
+      const result = await buildContext(messages, { attachmentResolver: createMockResolver() })
 
       expect(result).toHaveLength(1)
       expect(result[0].id).toBe('1')
@@ -39,13 +46,13 @@ describe('buildContext', () => {
         createMessage({ id: '2', role: 'assistant', contentParts: [{ type: 'text', text: 'Hello' }] }),
       ]
 
-      const result = await buildContext(messages, { attachmentResolver: createMockResolver(), toolCleanupMode: 'none' })
+      const result = await buildContext(messages, { attachmentResolver: createMockResolver() })
 
       expect(result.map((m) => m.id)).toEqual(['1', '2'])
     })
 
     it('should return empty array for empty messages', async () => {
-      const result = await buildContext([], { attachmentResolver: createMockResolver(), toolCleanupMode: 'none' })
+      const result = await buildContext([], { attachmentResolver: createMockResolver() })
 
       expect(result).toEqual([])
     })
@@ -56,7 +63,7 @@ describe('buildContext', () => {
         createMessage({ id: '2', role: 'assistant', generating: true }),
       ]
 
-      const result = await buildContext(messages, { attachmentResolver: createMockResolver(), toolCleanupMode: 'none' })
+      const result = await buildContext(messages, { attachmentResolver: createMockResolver() })
 
       expect(result).toEqual([])
     })
@@ -68,7 +75,7 @@ describe('buildContext', () => {
         createMessage({ id: '3', role: 'assistant', contentParts: [{ type: 'text', text: 'Hi there' }] }),
       ]
 
-      const result = await buildContext(messages, { attachmentResolver: createMockResolver(), toolCleanupMode: 'none' })
+      const result = await buildContext(messages, { attachmentResolver: createMockResolver() })
 
       expect(result).toHaveLength(3)
     })
@@ -85,7 +92,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         maxContextMessageCount: 2,
       })
 
@@ -110,7 +116,7 @@ describe('buildContext', () => {
         createMessage({ id: 'continuation', role: 'assistant', contentParts: [{ type: 'text', text: 'after' }] }),
       ]
 
-      const result = await buildContext(messages, { attachmentResolver: createMockResolver(), toolCleanupMode: 'none' })
+      const result = await buildContext(messages, { attachmentResolver: createMockResolver() })
 
       expect(result.map((message) => message.id)).toEqual(['original', 'segment', 'steered', 'continuation'])
     })
@@ -125,13 +131,22 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         maxContextMessageCount: 2,
       })
 
       // Split segments are ordinary history messages: plain tail slicing keeps
       // the steer between its segment and continuation without special casing.
-      expect(result.map((message) => message.id)).toEqual(['segment', 'steered', 'continuation'])
+      // The window then opens with an assistant turn, so a user note leads it.
+      expect(result.map((message) => message.id)).toEqual([
+        CONTEXT_HISTORY_START_MESSAGE_ID,
+        'segment',
+        'steered',
+        'continuation',
+      ])
+      expect(result[0]).toMatchObject({
+        role: 'user',
+        contentParts: [{ type: 'text', text: getContextHistoryStartNote() }],
+      })
     })
 
     it('should limit messages to maxContextMessageCount', async () => {
@@ -145,7 +160,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         maxContextMessageCount: 2,
       })
 
@@ -166,7 +180,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         maxContextMessageCount: 1,
       })
 
@@ -184,7 +197,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         maxContextMessageCount: 2,
       })
 
@@ -201,7 +213,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         maxContextMessageCount: 0,
       })
 
@@ -220,7 +231,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         maxContextMessageCount: 0,
       })
 
@@ -233,7 +243,6 @@ describe('buildContext', () => {
     // maxContextMessageCount=19 → effectiveLimit 20 → chunk = ceil(20/4) = 5
     const limitOptions = {
       attachmentResolver: createMockResolver(),
-      toolCleanupMode: 'none' as const,
       maxContextMessageCount: 19,
     }
     const makeMessages = (count: number): Message[] =>
@@ -246,8 +255,8 @@ describe('buildContext', () => {
       // 21 messages: overflow 1 → drop one whole chunk (5). 24: overflow 4 →
       // still one chunk. The boundary (and thus the request prefix) is stable
       // across the intermediate turns instead of sliding every turn.
-      expect(base[0].id).toBe('m5')
-      expect(grown[0].id).toBe('m5')
+      expect(historyIds(base)[0]).toBe('m5')
+      expect(historyIds(grown)[0]).toBe('m5')
       expect(grown.slice(0, base.length).map((m) => m.id)).toEqual(base.map((m) => m.id))
     })
 
@@ -262,7 +271,7 @@ describe('buildContext', () => {
     it('never serves more than the configured limit', async () => {
       for (let count = 20; count <= 30; count += 1) {
         const result = await buildContext(makeMessages(count), limitOptions)
-        expect(result.length).toBeLessThanOrEqual(20)
+        expect(historyIds(result).length).toBeLessThanOrEqual(20)
       }
     })
   })
@@ -293,13 +302,18 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         compactionPoints,
       })
 
-      expect(result.map((m) => m.id)).toContain('summary')
-      expect(result.map((m) => m.id)).not.toContain('1')
-      expect(result.map((m) => m.id)).not.toContain('2')
+      expect(result.map((m) => m.id)).toEqual(['sys', '3', '4'])
+      expect(result[1]).toMatchObject({
+        role: 'user',
+        contentParts: [
+          { type: 'text', text: buildCompactionHandoff('Summary of conversation', 'reference').text },
+          { type: 'text', text: 'Test message' },
+        ],
+      })
+      expect(messages.find((message) => message.id === 'summary')?.role).toBe('assistant')
     })
 
     it('summarizes a finalized segment behind the compaction boundary', async () => {
@@ -321,7 +335,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         compactionPoints: [{ boundaryMessageId: 'steered', summaryMessageId: 'summary', createdAt: Date.now() }],
       })
 
@@ -347,13 +360,14 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         compactionPoints,
       })
 
-      expect(result.map((m) => m.id)).toContain('new-summary')
-      expect(result.map((m) => m.id)).toContain('5')
-      expect(result.map((m) => m.id)).not.toContain('old-summary')
+      expect(result.map((m) => m.id)).toEqual(['5'])
+      expect(result[0].contentParts[0]).toEqual({
+        type: 'text',
+        text: buildCompactionHandoff('Test message', 'reference').text,
+      })
     })
 
     it('should preserve system message after compaction', async () => {
@@ -371,7 +385,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         compactionPoints,
       })
 
@@ -391,7 +404,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         compactionPoints,
       })
 
@@ -417,182 +429,57 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         compactionPoints,
       })
 
-      expect(result.map((m) => m.id)).toEqual(['old-summary', '3', '4', '5'])
+      expect(result.map((m) => m.id)).toEqual(['3', '4', '5'])
+      expect(result[0].contentParts[0]).toEqual({
+        type: 'text',
+        text: buildCompactionHandoff('Test message', 'reference').text,
+      })
     })
-  })
 
-  describe('tool call cleanup', () => {
-    it('stubs tool results older than keepToolCallRounds and keeps the recent round intact', async () => {
+    it('references compacted attachments in the handoff and keeps the next user turn intact', async () => {
+      const oldFile = { id: 'old', name: 'old.txt', fileType: 'text/plain', storageKey: 'old-key', lineCount: 1 }
+      const newFile = { id: 'new', name: 'new.txt', fileType: 'text/plain', storageKey: 'new-key', lineCount: 1 }
       const messages: Message[] = [
-        createMessage({ id: '1', role: 'user' }),
+        createMessage({ id: '1', role: 'user', files: [oldFile] }),
+        createMessage({ id: '2', role: 'assistant' }),
         createMessage({
-          id: '2',
+          id: 'summary',
           role: 'assistant',
-          contentParts: [
-            { type: 'text', text: 'Let me call a tool' },
-            {
-              type: 'tool-call',
-              state: 'result',
-              toolCallId: 'tc1',
-              toolName: 'search',
-              args: {},
-              result: { data: 'old-1' },
-            },
-          ],
+          isSummary: true,
+          contentParts: [{ type: 'text', text: 'Summary' }],
+          compactedFiles: [oldFile],
         }),
-        createMessage({ id: '3', role: 'user' }),
         createMessage({
-          id: '4',
-          role: 'assistant',
-          contentParts: [
-            { type: 'text', text: 'Another tool call' },
-            {
-              type: 'tool-call',
-              state: 'result',
-              toolCallId: 'tc2',
-              toolName: 'search',
-              args: {},
-              result: { data: 'old-2' },
-            },
-          ],
-        }),
-        createMessage({ id: '5', role: 'user' }),
-        createMessage({
-          id: '6',
-          role: 'assistant',
-          contentParts: [
-            { type: 'text', text: 'Recent tool call' },
-            {
-              type: 'tool-call',
-              state: 'result',
-              toolCallId: 'tc3',
-              toolName: 'search',
-              args: {},
-              result: { data: 'recent' },
-            },
-          ],
+          id: '3',
+          role: 'user',
+          contentParts: [{ type: 'text', text: 'Compare it with the new file' }],
+          files: [newFile],
         }),
       ]
 
       const result = await buildContext(messages, {
-        attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'stub-old-results',
-        keepToolCallRounds: 1,
+        attachmentResolver: createMockResolver(
+          new Map([
+            ['old-key', 'OLD BODY'],
+            ['new-key', 'NEW BODY'],
+          ])
+        ),
+        compactionPoints: [{ boundaryMessageId: '2', summaryMessageId: 'summary', createdAt: 1 }],
       })
 
-      const findToolPart = (id: string) =>
-        result.find((m) => m.id === id)?.contentParts.find((p) => p.type === 'tool-call')
-
-      expect(findToolPart('2')).toMatchObject({ toolName: 'search', result: { _cleared: true } })
-      expect(findToolPart('4')).toMatchObject({ toolName: 'search', result: { _cleared: true } })
-      expect(findToolPart('6')).toMatchObject({ result: { data: 'recent' } })
-    })
-
-    it('should preserve tool results for explicitly protected messages', async () => {
-      const messages: Message[] = [
-        createMessage({ id: '1', role: 'user' }),
-        createMessage({
-          id: '2',
-          role: 'assistant',
-          contentParts: [
-            { type: 'text', text: 'Tool call to preserve' },
-            {
-              type: 'tool-call',
-              state: 'result',
-              toolCallId: 'tc1',
-              toolName: 'search',
-              args: {},
-              result: { data: 'preserve' },
-            },
-          ],
-        }),
-        createMessage({ id: '3', role: 'user' }),
-        createMessage({
-          id: '4',
-          role: 'assistant',
-          contentParts: [
-            { type: 'text', text: 'Tool call to clean' },
-            {
-              type: 'tool-call',
-              state: 'result',
-              toolCallId: 'tc2',
-              toolName: 'search',
-              args: {},
-              result: { data: 'clean' },
-            },
-          ],
-        }),
-        createMessage({ id: '5', role: 'user' }),
-        createMessage({
-          id: '6',
-          role: 'assistant',
-          contentParts: [
-            { type: 'text', text: 'Recent tool call' },
-            {
-              type: 'tool-call',
-              state: 'result',
-              toolCallId: 'tc3',
-              toolName: 'search',
-              args: {},
-              result: { data: 'recent' },
-            },
-          ],
-        }),
-      ]
-
-      const result = await buildContext(messages, {
-        attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'stub-old-results',
-        keepToolCallRounds: 1,
-        preserveToolCallMessageIds: ['2'],
-      })
-
-      const findToolPart = (id: string) =>
-        result.find((m) => m.id === id)?.contentParts.find((p) => p.type === 'tool-call')
-
-      expect(findToolPart('2')).toMatchObject({ result: { data: 'preserve' } })
-      expect(findToolPart('4')).toMatchObject({ result: { _cleared: true } })
-      expect(findToolPart('6')).toMatchObject({ result: { data: 'recent' } })
-    })
-
-    it('keeps recent split-segment tool calls under the round policy', async () => {
-      // Split segments are ordinary rounds for tool-call cleanup: each steered
-      // user counts as a round boundary like any other user turn.
-      const messages: Message[] = [
-        createMessage({ id: 'original', role: 'user' }),
-        createMessage({
-          id: 'segment',
-          role: 'assistant',
-          finishReason: 'steered',
-          contentParts: [
-            { type: 'tool-call', state: 'result', toolCallId: 'tc1', toolName: 'search', args: {}, result: {} },
-          ],
-        }),
-        createMessage({ id: 'steered', role: 'user', steered: true }),
-        createMessage({
-          id: 'continuation',
-          role: 'assistant',
-          contentParts: [
-            { type: 'tool-call', state: 'result', toolCallId: 'tc2', toolName: 'search', args: {}, result: {} },
-          ],
-        }),
-      ]
-
-      const result = await buildContext(messages, {
-        attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'stub-old-results',
-      })
-
-      expect(result.find((message) => message.id === 'segment')?.contentParts).toEqual([
-        expect.objectContaining({ type: 'tool-call', toolCallId: 'tc1' }),
-      ])
-      expect(result.find((message) => message.id === 'continuation')?.contentParts).toEqual([
-        expect.objectContaining({ type: 'tool-call', toolCallId: 'tc2' }),
-      ])
+      expect(result.map((m) => m.id)).toEqual(['3'])
+      // Tool builders read the summary's references from the user turn it merged into.
+      expect(result[0]).toMatchObject({ files: [newFile], compactedFiles: [oldFile] })
+      const [handoff, turn] = result[0].contentParts.map((part) => (part.type === 'text' ? part.text : ''))
+      expect(handoff.startsWith(buildCompactionHandoff('Summary', 'reference').text)).toBe(true)
+      expect(handoff).toContain('<FILE_NAME>old.txt</FILE_NAME>')
+      expect(handoff).not.toContain('OLD BODY')
+      expect(turn).toContain('Compare it with the new file')
+      expect(turn).toContain(`<FILE_PATH>${uploadedFilePath('new-key')}</FILE_PATH>`)
+      expect(turn).toContain('NEW BODY')
     })
   })
 
@@ -610,7 +497,7 @@ describe('buildContext', () => {
         }),
       ]
 
-      const result = await buildContext(messages, { attachmentResolver: resolver, toolCleanupMode: 'none' })
+      const result = await buildContext(messages, { attachmentResolver: resolver })
 
       const textContent = result[0].contentParts.find((p) => p.type === 'text')
       expect(textContent?.type).toBe('text')
@@ -631,7 +518,7 @@ describe('buildContext', () => {
         }),
       ]
 
-      const result = await buildContext(messages, { attachmentResolver: resolver, toolCleanupMode: 'none' })
+      const result = await buildContext(messages, { attachmentResolver: resolver })
 
       const textContent = result[0].contentParts.find((p) => p.type === 'text')
       expect((textContent as { type: 'text'; text: string }).text).toContain('Web page content')
@@ -649,7 +536,7 @@ describe('buildContext', () => {
         }),
       ]
 
-      const result = await buildContext(messages, { attachmentResolver: resolver, toolCleanupMode: 'none' })
+      const result = await buildContext(messages, { attachmentResolver: resolver })
 
       const textContent = result[0].contentParts.find((p) => p.type === 'text')
       expect((textContent as { type: 'text'; text: string }).text).toBe('Check this file')
@@ -670,14 +557,15 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: resolver,
-        toolCleanupMode: 'none',
         modelSupportToolUseForFile: true,
       })
 
       const textContent = result[0].contentParts.find((p) => p.type === 'text')
       const text = (textContent as { type: 'text'; text: string }).text
       expect(text).toContain('TRUNCATED')
-      expect(text).toContain('Use read_file or search_file_content tool')
+      expect(text).toContain('Use read_file')
+      expect(text).toContain(`file_path="${uploadedFilePath('file-key')}"`)
+      expect(text).not.toContain('with FILE_KEY=')
     })
 
     it('should not truncate when modelSupportToolUseForFile is false', async () => {
@@ -695,7 +583,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: resolver,
-        toolCleanupMode: 'none',
         modelSupportToolUseForFile: false,
       })
 
@@ -726,7 +613,7 @@ describe('buildContext', () => {
         }),
       ]
 
-      const result = await buildContext(messages, { attachmentResolver: resolver, toolCleanupMode: 'none' })
+      const result = await buildContext(messages, { attachmentResolver: resolver })
 
       expect(resolver.read).not.toHaveBeenCalled()
       const textContent = result[0].contentParts.find((p) => p.type === 'text')
@@ -757,6 +644,7 @@ describe('buildContext', () => {
               rawStorageKey: 'file-key-raw',
               parserType: 'local',
               byteLength: 4096,
+              lineCount: 1200,
             },
           ],
         }),
@@ -764,7 +652,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: resolver,
-        toolCleanupMode: 'none',
         sandboxMode: true,
       })
 
@@ -778,7 +665,15 @@ describe('buildContext', () => {
       const budgetPath = sandboxAttachmentRelPath('budget.xlsx', 'file-key-raw')
       expect(text).toContain(`<SANDBOX_PATH>${budgetPath}</SANDBOX_PATH>`)
       expect(text).toContain(`<PARSED_SANDBOX_PATH>${sandboxAttachmentParsedRelPath(budgetPath)}</PARSED_SANDBOX_PATH>`)
-      expect(text).toContain('code_execution')
+      expect(text).toContain('process the original binary at SANDBOX_PATH with a script')
+      expect(text).not.toContain('code_execution')
+      expect(text).toContain('<PARSED_TEXT_STATUS>available</PARSED_TEXT_STATUS>')
+      expect(text).toContain('<FILE_LINES>1200</FILE_LINES>')
+      expect(text).toContain('read PARSED_SANDBOX_PATH sequentially')
+      expect(text).toContain('endLine + 1')
+      expect(text).toContain('reducing limit cannot recover them')
+      expect(text).toContain('bounded Unicode-safe character chunks')
+      expect(text).toContain('Line-number coverage alone does not establish complete text coverage')
       expect(text).not.toContain('parsed content should stay out of sandbox prompt')
     })
 
@@ -805,7 +700,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: resolver,
-        toolCleanupMode: 'none',
         sandboxMode: true,
       })
 
@@ -813,51 +707,83 @@ describe('buildContext', () => {
       const text = (textContent as { type: 'text'; text: string }).text
       expect(text).toContain(`<SANDBOX_PATH>${sandboxAttachmentRelPath('archive.bin', 'file-key-raw')}</SANDBOX_PATH>`)
       expect(text).not.toContain('<PARSED_SANDBOX_PATH>')
-      expect(text).toContain('Use read_file or code_execution on SANDBOX_PATH')
+      expect(text).toContain('<PARSED_TEXT_STATUS>unavailable</PARSED_TEXT_STATUS>')
+      expect(text).not.toContain('<FILE_LINES>')
+      expect(text).toContain('Use read_file on SANDBOX_PATH to inspect it, or process it with a script')
     })
 
-    it('should preserve session retrieval cues in sandbox mode', async () => {
-      const resolver = createMockResolver(new Map([['file-key', 'large parsed content should stay out of context']]))
+    it.each(['ready', 'indexing', 'failed'] as const)(
+      'routes sandbox text independently of retrieval status %s',
+      async (status) => {
+        const resolver = createMockResolver(new Map([['file-key', 'large parsed content should stay out of context']]))
 
-      const messages: Message[] = [
-        createMessage({
-          id: '1',
-          role: 'user',
-          contentParts: [{ type: 'text', text: 'Use the attached manual' }],
-          files: [
-            {
-              id: 'file-1',
-              name: 'manual.pdf',
-              fileType: 'application/pdf',
-              storageKey: 'file-key',
-              rawStorageKey: 'file-key-raw',
-              ragMode: 'session-retrieval',
-              sessionAttachmentId: 42,
-              sessionAttachmentIndexStatus: 'ready',
-            },
-          ],
-        }),
-      ]
+        const messages: Message[] = [
+          createMessage({
+            id: '1',
+            role: 'user',
+            contentParts: [{ type: 'text', text: 'Use the attached manual' }],
+            files: [
+              {
+                id: 'file-1',
+                name: 'manual.pdf',
+                fileType: 'application/pdf',
+                storageKey: 'file-key',
+                rawStorageKey: 'file-key-raw',
+                ragMode: 'session-retrieval',
+                sessionAttachmentId: 42,
+                sessionAttachmentIndexStatus: status,
+              },
+            ],
+          }),
+        ]
 
-      const result = await buildContext(messages, {
-        attachmentResolver: resolver,
-        toolCleanupMode: 'none',
-        sandboxMode: true,
-      })
+        const result = await buildContext(messages, {
+          attachmentResolver: resolver,
+          sandboxMode: true,
+        })
 
+        expect(resolver.read).not.toHaveBeenCalled()
+        const textContent = result[0].contentParts.find((p) => p.type === 'text')
+        const text = (textContent as { type: 'text'; text: string }).text
+        expect(text).toContain('<ATTACHMENT_FILE>')
+        expect(text).not.toContain('<ATTACHED_FILES>')
+        expect(text).toContain('<FILE_KEY>session-attachment:42</FILE_KEY>')
+        expect(text).toContain('<RETRIEVAL_MODE>session_attachment_rag</RETRIEVAL_MODE>')
+        expect(text).toContain(`<INDEX_STATUS>${status}</INDEX_STATUS>`)
+        expect(text).toContain('<PARSED_TEXT_STATUS>available</PARSED_TEXT_STATUS>')
+        expect(text).toContain('<FILE_LINES>unknown</FILE_LINES>')
+        const manualPath = sandboxAttachmentRelPath('manual.pdf', 'file-key-raw')
+        expect(text).toContain(`<SANDBOX_PATH>${manualPath}</SANDBOX_PATH>`)
+        expect(text).toContain(
+          `<PARSED_SANDBOX_PATH>${sandboxAttachmentParsedRelPath(manualPath)}</PARSED_SANDBOX_PATH>`
+        )
+        expect(text).toContain('query_session_attachment')
+        expect(text).toContain('For focused questions')
+        expect(text).toContain('read PARSED_SANDBOX_PATH sequentially')
+        expect(text).toContain('not extracted-text availability or completeness')
+        expect(text).not.toContain('For document-specific questions about this file')
+        expect(text).not.toContain('large parsed content should stay out of context')
+      }
+    )
+
+    it('uses the original sandbox path and known line count for text attachments', async () => {
+      const resolver = createMockResolver(new Map())
+      const result = await buildContext(
+        [
+          createMessage({
+            id: 'text-message',
+            role: 'user',
+            files: [{ id: 'text', name: 'notes.md', fileType: 'text/markdown', storageKey: 'text', lineCount: 800 }],
+          }),
+        ],
+        { attachmentResolver: resolver, sandboxMode: true }
+      )
+      const text = result[0].contentParts.find((part) => part.type === 'text')?.text ?? ''
+      expect(text).toContain('<PARSED_TEXT_STATUS>not_required</PARSED_TEXT_STATUS>')
+      expect(text).toContain('<FILE_LINES>800</FILE_LINES>')
+      expect(text).not.toContain('<PARSED_SANDBOX_PATH>')
+      expect(text).toContain('for original text files, use SANDBOX_PATH')
       expect(resolver.read).not.toHaveBeenCalled()
-      const textContent = result[0].contentParts.find((p) => p.type === 'text')
-      const text = (textContent as { type: 'text'; text: string }).text
-      expect(text).toContain('<ATTACHMENT_FILE>')
-      expect(text).not.toContain('<ATTACHED_FILES>')
-      expect(text).toContain('<FILE_KEY>session-attachment:42</FILE_KEY>')
-      expect(text).toContain('<RETRIEVAL_MODE>session_attachment_rag</RETRIEVAL_MODE>')
-      expect(text).toContain('<INDEX_STATUS>ready</INDEX_STATUS>')
-      const manualPath = sandboxAttachmentRelPath('manual.pdf', 'file-key-raw')
-      expect(text).toContain(`<SANDBOX_PATH>${manualPath}</SANDBOX_PATH>`)
-      expect(text).toContain(`<PARSED_SANDBOX_PATH>${sandboxAttachmentParsedRelPath(manualPath)}</PARSED_SANDBOX_PATH>`)
-      expect(text).toContain('query_session_attachment')
-      expect(text).not.toContain('large parsed content should stay out of context')
     })
 
     it('gives same-named uploads distinct sandbox paths', async () => {
@@ -887,7 +813,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         sandboxMode: true,
       })
 
@@ -909,7 +834,7 @@ describe('buildContext', () => {
       ]
       const messagesCopy = JSON.stringify(originalMessages)
 
-      await buildContext(originalMessages, { attachmentResolver: createMockResolver(), toolCleanupMode: 'none' })
+      await buildContext(originalMessages, { attachmentResolver: createMockResolver() })
 
       expect(JSON.stringify(originalMessages)).toBe(messagesCopy)
     })
@@ -936,7 +861,7 @@ describe('buildContext', () => {
         }),
       ]
 
-      const result = await buildContext(messages, { attachmentResolver: resolver, toolCleanupMode: 'none' })
+      const result = await buildContext(messages, { attachmentResolver: resolver })
 
       const textContent = result[0].contentParts.find((p) => p.type === 'text')
       expect(textContent?.type).toBe('text')
@@ -970,7 +895,7 @@ describe('buildContext', () => {
         }),
       ]
 
-      const result = await buildContext(messages, { attachmentResolver: resolver, toolCleanupMode: 'none' })
+      const result = await buildContext(messages, { attachmentResolver: resolver })
 
       const textContent = result[0].contentParts.find((p) => p.type === 'text')
       const text = (textContent as { type: 'text'; text: string }).text
@@ -999,7 +924,6 @@ describe('buildContext', () => {
 
       const result = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         compactionPoints,
       })
 
@@ -1015,7 +939,7 @@ describe('buildContext', () => {
         createMessage({ id: '2', role: 'assistant', contentParts: [{ type: 'text', text: 'Response' }] }),
       ]
 
-      const result = await buildContext(messages, { attachmentResolver: createMockResolver(), toolCleanupMode: 'none' })
+      const result = await buildContext(messages, { attachmentResolver: createMockResolver() })
 
       expect(result).toHaveLength(3)
       expect(result[0].id).toBe('1')
@@ -1032,13 +956,11 @@ describe('buildContext', () => {
 
       const resultWithEmpty = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         compactionPoints: [],
       })
 
       const resultWithUndefined = await buildContext(messages, {
         attachmentResolver: createMockResolver(),
-        toolCleanupMode: 'none',
         compactionPoints: undefined,
       })
 
@@ -1049,131 +971,22 @@ describe('buildContext', () => {
   })
 })
 
-describe('buildContext tool cleanup modes', () => {
-  type ToolCallPart = Extract<Message['contentParts'][number], { type: 'tool-call' }>
-
-  function toolCallPart(overrides: Partial<ToolCallPart> = {}): ToolCallPart {
-    return {
-      type: 'tool-call',
-      state: 'result',
-      toolCallId: 'tc-1',
-      toolName: 'search',
-      args: { query: 'x' },
-      result: { hits: ['a', 'b'] },
-      ...overrides,
-    }
-  }
-
-  function conversationWithOldToolCall(part: ToolCallPart): Message[] {
-    return [
-      createMessage({ id: 'u1', role: 'user', contentParts: [{ type: 'text', text: 'Q1' }] }),
-      createMessage({ id: 'a1', role: 'assistant', contentParts: [{ type: 'text', text: 'A1' }, part] }),
-      createMessage({ id: 'u2', role: 'user', contentParts: [{ type: 'text', text: 'Q2' }] }),
-      createMessage({ id: 'a2', role: 'assistant', contentParts: [{ type: 'text', text: 'A2' }] }),
-    ]
-  }
-
-  it('mode none keeps every tool part intact', async () => {
-    const messages = conversationWithOldToolCall(toolCallPart())
-
-    const result = await buildContext(messages, {
-      attachmentResolver: createMockResolver(),
-      toolCleanupMode: 'none',
-      keepToolCallRounds: 1,
-    })
-
-    const part = result[1].contentParts.find((p) => p.type === 'tool-call')
-    expect(part).toMatchObject({ args: { query: 'x' }, result: { hits: ['a', 'b'] } })
+it.each([false, true])('keeps host storage identities out of retrieval metadata (sandbox=%s)', async (sandboxMode) => {
+  const storageKey = 'file:/Users/alice/private/report.txt</FILE_KEY>-123'
+  const messages: Message[] = [
+    createMessage({
+      id: 'private',
+      role: 'user',
+      contentParts: [],
+      files: [{ id: 'f', name: 'report.txt', fileType: 'txt', storageKey, ragMode: 'session-retrieval' }],
+    }),
+  ]
+  const result = await buildContext(messages, {
+    attachmentResolver: createMockResolver(new Map()),
+    sandboxMode,
   })
-
-  it('stub mode replaces old results but keeps the call and args', async () => {
-    const original = toolCallPart()
-    const messages = conversationWithOldToolCall(original)
-
-    const result = await buildContext(messages, {
-      attachmentResolver: createMockResolver(),
-      toolCleanupMode: 'stub-old-results',
-      keepToolCallRounds: 1,
-    })
-
-    const part = result[1].contentParts.find((p) => p.type === 'tool-call')
-    expect(part).toMatchObject({
-      state: 'result',
-      toolName: 'search',
-      args: { query: 'x' },
-      result: { _cleared: true },
-    })
-    // Never mutates the stored message
-    expect(original.result).toEqual({ hits: ['a', 'b'] })
-  })
-
-  it('stub mode keeps a read-back pointer for blob-offloaded results', async () => {
-    const messages = conversationWithOldToolCall(
-      toolCallPart({ result: 'preview…', resultStorageKey: 'tool-result:s:tc-1' })
-    )
-
-    const result = await buildContext(messages, {
-      attachmentResolver: createMockResolver(),
-      toolCleanupMode: 'stub-old-results',
-      keepToolCallRounds: 1,
-    })
-
-    const part = result[1].contentParts.find((p) => p.type === 'tool-call')
-    expect(part).toMatchObject({
-      result: { _cleared: true, fullResultFileKey: 'tool-result:s:tc-1' },
-      resultStorageKey: undefined,
-    })
-  })
-
-  it('stub mode downgrades oversized args to a preview object', async () => {
-    const bigArgs = { content: 'x'.repeat(5000), path: '/tmp/file.txt' }
-    const messages = conversationWithOldToolCall(toolCallPart({ args: bigArgs }))
-
-    const result = await buildContext(messages, {
-      attachmentResolver: createMockResolver(),
-      toolCleanupMode: 'stub-old-results',
-      keepToolCallRounds: 1,
-    })
-
-    const part = result[1].contentParts.find((p) => p.type === 'tool-call')
-    expect(part).toMatchObject({ args: { _cleared: true } })
-    expect((part as { args: { preview: string } }).args.preview.length).toBeLessThanOrEqual(500)
-  })
-
-  it('stub mode leaves error results and the recent window untouched', async () => {
-    const errorPart = toolCallPart({ state: 'error', result: { error: 'boom' } })
-    const messages: Message[] = [
-      createMessage({ id: 'u1', role: 'user', contentParts: [{ type: 'text', text: 'Q1' }] }),
-      createMessage({ id: 'a1', role: 'assistant', contentParts: [errorPart] }),
-      createMessage({ id: 'u2', role: 'user', contentParts: [{ type: 'text', text: 'Q2' }] }),
-      createMessage({
-        id: 'a2',
-        role: 'assistant',
-        contentParts: [toolCallPart({ toolCallId: 'tc-2', result: { fresh: true } })],
-      }),
-    ]
-
-    const result = await buildContext(messages, {
-      attachmentResolver: createMockResolver(),
-      toolCleanupMode: 'stub-old-results',
-      keepToolCallRounds: 1,
-    })
-
-    expect(result[1].contentParts[0]).toMatchObject({ state: 'error', result: { error: 'boom' } })
-    expect(result[3].contentParts[0]).toMatchObject({ result: { fresh: true } })
-  })
-
-  it('stub mode honors preserveToolCallMessageIds', async () => {
-    const messages = conversationWithOldToolCall(toolCallPart())
-
-    const result = await buildContext(messages, {
-      attachmentResolver: createMockResolver(),
-      toolCleanupMode: 'stub-old-results',
-      keepToolCallRounds: 1,
-      preserveToolCallMessageIds: ['a1'],
-    })
-
-    const part = result[1].contentParts.find((p) => p.type === 'tool-call')
-    expect(part).toMatchObject({ result: { hits: ['a', 'b'] } })
-  })
+  const text = JSON.stringify(result[0].contentParts)
+  expect(text).not.toContain('/Users/alice')
+  expect(text).not.toContain('%2FUsers')
+  expect(text).toContain(uploadedFilePath(storageKey))
 })

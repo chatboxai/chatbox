@@ -1,4 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ImageGeneration, Message } from '@shared/types'
 
 /**
  * Storage Migration History:
@@ -875,5 +876,132 @@ describe('migrateStorage test', () => {
     expect(localforageData['session:old-session']).toBeUndefined()
 
     expect(initData).not.toHaveBeenCalled()
+  })
+
+  it('upgrades provider settings for more sessions than the row repository cache can retain', async () => {
+    const { RowBackedSessionRepository, SessionRowWriteQueue } = await import('@chatbox/core/application/session')
+    const { InMemorySessionRecordStore, InMemorySessionRowStore, InMemorySessionRepository } = await import(
+      '@chatbox/core/testing'
+    )
+    const records = new InMemorySessionRecordStore()
+    const rows = new InMemorySessionRowStore()
+    const repository = new RowBackedSessionRepository({
+      records,
+      rows,
+      writes: new SessionRowWriteQueue((_id, run) => run()),
+    })
+    await repository.initialize()
+    const sessions = Array.from({ length: 33 }, (_, index) => ({
+      id: `upgrade-${index}`,
+      type: 'chat',
+      name: `Upgrade ${index}`,
+      messages: [],
+      settings: { aiProvider: 'openai', model: `model-${index}` },
+    }))
+    const data = new Map<string, unknown>([
+      [StorageKey.ConfigVersion, 7],
+      [StorageKey.ChatSessions, sessions],
+      [StorageKey.Settings, { aiProvider: 'openai', model: 'default-model' }],
+    ])
+    vi.spyOn(currentPlatform, 'getSessionMetaStorage').mockReturnValue(new InMemorySessionRepository().meta as never)
+    const { migrateOnData } = await import('@/stores/migration')
+    await migrateOnData(
+      {
+        getData: async <T>(key: string, fallback: T): Promise<T> => (data.get(key) as T | undefined) ?? fallback,
+        setData: async (key, value) => {
+          data.set(key, value)
+        },
+        setAll: async (values) => {
+          for (const [key, value] of Object.entries(values)) data.set(key, value)
+        },
+        getSessionHeader: async (id) => {
+          const record = await records.getRecord(id)
+          if (!record) return null
+          return { id: record.id, name: record.name, type: record.type, settings: record.settings }
+        },
+        importSession: (value) => records.setRecord(value),
+        updateSessionSettings: (id, settings) => repository.upgradeLegacySessionSettings(id, settings),
+        openMessages: vi.fn(async () => {
+          throw new Error('Settings upgrades must not read messages')
+        }),
+      },
+      false
+    )
+    for (const [index, session] of sessions.entries()) {
+      expect((await repository.getSessionHeader(session.id))?.header.settings).toMatchObject({
+        provider: 'openai',
+        modelId: `model-${index}`,
+      })
+    }
+    expect(data.get(StorageKey.ConfigVersion)).toBe(15)
+  })
+
+  it('retries picture upgrades without duplicating records and reads each pending user by identity', async () => {
+    const { InMemorySessionRepository } = await import('@chatbox/core/testing')
+    const { migrateOnData } = await import('@/stores/migration')
+    const records = new Map<string, ImageGeneration>()
+    const create = vi.fn(async (record: ImageGeneration) => {
+      records.set(record.id, record)
+    })
+    create.mockImplementationOnce(async (record) => {
+      records.set(record.id, record)
+    })
+    create.mockRejectedValueOnce(new Error('disk full'))
+    vi.spyOn(currentPlatform, 'getImageGenerationStorage').mockReturnValue({
+      initialize: async () => {},
+      create,
+      getById: async (id) => records.get(id) ?? null,
+      update: async (id, patch) => {
+        const current = records.get(id)
+        if (!current) return null
+        const updated = { ...current, ...patch }
+        records.set(id, updated)
+        return updated
+      },
+      delete: async (id) => {
+        records.delete(id)
+      },
+      getTotal: async () => records.size,
+      getPage: async () => ({ items: [...records.values()], nextCursor: null, total: records.size }),
+    })
+    vi.spyOn(currentPlatform, 'getSessionMetaStorage').mockReturnValue(new InMemorySessionRepository().meta)
+    const messages: Message[] = [
+      { id: 'u1', role: 'user', contentParts: [{ type: 'text', text: 'First prompt' }] },
+      ...Array.from({ length: 51 }, (_, index): Message => ({ id: `s-${index}`, role: 'system', contentParts: [] })),
+      { id: 'u2', role: 'user', contentParts: [{ type: 'text', text: 'Second prompt' }] },
+      { id: 'a', role: 'assistant', contentParts: [{ type: 'image', storageKey: 'picture:generated' }] },
+    ]
+    const data = new Map<string, unknown>([
+      [StorageKey.ConfigVersion, 13],
+      [StorageKey.ChatSessionsList, [{ id: 'picture', name: 'Pictures', type: 'picture' }]],
+    ])
+    const read = vi.fn(async (id: string) => messages.find((message) => message.id === id))
+    const input = {
+      getData: async <T>(key: string, fallback: T): Promise<T> => (data.get(key) as T | undefined) ?? fallback,
+      setData: async <T>(key: string, value: T) => {
+        data.set(key, value)
+      },
+      setAll: async () => {},
+      getSessionHeader: async () => ({ id: 'picture', name: 'Pictures', type: 'picture' as const }),
+      importSession: vi.fn(async () => {}),
+      updateSessionSettings: vi.fn(async () => {}),
+      openMessages: async () => ({
+        messages: (async function* () {
+          yield* messages
+        })(),
+        read,
+      }),
+    }
+    await expect(migrateOnData(input, false)).rejects.toThrow()
+    expect(data.get(StorageKey.ConfigVersion)).toBe(13)
+    expect(records.size).toBe(1)
+    await migrateOnData(input, false)
+    expect(records.size).toBe(2)
+    const [first, second] = [...records.values()]
+    expect(first.prompt).toBe('First prompt')
+    expect(second).toMatchObject({ prompt: 'Second prompt', parentIds: [first.id] })
+    expect(read.mock.calls.map(([id]) => id)).toEqual(['u1', 'u2', 'u1', 'u2'])
+    expect(input.importSession).not.toHaveBeenCalled()
+    expect(data.get(StorageKey.ConfigVersion)).toBe(15)
   })
 })

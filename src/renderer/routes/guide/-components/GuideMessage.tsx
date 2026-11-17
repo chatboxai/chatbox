@@ -30,7 +30,7 @@ interface GuideMessageProps {
   onLoginSuccess?: () => void
   onQuestionClick?: (question: string) => void
   onClaimStart?: () => void
-  onClaimDetected?: (license: UserLicense) => void
+  onClaimDetected?: (license: UserLicense, email: string) => void
   isLastMessage?: boolean
 }
 
@@ -51,7 +51,7 @@ function ToolPartRenderer({
   onLoginSuccess?: () => void
   onQuestionClick?: (question: string) => void
   onClaimStart?: () => void
-  onClaimDetected?: (license: UserLicense) => void
+  onClaimDetected?: (license: UserLicense, email: string) => void
   disabled?: boolean
 }) {
   switch (part.toolName) {

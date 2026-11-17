@@ -31,9 +31,11 @@ Object.defineProperty(globalThis, 'ResizeObserver', {
   },
 })
 
-const { mockNavigateToSettings, mockPlatform } = vi.hoisted(() => ({
+const { mockNavigateToSettings, mockOpenLink, mockPlatform, mockSettingsState } = vi.hoisted(() => ({
   mockNavigateToSettings: vi.fn(),
+  mockOpenLink: vi.fn(),
   mockPlatform: { type: 'desktop', isDesktopLike: true },
+  mockSettingsState: { licenseDetail: undefined as { plan: string } | undefined },
 }))
 
 vi.mock('react-i18next', () => ({
@@ -92,12 +94,16 @@ vi.mock('@/packages/remote', () => ({
 
 vi.mock('@/platform', () => ({
   default: Object.assign(mockPlatform, {
-    openLink: vi.fn(),
+    openLink: mockOpenLink,
   }),
 }))
 
 vi.mock('@/stores/settingActions', () => ({
   getLanguage: () => 'en',
+}))
+
+vi.mock('@/stores/settingsStore', () => ({
+  useSettingsStore: <T,>(selector: (state: typeof mockSettingsState) => T) => selector(mockSettingsState),
 }))
 
 import FileParseError from './FileParseError'
@@ -119,8 +125,42 @@ function showFileParseError(errorCode: string, fileName?: string) {
 describe('FileParseError', () => {
   beforeEach(() => {
     mockNavigateToSettings.mockReset()
+    mockOpenLink.mockReset()
     mockPlatform.type = 'desktop'
     mockPlatform.isDesktopLike = true
+    mockSettingsState.licenseDetail = undefined
+  })
+
+  test.each([
+    ['pro', 'Upgrade plan'],
+    ['pro_plus', 'Buy expansion pack'],
+  ])('offers the %s plan its purchase option when cloud parsing runs out of points', async (plan, actionLabel) => {
+    mockSettingsState.licenseDetail = { plan }
+    showFileParseError('token_quota_exhausted', 'lecture.pdf')
+
+    expect(await screen.findByText('Your points are used up')).toBeTruthy()
+    fireEvent.click(screen.getByText(actionLabel))
+
+    expect(mockOpenLink).toHaveBeenCalledWith(expect.stringContaining('/redirect_app/view_more_plans/en'))
+  })
+
+  test('offers free users an upgrade when the daily free points run out', async () => {
+    mockSettingsState.licenseDetail = { plan: 'pro_plus' }
+    showFileParseError('free_token_quota_exhausted', 'lecture.pdf')
+
+    expect(await screen.findByText('Upgrade plan')).toBeTruthy()
+    expect(screen.queryByText('Buy expansion pack')).toBeNull()
+  })
+
+  test('explains an expired plan and links to the plans page', async () => {
+    showFileParseError('expired_license', 'lecture.pdf')
+
+    expect(
+      await screen.findByText('Your license has expired. Please check your subscription or purchase a new one.')
+    ).toBeTruthy()
+    fireEvent.click(screen.getByText('View More Plans'))
+
+    expect(mockOpenLink).toHaveBeenCalledWith(expect.stringContaining('/redirect_app/view_more_plans/en'))
   })
 
   test('lets desktop users switch parsers when Chatbox AI parsing has no account license', async () => {

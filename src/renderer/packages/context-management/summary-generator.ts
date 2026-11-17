@@ -123,6 +123,7 @@ export function isSummaryGenerationAvailable(): boolean {
 export interface StreamingSummaryOptions extends SummaryGeneratorOptions {
   sessionId: string
   onStreamUpdate?: (text: string) => void
+  abortSignal?: AbortSignal
 }
 
 export async function generateSummaryWithStream(options: StreamingSummaryOptions): Promise<SummaryResult> {
@@ -146,6 +147,7 @@ export async function generateSummaryWithStream(options: StreamingSummaryOptions
 
     const result = await model.chat(coreMessages, {
       sessionId,
+      signal: options.abortSignal,
       onResultChange: (data) => {
         if (data.contentParts && onStreamUpdate) {
           const newText = data.contentParts

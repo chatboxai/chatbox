@@ -1,4 +1,4 @@
-import { createCopilotOAuthFetch, createOAuthCredentialManager } from '../../oauth'
+import { createCopilotOAuthFetch, createOAuthCredentialManager, isUsingOAuth } from '../../oauth'
 import type { ProviderModelInfo } from '../../types'
 import { ModelProviderType } from '../../types'
 import { defineProvider } from '../registry'
@@ -71,7 +71,7 @@ export const githubCopilotProvider = defineProvider({
   },
   createModel: (config) => {
     const model = applyGitHubCopilotModelMetadata(config.model)
-    const isOAuth = config.providerSetting.activeAuthMode === 'oauth' && !!config.providerSetting.oauth?.accessToken
+    const isOAuth = isUsingOAuth(config.providerSetting, config.dependencies.platformType || 'desktop')
     const credentialManager = createOAuthCredentialManager(
       'github-copilot',
       config.providerSetting,

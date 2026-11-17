@@ -39,13 +39,18 @@ export {
 } from './crud'
 // Export operations
 export { exportSessionChat } from './export'
+export {
+  createSessionFolder,
+  deleteSessionFolder,
+  moveSessionToFolder,
+  renameSessionFolder,
+} from './folders'
 // Fork operations (7 functions)
 export {
   createNewFork,
   createSaveAndResendFork,
   deleteFork,
   expandFork,
-  findMessageLocation,
   switchFork,
   switchForkTo,
 } from './forks'
@@ -54,7 +59,6 @@ export {
   generate,
   generateMore,
   genMessageContext,
-  getMessageThreadContext,
   getSessionWebBrowsing,
   regenerateInNewFork,
   retryFromLastToolCallAfterApiError,
@@ -62,11 +66,14 @@ export {
 } from './generation'
 export type { GenerationCancellationDependencies } from './generation-cancellation'
 export { stopAllMessageGenerations, stopMessageGeneration } from './generation-cancellation'
-// Message queue (queue user messages while a generation is running)
-export type { QueuedUserMessage, QueuePausedReason } from './message-queue'
+// Session queue (user messages and compression requests waiting for a busy session)
+export type { QueuedCompactionRequest, QueuedItem, QueuedUserMessage, QueuePausedReason } from './message-queue'
 export {
   clearQueue,
+  readConversationAnchorId,
+  enqueueCompactionRequest,
   enqueueUserMessage,
+  hasQueuedWork,
   messageQueueStore,
   removeQueuedMessage,
   resumeQueueAndDrain,
@@ -105,7 +112,6 @@ export { buildToolsForSession } from './tools-builder'
 // Types and state
 export * from './types'
 export {
-  findTargetMessageIndex,
   handleGenerationError,
   initializeTargetMessage,
   trackGenerateEvent,

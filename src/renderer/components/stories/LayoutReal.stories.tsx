@@ -12,7 +12,7 @@ import platform from '@/platform'
 import { settingsStore } from '@/stores/settingsStore'
 import { uiStore } from '@/stores/uiStore'
 import { ScalableIcon } from '../common/ScalableIcon'
-import DesktopDownloadReminder from '../layout/DesktopDownloadReminder'
+import { MobileWebDownloadBanner, SidebarDesktopDownloadCard } from '../layout/DesktopDownloadReminder'
 import ExitFullscreenButton from '../layout/ExitFullscreenButton'
 import { Drawer, Modal } from '../layout/Overlay'
 import Page from '../layout/Page'
@@ -129,6 +129,13 @@ export const WindowControlsStates: StoryObj = {
           <SeedLayoutAtoms platformType="win32" fullscreen={false} maximized />
           <WindowControls />
         </Paper>
+        <Paper withBorder radius="md" p="sm">
+          <Text size="xs" c="dimmed" mb={6}>
+            App title bar (40px)
+          </Text>
+          <SeedLayoutAtoms platformType="win32" fullscreen={false} maximized={false} />
+          <WindowControls height={40} />
+        </Paper>
       </Group>
     </Stack>
   ),
@@ -201,7 +208,7 @@ export const ExitFullscreenButtonState: StoryObj = {
 }
 
 export const DesktopDownloadReminderState: StoryObj = {
-  name: 'Desktop download reminder web floating prompt state',
+  name: 'Desktop download reminder web prompt states',
   parameters: {
     uiInventoryTargets: ['src/renderer/components/layout/DesktopDownloadReminder'],
   },
@@ -210,17 +217,14 @@ export const DesktopDownloadReminderState: StoryObj = {
       <Stack gap="lg">
         <SurfaceLabel
           title="DesktopDownloadReminder"
-          description="Actual web-only floating reminder that promotes the desktop app outside settings routes."
+          description="Web-only app download prompts: the sidebar card at desktop widths and the strip under the header on small screens."
         />
         <WebPlatformFixture />
-        <Paper withBorder radius="md" h={260} pos="relative" style={{ overflow: 'hidden' }}>
-          <Box p="md">
-            <Text fw={600}>Web chat viewport</Text>
-            <Text size="sm" c="dimmed">
-              The real fixed reminder is rendered at the bottom right of this iframe viewport.
-            </Text>
-          </Box>
-          <DesktopDownloadReminder />
+        <Box w={240}>
+          <SidebarDesktopDownloadCard />
+        </Box>
+        <Paper withBorder radius="md" w={375} style={{ overflow: 'hidden' }}>
+          <MobileWebDownloadBanner />
         </Paper>
       </Stack>
     </StoryRouter>

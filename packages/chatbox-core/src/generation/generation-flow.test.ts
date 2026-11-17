@@ -41,6 +41,23 @@ function message(parts: Message['contentParts']): Message {
 }
 
 describe('generation flow', () => {
+  it('persists file preview versions and only forwards the approved call binding', () => {
+    const pause = getToolCallPause({
+      name: 'FileMutationApprovalPausedError',
+      toolCallId: 'edit-1',
+      title: 'Edit file',
+      preview: '-a\n+b',
+      editPreview: { version: 'sha256', diffTruncated: false },
+    })
+    expect(pause?.pauseReason).toMatchObject({ type: 'file_mutation_approval', editPreview: { version: 'sha256' } })
+    const part = { toolCallId: 'edit-1', pauseReason: pause?.pauseReason }
+    expect(createPausedToolCallExecutionContext(part, 'edit-1')).toMatchObject({
+      approved: true,
+      approvalFileVersion: 'sha256',
+    })
+    expect(createPausedToolCallExecutionContext(part, 'other')).not.toHaveProperty('approvalFileVersion')
+  })
+
   it.each([
     [
       {

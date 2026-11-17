@@ -1,15 +1,13 @@
+import { RowBackedSessionRepository } from '../application/session/RowBackedSessionRepository'
+import { SessionRowWriteQueue } from '../application/session/SessionRowWriteQueue'
+import { convertLegacyTreeToRowFormat } from '../application/session/compatibility/row-format'
+import { decodeSessionTree } from '../session/session-tree/decode'
+import { encodeSessionTree } from '../session/session-tree/encode'
+import { InMemorySessionRecordStore } from './InMemorySessionRecordStore'
+import { InMemorySessionRowStore } from './InMemorySessionRowStore'
 import type { SessionRepositoryPort } from '../ports'
 import type { Session, SessionMetaPage, SessionMetaRecord } from '../types'
-
-function sortVisible(records: SessionMetaRecord[]): SessionMetaRecord[] {
-  return records
-    .filter((record) => !record.hidden)
-    .sort((left, right) => {
-      if (left.starred && !right.starred) return -1
-      if (!left.starred && right.starred) return 1
-      return right.sortOrder - left.sortOrder
-    })
-}
+import { sortSessionRecords } from '../utils/session-sort'
 
 function page(items: SessionMetaRecord[], cursor: number, limit: number): SessionMetaPage {
   const pageItems = items.slice(cursor, cursor + limit)
@@ -21,9 +19,51 @@ function page(items: SessionMetaRecord[], cursor: number, limit: number): Sessio
 }
 
 export class InMemorySessionRepository implements SessionRepositoryPort {
-  readonly sessions = new Map<string, Session>()
   readonly records = new Map<string, SessionMetaRecord>()
   initializeCount = 0
+
+  readonly rowStore = new InMemorySessionRowStore()
+  readonly recordStore = new InMemorySessionRecordStore()
+  private readonly data = new RowBackedSessionRepository({
+    rows: this.rowStore,
+    records: this.recordStore,
+    writes: new SessionRowWriteQueue((_id, run) => run()),
+  })
+
+  readonly readPreviousUserMessage = this.data.readPreviousUserMessage.bind(this.data)
+  readonly readSessionPromptCacheDecision = this.data.readSessionPromptCacheDecision.bind(this.data)
+  readonly readSessionNamingMessages = this.data.readSessionNamingMessages.bind(this.data)
+  readonly getSessionHeader = this.data.getSessionHeader.bind(this.data)
+  readonly iterateSessionResourceReferences = this.data.iterateSessionResourceReferences.bind(this.data)
+  readonly iterateSessionAttachmentFacts = this.data.iterateSessionAttachmentFacts.bind(this.data)
+  readonly readSessionGeneratingMessageIds = this.data.readSessionGeneratingMessageIds.bind(this.data)
+  readonly readSessionGenerationControl = this.data.readSessionGenerationControl.bind(this.data)
+  readonly getCurrentThreadIdentity = this.data.getCurrentThreadIdentity.bind(this.data)
+  readonly projectLatestSession = this.data.projectLatestSession.bind(this.data)
+  readonly projectSessionMetadata = this.data.projectSessionMetadata.bind(this.data)
+  readonly readSessionBranchPreview = this.data.readSessionBranchPreview.bind(this.data)
+  readonly readSessionBranchMessagesPage = this.data.readSessionBranchMessagesPage.bind(this.data)
+  readonly readSessionSearchWindow = this.data.readSessionSearchWindow.bind(this.data)
+  readonly readSessionSearchCandidates = this.data.readSessionSearchCandidates.bind(this.data)
+  readonly readSessionTranscriptWindow = this.data.readSessionTranscriptWindow.bind(this.data)
+  readonly readSessionThread = this.data.readSessionThread.bind(this.data)
+  readonly readSessionThreadSummariesPage = this.data.readSessionThreadSummariesPage.bind(this.data)
+  readonly readSessionForkOptionsPage = this.data.readSessionForkOptionsPage.bind(this.data)
+  readonly readSessionConversationState = this.data.readSessionConversationState.bind(this.data)
+  readonly readSessionMessages = this.data.readSessionMessages.bind(this.data)
+  readonly iterateSessionArtifactMarkdown = this.data.iterateSessionArtifactMarkdown.bind(this.data)
+  readonly getSessionContextSource = this.data.getSessionContextSource.bind(this.data)
+  readonly acceptSessionTokenCacheResults = this.data.acceptSessionTokenCacheResults.bind(this.data)
+  readonly createSessionTokenPlan = this.data.createSessionTokenPlan.bind(this.data)
+  readonly readSessionTokenPage = this.data.readSessionTokenPage.bind(this.data)
+  readonly acceptSessionTextTokenResults = this.data.acceptSessionTextTokenResults.bind(this.data)
+  readonly patchSessionMessageDerivedData = this.data.patchSessionMessageDerivedData.bind(this.data)
+  readonly copySessionRows = this.data.copySessionRows.bind(this.data)
+  readonly copySessionThreadRows = this.data.copySessionThreadRows.bind(this.data)
+  readonly createSessionRows = this.data.createSessionRows.bind(this.data)
+  readonly executeSessionCommand = this.data.executeSessionCommand.bind(this.data)
+  readonly deleteSession = this.data.deleteSession.bind(this.data)
+  readonly getAllSessionIds = this.data.getAllSessionIds.bind(this.data)
 
   readonly meta = {
     initialize: () => this.initializeMeta(),
@@ -33,41 +73,50 @@ export class InMemorySessionRepository implements SessionRepositoryPort {
     getById: (id: string) => Promise.resolve(this.records.get(id) ?? null),
     delete: (id: string) => this.deleteMeta(id),
     deleteMany: (ids: string[]) => this.deleteMetaMany(ids),
-    getAll: () => Promise.resolve(sortVisible([...this.records.values()])),
+    getAll: () => Promise.resolve(sortSessionRecords([...this.records.values()])),
     getAllIncludingHidden: () => Promise.resolve([...this.records.values()].sort((a, b) => b.sortOrder - a.sortOrder)),
-    getArchived: () => Promise.resolve(this.archivedRecords()),
-    getArchivedPage: (cursor: number, limit = 2) => Promise.resolve(page(this.archivedRecords(), cursor, limit)),
-    getPage: (cursor: number, limit = 2) =>
-      Promise.resolve(page(sortVisible([...this.records.values()]), cursor, limit)),
-    getTotal: () => Promise.resolve(sortVisible([...this.records.values()]).length),
+    getArchived: () => Promise.resolve(this.getArchivedRecords()),
+    getArchivedPage: (cursor: number, limit = 2) => Promise.resolve(page(this.getArchivedRecords(), cursor, limit)),
+    getPage: (cursor: number, limit = 2, folderIds: readonly string[] = []) =>
+      Promise.resolve(page(sortSessionRecords([...this.records.values()], folderIds), cursor, limit)),
+    getTotal: () => Promise.resolve(sortSessionRecords([...this.records.values()]).length),
     getAllTotal: () => Promise.resolve(this.records.size),
-    getArchivedTotal: () => Promise.resolve(this.archivedRecords().length),
+    getArchivedTotal: () => Promise.resolve(this.getArchivedRecords().length),
     clear: () => {
       this.records.clear()
       return Promise.resolve()
     },
   }
 
-  initialize(): Promise<void> {
-    return this.meta.initialize()
+  async initialize(): Promise<void> {
+    await this.data.initialize()
+    await this.meta.initialize()
   }
 
-  getSession(id: string): Promise<Session | null> {
-    return Promise.resolve(this.sessions.get(id) ?? null)
+  /** Test fixture import; production operations use row commands. */
+  async seedSession(session: Session): Promise<void> {
+    await this.data.initialize()
+    const encoded = encodeSessionTree(session, { activeThreadId: session.id, now: 1 })
+    if (!encoded.ok) throw new Error(encoded.reason)
+    const tree = convertLegacyTreeToRowFormat(encoded.tree, encoded.normalized.messageForksHash)
+    const previousRevision = await this.rowStore.getRevision(session.id)
+    await this.rowStore.writeRows(
+      {
+        record: tree.session,
+        revision: (previousRevision ?? 0) + 1,
+        rows: { sessionId: session.id, threads: tree.threads, messages: tree.messages },
+      },
+      previousRevision
+    )
   }
 
-  setSession(session: Session): Promise<void> {
-    this.sessions.set(session.id, session)
-    return Promise.resolve()
-  }
-
-  deleteSession(id: string): Promise<void> {
-    this.sessions.delete(id)
-    return Promise.resolve()
-  }
-
-  getAllSessionIds(): Promise<string[]> {
-    return Promise.resolve([...this.sessions.keys()])
+  /** Test-only DTO projection for assertions and archive fixtures. */
+  inspectSession(sessionId: string): Session | null {
+    const snapshot = this.rowStore.snapshot().find((entry) => entry.record.id === sessionId)
+    if (!snapshot) return null
+    const decoded = decodeSessionTree({ session: snapshot.record, ...snapshot.rows })
+    if (!decoded.ok) throw new Error(decoded.reason)
+    return decoded.session
   }
 
   private initializeMeta(): Promise<void> {
@@ -103,9 +152,28 @@ export class InMemorySessionRepository implements SessionRepositoryPort {
     return Promise.resolve()
   }
 
-  private archivedRecords(): SessionMetaRecord[] {
+  private getArchivedRecords(): SessionMetaRecord[] {
     return [...this.records.values()]
       .filter((record) => record.archivedAt !== undefined)
-      .sort((left, right) => (right.archivedAt ?? 0) - (left.archivedAt ?? 0))
+      .sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0))
+  }
+}
+
+export function createTestSession(id: string): Session {
+  return {
+    id,
+    name: id,
+    type: 'chat',
+    messages: [],
+  }
+}
+
+export function createTestRecord(session: Session, sortOrder: number): SessionMetaRecord {
+  return {
+    id: session.id,
+    name: session.name,
+    type: session.type,
+    sortOrder,
+    createdAt: sortOrder,
   }
 }

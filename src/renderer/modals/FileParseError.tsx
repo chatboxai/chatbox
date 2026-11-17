@@ -1,5 +1,5 @@
 import NiceModal, { useModal } from '@ebay/nice-modal-react'
-import { Alert, Stack, Text } from '@mantine/core'
+import { Alert, Button, Stack, Text } from '@mantine/core'
 import {
   LOCAL_PARSER_FILE_TOO_LARGE_ERROR,
   LOCAL_PARSER_MAX_PDF_FILE_SIZE_LABEL,
@@ -7,6 +7,8 @@ import {
 } from '@shared/file-parse-errors'
 import { IconAlertCircle } from '@tabler/icons-react'
 import { Trans, useTranslation } from 'react-i18next'
+import { resolveQuotaCardAction } from '@/components/chat/message-error-presentation'
+import { QuotaExhaustedCard } from '@/components/chat/QuotaExhaustedCard'
 import { AdaptiveModal } from '@/components/common/AdaptiveModal'
 import LinkTargetBlank from '@/components/common/Link'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
@@ -22,7 +24,8 @@ import {
   SESSION_ATTACHMENT_RAG_REQUIRES_TOOL_USE_MODEL_ERROR,
 } from '@/stores/sessionAttachmentRagErrors'
 import * as settingActions from '@/stores/settingActions'
-import { getFileParseErrorI18nKey } from '@/utils/file-parse-error'
+import { useSettingsStore } from '@/stores/settingsStore'
+import { getChatboxAIParserAccountError, getFileParseErrorI18nKey } from '@/utils/file-parse-error'
 
 interface FileParseErrorProps {
   errorCode: string
@@ -32,6 +35,7 @@ interface FileParseErrorProps {
 const FileParseError = NiceModal.create(({ errorCode, fileName }: FileParseErrorProps) => {
   const modal = useModal()
   const { t } = useTranslation()
+  const licensePlan = useSettingsStore((state) => state.licenseDetail?.plan)
 
   const onClose = () => {
     modal.resolve()
@@ -40,6 +44,24 @@ const FileParseError = NiceModal.create(({ errorCode, fileName }: FileParseError
 
   // 根据错误码和平台能力获取错误文案
   const errorI18nKey = getFileParseErrorI18nKey(errorCode, platform.isDesktopLike)
+  const accountError = getChatboxAIParserAccountError(errorCode)
+  const quotaCardKind =
+    accountError === 'points-exhausted'
+      ? 'quota-exhausted'
+      : accountError === 'free-points-exhausted'
+        ? 'free-quota-exhausted'
+        : undefined
+
+  const openMorePlans = () => {
+    platform.openLink(
+      buildChatboxUrl(
+        `/redirect_app/view_more_plans/${settingActions.getLanguage()}?utm_source=app&utm_content=file_parse_error`
+      )
+    )
+    trackingEvent('click_view_more_plans_button_from_file_parse_error', {
+      event_category: 'user',
+    })
+  }
 
   // 错误提示内容
   const renderErrorTips = () => {
@@ -123,16 +145,7 @@ const FileParseError = NiceModal.create(({ errorCode, fileName }: FileParseError
           OpenMorePlanButton: (
             <a
               className="cursor-pointer underline font-semibold text-blue-600 hover:text-blue-700"
-              onClick={() => {
-                platform.openLink(
-                  buildChatboxUrl(
-                    `/redirect_app/view_more_plans/${settingActions.getLanguage()}?utm_source=app&utm_content=file_parse_error`
-                  )
-                )
-                trackingEvent('click_view_more_plans_button_from_file_parse_error', {
-                  event_category: 'user',
-                })
-              }}
+              onClick={openMorePlans}
             />
           ),
           OpenDocumentParserSettingButton: (
@@ -174,12 +187,21 @@ const FileParseError = NiceModal.create(({ errorCode, fileName }: FileParseError
           </Text>
         )}
 
-        <Alert icon={<ScalableIcon size={20} icon={IconAlertCircle} />} color="orange" variant="light">
-          {renderErrorTips()}
-        </Alert>
+        {quotaCardKind ? (
+          <QuotaExhaustedCard
+            kind={quotaCardKind}
+            action={resolveQuotaCardAction(quotaCardKind, licensePlan)}
+            onAction={openMorePlans}
+          />
+        ) : (
+          <Alert icon={<ScalableIcon size={20} icon={IconAlertCircle} />} color="orange" variant="light">
+            {renderErrorTips()}
+          </Alert>
+        )}
 
         <AdaptiveModal.Actions>
           <AdaptiveModal.CloseButton onClick={onClose} />
+          {accountError === 'plan-expired' && <Button onClick={openMorePlans}>{t('View More Plans')}</Button>}
         </AdaptiveModal.Actions>
       </Stack>
     </AdaptiveModal>

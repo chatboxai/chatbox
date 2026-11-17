@@ -5,13 +5,13 @@ import { IconMessageCircle2Filled, IconPhoto, IconUpload } from '@tabler/icons-r
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { v4 as uuidv4 } from 'uuid'
+import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
 import { AdaptiveModal } from '@/components/common/AdaptiveModal'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import { handleImageInputAndSave, ImageInStorage } from '@/components/Image'
 import { useCopilotMemory } from '@/hooks/useCopilots'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { trackingEvent } from '@/packages/event'
-import storage from '@/storage'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import { CopilotMemoriesList } from './CopilotMemoriesList'
 
@@ -25,7 +25,7 @@ export interface CopilotSettingsModalProps {
 }
 
 const CopilotSettingsModal = NiceModal.create(
-  ({ copilot, onSave, onDelete, mode = 'create' }: CopilotSettingsModalProps) => {
+  ({ copilot, onSave, onDelete: _onDelete, mode = 'create' }: CopilotSettingsModalProps) => {
     const modal = useModal()
     const { t } = useTranslation()
     const isSmallScreen = useIsSmallScreen()
@@ -86,7 +86,7 @@ const CopilotSettingsModal = NiceModal.create(
         () => {
           updateField('avatar', { type: 'storage-key', storageKey: key })
         },
-        (k, v) => storage.setBlob(k, v)
+        (k, v) => currentBlobStorage.set(k, v)
       )
     }
 
@@ -103,7 +103,7 @@ const CopilotSettingsModal = NiceModal.create(
         () => {
           updateField('backgroundImage', { type: 'storage-key', storageKey: key })
         },
-        (k, v) => storage.setBlob(k, v)
+        (k, v) => currentBlobStorage.set(k, v)
       )
     }
 

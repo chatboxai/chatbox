@@ -12,6 +12,9 @@ import JsonViewer from './JsonViewer'
 import MessageEdit from './MessageEdit'
 import ModelEdit from './ModelEdit'
 import ReportContent from './ReportContent'
+import SessionFolderCreate from './SessionFolderCreate'
+import SessionFolderMove from './SessionFolderMove'
+import SessionFolderName from './SessionFolderName'
 import SessionSettings from './SessionSettings'
 import ThreadNameEdit from './ThreadNameEdit'
 import VibedropPublish from './VibedropPublish'
@@ -25,6 +28,9 @@ NiceModal.register('session-settings', SessionSettings)
 NiceModal.register('app-store-rating', AppStoreRating)
 NiceModal.register('artifact-preview', ArtifactPreview)
 NiceModal.register('clear-session-list', ClearSessionList)
+NiceModal.register('session-folder-create', SessionFolderCreate)
+NiceModal.register('session-folder-name', SessionFolderName)
+NiceModal.register('session-folder-move', SessionFolderMove)
 NiceModal.register('confirm', ConfirmModal)
 NiceModal.register('export-chat', ExportChat)
 NiceModal.register('message-edit', MessageEdit)

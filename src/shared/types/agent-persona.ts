@@ -40,18 +40,24 @@ export function combineMemoryStateTokens(first: unknown, second: unknown): strin
 export interface CopilotMemoryStateToken {
   id: string
   token: string
+  /** Durable library identity, retained across toggles and rotated on deletion or replacement. */
+  retirementToken?: string
 }
 
 export function parseCopilotMemoryStateTokens(value: unknown): CopilotMemoryStateToken[] {
   if (!Array.isArray(value)) return []
-  const tokens = new Map<string, string>()
+  const tokens = new Map<string, CopilotMemoryStateToken>()
   for (const entry of value) {
     if (typeof entry !== 'object' || entry === null) continue
     const record = entry as Record<string, unknown>
     if (typeof record.id !== 'string' || !isMemoryStateToken(record.token)) continue
-    tokens.set(record.id, record.token)
+    tokens.set(record.id, {
+      id: record.id,
+      token: record.token,
+      ...(isMemoryStateToken(record.retirementToken) ? { retirementToken: record.retirementToken } : {}),
+    })
   }
-  return Array.from(tokens, ([id, token]) => ({ id, token }))
+  return Array.from(tokens.values())
 }
 
 export const MemoryEntrySchema = z.object({
@@ -72,7 +78,24 @@ export type MemoryEntry = z.infer<typeof MemoryEntrySchema>
  * whichever copilot holds the id by then — a remote copilot keeps its id across
  * remove and re-add.
  */
-export type MemoryScope = { type: 'global' } | { type: 'copilot'; copilotId: string; epoch: number }
+export type MemoryScope =
+  | { type: 'global' }
+  | { type: 'copilot'; copilotId: string; epoch: number; lifecycleToken?: string }
+
+/** Immutable destination of one emitted memory tool call; persisted with the call. */
+export const MemoryToolContextSchema = z.object({
+  version: z.literal(1),
+  enabled: z.boolean(),
+  scope: z.discriminatedUnion('type', [
+    z.object({ type: z.literal('global') }),
+    z.object({
+      type: z.literal('copilot'),
+      copilotId: z.string(),
+      lifecycleToken: z.string().refine(isMemoryStateToken).optional(),
+    }),
+  ]),
+})
+export type MemoryToolContext = z.infer<typeof MemoryToolContextSchema>
 
 /**
  * Frozen per-conversation snapshot of the reusable prompt-context inputs. It is
@@ -90,6 +113,8 @@ export const SessionPromptContextSnapshotSchema = z.object({
   // matches its snapshot (copilot memory toggled) reloads the snapshot's memory
   // slice from the newly selected source.
   memoryCopilotId: z.string().optional().catch(undefined),
+  // Durable Copilot library identity, preserved across toggles and restarts.
+  memoryCopilotLifecycleToken: z.string().refine(isMemoryStateToken).optional().catch(undefined),
   // Whether memories were enabled when this snapshot's memory slice was last
   // resolved. Missing is interpreted as enabled.
   memoryEnabled: z.boolean().optional().catch(undefined),
@@ -128,6 +153,14 @@ export const SessionPromptContextSnapshotSchema = z.object({
 })
 
 export type SessionPromptContextSnapshot = z.infer<typeof SessionPromptContextSnapshotSchema>
+
+/** Derive a library identity only when the captured Copilot source identifies it. */
+export function getSnapshotCopilotLifecycleToken(snapshot: SessionPromptContextSnapshot): string | undefined {
+  if (!snapshot.memoryCopilotId) return undefined
+  if (isMemoryStateToken(snapshot.memoryCopilotLifecycleToken)) return snapshot.memoryCopilotLifecycleToken
+  const token = snapshot.memoryStateToken?.endsWith(':') ? snapshot.memoryStateToken.slice(0, -1) : undefined
+  return isMemoryStateToken(token) ? token : undefined
+}
 
 export const SESSION_PROMPT_CONTEXT_SNAPSHOT_VERSION = 1
 

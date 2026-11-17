@@ -71,6 +71,7 @@ describe('session attachment RAG toolset', () => {
       {
         toolCallId: 'call-1',
         messages: [],
+        context: undefined,
       }
     )
 
@@ -86,6 +87,20 @@ describe('session attachment RAG toolset', () => {
         },
       },
     })
+  })
+
+  test('keeps direct whole-document reading available while retrieval indexing fails', async () => {
+    getAttachmentsMock.mockResolvedValue([{ id: 1, filename: 'large.pdf', status: 'failed' }])
+    const { getToolSet } = await import('./session-attachment-rag')
+    const { description } = await getToolSet([1])
+    expect(description).toContain('### Failed')
+    expect(description).toContain('For focused questions about a ready indexed attachment')
+    expect(description).toContain('read PARSED_SANDBOX_PATH sequentially')
+    expect(description).toContain(
+      'If indexing is pending or failed but a readable sandbox text path is available, use that path'
+    )
+    expect(description).toContain('If direct full-text access is unavailable')
+    expect(description).not.toContain('use query_session_attachment before answering')
   })
 
   test('local default rerank model wins over remote session RAG rerank model', async () => {
@@ -108,6 +123,7 @@ describe('session attachment RAG toolset', () => {
       {
         toolCallId: 'call-1',
         messages: [],
+        context: undefined,
       }
     )
 

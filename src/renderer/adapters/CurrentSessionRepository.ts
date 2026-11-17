@@ -1,25 +1,84 @@
 import {
+  createSessionMetaRecord,
+  MessageAnchorNotFoundError,
+  RowBackedSessionRepository,
+  SessionMigrationError,
+  SessionRowWriteQueue,
+} from '@chatbox/core/application/session'
+import { SessionActionBlockedError } from '@chatbox/core/session/action-gates'
+import { throwIfAborted } from '@chatbox/core/utils/abort'
+import {
+  type SessionHeaderRead,
   type SessionMetaRepositoryPort,
   SessionRepositoryError,
+  SessionStorageBusyError,
   type SessionRepositoryOperation,
   type SessionRepositoryPort,
+  SessionRowConflictError,
+  type SessionRowStorePort,
+  SessionWriteConflictError,
 } from '@chatbox/core/ports'
-import type { Session, SessionMetaPage, SessionMetaRecord } from '@shared/types'
+import type { Session, SessionHeader, SessionMetaPage, SessionMetaRecord } from '@shared/types'
 import platform from '@/platform'
 import storage from '@/storage'
-import { StorageKeyGenerator } from '@/storage/StoreStorage'
-import { migrateSession } from '@/utils/session-utils'
+import { type CurrentSessionDataStorage, CurrentSessionRecordStore } from './CurrentSessionRecordStore'
+import { collectSessionOwnership } from './session-ownership'
 
-export interface CurrentSessionDataStorage {
-  getItem<T>(key: string, initialValue: T): Promise<T>
-  setItemNow<T>(key: string, value: T): Promise<void>
-  removeItem(key: string): Promise<void>
-  getAllKeys(): Promise<string[]>
+export type { CurrentSessionDataStorage } from './CurrentSessionRecordStore'
+
+export type SessionMigrationOutcome = 'migrated' | 'already' | 'missing'
+export interface SessionMigrationCandidate {
+  id: string
 }
+
+type RepositoryRows = ConstructorParameters<typeof RowBackedSessionRepository>[0]['rows']
 
 export interface CurrentSessionRepositoryOptions {
   dataStorage?: CurrentSessionDataStorage
   metaStorage?: SessionMetaRepositoryPort
+  rowStore?: SessionRowStorePort
+}
+
+const SESSION_STORAGE_LOCK = 'chatbox-session-storage'
+let exclusiveStorageRequested = false
+const activeStorageOperations = new Set<Promise<void>>()
+
+function withSharedSessionStorageAccess<Result>(action: () => Promise<Result>): Promise<Result> {
+  if (exclusiveStorageRequested) return Promise.reject(new SessionStorageBusyError())
+  const result = Promise.resolve().then(async () => {
+    if (typeof navigator === 'undefined' || !navigator.locks) return action()
+    return navigator.locks.request(SESSION_STORAGE_LOCK, { mode: 'shared', ifAvailable: true }, (lock) => {
+      if (!lock) throw new SessionStorageBusyError()
+      return action()
+    })
+  })
+  const tail = result
+    .then(
+      () => {},
+      () => {}
+    )
+    .then(() => {
+      activeStorageOperations.delete(tail)
+    })
+  activeStorageOperations.add(tail)
+  return result
+}
+
+/** Waits for active writes and excludes other renderer contexts during storage upgrades. */
+export async function withExclusiveSessionStorageLock<Result>(
+  action: () => Promise<Result>,
+  signal?: AbortSignal
+): Promise<Result> {
+  if (exclusiveStorageRequested) throw new SessionStorageBusyError()
+  exclusiveStorageRequested = true
+  try {
+    await Promise.all(activeStorageOperations)
+    throwIfAborted(signal)
+    if (typeof navigator === 'undefined' || !navigator.locks) return await action()
+    return await navigator.locks.request(SESSION_STORAGE_LOCK, { mode: 'exclusive', signal }, action)
+  } finally {
+    exclusiveStorageRequested = false
+  }
 }
 
 async function normalizeRepositoryError<T>(
@@ -30,7 +89,16 @@ async function normalizeRepositoryError<T>(
   try {
     return await action()
   } catch (error) {
-    if (error instanceof SessionRepositoryError) throw error
+    if (
+      error instanceof SessionRepositoryError ||
+      error instanceof SessionWriteConflictError ||
+      error instanceof SessionRowConflictError ||
+      error instanceof SessionMigrationError ||
+      error instanceof SessionStorageBusyError ||
+      error instanceof MessageAnchorNotFoundError ||
+      error instanceof SessionActionBlockedError
+    )
+      throw error
     throw new SessionRepositoryError(operation, error, sessionId)
   }
 }
@@ -52,15 +120,25 @@ class CurrentSessionMetaRepository implements SessionMetaRepositoryPort {
   }
 
   create(record: SessionMetaRecord): Promise<void> {
-    return normalizeRepositoryError('create-meta', () => this.getBackend().create(record), record.id)
+    return normalizeRepositoryError(
+      'create-meta',
+      () => withSharedSessionStorageAccess(() => this.getBackend().create(record)),
+      record.id
+    )
   }
 
   createMany(records: SessionMetaRecord[]): Promise<void> {
-    return normalizeRepositoryError('create-meta-many', () => this.getBackend().createMany(records))
+    return normalizeRepositoryError('create-meta-many', () =>
+      withSharedSessionStorageAccess(() => this.getBackend().createMany(records))
+    )
   }
 
   update(id: string, updates: Partial<SessionMetaRecord>): Promise<SessionMetaRecord | null> {
-    return normalizeRepositoryError('update-meta', () => this.getBackend().update(id, updates), id)
+    return normalizeRepositoryError(
+      'update-meta',
+      () => withSharedSessionStorageAccess(() => this.getBackend().update(id, updates)),
+      id
+    )
   }
 
   getById(id: string): Promise<SessionMetaRecord | null> {
@@ -68,11 +146,17 @@ class CurrentSessionMetaRepository implements SessionMetaRepositoryPort {
   }
 
   delete(id: string): Promise<void> {
-    return normalizeRepositoryError('delete-meta', () => this.getBackend().delete(id), id)
+    return normalizeRepositoryError(
+      'delete-meta',
+      () => withSharedSessionStorageAccess(() => this.getBackend().delete(id)),
+      id
+    )
   }
 
   deleteMany(ids: string[]): Promise<void> {
-    return normalizeRepositoryError('delete-meta-many', () => this.getBackend().deleteMany(ids))
+    return normalizeRepositoryError('delete-meta-many', () =>
+      withSharedSessionStorageAccess(() => this.getBackend().deleteMany(ids))
+    )
   }
 
   getAll(): Promise<SessionMetaRecord[]> {
@@ -91,8 +175,8 @@ class CurrentSessionMetaRepository implements SessionMetaRepositoryPort {
     return normalizeRepositoryError('list-archived-meta-page', () => this.getBackend().getArchivedPage(cursor, limit))
   }
 
-  getPage(cursor: number, limit?: number): Promise<SessionMetaPage> {
-    return normalizeRepositoryError('list-meta-page', () => this.getBackend().getPage(cursor, limit))
+  getPage(cursor: number, limit?: number, folderIds?: readonly string[]): Promise<SessionMetaPage> {
+    return normalizeRepositoryError('list-meta-page', () => this.getBackend().getPage(cursor, limit, folderIds))
   }
 
   getTotal(): Promise<number> {
@@ -108,62 +192,350 @@ class CurrentSessionMetaRepository implements SessionMetaRepositoryPort {
   }
 
   clear(): Promise<void> {
-    return normalizeRepositoryError('clear-meta', () => this.getBackend().clear())
+    return normalizeRepositoryError('clear-meta', () => withSharedSessionStorageAccess(() => this.getBackend().clear()))
   }
 }
 
 /**
  * Session repository backed by the storage implementations used by the current
- * Renderer. It intentionally owns no QueryClient or UI side effects.
+ * Renderer: session records live in the key-value storage, their threads and
+ * messages in the platform row store. It intentionally owns no QueryClient or
+ * UI side effects.
  */
 export class CurrentSessionRepository implements SessionRepositoryPort {
+  collectSessionAttachmentOwnership(sessionId: string) {
+    return withSharedSessionStorageAccess(() => collectSessionOwnership(this.getData(), sessionId))
+  }
+
+  iterateSessionAttachmentFacts(
+    ...args: Parameters<SessionRepositoryPort['iterateSessionAttachmentFacts']>
+  ): ReturnType<SessionRepositoryPort['iterateSessionAttachmentFacts']> {
+    return this.getData().iterateSessionAttachmentFacts(...args)
+  }
+  /** Read obsolete settings only at the legacy upgrade input boundary. */
+  async readUpgradeSessionHeader(id: string): Promise<SessionHeader | null> {
+    await this.records.initialize()
+    const rows = this.createRowStore()
+    await rows.initialize()
+    if ((await rows.readCommit(id))?.record.rowAuthority === 1) return (await this.getSessionHeader(id))?.header ?? null
+    const record = await this.records.getRecord(id)
+    if (!record) return null
+    const {
+      messages: _messages,
+      threads: _threads,
+      messageForksHash: _forks,
+      compactionPoints: _points,
+      ...header
+    } = record as Session
+    return header
+  }
+
+  upgradeLegacySessionSettings(id: string, settings: NonNullable<SessionHeader['settings']>): Promise<void> {
+    return this.getData().upgradeLegacySessionSettings(id, settings)
+  }
+
+  /** Retain an older file's split input until row publication. Existing records remain authoritative. */
+  async storeLegacyUpgradeInput(source: Session): Promise<void> {
+    await withExclusiveSessionStorageLock(async () => {
+      await this.records.initialize()
+      const rows = this.createRowStore()
+      if ((await rows.hasRows(source.id)) || (await this.records.getRecord(source.id))) return
+      await this.records.setRecord(source)
+    })
+  }
+
   readonly meta: SessionMetaRepositoryPort
 
-  private readonly dataStorage: CurrentSessionDataStorage
+  private readonly records: CurrentSessionRecordStore
+  private readonly createRowStore: () => SessionRowStorePort
+  private readonly createMetaStorage: () => SessionMetaRepositoryPort
+  private data: RowBackedSessionRepository | null = null
+  private foregroundOperations = 0
+
+  hasForegroundSessionWork(): boolean {
+    return this.foregroundOperations > 0
+  }
+
+  private async withForegroundSessionWork<T>(read: () => Promise<T>): Promise<T> {
+    this.foregroundOperations++
+    try {
+      return await read()
+    } finally {
+      this.foregroundOperations--
+    }
+  }
 
   constructor(options: CurrentSessionRepositoryOptions = {}) {
-    this.dataStorage = options.dataStorage ?? storage
-    this.meta = new CurrentSessionMetaRepository(() => options.metaStorage ?? platform.getSessionMetaStorage())
+    this.records = new CurrentSessionRecordStore(options.dataStorage ?? storage)
+    this.createRowStore = () => options.rowStore ?? platform.getSessionRowStore()
+    this.createMetaStorage = () => options.metaStorage ?? platform.getSessionMetaStorage()
+    this.meta = new CurrentSessionMetaRepository(this.createMetaStorage)
+  }
+
+  private getData(): RowBackedSessionRepository {
+    if (!this.data) {
+      const rows = this.createRowStore()
+      this.data = new RowBackedSessionRepository({
+        records: this.records,
+        rows: rows as RepositoryRows,
+        writes: new SessionRowWriteQueue((sessionId, action) =>
+          withSharedSessionStorageAccess(async () => {
+            if (typeof navigator === 'undefined' || !navigator.locks) return action()
+            return await navigator.locks.request(
+              `chatbox-session-storage:${sessionId}`,
+              { mode: 'exclusive' },
+              async () => await action()
+            )
+          })
+        ),
+      })
+    }
+    return this.data
   }
 
   initialize(): Promise<void> {
-    return this.meta.initialize()
+    return normalizeRepositoryError('initialize', async () => {
+      await this.meta.initialize()
+      await this.getData().initialize()
+    })
   }
 
-  getSession(id: string): Promise<Session | null> {
-    return normalizeRepositoryError(
-      'get-session',
-      async () => {
-        const value = await this.dataStorage.getItem<Session | null>(StorageKeyGenerator.session(id), null)
-        return value ? migrateSession(value) : null
-      },
-      id
-    )
+  getSessionHeader(
+    ...args: Parameters<SessionRepositoryPort['getSessionHeader']>
+  ): ReturnType<SessionRepositoryPort['getSessionHeader']> {
+    return this.withForegroundSessionWork(() => this.getData().getSessionHeader(...args))
   }
 
-  setSession(session: Session): Promise<void> {
-    return normalizeRepositoryError(
-      'set-session',
-      () => this.dataStorage.setItemNow(StorageKeyGenerator.session(session.id), session),
-      session.id
-    )
+  iterateSessionArtifactMarkdown(
+    ...args: Parameters<SessionRepositoryPort['iterateSessionArtifactMarkdown']>
+  ): ReturnType<SessionRepositoryPort['iterateSessionArtifactMarkdown']> {
+    return this.getData().iterateSessionArtifactMarkdown(...args)
   }
 
-  deleteSession(id: string): Promise<void> {
-    return normalizeRepositoryError(
-      'delete-session',
-      () => this.dataStorage.removeItem(StorageKeyGenerator.session(id)),
-      id
-    )
+  getSessionContextSource(
+    ...args: Parameters<SessionRepositoryPort['getSessionContextSource']>
+  ): ReturnType<SessionRepositoryPort['getSessionContextSource']> {
+    return this.withForegroundSessionWork(() => this.getData().getSessionContextSource(...args))
+  }
+
+  readSessionConversationState(
+    ...args: Parameters<SessionRepositoryPort['readSessionConversationState']>
+  ): ReturnType<SessionRepositoryPort['readSessionConversationState']> {
+    return this.withForegroundSessionWork(() => this.getData().readSessionConversationState(...args))
+  }
+
+  readSessionNamingMessages(
+    ...args: Parameters<SessionRepositoryPort['readSessionNamingMessages']>
+  ): ReturnType<SessionRepositoryPort['readSessionNamingMessages']> {
+    return this.withForegroundSessionWork(() => this.getData().readSessionNamingMessages(...args))
+  }
+
+  readSessionMessages(
+    ...args: Parameters<SessionRepositoryPort['readSessionMessages']>
+  ): ReturnType<SessionRepositoryPort['readSessionMessages']> {
+    return this.withForegroundSessionWork(() => this.getData().readSessionMessages(...args))
+  }
+
+  readPreviousUserMessage(
+    ...args: Parameters<SessionRepositoryPort['readPreviousUserMessage']>
+  ): ReturnType<SessionRepositoryPort['readPreviousUserMessage']> {
+    return this.withForegroundSessionWork(() => this.getData().readPreviousUserMessage(...args))
+  }
+
+  readSessionPromptCacheDecision(
+    ...args: Parameters<SessionRepositoryPort['readSessionPromptCacheDecision']>
+  ): ReturnType<SessionRepositoryPort['readSessionPromptCacheDecision']> {
+    return this.withForegroundSessionWork(() => this.getData().readSessionPromptCacheDecision(...args))
+  }
+
+  iterateSessionResourceReferences(sessionId: string, signal?: AbortSignal) {
+    return this.getData().iterateSessionResourceReferences(sessionId, signal)
+  }
+
+  readSessionGeneratingMessageIds(sessionId: string): Promise<string[]> {
+    return this.getData().readSessionGeneratingMessageIds(sessionId)
+  }
+
+  readSessionGenerationControl(
+    ...args: Parameters<SessionRepositoryPort['readSessionGenerationControl']>
+  ): ReturnType<SessionRepositoryPort['readSessionGenerationControl']> {
+    return this.withForegroundSessionWork(() => this.getData().readSessionGenerationControl(...args))
+  }
+
+  readSessionSearchWindow(
+    ...args: Parameters<SessionRepositoryPort['readSessionSearchWindow']>
+  ): ReturnType<SessionRepositoryPort['readSessionSearchWindow']> {
+    return this.withForegroundSessionWork(() => this.getData().readSessionSearchWindow(...args))
+  }
+
+  readSessionSearchCandidates(
+    ...args: Parameters<SessionRepositoryPort['readSessionSearchCandidates']>
+  ): ReturnType<SessionRepositoryPort['readSessionSearchCandidates']> {
+    return this.withForegroundSessionWork(() => this.getData().readSessionSearchCandidates(...args))
+  }
+
+  prefetchSessionThreadLinks(
+    request: import('@chatbox/core/ports').SessionThreadRequest & { signal?: AbortSignal }
+  ): Promise<void> {
+    return this.getData().prefetchSessionThreadLinks(request)
+  }
+
+  readSessionTranscriptWindow(
+    ...args: Parameters<SessionRepositoryPort['readSessionTranscriptWindow']>
+  ): ReturnType<SessionRepositoryPort['readSessionTranscriptWindow']> {
+    return this.withForegroundSessionWork(() => this.getData().readSessionTranscriptWindow(...args))
+  }
+
+  readSessionBranchPreview(
+    ...args: Parameters<SessionRepositoryPort['readSessionBranchPreview']>
+  ): ReturnType<SessionRepositoryPort['readSessionBranchPreview']> {
+    return this.withForegroundSessionWork(() => this.getData().readSessionBranchPreview(...args))
+  }
+
+  readSessionBranchMessagesPage(
+    ...args: Parameters<SessionRepositoryPort['readSessionBranchMessagesPage']>
+  ): ReturnType<SessionRepositoryPort['readSessionBranchMessagesPage']> {
+    return this.withForegroundSessionWork(() => this.getData().readSessionBranchMessagesPage(...args))
+  }
+
+  readSessionThread(
+    ...args: Parameters<SessionRepositoryPort['readSessionThread']>
+  ): ReturnType<SessionRepositoryPort['readSessionThread']> {
+    return this.withForegroundSessionWork(() => this.getData().readSessionThread(...args))
+  }
+
+  readSessionThreadSummariesPage(
+    ...args: Parameters<SessionRepositoryPort['readSessionThreadSummariesPage']>
+  ): ReturnType<SessionRepositoryPort['readSessionThreadSummariesPage']> {
+    return this.withForegroundSessionWork(() => this.getData().readSessionThreadSummariesPage(...args))
+  }
+
+  readSessionForkOptionsPage(
+    ...args: Parameters<SessionRepositoryPort['readSessionForkOptionsPage']>
+  ): ReturnType<SessionRepositoryPort['readSessionForkOptionsPage']> {
+    return this.withForegroundSessionWork(() => this.getData().readSessionForkOptionsPage(...args))
+  }
+
+  acceptSessionTokenCacheResults(
+    ...args: Parameters<SessionRepositoryPort['acceptSessionTokenCacheResults']>
+  ): ReturnType<SessionRepositoryPort['acceptSessionTokenCacheResults']> {
+    return this.getData().acceptSessionTokenCacheResults(...args)
+  }
+
+  createSessionTokenPlan(
+    ...args: Parameters<SessionRepositoryPort['createSessionTokenPlan']>
+  ): ReturnType<SessionRepositoryPort['createSessionTokenPlan']> {
+    return this.withForegroundSessionWork(() => this.getData().createSessionTokenPlan(...args))
+  }
+
+  readSessionTokenPage(
+    ...args: Parameters<SessionRepositoryPort['readSessionTokenPage']>
+  ): ReturnType<SessionRepositoryPort['readSessionTokenPage']> {
+    return this.withForegroundSessionWork(() => this.getData().readSessionTokenPage(...args))
+  }
+
+  acceptSessionTextTokenResults(
+    ...args: Parameters<SessionRepositoryPort['acceptSessionTextTokenResults']>
+  ): ReturnType<SessionRepositoryPort['acceptSessionTextTokenResults']> {
+    return this.getData().acceptSessionTextTokenResults(...args)
+  }
+
+  patchSessionMessageDerivedData(
+    ...args: Parameters<SessionRepositoryPort['patchSessionMessageDerivedData']>
+  ): ReturnType<SessionRepositoryPort['patchSessionMessageDerivedData']> {
+    return this.getData().patchSessionMessageDerivedData(...args)
+  }
+
+  getCurrentThreadIdentity(
+    ...args: Parameters<SessionRepositoryPort['getCurrentThreadIdentity']>
+  ): ReturnType<SessionRepositoryPort['getCurrentThreadIdentity']> {
+    return this.withForegroundSessionWork(() => this.getData().getCurrentThreadIdentity(...args))
+  }
+
+  copySessionRows(
+    ...args: Parameters<SessionRepositoryPort['copySessionRows']>
+  ): ReturnType<SessionRepositoryPort['copySessionRows']> {
+    return this.withForegroundSessionWork(() => this.getData().copySessionRows(...args))
+  }
+
+  copySessionThreadRows(
+    ...args: Parameters<SessionRepositoryPort['copySessionThreadRows']>
+  ): ReturnType<SessionRepositoryPort['copySessionThreadRows']> {
+    return this.withForegroundSessionWork(() => this.getData().copySessionThreadRows(...args))
+  }
+
+  createSessionRows(
+    ...args: Parameters<SessionRepositoryPort['createSessionRows']>
+  ): ReturnType<SessionRepositoryPort['createSessionRows']> {
+    return this.withForegroundSessionWork(() => this.getData().createSessionRows(...args))
+  }
+
+  executeSessionCommand(
+    ...args: Parameters<SessionRepositoryPort['executeSessionCommand']>
+  ): ReturnType<SessionRepositoryPort['executeSessionCommand']> {
+    return this.withForegroundSessionWork(() => this.getData().executeSessionCommand(...args))
+  }
+
+  deleteSession(
+    ...args: Parameters<SessionRepositoryPort['deleteSession']>
+  ): ReturnType<SessionRepositoryPort['deleteSession']> {
+    return this.withForegroundSessionWork(() => this.getData().deleteSession(...args))
+  }
+
+  projectLatestSession<T>(sessionId: string, project: (current: SessionHeaderRead | null) => Promise<T>): Promise<T> {
+    return this.getData().projectLatestSession(sessionId, project)
+  }
+
+  projectSessionMetadata<T>(sessionId: string, project: () => Promise<T>): Promise<T> {
+    return this.getData().projectSessionMetadata(sessionId, project)
   }
 
   getAllSessionIds(): Promise<string[]> {
+    return normalizeRepositoryError('list-session-ids', () => this.getData().getAllSessionIds())
+  }
+
+  /** Ids that still have a `session:<id>` record; record values are not read. */
+  listSessionRecordIds(): Promise<string[]> {
+    return normalizeRepositoryError('list-session-ids', () => this.records.listIds())
+  }
+
+  /** Lists only identities; each candidate is inspected in a separate idle tick. */
+  listSessionMigrationCandidates(): Promise<SessionMigrationCandidate[]> {
     return normalizeRepositoryError('list-session-ids', async () => {
-      const keys = await this.dataStorage.getAllKeys()
-      return keys
-        .filter((key) => key.startsWith('session:'))
-        .map((key) => key.slice('session:'.length))
-        .filter((id) => id.length > 0 && id !== 'undefined')
+      return (await this.getData().getAllSessionIds()).map((id) => ({ id }))
     })
+  }
+
+  requiresSessionMigration(candidate: SessionMigrationCandidate): Promise<boolean> {
+    return normalizeRepositoryError(
+      'list-session-ids',
+      async () => {
+        const commit = await this.createRowStore().readCommit(candidate.id)
+        return commit?.record.rowAuthority !== 1 || commit.record.rowFormatVersion !== 3
+      },
+      candidate.id
+    )
+  }
+
+  /** Publishes verified rows and repairs their independent list projection. */
+  migrateSession(id: string): Promise<SessionMigrationOutcome> {
+    return normalizeRepositoryError(
+      'get-session',
+      async () => {
+        const data = this.getData()
+        await data.initialize()
+        const previous = await this.createRowStore().readCommit(id)
+        if (!(await data.getSessionHeader(id))) return 'missing'
+        await data.projectLatestSession(id, async (read) => {
+          if (!read) return
+          const meta = this.createMetaStorage()
+          if (await meta.getById(id)) return
+          const now = Date.now()
+          await meta.create(createSessionMetaRecord(read.header, now, now, read.summary.pausedMessageCount > 0))
+        })
+        return previous?.record.rowAuthority === 1 && previous.record.rowFormatVersion === 3 ? 'already' : 'migrated'
+      },
+      id
+    )
   }
 }

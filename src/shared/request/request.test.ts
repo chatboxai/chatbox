@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ApiError, ChatboxAIAPIError } from '../models/errors'
-import { createAfetch, createAuthenticatedAfetch } from './request'
+import { createAfetch, createAuthenticatedAfetch, uploadFile } from './request'
 
 const platformInfo = {
   type: 'desktop',
@@ -40,18 +40,21 @@ describe('createAfetch', () => {
     })
   })
 
-  it('stores request id from Chatbox error body on known Chatbox errors', async () => {
+  it.each([
+    { codeName: 'token_quota_exhausted', status: 429, clientCode: 10004 },
+    { codeName: 'license_downgraded', status: 409, clientCode: 20047 },
+  ])('parses $codeName from HTTP $status and preserves the request id', async ({ codeName, status, clientCode }) => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
         new Response(
           JSON.stringify({
             error: {
-              code: 'token_quota_exhausted',
+              code: codeName,
               request_id: 'req-from-body',
             },
           }),
-          { status: 429 }
+          { status }
         )
       )
     )
@@ -61,7 +64,7 @@ describe('createAfetch', () => {
     await expect(
       afetch('https://api.chatboxai.app/gateway/openai/v1/chat/completions', {}, { parseChatboxRemoteError: true })
     ).rejects.toMatchObject({
-      code: 10004,
+      code: clientCode,
       requestId: 'req-from-body',
     } satisfies Partial<ChatboxAIAPIError>)
   })
@@ -150,5 +153,66 @@ describe('createAfetch', () => {
     } satisfies Partial<ApiError>)
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(clearTokens).not.toHaveBeenCalled()
+  })
+
+  it('recognizes a structural AbortError without depending on DOMException', async () => {
+    const abortError = Object.assign(new Error('cancelled'), { name: 'AbortError' })
+    const fetchMock = vi.fn().mockRejectedValue(abortError)
+    const afetch = createAfetch(platformInfo, fetchMock)
+
+    await expect(afetch('https://example.com', {}, { retry: 3 })).rejects.toBe(abortError)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('raw file upload cancellation', () => {
+  afterEach(() => vi.unstubAllGlobals())
+  class UploadRequest {
+    static current: UploadRequest
+    upload = { onprogress: () => undefined }
+    status = 200
+    onload = () => undefined
+    onerror = () => undefined
+    onabort = () => undefined
+    open = vi.fn()
+    send = vi.fn()
+    abort = vi.fn(() => this.onabort())
+    getResponseHeader = () => 'fixture-etag'
+    constructor() {
+      UploadRequest.current = this
+    }
+  }
+
+  it('aborts the active XHR and rejects instead of waiting indefinitely', async () => {
+    vi.stubGlobal('DOMException', undefined)
+    vi.stubGlobal('XMLHttpRequest', UploadRequest)
+    const controller = new AbortController()
+    const upload = uploadFile(new File(['fixture'], 'report.doc'), 'https://upload.test/file', controller.signal)
+    const rejected = expect(upload).rejects.toMatchObject({ name: 'AbortError' })
+    controller.abort()
+    await rejected
+    expect(UploadRequest.current.abort).toHaveBeenCalledOnce()
+  })
+
+  it('does not create an XHR for an already canceled upload', async () => {
+    vi.stubGlobal('DOMException', undefined)
+    const request = vi.fn()
+    vi.stubGlobal('XMLHttpRequest', request)
+    const controller = new AbortController()
+    controller.abort()
+    await expect(
+      uploadFile(new File(['fixture'], 'report.doc'), 'https://upload.test/file', controller.signal)
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(request).not.toHaveBeenCalled()
+  })
+
+  it('removes cancellation listeners after successful upload', async () => {
+    vi.stubGlobal('XMLHttpRequest', UploadRequest)
+    const controller = new AbortController()
+    const result = uploadFile(new File(['fixture'], 'report.doc'), 'https://upload.test/file', controller.signal)
+    UploadRequest.current.onload()
+    expect(await result).toMatchObject({ ETag: 'fixture-etag' })
+    controller.abort()
+    expect(UploadRequest.current.abort).not.toHaveBeenCalled()
   })
 })

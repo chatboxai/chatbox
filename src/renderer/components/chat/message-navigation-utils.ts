@@ -1,3 +1,4 @@
+import type { MessageRow } from '@chatbox/core/session/session-tree'
 import type { Message } from '@shared/types'
 import type { MessageMinimapAnchor } from './MessageMinimapRail'
 
@@ -5,12 +6,7 @@ export function isUserNavigationMessage(message: Message): boolean {
   return message.role === 'user' && !message.isSummary && !message.backgroundTask
 }
 
-/**
- * Minimap previews render a few clamped lines at most, so anchors only need a
- * short prefix of each message. Building them from the full text made every
- * streaming chunk re-join the entire conversation (minutes-long chats lagged
- * on each token, see feedback 1589).
- */
+/** Bound preview work even when a loaded message contains a large body. */
 export const MINIMAP_PREVIEW_MAX_LENGTH = 300
 
 /**
@@ -30,49 +26,37 @@ export function getMessagePreviewText(message: Message, maxLength = MINIMAP_PREV
     if (!text) {
       continue
     }
-    const chunk = text.length > maxLength - collected ? text.slice(0, maxLength - collected) : text
+    if (chunks.length) {
+      chunks.push('\n')
+      collected++
+    }
+    const chunk = text.slice(0, maxLength - collected)
     chunks.push(chunk)
     collected += chunk.length
   }
-  return chunks.join('\n').trim()
+  return chunks.join('').trim()
 }
 
-/**
- * Streaming cache updates replace only the generating assistant message while
- * preserving the other message objects. Reuse the minimap only for that exact
- * update shape; edits, inserts, removals, reorders, and generation completion
- * must rebuild anchors.
- */
-export function canReuseMinimapAnchorsDuringGeneration(previous: Message[], current: Message[]): boolean {
-  if (previous.length !== current.length) {
-    return false
-  }
-
-  for (let i = 0; i < previous.length; i++) {
-    const previousMessage = previous[i]
-    const currentMessage = current[i]
-    if (previousMessage === currentMessage) {
-      continue
-    }
-    if (
-      previousMessage.id !== currentMessage.id ||
-      previousMessage.role !== 'assistant' ||
-      currentMessage.role !== 'assistant' ||
-      previousMessage.generating !== true ||
-      currentMessage.generating !== true
-    ) {
-      return false
+export function buildMessageMinimapAnchors(rows: readonly MessageRow[]): MessageMinimapAnchor[] {
+  const anchors: MessageMinimapAnchor[] = []
+  let pending: MessageMinimapAnchor | undefined
+  let threadId: string | undefined
+  for (const row of rows) {
+    if (threadId !== row.threadId) pending = undefined
+    threadId = row.threadId
+    const message = row.message
+    if (message.isSummary || message.backgroundTask || message.isForkMarker) continue
+    if (message.role === 'user') {
+      pending = { messageId: row.messageId, text: getMessagePreviewText(message) }
+      anchors.push(pending)
+    } else if (message.role === 'assistant' && pending) {
+      pending.assistantText = getMessagePreviewText(message)
+      pending = undefined
     }
   }
-
-  return true
+  return anchors
 }
 
-/**
- * Comparing against the previous result lets MessageList keep a stable array
- * reference when unrelated session state changes. Streaming replies are
- * frozen separately by MessageList and refreshed once generation completes.
- */
 export function areMinimapAnchorsEqual(previous: MessageMinimapAnchor[], next: MessageMinimapAnchor[]): boolean {
   if (previous.length !== next.length) {
     return false
@@ -80,12 +64,7 @@ export function areMinimapAnchorsEqual(previous: MessageMinimapAnchor[], next: M
   for (let i = 0; i < previous.length; i++) {
     const a = previous[i]
     const b = next[i]
-    if (
-      a.messageId !== b.messageId ||
-      a.itemIndex !== b.itemIndex ||
-      a.text !== b.text ||
-      a.assistantText !== b.assistantText
-    ) {
+    if (a.messageId !== b.messageId || a.text !== b.text || a.assistantText !== b.assistantText) {
       return false
     }
   }

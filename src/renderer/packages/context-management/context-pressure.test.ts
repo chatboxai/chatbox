@@ -1,62 +1,52 @@
-import type { Message } from '@shared/types'
-import { describe, expect, it, vi } from 'vitest'
-import { DEFAULT_COMPACTION_THRESHOLD, OUTPUT_RESERVE_TOKENS } from './compaction-detector'
-import { assessContextPressure, TOOL_RESULT_STUB_PRESSURE_RATIO } from './context-pressure'
+import { describe, expect, it } from 'vitest'
+import { getConfiguredContextWindow, getEffectiveMaxOutputTokens } from './context-pressure'
 
-vi.mock('../model-registry', () => ({
-  getModelContextWindowSync: vi.fn((modelId: string) => (modelId === 'known-model' ? 128_000 : null)),
-}))
+describe('getConfiguredContextWindow', () => {
+  it('reads the matching provider model window', () => {
+    expect(
+      getConfiguredContextWindow(
+        {
+          providers: {
+            openai: {
+              models: [{ modelId: 'gpt-4o', contextWindow: 128_000 }],
+            },
+          },
+        },
+        'openai',
+        'gpt-4o'
+      )
+    ).toBe(128_000)
+  })
 
-function messageWithToolResult(id: string, resultChars: number): Message {
-  return {
-    id,
-    role: 'assistant',
-    contentParts: [
-      {
-        type: 'tool-call',
-        state: 'result',
-        toolCallId: `tc-${id}`,
-        toolName: 'search',
-        args: {},
-        result: 'r'.repeat(resultChars),
+  it('returns undefined when the model is missing', () => {
+    expect(getConfiguredContextWindow({}, 'openai', 'gpt-4o')).toBeUndefined()
+    expect(getConfiguredContextWindow({}, undefined, undefined)).toBeUndefined()
+  })
+})
+
+describe('getEffectiveMaxOutputTokens', () => {
+  const settings = {
+    providers: {
+      'custom-compaction-budget': {
+        models: [{ modelId: 'custom-budget-model', maxOutput: 4096 }],
       },
-    ],
+    },
   }
-}
 
-describe('assessContextPressure', () => {
-  const threshold = Math.floor((128_000 - OUTPUT_RESERVE_TOKENS) * DEFAULT_COMPACTION_THRESHOLD)
-
-  it('keeps everything below the stub ratio', () => {
-    const result = assessContextPressure({
-      contextMessages: [messageWithToolResult('m1', 1000)],
-      providerId: 'openai',
-      modelId: 'known-model',
-    })
-
-    expect(result.thresholdTokens).toBe(threshold)
-    expect(result.toolCleanupMode).toBe('none')
+  it('prefers the session reply limit over the configured model output', () => {
+    expect(getEffectiveMaxOutputTokens(settings, 'custom-compaction-budget', 'custom-budget-model', 2048)).toBe(2048)
   })
 
-  it('activates stubbing at the pressure ratio, driven by tool-call weight', () => {
-    // Tool tokens ≈ chars/4; push past ratio × threshold with a huge result.
-    const charsNeeded = Math.ceil(threshold * TOOL_RESULT_STUB_PRESSURE_RATIO * 4) + 4000
-    const result = assessContextPressure({
-      contextMessages: [messageWithToolResult('m1', charsNeeded)],
-      providerId: 'openai',
-      modelId: 'known-model',
-    })
-
-    expect(result.toolCleanupMode).toBe('stub-old-results')
-    expect(result.contextTokens).toBeGreaterThan(Math.floor(threshold * TOOL_RESULT_STUB_PRESSURE_RATIO))
+  it('uses the configured output when no session limit is set', () => {
+    expect(getEffectiveMaxOutputTokens(settings, 'custom-compaction-budget', 'custom-budget-model', undefined)).toBe(
+      4096
+    )
   })
 
-  it('returns none with a null threshold when no model is known', () => {
-    const result = assessContextPressure({
-      contextMessages: [messageWithToolResult('m1', 1_000_000)],
-    })
-
-    expect(result.thresholdTokens).toBeNull()
-    expect(result.toolCleanupMode).toBe('none')
+  it('leaves unknown model output to the budget fallback', () => {
+    expect(
+      getEffectiveMaxOutputTokens({}, 'custom-compaction-budget', 'custom-budget-model', undefined)
+    ).toBeUndefined()
+    expect(getEffectiveMaxOutputTokens({}, undefined, undefined, undefined)).toBeUndefined()
   })
 })

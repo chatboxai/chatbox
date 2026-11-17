@@ -875,7 +875,7 @@ export async function requestLoginTicketId() {
   return json.data.ticket_id
 }
 
-export async function sendEmailLoginCode(params: { email: string; lang?: string }) {
+export async function sendEmailLoginCode(params: { email: string; lang?: string; signal?: AbortSignal }) {
   type Response = {
     data: {
       result: string
@@ -894,6 +894,7 @@ export async function sendEmailLoginCode(params: { email: string; lang?: string 
         email: params.email,
         lang: params.lang,
       }),
+      signal: params.signal,
     },
     {
       parseChatboxRemoteError: true,

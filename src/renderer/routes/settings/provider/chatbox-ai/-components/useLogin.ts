@@ -73,15 +73,30 @@ export function useLogin({ language, onLoginSuccess }: UseLoginParams) {
       return false
     }
 
+    let timedOut = false
     try {
       setLoginState('sending_code')
       setLoginError(null)
       setCode('')
 
-      const result = await sendEmailLoginCode({
-        email: trimmedEmail,
-        lang: getLanguagePath(language),
+      const controller = new AbortController()
+      let timeoutId: ReturnType<typeof setTimeout> | undefined
+      const timeout = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          timedOut = true
+          reject(new Error(t('Connection timed out') || 'Connection timed out'))
+          controller.abort()
+        }, 30_000)
       })
+      let result: string
+      try {
+        result = await Promise.race([
+          sendEmailLoginCode({ email: trimmedEmail, lang: getLanguagePath(language), signal: controller.signal }),
+          timeout,
+        ])
+      } finally {
+        clearTimeout(timeoutId)
+      }
 
       if (requestEpoch !== requestEpochRef.current) {
         return false
@@ -101,7 +116,14 @@ export function useLogin({ language, onLoginSuccess }: UseLoginParams) {
       }
 
       console.error('Failed to send login code:', error)
-      setLoginError(getSendLoginCodeErrorPresentation(error, t, t('Failed to send login code')))
+      setLoginError(
+        timedOut
+          ? {
+              title: t('Failed to send login code') || 'Failed to send login code',
+              message: t('Connection timed out') || 'Connection timed out',
+            }
+          : getSendLoginCodeErrorPresentation(error, t, t('Failed to send login code'))
+      )
       setLoginState('error')
       return false
     }

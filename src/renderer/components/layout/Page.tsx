@@ -1,5 +1,4 @@
 import { Box, Flex, Text } from '@mantine/core'
-import { TestId } from '@shared/automation/testids'
 import { IconMenu2 } from '@tabler/icons-react'
 import clsx from 'clsx'
 import type { FC, ReactNode } from 'react'
@@ -82,7 +81,6 @@ export const PageHeader: FC<PageHeaderProps> = ({ title, left, right, overlay })
             iconSize={ICON_SIZE.touch}
             color="chatbox-secondary"
             aria-label={t('Expand')}
-            data-testid={TestId.sidebar.open}
             onClick={() => setShowSidebar(!showSidebar)}
           />
         )}

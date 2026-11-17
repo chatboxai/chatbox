@@ -7,7 +7,7 @@ export const groqProvider = defineProvider({
   name: 'Groq',
   type: ModelProviderType.OpenAI,
   modelsDevProviderId: 'groq',
-  curatedModelIds: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant'],
+  curatedModelIds: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'],
   urls: {
     website: 'https://groq.com/',
   },
@@ -25,16 +25,6 @@ export const groqProvider = defineProvider({
         contextWindow: 131_072,
         maxOutput: 65_536,
         capabilities: ['reasoning', 'tool_use'],
-      },
-      {
-        modelId: 'llama-3.3-70b-versatile',
-        contextWindow: 131_072,
-        capabilities: ['tool_use'],
-      },
-      {
-        modelId: 'llama-3.1-8b-instant',
-        contextWindow: 131_072,
-        capabilities: ['tool_use'],
       },
     ],
   },

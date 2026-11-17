@@ -24,6 +24,16 @@ function createMoonshotProvider(config: {
       apiHost: config.apiHost,
       models: [
         {
+          modelId: 'kimi-k3.1-pro',
+          capabilities: ['vision', 'reasoning', 'tool_use'],
+          contextWindow: 1_048_576,
+        },
+        {
+          modelId: 'kimi-k3.1-pro-highspeed',
+          capabilities: ['vision', 'reasoning', 'tool_use'],
+          contextWindow: 1_048_576,
+        },
+        {
           modelId: 'kimi-k3',
           capabilities: ['vision', 'reasoning', 'tool_use'],
           contextWindow: 1_048_576,

@@ -5,6 +5,7 @@ import OpenAI from 'src/shared/providers/definitions/models/openai'
 import OpenAIResponses from 'src/shared/providers/definitions/models/openai-responses'
 import Qwen from 'src/shared/providers/definitions/models/qwen'
 import TencentHunyuan from 'src/shared/providers/definitions/models/tencent-hunyuan'
+import Wally from 'src/shared/providers/definitions/models/wally'
 import XiaomiMiMo from 'src/shared/providers/definitions/models/xiaomi-mimo'
 import ZhipuGLMCodingPlan from 'src/shared/providers/definitions/models/zhipu-glm-coding-plan'
 import { ModelProviderEnum, type SessionSettings, type Settings } from 'src/shared/types'
@@ -206,6 +207,7 @@ describe('getModel', () => {
       'https://open.bigmodel.cn/api/coding/paas/v4',
       ZhipuGLMCodingPlan,
     ],
+    [ModelProviderEnum.Wally, 'deepseek-v4.1-flash', 'https://inference.runanywhere.ai/v1', Wally],
   ])('returns OpenAI-compatible model instances for %s', (provider, modelId, apiHost, expectedModelClass) => {
     const sessionSettings: SessionSettings = {
       provider,

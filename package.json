@@ -332,7 +332,7 @@
     "@mastra/libsql": "^0.13.2",
     "@mastra/rag": "^1.0.8",
     "@modelcontextprotocol/sdk": "^1.15.1",
-    "@mozilla/readability": "^0.5.0",
+    "@mozilla/readability": "^0.6.0",
     "@sentry/node": "^9.28.1",
     "auto-launch": "^5.0.6",
     "chardet": "^2.1.0",

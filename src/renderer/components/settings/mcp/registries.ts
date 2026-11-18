@@ -35,6 +35,28 @@ export interface MCPRegistryEntry {
 
 export const MCP_ENTRIES_OFFICIAL: MCPRegistryEntry[] = [
   {
+    name: 'desearch',
+    title: 'Desearch',
+    description:
+      'Search web and social sources with Desearch. Set DESEARCH_API_KEY in the server environment configuration.',
+    icon: '',
+    homepage: 'https://desearch.ai/docs',
+    configuration: {
+      command: 'npx',
+      args: [
+        '-y',
+        'mcp-remote',
+        'https://mcp.desearch.ai/mcp',
+        '--header',
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: mcp-remote expands the environment variable.
+        'Authorization: Bearer ${DESEARCH_API_KEY}',
+      ],
+      env: {
+        DESEARCH_API_KEY: 'YOUR_API_KEY_HERE',
+      },
+    },
+  },
+  {
     name: 'brave-search',
     title: 'Brave Search',
     description:

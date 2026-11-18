@@ -127,7 +127,11 @@ export async function fetchRepoContents(owner: string, repo: string, repoPath = 
 const MAX_DETECTED_SKILLS = 100
 const SKILL_CONTENT_FETCH_BATCH = 8
 const SKILL_FILE_DOWNLOAD_BATCH = 8
-const MAX_FALLBACK_CATEGORY_DIRS = 10
+// Bounds for the contents-API fallback scan (used only when the tree API is
+// truncated/unavailable). Each directory costs one API call, so both a depth
+// and a total-call cap protect the often-unauthenticated 60/hour rate limit.
+const MAX_FALLBACK_SCAN_DEPTH = 6
+const MAX_FALLBACK_API_CALLS = 60
 
 // raw.githubusercontent.com can be unreachable while api.github.com works (common
 // behind some firewalls). In that case the tree listing succeeds but every content
@@ -205,106 +209,67 @@ async function detectSkillsViaTree(owner: string, repo: string): Promise<Detecte
   return detected
 }
 
-// Strategy 1: root SKILL.md | 2: skills/{name}/SKILL.md | 3: {dir}/skills/{name}/SKILL.md (fallback)
-async function detectSkillsViaContents(owner: string, repo: string): Promise<DetectedSkill[]> {
-  const detected: DetectedSkill[] = []
+// Recursively walks the repo via the contents API (one call per directory)
+// looking for SKILL.md at any depth — no assumption about folder naming
+// (doesn't require a literal "skills/" directory anywhere in the path).
+// Once a directory is found to contain SKILL.md it's treated as a leaf and
+// isn't searched further, matching the tree-based strategy's behavior.
+// Bounded by depth and a call budget since the tree API being unavailable
+// often means the unauthenticated (60/hour) rate limit is already a concern.
+async function scanDirForSkills(
+  owner: string,
+  repo: string,
+  dirPath: string,
+  depth: number,
+  detected: DetectedSkill[],
+  budget: { calls: number }
+): Promise<void> {
+  if (detected.length >= MAX_DETECTED_SKILLS) return
+  if (depth > MAX_FALLBACK_SCAN_DEPTH) return
+  if (budget.calls >= MAX_FALLBACK_API_CALLS) return
 
+  budget.calls++
+  let contents: GitHubContentItem[]
   try {
-    const rootContents = await fetchRepoContents(owner, repo)
-    const rootSkillMd = rootContents.find((item) => item.name === 'SKILL.md' && item.type === 'file')
-    if (rootSkillMd) {
-      const content = await fetchFileContent(owner, repo, 'SKILL.md')
-      const name = extractSkillName(content)
+    contents = await fetchRepoContents(owner, repo, dirPath)
+  } catch (error) {
+    log.warn(`Failed to list contents of "${dirPath}" for ${owner}/${repo}`, error)
+    return
+  }
+
+  const skillMdItem = contents.find((item) => item.name === 'SKILL.md' && item.type === 'file')
+  if (skillMdItem) {
+    try {
+      const skillMdRepoPath = dirPath ? `${dirPath}/SKILL.md` : 'SKILL.md'
+      const content = await fetchFileContent(owner, repo, skillMdRepoPath)
       detected.push({
-        name: name || repo,
-        path: '',
+        name: extractSkillName(content) || dirPath.split('/').pop() || repo,
+        path: dirPath,
         description: extractSkillDescription(content),
       })
+    } catch (error) {
+      log.warn(`Failed to fetch SKILL.md at "${dirPath}" for ${owner}/${repo}`, error)
     }
-  } catch (error) {
-    log.warn(`Failed to check root SKILL.md for ${owner}/${repo}`, error)
+    return
   }
 
+  const subDirs = contents.filter((item) => item.type === 'dir' && item.name !== 'node_modules')
+  for (const sub of subDirs) {
+    if (budget.calls >= MAX_FALLBACK_API_CALLS || detected.length >= MAX_DETECTED_SKILLS) break
+    const subPath = dirPath ? `${dirPath}/${sub.name}` : sub.name
+    await scanDirForSkills(owner, repo, subPath, depth + 1, detected, budget)
+  }
+}
+
+// Fallback used only when the git tree API is unavailable or truncated.
+async function detectSkillsViaContents(owner: string, repo: string): Promise<DetectedSkill[]> {
+  const detected: DetectedSkill[] = []
+  const budget = { calls: 0 }
   try {
-    const skillsDirContents = await fetchRepoContents(owner, repo, 'skills')
-    let drilledCategories = 0
-    for (const item of skillsDirContents) {
-      if (item.type !== 'dir') continue
-      try {
-        const subContents = await fetchRepoContents(owner, repo, `skills/${item.name}`)
-        const hasSkillMd = subContents.some((f) => f.name === 'SKILL.md' && f.type === 'file')
-        if (hasSkillMd) {
-          const content = await fetchFileContent(owner, repo, `skills/${item.name}/SKILL.md`)
-          detected.push({
-            name: extractSkillName(content) || item.name,
-            path: `skills/${item.name}`,
-            description: extractSkillDescription(content),
-          })
-          continue
-        }
-        // skills/{category}/{name}/SKILL.md — drill one level into category dirs,
-        // capped to bound contents API calls against the unauthenticated rate limit
-        if (drilledCategories >= MAX_FALLBACK_CATEGORY_DIRS) continue
-        drilledCategories++
-        for (const sub of subContents) {
-          if (sub.type !== 'dir') continue
-          try {
-            const nestedContents = await fetchRepoContents(owner, repo, `skills/${item.name}/${sub.name}`)
-            const hasNestedSkillMd = nestedContents.some((f) => f.name === 'SKILL.md' && f.type === 'file')
-            if (hasNestedSkillMd) {
-              const content = await fetchFileContent(owner, repo, `skills/${item.name}/${sub.name}/SKILL.md`)
-              detected.push({
-                name: extractSkillName(content) || sub.name,
-                path: `skills/${item.name}/${sub.name}`,
-                description: extractSkillDescription(content),
-              })
-            }
-          } catch {
-            // Inaccessible nested skill dir
-          }
-        }
-      } catch {
-        // Inaccessible skill dir
-      }
-    }
-  } catch {
-    // No skills/ directory
+    await scanDirForSkills(owner, repo, '', 0, detected, budget)
+  } catch (error) {
+    log.warn(`Recursive contents-based skill scan failed for ${owner}/${repo}`, error)
   }
-
-  if (detected.length === 0) {
-    try {
-      const rootContents = await fetchRepoContents(owner, repo)
-      const topDirs = rootContents.filter((item) => item.type === 'dir' && item.name !== 'skills')
-
-      for (const topDir of topDirs.slice(0, 5)) {
-        try {
-          const nestedSkillsDir = await fetchRepoContents(owner, repo, `${topDir.name}/skills`)
-          for (const item of nestedSkillsDir) {
-            if (item.type !== 'dir') continue
-            try {
-              const subContents = await fetchRepoContents(owner, repo, `${topDir.name}/skills/${item.name}`)
-              const hasSkillMd = subContents.some((f) => f.name === 'SKILL.md' && f.type === 'file')
-              if (hasSkillMd) {
-                const content = await fetchFileContent(owner, repo, `${topDir.name}/skills/${item.name}/SKILL.md`)
-                detected.push({
-                  name: extractSkillName(content) || item.name,
-                  path: `${topDir.name}/skills/${item.name}`,
-                  description: extractSkillDescription(content),
-                })
-              }
-            } catch {
-              // Skip
-            }
-          }
-        } catch {
-          // No nested skills/ directory
-        }
-      }
-    } catch {
-      // Root listing already failed earlier, skip
-    }
-  }
-
   return detected
 }
 

@@ -7,6 +7,12 @@ import { normalizeClaudeSkillName } from './validation'
 
 const log = getLogger('skills:discovery')
 
+// How many directory levels under the skills root to search for a SKILL.md
+// (e.g. <skillsDir>/ai/offensive-ai-security/SKILL.md is 2 levels deep).
+// Bounded so a pathologically deep or cyclic directory tree can't be scanned
+// forever.
+const MAX_SKILL_DISCOVERY_DEPTH = 5
+
 export function discoverSkills(skillsDir: string): SkillInfo[] {
   if (!fs.existsSync(skillsDir)) {
     fs.mkdirSync(skillsDir, { recursive: true })
@@ -15,34 +21,63 @@ export function discoverSkills(skillsDir: string): SkillInfo[] {
 
   const customSkills: SkillInfo[] = []
 
-  try {
-    const entries = fs.readdirSync(skillsDir, { withFileTypes: true })
+  // Recursively walks `dir` looking for a SKILL.md at any depth, so a skill
+  // placed at <skillsDir>/<category>/<skill-name>/SKILL.md is found just like
+  // one placed directly at <skillsDir>/<skill-name>/SKILL.md. Once a
+  // directory is found to *be* a skill (it directly contains SKILL.md), it's
+  // treated as a leaf — we don't recurse into a skill's own bundled
+  // subdirectories (scripts/, references/, examples/, ...) looking for more
+  // skills, since those may legitimately contain their own SKILL.md-named
+  // example files.
+  function scanDir(dir: string, depth: number): void {
+    let entries: fs.Dirent[]
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true })
+    } catch (error) {
+      log.error(`Failed to scan skills directory: ${dir}`, error)
+      return
+    }
+
     for (const entry of entries) {
       if (!entry.isDirectory()) continue
 
-      const skillMdPath = path.join(skillsDir, entry.name, 'SKILL.md')
-      if (!fs.existsSync(skillMdPath)) continue
+      const entryPath = path.join(dir, entry.name)
+      const skillMdPath = path.join(entryPath, 'SKILL.md')
 
-      const parsed = parseSkillFile(skillMdPath, entry.name)
-      if (!parsed) continue
+      if (fs.existsSync(skillMdPath)) {
+        const parsed = parseSkillFile(skillMdPath, entry.name)
+        if (!parsed) continue
 
-      let source: SkillSource | undefined
-      const sourcePath = path.join(skillsDir, entry.name, 'source.json')
-      try {
-        if (fs.existsSync(sourcePath)) {
-          source = JSON.parse(fs.readFileSync(sourcePath, 'utf-8')) as SkillSource
+        let source: SkillSource | undefined
+        const sourcePath = path.join(entryPath, 'source.json')
+        try {
+          if (fs.existsSync(sourcePath)) {
+            source = JSON.parse(fs.readFileSync(sourcePath, 'utf-8')) as SkillSource
+          }
+        } catch {
+          log.warn(`Failed to read source.json for skill "${entry.name}"`)
         }
-      } catch {
-        log.warn(`Failed to read source.json for skill "${entry.name}"`)
+
+        customSkills.push({
+          ...parsed.metadata,
+          path: entryPath,
+          isBuiltin: false,
+          source,
+        })
+        continue
       }
 
-      customSkills.push({
-        ...parsed.metadata,
-        path: path.join(skillsDir, entry.name),
-        isBuiltin: false,
-        source,
-      })
+      // Not a skill itself — keep looking deeper.
+      if (depth < MAX_SKILL_DISCOVERY_DEPTH) {
+        scanDir(entryPath, depth + 1)
+      } else {
+        log.warn(`Skipping "${entryPath}": exceeds max skill discovery depth (${MAX_SKILL_DISCOVERY_DEPTH})`)
+      }
     }
+  }
+
+  try {
+    scanDir(skillsDir, 0)
   } catch (error) {
     log.error(`Failed to scan skills directory: ${skillsDir}`, error)
   }

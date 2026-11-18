@@ -244,22 +244,22 @@ describe('github-fetcher', () => {
       expect(detected[0].path).toBe('skills/my-tool')
     })
 
-    it('should fall back to contents API ({dir}/skills/{name} pattern) when the tree is truncated', async () => {
-      const rootContents = [makeContentItem('domain', 'dir', 'domain')]
-      const nestedSkillsDir = [makeContentItem('nested-skill', 'dir', 'domain/skills/nested-skill')]
-      const subContents = [makeContentItem('SKILL.md', 'file', 'domain/skills/nested-skill/SKILL.md')]
+    it('should fall back to contents API for an arbitrarily-named nested folder when the tree is truncated', async () => {
+      // No folder here is literally named "skills" — e.g. ai/offensive-ai-security/SKILL.md.
+      const rootContents = [makeContentItem('ai', 'dir', 'ai')]
+      const categoryContents = [makeContentItem('offensive-ai-security', 'dir', 'ai/offensive-ai-security')]
+      const subContents = [makeContentItem('SKILL.md', 'file', 'ai/offensive-ai-security/SKILL.md')]
 
       mockFetch.mockResolvedValueOnce(makeResponse(makeTreeResponse(['unrelated.md'], true))) // truncated tree
-      mockFetch.mockResolvedValueOnce(makeResponse(rootContents)) // root contents (cached for strategy 3)
-      mockFetch.mockResolvedValueOnce(makeResponse(null, 404, false)) // skills/ → 404
-      mockFetch.mockResolvedValueOnce(makeResponse(nestedSkillsDir)) // domain/skills/
-      mockFetch.mockResolvedValueOnce(makeResponse(subContents)) // domain/skills/nested-skill/
-      mockFetch.mockResolvedValueOnce(makeResponse(makeSkillMdContent('nested-skill'), 200, true)) // SKILL.md
+      mockFetch.mockResolvedValueOnce(makeResponse(rootContents)) // root contents
+      mockFetch.mockResolvedValueOnce(makeResponse(categoryContents)) // ai/
+      mockFetch.mockResolvedValueOnce(makeResponse(subContents)) // ai/offensive-ai-security/
+      mockFetch.mockResolvedValueOnce(makeResponse(makeSkillMdContent('offensive-ai-security'), 200, true)) // SKILL.md
 
       const detected = await detectSkillsInRepo('owner', 'repo')
       expect(detected).toHaveLength(1)
-      expect(detected[0].name).toBe('nested-skill')
-      expect(detected[0].path).toBe('domain/skills/nested-skill')
+      expect(detected[0].name).toBe('offensive-ai-security')
+      expect(detected[0].path).toBe('ai/offensive-ai-security')
     })
 
     it('should fall back to contents API when the tree API fails', async () => {

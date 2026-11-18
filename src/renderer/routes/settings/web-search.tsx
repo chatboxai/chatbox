@@ -9,6 +9,8 @@ import { JK_EVENTS, JK_PAGE_NAMES } from '@/analytics/jk-events'
 import { AdaptiveSelect } from '@/components/AdaptiveSelect'
 import { CheckedFieldRow } from '@/components/settings/CheckedFieldRow'
 import { DeepSeekProviderKeyRow } from '@/components/settings/DeepSeekProviderKeyRow'
+import { GlmProviderKeyRow } from '@/components/settings/GlmProviderKeyRow'
+import { KimiProviderKeyRow } from '@/components/settings/KimiProviderKeyRow'
 import { SettingRow, SettingsPage, SettingsSection } from '@/components/settings/SettingsLayout'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { PROVIDERS_WITH_PARSE_LINK } from '@/packages/web-search'
@@ -104,11 +106,22 @@ export function RouteComponent() {
               aria-label={t('Search Provider') ?? undefined}
               data={WEB_SEARCH_PROVIDERS.map((p) => ({ value: p.value, label: p.label }))}
               value={provider}
-              onChange={(value) => value && updateWebSearch({ provider: value as WebSearchProviderValue })}
+              onChange={(value) => {
+                if (!value) return
+                const nextProvider = value as WebSearchProviderValue
+                // 备用提供方不能与主提供方相同，切换主提供方时自动让开
+                if ((webSearch.fallbackProvider ?? 'none') === nextProvider) {
+                  updateWebSearch({ provider: nextProvider, fallbackProvider: 'none' })
+                  return
+                }
+                updateWebSearch({ provider: nextProvider })
+              }}
             />
           )}
         />
         {provider === 'deepseek' && <DeepSeekProviderKeyRow />}
+        {provider === 'kimi' && <KimiProviderKeyRow />}
+        {provider === 'glm' && <GlmProviderKeyRow />}
         {provider === 'searxng' && (
           <CheckedFieldRow
             key="searxng"
@@ -166,6 +179,36 @@ export function RouteComponent() {
             getKeyUrl="https://www.querit.ai"
           />
         )}
+      </SettingsSection>
+
+      <SettingsSection title={t('Fallback')}>
+        <SettingRow
+          id="fallback-provider"
+          label={t('Fallback Search Provider')}
+          description={t(
+            'If the selected search provider fails (missing key, network error, rate limit), Chatbox retries the search with this provider.'
+          )}
+          control={(fieldId) => (
+            <AdaptiveSelect
+              id={fieldId}
+              comboboxProps={{ withinPortal: true, withArrow: true }}
+              aria-label={t('Fallback Search Provider') ?? undefined}
+              data={[
+                { value: 'none', label: 'None' },
+                ...WEB_SEARCH_PROVIDERS.map((p) => ({
+                  value: p.value,
+                  label: p.label,
+                  // The primary provider cannot also be the fallback; keep it visible but not selectable.
+                  disabled: p.value === provider,
+                })),
+              ]}
+              value={webSearch.fallbackProvider ?? 'none'}
+              onChange={(value) =>
+                updateWebSearch({ fallbackProvider: value as WebSearchSettings['fallbackProvider'] })
+              }
+            />
+          )}
+        />
       </SettingsSection>
 
       {provider === 'querit' && (

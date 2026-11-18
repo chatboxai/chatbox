@@ -165,6 +165,28 @@ export const ChatboxAIErrorMessage: FC<ChatboxAIErrorMessageProps> = ({
             }}
           />
         ),
+        OpenKimiProviderSettingButton: (
+          <Link
+            component="button"
+            type="button"
+            className={linkStyle ? 'cursor-pointer' : 'cursor-pointer italic'}
+            style={linkStyle}
+            onClick={() => {
+              navigateToSettings('/provider/moonshot')
+            }}
+          />
+        ),
+        OpenGLMProviderSettingButton: (
+          <Link
+            component="button"
+            type="button"
+            className={linkStyle ? 'cursor-pointer' : 'cursor-pointer italic'}
+            style={linkStyle}
+            onClick={() => {
+              navigateToSettings('/provider/chatglm-6b')
+            }}
+          />
+        ),
         OpenMorePlanButton: (
           <Link
             component="button"

@@ -19,12 +19,23 @@ export interface NativeWebSearchResultItem {
 }
 
 /** Same provider set the renderer's Web Search settings expose. */
-export type NativeWebSearchProvider = 'build-in' | 'bing' | 'deepseek' | 'tavily' | 'bocha' | 'querit' | 'searxng'
+export type NativeWebSearchProvider =
+  | 'build-in'
+  | 'bing'
+  | 'deepseek'
+  | 'kimi'
+  | 'glm'
+  | 'tavily'
+  | 'bocha'
+  | 'querit'
+  | 'searxng'
 
 export const nativeWebSearchProviderOptions: Array<{ id: NativeWebSearchProvider; label: string }> = [
   { id: 'build-in', label: 'Chatbox AI' },
   { id: 'bing', label: 'Bing Search' },
   { id: 'deepseek', label: 'DeepSeek' },
+  { id: 'kimi', label: 'Kimi' },
+  { id: 'glm', label: 'GLM' },
   { id: 'tavily', label: 'Tavily' },
   { id: 'bocha', label: 'BoCha' },
   { id: 'querit', label: 'Querit' },
@@ -85,8 +96,19 @@ export interface NativeWebSearchOptions {
 const TAVILY_DEFAULT_HOST = 'https://api.tavily.com'
 const CHATBOX_DEFAULT_ORIGIN = 'https://api.chatboxai.app'
 const DEFAULT_MAX_RESULTS = 8
+/** Kimi (Moonshot) search/fetch hosts; the China endpoint serves the same API. */
+const KIMI_INTERNATIONAL_HOST = 'https://api.moonshot.ai'
+const KIMI_CHINA_HOST = 'https://api.moonshot.cn'
 /** DeepSeek search accepts queries of at most 128 characters. */
 const DEEPSEEK_MAX_QUERY_LENGTH = 128
+/** Zhipu GLM web search endpoint; authenticates with the GLM model provider key. */
+const GLM_SEARCH_ENDPOINT = 'https://open.bigmodel.cn/api/paas/v4/web_search'
+/** GLM accepts `search_query` values of at most 70 characters. */
+const GLM_MAX_QUERY_LENGTH = 70
+/** GLM search engines: `search_std` is the standard (cheapest) tier. */
+const GLM_SEARCH_ENGINE = 'search_std'
+/** GLM caps `count` at 50 results per request. */
+const GLM_MAX_RESULTS = 50
 /** DeepSeek fetch accepts URLs of at most 8192 characters. */
 const DEEPSEEK_MAX_FETCH_URL_LENGTH = 8192
 
@@ -114,6 +136,10 @@ export function resolveNativeWebSearchApiKey(
   switch (provider) {
     case 'deepseek':
       return sources.providers?.[ModelProviderEnum.DeepSeek]?.apiKey ?? ''
+    case 'kimi':
+      return resolveNativeKimiConfig(sources).apiKey
+    case 'glm':
+      return resolveNativeGlmApiKey(sources)
     case 'tavily':
       return sources.extension.webSearch.tavilyApiKey ?? ''
     case 'bocha':
@@ -123,6 +149,29 @@ export function resolveNativeWebSearchApiKey(
     default:
       return ''
   }
+}
+
+/**
+ * Kimi search authenticates with the Moonshot model provider key. Both Moonshot endpoints
+ * (international and China) speak the same API, so the host follows whichever key is set;
+ * the international key wins when both exist.
+ */
+export function resolveNativeKimiConfig(sources: NativeWebSearchCredentialSources): { apiKey: string; apiHost: string } {
+  const international = sources.providers?.[ModelProviderEnum.Moonshot]?.apiKey?.trim()
+  if (international) return { apiKey: international, apiHost: KIMI_INTERNATIONAL_HOST }
+  const china = sources.providers?.[ModelProviderEnum.MoonshotCN]?.apiKey?.trim()
+  if (china) return { apiKey: china, apiHost: KIMI_CHINA_HOST }
+  return { apiKey: '', apiHost: KIMI_INTERNATIONAL_HOST }
+}
+
+/**
+ * GLM (Zhipu) web search authenticates with the GLM model provider key. The Coding Plan
+ * provider (`zhipu-glm-coding-plan`) stores its own copy, so fall back to it when present.
+ */
+export function resolveNativeGlmApiKey(sources: NativeWebSearchCredentialSources): string {
+  const direct = sources.providers?.[ModelProviderEnum.GLM]?.apiKey?.trim()
+  if (direct) return direct
+  return sources.providers?.[ModelProviderEnum.ZhipuGLMCodingPlan]?.apiKey?.trim() ?? ''
 }
 
 export function getNativeWebSearchProviderLabel(provider: NativeWebSearchProvider): string {
@@ -135,6 +184,8 @@ export function hasNativeWebSearchConfiguration(
 ): boolean {
   if (
     settings.provider === 'deepseek' ||
+    settings.provider === 'kimi' ||
+    settings.provider === 'glm' ||
     settings.provider === 'tavily' ||
     settings.provider === 'bocha' ||
     settings.provider === 'querit'
@@ -152,6 +203,8 @@ export async function searchNativeWeb(
 ): Promise<NativeWebSearchResultItem[]> {
   const provider = options.provider ?? 'tavily'
   if (provider === 'deepseek') return searchNativeDeepSeek(query, options)
+  if (provider === 'kimi') return searchNativeKimi(query, options)
+  if (provider === 'glm') return searchNativeGlm(query, options)
   if (provider === 'bing') return searchNativeBing(query, options)
   if (provider === 'build-in') return searchNativeChatbox(query, options)
   if (provider === 'bocha') return searchNativeBocha(query, options)
@@ -574,4 +627,183 @@ export async function fetchNativeDeepSeekPage(
   if (payload?.error) throw new Error(`DeepSeek fetch failed${detail ? `: ${detail}` : ''}`)
   if (typeof payload?.content !== 'string') throw new Error('DeepSeek returned an invalid fetch response')
   return { url: target, title: nonEmptyString(payload.title) ?? parsed.hostname, content: payload.content }
+}
+
+interface KimiSearchResponseItem {
+  title?: unknown
+  url?: unknown
+  snippet?: unknown
+  content?: unknown
+  site_name?: unknown
+}
+
+/**
+ * Kimi (Moonshot) Web Search Basic — `POST /v1/tools/search`, Bearer auth.
+ * Request uses `text_query`; the response carries `search_results[]` with title/url/snippet
+ * (plus `content` when `include_content` is on).
+ */
+async function searchNativeKimi(
+  query: string,
+  options: NativeWebSearchOptions
+): Promise<NativeWebSearchResultItem[]> {
+  const normalizedQuery = query.trim()
+  if (!normalizedQuery) throw new Error('Kimi search query is empty')
+  const apiKey = options.apiKey?.trim()
+  if (!apiKey) throw new Error('Kimi API key is required')
+  const host = (options.apiHost?.trim() || KIMI_INTERNATIONAL_HOST).replace(/\/+$/, '')
+  const response = await (options.fetchFn ?? fetch)(`${host}/v1/tools/search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      text_query: normalizedQuery,
+      limit: options.maxResults ?? DEFAULT_MAX_RESULTS,
+      timeout_seconds: 30,
+    }),
+    signal: options.signal as NativeFetchInit['signal'],
+  })
+  const payload = (await response.json().catch(() => null)) as {
+    search_results?: unknown
+    error?: { message?: unknown } | string
+    message?: unknown
+  } | null
+  if (!response.ok) {
+    const detail =
+      typeof payload?.error === 'string'
+        ? payload.error
+        : (nonEmptyString(payload?.error?.message) ?? nonEmptyString(payload?.message))
+    throw new Error(`Kimi search failed with status ${response.status}${detail ? `: ${detail}` : ''}`)
+  }
+  if (!Array.isArray(payload?.search_results)) throw new Error('Kimi returned an invalid search response')
+  return payload.search_results.flatMap((item: unknown) => {
+    if (!item || typeof item !== 'object') return []
+    const result = item as KimiSearchResponseItem
+    const title = nonEmptyString(result.title)
+    const link = nonEmptyString(result.url)
+    if (!title || !link) return []
+    return [
+      {
+        title,
+        link,
+        snippet:
+          nonEmptyString(result.snippet) ?? truncatePlainText(nonEmptyString(result.content) ?? '', 300) ?? '',
+      },
+    ]
+  })
+}
+
+function truncatePlainText(value: string, maxLength: number): string | null {
+  const normalized = value.replace(/\s+/g, ' ').trim()
+  if (!normalized) return null
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}…` : normalized
+}
+
+/** Reads one page as Markdown through the Kimi URL Fetch API (`POST /v1/tools/fetch`). */
+export async function fetchNativeKimiPage(
+  url: string,
+  options: Pick<NativeWebSearchOptions, 'apiKey' | 'apiHost' | 'signal' | 'fetchFn'>
+): Promise<NativeWebPage> {
+  const target = url.trim()
+  let parsed: URL | null = null
+  try {
+    parsed = new URL(target)
+  } catch {}
+  if (
+    !parsed ||
+    (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') ||
+    !parsed.hostname ||
+    parsed.username ||
+    parsed.password
+  ) {
+    throw new Error('Kimi fetch only accepts HTTP or HTTPS URLs with a host, without a username or password')
+  }
+  const apiKey = options.apiKey?.trim()
+  if (!apiKey) throw new Error('Kimi API key is required')
+  const host = (options.apiHost?.trim() || KIMI_INTERNATIONAL_HOST).replace(/\/+$/, '')
+  const response = await (options.fetchFn ?? fetch)(`${host}/v1/tools/fetch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({ url: target }),
+    signal: options.signal as NativeFetchInit['signal'],
+  })
+  const payload = (await response.json().catch(() => null)) as {
+    title?: unknown
+    markdown?: unknown
+    content?: unknown
+    error?: { message?: unknown } | string
+    message?: unknown
+  } | null
+  const detail =
+    typeof payload?.error === 'string'
+      ? payload.error
+      : (nonEmptyString(payload?.error?.message) ?? nonEmptyString(payload?.message))
+  if (!response.ok) {
+    throw new Error(`Kimi fetch failed with status ${response.status}${detail ? `: ${detail}` : ''}`)
+  }
+  const content = nonEmptyString(payload?.markdown) ?? nonEmptyString(payload?.content)
+  if (!content) throw new Error('Kimi returned an invalid fetch response')
+  return { url: target, title: nonEmptyString(payload?.title) ?? parsed.hostname, content }
+}
+
+interface GlmSearchResponseItem {
+  title?: unknown
+  content?: unknown
+  link?: unknown
+  media?: unknown
+  publish_date?: unknown
+}
+
+/**
+ * Zhipu GLM Web Search — `POST /api/paas/v4/web_search`, Bearer auth.
+ * The request carries `search_query` (max 70 chars) and a `search_engine` tier; the response
+ * carries `search_result[]` with `title` / `content` / `link`. GLM has no standalone URL
+ * fetch endpoint, so `parse_link` stays unavailable for this provider.
+ */
+async function searchNativeGlm(
+  query: string,
+  options: NativeWebSearchOptions
+): Promise<NativeWebSearchResultItem[]> {
+  const normalizedQuery = query.trim()
+  if (!normalizedQuery) throw new Error('GLM search query is empty')
+  const apiKey = options.apiKey?.trim()
+  if (!apiKey) throw new Error('GLM API key is required')
+  const limit = Math.min(Math.max(options.maxResults ?? DEFAULT_MAX_RESULTS, 1), GLM_MAX_RESULTS)
+  const response = await (options.fetchFn ?? fetch)(GLM_SEARCH_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      search_query: normalizedQuery.slice(0, GLM_MAX_QUERY_LENGTH),
+      search_engine: GLM_SEARCH_ENGINE,
+      search_intent: false,
+      count: limit,
+      content_size: 'medium',
+    }),
+    signal: options.signal as NativeFetchInit['signal'],
+  })
+  const payload = (await response.json().catch(() => null)) as {
+    search_result?: unknown
+    error?: { message?: unknown } | string
+    message?: unknown
+  } | null
+  if (!response.ok) {
+    const detail =
+      typeof payload?.error === 'string'
+        ? payload.error
+        : (nonEmptyString(payload?.error?.message) ?? nonEmptyString(payload?.message))
+    throw new Error(`GLM search failed with status ${response.status}${detail ? `: ${detail}` : ''}`)
+  }
+  if (!Array.isArray(payload?.search_result)) throw new Error('GLM returned an invalid search response')
+  return payload.search_result.flatMap((item: unknown) => {
+    if (!item || typeof item !== 'object') return []
+    const result = item as GlmSearchResponseItem
+    const title = nonEmptyString(result.title)
+    const link = nonEmptyString(result.link)
+    if (!title || !link) return []
+    return [
+      {
+        title,
+        link,
+        snippet: truncatePlainText(nonEmptyString(result.content) ?? '', 300) ?? '',
+      },
+    ]
+  })
 }

@@ -44,4 +44,31 @@ describe('getWebSearchConfigurationIssue', () => {
     expect(getWebSearchConfigurationIssue(settings, 'deepseek')).toBeNull()
     expect(getWebSearchConfigurationIssue(settings, 'tavily')).toBe('tavily-api-key')
   })
+
+  it('uses the Moonshot model provider key for Kimi search', () => {
+    expect(getWebSearchConfigurationIssue(readiness({ provider: 'kimi' }))).toBe('kimi-api-key')
+    expect(
+      getWebSearchConfigurationIssue(readiness({ provider: 'kimi' }, { providers: { moonshot: { apiKey: '  ' } } }))
+    ).toBe('kimi-api-key')
+    expect(
+      getWebSearchConfigurationIssue(readiness({ provider: 'kimi' }, { providers: { moonshot: { apiKey: 'kimi-key' } } }))
+    ).toBeNull()
+  })
+
+  it('treats a configured fallback as covering an unusable primary provider', () => {
+    const providers = { deepseek: { apiKey: 'model-key' } }
+    // Kimi has no key, but DeepSeek can still run the search.
+    expect(
+      getWebSearchConfigurationIssue(readiness({ provider: 'kimi', fallbackProvider: 'deepseek' }, { providers }))
+    ).toBeNull()
+    // No fallback configured: the primary problem is reported.
+    expect(getWebSearchConfigurationIssue(readiness({ provider: 'kimi' }, { providers }))).toBe('kimi-api-key')
+    expect(
+      getWebSearchConfigurationIssue(readiness({ provider: 'kimi', fallbackProvider: 'none' }, { providers }))
+    ).toBe('kimi-api-key')
+    // Both unusable: report the primary problem.
+    expect(
+      getWebSearchConfigurationIssue(readiness({ provider: 'kimi', fallbackProvider: 'deepseek' }))
+    ).toBe('kimi-api-key')
+  })
 })

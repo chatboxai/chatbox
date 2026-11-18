@@ -2,6 +2,8 @@ export const WEB_SEARCH_PROVIDERS = [
   { value: 'build-in', label: 'Chatbox AI' },
   { value: 'bing', label: 'Bing Search' },
   { value: 'deepseek', label: 'DeepSeek' },
+  { value: 'kimi', label: 'Kimi' },
+  { value: 'glm', label: 'GLM' },
   { value: 'tavily', label: 'Tavily' },
   { value: 'bocha', label: 'BoCha' },
   { value: 'querit', label: 'Querit' },

@@ -1,5 +1,5 @@
 import { cachified } from '@epic-web/cachified'
-import { resolveNativeWebSearchApiKey } from '@shared/services/native-web-search'
+import { resolveNativeKimiConfig, resolveNativeWebSearchApiKey } from '@shared/services/native-web-search'
 import type { SearchResultItem } from '@shared/types'
 import { truncate } from 'lodash'
 import platform from '@/platform'
@@ -11,7 +11,10 @@ import { BingSearch } from './bing'
 import { BingNewsSearch } from './bing-news'
 import { BochaSearch } from './bocha'
 import { ChatboxSearch } from './chatbox-search'
+import type { WebSearchProviderValue } from './constants'
 import { DeepSeekSearch } from './deepseek'
+import { GlmSearch } from './glm'
+import { KimiSearch } from './kimi'
 import { QueritSearch } from './querit'
 import { normalizeSearxngBaseUrl, SearxngSearch } from './searxng'
 import { TavilySearch } from './tavily'
@@ -19,12 +22,12 @@ import { TavilySearch } from './tavily'
 const MAX_CONTEXT_ITEMS = 10
 
 // 根据配置的搜索提供方来选择搜索服务
-function getSearchProviders() {
+function getSearchProviders(providerOverride?: WebSearchProviderValue) {
   const settings = getExtensionSettings()
   const licenseKey = getLicenseKey()
 
   const selectedProviders: WebSearch[] = []
-  const provider = settings.webSearch.provider
+  const provider = providerOverride ?? settings.webSearch.provider
   const language = getLanguage()
 
   switch (provider) {
@@ -49,6 +52,22 @@ function getSearchProviders() {
         throw ChatboxAIAPIError.fromCodeName('deepseek_api_key_required', 'deepseek_api_key_required')
       }
       selectedProviders.push(new DeepSeekSearch(apiKey))
+      break
+    }
+    case 'kimi': {
+      const kimi = resolveNativeKimiConfig(settingsStore.getState())
+      if (!kimi.apiKey) {
+        throw ChatboxAIAPIError.fromCodeName('kimi_api_key_required', 'kimi_api_key_required')
+      }
+      selectedProviders.push(new KimiSearch(kimi.apiKey, kimi.apiHost))
+      break
+    }
+    case 'glm': {
+      const apiKey = resolveNativeWebSearchApiKey(settingsStore.getState(), provider).trim()
+      if (!apiKey) {
+        throw ChatboxAIAPIError.fromCodeName('glm_api_key_required', 'glm_api_key_required')
+      }
+      selectedProviders.push(new GlmSearch(apiKey))
       break
     }
     case 'tavily':
@@ -90,13 +109,17 @@ function getSearchProviders() {
   return selectedProviders
 }
 
-async function _searchRelatedResults(query: string, signal?: AbortSignal) {
-  const providers = getSearchProviders()
+async function runProviderSearch(
+  provider: WebSearchProviderValue,
+  query: string,
+  signal?: AbortSignal
+): Promise<Array<{ title: string; snippet: string; link: string }>> {
+  const providers = getSearchProviders(provider)
   const results = await Promise.all(
-    providers.map(async (provider) => {
+    providers.map(async (searchProvider) => {
       try {
-        const result = await provider.search(query, signal)
-        console.debug(`web search result for "${query}":`, result.items)
+        const result = await searchProvider.search(query, signal)
+        console.debug(`web search result for "${query}" (${provider}):`, result.items)
         return { result }
       } catch (err) {
         console.error(err)
@@ -137,6 +160,36 @@ async function _searchRelatedResults(query: string, signal?: AbortSignal) {
   }))
 }
 
+export interface WebSearchOutcome {
+  searchResults: Array<{ title: string; snippet: string; link: string }>
+  provider: WebSearchProviderValue
+  /** Set when the configured provider failed and the fallback provider produced these results. */
+  fallbackFrom?: WebSearchProviderValue
+}
+
+async function _searchRelatedResults(query: string, signal?: AbortSignal): Promise<WebSearchOutcome> {
+  const webSearch = getExtensionSettings().webSearch
+  const provider = webSearch.provider
+  const fallback = webSearch.fallbackProvider
+
+  try {
+    return { searchResults: await runProviderSearch(provider, query, signal), provider }
+  } catch (error) {
+    if (!fallback || fallback === 'none' || fallback === provider) throw error
+    console.warn(`[web-search] provider "${provider}" failed, retrying with fallback "${fallback}"`, error)
+    try {
+      return {
+        searchResults: await runProviderSearch(fallback, query, signal),
+        provider: fallback,
+        fallbackFrom: provider,
+      }
+    } catch (fallbackError) {
+      console.error(`[web-search] fallback provider "${fallback}" failed too`, fallbackError)
+      throw error
+    }
+  }
+}
+
 export async function testWebSearchConnection(signal?: AbortSignal): Promise<void> {
   await _searchRelatedResults('Chatbox', signal)
 }
@@ -151,20 +204,20 @@ export const webSearchExecutor = async (
   const provider = webSearch.provider
   const cacheIdentity =
     provider === 'searxng' ? `${provider}:${normalizeSearxngBaseUrl(webSearch.searxngBaseUrl ?? '')}` : provider
-  const searchResults = await cachified({
+  const outcome = await cachified({
     cache,
     key: `search-context:${cacheIdentity}:${query}`,
     ttl: 1000 * 60 * 5,
     getFreshValue: () => _searchRelatedResults(query, abortSignal),
   })
-  return { query, searchResults }
+  return { query, ...outcome }
 }
 
 /**
  * Single source of truth: which configured providers offer the parse_link tool.
  * Keep in sync with the provider classes' `supportsParseLink` flags.
  */
-export const PROVIDERS_WITH_PARSE_LINK: ReadonlySet<string> = new Set(['build-in', 'deepseek', 'tavily'])
+export const PROVIDERS_WITH_PARSE_LINK: ReadonlySet<string> = new Set(['build-in', 'deepseek', 'kimi', 'tavily'])
 
 /**
  * Returns the first configured search provider that supports parseLink.

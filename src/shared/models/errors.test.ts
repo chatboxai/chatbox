@@ -149,6 +149,8 @@ describe('ChatboxAIAPIError', () => {
     [20040, 'free_agent_mode_token_quota_exhausted'],
     [20036, 'searxng_base_url_required'],
     [20048, 'deepseek_api_key_required'],
+    [20053, 'kimi_api_key_required'],
+    [20054, 'glm_api_key_required'],
     [20050, 'deepseek_parser_api_key_required'],
     [20051, 'deepseek_insufficient_balance'],
     [20052, 'deepseek_parser_file_too_large'],

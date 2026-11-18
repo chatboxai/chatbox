@@ -343,7 +343,13 @@ const ShortcutSettingSchema = z.preprocess(
 
 const ExtensionSettingsSchema = z.object({
   webSearch: z.object({
-    provider: z.enum(['build-in', 'bing', 'deepseek', 'tavily', 'bocha', 'querit', 'searxng']).catch('build-in'),
+    provider: z
+      .enum(['build-in', 'bing', 'deepseek', 'kimi', 'glm', 'tavily', 'bocha', 'querit', 'searxng'])
+      .catch('build-in'),
+    /** Provider retried when the selected one fails; `none` turns the fallback off. */
+    fallbackProvider: z
+      .enum(['none', 'build-in', 'bing', 'deepseek', 'kimi', 'glm', 'tavily', 'bocha', 'querit', 'searxng'])
+      .default('deepseek'),
     tavilyApiKey: z.string().optional(),
     bochaApiKey: z.string().optional(),
     queritApiKey: z.string().optional(),

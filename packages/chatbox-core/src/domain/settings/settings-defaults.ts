@@ -78,6 +78,7 @@ export function createDefaultSettings(): Settings {
     extension: {
       webSearch: {
         provider: 'build-in',
+        fallbackProvider: 'deepseek',
         tavilyApiKey: '',
         bochaApiKey: '',
         queritApiKey: '',

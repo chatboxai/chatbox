@@ -96,10 +96,28 @@ companion.
 - Bundled runtime: `src/renderer/public/pyodide/` — `pyodide.mjs`, `pyodide.asm.js`,
   `pyodide.asm.wasm`, `python_stdlib.zip`, `pyodide-lock.json` (11.7 MB, Pyodide 0.29.5,
   CPython 3.13). Added as a dev dependency in `package.json` / `pnpm-lock.yaml`.
-- Limits: standard library only (no numpy/pandas wheels are bundled), no network, 60 s deadline,
+- Bundled scientific stack (offline): `loadPackage(['numpy', 'pandas', 'matplotlib'])` is called
+  once after the runtime loads, and the matching wheels live in the same directory, so Pyodide
+  resolves them from `indexURL` without any network access:
+
+  | wheel | version |
+  | --- | --- |
+  | numpy | 2.2.5 |
+  | pandas | 2.3.3 |
+  | matplotlib | 3.8.4 |
+  | pillow / contourpy / cycler / fonttools / kiwisolver / packaging / pyparsing / python-dateutil / pytz / tzdata / six | 11.3.0 / 1.3.1 / 0.12.1 / 4.56.0 / 1.4.8 / 26.2 / 3.2.1 / 2.9.0.post0 / 2025.2 / 2025.3 / 1.17.0 |
+
+  They are the unmodified `cp313`/`pyemscripten_2025_0_wasm32` wheels published for Pyodide
+  0.29.5 (downloaded from `https://cdn.jsdelivr.net/pyodide/v0.29.5/full/`, 16.76 MB total), and
+  each keeps its own `*.dist-info` license metadata. `scipy` is **not** bundled.
+  Matplotlib must run headless: the tool description tells the model to call
+  `matplotlib.use('Agg')` before importing `pyplot` and to save with `fig.savefig('output/x.png')`,
+  because `pyplot.show()` is meaningless on mobile.
+- Limits: standard library plus the table above (no other third-party packages — `pip` and
+  `micropip` are not wired up, and there is no network), no shell or Node API, 60 s deadline,
   64 KiB output cap, and it is available in **work mode** only, because `code_execution` is a
-  work-mode tool. Pyodide itself is **MPL-2.0**; the bundled files and their license are
-  distributed unchanged.
+  work-mode tool. Python runs on the main renderer thread, so a long run blocks the UI.
+  Pyodide itself is **MPL-2.0**; the bundled files and their licenses are distributed unchanged.
 
 Upstream files that were touched (nothing else): the ones listed above, plus
 `src/renderer/packages/web-search/{constants.test.ts,parse-link-consistency.test.ts,configuration-issue.test.ts}`.
@@ -138,9 +156,17 @@ On Windows, `android/local.properties` must contain `sdk.dir=...` (git-ignored).
 1. Open a chat and switch the agent panel to **Work mode** (工作模式) — `code_execution` is a
    work-mode tool.
 2. Ask for a Python task, or let the model pick `language: "python"`; the first run loads the
-   WebAssembly runtime from the app bundle (a second or two on a modern phone).
+   WebAssembly runtime from the app bundle and pre-loads numpy, pandas and matplotlib (a few
+   seconds on a modern phone, then it is cached for the session).
 3. Files follow the same workspace rules as the JavaScript sandbox: read from `input/`, write to
    `output/`, then download with `create_download`.
+4. Charts: ask for `output/chart.png`; the bundled matplotlib runs headless (`Agg`) and the PNG
+   appears in the chat as an artifact you can download.
+
+Example prompt that works out of the box:
+
+> Use python with numpy, pandas and matplotlib: compute the mean and std of 1000 random numbers,
+> print them, then save a line plot to output/chart.png.
 
 ## Privacy / secrets
 

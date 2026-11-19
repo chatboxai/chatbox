@@ -172,7 +172,9 @@ export class LocalWorkMode<W extends LocalWorkspacePort> {
           language: z
             .enum(['javascript', 'python'])
             .default('javascript')
-            .describe('Execution language. "python" runs CPython (standard library only) in a Pyodide WASM sandbox.'),
+            .describe(
+              'Execution language. "python" runs CPython 3.13 in a Pyodide WASM sandbox with numpy, pandas and matplotlib bundled.'
+            ),
         }),
         execute: async ({ code, language }, options) => {
           const signal = options.abortSignal ?? context.signal

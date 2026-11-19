@@ -9,6 +9,12 @@ const WORK_ROOT = '/home/pyodide/work'
 const TIMEOUT_MS = 60_000
 const MAX_OUTPUT_CHARS = 64 * 1024
 
+/**
+ * Wheels shipped beside the Pyodide assets (see `src/renderer/public/pyodide`).
+ * They are pre-loaded so `import numpy` works without network access.
+ */
+const BUNDLED_PACKAGES = ['numpy', 'pandas', 'matplotlib']
+
 interface PyodideRuntime {
   FS: {
     mkdirTree: (path: string) => void
@@ -23,6 +29,7 @@ interface PyodideRuntime {
     rmdir: (path: string) => void
   }
   runPythonAsync: (code: string) => Promise<unknown>
+  loadPackage: (names: string | string[]) => Promise<unknown>
   setStdout: (options: { batched: (text: string) => void }) => void
   setStderr: (options: { batched: (text: string) => void }) => void
 }
@@ -49,7 +56,9 @@ async function loadRuntime(): Promise<PyodideRuntime> {
       const module = (await import(/* @vite-ignore */ `${base}pyodide.mjs`)) as {
         loadPyodide: (options: { indexURL: string }) => Promise<PyodideRuntime>
       }
-      return module.loadPyodide({ indexURL: base })
+      const runtime = await module.loadPyodide({ indexURL: base })
+      await preloadBundledPackages(runtime)
+      return runtime
     })().catch((error) => {
       runtimePromise = null
       log.error('Failed to load Pyodide:', error)
@@ -57,6 +66,21 @@ async function loadRuntime(): Promise<PyodideRuntime> {
     })
   }
   return runtimePromise
+}
+
+/**
+ * Pull the bundled scientific stack into the interpreter. The wheels sit next
+ * to the runtime, so `loadPackage` resolves them from `indexURL` and never
+ * touches the network. A failure here only costs the third-party packages:
+ * the standard library stays usable.
+ */
+async function preloadBundledPackages(runtime: PyodideRuntime): Promise<void> {
+  try {
+    await runtime.loadPackage(BUNDLED_PACKAGES)
+    log.info('Loaded bundled Python packages:', BUNDLED_PACKAGES.join(', '))
+  } catch (error) {
+    log.warn('Failed to load bundled Python packages:', error)
+  }
 }
 
 function bytesToBase64(bytes: Uint8Array): string {

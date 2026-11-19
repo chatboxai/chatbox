@@ -10,15 +10,22 @@ console.log('Saved output/result.json');`
 export const QUICKJS_CODE_INPUT =
   'JavaScript async function body for QuickJS. Use await files.readText/writeText for file I/O. No require, import/export, process, Buffer, Node.js packages or browser APIs.'
 
-export const PYTHON_ENVIRONMENT = `Pass language "python" to run Python in a Pyodide (CPython WebAssembly) sandbox instead. Only the Python standard library is available: numpy, pandas, requests and other third-party packages are not bundled, and there is no network, shell or Node.js access. Files are shared with the JavaScript sandbox: workspace files are copied into the current working directory before the run, and every file written there is saved back to the workspace afterwards. Open workspace-relative paths such as input/data.csv and write results under output/; input/ and artifacts/ are read-only. Print results with print(). Execution has a 60 second deadline and output is capped at 64 KiB.`
+export const PYTHON_ENVIRONMENT = `Pass language "python" to run Python in a Pyodide (CPython 3.13 WebAssembly) sandbox instead. The standard library is available, plus the bundled scientific stack: numpy, pandas and matplotlib (with Pillow). Packages are imported straight away, for example import numpy as np or import pandas as pd; there is no network, so pip and any other third-party package cannot be installed and requests/urllib cannot fetch URLs. For plots, call matplotlib.use('Agg') before importing pyplot, build the figure, then fig.savefig('output/chart.png', dpi=150) so the PNG lands in the workspace; pyplot.show() does nothing on mobile. Files are shared with the JavaScript sandbox: workspace files are copied into the current working directory before the run, and every file written there is saved back to the workspace afterwards. Open workspace-relative paths such as input/data.csv and write results under output/; input/ and artifacts/ are read-only. Print results with print(). Execution has a 60 second deadline and output is capped at 64 KiB.`
 
 export const PYTHON_EXAMPLE = `Python example (language: "python"):
-import csv
-with open('input/data.csv', newline='') as handle:
-    rows = list(csv.DictReader(handle))
-with open('output/summary.csv', 'w', newline='') as handle:
-    csv.writer(handle).writerow(['rows', len(rows)])
-print('Saved output/summary.csv')`
+import numpy as np
+import pandas as pd
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
+frame = pd.DataFrame({'x': np.arange(10), 'y': np.arange(10) ** 2})
+frame.to_csv('output/squares.csv', index=False)
+fig, ax = plt.subplots(figsize=(6, 4))
+ax.plot(frame['x'], frame['y'], marker='o')
+ax.set_title('Squares')
+fig.savefig('output/squares.png', dpi=150)
+print('rows:', len(frame), 'mean y:', frame['y'].mean())`
 
 export const PYTHON_UNAVAILABLE =
   'Python execution is not available in this environment. Use JavaScript in code_execution instead.'

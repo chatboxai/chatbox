@@ -25,6 +25,7 @@ import { createCapacitorSystemToolGroups } from './capacitor-system-tools'
 import { capacitorDocumentParser } from './document-parser'
 import { capacitorExecution } from './execution-service'
 import { normalizeWorkImage } from './normalize-work-image'
+import { capacitorPython } from './python-service'
 
 export const capacitorWorkspace = new CapacitorWorkspace()
 export const capacitorWorkMode = new LocalWorkMode(
@@ -52,7 +53,8 @@ export const capacitorWorkMode = new LocalWorkMode(
         : rendererApplication.sessions.listSessionsMetaPage(cursor, limit),
     readChatPage: (request) => rendererApplication.sessions.readSessionTranscriptWindow(request),
   }),
-  capacitorDocumentParser
+  capacitorDocumentParser,
+  capacitorPython
 )
 
 export function buildMobileWebTools(model: ModelInterface, enabled: boolean) {

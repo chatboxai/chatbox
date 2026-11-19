@@ -349,7 +349,7 @@ const ExtensionSettingsSchema = z.object({
     /** Provider retried when the selected one fails; `none` turns the fallback off. */
     fallbackProvider: z
       .enum(['none', 'build-in', 'bing', 'deepseek', 'kimi', 'glm', 'tavily', 'bocha', 'querit', 'searxng'])
-      .default('deepseek'),
+      .optional(),
     tavilyApiKey: z.string().optional(),
     bochaApiKey: z.string().optional(),
     queritApiKey: z.string().optional(),

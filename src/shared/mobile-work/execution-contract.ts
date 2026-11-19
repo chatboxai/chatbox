@@ -10,6 +10,19 @@ console.log('Saved output/result.json');`
 export const QUICKJS_CODE_INPUT =
   'JavaScript async function body for QuickJS. Use await files.readText/writeText for file I/O. No require, import/export, process, Buffer, Node.js packages or browser APIs.'
 
+export const PYTHON_ENVIRONMENT = `Pass language "python" to run Python in a Pyodide (CPython WebAssembly) sandbox instead. Only the Python standard library is available: numpy, pandas, requests and other third-party packages are not bundled, and there is no network, shell or Node.js access. Files are shared with the JavaScript sandbox: workspace files are copied into the current working directory before the run, and every file written there is saved back to the workspace afterwards. Open workspace-relative paths such as input/data.csv and write results under output/; input/ and artifacts/ are read-only. Print results with print(). Execution has a 60 second deadline and output is capped at 64 KiB.`
+
+export const PYTHON_EXAMPLE = `Python example (language: "python"):
+import csv
+with open('input/data.csv', newline='') as handle:
+    rows = list(csv.DictReader(handle))
+with open('output/summary.csv', 'w', newline='') as handle:
+    csv.writer(handle).writerow(['rows', len(rows)])
+print('Saved output/summary.csv')`
+
+export const PYTHON_UNAVAILABLE =
+  'Python execution is not available in this environment. Use JavaScript in code_execution instead.'
+
 export function explainQuickJSError(error: string | undefined): string | undefined {
   if (!error) return error
   const missing =

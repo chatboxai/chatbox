@@ -75,6 +75,32 @@ a model vendor's own official web-search API together with your own API key**, p
   (`appId com.chatbox.open`, `webDir release/app/dist/renderer`, `server.androidScheme https`).
   The generated `android/` project is **not** committed — see below.
 
+### 6. Python execution on mobile (Pyodide / WebAssembly)
+
+Upstream `code_execution` only runs JavaScript in a QuickJS sandbox on mobile, and its own
+contract text states that Python is unavailable. This fork adds CPython via
+[Pyodide](https://pyodide.org/) so the Android app can run Python locally, without a desktop
+companion.
+
+- `code_execution` accepts `language: "javascript" | "python"` (default `javascript`); the tool
+  description gains a Python environment/example section.
+- Runtime: `src/renderer/packages/mobile-work-mode/python-service.ts` lazily loads Pyodide from
+  the bundled assets (`/pyodide/`, served from the app bundle), keeps a single instance, and for
+  every run: resets `/home/pyodide/work`, copies the session workspace into it, executes the
+  snippet, then reads that directory back and commits the files through the same workspace port
+  the JavaScript sandbox uses (`input/` read-only, outputs under `output/`).
+- Wiring: `PythonExecutionPort` + optional constructor argument in
+  `src/shared/mobile-work/LocalWorkMode.ts`, provided by
+  `src/renderer/packages/mobile-work-mode/runtime.ts`; contract strings in
+  `src/shared/mobile-work/execution-contract.ts`.
+- Bundled runtime: `src/renderer/public/pyodide/` — `pyodide.mjs`, `pyodide.asm.js`,
+  `pyodide.asm.wasm`, `python_stdlib.zip`, `pyodide-lock.json` (11.7 MB, Pyodide 0.29.5,
+  CPython 3.13). Added as a dev dependency in `package.json` / `pnpm-lock.yaml`.
+- Limits: standard library only (no numpy/pandas wheels are bundled), no network, 60 s deadline,
+  64 KiB output cap, and it is available in **work mode** only, because `code_execution` is a
+  work-mode tool. Pyodide itself is **MPL-2.0**; the bundled files and their license are
+  distributed unchanged.
+
 Upstream files that were touched (nothing else): the ones listed above, plus
 `src/renderer/packages/web-search/{constants.test.ts,parse-link-consistency.test.ts,configuration-issue.test.ts}`.
 
@@ -106,6 +132,15 @@ On Windows, `android/local.properties` must contain `sdk.dir=...` (git-ignored).
 2. Settings → Capabilities → Web Search → choose the **Search Provider**
    (DeepSeek / Kimi / GLM) and optionally a **Fallback** provider.
 3. In a chat, open the agent panel (robot icon) and enable **Web Search**.
+
+## Using Python in the Android app
+
+1. Open a chat and switch the agent panel to **Work mode** (工作模式) — `code_execution` is a
+   work-mode tool.
+2. Ask for a Python task, or let the model pick `language: "python"`; the first run loads the
+   WebAssembly runtime from the app bundle (a second or two on a modern phone).
+3. Files follow the same workspace rules as the JavaScript sandbox: read from `input/`, write to
+   `output/`, then download with `create_download`.
 
 ## Privacy / secrets
 

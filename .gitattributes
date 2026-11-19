@@ -10,3 +10,7 @@
 *.ttf   binary
 *.woff  binary
 *.woff2 binary
+*.wasm  binary
+*.zip   binary
+*.mjs   text eol=lf
+src/renderer/public/pyodide/** binary

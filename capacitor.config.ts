@@ -11,7 +11,6 @@ const config: CapacitorConfig = {
   appId: 'com.chatbox.open',
   appName: 'Chatbox',
   webDir: 'release/app/dist/renderer',
-  bundledWebRuntime: false,
   android: {
     allowMixedContent: false,
   },

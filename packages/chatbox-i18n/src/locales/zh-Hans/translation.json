@@ -2107,5 +2107,18 @@
   "This request will consume {{count}} image quota.": "本次将消耗 {{count}} 张图片额度。",
   "This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.": "本次将先消耗 {{quota}} 张图片额度，其余 {{images}} 张按 {{points}} 点/张计为 {{total}} 点。批准即表示同意本次扣除。",
   "This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. Already allowed to use compute points.": "本次将先消耗 {{quota}} 张图片额度，其余 {{images}} 张按 {{points}} 点/张计为 {{total}} 点。已允许使用计算点数。",
-  "This request will use compute points: {{images}} × {{points}} points/image = {{total}} points. Already allowed to use compute points.": "本次请求将消耗计算点数：{{images}} 张 × {{points}} 点/张 = {{total}} 点。已允许使用计算点数。"
+  "This request will use compute points: {{images}} × {{points}} points/image = {{total}} points. Already allowed to use compute points.": "本次请求将消耗计算点数：{{images}} 张 × {{points}} 点/张 = {{total}} 点。已允许使用计算点数。",
+  "Workspaces": "工作区",
+  "Workspace Storage": "工作区存储",
+  "{{size}} used by {{count}} conversation workspace(s)": "已用 {{size}}，分布在 {{count}} 个会话工作区",
+  "Calculating…": "计算中…",
+  "Clean now": "立即清理",
+  "Automatically clean old workspaces": "自动清理旧工作区",
+  "Deletes the files a conversation left behind once it has been idle for the period below.": "当会话闲置超过下方时长后，删除它在工作区留下的文件。",
+  "Keep workspaces for": "工作区保留时长",
+  "{{count}} days": "{{count}} 天",
+  "Applies to work-mode workspaces on this device; conversations themselves are never deleted.": "仅作用于本机工作模式的工作区；对话本身不会被删除。",
+  "Removed {{count}} stale workspace(s), freed {{size}}": "已清理 {{count}} 个旧工作区，释放 {{size}}",
+  "No workspaces are older than {{days}} days": "没有超过 {{days}} 天的旧工作区",
+  "Cleanup failed: {{message}}": "清理失败：{{message}}"
 }

@@ -2107,5 +2107,18 @@
   "This request will consume {{count}} image quota.": "This request will consume {{count}} image quota.",
   "This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.": "This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.",
   "This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. Already allowed to use compute points.": "This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. Already allowed to use compute points.",
-  "This request will use compute points: {{images}} × {{points}} points/image = {{total}} points. Already allowed to use compute points.": "This request will use compute points: {{images}} × {{points}} points/image = {{total}} points. Already allowed to use compute points."
+  "This request will use compute points: {{images}} × {{points}} points/image = {{total}} points. Already allowed to use compute points.": "This request will use compute points: {{images}} × {{points}} points/image = {{total}} points. Already allowed to use compute points.",
+  "Workspaces": "Workspaces",
+  "Workspace Storage": "Workspace Storage",
+  "{{size}} used by {{count}} conversation workspace(s)": "{{size}} used by {{count}} conversation workspace(s)",
+  "Calculating…": "Calculating…",
+  "Clean now": "Clean now",
+  "Automatically clean old workspaces": "Automatically clean old workspaces",
+  "Deletes the files a conversation left behind once it has been idle for the period below.": "Deletes the files a conversation left behind once it has been idle for the period below.",
+  "Keep workspaces for": "Keep workspaces for",
+  "{{count}} days": "{{count}} days",
+  "Applies to work-mode workspaces on this device; conversations themselves are never deleted.": "Applies to work-mode workspaces on this device; conversations themselves are never deleted.",
+  "Removed {{count}} stale workspace(s), freed {{size}}": "Removed {{count}} stale workspace(s), freed {{size}}",
+  "No workspaces are older than {{days}} days": "No workspaces are older than {{days}} days",
+  "Cleanup failed: {{message}}": "Cleanup failed: {{message}}"
 }

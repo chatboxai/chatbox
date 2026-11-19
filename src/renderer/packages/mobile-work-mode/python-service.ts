@@ -15,7 +15,7 @@ const MAX_OUTPUT_CHARS = 64 * 1024
  * `micropip` is bundled too: it lets pure-Python packages be installed with
  * `micropip.install(...)` whenever the device has network access.
  */
-const BUNDLED_PACKAGES = ['numpy', 'pandas', 'matplotlib', 'micropip']
+const BUNDLED_PACKAGES = ['numpy', 'pandas', 'matplotlib', 'scipy', 'micropip']
 
 interface PyodideRuntime {
   FS: {

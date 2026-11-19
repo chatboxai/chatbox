@@ -632,6 +632,15 @@ export const SettingsSchema = GlobalSessionSettingsSchema.extend({
 
   extension: ExtensionSettingsSchema,
   mcp: MCPSettingsSchema,
+  // Mobile work-mode workspaces (session files used by code execution and Python) are cleaned up
+  // in the background once their last write is older than `retentionDays`.
+  workspaceCleanup: z
+    .object({
+      enabled: z.boolean().optional(),
+      retentionDays: z.number().min(1).max(365).optional(),
+    })
+    .optional()
+    .catch(undefined),
   mobileSkillPreferences: z
     .object({
       'chatbox-product-info': z.boolean().optional(),

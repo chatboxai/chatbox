@@ -99,6 +99,10 @@ export function createDefaultSettings(): Settings {
       servers: [],
       enabledBuiltinServers: [],
     },
+    workspaceCleanup: {
+      enabled: true,
+      retentionDays: 30,
+    },
     skills: {
       enabledSkillNames: [...DEFAULT_ENABLED_BUILTIN_SKILL_NAMES],
       translationEnabled: true,

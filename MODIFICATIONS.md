@@ -105,11 +105,12 @@ companion.
   | numpy | 2.2.5 |
   | pandas | 2.3.3 |
   | matplotlib | 3.8.4 |
+  | scipy | 1.14.1 |
   | pillow / contourpy / cycler / fonttools / kiwisolver / packaging / pyparsing / python-dateutil / pytz / tzdata / six | 11.3.0 / 1.3.1 / 0.12.1 / 4.56.0 / 1.4.8 / 26.2 / 3.2.1 / 2.9.0.post0 / 2025.2 / 2025.3 / 1.17.0 |
 
   They are the unmodified `cp313`/`pyemscripten_2025_0_wasm32` wheels published for Pyodide
-  0.29.5 (downloaded from `https://cdn.jsdelivr.net/pyodide/v0.29.5/full/`, 16.76 MB total), and
-  each keeps its own `*.dist-info` license metadata. `scipy` is **not** bundled.
+  0.29.5 (downloaded from `https://cdn.jsdelivr.net/pyodide/v0.29.5/full/`, 32.4 MB total), and
+  each keeps its own `*.dist-info` license metadata.
   Matplotlib must run headless: the tool description tells the model to call
   `matplotlib.use('Agg')` before importing `pyplot` and to save with `fig.savefig('output/x.png')`,
   because `pyplot.show()` is meaningless on mobile.
@@ -154,6 +155,26 @@ read-only `input/` attachments, so `CapacitorWorkspace.commit()` rejected the wh
 "Input and delivered files are read-only". `collectFiles()` now skips `input/` and `artifacts/` and
 only reports files that were created or changed, matching the JavaScript sandbox
 (`WorkerFiles.serialize()`).
+
+### 9. Automatic cleanup of old work-mode workspaces
+
+Every code/Python run leaves files under the app-private `files/workspaces/<session>/` directory
+(`output/chart.png`, exported CSVs, `input/` attachments). Deleting a conversation does not remove
+them, so long-lived installs accumulate tens or hundreds of megabytes of stale data.
+
+- `src/renderer/packages/mobile-work-mode/workspace-cleanup.ts` (new): `listWorkspaceUsage()` walks
+  each session directory and reports size/files; a workspace's "last used" time is the **newest
+  mtime of the directory and every file inside it** (a directory's own mtime does not change when a
+  nested file is overwritten). `cleanupStaleWorkspaces({ retentionDays })` removes the directories
+  older than the window and returns `{ scanned, removed, freedBytes, failed }`;
+  `autoCleanupWorkspaces()` runs it at most once per day.
+- Startup: `src/renderer/index.tsx` runs the cleanup in the background on mobile, after settings are
+  hydrated, and never blocks or breaks startup.
+- Settings: `workspaceCleanup: { enabled?, retentionDays? }` in the core settings schema
+  (defaults: enabled, 30 days) and a **Settings → Data & Backup → Workspaces** section
+  (`src/renderer/components/settings/WorkspaceCleanupSection.tsx`) showing current usage, a manual
+  "Clean now" button, the auto-cleanup switch and the retention select (7/14/30/60/90 days).
+  Conversations themselves are never deleted — only the per-conversation workspace files.
 
 Upstream files that were touched (nothing else): the ones listed above, plus
 `src/renderer/packages/web-search/{constants.test.ts,parse-link-consistency.test.ts,configuration-issue.test.ts}`.

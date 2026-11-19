@@ -15,6 +15,10 @@ import {
   runRendererStartup,
 } from './app'
 import { ErrorBoundary } from './components/common/ErrorBoundary'
+import {
+  autoCleanupWorkspaces,
+  DEFAULT_WORKSPACE_RETENTION_DAYS,
+} from './packages/mobile-work-mode/workspace-cleanup'
 import { sessionStartupRecovery } from './packages/session-startup-recovery'
 import platform from './platform'
 import reportWebVitals from './reportWebVitals'
@@ -22,6 +26,7 @@ import { router } from './router'
 import './static/globals.css'
 import './static/index.css'
 import { initLogAtom, migrationProcessAtom } from './stores/atoms/utilAtoms'
+import { settingsStore } from './stores/settingsStore'
 import { captureRendererDevLaunchOptions } from './utils/dev-launch'
 import { CHATBOX_BUILD_TARGET } from './variables'
 
@@ -111,6 +116,15 @@ void runRendererStartup({
     sessionStartupRecovery.promotePreviousAttempt()
     // 等待settings和onboarding初始化完成，避免闪屏
     await bootstrapRenderer(rendererApplication)
+    // Mobile workspaces grow with every Python/code run, so prune stale sessions in the background
+    // (once a day, after settings are hydrated). Failures must never block startup.
+    if (platform.type === 'mobile') {
+      const cleanup = settingsStore.getState().workspaceCleanup
+      void autoCleanupWorkspaces({
+        enabled: cleanup?.enabled ?? true,
+        retentionDays: cleanup?.retentionDays ?? DEFAULT_WORKSPACE_RETENTION_DAYS,
+      }).catch((error) => console.warn('[workspace-cleanup] background cleanup failed', error))
+    }
     // Cleanup is intentionally not captured — listeners persist for the app lifetime
 
     // 初始化完成，可以开始渲染

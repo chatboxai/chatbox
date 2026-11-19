@@ -68,8 +68,8 @@ export const topxAIProvider = defineProvider({
         contextWindow: 500_000,
       },
       {
-        modelId: 'kimi-k3.1-pro',
-        nickname: 'Kimi K3.1 Pro',
+        modelId: 'kimi-k3.1-pro-Abliterated',
+        nickname: 'kimi-k3.1-pro-Abliterated',
         capabilities: ['vision', 'reasoning', 'tool_use'],
         contextWindow: 1_048_576,
         maxOutput: 131_072,

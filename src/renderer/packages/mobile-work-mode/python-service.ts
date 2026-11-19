@@ -12,8 +12,10 @@ const MAX_OUTPUT_CHARS = 64 * 1024
 /**
  * Wheels shipped beside the Pyodide assets (see `src/renderer/public/pyodide`).
  * They are pre-loaded so `import numpy` works without network access.
+ * `micropip` is bundled too: it lets pure-Python packages be installed with
+ * `micropip.install(...)` whenever the device has network access.
  */
-const BUNDLED_PACKAGES = ['numpy', 'pandas', 'matplotlib']
+const BUNDLED_PACKAGES = ['numpy', 'pandas', 'matplotlib', 'micropip']
 
 interface PyodideRuntime {
   FS: {
@@ -127,32 +129,47 @@ function removePath(runtime: PyodideRuntime, path: string): void {
   runtime.FS.unlink(path)
 }
 
-function seedFiles(runtime: PyodideRuntime, files: WorkspaceFiles): void {
+function seedFiles(runtime: PyodideRuntime, files: WorkspaceFiles): Map<string, string> {
+  const seeded = new Map<string, string>()
   for (const [path, file] of Object.entries(files)) {
     const target = `${WORK_ROOT}/${path}`
     const slash = target.lastIndexOf('/')
     if (slash > 0) runtime.FS.mkdirTree(target.slice(0, slash))
     runtime.FS.writeFile(target, base64ToBytes(file.base64))
+    seeded.set(path, file.base64)
   }
+  return seeded
 }
 
-function collectFiles(runtime: PyodideRuntime): WorkspaceFiles {
+function collectFiles(runtime: PyodideRuntime, seeded: Map<string, string>): WorkspaceFiles {
   const collected: WorkspaceFiles = {}
   const walk = (directory: string, prefix: string) => {
     for (const entry of runtime.FS.readdir(directory)) {
       if (entry === '.' || entry === '..') continue
       const absolute = `${directory}/${entry}`
       const relative = prefix ? `${prefix}/${entry}` : entry
+      // `input/` and `artifacts/` are read-only in the workspace contract: they are
+      // copied into the sandbox for reading, but never written back from it.
+      if (isReadOnlyWorkspacePath(relative)) continue
       const stat = runtime.FS.stat(absolute)
       if (runtime.FS.isDir(stat.mode)) {
         walk(absolute, relative)
-      } else if (runtime.FS.isFile(stat.mode)) {
-        collected[relative] = { base64: bytesToBase64(runtime.FS.readFile(absolute)) }
+        continue
       }
+      if (!runtime.FS.isFile(stat.mode)) continue
+      const base64 = bytesToBase64(runtime.FS.readFile(absolute))
+      // Only report files the script created or modified, mirroring the JavaScript
+      // sandbox, so untouched workspace files are not rewritten on every run.
+      if (seeded.get(relative) === base64) continue
+      collected[relative] = { base64 }
     }
   }
   walk(WORK_ROOT, '')
   return collected
+}
+
+function isReadOnlyWorkspacePath(path: string): boolean {
+  return path.startsWith('input/') || path.startsWith('artifacts/')
 }
 
 async function runWithTimeout(runtime: PyodideRuntime, code: string): Promise<void> {
@@ -173,7 +190,7 @@ async function executePython(code: string, files: WorkspaceFiles, signal: AbortS
   if (signal.aborted) throw new Error('Execution stopped')
 
   clearWorkDirectory(runtime)
-  seedFiles(runtime, files)
+  const seeded = seedFiles(runtime, files)
 
   const stdout: string[] = []
   const stderr: string[] = []
@@ -195,7 +212,7 @@ async function executePython(code: string, files: WorkspaceFiles, signal: AbortS
   const output = [...stdout, ...stderr].join('\n')
   return {
     stdout: truncate(output),
-    files: error ? {} : collectFiles(runtime),
+    files: error ? {} : collectFiles(runtime, seeded),
     ...(error ? { error } : {}),
   }
 }

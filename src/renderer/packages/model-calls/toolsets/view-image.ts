@@ -28,6 +28,7 @@ import { isUploadedFilePath } from '@shared/uploaded-file-tools'
 import { validatedToolSchema } from '@shared/validated-tool-schema'
 import type { ModelMessage, ToolResultPart, ToolSet } from 'ai'
 import { getImageBase64AndResize, MODEL_IMAGE_MAX_DIMENSION, svgToPngBase64 } from '@/packages/pic_utils'
+import { hasHeicMagicBytes } from '@/packages/heic-image'
 import platform from '@/platform'
 import { saveImage } from '@/utils/image'
 import { isAbsolutePath, normalizeToolPathForPlatform } from './filesystem'
@@ -60,6 +61,8 @@ const IMAGE_MEDIA_TYPES: Record<string, string> = {
   '.webp': 'image/webp',
   '.bmp': 'image/bmp',
   '.svg': 'image/svg+xml',
+  '.heic': 'image/heic',
+  '.heif': 'image/heif',
 }
 
 function mediaTypeFromExtension(filePath: string): string | null {
@@ -87,6 +90,8 @@ function mediaTypeFromMagicBytes(bytes: Uint8Array): string | null {
     return 'image/webp'
   }
   if (bytes[0] === 0x42 && bytes[1] === 0x4d) return 'image/bmp'
+  // HEIC/HEIF (and AVIF) are ISO-BMFF containers: `....ftyp<brand>`.
+  if (hasHeicMagicBytes(bytes)) return 'image/heic'
   return null
 }
 
@@ -359,9 +364,12 @@ export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolS
 
     const mediaType = mediaTypeFromMagicBytes(sourceBytes.subarray(0, 12)) ?? mediaTypeFromExtension(filePath)
     if (!mediaType) {
-      return { error: 'Unsupported or unrecognized image format. Supported: png, jpg, webp, gif, bmp, svg.' }
+      return { error: 'Unsupported or unrecognized image format. Supported: png, jpg, webp, gif, bmp, svg, heic.' }
     }
-    if (mediaType !== 'image/svg+xml') {
+    // HEIC has no byte-level bounds parser here; libheif reports the dimensions
+    // while decoding, and `getImageBase64AndResize` rejects absurd sizes itself.
+    const isHeic = mediaType === 'image/heic' || mediaType === 'image/heif'
+    if (mediaType !== 'image/svg+xml' && !isHeic) {
       const sourceBounds = readRasterImageBounds(sourceBytes, mediaType)
       if (!sourceBounds) {
         return { error: 'Failed to inspect image dimensions safely. The file may be corrupted.' }
@@ -395,7 +403,9 @@ export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolS
         file = new File([readResult.bytes], fileNameOf(filePath), { type: mediaType })
       }
       dataUrl = await getImageBase64AndResize(file, { outputType: 'image/webp', quality: 0.85 })
-    } catch {
+    } catch (caught) {
+      // Surfaced in the console so HEIC/decoder regressions are diagnosable on device.
+      console.warn('[view-image] image normalization failed', caught)
       return { error: 'Failed to decode image. The file may be corrupted or not a valid image.' }
     }
 
@@ -415,7 +425,7 @@ export function buildViewImageToolSet(context: ViewImageContext): ViewImageToolS
       (context.provider?.type === 'local' && context.sessionId
         ? 'Relative paths resolve in the session sandbox; absolute paths read the user filesystem (read-only). '
         : 'Use absolute paths; they read the user filesystem (read-only). ') +
-      'Supports png, jpg, webp, gif, bmp, svg; large images are downscaled. ' +
+      'Supports png, jpg, webp, gif, bmp, svg, heic; large images are downscaled. ' +
       VIEW_IMAGE_BATCH_GUIDANCE,
     inputSchema: validatedToolSchema({
       type: 'object',

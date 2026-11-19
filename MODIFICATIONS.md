@@ -113,11 +113,47 @@ companion.
   Matplotlib must run headless: the tool description tells the model to call
   `matplotlib.use('Agg')` before importing `pyplot` and to save with `fig.savefig('output/x.png')`,
   because `pyplot.show()` is meaningless on mobile.
-- Limits: standard library plus the table above (no other third-party packages — `pip` and
-  `micropip` are not wired up, and there is no network), no shell or Node API, 60 s deadline,
-  64 KiB output cap, and it is available in **work mode** only, because `code_execution` is a
-  work-mode tool. Python runs on the main renderer thread, so a long run blocks the UI.
+- Limits: standard library plus the table above, `micropip` (0.11.1, also bundled) for pure-Python
+  packages **when the device has network access** (`import micropip; await micropip.install('httpx')`),
+  no shell or Node API, 60 s deadline, 64 KiB output cap, and it is available in **work mode** only,
+  because `code_execution` is a work-mode tool. Python runs on the main renderer thread, so a long run
+  blocks the UI. Packages with compiled C extensions cannot be installed at runtime; bundle their
+  Pyodide wheels instead (that is what the table above does).
   Pyodide itself is **MPL-2.0**; the bundled files and their licenses are distributed unchanged.
+
+### 7. HEIC/HEIF image input (libheif WebAssembly)
+
+Chromium — and therefore the Android WebView — cannot decode HEIC/HEIF with `<img>`, so an iPhone
+photo used to fail with "Failed to decode image" even though the picker listed `.heic` files. This
+fork decodes HEIC locally with [libheif-js](https://github.com/nokiatech/libheif) before the image is
+downscaled and sent to the model; nothing is uploaded and no native plugin is involved.
+
+- `src/renderer/packages/heic-image.ts` (new): `isHeicImage()` (MIME type or `.heic`/`.heif`
+  extension), `hasHeicMagicBytes()` (ISO-BMFF `ftyp` brands: `heic`, `heix`, `hevc`, `hevx`, `heim`,
+  `heis`, `hevm`, `hevs`, `mif1`, `mif2`, `msf1`, `avif`, `avis`), and `decodeHeicToImageData()`
+  (primary image → RGBA, 60 MP guard, throws on corrupt input).
+- `src/renderer/packages/pic_utils.ts`: new `encodeImageDataToBase64()` and exported
+  `isHeicImage()`; `getImageBase64AndResize()` decodes HEIC through libheif instead of `<img>`.
+- `src/renderer/components/InputBox/InputBox.tsx`: images are detected by MIME type **or** HEIC
+  extension, because Android often reports `.heic` as `application/octet-stream`.
+- `src/renderer/packages/model-calls/toolsets/view-image.ts`: `.heic`/`.heif` in
+  `IMAGE_MEDIA_TYPES`, HEIC magic-byte sniffing, HEIC skips the byte-level dimension pre-check
+  (libheif reports the size while decoding), tool description updated.
+- `src/shared/tools/view-image.ts`: `.heic`/`.heif` added to `READ_FILE_IMAGE_EXTENSIONS`.
+- `src/renderer/packages/libheif-js.d.ts` (new): minimal ambient types for the untyped package.
+- Dependency: `libheif-js@^1.23.5` (**LGPL-3.0**, compatible with this GPL-3.0 project), used through
+  its self-contained classic build (wasm inlined) and loaded lazily, so the 3 MB chunk is only
+  fetched when a HEIC file is actually opened.
+- Mobile builds no longer emit renderer sourcemaps or the bundle report
+  (`electron.vite.config.ts`), which removes ~10 MB of dead weight from the APK.
+
+### 8. Python workspace write-back fix
+
+`python-service.ts` used to send **every** file in the sandbox back to the workspace, including the
+read-only `input/` attachments, so `CapacitorWorkspace.commit()` rejected the whole run with
+"Input and delivered files are read-only". `collectFiles()` now skips `input/` and `artifacts/` and
+only reports files that were created or changed, matching the JavaScript sandbox
+(`WorkerFiles.serialize()`).
 
 Upstream files that were touched (nothing else): the ones listed above, plus
 `src/renderer/packages/web-search/{constants.test.ts,parse-link-consistency.test.ts,configuration-issue.test.ts}`.
@@ -167,6 +203,21 @@ Example prompt that works out of the box:
 
 > Use python with numpy, pandas and matplotlib: compute the mean and std of 1000 random numbers,
 > print them, then save a line plot to output/chart.png.
+
+Extra pure-Python packages (network required):
+
+```python
+import micropip
+await micropip.install('httpx')   # pure Python only; compiled packages must be bundled instead
+import httpx
+```
+
+## Using HEIC photos in the Android app
+
+- Attach a `.heic`/`.heif` photo like any other image (the attach menu → 添加图片, or 选择文件).
+  It is decoded on device with libheif, downscaled, and sent to the model as a normal image —
+  providers that cannot read HEIC never see one.
+- `view_image` and `read_file` also accept `.heic`/`.heif` paths inside a work-mode workspace.
 
 ## Privacy / secrets
 

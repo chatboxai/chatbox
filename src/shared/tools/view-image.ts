@@ -20,7 +20,7 @@ const IMAGE_VIEWING_TOOL_NAMES: ReadonlySet<string> = new Set([
 ])
 
 /** Raster formats read_file returns as visual input. SVG stays text so it can be read and edited as markup. */
-export const READ_FILE_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'] as const
+export const READ_FILE_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.heic', '.heif'] as const
 
 export function isReadFileImagePath(filePath: string): boolean {
   const lower = filePath.toLowerCase()

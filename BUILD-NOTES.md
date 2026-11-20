@@ -317,3 +317,4 @@ cd android; .\gradlew.bat assembleDebug
 - 实测：`/coding/v1/models`、`/coding/v1/me` 均 200；chat 请求在**额度用尽**时返回 429 `exceeded_current_quota_error`（配额按自然月重置）。
 - **Android 上的额外一步**：Kimi Code 网关不回 CORS 头，WebView 直连会被拦。新添加的提供方默认 `useProxy: true`（走原生 HTTP 通道），设置页里对应「改善网络兼容性」开关；该开关在手机端也对该提供方可见（`src/renderer/routes/settings/provider/-networkCompatibility.ts`）。老的 Kimi Code 条目需要手动打开一次。
 - **额度**：Kimi Code 套餐按自然月计费，额度用完时接口返回 429 `exceeded_current_quota_error`（附升级链接），这是账号额度而非客户端问题。
+- **错误卡片**：429（额度/限流）现在只显示真实的 `HTTP 429` 与服务器返回的原文，不再附带「登录 Chatbox AI 使用许可证」提示和「Chatbox AI 免费试用」按钮——这两处在 open build 里由 `CHATBOX_AI_ENABLED` 关掉（`src/renderer/components/chat/GenericMessageError.tsx`）。

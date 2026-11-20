@@ -322,4 +322,7 @@ binary built from this repository you must:
 3. keep this `MODIFICATIONS.md` so recipients can see what changed (§5 "state changes").
 
 Chatbox, its name and its logo remain the property of their respective owners; this fork is not
-affiliated with or endorsed by Chatbox.
+affiliated with or endorsed by Chatbox.- The chat error card no longer shows the "sign in to Chatbox AI" hint or the "Chatbox AI free
+  trial" button in this build (`CHATBOX_AI_ENABLED` gate in
+  `src/renderer/components/chat/GenericMessageError.tsx`), so a third-party provider failure such as
+  a Kimi Code 429 shows only the real HTTP status and the server message.

@@ -26,7 +26,15 @@ export function createMCPFetch(
     const url = String(input)
     if (new URL(url).origin !== origin)
       return Promise.reject(new Error('MCP endpoint must use the configured server origin'))
-    const requestInit = { ...init, redirect: 'error' as const, credentials: 'include' as const }
+    // Streamable HTTP servers (the MCP spec and, e.g., mcp.jina.ai) reject a request that does not
+    // advertise both content types with 406 Not Acceptable, which the SDK surfaces as a cancelled
+    // stream. Normalize Accept so every MCP request asks for JSON *and* an event stream.
+    const headers = new Headers(init?.headers)
+    const accept = headers.get('accept') ?? ''
+    if (!accept.includes('text/event-stream')) {
+      headers.set('accept', accept ? `${accept}, text/event-stream` : 'application/json, text/event-stream')
+    }
+    const requestInit = { ...init, headers, redirect: 'error' as const, credentials: 'include' as const }
     return fetchImpl(url, requestInit)
   }
 }

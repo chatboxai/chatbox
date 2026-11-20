@@ -59,6 +59,29 @@ describe('native web search', () => {
     expect(hasNativeWebSearchConfiguration({ provider: 'deepseek', apiKey: 'key' })).toBe(true)
   })
 
+  it('explains that Kimi Code subscription keys cannot use the search API', async () => {
+    const fetchFn = mockFetchResponse({ search_results: [] })
+    await expect(
+      searchNativeWeb('query', { provider: 'kimi', apiKey: 'sk-kimi-abc123', fetchFn })
+    ).rejects.toThrow(/sk-kimi-.*Moonshot Open Platform/s)
+    expect(fetchFn).not.toHaveBeenCalled()
+  })
+
+  it('searches through Kimi with the documented text_query payload', async () => {
+    const fetchFn = mockFetchResponse({
+      search_results: [{ title: 'Kimi doc', url: 'https://platform.moonshot.cn', snippet: 'snip' }],
+    })
+    const results = await searchNativeWeb('kimi news', { provider: 'kimi', apiKey: 'sk-open-platform', fetchFn })
+    expect(results).toEqual([{ title: 'Kimi doc', link: 'https://platform.moonshot.cn', snippet: 'snip' }])
+    expect(fetchFn).toHaveBeenCalledWith(
+      'https://api.moonshot.ai/v1/tools/search',
+      expect.objectContaining({
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer sk-open-platform' },
+        body: JSON.stringify({ text_query: 'kimi news', limit: 8, timeout_seconds: 30 }),
+      })
+    )
+  })
+
   it('preserves empty DeepSeek results and reports HTTP and payload errors', async () => {
     expect(
       await searchNativeWeb('query', {

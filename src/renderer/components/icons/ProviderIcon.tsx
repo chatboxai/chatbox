@@ -23,7 +23,11 @@ export default function ProviderIcon(props: { className?: string; size?: number;
     return <MinimaxColor className={className} size={size} />
   }
 
-  if ([ModelProviderEnum.Moonshot, ModelProviderEnum.MoonshotCN].includes(provider as ModelProviderEnum)) {
+  if (
+    [ModelProviderEnum.Moonshot, ModelProviderEnum.MoonshotCN, ModelProviderEnum.KimiCode].includes(
+      provider as ModelProviderEnum
+    )
+  ) {
     return <MoonshotMono className={className} size={size} style={{ color: 'currentColor' }} />
   }
 

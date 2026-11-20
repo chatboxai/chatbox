@@ -208,3 +208,11 @@ tmp_*.*
 # Local headless evaluation artifacts
 /jobs/
 /scripts/terminal_bench/__pycache__/
+
+# --- Local Android/Capacitor build output (regenerate with `pnpm exec cap add android`) ---
+/android/
+local.properties
+*.apk
+*.aab
+*.keystore
+*.jks

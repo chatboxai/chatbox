@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import { BackupRestoreSections, DataRecoveryRow } from '@/components/settings/DataSections'
 import { SettingRow, SettingsPage, SettingsSection } from '@/components/settings/SettingsLayout'
+import { WorkspaceCleanupSection } from '@/components/settings/WorkspaceCleanupSection'
+import platform from '@/platform'
 
 export const Route = createFileRoute('/settings/data')({
   component: RouteComponent,
@@ -34,6 +36,11 @@ export function RouteComponent() {
         />
         <DataRecoveryRow />
       </SettingsSection>
+      {platform.type === 'mobile' && (
+        <SettingsSection title={t('Workspaces')}>
+          <WorkspaceCleanupSection />
+        </SettingsSection>
+      )}
       <BackupRestoreSections />
     </SettingsPage>
   )

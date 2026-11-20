@@ -8,17 +8,25 @@ import { type LocalWorkCapabilityId, resolveLocalWorkCapabilities } from './capa
 import type { WorkDocumentParser } from './document-parser'
 import {
   explainQuickJSError,
+  PYTHON_ENVIRONMENT,
+  PYTHON_EXAMPLE,
+  PYTHON_UNAVAILABLE,
   QUICKJS_CODE_INPUT,
   QUICKJS_ENVIRONMENT,
   QUICKJS_EXAMPLE,
   QUICKJS_FILES,
 } from './execution-contract'
 import { buildLocalFilesystemTools } from './filesystem-tools'
-import type { MobileExecutionService } from './MobileExecutionService'
+import type { ExecutionResult, MobileExecutionService } from './MobileExecutionService'
 import { buildMobileProductInfoTool, type MobileProductInfoHost } from './product-info-tools'
 import { isMobileSkillEnabled, type MobileSkillPreferences } from './skill-settings'
-import { textToBase64 } from './workspace-path'
+import { textToBase64, type WorkspaceFiles } from './workspace-path'
 import type { LocalWorkspacePort } from './workspace-port'
+
+/** Runs Python (Pyodide/WASM) with the same file contract as the JavaScript sandbox. */
+export interface PythonExecutionPort {
+  execute(code: string, files: WorkspaceFiles, signal: AbortSignal): Promise<ExecutionResult>
+}
 
 export interface MobileToolGroup {
   id: string
@@ -70,7 +78,8 @@ export class LocalWorkMode<W extends LocalWorkspacePort> {
     private readonly groups: (context: WorkModeContext) => MobileToolGroup[] = () => [],
     private readonly blobs?: BlobStoragePort,
     private readonly productInfoHost?: () => MobileProductInfoHost,
-    private readonly documentParser?: WorkDocumentParser
+    private readonly documentParser?: WorkDocumentParser,
+    private readonly pythonExecution?: PythonExecutionPort
   ) {}
 
   async createTools(context: WorkModeContext, webTools: ToolSet = {}, restoreActive = false) {
@@ -157,17 +166,31 @@ export class LocalWorkMode<W extends LocalWorkspacePort> {
         },
       }),
       code_execution: tool({
-        description: `${QUICKJS_ENVIRONMENT}\n${QUICKJS_FILES}\n${QUICKJS_EXAMPLE}\nLoad the relevant document skill before using docs helpers.`,
-        inputSchema: z.object({ code: z.string().max(100_000).describe(QUICKJS_CODE_INPUT) }),
-        execute: async ({ code }, options) => {
+        description: `${QUICKJS_ENVIRONMENT}\n${QUICKJS_FILES}\n${QUICKJS_EXAMPLE}\n${this.pythonExecution ? `${PYTHON_ENVIRONMENT}\n${PYTHON_EXAMPLE}\n` : ''}Load the relevant document skill before using docs helpers.`,
+        inputSchema: z.object({
+          code: z.string().max(100_000).describe(QUICKJS_CODE_INPUT),
+          language: z
+            .enum(['javascript', 'python'])
+            .default('javascript')
+            .describe(
+              'Execution language. "python" runs CPython 3.13 in a Pyodide WASM sandbox with numpy, pandas and matplotlib bundled.'
+            ),
+        }),
+        execute: async ({ code, language }, options) => {
           const signal = options.abortSignal ?? context.signal
           const files = await this.workspace.snapshot(context.sessionId)
-          const result = await this.execution.execute(code, files, signal, undefined, context.skillPreferences)
+          let result: ExecutionResult
+          if (language === 'python') {
+            if (!this.pythonExecution) throw new Error(PYTHON_UNAVAILABLE)
+            result = await this.pythonExecution.execute(code, files, signal)
+          } else {
+            result = await this.execution.execute(code, files, signal, undefined, context.skillPreferences)
+          }
           throwIfWorkAborted(signal)
           if (!result.error) await this.workspace.commit(context.sessionId, result.files, signal)
           return {
             stdout: result.stdout,
-            error: explainQuickJSError(result.error),
+            error: language === 'python' ? result.error : explainQuickJSError(result.error),
             exitCode: result.error ? 1 : 0,
             files: result.error ? [] : Object.keys(result.files),
           }

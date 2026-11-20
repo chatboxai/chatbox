@@ -391,6 +391,18 @@ export class ChatboxAIAPIError extends BaseError {
       i18nKey:
         'You have selected DeepSeek as the search provider, but no DeepSeek API key is set up yet. Please <OpenDeepSeekProviderSettingButton>add it in the DeepSeek model provider settings</OpenDeepSeekProviderSettingButton>, or choose a different <OpenExtensionSettingButton>search provider</OpenExtensionSettingButton>.',
     },
+    kimi_api_key_required: {
+      name: 'kimi_api_key_required',
+      code: 20053,
+      i18nKey:
+        'You have selected Kimi as the search provider, but no Moonshot API key is set up yet. Please <OpenKimiProviderSettingButton>add it in the Moonshot model provider settings</OpenKimiProviderSettingButton>, or choose a different <OpenExtensionSettingButton>search provider</OpenExtensionSettingButton>.',
+    },
+    glm_api_key_required: {
+      name: 'glm_api_key_required',
+      code: 20054,
+      i18nKey:
+        'You have selected GLM as the search provider, but no GLM API key is set up yet. Please <OpenGLMProviderSettingButton>add it in the GLM model provider settings</OpenGLMProviderSettingButton>, or choose a different <OpenExtensionSettingButton>search provider</OpenExtensionSettingButton>.',
+    },
     parse_link_failed: {
       name: 'parse_link_failed',
       code: 20037,

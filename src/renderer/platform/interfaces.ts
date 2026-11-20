@@ -163,6 +163,12 @@ export interface Platform extends Storage {
     error?: string
   }>
   readWorkspaceInstructions?(directories: string[]): Promise<WorkspaceInstructionsResult>
+  /**
+   * Read an AGENTS.md from the mobile session workspace root (Directory.Data),
+   * capped by the caller. Resolves null when absent/unreadable — best-effort.
+   * Mobile only; desktop agent mode already loads AGENTS.md from working dirs.
+   */
+  readSessionWorkspaceAgentsMd?(sessionId: string): Promise<string | null>
   fsList?(params: { dirPath: string }): Promise<{ success: boolean; content?: string; error?: string }>
   fsSearch?(params: {
     pattern: string

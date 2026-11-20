@@ -1,6 +1,7 @@
 import { App } from '@capacitor/app'
 import { Browser } from '@capacitor/browser'
 import { Device } from '@capacitor/device'
+import { Filesystem } from '@capacitor/filesystem'
 import type { SessionRowStorePort } from '@chatbox/core/ports'
 import { type AnalyticsEventParams, GOOGLE_ANALYTICS_MEASUREMENT_ID } from '@shared/analytics'
 import * as defaults from '@shared/defaults'
@@ -15,6 +16,7 @@ import { SQLiteSessionMetaStorage } from '@/storage/SQLiteSessionMetaStorage'
 import { SQLiteSessionRowStore } from '@/storage/SQLiteSessionRowStorage'
 import { CHATBOX_BUILD_PLATFORM } from '@/variables'
 import { getBrowser, getOS } from '../packages/navigator'
+import { readWorkspaceAgentsMd } from '../packages/mobile-work-mode/workspace-agents-md'
 import type { Platform, PlatformType } from './interfaces'
 import type { KnowledgeBaseController } from './knowledge-base/interface'
 import MobileExporter from './mobile_exporter'
@@ -306,6 +308,10 @@ export default class MobilePlatform extends MobileSQLiteStorage implements Platf
 
   getLocalFilePath(file: File): string {
     return 'path' in file && typeof file.path === 'string' ? file.path : ''
+  }
+
+  async readSessionWorkspaceAgentsMd(sessionId: string): Promise<string | null> {
+    return readWorkspaceAgentsMd(sessionId, Filesystem)
   }
 
   public async parseUrl(url: string): Promise<{ key: string; title: string }> {

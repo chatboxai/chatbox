@@ -1,12 +1,12 @@
 import { Switch } from '@mantine/core'
 import type { FC } from 'react'
 import { useTranslation } from 'react-i18next'
+import { CHATBOX_AI_ENABLED } from '@shared/open-build'
 import MCPStatus from '@/components/mcp/MCPStatus'
 import { SettingRow, SettingsSection } from '@/components/settings/SettingsLayout'
 import { useMCPServerStatus, useToggleMCPServer } from '@/hooks/mcp'
 import { BUILTIN_MCP_SERVERS, type BuildinMCPServerConfig } from '@/packages/mcp/builtin'
-import { useAutoValidate } from '@/stores/premiumActions'
-import { useMcpSettings } from '@/stores/settingsStore'
+import { useMcpSettings, useSettingsStore } from '@/stores/settingsStore'
 
 const ServerRow: FC<{
   config: BuildinMCPServerConfig
@@ -41,12 +41,18 @@ const ServerRow: FC<{
 export const BuiltinServersSection: FC = () => {
   const { t } = useTranslation()
   const mcp = useMcpSettings()
-  const isPremium = useAutoValidate()
+  const licenseKey = useSettingsStore((state) => state.licenseKey)
   const onEnabledChange = useToggleMCPServer()
   return (
     <SettingsSection
-      title={`Chatbox ${t('Builtin MCP Servers')}`}
-      description={t('One-click MCP servers for Chatbox AI subscribers')}
+      title={CHATBOX_AI_ENABLED ? `Chatbox ${t('Builtin MCP Servers')}` : t('Builtin MCP Servers')}
+      description={
+        CHATBOX_AI_ENABLED
+          ? t('One-click MCP servers for Chatbox AI subscribers')
+          : t(
+              'One-click MCP servers. Fetch and Context7 use public endpoints; arXiv needs a Chatbox AI license.'
+            )
+      }
     >
       {BUILTIN_MCP_SERVERS.map((config) => (
         <ServerRow
@@ -54,7 +60,7 @@ export const BuiltinServersSection: FC = () => {
           config={config}
           enabled={mcp.enabledBuiltinServers.includes(config.id)}
           onEnabledChange={onEnabledChange}
-          accessible={isPremium}
+          accessible={!config.requiresLicense || !!licenseKey}
         />
       ))}
     </SettingsSection>

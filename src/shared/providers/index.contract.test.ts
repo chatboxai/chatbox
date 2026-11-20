@@ -18,6 +18,7 @@ describe('provider control-plane contracts', () => {
       'minimax-cn',
       'moonshot',
       'moonshot-cn',
+      'kimi-code',
       'siliconflow',
       'openrouter',
       'ollama',

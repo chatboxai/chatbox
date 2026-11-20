@@ -1,8 +1,5 @@
-/**
- * 获取图片base64，在必要时缩小到主流模型支持的尺寸，同时支持将 svg、gif 等文件转成 png 格式
- * @param file 图片文件
- * @returns 图片base64
- */
+import { decodeHeicToImageData, isHeicImage as isHeicImageFile } from './heic-image'
+
 export const MODEL_IMAGE_MAX_DIMENSION = 1568
 
 export function calculateImageResizeSize(
@@ -41,7 +38,46 @@ export interface ImageResizeOptions {
   quality?: number
 }
 
+/** Encode already-decoded pixels into a bounded data URL. */
+export function encodeImageDataToBase64(
+  image: { data: Uint8ClampedArray | Uint8Array; width: number; height: number },
+  options: ImageResizeOptions = {},
+  fallbackType: string = 'image/png'
+): string {
+  const resizeSize = calculateImageResizeSize(image.width, image.height)
+  const canvas = document.createElement('canvas')
+  canvas.width = resizeSize.width
+  canvas.height = resizeSize.height
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('cannot get canvas context')
+  if (resizeSize.width !== image.width || resizeSize.height !== image.height) {
+    // Draw through an offscreen canvas so the browser does the resampling.
+    const sourceCanvas = document.createElement('canvas')
+    sourceCanvas.width = image.width
+    sourceCanvas.height = image.height
+    const sourceCtx = sourceCanvas.getContext('2d')
+    if (!sourceCtx) throw new Error('cannot get canvas context')
+    sourceCtx.putImageData(new ImageData(new Uint8ClampedArray(image.data), image.width, image.height), 0, 0)
+    ctx.drawImage(sourceCanvas, 0, 0, resizeSize.width, resizeSize.height)
+  } else {
+    ctx.putImageData(new ImageData(new Uint8ClampedArray(image.data), image.width, image.height), 0, 0)
+  }
+  const outputType = options.outputType ?? (fallbackType === 'image/jpeg' ? 'image/jpeg' : 'image/png')
+  const quality = options.quality ?? (outputType === 'image/jpeg' ? 0.9 : 1)
+  return canvas.toDataURL(outputType, quality)
+}
+
+/** True for HEIC/HEIF inputs, which browsers cannot decode with `<img>`. */
+export function isHeicImage(file: { type?: string; name?: string }): boolean {
+  return isHeicImageFile(file)
+}
+
 export async function getImageBase64AndResize(file: File, options: ImageResizeOptions = {}) {
+  if (isHeicImage(file)) {
+    // Chromium has no HEIC decoder, so decode through libheif (WASM) instead.
+    const imageData = await decodeHeicToImageData(await file.arrayBuffer())
+    return encodeImageDataToBase64(imageData, options, file.type || 'image/png')
+  }
   if (!file.type.startsWith('image/')) {
     throw new Error('file is not an image')
   }

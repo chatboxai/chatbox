@@ -99,6 +99,9 @@ export async function planForkStructure(
     pivot = await readUserPivot(reader, parent)
   } else pivot = await readMetadata(reader, operation.pivotId)
   if (!pivot || pivot.kind === 'summary') return plan
+  // A replaced branch can remain mounted until its successor finishes loading.
+  // Ignore its stale controls instead of navigating outside the selected path.
+  if (operation.action === 'fork-switch' && !pivot.selected) return plan
   const point = await readBranchPoint(reader, pivot)
   const selected = await readMetadata(reader, point.activeChildId)
   const children = await readChildren(reader, point, 3)

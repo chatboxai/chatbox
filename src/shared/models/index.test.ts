@@ -6,6 +6,7 @@ import OpenAIResponses from 'src/shared/providers/definitions/models/openai-resp
 import Qwen from 'src/shared/providers/definitions/models/qwen'
 import TencentHunyuan from 'src/shared/providers/definitions/models/tencent-hunyuan'
 import XiaomiMiMo from 'src/shared/providers/definitions/models/xiaomi-mimo'
+import PowerTokens from 'src/shared/providers/definitions/models/powertokens'
 import ZhipuGLMCodingPlan from 'src/shared/providers/definitions/models/zhipu-glm-coding-plan'
 import { ModelProviderEnum, type SessionSettings, type Settings } from 'src/shared/types'
 import type { ModelDependencies } from 'src/shared/types/adapters'
@@ -205,6 +206,12 @@ describe('getModel', () => {
       'glm-5.3',
       'https://open.bigmodel.cn/api/coding/paas/v4',
       ZhipuGLMCodingPlan,
+    ],
+    [
+      ModelProviderEnum.PowerTokens,
+      'deepseek-v3-2-251201',
+      'https://api.powertokens.ai/v1',
+      PowerTokens,
     ],
   ])('returns OpenAI-compatible model instances for %s', (provider, modelId, apiHost, expectedModelClass) => {
     const sessionSettings: SessionSettings = {

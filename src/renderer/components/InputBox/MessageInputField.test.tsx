@@ -3,7 +3,8 @@
 import { MantineProvider } from '@mantine/core'
 import { act, fireEvent, waitFor } from '@testing-library/react'
 import { type ComponentProps, createRef, type Ref } from 'react'
-import { describe, expect, test, vi } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
+import { settingsStore } from '@/stores/settingsStore'
 import { render, screen } from '@/test-utils'
 import type { MessageInputFieldRef } from './MessageInputField'
 
@@ -60,7 +61,21 @@ function textareaValue(input: HTMLElement): string {
   return (input as HTMLTextAreaElement).value
 }
 
+const initialFontSize = settingsStore.getState().fontSize
+
 describe('MessageInputField', () => {
+  afterEach(() => {
+    settingsStore.setState({ fontSize: initialFontSize })
+  })
+
+  test.each([14, 22])('follows the Font Size setting (%ipx)', (fontSize) => {
+    settingsStore.setState({ fontSize })
+    renderField()
+
+    const input = screen.getByRole('textbox', { name: 'Type your question here...' })
+    expect(input.style.fontSize).toBe(`${fontSize}px`)
+  })
+
   test('exposes a localized accessible name independently from its placeholder', () => {
     renderField({ isReadOnly: true })
 

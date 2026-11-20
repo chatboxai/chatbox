@@ -3,6 +3,7 @@ import { TestId } from '@shared/automation/testids'
 import type React from 'react'
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { useMessageInput } from '@/hooks/useMessageInput'
+import { useSettingsStore } from '@/stores/settingsStore'
 import * as dom from '../../hooks/dom'
 
 function isNativeComposing(nativeEvent: Event): boolean {
@@ -49,6 +50,7 @@ export const MessageInputField = memo(
       ref
     ) => {
       const { messageInput, setMessageInput, clearDraft } = useMessageInput('', { isNewSession })
+      const fontSize = useSettingsStore((state) => state.fontSize)
       const inputRef = useRef<HTMLTextAreaElement | null>(null)
       const messageInputRef = useRef(messageInput)
       messageInputRef.current = messageInput
@@ -170,7 +172,7 @@ export const MessageInputField = memo(
       return (
         <Textarea
           unstyled={true}
-          styles={{ input: { fontSize: 14 } }}
+          styles={{ input: { fontSize, lineHeight: 20 / 14 } }}
           classNames={{
             root: 'flex-1',
             wrapper: 'flex-1',

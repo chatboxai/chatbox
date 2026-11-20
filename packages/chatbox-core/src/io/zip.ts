@@ -1,8 +1,8 @@
 import { Deflate, Inflate, Unzip, UnzipInflate, Zip, ZipDeflate, type ZipInputFile, ZipPassThrough } from 'fflate'
 import { throwIfAborted } from '../utils/abort'
-import { cacheFileRanges } from './range-cache'
 import { createTaskYielder } from '../utils/task-yield'
 import { type ByteSource, readFileBytes } from './byte-source'
+import { cacheFileRanges } from './range-cache'
 
 export const DEFAULT_ZIP_LIMITS = {
   maxEntries: 100_004,
@@ -329,7 +329,8 @@ async function readBoundedZipFileEntries(
   onEntry: (entry: ReadZipEntry) => Promise<void> | void,
   options: ZipReadOptions = {}
 ): Promise<void> {
-  file = cacheFileRanges(file, options.signal)
+  const ranges = cacheFileRanges(file, options.signal)
+  file = ranges
   const directory = await validateZipEndOfCentralDirectory(file)
   const limits = { ...DEFAULT_ZIP_LIMITS, ...options.limits }
   if (directory.entryCount > limits.maxEntries) throw new Error('ZIP contains too many entries')
@@ -414,7 +415,7 @@ async function readBoundedZipFileEntries(
       const inputSize = inflate ? 1024 : 64 * 1024
       for (let cursor = dataStart; cursor < dataEnd; cursor += ZIP_RANGE_READ_BYTES) {
         throwIfAborted(options.signal)
-        const block = await readFileBytes(file, cursor, Math.min(ZIP_RANGE_READ_BYTES, dataEnd - cursor))
+        const block = await ranges.readAheadBytes(cursor, Math.min(ZIP_RANGE_READ_BYTES, dataEnd - cursor))
         for (let offset = 0; offset < block.length; offset += inputSize) {
           throwIfAborted(options.signal)
           const input = block.subarray(offset, offset + inputSize)

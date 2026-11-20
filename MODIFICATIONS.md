@@ -326,3 +326,11 @@ affiliated with or endorsed by Chatbox.- The chat error card no longer shows the
   trial" button in this build (`CHATBOX_AI_ENABLED` gate in
   `src/renderer/components/chat/GenericMessageError.tsx`), so a third-party provider failure such as
   a Kimi Code 429 shows only the real HTTP status and the server message.
+- AGENTS.md global protocol (Kimi Code-style): settings page `Settings → Agent & Memory →
+  AGENTS.md` edits `extension.agentsMd {enabled, content}` (64 KB cap); the harness appends the
+  block to the system prompt of every conversation in both Chat and Work Mode
+  (`src/renderer/stores/session/agent-harness.ts` +
+  `src/renderer/packages/model-calls/workspace-instructions.ts`). On mobile, a session-workspace
+  `AGENTS.md` is additionally auto-loaded via the new optional platform seam
+  `readSessionWorkspaceAgentsMd` (`src/renderer/platform/mobile_platform.ts`,
+  `src/renderer/packages/mobile-work-mode/workspace-agents-md.ts`, 32 KB cap, best-effort).

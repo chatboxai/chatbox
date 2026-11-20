@@ -318,3 +318,11 @@ cd android; .\gradlew.bat assembleDebug
 - **Android 上的额外一步**：Kimi Code 网关不回 CORS 头，WebView 直连会被拦。新添加的提供方默认 `useProxy: true`（走原生 HTTP 通道），设置页里对应「改善网络兼容性」开关；该开关在手机端也对该提供方可见（`src/renderer/routes/settings/provider/-networkCompatibility.ts`）。老的 Kimi Code 条目需要手动打开一次。
 - **额度**：Kimi Code 套餐按自然月计费，额度用完时接口返回 429 `exceeded_current_quota_error`（附升级链接），这是账号额度而非客户端问题。
 - **错误卡片**：429（额度/限流）现在只显示真实的 `HTTP 429` 与服务器返回的原文，不再附带「登录 Chatbox AI 使用许可证」提示和「Chatbox AI 免费试用」按钮——这两处在 open build 里由 `CHATBOX_AI_ENABLED` 关掉（`src/renderer/components/chat/GenericMessageError.tsx`）。
+
+## 14. AGENTS.md 全局协议（仿 Kimi Code）
+
+- **设置**：`设置 → 智能体与记忆 → AGENTS.md`：开关 + 文本框（上限 64 KB），存于 `extension.agentsMd {enabled, content}`。
+- **注入**：`src/renderer/stores/session/agent-harness.ts` 在 instructions 组装后追加 `buildGlobalAgentsMdInstructions()`（`src/renderer/packages/model-calls/workspace-instructions.ts`），覆盖聊天与工作模式全部三个分支；包成 `<AGENTS_MD path="global">` 信封，与桌面版工作区 AGENTS.md 格式一致。
+- **移动端会话层**：`platform.readSessionWorkspaceAgentsMd()`（`mobile_platform.ts` → `packages/mobile-work-mode/workspace-agents-md.ts`）自动读取会话工作区根的 `AGENTS.md`（32 KB 截断），等价 Kimi Code 读项目 `./AGENTS.md`；best-effort，读不到不报错。工作模式里让 agent「保存为 AGENTS.md」即可在后续轮次自动生效。
+- **实测**（MuMu，kimi-for-coding）：问 "Prove that sqrt(2) is irrational."，回答以协议格式输出——「已证 / 简述」「按玩具例子→反例检查→直接证明流程」「先问一句…」「置信度：高」，协议注入生效。
+- **预填方式**：文本框粘贴；或停掉 App 后直接改 `databases/chatboxSQLite.db` 的 `key_value` 表（key=`settings`，JSON 内 `extension.agentsMd`）。

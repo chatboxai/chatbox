@@ -86,6 +86,10 @@ export function createDefaultSettings(): Settings {
         queritTimeRange: 'none',
         searxngBaseUrl: '',
       },
+      agentsMd: {
+        enabled: false,
+        content: '',
+      },
       knowledgeBase: {
         models: {
           embedding: undefined,

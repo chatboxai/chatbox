@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
+import { AgentsMdSection } from '@/components/settings/AgentsMdSection'
 import { CopilotMemoriesSection, MemoriesSection, SoulEditor } from '@/components/settings/agent-persona'
 import { SettingSwitchRow, SettingsListItem, SettingsPage, SettingsSection } from '@/components/settings/SettingsLayout'
 import { useSettingsStore } from '@/stores/settingsStore'
@@ -62,6 +63,17 @@ export function RouteComponent() {
       <MemoriesSection />
 
       <CopilotMemoriesSection />
+
+      <SettingsSection
+        title="AGENTS.md"
+        description={t(
+          'Global workspace protocol injected into every conversation, like Kimi Code loading ~/.kimi-code/AGENTS.md. On mobile, a conversation workspace AGENTS.md is also picked up automatically.'
+        )}
+      >
+        <SettingsListItem className="!block">
+          <AgentsMdSection />
+        </SettingsListItem>
+      </SettingsSection>
     </SettingsPage>
   )
 }

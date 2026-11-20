@@ -97,7 +97,8 @@ export function createDefaultSettings(): Settings {
     },
     mcp: {
       servers: [],
-      enabledBuiltinServers: [],
+      // The open build pre-enables the builtin servers that work without a subscription.
+      enabledBuiltinServers: ['fetch', 'context7'],
     },
     workspaceCleanup: {
       enabled: true,

@@ -179,6 +179,33 @@ them, so long-lived installs accumulate tens or hundreds of megabytes of stale d
 Upstream files that were touched (nothing else): the ones listed above, plus
 `src/renderer/packages/web-search/{constants.test.ts,parse-link-consistency.test.ts,configuration-issue.test.ts}`.
 
+### 10. Open-build defaults: no Chatbox AI models/promotions, public MCP servers, Kimi preset, chat-mode Python
+
+- **`src/shared/open-build.ts`** introduces `CHATBOX_AI_ENABLED = false` and
+  `CHATBOX_AI_MCP_PROXY_ENABLED = false`. With the flag off, `useChatboxAIModels()` stops
+  fetching the hosted model catalog (`allChatboxAIModels = []`, `chatboxAIModelList = null`), so
+  the model picker no longer shows the Chatbox AI group, the 62 hosted models or the
+  "Upgrade to Pro" locks. The same flag hides the "Chatbox AI / Not activated" card on the
+  settings home, the `chatbox-ai` row in the provider list, and the "try Chatbox AI for free"
+  footer on the web-search settings page.
+- **Builtin MCP servers now use public endpoints**: `fetch` →
+  `https://mcp.jina.ai/sse`, `context7` → `https://mcp.context7.com/mcp`, while `arxiv` still
+  requires a Chatbox AI license (`https://mcp.chatboxai.app/arxiv`). Each entry carries its own
+  `protocolMode` ('auto' tries streamable HTTP, 'legacy' uses GET-SSE) and an optional
+  `requiresLicense` flag; only license-gated servers receive the `x-chatbox-license` header.
+  `DEFAULT_ENABLED_BUILTIN_SERVERS` turns the license-free ones on by default, and
+  `prepareRemoteMCPTools()` falls back to that list when the stored
+  `mcp.enabledBuiltinServers` is empty (profiles created before this change). The settings
+  section no longer uses `useAutoValidate()` as a gate: Fetch and Context7 are togglable without
+  a subscription, arXiv stays disabled until a license exists.
+- **Kimi preset**: `FEATURED_PROVIDER_IDS` now includes `ModelProviderEnum.Moonshot` and
+  `ModelProviderEnum.MoonshotCN`, so the provider list surfaces "Moonshot AI" / "Moonshot CN"
+  instead of hiding them in the collapsed "more providers" section.
+- **Python in chat mode**: `src/renderer/packages/mobile-work-mode/chat-python-tool.ts` exposes
+  `buildChatPythonTools()` — a `code_execution` tool that runs Python through the same Pyodide
+  runtime used by work mode and commits new files back to the session workspace.
+  `stores/session/tools-builder.ts` registers it on mobile when agent mode is off, so plain
+  conversations can compute too (numpy / pandas / matplotlib / scipy are preinstalled).
 ## Building the Android APK from this repository
 
 ```bash

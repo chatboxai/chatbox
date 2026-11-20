@@ -495,6 +495,17 @@ When you create a Git commit that includes code changes, append this exact trail
     }
   }
 
+  // Chat sessions on mobile get Python too. Work mode owns the full `code_execution` tool, so this
+  // only fills the gap when agent mode is off (and the model can call tools at all).
+  if (!includeAgentTools && platform.type === 'mobile' && modelSupportsAgentTools && options.sessionId) {
+    const [{ buildChatPythonTools, CHAT_PYTHON_INSTRUCTIONS }, { capacitorWorkspace }] = await Promise.all([
+      import('@/packages/mobile-work-mode/chat-python-tool'),
+      import('@/packages/mobile-work-mode/runtime'),
+    ])
+    tools = { ...tools, ...buildChatPythonTools({ sessionId: options.sessionId, workspace: capacitorWorkspace }) }
+    instructions += CHAT_PYTHON_INSTRUCTIONS
+  }
+
   if (runCommandAvailable && commandExecution) {
     const sessionSettings = options.sessionSettings
     const recentUserMsgs = messages

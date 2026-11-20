@@ -1,4 +1,5 @@
 import { Flex, Select, Text, UnstyledButton } from '@mantine/core'
+import { CHATBOX_AI_ENABLED } from '@shared/open-build'
 import type { Settings } from '@shared/types'
 import { IconCheck, IconX } from '@tabler/icons-react'
 import { createFileRoute } from '@tanstack/react-router'
@@ -254,7 +255,7 @@ export function RouteComponent() {
         </SettingsSection>
       )}
 
-      {provider !== 'build-in' && !licenseKey && (
+      {CHATBOX_AI_ENABLED && provider !== 'build-in' && !licenseKey && (
         <Tooltip
           label={t(
             'Note: If you have never had a license before, you can claim it after logging in on the official website. Quota refreshed daily.'

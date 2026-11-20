@@ -1,5 +1,6 @@
 import { Box, Flex } from '@mantine/core'
 import { SystemProviders } from '@shared/defaults'
+import { CHATBOX_AI_ENABLED } from '@shared/open-build'
 import type { ModelProviderEnum, ProviderInfo, ProviderSettings } from '@shared/types'
 import { createFileRoute, Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
 import { zodValidator } from '@tanstack/zod-adapter'
@@ -39,9 +40,11 @@ export function RouteComponent() {
 
   const providers = useMemo<ProviderInfo[]>(() => {
     const systemProviders = SystemProviders().filter(
-      (p) => !(isExceeded && p.name.toLocaleLowerCase().match(/openai|claude|gemini/i))
+      (p) =>
+        !(isExceeded && p.name.toLocaleLowerCase().match(/openai|claude|gemini/i)) &&
+        (CHATBOX_AI_ENABLED || p.id !== 'chatbox-ai')
     )
-    // Put ChatboxAI first
+    // Put ChatboxAI first (only when the hosted catalog is part of this build)
     const chatboxAI = systemProviders.find((p) => p.id === 'chatbox-ai')
     const others = systemProviders.filter((p) => p.id !== 'chatbox-ai')
     return [...(chatboxAI ? [chatboxAI] : []), ...others, ...(customProviders || [])].map((p) => ({

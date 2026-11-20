@@ -843,6 +843,7 @@
   "On": "开启",
   "on the side bar to start a new conversation.": "在侧边栏开启新对话。",
   "One-click MCP servers for Chatbox AI subscribers": "Chatbox AI 订阅者的一键 MCP 服务器",
+  "One-click MCP servers. Fetch and Context7 use public endpoints; arXiv needs a Chatbox AI license.": "一键启用 MCP 服务器。Fetch 与 Context7 使用公开端点，arXiv 需要 Chatbox AI 授权。",
   "Only available before the first message.": "仅在第一条消息前可用。",
   "Only enable this when necessary, as it may reduce connection speed.": "仅在必要时启用，此选项可能会降低连接速度。",
   "Only supports basic text files (.txt, .md, .json, code files, etc.). For PDF and Office files, please switch to Chatbox AI.": "仅支持基本文本文件（.txt、.md、.json、代码文件等）。对于 PDF 和 Office 文件，请切换至 Chatbox AI。",

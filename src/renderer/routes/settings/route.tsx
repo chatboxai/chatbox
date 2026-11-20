@@ -1,5 +1,6 @@
 import { Box, Flex, Text, TextInput, UnstyledButton } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
+import { CHATBOX_AI_ENABLED } from '@shared/open-build'
 import { IconChevronLeft, IconChevronRight, IconSearch, IconSparkles, IconX } from '@tabler/icons-react'
 import {
   createFileRoute,
@@ -272,32 +273,34 @@ export function SettingsRoot() {
             </div>
           ) : (
             <>
-              <Link to="/settings/chatbox-ai" className="block no-underline">
-                <Flex
-                  align="center"
-                  gap="sm"
-                  className="rounded-xl bg-chatbox-background-raised px-3.5 py-3 text-chatbox-tint-primary"
-                >
+              {CHATBOX_AI_ENABLED && (
+                <Link to="/settings/chatbox-ai" className="block no-underline">
                   <Flex
                     align="center"
-                    justify="center"
-                    className="size-10 shrink-0 rounded-full bg-chatbox-background-brand-secondary text-chatbox-tint-brand"
+                    gap="sm"
+                    className="rounded-xl bg-chatbox-background-raised px-3.5 py-3 text-chatbox-tint-primary"
                   >
-                    <ScalableIcon icon={IconSparkles} size={22} strokeWidth={ICON_STROKE_WIDTH} />
+                    <Flex
+                      align="center"
+                      justify="center"
+                      className="size-10 shrink-0 rounded-full bg-chatbox-background-brand-secondary text-chatbox-tint-brand"
+                    >
+                      <ScalableIcon icon={IconSparkles} size={22} strokeWidth={ICON_STROKE_WIDTH} />
+                    </Flex>
+                    <Flex direction="column" flex={1} miw={0}>
+                      <Text fz={16} fw={600} lh="22px">
+                        Chatbox AI
+                      </Text>
+                      <Text fz={13} lh="18px" c={isChatboxAIActivated ? 'chatbox-success' : 'chatbox-tertiary'} truncate>
+                        {isChatboxAIActivated
+                          ? [t('Activated'), licensePlanName].filter(Boolean).join(' · ')
+                          : t('Not activated')}
+                      </Text>
+                    </Flex>
+                    <ScalableIcon icon={IconChevronRight} size={20} className="text-chatbox-tint-tertiary" />
                   </Flex>
-                  <Flex direction="column" flex={1} miw={0}>
-                    <Text fz={16} fw={600} lh="22px">
-                      Chatbox AI
-                    </Text>
-                    <Text fz={13} lh="18px" c={isChatboxAIActivated ? 'chatbox-success' : 'chatbox-tertiary'} truncate>
-                      {isChatboxAIActivated
-                        ? [t('Activated'), licensePlanName].filter(Boolean).join(' · ')
-                        : t('Not activated')}
-                    </Text>
-                  </Flex>
-                  <ScalableIcon icon={IconChevronRight} size={20} className="text-chatbox-tint-tertiary" />
-                </Flex>
-              </Link>
+                </Link>
+              )}
               {groups
                 .filter((group) => group.items.some((item) => item.key !== 'chatbox-ai'))
                 .map((group) => (

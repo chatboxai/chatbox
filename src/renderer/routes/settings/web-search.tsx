@@ -8,6 +8,7 @@ import { trackJkClickEvent } from '@/analytics/jk'
 import { JK_EVENTS, JK_PAGE_NAMES } from '@/analytics/jk-events'
 import { AdaptiveSelect } from '@/components/AdaptiveSelect'
 import { CheckedFieldRow } from '@/components/settings/CheckedFieldRow'
+import { DeepSeekProviderKeyRow } from '@/components/settings/DeepSeekProviderKeyRow'
 import { SettingRow, SettingsPage, SettingsSection } from '@/components/settings/SettingsLayout'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { PROVIDERS_WITH_PARSE_LINK } from '@/packages/web-search'
@@ -108,6 +109,7 @@ export function RouteComponent() {
             />
           )}
         />
+        {provider === 'deepseek' && <DeepSeekProviderKeyRow />}
         {provider === 'searxng' && (
           <CheckedFieldRow
             key="searxng"

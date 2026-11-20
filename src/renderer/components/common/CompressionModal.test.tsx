@@ -6,12 +6,16 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { requestCompaction, addToast, settings } = vi.hoisted(() => ({
+const { requestCompaction, requestTargetedCompaction, addToast, settings } = vi.hoisted(() => ({
   requestCompaction: vi.fn(),
+  requestTargetedCompaction: vi.fn(),
   addToast: vi.fn(),
   settings: { language: 'en', compactionPrompt: undefined as string | undefined },
 }))
-vi.mock('@/packages/context-management/compaction', () => ({ requestManualCompaction: requestCompaction }))
+vi.mock('@/packages/context-management/compaction', () => ({
+  requestManualCompaction: requestCompaction,
+  requestTargetedCompaction,
+}))
 vi.mock('@/stores/toastActions', () => ({ add: addToast }))
 vi.mock('@/stores/settingsStore', () => ({
   useSettingsStore: (selector: (state: typeof settings) => unknown) => selector(settings),
@@ -20,7 +24,13 @@ vi.mock('@/i18n/locales', () => ({ languageNameMap: { en: 'English' } }))
 vi.mock('@/hooks/useScreenChange', () => ({ useIsSmallScreen: () => false }))
 vi.mock('../layout/Overlay', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../layout/Overlay')>()),
-  Modal: ({ opened, children }: { opened: boolean; children: ReactNode }) => (opened ? <div>{children}</div> : null),
+  Modal: ({ opened, title, children }: { opened: boolean; title?: ReactNode; children: ReactNode }) =>
+    opened ? (
+      <div>
+        <h2>{title}</h2>
+        {children}
+      </div>
+    ) : null,
 }))
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
 
@@ -131,5 +141,62 @@ describe('CompressionModal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reset' }))
     expect((screen.getByLabelText('Compaction Prompt') as HTMLTextAreaElement).value).toBe('Saved prompt')
     expect((screen.getByRole('button', { name: 'Confirm' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+})
+
+describe('CompressionModal for a target message', () => {
+  function targetModal(onClose = vi.fn(), targetPreview?: string) {
+    return (
+      <MantineProvider>
+        <CompressionModal
+          opened
+          session={session}
+          targetMessageId="a2"
+          targetPreview={targetPreview}
+          onClose={onClose}
+        />
+      </MantineProvider>
+    )
+  }
+
+  it('says the target message itself is summarized along with everything before it', () => {
+    render(targetModal())
+
+    expect(screen.getByRole('heading').textContent).toBe('Compact up to here')
+    expect(
+      screen.getByText(
+        'This message (included) and everything before it will be summarized. Later messages stay as they are, and your conversation history remains available.'
+      )
+    ).toBeTruthy()
+  })
+
+  it('previews the target message', () => {
+    render(targetModal(vi.fn(), 'Plan the release'))
+
+    expect(screen.getByText('Plan the release')).toBeTruthy()
+  })
+
+  it('compresses through the target with the edited prompt and closes once started', async () => {
+    requestTargetedCompaction.mockResolvedValue('started')
+    const close = vi.fn()
+    render(targetModal(close))
+    fireEvent.change(screen.getByLabelText('Compaction Prompt'), { target: { value: 'Retain decisions.' } })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    await waitFor(() => expect(close).toHaveBeenCalledOnce())
+    expect(requestTargetedCompaction).toHaveBeenCalledWith('s1', 'a2', { prompt: 'Retain decisions.' })
+    expect(requestCompaction).not.toHaveBeenCalled()
+  })
+
+  it('stays open with the reason when the session is busy', async () => {
+    requestTargetedCompaction.mockResolvedValue('busy')
+    const close = vi.fn()
+    render(targetModal(close))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    await waitFor(() => expect(screen.getByText('Compression could not start')).toBeTruthy())
+    expect(close).not.toHaveBeenCalled()
   })
 })

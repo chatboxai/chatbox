@@ -399,8 +399,11 @@ export interface LicenseDetailResponse {
   error?: LicenseDetailError
 }
 
-export function getLicenseDetailRealtime(params: { licenseKey: string }): Promise<LicenseDetailResponse> {
-  return fetchLicenseDetail(params, 'realtime')
+export function getLicenseDetailRealtime(
+  params: { licenseKey: string },
+  signal?: AbortSignal
+): Promise<LicenseDetailResponse> {
+  return fetchLicenseDetail(params, 'realtime', signal)
 }
 
 export function getLicenseDetailForInspection(params: { licenseKey: string }): Promise<LicenseDetailResponse> {
@@ -409,7 +412,8 @@ export function getLicenseDetailForInspection(params: { licenseKey: string }): P
 
 async function fetchLicenseDetail(
   params: { licenseKey: string },
-  endpoint: 'realtime' | 'all_status'
+  endpoint: 'realtime' | 'all_status',
+  signal?: AbortSignal
 ): Promise<LicenseDetailResponse> {
   type Response = {
     data: ChatboxAILicenseDetail | null
@@ -419,6 +423,7 @@ async function fetchLicenseDetail(
   let capturedError: LicenseDetailError | undefined
   try {
     const res = await ofetch<Response>(`${getAPIOrigin()}/api/license/detail/${endpoint}`, {
+      signal,
       retry: 5,
       headers: {
         Authorization: params.licenseKey,
@@ -645,6 +650,7 @@ const RemoteModelInfoSchema = z.object({
   modelId: z.string(),
   modelName: z.string(),
   description: z.string().optional(),
+  points_per_image: z.number().int().positive().optional().catch(undefined),
   labels: z.array(z.string()).optional(),
   type: z.enum(['chat', 'embedding', 'rerank', 'image']).optional(),
   apiStyle: z.enum(['google', 'openai', 'openai-responses', 'anthropic']).optional(),
@@ -736,6 +742,13 @@ const ChatboxAIModelListResponseSchema = z.object({
       license: z
         .object({
           plan: z.string().optional().default('unknown'),
+          proTrial: z
+            .object({
+              canClaim: z.boolean().optional().default(false),
+              startsAt: z.string().nullish(),
+              expiresAt: z.string().nullish(),
+            })
+            .optional(),
         })
         .optional()
         .default({ plan: 'unknown' }),
@@ -767,11 +780,12 @@ const ChatboxAIModelListResponseSchema = z.object({
 
 export type ChatboxAIModelList = z.infer<typeof ChatboxAIModelListResponseSchema>['data']
 
-export async function getChatboxAIModelList(params: { licenseKey?: string; language?: string }) {
+export async function getChatboxAIModelList(params: { licenseKey?: string; language?: string }, signal?: AbortSignal) {
   const afetch = await getAfetch()
   const res = await afetch(
     `${getAPIOrigin()}/api/chatbox_ai/model_list`,
     {
+      signal,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -793,6 +807,26 @@ export async function getChatboxAIModelList(params: { licenseKey?: string; langu
     throw error
   }
   return data.data
+}
+
+export async function recordAdvancedModelListClick(params: { licenseKey: string; modelId?: string }) {
+  const afetch = await getAfetch()
+  await afetch(
+    `${getAPIOrigin()}/api/user/behavior_events/record`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(await getChatboxHeaders()),
+      },
+      body: JSON.stringify({
+        event: 'advanced_model_list_clicked',
+        license_key: params.licenseKey,
+        metadata: params.modelId ? { model_id: params.modelId } : undefined,
+      }),
+    },
+    { parseChatboxRemoteError: true }
+  )
 }
 
 export async function reportContent(params: { id: string; type: string; details: string }) {
@@ -853,7 +887,7 @@ export async function requestLoginTicketId() {
   const deviceName = await platform.getDeviceName()
 
   const res = await afetch(
-    `${getChatboxOrigin()}/api/auth/request_login_ticket`,
+    `${getAPIOrigin()}/api/auth/request_login_ticket`,
     {
       method: 'POST',
       headers: {
@@ -875,7 +909,7 @@ export async function requestLoginTicketId() {
   return json.data.ticket_id
 }
 
-export async function sendEmailLoginCode(params: { email: string; lang?: string }) {
+export async function sendEmailLoginCode(params: { email: string; lang?: string; signal?: AbortSignal }) {
   type Response = {
     data: {
       result: string
@@ -883,7 +917,7 @@ export async function sendEmailLoginCode(params: { email: string; lang?: string 
   }
   const afetch = await getAfetch()
   const res = await afetch(
-    `${getChatboxOrigin()}/api/auth/send_email_login_code`,
+    `${getAPIOrigin()}/api/auth/send_email_login_code`,
     {
       method: 'POST',
       headers: {
@@ -894,6 +928,7 @@ export async function sendEmailLoginCode(params: { email: string; lang?: string 
         email: params.email,
         lang: params.lang,
       }),
+      signal: params.signal,
     },
     {
       parseChatboxRemoteError: true,
@@ -914,7 +949,7 @@ export async function loginOrSignupWithEmailCode(params: { email: string; code: 
   }
   const afetch = await getAfetch()
   const res = await afetch(
-    `${getChatboxOrigin()}/api/auth/login_or_signup_with_email_code`,
+    `${getAPIOrigin()}/api/auth/login_or_signup_with_email_code`,
     {
       method: 'POST',
       headers: {
@@ -947,7 +982,7 @@ export async function getWebAuthToken(): Promise<string> {
   }
   const afetch = await getAuthenticatedAfetch()
   const res = await afetch(
-    `${getChatboxOrigin()}/api/auth/web_auth_token/generate`,
+    `${getAPIOrigin()}/api/auth/web_auth_token/generate`,
     {
       method: 'POST',
       headers: {
@@ -974,7 +1009,7 @@ export async function checkLoginStatus(ticketId: string) {
   }
   const afetch = await getAfetch()
   const res = await afetch(
-    `${getChatboxOrigin()}/api/auth/login_status`,
+    `${getAPIOrigin()}/api/auth/login_status`,
     {
       method: 'POST',
       headers: {
@@ -1015,7 +1050,7 @@ export async function refreshAccessToken(params: { refreshToken: string }) {
   }
   const afetch = await getAfetch()
   const res = await afetch(
-    `${getChatboxOrigin()}/api/auth/token_refresh`,
+    `${getAPIOrigin()}/api/auth/token_refresh`,
     {
       method: 'POST',
       headers: {
@@ -1058,7 +1093,7 @@ export async function getUserProfile() {
   }
   const afetch = await getAuthenticatedAfetch()
   const res = await afetch(
-    `${getChatboxOrigin()}/api/user/profile`,
+    `${getAPIOrigin()}/api/user/profile`,
     {
       method: 'GET',
       headers: {
@@ -1156,7 +1191,7 @@ export async function listLicensesByUser(): Promise<UserLicense[]> {
   }
   const afetch = await getAuthenticatedAfetch()
   const res = await afetch(
-    `${getChatboxOrigin()}/api/license/list_by_user`,
+    `${getAPIOrigin()}/api/license/list_by_user`,
     {
       method: 'GET',
       headers: {
@@ -1171,6 +1206,22 @@ export async function listLicensesByUser(): Promise<UserLicense[]> {
   )
   const json: Response = await res.json()
   return json.data
+}
+
+export async function claimProTrial(licenseKey: string) {
+  const afetch = await getAuthenticatedAfetch()
+  await afetch(
+    `${getAPIOrigin()}/api/license/claim_pro_trial`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(await getChatboxHeaders()),
+      },
+      body: JSON.stringify({ license_key: licenseKey }),
+    },
+    { parseChatboxRemoteError: true }
+  )
 }
 
 export async function claimFreeAgentModeReward(licenseKey: string): Promise<ClaimedAgentModeReward> {

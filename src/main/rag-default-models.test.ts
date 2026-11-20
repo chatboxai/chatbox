@@ -41,7 +41,6 @@ function settingsWithFallbacks(overrides: Partial<Settings> = {}): Settings {
       builtinDefaultsInitialized: true,
     },
     showTokenUsed: true,
-    showModelName: true,
     showAvatar: true,
     defaultPrompt: 'You are a helpful assistant.',
     allowReportingAndTracking: true,

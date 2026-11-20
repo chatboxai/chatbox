@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SettingsService } from '../application/settings/SettingsService'
 import { createDefaultSettings, encodePersistedSettings, SETTINGS_PERSIST_VERSION } from '../domain/settings'
+import { validateBackupGlobal } from './globals'
 import { commitBackupSettings } from './settings'
 
 afterEach(() => vi.useRealTimers())
@@ -115,6 +116,68 @@ describe('backup settings commit', () => {
       extension: { documentParser: { type: 'chatbox-ai' } },
     })
     expect(host.read()).toMatchObject({ __version: SETTINGS_PERSIST_VERSION, providers: imported.providers })
+  })
+
+  it.each([
+    ['left', 8, 'classic'],
+    ['bubble', 8, 'bubble'],
+    [undefined, 8, 'bubble'],
+    ['classic', SETTINGS_PERSIST_VERSION, 'classic'],
+  ] as const)('imports a %s message layout from version %i as %s', async (messageLayout, __version, expected) => {
+    vi.useFakeTimers()
+    const host = setup()
+    const record = { ...imported, __version, ...(messageLayout ? { messageLayout } : {}) }
+    expect(() =>
+      validateBackupGlobal({ type: 'global', category: 'settings', id: 'settings', value: record })
+    ).not.toThrow()
+    await commitBackupSettings(record, host)
+    expect(host.settings.getSettings().messageLayout).toBe(expected)
+    expect(host.read()).toMatchObject({ messageLayout: expected })
+  })
+
+  it.each([8, SETTINGS_PERSIST_VERSION])(
+    'drops an unknown message layout from a version %i backup and keeps the rest of the settings',
+    async (__version) => {
+      vi.useFakeTimers()
+      const host = setup()
+      const record = { ...imported, __version, messageLayout: 'grid' }
+      expect(() =>
+        validateBackupGlobal({ type: 'global', category: 'settings', id: 'settings', value: record })
+      ).not.toThrow()
+      await commitBackupSettings(record, host)
+      expect(host.settings.getSettings()).toMatchObject({ language: 'zh-Hans', providers: imported.providers })
+      expect(host.settings.getSettings().messageLayout).toBeUndefined()
+    }
+  )
+
+  it.each([
+    [true, true],
+    [false, false],
+    ['x', true],
+  ])('imports a backup carrying showModelName=%s as %s', async (showModelName, expected) => {
+    vi.useFakeTimers()
+    const host = setup()
+    for (const __version of [8, SETTINGS_PERSIST_VERSION]) {
+      const record = { ...imported, __version, showModelName }
+      expect(() =>
+        validateBackupGlobal({ type: 'global', category: 'settings', id: 'settings', value: record })
+      ).not.toThrow()
+      await commitBackupSettings(record, host)
+      expect(host.settings.getSettings()).toMatchObject({ language: 'zh-Hans', providers: imported.providers })
+      expect(host.settings.getSettings().showModelName).toBe(expected)
+      expect(host.read()).toMatchObject({ showModelName: expected })
+    }
+  })
+
+  it('still rejects the whole settings record for other invalid fields', () => {
+    expect(() =>
+      validateBackupGlobal({
+        type: 'global',
+        category: 'settings',
+        id: 'settings',
+        value: { ...imported, messageLayout: 'grid', language: 'not-a-language' },
+      })
+    ).toThrow()
   })
 
   it('rejects invalid input before changing the active snapshot', async () => {

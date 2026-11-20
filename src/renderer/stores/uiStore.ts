@@ -17,6 +17,7 @@ import { safeStorage } from './safeStorage'
 export interface TranscriptNavigation {
   readonly owner: symbol
   readonly sessionId: string
+  prepareBranchCreation(): Promise<boolean>
   navigateMessage(messageId: string): Promise<boolean>
   openSearch(messageId: string): Promise<boolean>
   viewThread(threadId: string): Promise<boolean>
@@ -129,14 +130,17 @@ export const uiStore = createStore(
         sessionPanels: {} as Record<string, SessionPanelState | undefined>,
         // Width of the conversation side panel in px; null uses min(560px, 45%).
         sessionPanelWidth: null as number | null,
+        // Last auto-wrap choice on a code block; code blocks the user has not toggled follow it.
+        codeBlockWrap: false,
       },
       (set, get) => ({
-        addToast: (content: string, duration?: number, action?: Toast['action']) => {
+        addToast: (content: string, duration?: number | null, action?: Toast['action']) => {
           const newToast = { id: `toast:${uuidv4()}`, content, duration, action }
           set((state) => ({
             ...state,
             toasts: [...state.toasts, newToast],
           }))
+          return newToast.id
         },
         removeToast: (id: string) => {
           set((state) => ({
@@ -243,6 +247,10 @@ export const uiStore = createStore(
 
         setSessionPanelWidth: (sessionPanelWidth: number | null) => {
           set({ sessionPanelWidth })
+        },
+
+        setCodeBlockWrap: (codeBlockWrap: boolean) => {
+          set({ codeBlockWrap })
         },
 
         setOpenSearchDialog: (openSearchDialog: boolean, globalOnly = false) => {
@@ -432,6 +440,7 @@ export const uiStore = createStore(
         promptCacheBreakConfirmDismissed: state.promptCacheBreakConfirmDismissed,
         lowQuotaReminderDismissedPeriod: state.lowQuotaReminderDismissedPeriod,
         sessionPanelWidth: state.sessionPanelWidth,
+        codeBlockWrap: state.codeBlockWrap,
       }),
       storage: safeStorage,
     }

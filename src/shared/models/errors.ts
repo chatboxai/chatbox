@@ -16,6 +16,7 @@ export const MESSAGE_ERROR_CODES = {
   FILE_PREPROCESS_FAILED: 20041,
   FILE_STORAGE_QUOTA_EXCEEDED: 20042,
   EMPTY_ATTACHMENT_CONTENT: 20043,
+  IMAGE_POINTS_INSUFFICIENT: 20049,
   CHATBOX_AI_OCR_QUOTA_EXHAUSTED: 20044,
   CHATBOX_AI_FREE_OCR_QUOTA_EXHAUSTED: 20045,
 } as const
@@ -107,6 +108,11 @@ export class ChatboxAIAPIError extends BaseError {
       code: MESSAGE_ERROR_CODES.CHATBOX_AI_QUOTA_EXHAUSTED, // 小于 20000 是为了兼容旧版本
       i18nKey:
         'You have used up your monthly Chatbox AI quota. Please <OpenSettingButton>go to Settings</OpenSettingButton> to view your quota usage or upgrade your plan.',
+    },
+    image_points_insufficient: {
+      name: 'image_points_insufficient',
+      code: MESSAGE_ERROR_CODES.IMAGE_POINTS_INSUFFICIENT,
+      i18nKey: 'Insufficient points',
     },
     // 超出每日免费配额
     free_token_quota_exhausted: {
@@ -338,6 +344,23 @@ export class ChatboxAIAPIError extends BaseError {
       i18nKey:
         'MinerU API token is required. Please go to <OpenDocumentParserSettingButton>Settings</OpenDocumentParserSettingButton> and configure your MinerU API token.',
     },
+    deepseek_parser_api_key_required: {
+      name: 'deepseek_parser_api_key_required',
+      code: 20050,
+      i18nKey:
+        'You have selected DeepSeek as the document parser, but no DeepSeek API key is set up yet. Please <OpenDeepSeekProviderSettingButton>add it in the DeepSeek model provider settings</OpenDeepSeekProviderSettingButton>, or choose a different <OpenDocumentParserSettingButton>document parser</OpenDocumentParserSettingButton>.',
+    },
+    deepseek_insufficient_balance: {
+      name: 'deepseek_insufficient_balance',
+      code: 20051,
+      i18nKey: 'Your DeepSeek account balance is insufficient. Please top up your DeepSeek account and try again.',
+    },
+    deepseek_parser_file_too_large: {
+      name: 'deepseek_parser_file_too_large',
+      code: 20052,
+      i18nKey:
+        'This file exceeds the DeepSeek document parsing limits (100 MiB and 1,000 pages). Please upload a smaller file.',
+    },
     document_parser_not_configured: {
       name: 'document_parser_not_configured',
       code: 20034,
@@ -362,9 +385,15 @@ export class ChatboxAIAPIError extends BaseError {
       i18nKey:
         'You have selected SearXNG as the search provider, but an instance URL has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your SearXNG instance URL, or choose a different search provider.',
     },
+    deepseek_api_key_required: {
+      name: 'deepseek_api_key_required',
+      code: 20048,
+      i18nKey:
+        'You have selected DeepSeek as the search provider, but no DeepSeek API key is set up yet. Please <OpenDeepSeekProviderSettingButton>add it in the DeepSeek model provider settings</OpenDeepSeekProviderSettingButton>, or choose a different <OpenExtensionSettingButton>search provider</OpenExtensionSettingButton>.',
+    },
     firecrawl_api_key_required: {
       name: 'firecrawl_api_key_required',
-      code: 20048,
+      code: 20053,
       i18nKey:
         'You have selected Firecrawl as the search provider, but an API key has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your API key, or choose a different search provider.',
     },

@@ -17,7 +17,7 @@ describe('buildAgentMemoryTools', () => {
 
   test('writes to the global store by default', async () => {
     addMemoryForScope.mockResolvedValue({ ok: true, entry: { id: 'm1', content: 'fact', createdAt: 1 } })
-    deleteMemoryForScope.mockResolvedValue(true)
+    deleteMemoryForScope.mockResolvedValue({ id: 'm1', content: 'Saved fact', createdAt: 1 })
     const { tools, description } = buildAgentMemoryTools()
 
     await tools.save_memory.execute?.({ content: 'fact' }, {} as never)
@@ -30,7 +30,7 @@ describe('buildAgentMemoryTools', () => {
 
   test('writes to the copilot store when given a copilot scope', async () => {
     addMemoryForScope.mockResolvedValue({ ok: true, entry: { id: 'm1', content: 'fact', createdAt: 1 } })
-    deleteMemoryForScope.mockResolvedValue(true)
+    deleteMemoryForScope.mockResolvedValue({ id: 'm1', content: 'Saved fact', createdAt: 1 })
     const scope = { type: 'copilot', copilotId: 'cp1', epoch: 0 } as const
     const { tools, description } = buildAgentMemoryTools({ scope })
 

@@ -1,4 +1,32 @@
 const changelog = `
+## v1.24.4 - 2026.11.12
+1. Improved conversation scrolling and history loading, including position retention when switching branches or regenerating replies
+2. Unified the frosted glass appearance of popups and panels over chat wallpapers
+3. Improved settings card styling in dark mode
+4. Fixed downloading large SVG diagrams on mobile and added error messages
+5. Fixed file tools being enabled in some cases when they were not needed
+
+
+## v1.24.3 - 2026.11.10
+1. Improved message list flickering and scrolling during generation
+2. Improved chat wallpaper and input appearance, and custom dark theme colors
+3. Adjusted message avatars, model names, and timestamps, and improved readability in classic layout
+4. Restored the mobile message toolbar for regenerating, editing, copying, and deleting messages
+
+
+## v1.24.2 - 2026.11.08
+1. Improved the dark theme and mobile message layout.
+2. Fixed message scrolling jumps and replies not following automatically.
+3. Fixed an issue that prevented some long conversations from being restored.
+4. Fixed Copilot conversation naming and other interface issues.
+
+## v1.24.1 - 2026.11.05
+1. Swipe an assistant reply right on mobile to regenerate it
+2. Wider message bubbles on mobile
+3. Improved message width in full-width mode on desktop
+4. Fixed lag when tapping Reply Again
+5. Fixed the "Inject default metadata" setting
+
 ## v1.24.0 - 2026.10.29
 1. Added Projects: group chats into projects, with Work Mode chats grouped by working directory
 2. Added a built-in browser to Work Mode on desktop: the AI can use web pages, and you can take over at any time

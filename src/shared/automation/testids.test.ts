@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   AUTOMATION_CONTRACT_VERSION,
   AUTOMATION_CONTRACT_VERSION_ATTRIBUTE,
+  AutomationStateAttr,
   listStaticTestIds,
   TestId,
 } from './testids'
@@ -72,6 +73,10 @@ describe('automation test ID contract', () => {
     ]
 
     expect(actionBarIds.some((testId) => actionMenuIds.includes(testId))).toBe(false)
+  })
+
+  it('publishes the message layout as a state attribute', () => {
+    expect(AutomationStateAttr.messageLayout).toBe('data-message-layout')
   })
 
   it('uses a stable document-root attribute for renderer automation', () => {

@@ -57,7 +57,7 @@
   "src/renderer/i18n/changelogs/changelog_zh_Hant.ts": 2,
   "src/renderer/index.tsx": 1,
   "src/renderer/lib/format-chat.tsx": 15,
-  "src/renderer/modals/FileParseError.tsx": 7,
+  "src/renderer/modals/FileParseError.tsx": 1,
   "src/renderer/modals/MessageEdit.tsx": 1,
   "src/renderer/modals/VibedropPublish.tsx": 2,
   "src/renderer/packages/initial_data.ts": 62,

@@ -1,6 +1,7 @@
 import { Stack, Transition } from '@mantine/core'
 import { type ModelProvider, ModelProviderEnum } from '@shared/types'
-import { useCallback, useLayoutEffect, useRef, useState } from 'react'
+import { useRouterState } from '@tanstack/react-router'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import useChatboxAIModels from '@/hooks/useChatboxAIModels'
 import { useLanguage, useProviderSettings, useSettingsStore } from '@/stores/settingsStore'
 import { VIEW_TRANSITION_DURATION, VIEW_TRANSITION_TIMING } from './constants'
@@ -13,6 +14,12 @@ import type { ViewMode } from './types'
 import { useAuthTokens } from './useAuthTokens'
 
 export function ChatboxAISettings({ padded = false }: { padded?: boolean }) {
+  const requestedView = useRouterState({
+    select: (state) => {
+      const view = (state.location.search as Record<string, unknown>).view
+      return view === 'login' || view === 'licenseKey' ? view : undefined
+    },
+  })
   const language = useLanguage()
   const providerId: ModelProvider = ModelProviderEnum.ChatboxAI
   const { providerSettings, setProviderSettings } = useProviderSettings(providerId)
@@ -20,6 +27,8 @@ export function ChatboxAISettings({ padded = false }: { padded?: boolean }) {
   const licenseActivationMethod = useSettingsStore((state) => state.licenseActivationMethod)
 
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    if (requestedView === 'login') return 'login'
+    if (requestedView === 'licenseKey') return 'licenseKey'
     if (licenseActivationMethod === 'manual') {
       return 'licenseKey'
     }
@@ -28,6 +37,11 @@ export function ChatboxAISettings({ padded = false }: { padded?: boolean }) {
     }
     return 'login'
   })
+
+  useEffect(() => {
+    if (requestedView === 'login') setViewMode('login')
+    if (requestedView === 'licenseKey') setViewMode('licenseKey')
+  }, [requestedView])
 
   const { isLoggedIn, clearAuthTokens, saveAuthTokens, afterLogin, consumeLogin } = useAuthTokens()
   const licenseKey = useSettingsStore((state) => state.licenseKey)

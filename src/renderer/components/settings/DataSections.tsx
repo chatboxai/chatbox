@@ -7,6 +7,7 @@ import { rendererApplication } from '@/app/renderer-application'
 import { SettingRow } from '@/components/settings/SettingsLayout'
 import platform from '@/platform'
 import { BackupControls } from './BackupControls'
+import { DeepSeekImportControls } from './DeepSeekImportControls'
 
 export function DataRecoveryRow() {
   const { t } = useTranslation()
@@ -83,7 +84,12 @@ export function DataRecoveryRow() {
 }
 
 export function BackupRestoreSections() {
-  return <BackupControls />
+  return (
+    <>
+      <BackupControls />
+      <DeepSeekImportControls />
+    </>
+  )
 }
 
 export function DiagnosticLogsRow() {

@@ -10,7 +10,7 @@ import { formatNumber } from '@/utils/format'
 import { ScalableIcon } from '../common/ScalableIcon'
 import { ModelIcon } from '../icons/ModelIcon'
 import { CapabilityIconRow } from './CapabilityIconRow'
-import { CARD_SURFACE_STYLE, FALLBACK_UPGRADE_URL, MODEL_SELECTOR_SURFACE_CLASS } from './constants'
+import { CARD_SURFACE_STYLE, FALLBACK_UPGRADE_URL, getModelSelectorFloatingSurfaceClass } from './constants'
 import { getCostLabel, getCostLevelBarCount } from './helpers'
 import type { DetailModel } from './types'
 
@@ -288,6 +288,7 @@ export function DetailCard({
   upgradeLink,
   onClose,
   onUpgradeClick,
+  onClaimProTrial,
   mobile,
 }: {
   model: DetailModel
@@ -295,6 +296,8 @@ export function DetailCard({
   upgradeLink?: string
   onClose?: () => void
   onUpgradeClick?: () => void
+  /** Replaces the upgrade action while the license can claim a Pro trial. */
+  onClaimProTrial?: () => void
   mobile?: boolean
 }) {
   const { t, i18n } = useTranslation()
@@ -307,7 +310,7 @@ export function DetailCard({
       gap={mobile ? 'md' : 'md'}
       className={clsx(
         'relative border border-solid text-chatbox-tint-primary',
-        MODEL_SELECTOR_SURFACE_CLASS,
+        getModelSelectorFloatingSurfaceClass(!!mobile),
         mobile ? 'm-[4px] border-0 px-4 pb-4 pt-3 rounded-[12px]' : 'm-[4px] w-[320px] rounded-[12px] px-4 pb-4 pt-4',
         model.type === 'image' && 'max-h-[80vh] overflow-y-auto'
       )}
@@ -331,6 +334,22 @@ export function DetailCard({
       {model.type !== 'image' && model.providerId === ModelProviderEnum.ChatboxAI && (
         <CostLevelIndicator costLevel={model.costLevel} costLabel={costLabel} t={t} />
       )}
+      {model.type === 'image' &&
+        model.providerId === ModelProviderEnum.ChatboxAI &&
+        model.pointsPerImage !== undefined && (
+          <Stack gap={10} className="border-0 border-y border-solid border-chatbox-border-primary py-4">
+            <Text size="xs" fw={750} c="chatbox-primary" className="uppercase tracking-[0.08em]">
+              {t('Pricing')}
+            </Text>
+            <PriceMetric
+              label={t('Compute points / image')}
+              value={model.pointsPerImage.toLocaleString(isCN ? 'zh-CN' : 'en-US')}
+            />
+            <Text size="xs" c="chatbox-tertiary" lh={1.6}>
+              {t('Image quota is used first. Once it runs out, you can use compute points to generate more images.')}
+            </Text>
+          </Stack>
+        )}
       {/* Temporarily hide model pricing information. */}
       {showPricing && <PricingBlock model={model} mobile={mobile} t={t} isCN={isCN} />}
       {model.type !== 'image' && (
@@ -372,11 +391,15 @@ export function DetailCard({
               leftSection={<ScalableIcon icon={IconSparkles} size={16} />}
               className="font-semibold"
               onClick={() => {
+                if (onClaimProTrial) {
+                  onClaimProTrial()
+                  return
+                }
                 onUpgradeClick?.()
                 platform.openLink(upgradeLink || FALLBACK_UPGRADE_URL)
               }}
             >
-              {t('Upgrade to Pro')}
+              {onClaimProTrial ? t('Free trial for a limited time') : t('Upgrade to Pro')}
             </Button>
           )}
         </Flex>

@@ -8,10 +8,17 @@ export interface GenerationCompactionRequest {
   retainedToolCallId: string
 }
 
+/** Compacts the target's causal path through the target and places the summary right after it. */
+export interface TargetedCompactionRequest {
+  kind: 'targeted'
+  targetMessageId: string
+}
+
 export type CompactionRequest =
   | { kind: 'automatic'; pendingMessage?: Message }
   | { kind: 'manual' }
   | GenerationCompactionRequest
+  | TargetedCompactionRequest
 
 export interface CompactionRunOptions {
   prompt?: string
@@ -23,6 +30,7 @@ export interface CompactionRunOptions {
 
 export type CompactionCoverage =
   | { kind: 'conversation'; boundaryMessageId: string }
+  | { kind: 'targeted'; boundaryMessageId: string }
   | (GenerationCompactionRequest & { boundaryMessageId: string })
 
 export type CompactionFailureCode = 'session_not_found' | 'summary_failed' | 'no_messages' | 'update_failed'

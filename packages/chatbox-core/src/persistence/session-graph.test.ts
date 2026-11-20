@@ -55,6 +55,7 @@ function createFixture(): Session {
     threadName: 'Current thread',
     starred: true,
     assistantAvatarKey: 'blob:avatar',
+    assistantName: 'Mover',
     backgroundImage: { type: 'storage-key', storageKey: 'blob:background' },
     settings: { temperature: 0.4 },
     messages: [textMessage('user-1', 'Hello', 100), generating],
@@ -116,6 +117,7 @@ describe('SessionGraphCodec', () => {
 
     expect(decoded).toEqual(SessionGraphCodec.persistableProjection(source, { interruptedAt: 1_000 }))
     expect(decoded.futureSessionField).toEqual({ retained: 'yes' })
+    expect(decoded.assistantName).toBe('Mover')
     expect(decoded.threads?.[0]?.compactionPoints).toEqual(source.threads?.[0]?.compactionPoints)
     expect(decoded.threads?.[0]?.sessionPromptContextSnapshot).toEqual(
       source.threads?.[0]?.sessionPromptContextSnapshot

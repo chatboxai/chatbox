@@ -1,8 +1,8 @@
 import {
-  SessionRowConflictError,
   type SessionBranchPreview,
   type SessionForkOptionsPage,
   type SessionGenerationControl,
+  SessionRowConflictError,
 } from '@chatbox/core/ports'
 import { getSessionActionGate, type SessionLockState } from '@chatbox/core/session/action-gates'
 import { isActionAvailableInMode, type SessionMode } from '@chatbox/core/session/mode-policy'
@@ -12,11 +12,12 @@ import { TestId } from '@shared/automation/testids'
 import { supportsSessionGeneration } from '@shared/session/capabilities'
 import type { SessionType } from '@shared/types'
 import { IconAlignRight, IconChevronLeft, IconChevronRight, IconFold, IconTrash } from '@tabler/icons-react'
-import { useQueries, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
+import { type UseQueryResult, useQueries, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { rendererApplication } from '@/app/renderer-application'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
+import { GLASS_FILL_CLASS } from '@/lib/glass-surface'
 import { deleteFork, switchFork, switchForkTo } from '@/stores/session/forks'
 import { getSessionLockNotice, notifySessionLockBlocked } from '@/utils/session-lock-copy'
 import ActionMenu, { type ActionMenuItemProps } from '../ActionMenu'
@@ -32,6 +33,7 @@ type ForkGroupProps = {
   sessionMode?: SessionMode
   assistantAvatarKey?: string
   sessionPicUrl?: string
+  assistantName?: string
 }
 
 type Branch = SessionForkOptionsPage['branches'][number]
@@ -403,7 +405,7 @@ function BranchPreview(
       gap={0}
       mx="md"
       p="xs"
-      className="rounded-lg border border-solid border-chatbox-border-primary bg-chatbox-background-primary shadow-sm"
+      className={`rounded-lg border border-solid border-chatbox-border-primary bg-chatbox-background-primary shadow-sm ${GLASS_FILL_CLASS}`}
     >
       <Flex justify="space-between" align="center" gap="xs" wrap="wrap" px="xs" pb="xxs">
         <Text size="xs" c="chatbox-tertiary">
@@ -455,6 +457,7 @@ function PreviewMessage(props: ForkGroupProps & { messageId: string }) {
       sessionMode={props.sessionMode}
       assistantAvatarKey={props.assistantAvatarKey}
       sessionPicUrl={props.sessionPicUrl}
+      assistantName={props.assistantName}
     />
   ) : null
 }

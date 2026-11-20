@@ -67,7 +67,12 @@ vi.mock('@/stores/session/message-queue', () => ({
   hasQueuedWork: hasQueuedWorkMock,
 }))
 
-import { recordRequestOverhead, requestManualCompaction, runCompactionWithUIState } from './compaction'
+import {
+  recordRequestOverhead,
+  requestManualCompaction,
+  requestTargetedCompaction,
+  runCompactionWithUIState,
+} from './compaction'
 let repository: InMemorySessionRepository
 let sessions: SessionService
 
@@ -428,5 +433,79 @@ describe('requestManualCompaction', () => {
     await expect(requestManualCompaction('session-1', { force: true })).resolves.toBe(outcome)
 
     expect(generateSummaryWithStreamMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('requestTargetedCompaction', () => {
+  const idleLocks = {
+    generatingReplyCount: 0,
+    anyReplyGenerating: false,
+    compactionRunning: false,
+    awaitingPauseDecision: false,
+  }
+
+  it('summarizes through the target and places the summary right after it', async () => {
+    await expect(requestTargetedCompaction('session-1', 'u1', { prompt: 'Keep paths.' })).resolves.toBe('started')
+
+    await vi.waitFor(() => expect(getCompactionUIState('session-1').status).toBe('completed'))
+    expect(generateSummaryWithStreamMock).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'Keep paths.' }))
+    const summaryId = getCompactionUIState('session-1').summaryMessageId
+    expect(repository.inspectSession('session-1')?.messages.map((m) => m.id)).toEqual(['u1', summaryId, 'a1'])
+    expect(enqueueCompactionRequestMock).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['a streaming reply', { ...idleLocks, anyReplyGenerating: true }],
+    ['a running summary', { ...idleLocks, compactionRunning: true }],
+    ['a tool call waiting for a decision', { ...idleLocks, awaitingPauseDecision: true }],
+  ])('rejects instead of queueing during %s', async (_case, locks) => {
+    getSessionLockStateMock.mockResolvedValue(locks)
+
+    await expect(requestTargetedCompaction('session-1', 'u1')).resolves.toBe('busy')
+
+    expect(generateSummaryWithStreamMock).not.toHaveBeenCalled()
+    expect(enqueueCompactionRequestMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects when a reply wins the lock between the check and the run', async () => {
+    getSessionLockStateMock
+      .mockResolvedValueOnce(idleLocks)
+      .mockResolvedValueOnce({ ...idleLocks, anyReplyGenerating: true })
+
+    await expect(requestTargetedCompaction('session-1', 'u1')).resolves.toBe('busy')
+    expect(generateSummaryWithStreamMock).not.toHaveBeenCalled()
+  })
+
+  it('reports a target that disappeared and keeps it for the retry', async () => {
+    await expect(requestTargetedCompaction('session-1', 'deleted', { prompt: 'Keep paths.' })).resolves.toBe('started')
+
+    await vi.waitFor(() => expect(getCompactionUIState('session-1').status).toBe('failed'))
+    expect(getCompactionUIState('session-1')).toMatchObject({
+      retryPrompt: 'Keep paths.',
+      retryTargetMessageId: 'deleted',
+    })
+    expect(generateSummaryWithStreamMock).not.toHaveBeenCalled()
+    expect(repository.inspectSession('session-1')?.messages.map((m) => m.id)).toEqual(['u1', 'a1'])
+  })
+
+  it('keeps the target of a failed summary for the retry', async () => {
+    generateSummaryWithStreamMock.mockResolvedValue({ success: false, error: new Error('provider down') })
+
+    await expect(requestTargetedCompaction('session-1', 'u1')).resolves.toBe('started')
+
+    await vi.waitFor(() => expect(getCompactionUIState('session-1').status).toBe('failed'))
+    expect(getCompactionUIState('session-1')).toMatchObject({ error: 'provider down', retryTargetMessageId: 'u1' })
+    expect(repository.inspectSession('session-1')?.messages.map((m) => m.id)).toEqual(['u1', 'a1'])
+  })
+
+  it('clears the retry target once a conversation compression fails', async () => {
+    generateSummaryWithStreamMock.mockResolvedValue({ success: false, error: new Error('provider down') })
+    await requestTargetedCompaction('session-1', 'u1')
+    await vi.waitFor(() => expect(getCompactionUIState('session-1').status).toBe('failed'))
+
+    await requestManualCompaction('session-1', { force: true })
+
+    await vi.waitFor(() => expect(hasPendingSessionGeneration('session-1')).toBe(false))
+    expect(getCompactionUIState('session-1')).toMatchObject({ status: 'failed', retryTargetMessageId: undefined })
   })
 })

@@ -184,7 +184,7 @@ describe('Chatbox CLI image commands', () => {
 
     expect(startImageGenerationMock).toHaveBeenCalledWith(
       expect.objectContaining({ model: { provider: 'chatbox-ai', modelId: 'manifest-image' } }),
-      expect.objectContaining({ onRecordCreated: expect.any(Function) })
+      expect.objectContaining({ interactive: false, onRecordCreated: expect.any(Function) })
     )
     expect(queueBackgroundTaskNotificationMock).toHaveBeenCalledWith(
       'session-1',
@@ -530,7 +530,7 @@ describe('Chatbox CLI image commands', () => {
           toolCallId: 'tool-1',
         },
       }),
-      expect.objectContaining({ onRecordCreated: expect.any(Function) })
+      expect.objectContaining({ interactive: false, onRecordCreated: expect.any(Function) })
     )
   })
 

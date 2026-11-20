@@ -78,6 +78,11 @@ describe('SummaryMessage mode policy', () => {
     })
   })
 
+  test('the summary body is a translucent glass fill in the transcript', () => {
+    const view = renderSummary()
+    expect(view.container.querySelector('.msg-block.chatbox-glass-fill')).not.toBeNull()
+  })
+
   test('chat mode keeps the latest-summary edit and delete controls', () => {
     renderSummary()
     expandSummary()

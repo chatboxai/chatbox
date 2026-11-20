@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { RecordOrder } from './records'
+import { toBackupSession } from './schema'
 import type { BackupBusinessRecord, BackupImportIssueReporter, BackupManifest, BackupWorkspace } from './types'
 
 const manifest: BackupManifest = {
@@ -163,4 +164,18 @@ it('retains import header deduplication and delegates owned row validation to th
     'session-ids',
   ])
   expect(store.get).not.toHaveBeenCalled()
+})
+
+describe('backup session header', () => {
+  it('carries the session assistant name and omits it for sessions without one', () => {
+    const record = {
+      id: 'session-1',
+      name: 'Moving',
+      assistantAvatarKey: 'avatar',
+      activeThreadId: 'thread-1',
+      storageFormat: 'rows' as const,
+    }
+    expect(toBackupSession({ ...record, assistantName: 'Mover' })).toMatchObject({ assistantName: 'Mover' })
+    expect(toBackupSession(record).assistantName).toBeUndefined()
+  })
 })

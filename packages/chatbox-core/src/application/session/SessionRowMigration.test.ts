@@ -184,3 +184,43 @@ describe('row publication and migration', () => {
     expect(await migration.ensureRows(source.id)).toMatchObject({ record: { name: 'Updated original' } })
   })
 })
+
+it('migrates a long conversation with consecutive active forks and retains its original data', async () => {
+  const { records, storage, migration } = setup()
+  const count = 12_000
+  const legacy: Session = {
+    ...source,
+    messages: Array.from({ length: count }, (_, index) => ({
+      id: `m${index}`,
+      role: 'user',
+      contentParts: [{ type: 'text', text: `message ${index}` }],
+    })),
+    messageForksHash: {},
+  }
+  for (let index = 0; index < count - 1; index += 1) {
+    const active = { id: `active${index}`, messages: [] }
+    const saved = {
+      id: `saved${index}`,
+      messages: [
+        {
+          id: `alternative${index}`,
+          role: 'assistant' as const,
+          contentParts: [{ type: 'text' as const, text: 'alternative' }],
+        },
+      ],
+    }
+    legacy.messageForksHash![`m${index}`] = {
+      position: index % 2,
+      createdAt: 1,
+      lists: index % 2 ? [saved, active] : [active, saved],
+    }
+  }
+  await records.setRecord(legacy)
+  const before = JSON.stringify(await records.getRecord(legacy.id))
+  await expect(migration.ensureRows(legacy.id)).resolves.toMatchObject({ revision: 1 })
+  const snapshot = await storage.readSnapshot(legacy.id)
+  expect(snapshot?.rows.messages).toHaveLength(count * 2 - 1)
+  expect(new Set(snapshot?.rows.messages.map((row) => row.messageId)).size).toBe(count * 2 - 1)
+  expect(JSON.stringify(await records.getRecord(legacy.id))).toBe(before)
+  await expect(migration.ensureRows(legacy.id)).resolves.toMatchObject({ revision: 1 })
+}, 30_000)

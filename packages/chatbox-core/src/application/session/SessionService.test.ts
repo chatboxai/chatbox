@@ -647,7 +647,7 @@ describe('SessionService', () => {
 
     await expect(harness.service.recoverSessionList()).resolves.toEqual({ recovered: 1, failed: 0 })
 
-    expect(harness.repository.records.get(session.id)).not.toHaveProperty('archivedAt')
+    expect(harness.repository.records.get(session.id)?.archivedAt).toBeUndefined()
     expect(harness.repository.records.get(session.id)?.recoveryArchived).toBeUndefined()
   })
 
@@ -668,21 +668,45 @@ describe('SessionService', () => {
     })
   })
 
-  test('rebuilds readable metadata when the archived metadata snapshot cannot be read', async () => {
+  test('leaves the index intact if its recovery snapshot cannot be read', async () => {
     const harness = createHarness()
     const session = createTestSession('session-1')
     await harness.repository.seedSession(session)
+    const original = createTestRecord(session, 1)
+    harness.repository.records.set(session.id, original)
+    const clear = vi.spyOn(harness.repository.meta, 'clear')
     vi.spyOn(harness.repository.meta, 'getAllIncludingHidden').mockRejectedValue(new Error('meta read failed'))
+    await expect(harness.service.recoverSessionList()).rejects.toThrow('meta read failed')
+    expect(clear).not.toHaveBeenCalled()
+    expect(harness.repository.records.get(session.id)).toEqual(original)
+  })
 
-    await expect(harness.service.recoverSessionList()).resolves.toEqual({ recovered: 1, failed: 0 })
+  test.each([false, true])('preserves unreadable metadata with hidden=%s', async (hidden) => {
+    const harness = createHarness()
+    const session = createTestSession('unreadable')
+    await harness.repository.seedSession(session)
+    const original = {
+      ...createTestRecord(session, 42),
+      name: 'Important chat',
+      folderId: 'folder',
+      starred: true,
+      hidden,
+    }
+    harness.repository.records.set(session.id, original)
+    vi.spyOn(harness.repository, 'getSessionHeader').mockRejectedValue(new Error('migration failed'))
+    await expect(harness.service.recoverSessionList()).resolves.toEqual({ recovered: 0, failed: 1 })
+    expect(harness.repository.records.get(session.id)).toEqual(original)
+  })
 
-    expect(harness.repository.records.get(session.id)).toMatchObject({ id: session.id })
-    expect(harness.repository.records.get(session.id)).not.toHaveProperty('archivedAt')
-    expect(harness.log).toHaveBeenCalledWith(
-      'warn',
-      'Failed to preserve archived metadata during session-list recovery',
-      expect.objectContaining({ error: expect.objectContaining({ message: 'meta read failed' }) })
-    )
+  test('creates a retryable list entry for unreadable data whose metadata is missing', async () => {
+    const harness = createHarness()
+    const session = createTestSession('orphan')
+    await harness.repository.seedSession(session)
+    harness.repository.records.delete(session.id)
+    vi.spyOn(harness.repository, 'getSessionHeader').mockRejectedValue(new Error('migration failed'))
+    await expect(harness.service.recoverSessionList()).resolves.toEqual({ recovered: 0, failed: 1 })
+    expect(harness.repository.records.get(session.id)).toMatchObject({ id: session.id, name: session.id })
+    expect(harness.repository.records.get(session.id)?.hidden).not.toBe(true)
   })
 
   test('updates sort order in session metadata and refreshes the visible list', async () => {

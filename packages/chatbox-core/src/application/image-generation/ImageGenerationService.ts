@@ -4,6 +4,7 @@ import type {
   GenerateImageParams,
   ImageGenerationHandle,
   ImageGenerationRecordEvent,
+  ImageGenerationRequestOptions,
   ImageGenerationServiceOptions,
   ImageGenerationSnapshot,
   ImageGenerationTaskResponse,
@@ -241,6 +242,7 @@ export class ImageGenerationService {
         aspectRatio: params.aspectRatio === 'auto' ? undefined : params.aspectRatio,
       }
       await this.initialize()
+      const authorizationError = await this.authorize(normalized, attempt, options)
       record = {
         ...normalized,
         id: this.options.createId?.() ?? uuid(),
@@ -255,7 +257,11 @@ export class ImageGenerationService {
       this.assert(attempt)
       attempt.recordId = record.id
       this.setState(record.id, 'preparing')
-      return this.handle(record, attempt, this.generate(record, attempt))
+      return this.handle(
+        record,
+        attempt,
+        authorizationError ? this.fail(record.id, attempt, authorizationError.error) : this.generate(record, attempt)
+      )
     } catch (error) {
       try {
         if (record) await this.update(record.id, errorUpdate(error))
@@ -302,6 +308,21 @@ export class ImageGenerationService {
     }
     this.assert(attempt)
     return references
+  }
+
+  private async authorize(
+    params: GenerateImageParams,
+    attempt: Attempt,
+    options: ImageGenerationRequestOptions
+  ): Promise<{ error: unknown } | undefined> {
+    try {
+      await this.options.authorizeRequest?.(params, attempt.controller.signal, options.interactive === true)
+      this.assert(attempt)
+    } catch (error) {
+      this.assert(attempt)
+      if (error instanceof Error && error.name === 'AbortError') throw error
+      return { error }
+    }
   }
 
   private async generate(record: ImageGeneration, attempt: Attempt): Promise<ImageGeneration | null> {
@@ -534,12 +555,15 @@ export class ImageGenerationService {
     }
   }
 
-  async retry(recordId: string): Promise<ImageGenerationHandle> {
+  async retry(recordId: string, options: ImageGenerationRequestOptions = {}): Promise<ImageGenerationHandle> {
     const attempt = this.acquire(recordId)
+    let recordReset = false
     try {
       const record = await this.getRecord(recordId)
       this.assert(attempt)
       if (!record) throw new Error('Record not found')
+      const authorizationError = await this.authorize(record, attempt, options)
+      recordReset = true
       const updated = await this.update(
         recordId,
         {
@@ -553,10 +577,14 @@ export class ImageGenerationService {
       )
       this.assert(attempt)
       if (!updated) throw new Error('Record not found')
-      return this.handle(updated, attempt, this.generate(updated, attempt))
+      return this.handle(
+        updated,
+        attempt,
+        authorizationError ? this.fail(recordId, attempt, authorizationError.error) : this.generate(updated, attempt)
+      )
     } catch (error) {
       try {
-        if (error instanceof Error && error.name === 'AbortError') await this.fail(recordId, attempt, error)
+        if (recordReset && attempt.controller.signal.aborted) await this.fail(recordId, attempt, error)
       } finally {
         this.release(attempt)
       }

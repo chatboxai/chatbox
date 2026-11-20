@@ -186,6 +186,17 @@ html[data-theme="light"] {
   flex: 1 1 auto;
 }
 
+.settings-row-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.settings-row-label-action {
+  flex: none;
+}
+
 .settings-row-control {
   flex: 0 0 auto;
   display: flex;
@@ -221,5 +232,17 @@ html[data-theme="light"] {
 
   .settings-row[data-layout="block"]:not([data-density="touch"]) .settings-row-control {
     flex: 1 1 auto;
+  }
+
+  /* Beside a 220px label column the action sits under the description instead. */
+  .settings-row[data-layout="block"]:not([data-density="touch"]) .settings-row-heading {
+    display: contents;
+  }
+
+  .settings-row[data-layout="block"]:not([data-density="touch"]) .settings-row-label-action {
+    order: 1;
+    align-self: flex-start;
+    margin-top: 6px;
+    margin-inline-start: -8px;
   }
 }

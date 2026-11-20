@@ -30,7 +30,7 @@ vi.mock('@sentry/react', () => ({ captureException: vi.fn() }))
 
 vi.mock('@/adapters', () => ({ createModel: vi.fn() }))
 
-vi.mock('@/packages/model-setting-utils', () => ({ getModelDisplayName: vi.fn() }))
+vi.mock('@/packages/model-setting-utils', () => ({ getMessageProviderName: vi.fn(), getModelDisplayName: vi.fn() }))
 
 vi.mock('@/packages/context-management', () => ({ runCompactionWithUIState: vi.fn() }))
 

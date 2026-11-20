@@ -133,6 +133,7 @@ const PARSER_OPTION_LABELS: Record<string, string> = {
   'chatbox-ai': 'Chatbox AI',
   local: 'Built-in parser',
   mineru: 'MinerU',
+  deepseek: 'DeepSeek',
 }
 
 function isChatType(model: ProviderModelInfo) {
@@ -290,7 +291,11 @@ export function RouteComponent() {
         </Stack>
       </Stack>
 
-      <Stack gap="sm" p="md" className="border border-solid border-chatbox-border-primary rounded-xl">
+      <Stack
+        gap="sm"
+        p="md"
+        className="border border-solid border-chatbox-border-primary rounded-xl bg-chatbox-background-raised"
+      >
         <Flex align="center" justify="space-between" gap="sm" wrap="wrap">
           <Stack gap={4} className="flex-1 min-w-[160px]">
             <Text fw={600} size="sm">
@@ -457,7 +462,7 @@ function SlotCard(props: {
     <Stack
       gap="sm"
       p="md"
-      className="border border-solid border-chatbox-border-primary rounded-xl bg-chatbox-background-primary"
+      className="border border-solid border-chatbox-border-primary rounded-xl bg-chatbox-background-raised"
     >
       <Flex align="center" gap="sm" wrap="wrap">
         <Flex
@@ -758,7 +763,7 @@ function sourceForSlot(
   parser: DocumentParserType
 ) {
   if (slotId === 'parser')
-    return parser === 'mineru'
+    return parser === 'mineru' || parser === 'deepseek'
       ? 'Remote service'
       : parser === 'local'
         ? 'Built-in parsing. Image recognition may use the selected OCR provider.'

@@ -21,15 +21,16 @@ import { JK_EVENTS, JK_PAGE_NAMES } from '@/analytics/jk-events'
 import { ChatboxAIErrorMessage } from '@/components/common/ChatboxAIErrorMessage'
 import { ErrorNotice } from '@/components/common/ErrorNotice'
 import classes from '@/components/common/ErrorNotice.module.css'
-import LinkTargetBlank from '@/components/common/Link'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { useCopied } from '@/hooks/useCopied'
 import { navigateToSettings } from '@/modals/settings-navigation'
 import { buildChatboxUrl } from '@/packages/remote'
 import { translateTexts } from '@/packages/translation'
 import platform from '@/platform'
+import { useAuthInfoStore } from '@/stores/authInfoStore'
 import * as settingActions from '@/stores/settingActions'
 import { useLanguage, useSettingsStore } from '@/stores/settingsStore'
+import { ChatboxAIQuotaHint } from './ChatboxAIQuotaHint'
 import type { MessageErrorPresentation } from './message-error-presentation'
 
 const MAX_CHARS = 200
@@ -38,8 +39,8 @@ const MAX_LINES = 3
 type GenericPresentation = Exclude<MessageErrorPresentation, { kind: 'quota' } | { kind: 'agent-mode-reward' }>
 
 const httpStatusCodeI18nKeys: Record<number, string> = {
-  401: 'HTTP error: Unauthorized (401). Your authentication credentials are invalid or have expired. Please check your API key or login status.',
-  403: 'HTTP error: Forbidden (403). You do not have permission to access this resource. Please check your API key permissions or account status.',
+  401: 'HTTP error: Unauthorized (401). The API key for your configured {{apiProvider}} API may be invalid, expired, or entered incorrectly. Please check it and configure it again.',
+  403: 'HTTP error: Forbidden (403). You do not have permission to access your configured {{apiProvider}} API. Please check your API key permissions or account status.',
   408: 'HTTP error: Request Timeout (408). The server took too long to respond. Please try again later.',
   429: 'HTTP error: Too Many Requests (429). The service is currently experiencing high demand or resource limitations. Please wait a moment and try again.',
   500: 'HTTP error: Internal Server Error (500). The server encountered an unexpected error. Please try again later.',
@@ -107,11 +108,27 @@ function ErrorActionButtons(props: {
   )
 }
 
-function getProviderName(providerId?: string): string {
-  return (providerId && aiProviderNameHash[providerId as keyof typeof aiProviderNameHash]) || 'AI Provider'
+function getProviderName(providerId?: string, customProviderName?: string): string {
+  return (
+    customProviderName ||
+    (providerId && aiProviderNameHash[providerId as keyof typeof aiProviderNameHash]) ||
+    'AI Provider'
+  )
 }
 
-function ErrorTip({ presentation, model }: { presentation: GenericPresentation; model?: string }) {
+function getApiProviderName(providerId?: string, customProviderName?: string): string {
+  return getProviderName(providerId, customProviderName).replace(/ API$/, '')
+}
+
+function ErrorTip({
+  presentation,
+  model,
+  customProviderName,
+}: {
+  presentation: GenericPresentation
+  model?: string
+  customProviderName?: string
+}) {
   switch (presentation.kind) {
     case 'context-limit':
       return (
@@ -137,10 +154,10 @@ function ErrorTip({ presentation, model }: { presentation: GenericPresentation; 
       const httpStatusI18nKey = presentation.httpStatusCode
         ? httpStatusCodeI18nKeys[presentation.httpStatusCode]
         : undefined
-      if (httpStatusI18nKey) {
-        return <Trans i18nKey={httpStatusI18nKey} values={{ aiProvider: getProviderName(presentation.providerId) }} />
-      }
-      if (presentation.providerId === ModelProviderEnum.ChatboxAI) {
+      if (
+        presentation.providerId === ModelProviderEnum.ChatboxAI &&
+        (presentation.httpStatusCode === 401 || presentation.httpStatusCode === 403 || !httpStatusI18nKey)
+      ) {
         return (
           <Trans
             i18nKey="Connection to {{aiProvider}} failed. This typically occurs due to a temporary service issue. Please try again later or <buttonOpenSettings>check your settings</buttonOpenSettings>."
@@ -157,10 +174,21 @@ function ErrorTip({ presentation, model }: { presentation: GenericPresentation; 
           />
         )
       }
+      if (httpStatusI18nKey) {
+        return (
+          <Trans
+            i18nKey={httpStatusI18nKey}
+            values={{ apiProvider: getApiProviderName(presentation.providerId, customProviderName) }}
+          />
+        )
+      }
       return (
         <Trans
-          i18nKey="Connection to {{aiProvider}} failed. This typically occurs due to incorrect configuration or {{aiProvider}} account issues. Please <buttonOpenSettings>check your settings</buttonOpenSettings> and verify your {{aiProvider}} account status, or purchase a <LinkToLicensePricing>Chatbox AI License</LinkToLicensePricing> to unlock all advanced models instantly without any configuration."
-          values={{ aiProvider: getProviderName(presentation.providerId) }}
+          i18nKey="Connection to {{aiProvider}} failed. You are currently using your configured {{apiProvider}} API. Please <buttonOpenSettings>check your API settings</buttonOpenSettings> and account status."
+          values={{
+            aiProvider: getProviderName(presentation.providerId, customProviderName),
+            apiProvider: getApiProviderName(presentation.providerId, customProviderName),
+          }}
           components={{
             buttonOpenSettings: (
               <a
@@ -169,21 +197,6 @@ function ErrorTip({ presentation, model }: { presentation: GenericPresentation; 
                 onClick={() =>
                   navigateToSettings(presentation.providerId ? `/provider/${presentation.providerId}` : '/provider')
                 }
-              />
-            ),
-            LinkToLicensePricing: (
-              <LinkTargetBlank
-                style={errorLinkStyle}
-                href={buildChatboxUrl(
-                  `/redirect_app/advanced_url_processing/${settingActions.getLanguage()}?utm_source=app&utm_content=msg_bad_provider`
-                )}
-              />
-            ),
-            a: (
-              <a
-                style={errorLinkStyle}
-                href={buildChatboxUrl(`/redirect_app/faqs/${settingActions.getLanguage()}`)}
-                target="_blank"
               />
             ),
           }}
@@ -196,6 +209,26 @@ function ErrorTip({ presentation, model }: { presentation: GenericPresentation; 
         <>
           <Trans i18nKey="network error tips" values={{ host: presentation.host }} />
           {proxy && <Trans i18nKey="network proxy error tips" values={{ proxy }} />}
+          {presentation.providerId && presentation.providerId !== ModelProviderEnum.ChatboxAI && (
+            <div>
+              <Trans
+                i18nKey="Connection to {{aiProvider}} failed. You are currently using your configured {{apiProvider}} API. Please <buttonOpenSettings>check your API settings</buttonOpenSettings> and account status."
+                values={{
+                  aiProvider: getProviderName(presentation.providerId, customProviderName),
+                  apiProvider: getApiProviderName(presentation.providerId, customProviderName),
+                }}
+                components={{
+                  buttonOpenSettings: (
+                    <a
+                      className="cursor-pointer"
+                      style={errorLinkStyle}
+                      onClick={() => navigateToSettings(`/provider/${presentation.providerId}`)}
+                    />
+                  ),
+                }}
+              />
+            </div>
+          )}
         </>
       )
     }
@@ -242,6 +275,16 @@ export function GenericMessageError(props: {
   const { msg, presentation, onRetry } = props
   const { t } = useTranslation()
   const licenseKey = useSettingsStore((state) => state.licenseKey)
+  const providerId =
+    presentation.kind === 'api' || presentation.kind === 'network' ? presentation.providerId : undefined
+  const customProviderName = useSettingsStore(
+    (state) => state.customProviders?.find((provider) => provider.id === providerId)?.name
+  )
+  const isLoggedIn = useAuthInfoStore((state) => !!state.accessToken && !!state.refreshToken)
+  const isConfiguredApiError =
+    (presentation.kind === 'api' || presentation.kind === 'network') &&
+    !!providerId &&
+    providerId !== ModelProviderEnum.ChatboxAI
   const language = useLanguage()
   const [retrying, setRetrying] = useState(false)
   const [expanded, setExpanded] = useState(false)
@@ -273,8 +316,25 @@ export function GenericMessageError(props: {
   return (
     <ErrorNotice testId={TestId.message.errorTips}>
       <div className={classes.tip}>
-        <ErrorTip presentation={presentation} model={msg.model} />
+        <ErrorTip presentation={presentation} model={msg.model} customProviderName={customProviderName} />
       </div>
+      {isConfiguredApiError && licenseKey && <ChatboxAIQuotaHint licenseKey={licenseKey} />}
+      {isConfiguredApiError && !isLoggedIn && !licenseKey && (
+        <div className="text-sm leading-5 text-[var(--chatbox-tint-secondary)]">
+          <Trans
+            i18nKey="<OpenSettingButton>Sign in to Chatbox AI</OpenSettingButton> to use your account license."
+            components={{
+              OpenSettingButton: (
+                <a
+                  className="cursor-pointer"
+                  style={errorLinkStyle}
+                  onClick={() => navigateToSettings(`/provider/${ModelProviderEnum.ChatboxAI}`)}
+                />
+              ),
+            }}
+          />
+        </div>
+      )}
       {presentation.requestId && (
         <Text size="sm" c="chatbox-tertiary" className="break-all select-text" lh="20px">
           {t('Request ID: {{requestId}}', { requestId: presentation.requestId })}

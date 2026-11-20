@@ -7,6 +7,7 @@ import { type FC, useCallback, useEffect, useMemo, useRef, useState } from 'reac
 import { useTranslation } from 'react-i18next'
 import { Drawer } from 'vaul'
 import { blurMessageInput } from '@/hooks/dom'
+import { GLASS_HOST_CLASS } from '@/lib/glass-surface'
 import { getWebSearchConfigurationIssue } from '@/packages/web-search/configuration-issue'
 import platform from '@/platform'
 import { useSessionAgentMode } from '@/stores/session/agent-mode'
@@ -17,6 +18,7 @@ import { getAgentModeUIState } from './agentModeState'
 import { useComposerMenuStore } from './composerMenuStore'
 import { type ComposerMenuLayout, resolveComposerMenuLayout, useComposerTouchLayout } from './composerTouchLayout'
 import MobileAgentModePanel from './MobileAgentModePanel'
+import { getStatusBadgeCutoutStyle } from './status-badge-cutout'
 
 interface AgentModeButtonProps {
   sessionId: string
@@ -74,10 +76,8 @@ const AgentModeButton: FC<AgentModeButtonProps> = ({
   const openTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const closeTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const entry = useSessionAgentMode(sessionId)
-  const webSearchConfiguration = useSettingsStore((state) => state.extension.webSearch)
-  const licenseKey = useSettingsStore((state) => state.licenseKey)
-  const hasWebSearchWarning =
-    webBrowsingMode && getWebSearchConfigurationIssue(webSearchConfiguration, licenseKey) !== null
+  const webSearchConfigurationIssue = useSettingsStore((state) => getWebSearchConfigurationIssue(state))
+  const hasWebSearchWarning = webBrowsingMode && webSearchConfigurationIssue !== null
   const settingsOpened =
     Boolean((location.search as Record<string, unknown>)?.settings) || location.pathname.startsWith('/settings')
 
@@ -288,6 +288,7 @@ const AgentModeButton: FC<AgentModeButtonProps> = ({
       </Popover.Target>
       <Popover.Dropdown
         p={0}
+        className={GLASS_HOST_CLASS}
         style={{ overflow: 'visible' }}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
@@ -304,12 +305,10 @@ function CompactAgentModeIcon({ mode, size }: { mode: AgentModeValue; size: numb
 
   return (
     <span className="relative inline-flex shrink-0" style={{ width: size, height: size }} data-agent-mode={mode}>
-      <IconRobot size={size} strokeWidth={1.8} />
-      <AgentModeStatusIcon
-        mode={mode}
-        size={statusSize}
-        className="absolute -bottom-0.5 -right-0.5 bg-[var(--chatbox-background-secondary)]"
-      />
+      <span className="inline-flex" style={getStatusBadgeCutoutStyle(size, statusSize)}>
+        <IconRobot size={size} strokeWidth={1.8} />
+      </span>
+      <AgentModeStatusIcon mode={mode} size={statusSize} className="absolute -bottom-0.5 -right-0.5" />
     </span>
   )
 }

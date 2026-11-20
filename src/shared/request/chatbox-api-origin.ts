@@ -14,3 +14,8 @@ export function getChatboxAPIOrigin(environment: ChatboxAPIOriginEnvironment = p
 export function setDynamicChatboxAPIOrigin(origin: string): void {
   dynamicChatboxAPIOrigin = origin
 }
+
+/** True when an environment override pins the origin, so origin probing must not run. */
+export function isChatboxAPIOriginOverridden(): boolean {
+  return Boolean(process.env.USE_LOCAL_API || process.env.USE_BETA_API || process.env.USE_NEWDB_API)
+}

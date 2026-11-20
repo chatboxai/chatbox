@@ -124,6 +124,35 @@ describe('InterfaceColorInput', () => {
     expect(onChange).toHaveBeenCalledWith('#ffffff')
   })
 
+  it('reports complete, allowed drafts before they commit', () => {
+    const onCommit = vi.fn()
+    const onDraftChange = vi.fn()
+
+    render(
+      <InterfaceColorInput
+        label="Brand Color"
+        value="#228be6"
+        isColorAllowed={(color) => color !== '#ffffff'}
+        onCommit={onCommit}
+        onDraftChange={onDraftChange}
+      />
+    )
+
+    const input = screen.getByLabelText('Brand Color')
+    fireEvent.change(input, { target: { value: '#12A150' } })
+    expect(onDraftChange).toHaveBeenLastCalledWith('#12a150')
+    expect(onCommit).not.toHaveBeenCalled()
+
+    onDraftChange.mockClear()
+    fireEvent.change(input, { target: { value: '#12a1' } })
+    fireEvent.change(input, { target: { value: '#ffffff' } })
+    expect(onDraftChange).not.toHaveBeenCalled()
+
+    fireEvent.blur(input)
+    expect(onDraftChange).toHaveBeenLastCalledWith('#228be6')
+    expect(onCommit).not.toHaveBeenCalled()
+  })
+
   it('does not commit the same color again when blur follows picking end', () => {
     const onChange = vi.fn()
 

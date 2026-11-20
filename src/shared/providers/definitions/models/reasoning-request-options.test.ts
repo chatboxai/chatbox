@@ -1,9 +1,13 @@
 import type { LanguageModelV4CallOptions } from '@ai-sdk/provider'
 import type { CallChatCompletionOptions } from '@shared/models/types'
-import type { ProviderModelInfo } from '@shared/types'
+import { convertToModelMessages } from '@shared/services/model-message-converter'
+import { type Message, ModelProviderEnum, type ProviderModelInfo } from '@shared/types'
 import type { ModelDependencies } from '@shared/types/adapters'
+import { resolveReasoningReplayPolicy } from '@shared/utils/reasoning-control'
 import type { SentryScope } from '@shared/utils/sentry_adapter'
+import { generateText } from 'ai'
 import { describe, expect, it, vi } from 'vitest'
+import '../ollama'
 import Claude from './claude'
 import CustomOpenAI from './custom-openai'
 import DeepSeek from './deepseek'
@@ -11,6 +15,12 @@ import Ollama from './ollama'
 import OpenAI from './openai'
 import OpenRouter from './openrouter'
 import Qwen from './qwen'
+
+class TestOllama extends Ollama {
+  public exposeChatModel() {
+    return this.getChatModel()
+  }
+}
 
 class TestDeepSeek extends DeepSeek {
   public exposeCallSettings(options: CallChatCompletionOptions) {
@@ -101,7 +111,110 @@ const supportedQwenModel = (modelId: string): ProviderModelInfo => ({
   providerId: 'qwen',
 })
 
+function createRecordingOllama() {
+  const requests: Array<{ messages?: unknown[] }> = []
+  const model = new TestOllama(
+    {
+      ollamaHost: 'http://127.0.0.1:11434',
+      model: reasoningModel('qwen3.5:9b'),
+      customFetch: async (_input, init) => {
+        requests.push(JSON.parse(String(init?.body)))
+        return new Response(
+          JSON.stringify({
+            id: 'test',
+            object: 'chat.completion',
+            created: 1,
+            model: 'qwen3.5:9b',
+            choices: [
+              {
+                index: 0,
+                message: { role: 'assistant', content: 'The answer', reasoning: 'Checked the file' },
+                finish_reason: 'stop',
+              },
+            ],
+            usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+          }),
+          { headers: { 'content-type': 'application/json' } }
+        )
+      },
+    },
+    createDependencies()
+  )
+  return { model, requests }
+}
+
 describe('reasoning request options', () => {
+  it('replays assistant reasoning alongside tool calls using the Ollama wire field', async () => {
+    const { model, requests } = createRecordingOllama()
+    const result = await model.exposeChatModel().doGenerate({
+      prompt: [
+        { role: 'user', content: [{ type: 'text', text: 'Read the attachment' }] },
+        {
+          role: 'assistant',
+          content: [
+            { type: 'reasoning', text: 'I need to read the file' },
+            { type: 'tool-call', toolCallId: 'call-1', toolName: 'read_file', input: { path: 'input.txt' } },
+          ],
+        },
+        {
+          role: 'tool',
+          content: [
+            {
+              type: 'tool-result',
+              toolCallId: 'call-1',
+              toolName: 'read_file',
+              output: { type: 'text', value: 'File contents' },
+            },
+          ],
+        },
+      ],
+    })
+    expect(requests[0]?.messages).toEqual([
+      { role: 'user', content: 'Read the attachment' },
+      {
+        role: 'assistant',
+        content: null,
+        reasoning: 'I need to read the file',
+        tool_calls: [
+          { id: 'call-1', type: 'function', function: { name: 'read_file', arguments: '{"path":"input.txt"}' } },
+        ],
+      },
+      { role: 'tool', tool_call_id: 'call-1', content: 'File contents' },
+    ])
+    expect(result.content).toContainEqual(expect.objectContaining({ type: 'text', text: 'The answer' }))
+    expect(result.content).toContainEqual(expect.objectContaining({ type: 'reasoning', text: 'Checked the file' }))
+  })
+
+  it('replays stored assistant reasoning when an Ollama tool exchange resumes from saved messages', async () => {
+    const { model, requests } = createRecordingOllama()
+    const storedMessages: Message[] = [
+      { id: 'user-1', role: 'user', contentParts: [{ type: 'text', text: 'Read the attachment' }] },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        contentParts: [
+          { type: 'reasoning', text: 'I need to read the file' },
+          {
+            type: 'tool-call',
+            state: 'result',
+            toolCallId: 'call-1',
+            toolName: 'read_file',
+            args: { path: 'input.txt' },
+            result: 'File contents',
+          },
+        ],
+      },
+    ]
+    const messages = await convertToModelMessages(storedMessages, async () => null, {
+      modelSupportVision: false,
+      ...resolveReasoningReplayPolicy(ModelProviderEnum.Ollama, { modelId: 'qwen3.5:9b', apiStyle: model.apiStyle }),
+    })
+    await generateText({ model: model.exposeChatModel(), messages })
+    expect(requests[0]?.messages).toContainEqual(
+      expect.objectContaining({ role: 'assistant', reasoning: 'I need to read the file' })
+    )
+  })
+
   it('adds summarized display to Claude thinking requests before fetch', async () => {
     let requestBody: unknown
     const baseFetch: typeof globalThis.fetch = (_input, init) => {

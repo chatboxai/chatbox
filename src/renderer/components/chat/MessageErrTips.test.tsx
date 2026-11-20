@@ -5,10 +5,24 @@ import { MantineProvider } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import { ChatboxAIAPIError, MESSAGE_ERROR_CODES } from '@shared/models/errors'
 import type { ChatboxAILicenseDetail, ChatboxAIPlanType, Message } from '@shared/types'
+import { ModelProviderType } from '@shared/types'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { ReactElement } from 'react'
 import { afterEach, expect, test, vi } from 'vitest'
+import i18n from '@/i18n'
 import { settingsStore } from '@/stores/settingsStore'
-import { fireEvent, render, screen, waitFor } from '@/test-utils'
+import { act, fireEvent, render as renderWithProviders, screen, waitFor } from '@/test-utils'
 import MessageErrTips from './MessageErrTips'
+
+let queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+function render(ui: ReactElement) {
+  return renderWithProviders(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>)
+}
+const remoteMocks = vi.hoisted(() => ({ getLicenseDetailRealtime: vi.fn() }))
+vi.mock('@/packages/remote', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/packages/remote')>()),
+  ...remoteMocks,
+}))
 
 const translationMocks = vi.hoisted(() => ({ translateTexts: vi.fn<() => Promise<string[]>>() }))
 vi.mock('@/packages/translation', () => translationMocks)
@@ -93,12 +107,67 @@ const proPlusLicenseDetail: ChatboxAILicenseDetail = {
 }
 
 afterEach(() => {
+  queryClient.clear()
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  remoteMocks.getLicenseDetailRealtime.mockReset()
   translationMocks.translateTexts.mockReset()
   platformMocks.openLink.mockReset()
   trackingMocks.trackTokenExhaustedCard.mockReset()
   trackingMocks.useSessionHeader.mockReset()
   trackingMocks.useSessionHeader.mockReturnValue({ session: undefined, isFetched: false })
   settingsStore.setState(initialSettings)
+})
+
+test.each([401, 403])('keeps Chatbox AI guidance for HTTP %i', (httpStatusCode) => {
+  settingsStore.setState((state) => ({ ...state, language: 'en' }))
+  const msg = {
+    id: `chatbox-ai-${httpStatusCode}`,
+    role: 'assistant',
+    contentParts: [],
+    error: 'API Error',
+    errorCode: 10001,
+    errorExtra: { httpStatusCode },
+    aiProvider: 'chatbox-ai',
+  } as Message
+
+  render(
+    <MantineProvider>
+      <MessageErrTips msg={msg} />
+    </MantineProvider>
+  )
+
+  const guidance = screen.getByRole('alert').textContent || ''
+  expect(guidance).toContain('Connection to Chatbox AI failed.')
+  expect(guidance).not.toContain('your configured Chatbox AI API')
+})
+
+test.each([
+  [408, 'Request Timeout'],
+  [429, 'Too Many Requests'],
+  [500, 'Internal Server Error'],
+  [502, 'Bad Gateway'],
+  [503, 'Service Unavailable'],
+  [504, 'Gateway Timeout'],
+])('keeps Chatbox AI HTTP %i status guidance', (httpStatusCode, statusName) => {
+  settingsStore.setState((state) => ({ ...state, language: 'en' }))
+  render(
+    <MantineProvider>
+      <MessageErrTips
+        msg={
+          {
+            id: `chatbox-ai-${httpStatusCode}`,
+            role: 'assistant',
+            contentParts: [],
+            error: 'API Error',
+            errorCode: 10001,
+            errorExtra: { httpStatusCode },
+            aiProvider: 'chatbox-ai',
+          } as Message
+        }
+      />
+    </MantineProvider>
+  )
+  expect(screen.getByRole('alert').textContent).toContain(`HTTP error: ${statusName} (${httpStatusCode}).`)
 })
 
 test('shows the Free plan downgrade and license refresh guidance for a backend downgrade error', () => {
@@ -363,4 +432,219 @@ test('shows translation progress and lets the user return to the original error'
   await waitFor(() => expect(screen.getByText('服务商身份验证失败。')).not.toBeNull())
   fireEvent.click(screen.getByRole('button', { name: 'Show original' }))
   expect(screen.getByText('Provider authentication failed.')).not.toBeNull()
+})
+
+const availableLicenseDetail: ChatboxAILicenseDetail = {
+  ...proPlusLicenseDetail,
+  unified_token_usage_details: [{ type: 'plan', token_limit: 50000, token_usage: 0 }],
+}
+const customApiError = {
+  id: 'custom-api-error',
+  role: 'assistant',
+  contentParts: [],
+  error: 'API Error',
+  errorCode: 10001,
+  aiProvider: 'custom-provider',
+  errorExtra: { httpStatusCode: 401 },
+} as Message
+function renderCustomError() {
+  return render(
+    <MantineProvider>
+      <MessageErrTips msg={customApiError} />
+    </MantineProvider>
+  )
+}
+
+test('refreshes persisted quota and shares a fresh query across error cards', async () => {
+  settingsStore.setState({ licenseKey: 'license-a', licenseDetail: availableLicenseDetail })
+  remoteMocks.getLicenseDetailRealtime.mockResolvedValue({
+    data: {
+      ...availableLicenseDetail,
+      unified_token_usage_details: [{ type: 'plan', token_limit: 50000, token_usage: 40000 }],
+    },
+  })
+  const first = renderCustomError()
+  await screen.findByText(/10.00K plan points/)
+  expect(screen.queryByText(/50.00K plan points/)).toBeNull()
+  renderCustomError()
+  expect(remoteMocks.getLicenseDetailRealtime).toHaveBeenCalledTimes(1)
+  first.unmount()
+})
+
+test('refetches quota when an error is shown after the cache becomes stale', async () => {
+  settingsStore.setState({ licenseKey: 'license-a', licenseDetail: availableLicenseDetail })
+  queryClient.setQueryData(['chatbox-ai-error-quota', 'license-a'], availableLicenseDetail, {
+    updatedAt: Date.now() - 61000,
+  })
+  remoteMocks.getLicenseDetailRealtime.mockResolvedValue({ data: proPlusLicenseDetail })
+  renderCustomError()
+  await waitFor(() => expect(remoteMocks.getLicenseDetailRealtime).toHaveBeenCalledOnce())
+  await waitFor(() => expect(screen.queryByText(/Switch to a model under/)).toBeNull())
+})
+
+test('hides quota on logout and does not reuse it for another license', async () => {
+  settingsStore.setState({ licenseKey: 'license-a' })
+  remoteMocks.getLicenseDetailRealtime
+    .mockResolvedValueOnce({ data: availableLicenseDetail })
+    .mockResolvedValueOnce({ data: proPlusLicenseDetail })
+  renderCustomError()
+  await screen.findByText(/50.00K plan points/)
+  act(() => settingsStore.setState({ licenseKey: undefined, licenseDetail: undefined }))
+  expect(screen.queryByText(/Switch to a model under/)).toBeNull()
+  act(() => settingsStore.setState({ licenseKey: 'license-b' }))
+  expect(screen.queryByText(/50.00K plan points/)).toBeNull()
+  await waitFor(() =>
+    expect(remoteMocks.getLicenseDetailRealtime).toHaveBeenLastCalledWith({ licenseKey: 'license-b' })
+  )
+  await waitFor(() =>
+    expect(queryClient.getQueryState(['chatbox-ai-error-quota', 'license-b'])?.status).toBe('success')
+  )
+  expect(screen.queryByText(/Switch to a model under/)).toBeNull()
+})
+
+test('ignores an old license response that arrives after switching licenses', async () => {
+  let resolveOld: (value: { data: ChatboxAILicenseDetail }) => void = () => {}
+  settingsStore.setState({ licenseKey: 'license-a' })
+  remoteMocks.getLicenseDetailRealtime
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveOld = resolve
+        })
+    )
+    .mockResolvedValueOnce({ data: proPlusLicenseDetail })
+  renderCustomError()
+  act(() => settingsStore.setState({ licenseKey: 'license-b' }))
+  await waitFor(() => expect(remoteMocks.getLicenseDetailRealtime).toHaveBeenCalledTimes(2))
+  await act(async () => resolveOld({ data: availableLicenseDetail }))
+  expect(screen.queryByText(/Switch to a model under/)).toBeNull()
+})
+
+test.each([
+  { error: 'API Error', errorCode: 10001, aiProvider: 'chatbox-ai' },
+  { error: 'Expired license', errorCode: 20002, aiProvider: 'chatbox-ai' },
+  { error: 'Network Error', errorCode: 10002, aiProvider: 'chatbox-ai' },
+])('does not fetch or recommend quota for $error from $aiProvider', (error) => {
+  settingsStore.setState({ licenseKey: 'license-a', licenseDetail: availableLicenseDetail })
+  render(
+    <MantineProvider>
+      <MessageErrTips msg={{ ...customApiError, ...error }} />
+    </MantineProvider>
+  )
+  expect(remoteMocks.getLicenseDetailRealtime).not.toHaveBeenCalled()
+  expect(screen.queryByText(/Switch to a model under/)).toBeNull()
+})
+
+test('shows custom provider name, network advice and login guidance after a network failure', () => {
+  settingsStore.setState({
+    licenseKey: undefined,
+    language: 'en',
+    customProviders: [{ id: 'custom-provider', name: 'My API', type: ModelProviderType.OpenAI, isCustom: true }],
+  })
+  render(
+    <MantineProvider>
+      <MessageErrTips
+        msg={{
+          ...customApiError,
+          error: 'Network Error: connection refused',
+          errorCode: 10002,
+          errorExtra: { host: 'api.example.test' },
+        }}
+      />
+    </MantineProvider>
+  )
+  const guidance = screen.getByRole('alert').textContent || ''
+  expect(guidance).toContain('connection with api.example.test')
+  expect(guidance).toContain('your configured My API')
+  expect(guidance).toContain('Sign in to Chatbox AI')
+})
+
+test('shows available Chatbox AI points after a custom provider network failure', async () => {
+  settingsStore.setState({ licenseKey: 'license-a', language: 'en' })
+  remoteMocks.getLicenseDetailRealtime.mockResolvedValue({ data: availableLicenseDetail })
+  render(
+    <MantineProvider>
+      <MessageErrTips
+        msg={{
+          ...customApiError,
+          error: 'Network Error: connection refused',
+          errorCode: 10002,
+          errorExtra: { host: 'api.example.test' },
+        }}
+      />
+    </MantineProvider>
+  )
+  await screen.findByText(/50.00K plan points/)
+  expect(screen.getByRole('alert').textContent).toContain('connection with api.example.test')
+})
+
+test('does not advertise quota when the server rejects the license', async () => {
+  settingsStore.setState({ licenseKey: 'license-a', licenseDetail: availableLicenseDetail })
+  remoteMocks.getLicenseDetailRealtime.mockResolvedValue({
+    data: availableLicenseDetail,
+    error: { code: 'expired_license' },
+  })
+  renderCustomError()
+  await waitFor(() =>
+    expect(queryClient.getQueryState(['chatbox-ai-error-quota', 'license-a'])?.status).toBe('success')
+  )
+  expect(screen.queryByText(/Switch to a model under/)).toBeNull()
+})
+
+test.each(['token_expire_time', 'plan expires_at'] as const)(
+  'hides expired plan points but keeps expansion points when %s has passed',
+  async (expiryField) => {
+    settingsStore.setState({ licenseKey: 'license-a' })
+    const expiredAt = new Date(Date.now() - 60_000).toISOString()
+    remoteMocks.getLicenseDetailRealtime.mockResolvedValue({
+      data: {
+        ...availableLicenseDetail,
+        token_expire_time: expiryField === 'token_expire_time' ? expiredAt : undefined,
+        unified_token_usage_details: [
+          {
+            type: 'plan',
+            token_limit: 50000,
+            token_usage: 0,
+            expires_at: expiryField === 'plan expires_at' ? expiredAt : undefined,
+          },
+        ],
+        expansion_pack_limit: 2000,
+      },
+    })
+    renderCustomError()
+    await screen.findByText(/2.00K Chatbox expansion pack points/)
+    expect(screen.queryByText(/50.00K plan points/)).toBeNull()
+  }
+)
+
+test.each([
+  ['en', '50.00K', '2.00K'],
+  ['zh-Hans', '5.00万', '2.00千'],
+])('formats plan and expansion points for %s', async (language, planPoints, expansionPoints) => {
+  await i18n.changeLanguage(language)
+  try {
+    settingsStore.setState({ licenseKey: 'license-a' })
+    remoteMocks.getLicenseDetailRealtime.mockResolvedValue({
+      data: {
+        ...availableLicenseDetail,
+        expansion_pack_limit: 2000,
+      },
+    })
+    renderCustomError()
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain(planPoints))
+    expect(screen.getByRole('alert').textContent).toContain(expansionPoints)
+  } finally {
+    await i18n.changeLanguage('en')
+  }
+})
+
+test('hides cached quota if a refresh fails', async () => {
+  settingsStore.setState({ licenseKey: 'license-a' })
+  queryClient.setQueryData(['chatbox-ai-error-quota', 'license-a'], availableLicenseDetail, {
+    updatedAt: Date.now() - 61000,
+  })
+  remoteMocks.getLicenseDetailRealtime.mockRejectedValue(new Error('offline'))
+  renderCustomError()
+  await waitFor(() => expect(queryClient.getQueryState(['chatbox-ai-error-quota', 'license-a'])?.status).toBe('error'))
+  await waitFor(() => expect(screen.queryByText(/Switch to a model under/)).toBeNull())
 })

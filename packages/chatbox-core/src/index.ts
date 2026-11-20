@@ -3,6 +3,7 @@
 export type { ChatStreamOptions, ModelInterface, ModelStreamPart } from '@shared/models/types'
 export { SessionHeaderSchema } from '@shared/types'
 export { getChatboxAPIOrigin } from '@shared/request/chatbox-api-origin'
+export { type ApiOriginsStorage, startChatboxAPIOriginProbing } from '@shared/request/chatboxai_pool'
 export {
   licenseActivationSettings,
   licenseDeactivationSettings,
@@ -30,6 +31,12 @@ export {
   parseNativeChatboxAIDocument,
 } from '@shared/services/native-document-parser'
 export {
+  DEEPSEEK_OCR_MAX_FILE_SIZE,
+  getDeepSeekParserErrorCode,
+  isDeepSeekOcrFile,
+  recognizeDocumentWithDeepSeek,
+} from '@shared/services/deepseek-ocr'
+export {
   activateNativeLicense,
   deactivateNativeLicense,
   fetchNativeLicenseDetail,
@@ -44,12 +51,15 @@ export {
   reportNativeContent,
 } from '@shared/services/native-report'
 export {
+  getNativeWebSearchProviderLabel,
   hasNativeWebSearchConfiguration,
+  type NativeWebSearchCredentialSources,
   type NativeWebSearchOptions,
   type NativeWebSearchProvider,
   type NativeWebSearchResultItem,
   nativeWebSearchProviderOptions,
   normalizeNativeWebSearchSettings,
+  resolveNativeWebSearchApiKey,
   searchNativeWeb,
 } from '@shared/services/native-web-search'
 export type {
@@ -320,6 +330,7 @@ export {
   TOOL_RESULT_PREVIEW_LENGTH,
   TOOL_RESULT_SIZE_LIMIT,
   ToolCallLimitPausedError,
+  trySessionGenerationLock,
   updateToolCallPart,
   updateToolCallParts,
   withSessionGenerationLock,

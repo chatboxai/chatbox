@@ -17,11 +17,12 @@ export { ModelProviderType } from '../../types/provider'
  * - local: Local parsing using built-in libraries (desktop default)
  * - chatbox-ai: Local-first parsing with Chatbox cloud fallback (mobile/web default)
  * - mineru: Third-party MinerU parsing service (desktop only)
+ * - deepseek: DeepSeek OCR, authenticated with the DeepSeek model provider API key
  */
-export type DocumentParserType = 'none' | 'local' | 'chatbox-ai' | 'mineru'
+export type DocumentParserType = 'none' | 'local' | 'chatbox-ai' | 'mineru' | 'deepseek'
 
 export const DocumentParserConfigSchema = z.object({
-  type: z.enum(['none', 'local', 'chatbox-ai', 'mineru']),
+  type: z.enum(['none', 'local', 'chatbox-ai', 'mineru', 'deepseek']),
   mineru: z
     .object({
       apiToken: z.string(),
@@ -342,7 +343,9 @@ const ShortcutSettingSchema = z.preprocess(
 
 const ExtensionSettingsSchema = z.object({
   webSearch: z.object({
-    provider: z.enum(['build-in', 'bing', 'tavily', 'bocha', 'querit', 'searxng', 'firecrawl']).catch('build-in'),
+    provider: z
+      .enum(['build-in', 'bing', 'deepseek', 'tavily', 'bocha', 'querit', 'searxng', 'firecrawl'])
+      .catch('build-in'),
     tavilyApiKey: z.string().optional(),
     bochaApiKey: z.string().optional(),
     queritApiKey: z.string().optional(),
@@ -539,13 +542,18 @@ export const SettingsSchema = GlobalSessionSettingsSchema.extend({
   showWordCount: z.boolean().optional().catch(undefined),
   showTokenCount: z.boolean().optional().catch(undefined),
   showTokenUsed: z.boolean().optional().catch(undefined),
-  showModelName: z.boolean().optional().catch(undefined),
+  /** Shown unless turned off; an invalid stored value reads as the default. */
+  showModelName: z.boolean().optional().catch(true),
   showMessageTimestamp: z.boolean().optional().catch(undefined),
   showFirstTokenLatency: z.boolean().optional().catch(undefined),
 
   showAvatar: z.boolean().optional().catch(undefined),
   hideSystemPromptMessage: z.boolean().optional().catch(undefined),
-  messageLayout: z.enum(['left', 'bubble']).optional().catch(undefined),
+  // 'left' is the pre-classic name of the flat layout; stored settings and backups may still carry it.
+  messageLayout: z
+    .preprocess((value) => (value === 'left' ? 'classic' : value), z.enum(['classic', 'bubble']))
+    .optional()
+    .catch(undefined),
   autoScrollNewMessagesToTop: z.boolean().default(false),
 
   theme: z.nativeEnum(Theme),

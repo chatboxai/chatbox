@@ -1,5 +1,5 @@
-import type { Message, Session } from '../../types/session'
 import { forkTailStartIndex } from '@shared/session/message-forks'
+import type { Message, Session } from '../../types/session'
 import { normalizeSessionV1 } from './normalize'
 import type { MessageRow, MessageRowStatus, SessionRecordV2, SessionTree, ThreadRow } from './types'
 
@@ -87,44 +87,73 @@ function encodeThreadMessages(
     return row
   }
 
-  const emitChain = (chain: Message[], parentMessageId: string | null, headBranchId: string | null): void => {
-    let previous: MessageRow | null = null
+  // Explicit segments keep deeply nested forks within a bounded call stack.
+  interface ChainSegment {
+    chain: Message[]
+    start: number
+    parentMessageId: string | null
+    headBranchId: string | null
+  }
 
-    for (const [index, message] of chain.entries()) {
-      const row = createRow(message, previous ? previous.messageId : parentMessageId, index === 0 ? headBranchId : null)
-      if (previous) {
-        previous.activeChildId = message.id
-      }
-      previous = row
+  const emitChain = (root: ChainSegment): void => {
+    const pending: ChainSegment[] = [root]
 
-      const fork = forks[message.id]
-      if (!fork) {
-        continue
-      }
+    while (pending.length > 0) {
+      const segment = pending.pop()
+      if (!segment) break
+      const { chain, start, parentMessageId, headBranchId } = segment
+      let previous: MessageRow | null = null
 
-      // Summaries anchored to the pivot belong to the shared prefix, so they
-      // stay on the chain and the branch point moves past them.
-      const tailStart = forkTailStartIndex(chain, index)
-      let branchPoint = row
-      for (const summary of chain.slice(index + 1, tailStart)) {
-        const summaryRow = createRow(summary, branchPoint.messageId, null)
-        branchPoint.activeChildId = summary.id
-        branchPoint = summaryRow
-      }
-
-      const activeTail = chain.slice(tailStart)
-      for (const [listIndex, list] of fork.lists.entries()) {
-        const branch = listIndex === fork.position ? activeTail : list.messages
-        emitChain(branch, branchPoint.messageId, list.id)
-        if (listIndex === fork.position) {
-          branchPoint.activeChildId = branch[0]?.id ?? null
+      for (let index = start; index < chain.length; index += 1) {
+        const message = chain[index]
+        const row = createRow(
+          message,
+          previous ? previous.messageId : parentMessageId,
+          index === start ? headBranchId : null
+        )
+        if (previous) {
+          previous.activeChildId = message.id
         }
+        previous = row
+
+        const fork = forks[message.id]
+        if (!fork) {
+          continue
+        }
+
+        // Summaries anchored to the pivot belong to the shared prefix, so they
+        // stay on the chain and the branch point moves past them.
+        const tailStart = forkTailStartIndex(chain, index)
+        let branchPoint = row
+        for (let summaryIndex = index + 1; summaryIndex < tailStart; summaryIndex += 1) {
+          const summary = chain[summaryIndex]
+          const summaryRow = createRow(summary, branchPoint.messageId, null)
+          branchPoint.activeChildId = summary.id
+          branchPoint = summaryRow
+        }
+
+        // Branches are read back to front so the stack yields them in list order,
+        // keeping sibling order and row order identical to a depth-first walk.
+        for (let listIndex = fork.lists.length - 1; listIndex >= 0; listIndex -= 1) {
+          const list = fork.lists[listIndex]
+          const branch = listIndex === fork.position ? chain : list.messages
+          const branchStart = listIndex === fork.position ? tailStart : 0
+          pending.push({
+            chain: branch,
+            start: branchStart,
+            parentMessageId: branchPoint.messageId,
+            headBranchId: list.id,
+          })
+          if (listIndex === fork.position) {
+            branchPoint.activeChildId = branch[branchStart]?.id ?? null
+          }
+        }
+        break
       }
-      return
     }
   }
 
-  emitChain(messages, null, null)
+  emitChain({ chain: messages, start: 0, parentMessageId: null, headBranchId: null })
 
   const rootMessageId: string | null = messages[0]?.id ?? null
   let activeLeafMessageId: string | null = null

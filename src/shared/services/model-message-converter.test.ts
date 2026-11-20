@@ -27,6 +27,26 @@ function assistantWithToolResult(result: unknown): Message {
 }
 
 describe('convertToModelMessages — tool result sanitization', () => {
+  it.each([
+    { message: 'Memory m1 deleted.', content: 'Display-only memory fact' },
+    { message: 'Memory m1 deleted.' },
+    { error: 'No memory found with id m1.' },
+  ])('replays memory deletion status without display content: %j', async (result) => {
+    const message = assistantWithToolResult(result)
+    const part = message.contentParts[0]
+    if (part.type !== 'tool-call') throw new Error('Expected tool call')
+    part.toolName = 'delete_memory'
+    part.args = { id: 'm1' }
+    const output = await convertToModelMessages([message], noImage)
+    const toolMessage = output.find((entry) => entry.role === 'tool')
+    expect(toolMessage?.content[0]).toMatchObject({
+      type: 'tool-result',
+      output: { type: 'json', value: 'message' in result ? { message: result.message } : result },
+    })
+    expect(JSON.stringify(output)).not.toContain('Display-only memory fact')
+    expect(part.result).toEqual(result)
+  })
+
   it('produces a schema-valid prompt when a tool result is a raw Error object', async () => {
     // Regression: when an MCP tool crashed, the raw Error leaked into history. On the next
     // send, the AI SDK rejected the prompt with AI_InvalidPromptError because an Error is not

@@ -37,7 +37,7 @@ export const defaultSessionsForEN: Session[] = [
         content:
           'Sure, here\'s a demo table in markdown:\n\n| Column 1 | Column 2 | Column 3 |\n| --- | --- | --- |\n| Row 1, Column 1 | Row 1, Column 2 | Row 1, Column 3 |\n| Row 2, Column 1 | Row 2, Column 2 | Row 2, Column 3 |\n| Row 3, Column 1 | Row 3, Column 2 | Row 3, Column 3 | \n\nIn this table, there are three columns labeled "Column 1", "Column 2", and "Column 3". There are also three rows, each with a value in each column. The "---" used in the second row is markdown syntax for a separator between the header row and the data rows.',
         role: 'assistant' as const,
-        model: 'unknown',
+        model: 'Chatbox AI',
         generating: false,
       },
       {
@@ -50,7 +50,7 @@ export const defaultSessionsForEN: Session[] = [
         content:
           'The formula for Fourier Transform is:\n\n$$\n\\hat{f}(\\xi) = \\int_{-\\infty}^{\\infty} f(x)\\, e^{-2\\pi ix\\xi} \\,dx\n$$\n\nwhere $\\hat{f}(\\xi)$ denotes the Fourier transform of $f(x)$.',
         role: 'assistant' as const,
-        model: 'unknown',
+        model: 'Chatbox AI',
         generating: false,
       },
     ].map(migrateMessage),
@@ -77,7 +77,7 @@ export const defaultSessionsForEN: Session[] = [
         content:
           "Sure, here's a 7-day itinerary for exploring Japan:\n\nDay 1: Tokyo\n- Visit Sensoji Temple in Asakusa\n- Explore the trendy neighborhood of Shibuya\n- See the iconic Tokyo Tower\n\nDay 2: Tokyo\n- Visit the famous Tsukiji Fish Market\n- Experience Japan's technology at the Sony showroom\n- Take a stroll through the Imperial Palace Gardens\n\nDay 3: Hakone\n- Enjoy a scenic train ride to Hakone\n- Take a cable car up to the Owakudani Valley\n- Relax in a hot spring at an onsen resort\n\nDay 4: Kyoto\n- Explore the old streets of Gion district\n- Visit the impressive Fushimi-Inari Shrine\n- Marvel at the Golden Pavilion Temple\n\nDay 5: Kyoto\n- Take a stroll through the Arashiyama Bamboo Forest\n- Visit the Ryoanji Temple and its Zen garden\n- Explore the Nishiki Market for some authentic Japanese cuisine \n\nDay 6: Hiroshima\n- Visit the Atomic Bomb Dome and Peace Memorial Park\n- Take a ferry to Miyajima Island to see the Itsukushima Shrine and friendly deer\n\nDay 7: Osaka\n- Eat your way through the famous food streets of Dotonbori\n- Visit the Osaka Castle\n- Enjoy the nightlife in the trendy neighborhood of Namba.\n\nI hope you enjoy your trip to Japan!",
         role: 'assistant' as const,
-        model: 'unknown',
+        model: 'Chatbox AI',
         generating: false,
       },
     ].map(migrateMessage),
@@ -106,7 +106,7 @@ export const defaultSessionsForEN: Session[] = [
         content:
           '"Exciting news! The latest version of Chatbox has just been released. Get ready to experience amazing features and seamless AI conversations. Upgrade now and unleash your productivity potential! #Chatbox #MessagingApp #Upgrade"',
         role: 'assistant' as const,
-        model: 'unknown',
+        model: 'Chatbox AI',
         generating: false,
       },
     ].map(migrateMessage),
@@ -135,7 +135,7 @@ export const defaultSessionsForEN: Session[] = [
         content:
           "Sure, here's an example Python function to encode a string in base64:\n\n```python\nimport base64\n\ndef encode_base64(text):\n    encoded = base64.b64encode(text.encode('utf-8'))\n    return encoded.decode('utf-8')\n```\n\nYou can call this function with a string as an argument, and it will return the base64-encoded version of the string:\n\n```python\ntext = \"Hello, world!\"\nencoded_text = encode_base64(text)\nprint(encoded_text)\n```\n\nOutput:\n```\nSGVsbG8sIHdvcmxkIQ==\n```\n\nNote that we first convert the string to bytes using the `encode()` method, and then pass that to the `b64encode()` method in the `base64` module. We also decode the result back to a string using `decode()` method.",
         role: 'assistant' as const,
-        model: 'unknown',
+        model: 'Chatbox AI',
         generating: false,
       },
     ].map(migrateMessage),
@@ -163,7 +163,7 @@ export const defaultSessionsForEN: Session[] = [
         id: '67435839-0d47-496f-8f73-a82c0c3db5d1',
         content: 'Hello, it is pleasant to make your acquaintance.',
         role: 'assistant' as const,
-        model: 'unknown',
+        model: 'Chatbox AI',
         generating: false,
       },
       {
@@ -175,7 +175,7 @@ export const defaultSessionsForEN: Session[] = [
         id: 'd74098a2-7745-44e2-a284-c3844955004a',
         content: 'Good morning.',
         role: 'assistant' as const,
-        model: 'unknown',
+        model: 'Chatbox AI',
         generating: false,
       },
       {
@@ -187,7 +187,7 @@ export const defaultSessionsForEN: Session[] = [
         id: 'e1168e40-a26b-4a0c-ab84-cfd5d32c2b6f',
         content: 'The first shall be last.',
         role: 'assistant' as const,
-        model: 'unknown',
+        model: 'Chatbox AI',
         generating: false,
       },
       {
@@ -199,7 +199,7 @@ export const defaultSessionsForEN: Session[] = [
         id: '565164bc-5d1d-4cee-a1fd-2dfbfb3f5181',
         content: 'I think, therefore I am.',
         role: 'assistant' as const,
-        model: 'unknown',
+        model: 'Chatbox AI',
         generating: false,
       },
     ].map(migrateMessage),
@@ -230,7 +230,7 @@ export const defaultSessionsForCN: Session[] = [
         content:
           '小仙女们，Chatbox 又双叒叕更新啦！这次版本新增了好多好多小细节哦，让我们快来看看吧~✨✨✨\n\n首先，Chatbox 在此次更新中为大家加入了许多优化体验！让聊天变得更加愉快、更加流畅。而且还有一些小搭档的出现，帮助你更高效地完成工作🔥🔥🔥\n\n此外，Chatbox 为大家特别准备了一个新的 AI 服务：Chatbox AI，可以直接使用哦，再也不用折腾 API KEY 和技术术语啦💗💗💗💗\n\n最后，记得分享和转发这篇笔记让更多小伙伴们一起使用，分享快乐哦😁😁😁😁\n\n快来下载最新版的 Chatbox，开启与小伙伴们的新生活吧！\n💬 #Chatbox新版本 #AI神器 #人生苦短我用Chatbox#',
         role: 'assistant' as const,
-        model: 'unknown',
+        model: 'Chatbox AI',
         generating: false,
       },
     ].map(migrateMessage),
@@ -259,7 +259,7 @@ export const defaultSessionsForCN: Session[] = [
         content:
           '别担心，你一直都非常努力，做得很出色。就算今天有些累，也是因为你在拼尽全力完成自己的任务。要好好休息，明天会更好的！我相信你能做到的！加油！😊',
         role: 'assistant' as const,
-        model: 'unknown',
+        model: 'Chatbox AI',
         generating: false,
       },
     ].map(migrateMessage),
@@ -287,7 +287,7 @@ export const defaultSessionsForCN: Session[] = [
         id: 'f2042062-949b-47f6-b353-21e06506869c',
         content: '你好，世界。',
         role: 'assistant' as const,
-        model: 'unknown',
+        model: 'Chatbox AI',
         generating: false,
       },
     ].map(migrateMessage),

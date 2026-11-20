@@ -158,8 +158,35 @@ export function MermaidSVGPreviewDangerous(props: {
   )
 }
 
+/**
+ * Mobile saves a PNG so the system share sheet treats it as a photo. When rasterizing fails, the
+ * original SVG is shared instead so the download still produces a usable file.
+ */
+export async function downloadSvgPreview(svgBase64: string, t: (key: string, options?: object) => string) {
+  const basename = `svg_${Math.random().toString(36).substring(7)}`
+  if (platform.type !== 'mobile') {
+    await platform.exporter.exportByUrl(basename, svgBase64)
+    return
+  }
+  try {
+    const pngBase64 = await picUtils.svgToPngBase64(svgBase64)
+    await platform.exporter.exportImageFile(basename, pngBase64)
+  } catch (error) {
+    try {
+      await platform.exporter.exportImageFile(basename, svgBase64)
+    } catch (fallbackError) {
+      toastActions.add(
+        t('Failed to export file: {{error}}', {
+          error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+        })
+      )
+    }
+  }
+}
+
 export function SVGPreview(props: { xmlCode: string; className?: string; generating?: boolean }) {
   let { xmlCode, className, generating } = props
+  const { t } = useTranslation()
   const svgBase64 = useMemo(() => {
     if (!xmlCode.includes('</svg') && generating) {
       return ''
@@ -213,14 +240,7 @@ export function SVGPreview(props: { xmlCode: string; className?: string; generat
             outlineID: 'pswp__icn-download',
           },
           appendTo: 'bar',
-          onClick: async () => {
-            if (platform.type === 'mobile') {
-              const pngBase64 = await picUtils.svgToPngBase64(svgBase64)
-              platform.exporter.exportImageFile(`svg_${Math.random().toString(36).substring(7)}`, pngBase64)
-            } else {
-              platform.exporter.exportByUrl(`svg_${Math.random().toString(36).substring(7)}`, svgBase64)
-            }
-          },
+          onClick: () => void downloadSvgPreview(svgBase64, t),
         },
       ]}
     >

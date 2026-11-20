@@ -54,6 +54,7 @@ export function customParserTypes(host: { isDesktopLike: boolean; isMobile: bool
   const types: DocumentParserType[] = []
   if (host.isDesktopLike || host.isMobile) types.push('local')
   if (host.isDesktopLike) types.push('mineru')
+  types.push('deepseek')
   return types
 }
 

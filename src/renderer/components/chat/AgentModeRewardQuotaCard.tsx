@@ -1,6 +1,7 @@
 import { Box, Button, Group, Paper, Stack, Text, ThemeIcon } from '@mantine/core'
 import { IconGift, IconPlayerPlay } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
+import { GLASS_FILL_CLASS } from '@/lib/glass-surface'
 
 interface AgentModeRewardQuotaCardProps {
   onAction: () => void
@@ -25,10 +26,8 @@ export function AgentModeRewardQuotaCard({
       radius={8}
       p={16}
       withBorder
-      style={{
-        borderColor: 'rgba(34, 139, 230, 0.35)',
-        background: 'var(--chatbox-background-primary)',
-      }}
+      className={`bg-chatbox-background-primary ${GLASS_FILL_CLASS}`}
+      style={{ borderColor: 'rgba(34, 139, 230, 0.35)' }}
     >
       <Group align="flex-start" wrap="nowrap" gap={14}>
         <ThemeIcon

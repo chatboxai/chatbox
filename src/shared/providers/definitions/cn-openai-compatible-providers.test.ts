@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { findModelInRegistry } from '../../model-registry/enrich'
 import { getModelsDevProviderId } from '../../model-registry/provider-mapping'
-import { MODELS_DEV_SNAPSHOT } from '../../model-registry/snapshot.generated'
+import type { ProviderModelRegistry } from '../../model-registry/types'
 import { getProviderDefinition, getSystemProviders } from '../index'
 import { longCatProvider } from './longcat'
 import { tencentHunyuanProvider } from './tencent-hunyuan'
@@ -38,15 +38,16 @@ describe('Tencent Hunyuan / Xiaomi MiMo / LongCat / GLM Coding Plan definitions'
   })
 
   it('keeps GLM Coding Plan out of models.dev enrichment', () => {
-    // The zhipuai catalog has no glm-5.3 / glm-5-turbo entry, and
-    // findModelInRegistry() treats '.' and '-' as prefix boundaries, so both ids
-    // collapse onto 'glm-5' and would have their contextWindow overwritten
-    // (1M -> 200K) once a models.dev refresh lands. This provider ships its own
-    // verified catalog instead, so it must stay out of the mapping.
+    // This provider ships its own verified catalog. findModelInRegistry() treats
+    // '.' and '-' as prefix boundaries, so a catalog that lacks glm-5.3 /
+    // glm-5-turbo would collapse both ids onto 'glm-5' and overwrite their
+    // contextWindow; the provider must stay out of the models.dev mapping.
     expect(zhipuGLMCodingPlanProvider.modelsDevProviderId).toBeUndefined()
     expect(getModelsDevProviderId(zhipuGLMCodingPlanProvider.id)).toBeUndefined()
 
-    const zhipuCatalog = MODELS_DEV_SNAPSHOT['chatglm-6b']
+    const zhipuCatalog: ProviderModelRegistry = {
+      'glm-5': { modelId: 'glm-5', type: 'chat', capabilities: [], contextWindow: 200_000, maxOutput: 128_000 },
+    }
     expect(findModelInRegistry('glm-5.3', zhipuCatalog)?.modelId).toBe('glm-5')
     expect(findModelInRegistry('glm-5-turbo', zhipuCatalog)?.modelId).toBe('glm-5')
   })

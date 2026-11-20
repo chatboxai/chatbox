@@ -67,7 +67,9 @@ function buildDeleteMemoryTool(memory: MemoryToolsPort, scope: MemoryScope): Too
       const { id } = input as { id: string }
       try {
         const deleted = await memory.deleteMemoryForScope(scope, id)
-        return deleted ? { message: `Memory ${id} deleted.` } : { error: `No memory found with id ${id}.` }
+        return deleted
+          ? { message: `Memory ${id} deleted.`, content: deleted.content }
+          : { error: `No memory found with id ${id}.` }
       } catch (error) {
         if (error instanceof MemoryContextUnavailableError) return { error: error.message }
         throw error

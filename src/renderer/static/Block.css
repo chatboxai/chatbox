@@ -48,6 +48,33 @@
   }
 }
 
+/* Small screens space messages by a fixed gap above each one, so the trailing margin of the last block is dropped. */
+.msg-block .msg-content-trim-end > :last-child,
+.msg-block .msg-content-trim-end > :last-child > :last-child,
+.msg-block .msg-content-trim-end > :last-child > :last-child > :last-child,
+.msg-block .msg-content-trim-end > :last-child > :last-child > :last-child > :last-child,
+.msg-block .msg-content-trim-end > :last-child > :last-child > :last-child > :last-child > :last-child {
+  margin-bottom: 0;
+}
+
+/* Bubbles carry their own padding, so the first and last paragraph add no extra space inside them. */
+.bubble-msg .msg-content p:first-child {
+  margin-top: 0;
+}
+.bubble-msg .msg-content p:last-child {
+  margin-bottom: 0;
+}
+
+/* A reply spanning the full-width column keeps prose to a readable line length while code blocks and tables fill the column. */
+.assistant-msg.msg-spans-column .msg-content :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6) {
+  max-width: 960px;
+}
+
+/* Assistant replies start right under their name row, which already sets the gap. */
+.assistant-msg .msg-content p:first-child {
+  margin-top: 0;
+}
+
 /* Bubble layout: ensure user message links match bubble text color (white on brand background) */
 .bubble-user-msg .msg-content a {
   color: var(--chatbox-tint-white);
@@ -91,6 +118,20 @@
 
 /* // markdown table */
 .msg-block {
+  .markdown-table-scroll {
+    max-width: 100%;
+    overflow-x: auto;
+    margin-bottom: var(--chatbox-spacing-md);
+  }
+  .markdown-table-scroll table {
+    width: max-content;
+    margin-bottom: 0;
+  }
+  .markdown-table-scroll th,
+  .markdown-table-scroll td {
+    min-width: 7em;
+    max-width: 20em;
+  }
   table {
     background-color: var(--chatbox-background-primary);
     margin: 0 auto var(--chatbox-spacing-md);

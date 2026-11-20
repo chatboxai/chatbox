@@ -66,12 +66,17 @@ const safeSettings: SafeSettingSpec[] = [
     page: 'Chat',
     read: () => settingsStore.getState().maxContextMessageCount ?? Number.MAX_SAFE_INTEGER,
   },
+  {
+    key: 'chat.show-model-name',
+    description: 'Show model names on messages.',
+    page: 'Chat',
+    read: () => settingsStore.getState().showModelName ?? true,
+  },
   ...(
     [
       ['chat.show-word-count', 'Show message word counts.', 'showWordCount', 'Chat'],
       ['chat.show-token-count', 'Show estimated message token counts.', 'showTokenCount', 'Chat'],
       ['chat.show-token-used', 'Show model token usage.', 'showTokenUsed', 'Chat'],
-      ['chat.show-model-name', 'Show model names on messages.', 'showModelName', 'Chat'],
       ['chat.show-message-timestamp', 'Show message timestamps.', 'showMessageTimestamp', 'Chat'],
       ['chat.show-avatar', 'Show chat avatars.', 'showAvatar', 'Chat'],
       ['chat.markdown', 'Render Markdown.', 'enableMarkdownRendering', 'Chat'],
@@ -95,7 +100,7 @@ const safeSettings: SafeSettingSpec[] = [
     key: 'chat.message-layout',
     description: 'Message layout style.',
     page: 'Chat',
-    read: () => settingsStore.getState().messageLayout ?? 'bubble',
+    read: () => settingsStore.getState().messageLayout ?? 'classic',
   },
   {
     key: 'chat.compaction-threshold',

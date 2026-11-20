@@ -8,7 +8,7 @@ import { identity, pickBy } from 'lodash'
 import { normalizePlausibleModel, normalizePlausibleProvider } from '@/analytics/plausible'
 import { bucketCount, toBooleanString } from '@/analytics/values'
 import { captureAgentModeException } from '@/observability/agent-mode'
-import { getModelDisplayName } from '@/packages/model-setting-utils'
+import { getMessageProviderName, getModelDisplayName } from '@/packages/model-setting-utils'
 import platform from '@/platform'
 import { reportError } from '@/utils/sentry'
 import { trackEvent } from '@/utils/track'
@@ -90,6 +90,7 @@ export async function initializeTargetMessage(
   return {
     ...targetMsg,
     aiProvider: settings.provider,
+    aiProviderName: getMessageProviderName(settings, globalSettings),
     model: await getModelDisplayName(settings, globalSettings, sessionType || 'chat'),
     // Raw id alongside the display name: display names are neither stable nor
     // parseable, so this is the message's machine-readable provenance.

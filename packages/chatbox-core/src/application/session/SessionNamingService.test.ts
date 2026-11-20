@@ -6,6 +6,7 @@ import type { Message, Session, Settings } from '../../types'
 import { type ScheduledNameGeneration, SessionNamingService } from './SessionNamingService'
 import { rowChatFixture } from '../chat/testing/row-chat-fixture'
 import type { SessionHeaderRead } from '../../ports/session-row-repository'
+import { SessionRowConflictError } from '../../ports/session-row-store'
 import { SessionNotFoundError } from './SessionWriteCoordinator'
 
 function createSession(overrides: Partial<Session> = {}): Session {
@@ -66,6 +67,8 @@ function createHarness() {
     return result
   }
   const executeStructureCommand = vi.fn(execute)
+  const readSessionNamingMessages = vi.fn(fixture.useCases.readSessionNamingMessages)
+  const reportUnexpectedError = vi.fn()
   const toModelMessages = vi.fn((messages: Message[]) => {
     const textPart = messages[0]?.contentParts[0]
     return Promise.resolve([
@@ -77,7 +80,7 @@ function createHarness() {
       getSessionHeader: getSession,
       updateSessionHeader: updateSession,
       executeStructureCommand,
-      readSessionNamingMessages: fixture.useCases.readSessionNamingMessages,
+      readSessionNamingMessages,
     },
     settings: { getSettings: () => settings },
     models: { createModel: vi.fn(() => Promise.resolve(model)) },
@@ -94,12 +97,14 @@ function createHarness() {
     },
     getLanguageName: (language) => (language === 'zh-Hans' ? 'Simplified Chinese' : 'English'),
     toModelMessages,
-    reportUnexpectedError: vi.fn(),
+    reportUnexpectedError,
   })
   return {
     service,
     scheduled,
     chat,
+    readSessionNamingMessages,
+    reportUnexpectedError,
     getSession,
     updateSession,
     executeStructureCommand,
@@ -131,6 +136,16 @@ describe('SessionNamingService', () => {
     const prompt = harness.toModelMessages.mock.calls[0][0][0].contentParts[0]
     expect(prompt).toMatchObject({ type: 'text' })
     if (prompt.type === 'text') expect(prompt.text).toContain('Simplified Chinese')
+  })
+
+  test('leaves a snapshot staled by a concurrent commit to a later attempt without reporting it', async () => {
+    const harness = createHarness()
+    harness.readSessionNamingMessages.mockRejectedValueOnce(new SessionRowConflictError('session-1', 1, 2))
+
+    await expect(harness.service.generateNameAndThreadName('session-1', 'en')).resolves.toBe(false)
+
+    expect(harness.chat).not.toHaveBeenCalled()
+    expect(harness.reportUnexpectedError).not.toHaveBeenCalled()
   })
 
   test('keeps the first pending schedule and names only after eligibility is re-checked', async () => {
@@ -310,6 +325,31 @@ describe('SessionNamingService', () => {
     disabled.settings.autoGenerateTitle = false
     await disabled.service.syncAutoTitle('session-1')
     expect(disabled.scheduled).toHaveLength(0)
+  })
+
+  test('syncAutoTitle names an Untitled Copilot conversation from content', async () => {
+    const harness = createHarness()
+    harness.setSession(createSession({ name: 'Untitled', copilotId: 'writer', threadName: '' }))
+
+    await harness.service.syncAutoTitle('session-1')
+
+    expect(harness.scheduled).toHaveLength(1)
+    expect(harness.chat).not.toHaveBeenCalled()
+    harness.scheduled[0].callback()
+    await vi.waitFor(() => expect(harness.session?.name).toBe('北京旅行计划'))
+    expect(harness.session?.threadName).toBe('北京旅行计划')
+    expect(harness.session?.copilotId).toBe('writer')
+  })
+
+  test('syncAutoTitle leaves an already titled Copilot conversation alone', async () => {
+    const harness = createHarness()
+    harness.setSession(createSession({ name: 'Writing partner', copilotId: 'writer', threadName: 'Writing partner' }))
+
+    await harness.service.syncAutoTitle('session-1')
+
+    expect(harness.scheduled).toHaveLength(0)
+    expect(harness.chat).not.toHaveBeenCalled()
+    expect(harness.session?.name).toBe('Writing partner')
   })
 
   test('cancels pending work and clears retry state when a Session is deleted', () => {

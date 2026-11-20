@@ -1,4 +1,4 @@
-import { buildContext, flattenToolCallPartsToText } from '@shared/context'
+import { buildContext, flattenToolCallPartsToText, selectMessagesBeforeTarget } from '@shared/context'
 import type { AttachmentPolicy } from '@shared/context/attachments'
 import type { Message, MessageContentParts } from '@shared/types'
 import type { MemoryToolContext } from '@shared/types/agent-persona'
@@ -68,7 +68,12 @@ export class BasicGenerationPreparation<TContext> implements GenerationPreparati
       modelSupportToolUseForFile: false,
       sandboxMode: false,
     }
-    let promptMessages = await buildContext(request.messages.slice(0, request.targetMessageIndex), {
+    const contextMessages = selectMessagesBeforeTarget(
+      request.messages,
+      request.targetMessageIndex,
+      request.preserveLastPromptMessageToolCalls
+    )
+    let promptMessages = await buildContext(contextMessages, {
       attachmentResolver: request.attachments,
       compactionPoints: request.compactionPoints,
       maxContextMessageCount: request.settings.maxContextMessageCount,
@@ -92,8 +97,8 @@ export class BasicGenerationPreparation<TContext> implements GenerationPreparati
       request.model.reasoningReplaySource
     )
     // Anthropic signed replay also needs the Renderer harness's unsigned-resume
-    // handling, so this path replays only the Responses and Gemini protocols.
-    const portableReplay = replay.replayNamespaces.some((namespace) => namespace === 'openai' || namespace === 'google')
+    // handling, so this path applies every other route's replay policy.
+    const portableReplay = !replay.replayNamespaces.includes('anthropic')
     const preparedMessages = await prepareModelMessages({
       messages: promptMessages,
       model: request.model,

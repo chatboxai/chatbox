@@ -1,29 +1,10 @@
 import NiceModal from '@ebay/nice-modal-react'
 import {
-  Avatar,
   Button,
-  Card,
-  Checkbox,
-  Combobox,
-  colorsTuple,
-  createTheme,
   type DefaultMantineColor,
-  Drawer,
-  Flex,
-  Input,
   type MantineColorsTuple,
   MantineProvider,
-  Modal,
-  NativeSelect,
-  Paper,
-  Popover,
-  rem,
-  Select,
-  Slider,
-  Switch,
   Text,
-  TextInput,
-  Title,
   useMantineColorScheme,
 } from '@mantine/core'
 import { Box, Grid } from '@mui/material'
@@ -35,7 +16,7 @@ import { useQuery } from '@tanstack/react-query'
 import { createRootRoute, Outlet, useLocation } from '@tanstack/react-router'
 import clsx from 'clsx'
 import { useSetAtom } from 'jotai'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
 import { JK_PAGE_NAMES } from '@/analytics/jk-events'
@@ -50,9 +31,11 @@ import useAppTheme from '@/hooks/useAppTheme'
 import { useSystemLanguageWhenInit } from '@/hooks/useDefaultSystemLanguage'
 import { useI18nEffect } from '@/hooks/useI18nEffect'
 import useNeedRoomForWinControls from '@/hooks/useNeedRoomForWinControls'
-import useScreenChange, { useSidebarWidth } from '@/hooks/useScreenChange'
+import useScreenChange, { useIsSmallScreen, useSidebarWidth } from '@/hooks/useScreenChange'
 import useShortcut from '@/hooks/useShortcut'
 import useVersion from '@/hooks/useVersion'
+import { setChatWallpaperMarker } from '@/lib/glass-surface'
+import { creteMantineTheme } from '@/theme/mantine-theme'
 import '@/modals'
 import { rendererApplication } from '@/app/renderer-application'
 import DbSchemaGuardDialog from '@/components/DbSchemaGuardDialog'
@@ -90,12 +73,10 @@ import { useUIStore } from '@/stores/uiStore'
 import { CHATBOX_BUILD_CHANNEL, CHATBOX_BUILD_PLATFORM } from '@/variables'
 import { blobToDataUrl } from './image-creator/-components/constants'
 
-function BackgroundImageOverlay() {
+/** The chat wallpaper's image URL on chat routes, or undefined until the image is actually available. */
+function useChatWallpaperUrl(): string | undefined {
   const location = useLocation()
   const globalBackgroundImageKey = useSettingsStore((s) => s.backgroundImageKey)
-  const backgroundImageOpacity = useSettingsStore((s) => s.backgroundImageOpacity)
-  const showSidebar = useUIStore((s) => s.showSidebar)
-  const sidebarWidth = useSidebarWidth()
   const isRootPage = location.pathname === '/'
   const isSessionPage = location.pathname.startsWith('/session/') && location.pathname.length > '/session/'.length
   const sessionId = getSessionIdFromPathname(location.pathname)
@@ -117,55 +98,29 @@ function BackgroundImageOverlay() {
     enabled: !!effectiveKey,
     staleTime: Number.POSITIVE_INFINITY,
   })
-  const imageUrl =
-    session?.backgroundImage?.type === 'url'
-      ? session.backgroundImage.url
-      : effectiveKey && blob
-        ? blobToDataUrl(blob)
-        : undefined
+  const storedImageUrl = useMemo(() => (effectiveKey && blob ? blobToDataUrl(blob) : undefined), [effectiveKey, blob])
 
-  if (!isRootPage && !isSessionPage) return null
-  if (!imageUrl) return null
-  return (
-    <div className="pointer-events-none absolute z-0 top-0 left-0 w-full h-full">
-      <div
-        className="absolute top-0 left-0 w-full h-full bg-cover bg-center bg-no-repeat"
-        style={{
-          backgroundImage: `
-          url("${imageUrl.replace(/"/g, '%22')}")
-        `,
-          opacity: backgroundImageOpacity,
-        }}
-      />
-      <div className="hidden sm:block absolute top-0 left-0 w-full h-40 bg-gradient-to-b from-chatbox-background-primary from-0 to-transparent to-100%" />
-      {showSidebar && (
-        <div
-          className="hidden sm:block absolute top-0 left-0 h-full bg-gradient-to-r from-chatbox-background-primary from-[25%] to-transparent to-100%"
-          style={{
-            width: `${sidebarWidth * 2}px`,
-          }}
-        />
-      )}
-
-      <Flex h={54} className="sm:hidden bg-chatbox-background-primary" />
-
-      <Flex className="sm:hidden relative h-36 bg-gradient-to-b from-chatbox-background-primary from-0 to-transparent to-100%" />
-
-      <Flex className="sm:hidden absolute bottom-0 left-0 w-full h-36 bg-gradient-to-t from-chatbox-background-primary from-0 to-transparent to-100%" />
-    </div>
-  )
+  if (!isRootPage && !isSessionPage) return undefined
+  return session?.backgroundImage?.type === 'url' ? session.backgroundImage.url || undefined : storedImageUrl
 }
 
-function useHasBackgroundImage() {
-  const location = useLocation()
-  const globalBackgroundImageKey = useSettingsStore((s) => s.backgroundImageKey)
-  const isRootPage = location.pathname === '/'
-  const isSessionPage = location.pathname.startsWith('/session/') && location.pathname.length > '/session/'.length
-  const sessionId = getSessionIdFromPathname(location.pathname)
-  const sessionLoadTarget = useSessionStartupLoadTarget(sessionId)
-  const { session } = useSessionHeader(sessionLoadTarget)
-
-  return (isRootPage || isSessionPage) && Boolean(session?.backgroundImage ?? globalBackgroundImageKey)
+function BackgroundImageOverlay({ imageUrl }: { imageUrl: string }) {
+  const backgroundImageOpacity = useSettingsStore((s) => s.backgroundImageOpacity)
+  const isSmallScreen = useIsSmallScreen()
+  return (
+    // Wide layouts render it inside the main panel, so the sidebar and title bar stay solid. Small
+    // screens render it on the app shell, so it fills the safe areas and runs under the header.
+    <div
+      className={clsx(
+        'pointer-events-none absolute inset-0 bg-cover bg-center bg-no-repeat',
+        isSmallScreen ? 'z-0' : '-z-10'
+      )}
+      style={{
+        backgroundImage: `url("${imageUrl.replace(/"/g, '%22')}")`,
+        opacity: backgroundImageOpacity,
+      }}
+    />
+  )
 }
 
 function SettingsModalErrorFallback({ retry }: { error: Error; retry: () => void }) {
@@ -192,7 +147,15 @@ function Root() {
   const startupPathname = useRef(location.pathname)
   const spellCheck = useSettingsStore((state) => state.spellCheck)
   const language = useLanguage()
-  const hasBackgroundImage = useHasBackgroundImage()
+  const wallpaperUrl = useChatWallpaperUrl()
+  const hasBackgroundImage = Boolean(wallpaperUrl)
+  useLayoutEffect(() => {
+    setChatWallpaperMarker(document.documentElement, hasBackgroundImage)
+  }, [hasBackgroundImage])
+  const isSmallScreen = useIsSmallScreen()
+  // The small-screen settings index sits on the grouped surface (see `SettingsRoot`).
+  const pageSurface =
+    isSmallScreen && (location.pathname === '/settings' || location.pathname === '/settings/') ? 'grouped' : undefined
   const pageViewSessionLoadTarget = useSessionStartupLoadTarget(getSessionIdFromPathname(location.pathname))
   const pageViewVisitGate = useRef(createPageViewVisitGate())
   const initialized = useRef(false)
@@ -391,13 +354,14 @@ function Root() {
         titleBarHeight ? 'bg-chatbox-background-primary-hover' : 'bg-chatbox-background-primary'
       )}
       data-chatbox-platform={CHATBOX_BUILD_PLATFORM}
+      data-page-surface={pageSurface}
       spellCheck={spellCheck}
       dir={language === 'ar' ? 'rtl' : 'ltr'}
     >
-      <BackgroundImageOverlay />
       {platform.isDesktopLike && (getOS() === 'Windows' || getOS() === 'Linux') && <ExitFullscreenButton />}
+      {isSmallScreen && wallpaperUrl && <BackgroundImageOverlay imageUrl={wallpaperUrl} />}
       <AppTitleBar />
-      <Grid container className="min-h-0 flex-1 relative z-[1]">
+      <Grid container className="chatbox-app-content min-h-0 flex-1 relative z-[1]">
         <Sidebar />
         <Box
           className="relative h-full w-full box-border"
@@ -421,8 +385,9 @@ function Root() {
           <Box
             className={clsx(
               'h-full overflow-hidden box-border border-0 border-solid border-chatbox-border-primary',
-              hasBackgroundImage ? 'bg-transparent' : 'bg-chatbox-background-primary'
+              hasBackgroundImage ? 'relative isolate bg-transparent' : 'bg-chatbox-background-primary'
             )}
+            data-page-surface={pageSurface}
             sx={
               titleBarHeight
                 ? {
@@ -433,6 +398,7 @@ function Root() {
                 : undefined
             }
           >
+            {!isSmallScreen && wallpaperUrl && <BackgroundImageOverlay imageUrl={wallpaperUrl} />}
             {/* Keyed per route so a crashing page stays contained to that page
                 instead of latching the whole main area until the app restarts. */}
             <ErrorBoundary key={location.pathname} name="main">
@@ -479,283 +445,6 @@ function Root() {
     </Box>
   )
 }
-
-const creteMantineTheme = (scale = 1) =>
-  createTheme({
-    /** Put your mantine theme override here */
-    scale,
-    // Controls (buttons, rows, icon buttons, inputs) use md; surfaces (modals, cards, papers) opt into lg below.
-    defaultRadius: 'md',
-    primaryColor: 'chatbox-brand',
-    colors: {
-      'chatbox-brand': colorsTuple(Array.from({ length: 10 }, () => 'var(--chatbox-tint-brand)')),
-      'chatbox-gray': colorsTuple(Array.from({ length: 10 }, () => 'var(--chatbox-tint-gray)')),
-      'chatbox-success': colorsTuple(Array.from({ length: 10 }, () => 'var(--chatbox-tint-success)')),
-      'chatbox-error': colorsTuple(Array.from({ length: 10 }, () => 'var(--chatbox-tint-error)')),
-      'chatbox-warning': colorsTuple(Array.from({ length: 10 }, () => 'var(--chatbox-tint-warning)')),
-
-      'chatbox-primary': colorsTuple(Array.from({ length: 10 }, () => 'var(--chatbox-tint-primary)')),
-      'chatbox-secondary': colorsTuple(Array.from({ length: 10 }, () => 'var(--chatbox-tint-secondary)')),
-      'chatbox-tertiary': colorsTuple(Array.from({ length: 10 }, () => 'var(--chatbox-tint-tertiary)')),
-    },
-    headings: {
-      fontWeight: 'Bold',
-      sizes: {
-        h1: {
-          fontSize: 'calc(2.5rem * var(--mantine-scale))', // 40px
-          lineHeight: '1.2', // 48px
-        },
-        h2: {
-          fontSize: 'calc(2rem * var(--mantine-scale))', // 32px
-          lineHeight: '1.25', //  40px
-        },
-        h3: {
-          fontSize: 'calc(1.5rem * var(--mantine-scale))', // 24px
-          lineHeight: '1.3333333333', // 32px
-        },
-        h4: {
-          fontSize: 'calc(1.125rem * var(--mantine-scale))', // 18px
-          lineHeight: '1.3333333333', // 24px
-        },
-        h5: {
-          fontSize: 'calc(1rem * var(--mantine-scale))', // 16px
-          lineHeight: '1.25', // 20px
-        },
-        h6: {
-          fontSize: 'calc(0.75rem * var(--mantine-scale))', // 12px
-          lineHeight: '1.3333333333', // 16px
-        },
-      },
-    },
-    fontSizes: {
-      xxs: 'calc(0.625rem * var(--mantine-scale))', // 10px
-      xs: 'calc(0.75rem * var(--mantine-scale))', // 12px
-      sm: 'calc(0.875rem * var(--mantine-scale))', // 14px
-      md: 'calc(1rem * var(--mantine-scale))', // 16px
-      lg: 'calc(1.125rem * var(--mantine-scale))', // 18px
-      xl: 'calc(1.25rem * var(--mantine-scale))', // 20px
-    },
-    lineHeights: {
-      xxs: '1.3', // 13px
-      xs: '1.3333333333', // 16px
-      sm: '1.4285714286', // 20px
-      md: '1.5', // 24px
-      lg: '1.5555555556', // 28px
-      xl: '1.6', // 32px
-    },
-    radius: {
-      xs: 'calc(0.125rem * var(--mantine-scale))',
-      sm: 'calc(0.25rem * var(--mantine-scale))',
-      md: 'calc(0.5rem * var(--mantine-scale))',
-      lg: 'calc(1rem * var(--mantine-scale))',
-      xl: 'calc(1.5rem * var(--mantine-scale))',
-      xxl: 'calc(2rem * var(--mantine-scale))',
-    },
-    spacing: {
-      '3xs': 'calc(0.125rem * var(--mantine-scale))',
-      xxs: 'calc(0.25rem * var(--mantine-scale))',
-      xs: 'calc(0.5rem * var(--mantine-scale))',
-      sm: 'calc(0.75rem * var(--mantine-scale))',
-      md: 'calc(1rem * var(--mantine-scale))',
-      lg: 'calc(1.25rem * var(--mantine-scale))',
-      xl: 'calc(1.5rem * var(--mantine-scale))',
-      xxl: 'calc(2rem * var(--mantine-scale))',
-    },
-    components: {
-      Text: Text.extend({
-        defaultProps: {
-          size: 'sm',
-          c: 'chatbox-primary',
-        },
-      }),
-      Title: Title.extend({
-        defaultProps: {
-          c: 'chatbox-primary',
-        },
-      }),
-      Button: Button.extend({
-        defaultProps: {
-          color: 'chatbox-brand',
-        },
-        styles: () => ({
-          root: {
-            '--button-height-sm': rem('32px'),
-            '--button-height-compact-xs': rem('24px'),
-            fontWeight: '400',
-          },
-        }),
-      }),
-      Input: Input.extend({
-        styles: (_theme, props) => ({
-          wrapper: {
-            '--input-height-sm': rem('32px'),
-            ...(props.error
-              ? {
-                  '--input-color': 'var(--chatbox-tint-error)',
-                  '--input-bd': 'var(--chatbox-tint-error)',
-                }
-              : {}),
-          },
-        }),
-      }),
-      TextInput: TextInput.extend({
-        defaultProps: {
-          size: 'sm',
-        },
-        styles: () => ({
-          label: {
-            marginBottom: 'var(--chatbox-spacing-xxs)',
-            fontWeight: '600',
-            lineHeight: '1.5',
-          },
-        }),
-      }),
-      Textarea: TextInput.extend({
-        defaultProps: {
-          size: 'sm',
-        },
-        styles: () => ({
-          label: {
-            marginBottom: 'var(--chatbox-spacing-xxs)',
-            fontWeight: '600',
-            lineHeight: '1.5',
-          },
-        }),
-      }),
-      Select: Select.extend({
-        defaultProps: {
-          size: 'sm',
-          allowDeselect: false,
-        },
-        styles: () => ({
-          label: {
-            marginBottom: 'var(--chatbox-spacing-xxs)',
-            fontWeight: '600',
-            lineHeight: '1.5',
-          },
-        }),
-      }),
-      NativeSelect: NativeSelect.extend({
-        defaultProps: {
-          size: 'sm',
-        },
-        styles: () => ({
-          label: {
-            marginBottom: 'var(--chatbox-spacing-xxs)',
-            fontWeight: '600',
-            lineHeight: '1.5',
-          },
-        }),
-      }),
-      Switch: Switch.extend({
-        defaultProps: {
-          size: 'sm',
-        },
-        styles: (_theme, props) => {
-          return {
-            label: {
-              color: props.checked ? 'var(--chatbox-tint-primary)' : 'var(--chatbox-tint-tertiary)',
-            },
-          }
-        },
-      }),
-      Checkbox: Checkbox.extend({
-        defaultProps: {
-          size: 'sm',
-        },
-        styles: (_theme, props) => ({
-          label: {
-            color: props.checked ? 'var(--chatbox-tint-primary)' : 'var(--chatbox-tint-tertiary)',
-          },
-        }),
-      }),
-      Modal: Modal.extend({
-        defaultProps: {
-          zIndex: 2000,
-          radius: 'lg',
-        },
-        styles: () => ({
-          title: {
-            fontWeight: '600',
-            color: 'var(--chatbox-tint-primary)',
-            fontSize: 'var(--mantine-font-size-sm)',
-          },
-          close: {
-            width: rem('24px'),
-            height: rem('24px'),
-            color: 'var(--chatbox-tint-secondary)',
-          },
-          header: {
-            backgroundColor: 'var(--chatbox-background-primary)',
-          },
-          content: {
-            backgroundColor: 'var(--chatbox-background-primary)',
-          },
-          overlay: {
-            '--overlay-bg': 'var(--chatbox-background-mask-overlay)',
-            '--overlay-filter': 'blur(4px)',
-          },
-        }),
-      }),
-      Drawer: Drawer.extend({
-        defaultProps: {
-          zIndex: 2000,
-        },
-        styles: () => ({
-          title: {
-            fontWeight: '600',
-            color: 'var(--chatbox-tint-primary)',
-            fontSize: 'var(--mantine-font-size-sm)',
-          },
-          close: {
-            width: rem('24px'),
-            height: rem('24px'),
-            color: 'var(--chatbox-tint-secondary)',
-          },
-          content: {
-            backgroundColor: 'var(--chatbox-background-primary)',
-          },
-          overlay: {
-            '--overlay-bg': 'var(--chatbox-background-mask-overlay)',
-          },
-        }),
-      }),
-      Combobox: Combobox.extend({
-        defaultProps: {
-          shadow: 'md',
-          zIndex: 2100,
-        },
-      }),
-      Paper: Paper.extend({
-        defaultProps: {
-          radius: 'lg',
-        },
-      }),
-      Card: Card.extend({
-        defaultProps: {
-          radius: 'lg',
-        },
-      }),
-      Avatar: Avatar.extend({
-        styles: () => ({
-          image: {
-            objectFit: 'contain',
-          },
-        }),
-      }),
-      Popover: Popover.extend({
-        defaultProps: {
-          zIndex: 3000,
-        },
-      }),
-      Slider: Slider.extend({
-        classNames: {
-          trackContainer: 'max-sm:pointer-events-none',
-          thumb: 'max-sm:pointer-events-auto',
-        },
-      }),
-    },
-  })
 
 export const Route = createRootRoute({
   component: () => {

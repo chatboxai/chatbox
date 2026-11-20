@@ -283,7 +283,9 @@ export default function Sidebar() {
           </Box>
         </Stack>
 
-        <SessionList sessionListViewportRef={sessionListViewportRef} atTopStateChange={setIsSessionListAtTop} />
+        <Flex direction="column" flex={1} mih={0}>
+          <SessionList sessionListViewportRef={sessionListViewportRef} atTopStateChange={setIsSessionListAtTop} />
+        </Flex>
 
         <SidebarUpdateBanner />
 

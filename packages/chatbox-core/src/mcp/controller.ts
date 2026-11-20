@@ -18,7 +18,7 @@ import { isEqual } from 'lodash'
 import { formatMCPError } from './error'
 import { mcpToolSchema } from './mcp-tool-schema'
 import { createMCPFetch, type MCPAuthorizationProvider, type MCPPlatformDependencies } from './platform'
-import type { MCPProtocolMode, MCPServerConfig, MCPServerStatus } from './types'
+import type { MCPProtocolMode, MCPServerConfig, MCPServerStatus, MCPToolGroup } from './types'
 
 type TransportConfig = MCPServerConfig['transport']
 type ManagedTransport = { close(): Promise<void>; onclose?: () => void; onerror?: (error: Error) => void }
@@ -678,15 +678,14 @@ export function createMCPController(dependencies: MCPPlatformDependencies) {
     },
 
     getAvailableTools(serverIds?: ReadonlySet<string>): ToolSet {
-      const toolSet: ToolSet = {}
+      const groups: MCPToolGroup[] = []
       for (const { instance, config } of this.servers.values()) {
         if (serverIds && !serverIds.has(config.id)) continue
         const mcpTools = instance.getAvailableTools()
+        const tools: ToolSet = {}
         for (const [toolName, tool] of Object.entries(mcpTools)) {
           const rawExecute = tool.execute?.bind(tool)
-          const name = normalizeToolName(config.name, toolName)
-          if (name in toolSet) throw new Error(`MCP tool name collision: ${name}`)
-          toolSet[name] = {
+          tools[toolName] = {
             ...tool,
             execute: async (args, options) => {
               try {
@@ -706,8 +705,9 @@ export function createMCPController(dependencies: MCPPlatformDependencies) {
             },
           }
         }
+        groups.push({ serverId: config.id, server: config.name, tools })
       }
-      return toolSet
+      return flattenMCPToolGroups(groups)
     },
   }
 }
@@ -715,6 +715,49 @@ export function createMCPController(dependencies: MCPPlatformDependencies) {
 export type MCPController = ReturnType<typeof createMCPController>
 
 const SERVER_NAME_REGEX = /^[A-Za-z0-9_-]+$/
+
+export function flattenMCPToolGroups(groups: MCPToolGroup[]): ToolSet {
+  const toolSet: ToolSet = {}
+  for (const { name, tool } of nameMCPTools(groups)) {
+    if (name in toolSet) throw new Error(`MCP tool name collision: ${name}`)
+    toolSet[name] = tool
+  }
+  return toolSet
+}
+
+/**
+ * Model-facing tool names. Names that would collide (servers sharing a name, or non-ASCII server
+ * names that drop the prefix) all get a suffix derived from the stable server id, so the mapping
+ * survives restarts and reordering, and their descriptions name the server for the model.
+ */
+export function nameMCPTools(groups: MCPToolGroup[]) {
+  const named = groups.flatMap((group) =>
+    Object.entries(group.tools).map(([toolName, tool]) => ({
+      group,
+      toolName,
+      tool,
+      name: normalizeToolName(group.server, toolName),
+    }))
+  )
+  const counts = new Map<string, number>()
+  for (const { name } of named) counts.set(name, (counts.get(name) ?? 0) + 1)
+  return named.map((entry) => {
+    if (counts.get(entry.name) === 1) return entry
+    // Function names are limited to 64 characters by OpenAI-compatible APIs.
+    const name = `${entry.name.slice(0, 57)}_${shortHash(`${entry.group.serverId}\0${entry.toolName}`)}`
+    const original = typeof entry.tool.description === 'string' ? entry.tool.description : ''
+    const description = `[MCP server: ${entry.group.server}] ${original}`.trimEnd()
+    return { ...entry, name, tool: { ...entry.tool, description } as ToolSet[string] }
+  })
+}
+
+function shortHash(value: string): string {
+  let hash = 0x811c9dc5
+  for (let index = 0; index < value.length; index++) {
+    hash = Math.imul(hash ^ value.charCodeAt(index), 0x01000193)
+  }
+  return (hash >>> 0).toString(36).padStart(7, '0').slice(-6)
+}
 
 function normalizeToolName(serverName: string, toolName: string) {
   serverName = serverName.replace(/\s+/g, '_')

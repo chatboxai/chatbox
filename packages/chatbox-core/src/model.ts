@@ -8,6 +8,7 @@ export {
   getBuiltinProviderIds,
   getModel,
   getProviderDefinition,
+  getProviderDisplayName,
   getProviderSettings,
   getSystemProviders,
   hasProvider,

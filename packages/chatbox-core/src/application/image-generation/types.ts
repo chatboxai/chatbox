@@ -58,7 +58,12 @@ export interface ImageGenerationHandle {
   completion: Promise<ImageGeneration | null>
 }
 
-export interface StartImageGenerationOptions {
+export interface ImageGenerationRequestOptions {
+  /** Whether the current caller can present a user confirmation. Defaults to false. */
+  interactive?: boolean
+}
+
+export interface StartImageGenerationOptions extends ImageGenerationRequestOptions {
   /** Runs after the record is durable, before any potentially billable provider request. */
   onRecordCreated?: (record: ImageGeneration) => void | Promise<void>
 }
@@ -70,6 +75,8 @@ export interface ImageGenerationServiceOptions {
   createModel(model: ImageGenerationModel): Promise<Pick<ModelInterface, 'paint'>>
   resolveReferenceImage(key: string): Promise<string | null>
   validateRequest?(params: GenerateImageParams, signal: AbortSignal): Promise<void>
+  /** Runs before creating/resetting a record. Reject with AbortError to cancel without changing history. */
+  authorizeRequest?(params: GenerateImageParams, signal: AbortSignal, interactive: boolean): Promise<void>
   createId?(): string
   createImageKey?(recordId: string): string
   now?(): number

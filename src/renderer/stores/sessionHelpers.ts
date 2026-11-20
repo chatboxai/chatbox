@@ -5,7 +5,7 @@ import {
   type ParsedAttachmentContent,
   type PickedAsset,
 } from '@chatbox/core/application/attachments'
-import { projectSessionMeta, SessionSearchService, type SessionSearchOptions } from '@chatbox/core/application/session'
+import { projectSessionMeta, type SessionSearchOptions, SessionSearchService } from '@chatbox/core/application/session'
 import { isActionAvailableInMode, resolveSessionMode } from '@chatbox/core/session/mode-policy'
 import { isSessionAttachmentRagSupportedFilePath, isSupportedFile, isTextFilePath } from '@shared/file-extensions'
 import {
@@ -13,7 +13,20 @@ import {
   EMPTY_ATTACHMENT_CONTENT_ERROR,
   NON_RECOVERABLE_LOCAL_PARSER_ERROR_CODES,
 } from '@shared/file-parse-errors'
-import type { SessionHeader, SessionMeta, SessionSettings, Settings } from '@shared/types'
+import { ChatboxAIAPIError } from '@shared/models/errors'
+import {
+  DEEPSEEK_OCR_MAX_FILE_SIZE,
+  getDeepSeekParserErrorCode,
+  isDeepSeekOcrFile,
+  recognizeDocumentWithDeepSeek,
+} from '@shared/services/deepseek-ocr'
+import {
+  ModelProviderEnum,
+  type SessionHeader,
+  type SessionMeta,
+  type SessionSettings,
+  type Settings,
+} from '@shared/types'
 import type { DocumentParserConfig } from '@shared/types/settings'
 import { BrowserAttachmentAdapter } from '@/adapters/BrowserAttachmentAdapter'
 import { CapacitorAttachmentAdapter } from '@/adapters/CapacitorAttachmentAdapter'
@@ -30,6 +43,7 @@ import storage from '@/storage'
 import { nonSessionStorageKey } from '@/storage/non-session-key'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import { authInfoStore } from '@/stores/authInfoStore'
+import { getChatboxAIParserAccountError } from '@/utils/file-parse-error'
 import { reportError } from '@/utils/sentry'
 import * as defaults from '../../shared/defaults'
 import { SESSION_ATTACHMENT_RAG_LOG_PREFIX } from '../../shared/session-attachment-rag/logging'
@@ -99,6 +113,9 @@ class FilePreprocessFailure extends Error {
 const EXPECTED_FILE_PREPROCESS_ERROR_CODES = new Set([
   'chatbox_ai_parser_failed',
   CHATBOX_AI_PARSER_LICENSE_KEY_REQUIRED_ERROR,
+  'deepseek_insufficient_balance',
+  'deepseek_parser_api_key_required',
+  'deepseek_parser_file_too_large',
   'document_parser_not_configured',
   EMPTY_ATTACHMENT_CONTENT_ERROR,
   'license_key_required',
@@ -204,7 +221,7 @@ function normalizeFilePreprocessFailure(error: unknown, stage: FilePreprocessSta
   }
 
   const errorCode = error instanceof Error ? error.message : ''
-  if (EXPECTED_FILE_PREPROCESS_ERROR_CODES.has(errorCode)) return undefined
+  if (EXPECTED_FILE_PREPROCESS_ERROR_CODES.has(errorCode) || getChatboxAIParserAccountError(errorCode)) return undefined
   return new FilePreprocessFailure(FILE_PREPROCESS_FAILED_ERROR, stage, error)
 }
 
@@ -383,6 +400,9 @@ async function fallbackToChatboxAIParser(
     if (isStorageQuotaError(error)) {
       throw new FilePreprocessFailure(FILE_STORAGE_QUOTA_EXCEEDED_ERROR, 'cloud_parse', error)
     }
+    if (error instanceof ChatboxAIAPIError && getChatboxAIParserAccountError(error.detail.name)) {
+      throw new Error(error.detail.name)
+    }
     if (
       error instanceof Error &&
       (error.message === EMPTY_ATTACHMENT_CONTENT_ERROR ||
@@ -503,6 +523,41 @@ async function parseFileWithMineruService(file: File, apiToken: string): Promise
   return { content: result.content, tokenCountMap: {}, parserType: 'mineru' }
 }
 
+/**
+ * Parse file using DeepSeek OCR, authenticated with the DeepSeek model provider API key
+ */
+async function parseFileWithDeepSeek(file: File): Promise<ParsedAttachmentContent> {
+  const apiKey = settingsStore.getState().providers?.[ModelProviderEnum.DeepSeek]?.apiKey?.trim()
+  if (!apiKey) {
+    throw new Error('deepseek_parser_api_key_required')
+  }
+  if (file.size > DEEPSEEK_OCR_MAX_FILE_SIZE) {
+    throw new Error('deepseek_parser_file_too_large')
+  }
+  let result: Awaited<ReturnType<typeof recognizeDocumentWithDeepSeek>>
+  try {
+    result = await recognizeDocumentWithDeepSeek({
+      apiKey,
+      fileName: file.name,
+      mimeType: file.type,
+      data: new Uint8Array(await file.arrayBuffer()),
+      fetch: (url, init) => fetch(url, init),
+    })
+  } catch (error) {
+    log.error(`DeepSeek parsing failed for "${file.name}":`, error)
+    throw new Error(getDeepSeekParserErrorCode(error))
+  }
+  if (result.truncatedPages.length > 0) {
+    log.warn(
+      `DeepSeek OCR output was cut off for "${file.name}" on page(s) ${result.truncatedPages.map((index) => index + 1).join(', ')}`
+    )
+  }
+  if (!hasParsedText(result.text)) {
+    throw new Error(EMPTY_ATTACHMENT_CONTENT_ERROR)
+  }
+  return { content: result.text, tokenCountMap: {}, parserType: 'deepseek' }
+}
+
 function createPickedAssetAdapter(): BrowserAttachmentAdapter {
   if (platform.type === 'mobile') {
     return new CapacitorAttachmentAdapter()
@@ -572,6 +627,9 @@ async function parsePickedAsset(
         throw new Error('third_party_parser_failed')
       }
     }
+    case 'deepseek':
+      // DeepSeek OCR reads PDF, Word, PowerPoint and images; other formats keep the local parser.
+      return isDeepSeekOcrFile(asset.name) ? parseFileWithDeepSeek(file) : parseFileWithLocalFallback(file)
     default:
       throw new Error('document_parser_not_configured')
   }

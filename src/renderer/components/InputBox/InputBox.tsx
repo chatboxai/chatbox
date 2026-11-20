@@ -127,10 +127,13 @@ import { getAgentModeUIState } from './agentModeState'
 import { ComposerSettingsMenu } from './ComposerSettingsMenu'
 import { ImageUploadInput } from './ImageUploadInput'
 import {
+  COMPOSER_NOTICE_CLASS_NAME,
+  COMPOSER_NOTICE_STYLE,
   INPUT_SURFACE_CLASS_NAME,
   INPUT_SURFACE_MIN_HEIGHT_CLASS_NAME,
   INPUT_SURFACE_STYLE,
   SEND_BUTTON_BLOCKED_CLASS,
+  SKILL_MENU_SURFACE_CLASS_NAME,
 } from './inputSurface'
 import { MessageInputField, type MessageInputFieldRef } from './MessageInputField'
 import PendingActionBar from './PendingActionBar'
@@ -176,7 +179,6 @@ export type InputBoxProps = {
   stopGenerationStatus?: 'idle' | 'stopping' | 'failed'
   onStartNewThread?(): Promise<(() => Promise<boolean>) | undefined>
   onClickSessionSettings?(): boolean | Promise<boolean>
-  onViewCompactionSummary?(summaryMessageId: string): void
 }
 
 function getSessionAttachmentProgressValue(embeddedChunks?: number, totalChunks?: number): number | undefined {
@@ -220,7 +222,6 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       stopGenerationStatus = 'idle',
       onStartNewThread,
       onClickSessionSettings,
-      onViewCompactionSummary,
     },
     ref
   ) => {
@@ -1602,9 +1603,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       <Box pt={0} pb={isSmallScreen ? 'md' : 'sm'} id={dom.InputBoxID} className="overflow-visible" {...getRootProps()}>
         <input className="hidden" {...getInputProps()} />
         <Stack className={cn('overflow-visible', paddedContentColumnClassName(widthFull))} gap="xs">
-          {currentSessionId && (
-            <CompactionStatus sessionId={currentSessionId} onViewSummary={onViewCompactionSummary} />
-          )}
+          {currentSessionId && <CompactionStatus sessionId={currentSessionId} />}
           {!isNewSession && headerRead && (
             <WebSearchUnavailableBanner
               sessionId={headerRead.header.id}
@@ -1644,7 +1643,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
               createPortal(
                 <Box
                   ref={skillMenuFloatingRef}
-                  className="z-[400] overflow-y-auto rounded-lg border border-solid border-chatbox-border-primary bg-chatbox-background-primary py-1 shadow-lg"
+                  className={SKILL_MENU_SURFACE_CLASS_NAME}
                   style={{ position: 'fixed', top: 0, left: 0 }}
                 >
                   {matchingInputSkills.map((skill, index) => (
@@ -1779,12 +1778,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                     aria-live="polite"
                     align="center"
                     gap={8}
-                    className="w-full rounded-lg px-2.5 py-2 mb-1"
-                    style={{
-                      border: '1px solid var(--chatbox-border-primary)',
-                      borderLeft: '3px solid var(--chatbox-tint-warning)',
-                      background: 'var(--chatbox-background-primary)',
-                    }}
+                    className={COMPOSER_NOTICE_CLASS_NAME}
+                    style={COMPOSER_NOTICE_STYLE}
                   >
                     <Box
                       className="flex items-center justify-center rounded-full shrink-0"
@@ -1810,12 +1805,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                     aria-live="polite"
                     align="center"
                     gap={8}
-                    className="w-full rounded-lg px-2.5 py-2 mb-1"
-                    style={{
-                      border: '1px solid var(--chatbox-border-primary)',
-                      borderLeft: '3px solid var(--chatbox-tint-warning)',
-                      background: 'var(--chatbox-background-primary)',
-                    }}
+                    className={COMPOSER_NOTICE_CLASS_NAME}
+                    style={COMPOSER_NOTICE_STYLE}
                   >
                     <Box
                       className="flex items-center justify-center rounded-full shrink-0"

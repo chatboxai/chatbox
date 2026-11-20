@@ -25,6 +25,11 @@ function createMiniMaxProvider(config: {
       apiHost: config.apiHost,
       models: [
         {
+          modelId: 'MiniMax-M3.1-Flash',
+          capabilities: ['vision', 'reasoning', 'tool_use'],
+          contextWindow: 1_000_000,
+        },
+        {
           modelId: 'MiniMax-M3',
           capabilities: ['vision', 'reasoning', 'tool_use'],
           contextWindow: 1_000_000,

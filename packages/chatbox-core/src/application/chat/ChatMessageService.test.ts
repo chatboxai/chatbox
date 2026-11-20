@@ -350,6 +350,46 @@ describe('ChatMessageService', () => {
     )
   })
 
+  it('drops a repeated retry instead of forking again after the first reply settles', async () => {
+    const user: Message = { id: 'user', role: 'user', contentParts: [{ type: 'text', text: 'Question' }] }
+    const oldAnswer: Message = {
+      id: 'old-answer',
+      role: 'assistant',
+      contentParts: [{ type: 'text', text: 'Old answer' }],
+    }
+    const session: Session = {
+      id: 'retry-twice',
+      name: 'Retry twice',
+      type: 'chat',
+      settings: { provider: 'openai', modelId: 'gpt-test' },
+      messages: [user, oldAnswer],
+    }
+    const harness = createHarness(session)
+    let finishReply = () => {}
+    harness.generation.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishReply = resolve
+        })
+    )
+
+    const first = harness.service.retryMessage(session.id, oldAnswer.id)
+    const repeatedTap = harness.service.retryMessage(session.id, oldAnswer.id)
+    await vi.waitFor(() => expect(harness.generation).toHaveBeenCalledTimes(1))
+    const tapWhileStreaming = harness.service.retryMessage(session.id, oldAnswer.id)
+    await Promise.all([repeatedTap, tapWhileStreaming])
+    finishReply()
+    await first
+
+    expect(harness.generation).toHaveBeenCalledTimes(1)
+    const updated = harness.sessions.get(session.id)
+    expect(updated?.messages).toHaveLength(2)
+    expect(updated?.messageForksHash?.[user.id].lists.map((list) => list.messages.map(({ id }) => id))).toEqual([
+      [oldAnswer.id],
+      [],
+    ])
+  })
+
   it('keeps an anchored summary in the shared prefix when retrying', async () => {
     const user: Message = { id: 'user', role: 'user', contentParts: [{ type: 'text', text: 'Question' }] }
     const summary: Message = {

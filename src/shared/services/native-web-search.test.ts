@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
-import { formatNativeWebSearchContext, hasNativeWebSearchConfiguration, searchNativeWeb } from './native-web-search'
+import {
+  fetchNativeDeepSeekPage,
+  formatNativeWebSearchContext,
+  getNativeWebSearchProviderLabel,
+  hasNativeWebSearchConfiguration,
+  resolveNativeWebSearchApiKey,
+  searchNativeWeb,
+} from './native-web-search'
 
 function mockFetchResponse(body: unknown, ok = true, status = 200) {
   return vi.fn(async () => ({
@@ -10,6 +17,89 @@ function mockFetchResponse(body: unknown, ok = true, status = 200) {
 }
 
 describe('native web search', () => {
+  it('uses DeepSeek bearer authentication and maps ranked results', async () => {
+    const fetchFn = mockFetchResponse({
+      results: [
+        { title: 'Docs', url: 'https://example.com', summary: 'Detailed summary', snippet: 'Short' },
+        { title: 'News', url: 'https://example.com/news', snippet: 'News summary' },
+      ],
+    })
+    const signal = new AbortController().signal
+    expect(await searchNativeWeb('Chatbox', { provider: 'deepseek', apiKey: ' shared-key ', fetchFn, signal })).toEqual(
+      [
+        { title: 'Docs', link: 'https://example.com', snippet: 'Detailed summary' },
+        { title: 'News', link: 'https://example.com/news', snippet: 'News summary' },
+      ]
+    )
+    expect(fetchFn).toHaveBeenCalledWith(
+      'https://api.deepseek.com/v1/tools/search',
+      expect.objectContaining({
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer shared-key' },
+        body: JSON.stringify({ query: 'Chatbox', count: 8 }),
+        signal,
+      })
+    )
+  })
+
+  it('trims DeepSeek queries and truncates them to 128 characters', async () => {
+    const fetchFn = mockFetchResponse({ results: [] })
+    await searchNativeWeb('  Chatbox  ', { provider: 'deepseek', apiKey: 'key', fetchFn })
+    await searchNativeWeb(` ${'搜'.repeat(100)}${'😀'.repeat(40)} `, { provider: 'deepseek', apiKey: 'key', fetchFn })
+    const bodies = vi.mocked(fetchFn).mock.calls.map(([, init]) => JSON.parse(String(init?.body)) as { query: string })
+    expect(bodies[0]?.query).toBe('Chatbox')
+    expect(bodies[1]?.query).toBe(`${'搜'.repeat(100)}${'😀'.repeat(28)}`)
+  })
+
+  it('rejects missing DeepSeek credentials and empty queries before requesting', async () => {
+    const fetchFn = mockFetchResponse({ results: [] })
+    await expect(searchNativeWeb('  ', { provider: 'deepseek', apiKey: 'key', fetchFn })).rejects.toThrow('empty')
+    await expect(searchNativeWeb('query', { provider: 'deepseek', fetchFn })).rejects.toThrow('API key')
+    expect(fetchFn).not.toHaveBeenCalled()
+    expect(hasNativeWebSearchConfiguration({ provider: 'deepseek', apiKey: ' ' })).toBe(false)
+    expect(hasNativeWebSearchConfiguration({ provider: 'deepseek', apiKey: 'key' })).toBe(true)
+  })
+
+  it('preserves empty DeepSeek results and reports HTTP and payload errors', async () => {
+    expect(
+      await searchNativeWeb('query', {
+        provider: 'deepseek',
+        apiKey: 'key',
+        fetchFn: mockFetchResponse({ results: [] }),
+      })
+    ).toEqual([])
+    await expect(
+      searchNativeWeb('query', { provider: 'deepseek', apiKey: 'key', fetchFn: mockFetchResponse({}, false, 401) })
+    ).rejects.toThrow('DeepSeek search failed with status 401')
+    await expect(
+      searchNativeWeb('query', {
+        provider: 'deepseek',
+        apiKey: 'key',
+        fetchFn: mockFetchResponse({ error: { message: 'Authentication Fails' } }, false, 401),
+      })
+    ).rejects.toThrow('DeepSeek search failed with status 401: Authentication Fails')
+    await expect(
+      searchNativeWeb('query', { provider: 'deepseek', apiKey: 'key', fetchFn: mockFetchResponse({}) })
+    ).rejects.toThrow('invalid search response')
+  })
+
+  it('resolves each provider API key from its settings source', () => {
+    const sources = {
+      extension: { webSearch: { tavilyApiKey: 'tavily-key', bochaApiKey: 'bocha-key', queritApiKey: 'querit-key' } },
+      providers: { deepseek: { apiKey: 'deepseek-model-key' } },
+    }
+    expect(resolveNativeWebSearchApiKey(sources, 'deepseek')).toBe('deepseek-model-key')
+    expect(resolveNativeWebSearchApiKey(sources, 'tavily')).toBe('tavily-key')
+    expect(resolveNativeWebSearchApiKey(sources, 'bocha')).toBe('bocha-key')
+    expect(resolveNativeWebSearchApiKey(sources, 'querit')).toBe('querit-key')
+    expect(resolveNativeWebSearchApiKey(sources, 'bing')).toBe('')
+    expect(resolveNativeWebSearchApiKey({ extension: { webSearch: {} } }, 'deepseek')).toBe('')
+  })
+
+  it('labels providers by display name', () => {
+    expect(getNativeWebSearchProviderLabel('deepseek')).toBe('DeepSeek')
+    expect(getNativeWebSearchProviderLabel('bocha')).toBe('BoCha')
+  })
+
   it('detects configuration presence per provider', () => {
     expect(hasNativeWebSearchConfiguration({ provider: 'tavily', apiKey: '' })).toBe(false)
     expect(hasNativeWebSearchConfiguration({ provider: 'tavily', apiKey: '  ' })).toBe(false)
@@ -176,5 +266,75 @@ describe('native web search', () => {
     expect(context).toContain('query: chatbox')
     expect(context).toContain('https://one.test')
     expect(formatNativeWebSearchContext('chatbox', [])).toBe('')
+  })
+})
+
+describe('DeepSeek fetch', () => {
+  it('posts the URL with DeepSeek bearer authentication and maps the page', async () => {
+    const fetchFn = mockFetchResponse({ title: 'Example article', content: '# Example article\n\nBody' })
+    const signal = new AbortController().signal
+
+    await expect(
+      fetchNativeDeepSeekPage(' https://example.com/article ', { apiKey: ' shared-key ', fetchFn, signal })
+    ).resolves.toEqual({
+      url: 'https://example.com/article',
+      title: 'Example article',
+      content: '# Example article\n\nBody',
+    })
+    expect(fetchFn).toHaveBeenCalledWith('https://api.deepseek.com/v1/tools/fetch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer shared-key' },
+      body: JSON.stringify({ url: 'https://example.com/article' }),
+      signal,
+    })
+  })
+
+  it('uses the hostname when the page has no title', async () => {
+    const fetchFn = mockFetchResponse({ title: '', content: 'Body' })
+    await expect(fetchNativeDeepSeekPage('https://docs.example.com/a', { apiKey: 'key', fetchFn })).resolves.toEqual({
+      url: 'https://docs.example.com/a',
+      title: 'docs.example.com',
+      content: 'Body',
+    })
+  })
+
+  it.each([
+    ['a non-URL', 'not a url'],
+    ['a non-HTTP scheme', 'ftp://example.com/file'],
+    ['a URL with a username and password', 'https://user:pass@example.com/'],
+    ['a URL with a username', 'https://user@example.com/'],
+    ['a file URL', 'file:///etc/hosts'],
+    ['a URL over 8192 characters', `https://example.com/${'a'.repeat(8192)}`],
+  ])('rejects %s before requesting', async (_label, url) => {
+    const fetchFn = mockFetchResponse({ title: 't', content: 'c' })
+    await expect(fetchNativeDeepSeekPage(url, { apiKey: 'key', fetchFn })).rejects.toThrow(
+      'DeepSeek fetch only accepts'
+    )
+    expect(fetchFn).not.toHaveBeenCalled()
+  })
+
+  it('requires the API key before requesting', async () => {
+    const fetchFn = mockFetchResponse({ title: 't', content: 'c' })
+    await expect(fetchNativeDeepSeekPage('https://example.com', { apiKey: ' ', fetchFn })).rejects.toThrow('API key')
+    expect(fetchFn).not.toHaveBeenCalled()
+  })
+
+  it('reports HTTP failures, error bodies and missing content', async () => {
+    await expect(
+      fetchNativeDeepSeekPage('https://example.com', {
+        apiKey: 'key',
+        fetchFn: mockFetchResponse({ error: { message: 'Insufficient Balance' } }, false, 402),
+      })
+    ).rejects.toThrow('DeepSeek fetch failed with status 402: Insufficient Balance')
+    // The mobile CapacitorHttp seam reports every response as 200, so the error body decides.
+    await expect(
+      fetchNativeDeepSeekPage('https://example.com', {
+        apiKey: 'key',
+        fetchFn: mockFetchResponse({ error: { message: 'Fetch could not retrieve usable page content' } }),
+      })
+    ).rejects.toThrow('DeepSeek fetch failed: Fetch could not retrieve usable page content')
+    await expect(
+      fetchNativeDeepSeekPage('https://example.com', { apiKey: 'key', fetchFn: mockFetchResponse({ title: 't' }) })
+    ).rejects.toThrow('DeepSeek returned an invalid fetch response')
   })
 })

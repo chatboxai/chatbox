@@ -216,3 +216,31 @@ describe('raw file upload cancellation', () => {
     expect(UploadRequest.current.abort).not.toHaveBeenCalled()
   })
 })
+
+describe('image points balance error', () => {
+  afterEach(() => vi.unstubAllGlobals())
+  it.each([false, true])('does not replay a rejected generation (authenticated=%s)', async (authenticated) => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ error: { code: 'image_points_insufficient' } }), { status: 499 })
+      )
+    vi.stubGlobal('fetch', fetchMock)
+    const afetch = authenticated
+      ? createAuthenticatedAfetch({
+          platformInfo,
+          getTokens: async () => ({ accessToken: 'access', refreshToken: 'refresh' }),
+          refreshTokens: vi.fn(),
+          clearTokens: vi.fn(),
+        })
+      : createAfetch(platformInfo, fetchMock)
+    await expect(
+      afetch(
+        'https://api.chatboxai.app/api/images/async_generations',
+        { method: 'POST' },
+        { retry: 2, parseChatboxRemoteError: true }
+      )
+    ).rejects.toMatchObject({ code: 20049 })
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+})

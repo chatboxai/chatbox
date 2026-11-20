@@ -2,7 +2,7 @@
 
 import { MantineProvider } from '@mantine/core'
 import { type SessionHeader } from '@shared/types'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { type ReactNode, useState } from 'react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
@@ -55,6 +55,7 @@ vi.mock('@/components/common/Avatar', () => ({ AssistantAvatar: () => <div /> })
 vi.mock('@/components/Image', () => ({ handleImageInputAndSave: vi.fn(), ImageInStorage: () => <div /> }))
 vi.mock('@/components/ui/tooltip', () => ({ AppTooltip: ({ children }: { children: ReactNode }) => children }))
 vi.mock('@/adapters/CurrentBlobStorage', () => ({ currentBlobStorage: { set: vi.fn() } }))
+vi.mock('@/hooks/useCopilots', () => ({ useMyCopilots: () => ({ copilots: [{ id: 'copilot-1', name: 'Mover' }] }) }))
 vi.mock('@/storage/StoreStorage', () => ({ StorageKeyGenerator: { picture: (key: string) => `picture:${key}` } }))
 
 vi.mock('@/app/renderer-application', () => ({
@@ -227,6 +228,28 @@ describe('SessionSettingsContent', () => {
       return Promise.resolve()
     })
     expect(streamSwitch().checked).toBe(false)
+  })
+
+  test('saves the assistant name and clears it back to the default', () => {
+    const onEdit = renderContent({ ...makeSession({}), assistantName: 'Helper' })
+    const input = screen.getByRole('textbox', { name: 'Assistant Name' }) as HTMLInputElement
+    expect(input.value).toBe('Helper')
+    expect(input.maxLength).toBe(40)
+    fireEvent.change(input, { target: { value: '  Planner ' } })
+    fireEvent.blur(input)
+    expect(onEdit).toHaveBeenCalledWith({ assistantName: '  Planner ' })
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
+    expect(onEdit).toHaveBeenCalledWith({ assistantName: null })
+    expect(input.value).toBe('')
+  })
+
+  test('shows the name replies use when none is set: the copilot, else the provider', () => {
+    renderContent({ ...makeSession({}), copilotId: 'copilot-1' })
+    expect(screen.getByRole('textbox', { name: 'Assistant Name' }).getAttribute('placeholder')).toBe('Mover')
+    expect(screen.getByText('Shown next to the avatar on replies. Leave empty to use Mover.')).toBeTruthy()
+    cleanup()
+    renderContent(makeSession({}))
+    expect(screen.getByRole('textbox', { name: 'Assistant Name' }).getAttribute('placeholder')).toBe('OpenAI')
   })
 
   test('reports a failed name save', async () => {

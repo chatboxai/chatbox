@@ -88,7 +88,30 @@ describe('setSessionAgentMode cross-mode freeze', () => {
 
     await setSessionAgentMode('session-1', 'on')
 
-    expect(updateSessionMock).toHaveBeenCalled()
+    expect(updateSessionMock).toHaveBeenCalledWith('session-1', expect.any(Function), {
+      expectedRevision: expect.any(Number),
+    })
+  })
+
+  it('applies system-source resolution over a commit that landed after its header read', async () => {
+    await seed(
+      session({ messages: [userMsg], settings: { agentMode: { value: 'auto', locked: false, lockReason: null } } })
+    )
+    getSessionMock.mockImplementationOnce(async (id: string) => {
+      const read = await repository.getSessionHeader(id)
+      await repository.executeSessionCommand(id, {
+        type: 'header',
+        updater: { name: 'Renamed' },
+      })
+      return read
+    })
+
+    await setSessionAgentMode('session-1', 'off', { source: 'system' })
+
+    expect((await repository.getSessionHeader('session-1'))?.header).toMatchObject({
+      name: 'Renamed',
+      settings: { agentMode: { value: 'off' } },
+    })
   })
 
   it('lets system-source resolution cross modes mid-conversation (suggestion decline)', async () => {

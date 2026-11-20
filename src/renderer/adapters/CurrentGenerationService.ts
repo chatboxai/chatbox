@@ -3,6 +3,7 @@ import {
   GenerationService,
   type GenerationServiceDependencies,
   type GenerationSessionPort,
+  trySessionGenerationLock,
   withSessionGenerationLock,
 } from '@chatbox/core/generation'
 import type { LoggerPort, SessionContextSource } from '@chatbox/core/ports'
@@ -284,6 +285,25 @@ const dependencies: GenerationServiceDependencies<ModelDependencies> = {
         compactionPoints: request.compactionPoints,
         sideEffects: {
           lockAgentMode: request.lockAgentMode,
+          persistOcrResult: async (messageId, storageKey, text) => {
+            if (request.signal.aborted) return
+            try {
+              await rendererApplication.sessions.updateMessage(request.session.id, messageId, (current) => {
+                if (!current) throw new Error('OCR source message no longer exists')
+                if (request.signal.aborted) return current
+                return {
+                  ...current,
+                  contentParts: current.contentParts.map((part) =>
+                    part.type === 'image' && part.storageKey === storageKey && !part.ocrResult
+                      ? { ...part, ocrResult: text }
+                      : part
+                  ),
+                }
+              })
+            } catch (error) {
+              log.warn('Failed to persist OCR result:', error)
+            }
+          },
           persistSessionPromptContextSnapshot: persistSnapshot,
         },
         isPro: settingActions.isPro,
@@ -306,6 +326,7 @@ const dependencies: GenerationServiceDependencies<ModelDependencies> = {
   },
   coordination: {
     runExclusive: (sessionId, operation) => withSessionGenerationLock(sessionId, operation),
+    tryRunExclusive: (sessionId, operation) => trySessionGenerationLock(sessionId, operation),
     wakeBackgroundTaskFollowUps: (sessionId) => wakeBackgroundTaskFollowUps(sessionId),
   },
   steering: {

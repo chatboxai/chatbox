@@ -4,6 +4,7 @@ import type { FC } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChatboxAIErrorMessage } from '@/components/common/ChatboxAIErrorMessage'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
+import { GLASS_FILL_CLASS } from '@/lib/glass-surface'
 
 interface ToolUnavailableCardProps {
   toolLabel: string
@@ -34,10 +35,8 @@ export const ToolUnavailableCard: FC<ToolUnavailableCardProps> = ({ toolLabel, t
       radius={8}
       p={isSmallScreen ? 14 : 16}
       withBorder
-      style={{
-        borderColor: 'var(--chatbox-border-primary)',
-        background: 'var(--chatbox-background-primary)',
-      }}
+      className={`bg-chatbox-background-primary ${GLASS_FILL_CLASS}`}
+      style={{ borderColor: 'var(--chatbox-border-primary)' }}
     >
       <Group
         align="flex-start"

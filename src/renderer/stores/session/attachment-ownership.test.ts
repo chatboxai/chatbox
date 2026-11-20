@@ -37,7 +37,7 @@ vi.mock('@/platform', () => ({
 vi.mock('./action-guard', () => ({ guardSessionAction: guardSessionActionMock }))
 vi.mock('@/adapters', () => ({ createModel: vi.fn() }))
 vi.mock('@/packages/context-management', () => ({ runCompactionWithUIState: vi.fn() }))
-vi.mock('@/packages/model-setting-utils', () => ({ getModelDisplayName: vi.fn() }))
+vi.mock('@/packages/model-setting-utils', () => ({ getMessageProviderName: vi.fn(), getModelDisplayName: vi.fn() }))
 vi.mock('@/packages/token', () => ({ estimateTokensFromMessages: () => 0 }))
 vi.mock('../sessionAttachmentRagIndexing', () => ({ ensureMessageFileSessionAttachment: vi.fn() }))
 vi.mock('../settingActions', () => ({ isPro: () => false, getRemoteConfig: vi.fn() }))

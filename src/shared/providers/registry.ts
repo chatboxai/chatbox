@@ -16,6 +16,14 @@ export function getProviderDefinition(id: string): ProviderDefinition | undefine
   return providerRegistry.get(id)
 }
 
+/** Display name of a provider: the custom provider's own name, or the built-in definition's name. */
+export function getProviderDisplayName(
+  id: string,
+  customProviders?: readonly { id: string; name?: string }[]
+): string | undefined {
+  return customProviders?.find((provider) => provider.id === id)?.name?.trim() || providerRegistry.get(id)?.name
+}
+
 export function getAllProviders(): ProviderDefinition[] {
   return Array.from(providerRegistry.values())
 }

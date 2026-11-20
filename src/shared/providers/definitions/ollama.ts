@@ -6,6 +6,8 @@ export const ollamaProvider = defineProvider({
   id: ModelProviderEnum.Ollama,
   name: 'Ollama',
   type: ModelProviderType.OpenAI,
+  // The Ollama model adapter sends replayed reasoning in Ollama's `reasoning` field.
+  reasoningReplay: 'plain-text',
   defaultSettings: {
     apiHost: 'http://127.0.0.1:11434',
   },

@@ -27,21 +27,44 @@ describe('memory tools', () => {
     expect(await memory.listMemories()).toEqual([])
   })
 
-  it('distinguishes deletion in the current library from a missing id', async () => {
-    const memory = new MemoryService({ storage: new InMemoryKeyValueStorage() })
+  it.each(['global', 'copilot'] as const)(
+    'distinguishes %s deletion in the current library from a missing id',
+    async (scopeType) => {
+      const memory = new MemoryService({ storage: new InMemoryKeyValueStorage() })
+      await memory.enableCopilotMemory({ id: 'tutor', name: 'Tutor' })
+      const scope =
+        scopeType === 'global' ? ({ type: 'global' } as const) : (await memory.getCopilotMemorySelection('tutor')).scope
+      const added = await memory.addMemoryForScope(scope, 'Outdated preference')
+      if (!added.ok) throw new Error('Memory setup failed')
+      const { tools } = createMemoryTools({ memory, scope })
+
+      await expect(tools.delete_memory.execute?.({ id: added.entry.id }, execution)).resolves.toEqual({
+        message: `Memory ${added.entry.id} deleted.`,
+        content: 'Outdated preference',
+      })
+      await expect(tools.delete_memory.execute?.({ id: added.entry.id }, execution)).resolves.toEqual({
+        error: `No memory found with id ${added.entry.id}.`,
+      })
+      expect(await memory.listCopilotMemories('tutor')).toEqual([])
+    }
+  )
+
+  it('returns the deleted content from the selected scope when ids overlap', async () => {
+    const memory = new MemoryService({ storage: new InMemoryKeyValueStorage(), createId: () => 'same-id' })
+    await memory.addMemory('Global preference')
     await memory.enableCopilotMemory({ id: 'tutor', name: 'Tutor' })
     const scope = (await memory.getCopilotMemorySelection('tutor')).scope
-    const added = await memory.addMemoryForScope(scope, 'Outdated preference')
-    if (!added.ok) throw new Error('Memory setup failed')
+    await memory.addMemoryForScope(scope, 'Tutor preference')
     const { tools } = createMemoryTools({ memory, scope })
-
-    await expect(tools.delete_memory.execute?.({ id: added.entry.id }, execution)).resolves.toEqual({
-      message: `Memory ${added.entry.id} deleted.`,
+    const output = await tools.delete_memory.execute?.({ id: 'same-id' }, execution)
+    expect(output).toEqual({ message: 'Memory same-id deleted.', content: 'Tutor preference' })
+    expect(
+      await tools.delete_memory.toModelOutput?.({ toolCallId: 'memory-call', input: { id: 'same-id' }, output })
+    ).toEqual({
+      type: 'text',
+      value: 'Memory same-id deleted.',
     })
-    await expect(tools.delete_memory.execute?.({ id: added.entry.id }, execution)).resolves.toEqual({
-      error: `No memory found with id ${added.entry.id}.`,
-    })
-    expect(await memory.listCopilotMemories('tutor')).toEqual([])
+    expect((await memory.listMemories()).map((entry) => entry.content)).toEqual(['Global preference'])
   })
 
   it('returns the same unavailable-context error for an old save and delete without touching the new library', async () => {

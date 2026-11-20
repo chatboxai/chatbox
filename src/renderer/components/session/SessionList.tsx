@@ -346,10 +346,12 @@ export default function SessionList(props: Props) {
       fetchNextPage()
     }
   }, [hasNextPage, isFetchingNextPage, fetchNextPage])
-  // A page that ends inside a collapsed folder adds no visible rows, and
-  // Virtuoso reports the end again only when the row count changes; keep
-  // loading until the list reaches a group that is shown. A failed read stops
-  // here; scrolling to the end retries it.
+  // Virtuoso reports the end again only when the row count changes. A page
+  // that ends inside a collapsed folder adds no visible rows, and a list reset
+  // back to its first page (after a move) restores a row count whose end was
+  // already reported; keep loading while the list ends in a collapsed folder or
+  // rests at its end. A failed read stops here; scrolling to the end retries it.
+  const [atListEnd, setAtListEnd] = useState(false)
   const lastLoadedSession = sortedSessions?.at(-1)
   const lastLoadedCollapsed = useMemo(() => {
     if (!lastLoadedSession) return false
@@ -360,18 +362,18 @@ export default function SessionList(props: Props) {
     return group.kind === 'folder' && collapsedFolderIds.includes(group.folderId)
   }, [lastLoadedSession, folders, collapsedFolderIds])
   useEffect(() => {
-    if (lastLoadedCollapsed && hasNextPage && !isFetchingNextPage && !isFetchNextPageError) {
+    if ((lastLoadedCollapsed || atListEnd) && hasNextPage && !isFetchingNextPage && !isFetchNextPageError) {
       void fetchNextPage()
     }
-  }, [lastLoadedCollapsed, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage])
+  }, [lastLoadedCollapsed, atListEnd, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage])
   const virtuosoComponents = useMemo(
     () =>
-      hasNextPage
+      isFetchingNextPage
         ? {
             Footer: SessionListLoadingFooter,
           }
         : {},
-    [hasNextPage]
+    [isFetchingNextPage]
   )
   const isEmpty = Boolean(sortedSessions) && groupedItems.items.length === 0
   useEffect(() => {
@@ -443,6 +445,7 @@ export default function SessionList(props: Props) {
               }
             }}
             endReached={onEndReached}
+            atBottomStateChange={setAtListEnd}
             components={virtuosoComponents}
             groupContent={(index) => {
               const item = groupedItems.groups[index].header

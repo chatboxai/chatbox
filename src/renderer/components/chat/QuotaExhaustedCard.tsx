@@ -1,6 +1,7 @@
 import { Box, Button, Group, Paper, Stack, Text, ThemeIcon } from '@mantine/core'
 import { IconArrowUpRight, IconInfoCircle } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
+import { GLASS_FILL_CLASS } from '@/lib/glass-surface'
 import type { QuotaCardAction, QuotaCardKind } from './message-error-presentation'
 
 interface QuotaExhaustedCardProps {
@@ -8,9 +9,20 @@ interface QuotaExhaustedCardProps {
   action: QuotaCardAction
   onAction: () => void
   onConfigureOcr?: () => void
+  title?: string
+  description?: string
+  secondaryActions?: { label: string; onClick: () => void; loading?: boolean }[]
 }
 
-export function QuotaExhaustedCard({ kind, action, onAction, onConfigureOcr }: QuotaExhaustedCardProps) {
+export function QuotaExhaustedCard({
+  kind,
+  action,
+  onAction,
+  onConfigureOcr,
+  title,
+  description: customDescription,
+  secondaryActions,
+}: QuotaExhaustedCardProps) {
   const { t } = useTranslation()
   const isOcrQuota = kind === 'ocr-quota-exhausted' || kind === 'free-ocr-quota-exhausted'
   const isFreeQuota = kind === 'free-quota-exhausted' || kind === 'free-ocr-quota-exhausted'
@@ -43,10 +55,8 @@ export function QuotaExhaustedCard({ kind, action, onAction, onConfigureOcr }: Q
       radius={8}
       p={16}
       withBorder
-      style={{
-        borderColor: 'var(--chatbox-border-primary)',
-        background: 'var(--chatbox-background-primary)',
-      }}
+      className={`bg-chatbox-background-primary ${GLASS_FILL_CLASS}`}
+      style={{ borderColor: 'var(--chatbox-border-primary)' }}
     >
       <Group align="flex-start" wrap="nowrap" gap={14}>
         <ThemeIcon
@@ -65,10 +75,10 @@ export function QuotaExhaustedCard({ kind, action, onAction, onConfigureOcr }: Q
         <Box style={{ flex: 1, minWidth: 0 }}>
           <Stack gap={4}>
             <Text size="sm" fw={600} lh={1.45}>
-              {isOcrQuota ? t('Chatbox AI OCR points are used up') : t('Your points are used up')}
+              {title ?? (isOcrQuota ? t('Chatbox AI OCR points are used up') : t('Your points are used up'))}
             </Text>
-            <Text size="13px" c="var(--chatbox-tint-secondary)" lh={1.6}>
-              {description}
+            <Text size="13px" c="var(--chatbox-tint-secondary)" lh={1.6} style={{ whiteSpace: 'pre-line' }}>
+              {customDescription ?? description}
             </Text>
           </Stack>
 
@@ -93,6 +103,21 @@ export function QuotaExhaustedCard({ kind, action, onAction, onConfigureOcr }: Q
                 {t('OCR model settings')}
               </Button>
             )}
+            {secondaryActions?.map(({ label, onClick, loading }) => (
+              <Button
+                key={label}
+                h={32}
+                px={14}
+                radius={6}
+                size="xs"
+                variant="light"
+                onClick={onClick}
+                loading={loading}
+                disabled={loading}
+              >
+                {label}
+              </Button>
+            ))}
           </Group>
         </Box>
       </Group>

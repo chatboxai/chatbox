@@ -37,6 +37,7 @@ export function remoteImageModelToOption(model: RemoteModelInfo): ImageModelOpti
     modelId: model.modelId,
     displayName: model.modelName || model.modelId,
     ...(model.description ? { description: model.description } : {}),
+    ...(model.points_per_image !== undefined ? { pointsPerImage: model.points_per_image } : {}),
   }
 }
 

@@ -1,10 +1,11 @@
-import { binaryChunks, bytesToBase64 } from './binary-chunks'
 import { Directory, Encoding, Filesystem, type WriteFileOptions, type WriteFileResult } from '@capacitor/filesystem'
 import { Share } from '@capacitor/share'
 import { Toast } from '@capacitor/toast'
+import { throwIfAborted } from '@chatbox/core/utils/abort'
 import i18n from '@/i18n'
 import { getLogger } from '@/lib/utils'
 import { AndroidDocumentSaver } from './android_document_saver'
+import { binaryChunks, bytesToBase64 } from './binary-chunks'
 
 const log = getLogger('android-filter-writer')
 
@@ -85,6 +86,19 @@ export function isSaveCanceledError(error: unknown): boolean {
   }
 
   return false
+}
+
+/** The iOS share sheet rejects with this message when the user dismisses it. */
+export function isShareCanceledError(error: unknown): boolean {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : error && typeof error === 'object' && 'message' in error
+          ? String((error as { message?: unknown }).message)
+          : ''
+  return message === 'Share canceled'
 }
 
 export class HandledExportError extends Error {
@@ -324,8 +338,21 @@ export class IOSFilterWriter extends FilterWriter {
     })
   }
 
-  protected handleError(error: unknown): Promise<never> {
-    return Promise.reject(error)
+  protected async handleError(error: unknown): Promise<never> {
+    if (isSaveCanceledError(error) || isShareCanceledError(error)) {
+      throw error
+    }
+    log.error('handleError', serializeErrorForLog(error))
+    try {
+      await Toast.show({
+        text: i18n.t('Failed to save file: {{error}}', {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      })
+    } catch (toastError) {
+      log.warn('handleError:toastFailed', { error: serializeErrorForLog(toastError) })
+    }
+    throw new HandledExportError(error)
   }
 
   async exportTextFile(filename: string, content: string) {
@@ -441,7 +468,7 @@ export class AndroidFilterWriter extends FilterWriter {
         })
         tempUri = result.uri
       }
-      signal?.throwIfAborted()
+      throwIfAborted(signal)
       const saveResult = await AndroidDocumentSaver.saveFile({ sourceUri: tempUri, suggestedName: filename, mimeType })
       await this.handlePostWrite({ uri: saveResult.uri })
     } finally {

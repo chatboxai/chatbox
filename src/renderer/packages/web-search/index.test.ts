@@ -7,6 +7,10 @@ vi.mock('@/stores/settingActions', () => ({
   getLicenseKey: vi.fn(() => 'test-license-key'),
 }))
 
+vi.mock('@/stores/settingsStore', () => ({
+  settingsStore: { getState: vi.fn(() => ({ providers: {} })) },
+}))
+
 // Mock the search providers to avoid actual network calls
 vi.mock('./bing', () => {
   return {
@@ -34,6 +38,17 @@ vi.mock('./tavily', () => {
         if (this.apiKey === 'failing-key') throw new Error('Tavily unavailable')
         return { items: [{ title: 'Tavily Result', snippet: 'test', link: 'https://example.com' }] }
       })
+    },
+  }
+})
+
+vi.mock('./deepseek', () => {
+  return {
+    DeepSeekSearch: class {
+      constructor(private readonly apiKey: string) {}
+      search = vi.fn().mockImplementation(async () => ({
+        items: [{ title: `DeepSeek Result ${this.apiKey}`, snippet: 'test', link: 'https://example.com' }],
+      }))
     },
   }
 })
@@ -72,9 +87,11 @@ vi.mock('./chatbox-search', () => {
 })
 
 import { getExtensionSettings } from '@/stores/settingActions'
+import { settingsStore } from '@/stores/settingsStore'
 import { testWebSearchConnection, webSearchExecutor } from './index'
 
 const mockGetExtensionSettings = vi.mocked(getExtensionSettings)
+const mockGetSettingsState = vi.mocked(settingsStore.getState)
 
 describe('webSearchExecutor', () => {
   beforeEach(() => {
@@ -165,6 +182,34 @@ describe('webSearchExecutor', () => {
     })
   })
 
+  it('searches DeepSeek with the DeepSeek model provider key', async () => {
+    mockGetExtensionSettings.mockReturnValue({
+      webSearch: { provider: 'deepseek' },
+    } as ReturnType<typeof getExtensionSettings>)
+    mockGetSettingsState.mockReturnValue({
+      extension: { webSearch: { provider: 'deepseek' } },
+      providers: { deepseek: { apiKey: ' model-key ' } },
+    } as unknown as ReturnType<typeof settingsStore.getState>)
+
+    const result = await webSearchExecutor({ query: 'deepseek query' }, {})
+
+    expect(result.searchResults[0].title).toBe('DeepSeek Result model-key')
+  })
+
+  it('requires the DeepSeek model provider key for DeepSeek search', async () => {
+    mockGetExtensionSettings.mockReturnValue({
+      webSearch: { provider: 'deepseek' },
+    } as ReturnType<typeof getExtensionSettings>)
+    mockGetSettingsState.mockReturnValue({
+      extension: { webSearch: { provider: 'deepseek' } },
+      providers: { deepseek: { apiKey: '  ' } },
+    } as unknown as ReturnType<typeof settingsStore.getState>)
+
+    await expect(webSearchExecutor({ query: 'missing deepseek key' }, {})).rejects.toMatchObject({
+      code: 20048,
+    })
+  })
+
   it('searches with Firecrawl when an API key is set', async () => {
     mockGetExtensionSettings.mockReturnValue({
       webSearch: { provider: 'firecrawl', firecrawlApiKey: 'fc-key' },
@@ -180,7 +225,7 @@ describe('webSearchExecutor', () => {
     } as ReturnType<typeof getExtensionSettings>)
 
     await expect(webSearchExecutor({ query: 'missing firecrawl key' }, {})).rejects.toMatchObject({
-      code: 20048,
+      code: 20053,
     })
   })
 

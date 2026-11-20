@@ -1,7 +1,8 @@
 import { createOpenRouter } from '@openrouter/ai-sdk-provider'
-import type { ImageModelProviderMetadata } from 'ai'
+import type { ImageModelProviderMetadata, ModelMessage } from 'ai'
 import { extractReasoningMiddleware, wrapLanguageModel } from 'ai'
 import AbstractAISDKModel from '../../../models/abstract-ai-sdk'
+import { applyAnthropicCacheBreakpoints } from '../../../models/anthropic-cache'
 import { fetchRemoteModels } from '../../../models/openai-compatible'
 import type { CallChatCompletionOptions } from '../../../models/types'
 import { createOpenAIChatCompletionSseFetch } from '../../../models/utils/openai-chat-sse-termination'
@@ -60,6 +61,12 @@ export default class OpenRouter extends AbstractAISDKModel {
     })
   }
 
+  // OpenRouter only caches Claude prompts at explicit cache_control breakpoints.
+  protected override prepareRequestMessages(messages: ModelMessage[]): ModelMessage[] {
+    if (!/claude/i.test(this.options.model.modelId)) return messages
+    return applyAnthropicCacheBreakpoints(messages).map(withAssistantCacheControlOnMessage)
+  }
+
   protected getImageModel() {
     const modelId = this.options.model.modelId
     if (!modelId) return null
@@ -107,4 +114,36 @@ export default class OpenRouter extends AbstractAISDKModel {
       return []
     })
   }
+}
+
+type AssistantPart = Exclude<Extract<ModelMessage, { role: 'assistant' }>['content'], string>[number]
+
+function getAnthropicCacheControl(options: ModelMessage['providerOptions']) {
+  return options?.anthropic?.cacheControl
+}
+
+/**
+ * The OpenRouter serializer reads `cache_control` on an assistant message only from
+ * the message itself and sends reasoning in separate fields, so a breakpoint placed on
+ * an assistant part (the fallback when the message ends in reasoning) is moved to the
+ * message.
+ */
+function withAssistantCacheControlOnMessage(message: ModelMessage): ModelMessage {
+  if (message.role !== 'assistant' || typeof message.content === 'string') return message
+  const parts = message.content as AssistantPart[]
+  const marked = parts.find((part) => 'providerOptions' in part && getAnthropicCacheControl(part.providerOptions))
+  if (!marked || !('providerOptions' in marked)) return message
+  const cacheControl = getAnthropicCacheControl(marked.providerOptions)
+  return {
+    ...message,
+    content: parts.map((part) => {
+      if (part !== marked) return part
+      const { cacheControl: _cacheControl, ...anthropic } = marked.providerOptions?.anthropic ?? {}
+      return { ...marked, providerOptions: { ...marked.providerOptions, anthropic } }
+    }),
+    providerOptions: {
+      ...message.providerOptions,
+      anthropic: { ...message.providerOptions?.anthropic, cacheControl },
+    },
+  } as ModelMessage
 }

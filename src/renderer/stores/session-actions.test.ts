@@ -124,6 +124,7 @@ vi.mock('@/packages/model-calls', () => ({
 }))
 
 vi.mock('@/packages/model-setting-utils', () => ({
+  getMessageProviderName: () => 'Mock Provider',
   getModelDisplayName: async () => 'mock-model',
 }))
 
@@ -505,6 +506,35 @@ describe('row session actions', () => {
     expect(session).toEqual(snapshot)
     expect(updated.threads?.[0].messages.map((message) => message.id).slice(0, 1)).toEqual([pivot.id])
     expect(updated.threads?.[0].messages.at(-1)?.generating).toBe(true)
+  })
+  test('regenerateInNewFork saves the reply with its provider and model before generation starts', async () => {
+    const pivot = makeMessage('pivot', 'user')
+    const target = makeMessage('target', 'assistant')
+    const session: Session = {
+      id: 'session-8c',
+      name: 'Test',
+      messages: [pivot, target],
+      settings: { provider: 'openai', modelId: 'gpt-mock' },
+    }
+
+    await seed(session)
+    await sessionActions.regenerateInNewFork(session.id, target)
+    const reply = inspect(session.id).messages.at(-1)
+    expect(reply).toMatchObject({
+      role: 'assistant',
+      generating: true,
+      aiProvider: 'openai',
+      aiProviderName: 'Mock Provider',
+      model: 'mock-model',
+      modelId: 'gpt-mock',
+    })
+    expect(orchestrateMock).toHaveBeenCalledWith(
+      session.id,
+      expect.objectContaining({ id: reply?.id, aiProvider: 'openai' }),
+      {
+        operationType: 'regenerate',
+      }
+    )
   })
   test('regenerateInNewFork skips an anchored summary when picking the fork pivot', async () => {
     const pivot = makeMessage('pivot', 'user')
@@ -913,5 +943,78 @@ describe('row session actions', () => {
         createdAt: 100,
       },
     ])
+  })
+})
+
+describe('copyAndSwitchSession single flight', () => {
+  function deferredCopy() {
+    const pending: Array<{ resolve: (id: string) => void; reject: (error: Error) => void }> = []
+    const copy = vi.spyOn(sessions, 'copySession').mockImplementation(
+      (request) =>
+        new Promise((resolve, reject) =>
+          pending.push({
+            resolve: (id) => resolve({ id, name: `copy of ${request.sessionId}` }),
+            reject,
+          })
+        )
+    )
+    return { copy, pending }
+  }
+  const waitForCopies = (copy: { mock: { calls: unknown[] } }, count: number) =>
+    vi.waitFor(() => expect(copy.mock.calls).toHaveLength(count))
+
+  test('shares one copy per source session while it is in flight', async () => {
+    await seed({ id: 'source-a', name: 'A', messages: [makeMessage('a')] })
+    await seed({ id: 'source-b', name: 'B', messages: [makeMessage('b')] })
+    const { copy, pending } = deferredCopy()
+    const listener = vi.fn()
+    const unsubscribe = sessionActions.subscribeSessionCopies(listener)
+
+    const first = sessionActions.copyAndSwitchSession('source-a')
+    const repeated = sessionActions.copyAndSwitchSession('source-a')
+    const other = sessionActions.copyAndSwitchSession('source-b')
+    expect(repeated).toBe(first)
+    expect(sessionActions.isSessionCopyInFlight('source-a')).toBe(true)
+    expect(sessionActions.isSessionCopyInFlight('source-b')).toBe(true)
+    expect(listener).toHaveBeenCalledTimes(2)
+
+    await waitForCopies(copy, 2)
+    pending[0].resolve('copy-a')
+    pending[1].resolve('copy-b')
+    await Promise.all([first, repeated, other])
+    expect(copy).toHaveBeenCalledTimes(2)
+    expect(routerNavigateMock.mock.calls.map(([target]) => target)).toEqual([
+      { to: '/session/copy-a' },
+      { to: '/session/copy-b' },
+    ])
+    expect(sessionActions.isSessionCopyInFlight('source-a')).toBe(false)
+    expect(listener).toHaveBeenCalledTimes(4)
+    unsubscribe()
+
+    const again = sessionActions.copyAndSwitchSession('source-a')
+    expect(again).not.toBe(first)
+    await waitForCopies(copy, 3)
+    pending[2].resolve('copy-a-2')
+    await again
+    expect(listener).toHaveBeenCalledTimes(4)
+  })
+
+  test('clears the in-flight copy after a failure', async () => {
+    await seed({ id: 'source-a', name: 'A', messages: [makeMessage('a')] })
+    const { copy, pending } = deferredCopy()
+    const first = sessionActions.copyAndSwitchSession('source-a')
+    const repeated = sessionActions.copyAndSwitchSession('source-a')
+    await waitForCopies(copy, 1)
+    pending[0].reject(new Error('copy failed'))
+    await expect(first).rejects.toThrow('copy failed')
+    await expect(repeated).rejects.toThrow('copy failed')
+    expect(sessionActions.isSessionCopyInFlight('source-a')).toBe(false)
+    expect(routerNavigateMock).not.toHaveBeenCalled()
+
+    const retry = sessionActions.copyAndSwitchSession('source-a')
+    await waitForCopies(copy, 2)
+    pending[1].resolve('copy-a')
+    await retry
+    expect(routerNavigateMock).toHaveBeenCalledWith({ to: '/session/copy-a' })
   })
 })

@@ -5,12 +5,14 @@ import type { TranscriptNavigation } from './uiStore'
 
 const mocks = vi.hoisted(() => ({ state: { transcriptNavigation: null as TranscriptNavigation | null } }))
 vi.mock('./uiStore', () => ({ uiStore: { getState: () => mocks.state } }))
+
 import { scrollToMessage } from './scrollActions'
 
 function mount(sessionId = 's') {
   const navigation: TranscriptNavigation = {
     owner: Symbol(sessionId),
     sessionId,
+    prepareBranchCreation: vi.fn(async () => true),
     navigateMessage: vi.fn(async () => true),
     openSearch: vi.fn(async () => true),
     viewThread: vi.fn(async () => true),

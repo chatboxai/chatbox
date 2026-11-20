@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
     >(),
   save: vi.fn<() => Promise<void>>(),
   resend: vi.fn<() => Promise<void>>(),
+  prepareBranchCreation: vi.fn<() => Promise<boolean>>(),
 }))
 
 vi.mock('@/app/renderer-application', () => ({
@@ -28,6 +29,9 @@ vi.mock('@/app/renderer-application', () => ({
 vi.mock('@/stores/session/action-guard', () => ({ getSessionLockStateNow: mocks.locks }))
 vi.mock('@/stores/session/messages', () => ({ modifyMessage: mocks.save }))
 vi.mock('@/stores/session/generation', () => ({ saveAndResendMessage: mocks.resend }))
+vi.mock('@/utils/prepare-transcript-branch-creation', () => ({
+  prepareTranscriptBranchCreation: mocks.prepareBranchCreation,
+}))
 vi.mock('@/utils/session-lock-copy', () => ({ notifySessionLockBlocked: vi.fn() }))
 vi.mock('@/stores/toastActions', () => ({ add: vi.fn() }))
 vi.mock('@/hooks/useScreenChange', () => ({ useIsSmallScreen: () => false }))
@@ -91,6 +95,7 @@ describe('MessageEdit pending submission', () => {
     mocks.locks.mockResolvedValue(unlocked)
     mocks.save.mockResolvedValue(undefined)
     mocks.resend.mockResolvedValue(undefined)
+    mocks.prepareBranchCreation.mockResolvedValue(true)
     vi.stubGlobal(
       'ResizeObserver',
       class {
@@ -171,12 +176,44 @@ describe('MessageEdit pending submission', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
+  test('waits at the editor until the old branch reaches the tail before resending', async () => {
+    const tail = deferred<boolean>()
+    mocks.prepareBranchCreation.mockReturnValue(tail.promise)
+    const input = await showEditor()
+    fireEvent.click(screen.getByRole('button', { name: 'Save & Resend' }))
+    await waitFor(() => expect(mocks.prepareBranchCreation).toHaveBeenCalledExactlyOnceWith('session'))
+    expect(mocks.resend).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(input.disabled).toBe(true)
+    await act(async () => {
+      tail.resolve(true)
+    })
+    expect(mocks.resend).toHaveBeenCalledExactlyOnceWith('session', {
+      ...message,
+      contentParts: [{ type: 'text', text: 'Edited draft' }],
+    })
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  test('keeps the draft and allows retry when preparing the tail fails', async () => {
+    mocks.prepareBranchCreation.mockResolvedValueOnce(false)
+    const input = await showEditor()
+    fireEvent.click(screen.getByRole('button', { name: 'Save & Resend' }))
+    expect(await screen.findByRole('alert')).toBeTruthy()
+    expect(input.value).toBe('Edited draft')
+    expect(input.disabled).toBe(false)
+    expect(mocks.resend).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Save & Resend' }))
+    await waitFor(() => expect(mocks.resend).toHaveBeenCalledTimes(1))
+  })
+
   test('keeps the dialog and edit until Save publishes, and recovers from a write failure', async () => {
     const save = deferred<void>()
     mocks.save.mockReturnValueOnce(save.promise)
     const input = await showEditor()
     fireEvent.click(screen.getByRole('button', { name: /^Save$/ }))
     await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(1))
+    expect(mocks.prepareBranchCreation).not.toHaveBeenCalled()
     expect(screen.getByRole('dialog')).toBeTruthy()
     expect(input.disabled).toBe(true)
     await act(async () => {

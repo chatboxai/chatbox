@@ -1,5 +1,6 @@
 export const JK_EVENTS = {
   ONBOARDING_CHOICE_CLICK: 'onboarding_choice_click',
+  ONBOARDING_IMPORT_CHOICE_CLICK: 'onboarding_import_choice_click',
   LOGIN_BUTTON_CLICK: 'login_button_click',
   FREE_LICENSE_CLAIM_CLICK: 'free_license_claim_click',
   KEY_VERIFY_SUCCESS: 'key_verify_success',
@@ -11,6 +12,8 @@ export const JK_EVENTS = {
   LIST_MODEL_CLICK: 'list_model_click',
   SELECT_MODEL_CLICK: 'select_model_click',
   UPGRADE_MODEL_CLICK: 'upgrade_model_click',
+  PRO_TRIAL_CLAIM_CLICK: 'pro_trial_claim_click',
+  PRO_TRIAL_UPGRADE_CLICK: 'pro_trial_upgrade_click',
   LEAD_CHAT_CARD_CLICK: 'lead_chat_card_click',
   AGENT_MODE_SELECT: 'agent_mode_select',
   SMART_SWITCHING_CLICK: 'smart_switching_click',

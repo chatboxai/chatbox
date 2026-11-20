@@ -7,13 +7,18 @@ export const xaiProvider = defineProvider({
   name: 'xAI',
   type: ModelProviderType.OpenAI,
   modelsDevProviderId: 'xai',
-  curatedModelIds: ['grok-4.6', 'grok-4.3', 'grok-4-1-fast', 'grok-4-fast', 'grok-4', 'grok-build-0.1'],
+  curatedModelIds: ['grok-4.7', 'grok-4.6', 'grok-4.3', 'grok-4-1-fast', 'grok-4-fast', 'grok-4', 'grok-build-0.1'],
   urls: {
     website: 'https://x.ai/',
   },
   defaultSettings: {
     apiHost: 'https://api.x.ai',
     models: [
+      {
+        modelId: 'grok-4.7',
+        capabilities: ['vision', 'tool_use', 'reasoning'],
+        contextWindow: 500_000,
+      },
       {
         modelId: 'grok-4.6',
         contextWindow: 500_000,

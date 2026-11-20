@@ -1,33 +1,33 @@
 import { readFileSync } from 'node:fs'
-import { afterEach, describe, expect, it, vi } from 'vitest'
 import { zipSync } from 'fflate'
-import { importBackupV3 } from '../backup-v3/archive'
-import { getBackupImportPartialResult } from '../backup-v3/errors'
-import { importBackup } from '../backup-import'
-import { createSessionMetaRecord } from '../application/session/session-metadata'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SessionRowMigration } from '../application/session/SessionRowMigration'
 import { SessionRowWriteQueue } from '../application/session/SessionRowWriteQueue'
+import { createSessionMetaRecord } from '../application/session/session-metadata'
+import { importBackup } from '../backup-import'
+import { importBackupV3 } from '../backup-v3/archive'
+import { getBackupImportPartialResult } from '../backup-v3/errors'
 import { toBackupMessage, toBackupSession, toBackupThread } from '../backup-v3/records'
 import type {
   BackupBusinessRecord,
-  BackupImportProjections,
   BackupImportIssue,
+  BackupImportProjections,
   BackupManifest,
   BackupResourceRecord,
-  BackupWorkspace,
   BackupWarningRecord,
+  BackupWorkspace,
 } from '../backup-v3/types'
 import { mergeSettingsWithDefaults } from '../domain/settings'
-import { contextSnapshot } from '../persistence/session-context-read.test-support'
 import { InMemorySessionRecordStore } from '../persistence/memory-session-record-store'
 import { type NodeSessionRowSqlDatabase, openNodeSessionRowDatabase } from '../persistence/node-sqlite.test-support'
+import { contextSnapshot } from '../persistence/session-context-read.test-support'
 import { SqlSessionRowStore } from '../persistence/session-row-sql'
 import type { SessionMetaRepositoryPort } from '../ports/session-repository'
 import { sessionImportCandidateId } from '../ports/session-row-transfer'
 import { InMemoryKeyValueStorage } from '../testing/InMemoryKeyValueStorage'
 import type { Session, SessionMetaRecord } from '../types'
-import { cleanupBackupImport, createBackupExportSource, createBackupImportTarget } from './host'
 import { GLOBAL_KEYS } from './globals'
+import { cleanupBackupImport, createBackupExportSource, createBackupImportTarget } from './host'
 import { commitBackupSettings } from './settings'
 import type { BackupHostOptions, BackupHostResources } from './types'
 
@@ -635,6 +635,7 @@ describe('incremental backup host import', () => {
     const backup = JSON.parse(
       readFileSync(new URL('../testing/fixtures/published-backups/v1.15.0-settings.json', import.meta.url), 'utf8')
     )
+    backup.settings.showModelName = false
     // Distinguish the legacy spellings from the current defaults they migrate into.
     Object.assign(backup.settings.shortcuts, {
       inpubBoxSendMessage: 'Ctrl+Enter',
@@ -668,6 +669,7 @@ describe('incremental backup host import', () => {
       autoUpdate: false,
       shortcuts: { inputBoxSendMessage: 'Ctrl+Enter', inputBoxSendMessageWithoutResponse: 'Enter' },
     })
+    expect(await f.storage.get(GLOBAL_KEYS.settings)).toHaveProperty('showModelName', false)
     expect(replaceSettings).toHaveBeenCalledOnce()
   })
 })

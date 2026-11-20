@@ -84,12 +84,12 @@ const MobileAgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProp
     modelId,
     agentModeActive: workActive,
     copilotId: sessionId === 'new' ? draftCopilotId : header?.copilotId,
-    copilotName: sessionId === 'new' ? draftCopilotName : header?.name,
+    copilotName: sessionId === 'new' ? draftCopilotName : undefined,
     onClose,
   })
   const webSearch = useSettingsStore((s) => s.extension.webSearch)
-  const licenseKey = useSettingsStore((s) => s.licenseKey)
-  const webIssue = webBrowsingMode && getWebSearchConfigurationIssue(webSearch, licenseKey) !== null
+  const webSearchConfigurationIssue = useSettingsStore((s) => getWebSearchConfigurationIssue(s))
+  const webIssue = webBrowsingMode && webSearchConfigurationIssue !== null
   const webProvider = WEB_SEARCH_PROVIDERS.find((p) => p.value === webSearch.provider)?.label ?? webSearch.provider
   const labels: Record<LocalWorkCapabilityId, string> = {
     photos: t('Photos'),

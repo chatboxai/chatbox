@@ -1,5 +1,9 @@
 import { createTheme, type ThemeOptions } from '@mui/material/styles'
-import { getDefaultInterfaceColors, resolveInterfaceBrandColor } from '@shared/theme-colors'
+import {
+  getDefaultInterfaceColors,
+  resolveDarkSurfaceOverrides,
+  resolveInterfaceBrandColor,
+} from '@shared/theme-colors'
 import { useLayoutEffect, useMemo } from 'react'
 import { settingsStore, useLanguage, useSettingsStore } from '@/stores/settingsStore'
 import { uiStore, useUIStore } from '@/stores/uiStore'
@@ -59,6 +63,14 @@ export default function useAppTheme() {
     rootStyle.setProperty('--chatbox-background-secondary', colors.backgroundSecondary)
     rootStyle.setProperty('--chatbox-background-tertiary', colors.backgroundTertiary)
     rootStyle.setProperty('--chatbox-brand', brandColor)
+    const darkSurfaces = resolveDarkSurfaceOverrides(interfaceColors, realTheme)
+    if (darkSurfaces) {
+      rootStyle.setProperty('--chatbox-background-raised', darkSurfaces.raised)
+      rootStyle.setProperty('--chatbox-background-composer', darkSurfaces.composer)
+    } else {
+      rootStyle.removeProperty('--chatbox-background-raised')
+      rootStyle.removeProperty('--chatbox-background-composer')
+    }
   }, [interfaceColors, realTheme])
 
   const themeObj = useMemo(

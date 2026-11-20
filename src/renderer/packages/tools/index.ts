@@ -89,6 +89,8 @@ export function getToolName(toolName: string, input?: unknown): string {
     sandbox_ls: t('List Directory'),
     sandbox_find: t('Find Files'),
     load_skill: t('Load Skill'),
+    save_memory: t('Save Memory'),
+    delete_memory: t('Delete Memory'),
     install_skill: t('Install Skill'),
     run_command: t('Run Command'),
     user_exec: t('Run Command'),

@@ -66,6 +66,8 @@ function GuidePage() {
     onClaimStart,
     onClaimDetected,
     handleConfigComplete,
+    importConversations,
+    skipImport,
     clearSession,
     debugResetGuide,
     debugSkipToLoginSuccess,
@@ -274,8 +276,19 @@ function GuidePage() {
         }
       />
 
+      {import.meta.env.MODE !== 'production' && (
+        <Stack gap={4} px="md" py="xs">
+          <Button variant="light" color="chatbox-brand" size="xs" onClick={debugResetGuide}>
+            {t('Clear onboarding data')}
+          </Button>
+          <Text size="xs" c="chatbox-secondary" ta="center">
+            {t('Clears login and API settings. Keeps chats.')}
+          </Text>
+        </Stack>
+      )}
+
       {/* Messages */}
-      <ScrollArea viewportRef={viewportRef} className="flex-1" type="scroll">
+      <ScrollArea viewportRef={viewportRef} className="chatbox-scroll-top-fade flex-1" type="scroll">
         <Stack gap={0} pt="md" pb="md" mb={showInputArea ? 0 : 120} maw={800} mx="auto">
           {messages.map((message, index) => (
             <GuideMessage
@@ -286,6 +299,8 @@ function GuidePage() {
               onQuestionClick={sendMessage}
               onClaimStart={onClaimStart}
               onClaimDetected={onClaimDetected}
+              onImportConversations={importConversations}
+              onSkipImport={skipImport}
               isLastMessage={index === messages.length - 1}
             />
           ))}

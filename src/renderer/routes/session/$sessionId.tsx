@@ -1,4 +1,3 @@
-import { getSessionSearchTarget, clearSessionSearchTarget } from '@/stores/session-search-target'
 import { resolveSessionMode } from '@chatbox/core/session/mode-policy'
 import { Box, Button, Loader } from '@mantine/core'
 import type { ModelProvider } from '@shared/types'
@@ -12,9 +11,11 @@ import MessageList, { type MessageListRef } from '@/components/chat/MessageList'
 import { ChatboxWelcomeCard } from '@/components/common/ChatboxWelcomeCard'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import InputBox, { type InputBoxPayload } from '@/components/InputBox/InputBox'
-import { paddedContentColumnClassName } from '@/components/layout/contentColumn'
+import { contentColumnContainerClassName, paddedContentColumnClassName } from '@/components/layout/contentColumn'
 import Header from '@/components/layout/Header'
 import Page from '@/components/layout/Page'
+import { MissingSessionActions } from '@/components/session/MissingSessionActions'
+import { SessionRecoveryDetails } from '@/components/session/SessionRecoveryDetails'
 import { SessionSheet } from '@/components/session/SessionSheet'
 import { closeSessionPanel, SessionSidePanel } from '@/components/session/SessionSidePanel'
 import { useGenerationStop } from '@/hooks/useGenerationStop'
@@ -22,6 +23,7 @@ import { useProviders } from '@/hooks/useProviders'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { useSessionPresentation, useSessionTranscript } from '@/hooks/useSessionPresentation'
 import useVersion from '@/hooks/useVersion'
+import { cn } from '@/lib/utils'
 import { defaultSessionsForCN, defaultSessionsForEN } from '@/packages/initial_data'
 import * as remote from '@/packages/remote'
 import {
@@ -39,6 +41,7 @@ import { useSessionAgentMode } from '@/stores/session/agent-mode'
 import { switchCurrentSession } from '@/stores/session/crud'
 import { submitNewUserMessage } from '@/stores/session/messages'
 import { startNewThread } from '@/stores/session/threads'
+import { clearSessionSearchTarget, getSessionSearchTarget } from '@/stores/session-search-target'
 import { clearSessionActivity, setOnScreenSession } from '@/stores/sessionActivityStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { add as addToast } from '@/stores/toastActions'
@@ -73,13 +76,22 @@ function RouteComponent() {
   const sessionLoadSettled = currentSession?.id === currentSessionId || (!isFetching && !isError)
   useSessionStartupGuard(currentSessionId, sessionLoadSettled, recovering)
   const messageListRef = useRef<MessageListRef>(null)
+  const [pendingSendScroll, setPendingSendScroll] = useState<{
+    messageId: string
+    stillFollowing: () => boolean
+  } | null>(null)
+  useEffect(() => {
+    if (pendingSendScroll && headerRead?.summary.lastUserMessageId === pendingSendScroll.messageId) {
+      if (pendingSendScroll.stillFollowing()) messageListRef.current?.scrollToBottom()
+      setPendingSendScroll(null)
+    }
+  }, [pendingSendScroll, headerRead?.summary.lastUserMessageId])
   const [searchTarget] = useState(() => getSessionSearchTarget(currentSessionId))
   const initialOrigin = useMemo(
     () => (searchTarget ? { messageId: searchTarget.messageId } : ('tail' as const)),
     [searchTarget]
   )
-  const captureAnchor = useCallback(() => messageListRef.current?.captureAnchor() ?? null, [])
-  const transcript = useSessionTranscript(sessionLoadTarget, initialOrigin, captureAnchor)
+  const transcript = useSessionTranscript(sessionLoadTarget, initialOrigin)
   useEffect(() => {
     if (searchTarget) clearSessionSearchTarget(searchTarget)
   }, [searchTarget])
@@ -189,7 +201,11 @@ function RouteComponent() {
 
   const onSubmit = useCallback(
     async ({ constructedMessage, needGenerating = true, onUserMessageReady }: InputBoxPayload) => {
-      messageListRef.current?.setIsNewMessage(autoScrollNewMessagesToTop)
+      const submittedList = messageListRef.current
+      submittedList?.setIsNewMessage(autoScrollNewMessagesToTop)
+      // Read the intent before any await: sending from the tail (or right after asking for it), or from anywhere on
+      // a mobile layout, follows the new turn; sending while reading history on a wide layout keeps the position.
+      const stillFollowing = autoScrollNewMessagesToTop ? null : (submittedList?.captureSendFollow() ?? null)
 
       if (!currentSession) {
         return
@@ -209,7 +225,12 @@ function RouteComponent() {
       await submitNewUserMessage(currentSession.id, {
         newUserMsg: constructedMessage,
         needGenerating,
-        onUserMessageReady,
+        onUserMessageReady: () => {
+          onUserMessageReady?.()
+          if (stillFollowing && messageListRef.current === submittedList) {
+            setPendingSendScroll({ messageId: constructedMessage.id, stillFollowing })
+          }
+        },
       })
     },
     [autoScrollNewMessagesToTop, currentSession, currentSessionWithDefaultModel]
@@ -227,10 +248,6 @@ function RouteComponent() {
   }, [currentSession])
 
   const { requestStop: onStopGenerating, status: stopGenerationStatus } = useGenerationStop(currentSession?.id)
-
-  const onViewCompactionSummary = useCallback((summaryMessageId: string) => {
-    messageListRef.current?.scrollToMessage(summaryMessageId)
-  }, [])
 
   const model = useMemo(() => {
     if (!currentSessionWithDefaultModel?.settings?.modelId || !currentSessionWithDefaultModel?.settings?.provider) {
@@ -277,6 +294,7 @@ function RouteComponent() {
             </Button>
             <Button onClick={() => sessionStartupRecovery.retry(currentSessionId)}>{t('Try Again')}</Button>
           </div>
+          <SessionRecoveryDetails sessionId={currentSessionId} />
         </div>
       </Page>
     )
@@ -284,7 +302,7 @@ function RouteComponent() {
 
   return currentSession ? (
     <div className="flex h-full">
-      <div className={`flex min-w-0 flex-1 flex-col h-full ${!isSmallScreen ? 'relative' : ''}`}>
+      <div className={cn('relative flex min-w-0 flex-1 flex-col h-full', contentColumnContainerClassName(widthFull))}>
         <Header session={currentSession} />
         <MessageList
           ref={messageListRef}
@@ -323,7 +341,6 @@ function RouteComponent() {
               onSubmit={onSubmit}
               onStopGenerating={onStopGenerating}
               stopGenerationStatus={stopGenerationStatus}
-              onViewCompactionSummary={onViewCompactionSummary}
             />
           </ErrorBoundary>
         </Box>
@@ -339,9 +356,13 @@ function RouteComponent() {
       <Page title="">
         <div className="flex flex-1 flex-col items-center justify-center min-h-[60vh]">
           <div className="text-2xl font-semibold text-gray-700 mb-4">{t('Conversation not found')}</div>
-          <Button variant="outline" onClick={goHome}>
-            {t('Back to HomePage')}
-          </Button>
+          {isError ? (
+            <Button variant="outline" onClick={goHome}>
+              {t('Back to HomePage')}
+            </Button>
+          ) : (
+            <MissingSessionActions sessionId={currentSessionId} onBack={goHome} />
+          )}
         </div>
       </Page>
     )

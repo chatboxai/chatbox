@@ -10,7 +10,7 @@
 | 一致性 | `SessionWriteCoordinator`、`SessionRowWriteQueue` | 串行化本宿主写入、维护生命周期；仓库 revision/CAS 处理外部并发 |
 | 存储 | `RowBackedSessionRepository`、SQL/IndexedDB/Memory row store | 局部关系与正文事务、元信息投影、迁移和恢复 |
 | React | `SessionQueryBridge`、`SessionTranscriptWindowController` | 分离查询、投影已提交 delta、分页正文与共用窗口的 minimap |
-| 宿主 | Renderer Virtuoso、RN FlatList | 用户输入、语义锚点、布局确认和错误反馈 |
+| 宿主 | Renderer Virtuoso、RN LegendList | 用户输入、消息定位、列表布局确认和错误反馈 |
 
 命令只读取目标消息、所需关系和相关控制信息。文本检查点更新目标正文及必要派生信息；thread 激活通过关系和 activeThreadId 完成，消息身份保持稳定。命令持久化成功后再发布事件，元信息投影失败不能重放已经成功的正文写入。
 
@@ -28,9 +28,9 @@
 | 切换/继续 thread | 提交激活后定位该 thread 末尾 |
 | 切分支 | 保留已加载公共前缀，用新分支的1页替换分叉点之后的数据 |
 
-分页和布局变化保持当前阅读位置，跳转使用稳定 thread/message ID；RN 优先使用 FlatList 原生维持位置能力。重新打开会话仍按最新1页处理。
+Renderer 的分页位置保持、动态行高补偿和输出跟随由 Virtuoso 负责；RN 使用 LegendList 的位置保持能力。明确跳转使用稳定 thread/message ID 找到列表项，再调用列表公开的定位接口。重新打开会话按最新1页处理。
 
-消息分组在真实 thread/路径边界处结束，key 不能依赖数组下标或当前窗口尾部。布局提交、远页回收与可见锚点恢复属于一次事务；宿主不得用全历史占位高度模拟位置。
+消息分组在真实 thread/路径边界处结束，key 不能依赖数组下标或当前窗口尾部。Renderer 根据实际渲染项维护 Virtuoso 的 firstItemIndex，加载历史时由列表补偿位置。宿主通过列表渲染事件确认窗口可交互，不用全历史占位高度模拟位置。
 
 ## 分支预览
 

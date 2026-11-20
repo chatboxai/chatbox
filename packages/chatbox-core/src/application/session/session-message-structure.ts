@@ -21,6 +21,8 @@ import {
   type StructurePlan,
 } from './session-structure-plan'
 
+const RETRY_PIVOT_ANCESTOR_PAGE = 8
+
 export async function planMessageStructure(
   reader: StructureCommandReader,
   operation: Exclude<SessionMessageStructureOperation, { action: 'generation-segment-split' | 'background-follow-up' }>
@@ -53,7 +55,12 @@ export async function planMessageStructure(
     let parentId = target.parentMessageId
     let pivot: Awaited<ReturnType<typeof readMetadata>>
     while (parentId) {
-      const ancestors = await reader.relations(target.threadId, { kind: 'ancestors', messageId: parentId }, 200)
+      // Only the nearest non-summary ancestor is needed; the loop pages past summaries.
+      const ancestors = await reader.relations(
+        target.threadId,
+        { kind: 'ancestors', messageId: parentId },
+        RETRY_PIVOT_ANCESTOR_PAGE
+      )
       if (!ancestors.length) throw new Error('Missing retry predecessor')
       pivot = ancestors.find((row) => row.kind !== 'summary')
       if (pivot) break

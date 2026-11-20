@@ -39,3 +39,12 @@ If you select GPT-4 and receive a similar error message when sending messages:
 ```
 
 This issue often occurs when you're using your own OpenAI account and have selected the GPT-4 model, but your OpenAI API account does not support GPT-4. As of July 4, 2023, all OpenAI API accounts require a request to be submitted to OpenAI before the GPT-4 model can be used. Here's the application link: https://openai.com/waitlist/gpt-4-api. Please note that even if you're a ChatGPT Plus user, you still need to apply for access to use the GPT-4 API model.
+
+### 1004
+
+#### On Windows/Linux I accidentally pressed F11 and entered fullscreen. How do I exit?
+
+On Windows/Linux desktop versions, press **F11** to toggle fullscreen mode. If you accidentally entered fullscreen and can't figure out how to exit, try one of the following:
+
+- Press **F11** again to exit fullscreen.
+- Move your mouse to the **top center area of the window** — a hidden exit button will appear. Click it to exit fullscreen.

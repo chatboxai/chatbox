@@ -24,6 +24,7 @@ describe('Provider Spotlight and List integration', () => {
       ModelProviderEnum.TencentHunyuan,
       ModelProviderEnum.LongCat,
       ModelProviderEnum.ZhipuGLMCodingPlan,
+      ModelProviderEnum.Ionet,
     ]
 
     for (const id of newProviderIds) {
@@ -39,5 +40,6 @@ describe('Provider Spotlight and List integration', () => {
     expect(moreProviderIds).toContain('tencent-hunyuan')
     expect(moreProviderIds).toContain('longcat')
     expect(moreProviderIds).toContain('zhipu-glm-coding-plan')
+    expect(moreProviderIds).toContain('ionet')
   })
 })

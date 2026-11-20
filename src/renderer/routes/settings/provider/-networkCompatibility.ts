@@ -7,6 +7,7 @@ const WEB_NETWORK_COMPATIBILITY_PROVIDERS = new Set<string>([
   ModelProviderEnum.OpenCodeZen,
   ModelProviderEnum.GLM,
   ModelProviderEnum.ZhipuGLMCodingPlan,
+  ModelProviderEnum.Ionet,
 ])
 
 export function showsNetworkCompatibility(provider: { id: string; isCustom?: boolean }, platformType: PlatformType) {

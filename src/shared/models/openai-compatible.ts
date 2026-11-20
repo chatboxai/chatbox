@@ -141,17 +141,18 @@ export async function fetchRemoteModels(
   },
   dependencies: ModelDependencies
 ) {
+  const apiHost = params.apiHost.replace(/\/+$/, '')
   const headers = {
     Authorization: `Bearer ${params.apiKey}`,
     ...(params.extraHeaders || {}),
   }
   const response = params.customFetch
-    ? await params.customFetch(`${params.apiHost}/models`, {
+    ? await params.customFetch(`${apiHost}/models`, {
         method: 'GET',
         headers,
       })
     : await dependencies.request.apiRequest({
-        url: `${params.apiHost}/models`,
+        url: `${apiHost}/models`,
         method: 'GET',
         headers,
         useProxy: params.useProxy,

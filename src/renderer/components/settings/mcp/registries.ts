@@ -428,6 +428,18 @@ export const MCP_ENTRIES_OFFICIAL: MCPRegistryEntry[] = [
       },
     },
   },
+  {
+    name: 'truthifi',
+    title: 'Truthifi',
+    description:
+      "One verified household record for your AI: accounts, activity, holdings, fees, performance, cash flow and your Truthifi Score. Can't move money. Hosted server with browser OAuth sign-in.",
+    icon: 'https://framerusercontent.com/images/u37AxMviOa9x9r67PQkR35LJQ.png',
+    homepage: 'https://truthifi.com/features/mcp',
+    configuration: {
+      command: 'npx',
+      args: ['-y', 'mcp-remote@0.14.3', 'https://api.truthifi.com/mcp'],
+    },
+  },
 ]
 
 export const MCP_ENTRIES_COMMUNITY: MCPRegistryEntry[] = [

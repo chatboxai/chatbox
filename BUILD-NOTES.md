@@ -297,3 +297,23 @@ cd android; .\gradlew.bat assembleDebug
 - 新组件 `src/renderer/components/settings/LanguageSettingsCard.tsx`：一行 `LanguageSettingsCard`（`data-testid="settings-language-entry"`），弹层用现成的 `AdaptiveModal`（手机是 vaul 底部抽屉，桌面是 Mantine Modal），选项来自 `@/i18n/locales` 的 `languages` / `languageNameMap`（`en`/`zh-Hans`/`zh-Hant`/`ja`/`ko`/`ru`/`de`/`fr`/`pt-PT`/`es`/`ar`/`it-IT`/`sv`/`nb-NO`/`tr`），每项 `data-testid="settings-language-<code>"`。
 - 选中后只写 `setSettings({ language })`，界面语言由既有的 `useI18nEffect()` 监听 settings.language 自动 `i18n.changeLanguage()`，无需额外同步；桌面端 `设置 → 外观` 里的下拉仍然保留。
 - 真机验证：设置首页顶部出现「语言 简体中文」→ 点开「选择语言」列出全部语言（当前项打勾）→ 选 English，整个设置页立即变英文且行尾显示「English」→ 再切回简体中文，恢复原状。
+## 13. MCP 抓取修复、本地 `fetch_url` 工具与 Kimi Code 提供方
+
+### 13.1 内置 Fetch MCP 的两个问题
+1. **协议**：`https://mcp.jina.ai` 要求请求头同时带 `Accept: application/json` 与 `text/event-stream`，只带 `application/json` 会得到 `406 Not Acceptable`。`packages/chatbox-core/src/mcp/platform.ts` 的 `createMCPFetch` 现在会自动补全 `text/event-stream`，并有 6 条单测覆盖。
+2. **网络**：部分网络到 `mcp.jina.ai` 的 DNS 被污染（解析到 `31.13.95.38`，TCP 443 超时），而 `mcp.context7.com` 正常。因此 Fetch 在受限网络下会停在 `idle`。
+
+### 13.2 新增本地工具 `fetch_url`（工作模式）
+`src/renderer/packages/mobile-work-mode/fetch-tool.ts`：
+
+- `createFetchUrlTool({ fetchImpl?, maxChars? })` 注册 `fetch_url({ url, max_chars? })`，走 `nativeFetch`（CapacitorHttp，绕过 WebView CORS），30s 超时 / 4 MB 上限 / 默认 20 000 字符截断。
+- HTML 用 `htmlToReadableText()` 转纯文本（去掉 `head`/`title`/`script`/`style`/注释，块级标签转换行，解码常见实体），二进制（图片/音视频/字体/zip/pdf/wasm/octet-stream）直接拒绝。
+- 返回 `{ url, status, content_type, title, text, truncated }`；在 `mobile-work-mode/runtime.ts` 里与 `web.tools` 一起并入 `createTools(...)`。
+- 用途：不依赖搜索提供方/付费 MCP 的网页读取；用户站点 `https://cf.a0x7fff.site` 真机验证返回 `status 200`、标题 `My Server Dashboard` 与真实导航内容。
+
+### 13.3 Kimi Code（`sk-kimi-`）与 Kimi 搜索
+- `sk-kimi-` 前缀的 key 属于 **Kimi Code 订阅**，只认 `https://api.kimi.com/coding/v1`；Moonshot 开放平台域名会 401。新增系统提供方 **Kimi Code**（`src/shared/providers/definitions/kimi-code.ts`，模型 `kimi-for-coding` / `kimi-for-coding-highspeed` / `k3.1-pro` / `k3.1-pro-highspeed` / `k3` / `k3-256k`，并加入 `FEATURED_PROVIDER_IDS` 与图标别名）。
+- Kimi Code **没有** `/v1/tools/search`（404），所以联网搜索的 Kimi 提供方只对开放平台 key 有效；`searchNativeKimi` 对 `sk-kimi-` 前缀给出明确报错，引导改用 `platform.moonshot.cn` 的 key。
+- 实测：`/coding/v1/models`、`/coding/v1/me` 均 200；chat 请求在**额度用尽**时返回 429 `exceeded_current_quota_error`（配额按自然月重置）。
+- **Android 上的额外一步**：Kimi Code 网关不回 CORS 头，WebView 直连会被拦。新添加的提供方默认 `useProxy: true`（走原生 HTTP 通道），设置页里对应「改善网络兼容性」开关；该开关在手机端也对该提供方可见（`src/renderer/routes/settings/provider/-networkCompatibility.ts`）。老的 Kimi Code 条目需要手动打开一次。
+- **额度**：Kimi Code 套餐按自然月计费，额度用完时接口返回 429 `exceeded_current_quota_error`（附升级链接），这是账号额度而非客户端问题。

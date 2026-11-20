@@ -276,6 +276,34 @@ import httpx
   providers that cannot read HEIC never see one.
 - `view_image` and `read_file` also accept `.heic`/`.heif` paths inside a work-mode workspace.
 
+### 12. MCP fetch repair and the local `fetch_url` tool
+
+- `packages/chatbox-core/src/mcp/platform.ts` — `createMCPFetch` now always adds
+  `text/event-stream` to the outgoing `Accept` header. `https://mcp.jina.ai` answers
+  `406 Not Acceptable` unless both `application/json` and `text/event-stream` are accepted.
+- New built-in tool **`fetch_url`** (`src/renderer/packages/mobile-work-mode/fetch-tool.ts`):
+  reads one URL through Capacitor's native HTTP stack (no CORS), reduces HTML to title + readable
+  text, rejects binary payloads, 30 s timeout, 4 MB / 20 000 character caps. Registered for
+  work-mode sessions next to the web tools, so a page can be read without any search provider or
+  paid MCP proxy.
+
+### 13. Kimi Code provider (`sk-kimi-` keys)
+
+- Keys issued by the Kimi Code console start with `sk-kimi-` and only authenticate against
+  `https://api.kimi.com/coding/v1`; the Moonshot Open Platform hosts return `401`.
+- New system provider **Kimi Code** (`src/shared/providers/definitions/kimi-code.ts`) with models
+  `kimi-for-coding`, `kimi-for-coding-highspeed`, `k3.1-pro`, `k3.1-pro-highspeed`, `k3`, `k3-256k`.
+  It reuses the OpenAI-compatible client, so tools / streaming / reasoning work as usual.
+- Kimi Code has **no** `/v1/tools/search` endpoint (404), therefore the Kimi *search* provider keeps
+  requiring a Moonshot Open Platform key; `searchNativeKimi` reports that explicitly when it sees
+  an `sk-kimi-` key.
+- The Kimi Code gateway sends no CORS headers, so inside the Android WebView the browser cannot call
+  it directly. New provider settings default to `useProxy: true` (native HTTP bridge, i.e. the
+  "Improve Network Compatibility" switch) and that switch is now also exposed on mobile for this
+  provider (`src/renderer/routes/settings/provider/-networkCompatibility.ts`). Turn it on for an
+  existing Kimi Code entry.
+- Quota note: a key can still fail with HTTP 429 `exceeded_current_quota_error` when the Kimi Code
+  plan's monthly limit is used up; that is an account limit, not a client bug.
 ## Privacy / secrets
 
 - **No API keys, tokens, cookies or credentials are stored in this repository.** The keys live in

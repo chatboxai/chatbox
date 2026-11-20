@@ -18,6 +18,7 @@ export const aiProviderNameHash: Record<ModelProviderEnum, string> = {
   [ModelProviderEnum.MiniMaxCN]: 'MiniMax CN API',
   [ModelProviderEnum.Moonshot]: 'Moonshot AI API',
   [ModelProviderEnum.MoonshotCN]: 'Moonshot CN API',
+  [ModelProviderEnum.KimiCode]: 'Kimi Code API',
   [ModelProviderEnum.Ollama]: 'Ollama API',
   [ModelProviderEnum.Groq]: 'Groq API',
   [ModelProviderEnum.DeepSeek]: 'DeepSeek API',

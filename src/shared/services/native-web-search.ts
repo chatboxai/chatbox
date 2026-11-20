@@ -650,6 +650,10 @@ async function searchNativeKimi(
   if (!normalizedQuery) throw new Error('Kimi search query is empty')
   const apiKey = options.apiKey?.trim()
   if (!apiKey) throw new Error('Kimi API key is required')
+  if (apiKey.startsWith('sk-kimi-'))
+    throw new Error(
+      'Kimi Code subscription keys (sk-kimi-…) cannot use the web search API. Add a Moonshot Open Platform key from platform.moonshot.cn instead.'
+    )
   const host = (options.apiHost?.trim() || KIMI_INTERNATIONAL_HOST).replace(/\/+$/, '')
   const response = await (options.fetchFn ?? fetch)(`${host}/v1/tools/search`, {
     method: 'POST',

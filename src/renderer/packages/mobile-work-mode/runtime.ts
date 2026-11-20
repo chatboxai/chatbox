@@ -21,6 +21,7 @@ import platform from '@/platform'
 import * as settingActions from '@/stores/settingActions'
 import { settingsStore } from '@/stores/settingsStore'
 import { CapacitorWorkspace } from './CapacitorWorkspace'
+import { createFetchUrlTool } from './fetch-tool'
 import { createCapacitorSystemToolGroups } from './capacitor-system-tools'
 import { capacitorDocumentParser } from './document-parser'
 import { capacitorExecution } from './execution-service'
@@ -98,6 +99,7 @@ export async function prepareCapacitorWorkMode(
   })
   const web = buildMobileWebTools(request.model, request.webBrowsing)
   const images = capacitorImageTools(request.model, request.session.id, request.signal)
+  const fetchTools = createFetchUrlTool()
   const { tools, active } = await capacitorWorkMode.createTools(
     {
       sessionId: request.session.id,
@@ -106,7 +108,7 @@ export async function prepareCapacitorWorkMode(
       ...workModelDisclosure(request.settings, request.globalSettings),
       signal: request.signal,
     },
-    { ...web.tools, ...images?.tools, ...memory.tools, ...mcp.tools }
+    { ...web.tools, ...fetchTools, ...images?.tools, ...memory.tools, ...mcp.tools }
   )
   const prepared = await new BasicGenerationPreparation<ModelDependencies>({
     attachmentPolicy: { workspacePath: workspaceInputPath },

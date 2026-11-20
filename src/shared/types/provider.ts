@@ -16,6 +16,7 @@ export enum ModelProviderEnum {
   MiniMaxCN = 'minimax-cn',
   Moonshot = 'moonshot',
   MoonshotCN = 'moonshot-cn',
+  KimiCode = 'kimi-code',
   Ollama = 'ollama',
   Groq = 'groq',
   DeepSeek = 'deepseek',

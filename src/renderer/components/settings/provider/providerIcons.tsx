@@ -11,6 +11,7 @@ export const FEATURED_PROVIDER_IDS: string[] = [
   ModelProviderEnum.DeepSeek,
   ModelProviderEnum.Moonshot,
   ModelProviderEnum.MoonshotCN,
+  ModelProviderEnum.KimiCode,
   ModelProviderEnum.XiaomiMiMo,
   ModelProviderEnum.MiniMax,
   ModelProviderEnum.GLM,

@@ -53,6 +53,16 @@ vi.mock('./deepseek', () => {
   }
 })
 
+vi.mock('./firecrawl', () => {
+  return {
+    FirecrawlSearch: class {
+      search = vi.fn().mockResolvedValue({
+        items: [{ title: 'Firecrawl Result', snippet: 'test', link: 'https://example.com' }],
+      })
+    },
+  }
+})
+
 vi.mock('./searxng', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./searxng')>()
   return {
@@ -197,6 +207,25 @@ describe('webSearchExecutor', () => {
 
     await expect(webSearchExecutor({ query: 'missing deepseek key' }, {})).rejects.toMatchObject({
       code: 20048,
+    })
+  })
+
+  it('searches with Firecrawl when an API key is set', async () => {
+    mockGetExtensionSettings.mockReturnValue({
+      webSearch: { provider: 'firecrawl', firecrawlApiKey: 'fc-key' },
+    } as ReturnType<typeof getExtensionSettings>)
+
+    const result = await webSearchExecutor({ query: 'firecrawl query' }, {})
+    expect(result.searchResults[0].title).toBe('Firecrawl Result')
+  })
+
+  it('rejects Firecrawl without an API key', async () => {
+    mockGetExtensionSettings.mockReturnValue({
+      webSearch: { provider: 'firecrawl', firecrawlApiKey: '' },
+    } as ReturnType<typeof getExtensionSettings>)
+
+    await expect(webSearchExecutor({ query: 'missing firecrawl key' }, {})).rejects.toMatchObject({
+      code: 20053,
     })
   })
 

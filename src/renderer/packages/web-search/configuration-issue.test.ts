@@ -24,6 +24,8 @@ describe('getWebSearchConfigurationIssue', () => {
     expect(getWebSearchConfigurationIssue(readiness({ provider: 'searxng', searxngBaseUrl: '  ' }))).toBe(
       'searxng-instance'
     )
+    expect(getWebSearchConfigurationIssue(readiness({ provider: 'firecrawl' }))).toBe('firecrawl-api-key')
+    expect(getWebSearchConfigurationIssue(readiness({ provider: 'firecrawl', firecrawlApiKey: 'fc-key' }))).toBeNull()
     expect(getWebSearchConfigurationIssue(readiness({ provider: 'tavily', tavilyApiKey: 'tavily-key' }))).toBeNull()
   })
 

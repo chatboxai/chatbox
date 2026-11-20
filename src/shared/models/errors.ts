@@ -391,6 +391,12 @@ export class ChatboxAIAPIError extends BaseError {
       i18nKey:
         'You have selected DeepSeek as the search provider, but no DeepSeek API key is set up yet. Please <OpenDeepSeekProviderSettingButton>add it in the DeepSeek model provider settings</OpenDeepSeekProviderSettingButton>, or choose a different <OpenExtensionSettingButton>search provider</OpenExtensionSettingButton>.',
     },
+    firecrawl_api_key_required: {
+      name: 'firecrawl_api_key_required',
+      code: 20053,
+      i18nKey:
+        'You have selected Firecrawl as the search provider, but an API key has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your API key, or choose a different search provider.',
+    },
     parse_link_failed: {
       name: 'parse_link_failed',
       code: 20037,

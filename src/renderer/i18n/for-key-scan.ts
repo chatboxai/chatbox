@@ -127,6 +127,9 @@ function _errorI18nKeys(t: (key: string) => string) {
   t(
     'You have selected DeepSeek as the search provider, but no DeepSeek API key is set up yet. Please <OpenDeepSeekProviderSettingButton>add it in the DeepSeek model provider settings</OpenDeepSeekProviderSettingButton>, or choose a different <OpenExtensionSettingButton>search provider</OpenExtensionSettingButton>.'
   )
+  t(
+    'You have selected Firecrawl as the search provider, but an API key has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your API key, or choose a different search provider.'
+  )
   t('Failed to read webpage content. Please try again later or use a different URL.')
   t(
     'The current search provider does not support reading webpages. Please <OpenExtensionSettingButton>choose a different search provider</OpenExtensionSettingButton> that supports this capability.'

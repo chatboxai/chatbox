@@ -12,6 +12,7 @@ import { BingNewsSearch } from './bing-news'
 import { BochaSearch } from './bocha'
 import { ChatboxSearch } from './chatbox-search'
 import { DeepSeekSearch } from './deepseek'
+import { FirecrawlSearch } from './firecrawl'
 import { QueritSearch } from './querit'
 import { normalizeSearxngBaseUrl, SearxngSearch } from './searxng'
 import { TavilySearch } from './tavily'
@@ -83,6 +84,12 @@ function getSearchProviders() {
       selectedProviders.push(new SearxngSearch(searxngBaseUrl))
       break
     }
+    case 'firecrawl':
+      if (!settings.webSearch.firecrawlApiKey) {
+        throw ChatboxAIAPIError.fromCodeName('firecrawl_api_key_required', 'firecrawl_api_key_required')
+      }
+      selectedProviders.push(new FirecrawlSearch(settings.webSearch.firecrawlApiKey))
+      break
     default:
       throw new Error(`Unsupported search provider: ${provider}`)
   }
@@ -164,7 +171,7 @@ export const webSearchExecutor = async (
  * Single source of truth: which configured providers offer the parse_link tool.
  * Keep in sync with the provider classes' `supportsParseLink` flags.
  */
-export const PROVIDERS_WITH_PARSE_LINK: ReadonlySet<string> = new Set(['build-in', 'deepseek', 'tavily'])
+export const PROVIDERS_WITH_PARSE_LINK: ReadonlySet<string> = new Set(['build-in', 'deepseek', 'tavily', 'firecrawl'])
 
 /**
  * Returns the first configured search provider that supports parseLink.

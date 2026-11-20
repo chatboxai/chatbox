@@ -13,6 +13,7 @@ export type WebSearchConfigurationIssue =
   | 'bocha-api-key'
   | 'querit-api-key'
   | 'searxng-instance'
+  | 'firecrawl-api-key'
 
 export function getWebSearchConfigurationIssue(
   settings: WebSearchReadinessSettings,

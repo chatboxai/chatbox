@@ -206,6 +206,15 @@ Upstream files that were touched (nothing else): the ones listed above, plus
   runtime used by work mode and commits new files back to the session workspace.
   `stores/session/tools-builder.ts` registers it on mobile when agent mode is off, so plain
   conversations can compute too (numpy / pandas / matplotlib / scipy are preinstalled).
+### 11. Language switcher on the mobile settings home
+
+`src/renderer/components/settings/LanguageSettingsCard.tsx` adds a "Language" row to the top of
+the mobile settings home (it used to be reachable only from Settings → Appearance, or from the
+onboarding header). The row shows the current language and opens an `AdaptiveModal` sheet with
+every supported locale (`en`, `zh-Hans`, `zh-Hant`, `ja`, `ko`, `ru`, `de`, `fr`, `pt-PT`, `es`,
+`ar`, `it-IT`, `sv`, `nb-NO`, `tr`); picking one writes `settings.language`, and the existing
+`useI18nEffect()` hook re-renders the whole UI in the new language. The Appearance page keeps its
+own dropdown for desktop.
 ## Building the Android APK from this repository
 
 ```bash

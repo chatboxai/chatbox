@@ -18,6 +18,7 @@ import { Toaster } from 'sonner'
 import { ICON_SIZE, ICON_STROKE_WIDTH, IconButton } from '@/components/common/IconButton'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import Page from '@/components/layout/Page'
+import { LanguageSettingsCard } from '@/components/settings/LanguageSettingsCard'
 import { SettingsDensityProvider, settingsHighlightStore } from '@/components/settings/SettingsLayout'
 import {
   getSettingsNavGroups,
@@ -273,6 +274,7 @@ export function SettingsRoot() {
             </div>
           ) : (
             <>
+              <LanguageSettingsCard />
               {CHATBOX_AI_ENABLED && (
                 <Link to="/settings/chatbox-ai" className="block no-underline">
                   <Flex

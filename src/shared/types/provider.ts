@@ -33,6 +33,7 @@ export enum ModelProviderEnum {
   TencentHunyuan = 'tencent-hunyuan',
   XiaomiMiMo = 'xiaomi-mimo',
   LongCat = 'longcat',
+  CrowLLM = 'crowllm',
   ZhipuGLMCodingPlan = 'zhipu-glm-coding-plan',
   Custom = 'custom',
 }

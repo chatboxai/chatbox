@@ -278,6 +278,10 @@ function Markdown(props: {
                   rel="noreferrer"
                   onClick={(e) => {
                     e.stopPropagation()
+                    if (href?.startsWith('#')) {
+                      e.preventDefault()
+                      scrollToInPageTarget(e.currentTarget, href.slice(1))
+                    }
                   }}
                 >
                   {linkChildren}
@@ -313,6 +317,34 @@ function Markdown(props: {
 }
 
 export default memo(Markdown)
+
+/**
+ * GFM footnote references, their back-references and other `#id` links point inside the
+ * rendered reply. Opened like external links, they reach the OS as `.../index.html#id`,
+ * which nothing can open. Scroll to the target instead. Each reply numbers its footnotes
+ * from 1, so the same id can exist in several messages: use the match nearest the link.
+ */
+function scrollToInPageTarget(link: HTMLElement, fragment: string) {
+  const id = decodeFragment(fragment)
+  if (!id) return
+  const matches = Array.from(link.ownerDocument.querySelectorAll('[id]')).filter((element) => element.id === id)
+  for (let scope = link.parentElement; scope && matches.length > 0; scope = scope.parentElement) {
+    const container = scope
+    const target = matches.find((element) => container.contains(element))
+    if (target) {
+      target.scrollIntoView({ block: 'center' })
+      return
+    }
+  }
+}
+
+function decodeFragment(fragment: string): string {
+  try {
+    return decodeURIComponent(fragment)
+  } catch {
+    return fragment
+  }
+}
 
 function parseImageDimension(value: number | string | undefined): number | undefined {
   if (typeof value === 'number') return value > 0 ? value : undefined

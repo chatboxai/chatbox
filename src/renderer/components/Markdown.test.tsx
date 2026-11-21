@@ -2,7 +2,7 @@
 
 import { MantineProvider } from '@mantine/core'
 import type { ReactNode } from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@/test-utils'
 
 Object.defineProperty(window, 'matchMedia', {
@@ -321,6 +321,56 @@ describe('Markdown images', () => {
 
     expect(screen.getAllByTestId('image-viewer')).toHaveLength(1)
     expect(screen.getAllByTestId('image-viewer-item')).toHaveLength(2)
+  })
+})
+
+describe('Markdown in-page links', () => {
+  const originalScrollIntoView = Element.prototype.scrollIntoView
+  let scrolledTo: Element[] = []
+
+  beforeEach(() => {
+    scrolledTo = []
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolledTo.push(this)
+    }
+  })
+
+  afterEach(() => {
+    Element.prototype.scrollIntoView = originalScrollIntoView
+  })
+
+  const renderTwoReplies = () =>
+    render(
+      <>
+        <Markdown>{'First reply[^1]\n\n[^1]: first note'}</Markdown>
+        <Markdown>{'Second reply[^1]\n\n[^1]: second note'}</Markdown>
+      </>
+    )
+
+  it('scrolls to the footnote of the same reply instead of opening the link', () => {
+    renderTwoReplies()
+
+    const reference = screen.getAllByRole('link', { name: '1' })[1]
+    expect(reference.getAttribute('href')).toBe('#user-content-fn-1')
+    expect(fireEvent.click(reference)).toBe(false)
+    expect(scrolledTo).toHaveLength(1)
+    expect(scrolledTo[0].textContent).toContain('second note')
+  })
+
+  it('scrolls back to the footnote reference from its back-reference', () => {
+    renderTwoReplies()
+
+    const backReference = screen.getAllByRole('link', { name: 'Back to reference 1' })[1]
+    expect(fireEvent.click(backReference)).toBe(false)
+    expect(scrolledTo).toHaveLength(1)
+    expect(scrolledTo[0].closest('p')?.textContent).toContain('Second reply')
+  })
+
+  it('does nothing for a fragment link without a target', () => {
+    render(<Markdown>{'[jump](#missing-section)'}</Markdown>)
+
+    expect(fireEvent.click(screen.getByRole('link', { name: 'jump' }))).toBe(false)
+    expect(scrolledTo).toHaveLength(0)
   })
 })
 

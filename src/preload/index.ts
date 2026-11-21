@@ -2,6 +2,7 @@
 /* eslint no-unused-vars: off */
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { ElectronIPC } from 'src/shared/electron-types'
+import { SyncIpcChannels } from 'src/shared/sync'
 
 // export type Channels = 'ipc-example';
 
@@ -40,6 +41,22 @@ ipcRenderer.on('navigate-to', (_event, path: string) => {
 
 const electronHandler: ElectronIPC = {
   invoke: ipcRenderer.invoke,
+  sync: {
+    getBaiduAccount: () => ipcRenderer.invoke(SyncIpcChannels.BAIDU_STATUS),
+    signInToBaidu: (request) => ipcRenderer.invoke(SyncIpcChannels.BAIDU_LOGIN, request),
+    cancelBaiduLogin: () => ipcRenderer.invoke(SyncIpcChannels.BAIDU_CANCEL_LOGIN),
+    signOutOfBaidu: () => ipcRenderer.invoke(SyncIpcChannels.BAIDU_LOGOUT),
+    configureWebDav: (input) => ipcRenderer.invoke(SyncIpcChannels.WEBDAV_CONFIGURE, input),
+    readSavedSecret: (request) => ipcRenderer.invoke(SyncIpcChannels.READ_SAVED_SECRET, request),
+    getPreferences: () => ipcRenderer.invoke(SyncIpcChannels.PREFERENCES_GET),
+    setPreferences: (update) => ipcRenderer.invoke(SyncIpcChannels.PREFERENCES_SET, update),
+    download: (target) => ipcRenderer.invoke(SyncIpcChannels.CLOUD_DOWNLOAD, target),
+    upload: (request) => ipcRenderer.invoke(SyncIpcChannels.CLOUD_UPLOAD, request),
+    recordCompletion: (result) => ipcRenderer.invoke(SyncIpcChannels.SYNC_RESULT, result),
+    setWindowCloseReady: (ready) => ipcRenderer.invoke(SyncIpcChannels.WINDOW_CLOSE_READY, ready),
+    onWindowCloseRequested: createListener(SyncIpcChannels.WINDOW_CLOSE_REQUESTED),
+    completeWindowClose: () => ipcRenderer.invoke(SyncIpcChannels.WINDOW_CLOSE_COMPLETE),
+  },
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   onSystemThemeChange: (callback: () => void) => {
     ipcRenderer.on('system-theme-updated', callback)

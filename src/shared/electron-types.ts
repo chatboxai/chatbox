@@ -1,6 +1,8 @@
 import type { BuiltInBrowserTabs } from './built-in-browser'
+import type { DesktopSyncApi } from './sync'
 
 export interface ElectronIPC {
+  sync?: DesktopSyncApi
   invoke: (channel: string, ...args: any[]) => Promise<any>
   getPathForFile: (file: File) => string
   onSystemThemeChange: (callback: () => void) => () => void

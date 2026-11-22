@@ -22,7 +22,8 @@ const message = (id: number, parent_id: number | null, role: 'USER' | 'ASSISTANT
 })
 
 describe.each(drivers)('imported DeepSeek branch reads on %s', (driver) => {
-  it.each([false, true])('preserves imported messages through branch navigation (queued reads: %s)', async (queued) => {
+  const queuedModes = driver === 'sqlite' ? [false, true] : [false]
+  it.each(queuedModes)('preserves imported messages through branch navigation (queued reads: %s)', async (queued) => {
     const h = await setupRows(driver)
     cleanups.push(h.dispose)
     const converted = await convertDeepSeekSession(
@@ -59,8 +60,9 @@ describe.each(drivers)('imported DeepSeek branch reads on %s', (driver) => {
     await writer.appendRows(converted.rows.map((message) => ({ kind: 'message', message })))
     await writer.prepare()
     await writer.publish()
-    const database = Reflect.get(h.rows, 'database') as SessionRowSqlDatabase | undefined
-    if (queued && database) {
+    if (queued) {
+      const database = Reflect.get(h.rows, 'database') as SessionRowSqlDatabase | undefined
+      if (!database) throw new Error('Queued reads require a SQLite database')
       const query = database.query.bind(database)
       vi.spyOn(database, 'query').mockImplementation(async <T>(sql: string, params?: SessionRowSqlBindValue[]) => {
         const result = await query<T>(sql, params)
@@ -92,9 +94,8 @@ describe.each(drivers)('imported DeepSeek branch reads on %s', (driver) => {
         pivotId: `s:${step.pivot}`,
         target: step.target,
       })
-      if (queued && step.pivot === 'root' && step.target === 'next') {
-        // The previous branch can remain mounted while the replacement is read.
-        // A click on its nested fork must not publish an off-path navigation.
+      if (step.pivot === 'root' && step.target === 'next') {
+        // Simulate a stale click on the previous branch's nested fork after switching the root fork.
         const revision = await h.rows.getRevision('s')
         const stale = await h.service.executeStructureCommand('s', {
           action: 'fork-switch',

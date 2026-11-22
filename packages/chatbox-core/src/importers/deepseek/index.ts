@@ -2,6 +2,7 @@ import { createSessionMetaRecord } from '../../application/session/session-metad
 import type { BackupHostOptions } from '../../backup-host'
 import type { BackupCodec, BackupWorkspace } from '../../backup-v3'
 import { type ByteSource, readFileBytes, readZipFileEntries } from '../../io'
+import type { SessionStoredRow } from '../../ports/session-row-transfer'
 import { isAbortError, throwIfAborted } from '../../utils/abort'
 import { createTaskYielder } from '../../utils/task-yield'
 import { convertDeepSeekSession, type SourceFile, sourceSession } from './convert'
@@ -65,18 +66,17 @@ export async function inspectDeepSeekArchive(
   await readZipFileEntries(
     source,
     (entry) => {
-      if (entry.path === 'manifest.json')
-        version = (JSON.parse(decode(entry.data, codec)) as { export_format_version?: unknown }).export_format_version
-      if (/^chat_sessions\/[^/]+\.json$/.test(entry.path)) count++
+      version = (JSON.parse(decode(entry.data, codec)) as { export_format_version?: unknown }).export_format_version
     },
     {
       bounded: true,
       signal,
-      filter: (path) => path === 'manifest.json' || /^chat_sessions\/[^/]+\.json$/.test(path),
-      streamEntry: (path) => path !== 'manifest.json',
-      onStreamEntry: async (entry) => {
-        count++
-        for await (const _ of entry.data) throwIfAborted(signal)
+      // In bounded mode the reader validates each entry's directory and local
+      // headers before calling the filter. Preview only needs the path count;
+      // extract() still checks every imported payload's size and CRC.
+      filter: (path) => {
+        if (/^chat_sessions\/[^/]+\.json$/.test(path)) count++
+        return path === 'manifest.json'
       },
     }
   )
@@ -248,11 +248,17 @@ export async function importDeepSeekArchive(options: {
         })
         title = converted.record.name || entry.path
         writer = await host.rows.stageImportRows(converted.record, host.jobId)
-        await writer.appendThread(converted.thread)
-        for (let offset = 0; offset < converted.rows.length; offset += 128) {
+        const batchSize = 128
+        // Share the first bounded staging call without changing prepare/publish.
+        const firstBatch: SessionStoredRow[] = [{ kind: 'thread', thread: converted.thread }]
+        for (const message of converted.rows.slice(0, batchSize - 1)) firstBatch.push({ kind: 'message', message })
+        throwIfAborted(signal)
+        await writer.appendRows(firstBatch)
+        await yieldTask()
+        for (let offset = batchSize - 1; offset < converted.rows.length; offset += batchSize) {
           throwIfAborted(signal)
           await writer.appendRows(
-            converted.rows.slice(offset, offset + 128).map((message) => ({ kind: 'message', message }))
+            converted.rows.slice(offset, offset + batchSize).map((message) => ({ kind: 'message', message }))
           )
           await yieldTask()
         }

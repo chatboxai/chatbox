@@ -1505,6 +1505,8 @@
   "Shared by chats that don't use Copilot Memory.": "مشتركة بين الدردشات التي لا تستخدم ذاكرة Copilot.",
   "No memories yet. Chats with this copilot save durable facts here.": "لا توجد ذكريات بعد. تحفظ الدردشات مع هذا الـ Copilot الحقائق المفيدة على المدى الطويل هنا.",
   "Save facts from conversations and recall them in new chats. Works in both Chat and Work Mode.": "يحفظ الحقائق من المحادثات ويستدعيها في الدردشات الجديدة. يعمل في وضع الدردشة ووضع العمل.",
+  "Conversation History Search": "البحث في سجل المحادثة",
+  "Let the model search older messages in this conversation and receive matching excerpts.": "يتيح للنموذج البحث في الرسائل السابقة في هذه المحادثة وتلقي المقتطفات المطابقة.",
   "Import memories": "استيراد الذكريات",
   "Import memory files from Claude, ChatGPT, Codex, or other tools. Supports Markdown, text, and JSON; chat history is not imported automatically.": "استورد ملفات الذاكرة من Claude أو ChatGPT أو Codex أو أدوات أخرى. يدعم Markdown والنص وJSON؛ لا يتم استيراد سجل الدردشة تلقائيًا.",
   "Chat history exports cannot be converted to memories automatically.": "لا يمكن تحويل صادرات سجل الدردشة إلى ذكريات تلقائيًا.",

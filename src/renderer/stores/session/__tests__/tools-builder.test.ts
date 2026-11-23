@@ -386,6 +386,33 @@ describe('buildToolsForSession', () => {
     expect(withCopilotScope.instructions).toContain('## Persistent Memory')
   })
 
+  test('history search requires opt-in, a session and basic tool support in Chat mode', async () => {
+    const model = createMockModel({ isSupportToolUse: (scope) => scope === undefined })
+    const options: BuildToolsOptions = {
+      sessionId: 'current-session',
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'off',
+      globalSettings: { memoryEnabled: false, language: 'en' },
+    }
+
+    expect((await buildToolsForSession(model, options)).tools.memory_search).toBeUndefined()
+
+    options.globalSettings = { memoryEnabled: false, memorySearchEnabled: true, language: 'en' }
+    const enabled = await buildToolsForSession(model, options)
+    expect(enabled.tools.memory_search?.execute).toBeDefined()
+    expect(enabled.instructions).toContain('call memory_search')
+    expect(enabled.tools.save_memory).toBeUndefined()
+    expect(
+      (await buildToolsForSession(model, { ...options, sessionId: undefined })).tools.memory_search
+    ).toBeUndefined()
+    const unsupported = createMockModel({ isSupportToolUse: () => false })
+    expect((await buildToolsForSession(unsupported, options)).tools.memory_search).toBeUndefined()
+
+    options.globalSettings.memorySearchEnabled = false
+    expect((await buildToolsForSession(model, options)).tools.memory_search).toBeUndefined()
+  })
+
   function pausedMemoryMessage(
     contexts: Array<{ id: string; context?: MemoryToolContext; name?: 'save_memory' | 'delete_memory' }>
   ): Message {

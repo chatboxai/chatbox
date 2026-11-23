@@ -15,6 +15,7 @@ export function RouteComponent() {
   const smartSwitchingDefault = useUIStore((s) => s.agentModeSmartSwitchingDefault)
   const setAgentModeSmartSwitchingDefault = useUIStore((s) => s.setAgentModeSmartSwitchingDefault)
   const memoryEnabled = useSettingsStore((s) => s.memoryEnabled !== false)
+  const memorySearchEnabled = useSettingsStore((s) => s.memorySearchEnabled === true)
   const setSettings = useSettingsStore((s) => s.setSettings)
   // Memory is global and platform-independent; Smart Switching and Soul only mean
   // something where agent mode runs, so the page narrows to memory elsewhere.
@@ -43,6 +44,12 @@ export function RouteComponent() {
           )}
           checked={memoryEnabled}
           onChange={(checked) => setSettings({ memoryEnabled: checked })}
+        />
+        <SettingSwitchRow
+          label={t('Conversation History Search')}
+          description={t('Let the model search older messages in this conversation and receive matching excerpts.')}
+          checked={memorySearchEnabled}
+          onChange={(checked) => setSettings({ memorySearchEnabled: checked })}
         />
       </SettingsSection>
 

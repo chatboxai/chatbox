@@ -1509,6 +1509,8 @@
   "Shared by chats that don't use Copilot Memory.": "Shared by chats that don't use Copilot Memory.",
   "No memories yet. Chats with this copilot save durable facts here.": "No memories yet. Chats with this copilot save durable facts here.",
   "Save facts from conversations and recall them in new chats. Works in both Chat and Work Mode.": "Save facts from conversations and recall them in new chats. Works in both Chat and Work Mode.",
+  "Conversation History Search": "Conversation History Search",
+  "Let the model search older messages in this conversation and receive matching excerpts.": "Let the model search older messages in this conversation and receive matching excerpts.",
   "Import memories": "Import memories",
   "Import memory files from Claude, ChatGPT, Codex, or other tools. Supports Markdown, text, and JSON; chat history is not imported automatically.": "Import memory files from Claude, ChatGPT, Codex, or other tools. Supports Markdown, text, and JSON; chat history is not imported automatically.",
   "Chat history exports cannot be converted to memories automatically.": "Chat history exports cannot be converted to memories automatically.",

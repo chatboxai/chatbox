@@ -95,6 +95,17 @@ describe('Capacitor Work memory integration', () => {
     state.seed.mockReset()
   })
 
+  it('includes history search among active Work tools after opt-in', async () => {
+    const input = request()
+    expect((await prepare(input)).tools.memory_search).toBeUndefined()
+
+    input.globalSettings.memorySearchEnabled = true
+    const prepared = await prepare(input)
+    expect(prepared.tools.memory_search?.execute).toBeDefined()
+    expect(JSON.stringify(prepared.promptMessages)).toContain('call memory_search')
+    expect((await prepared.chatOptions.prepareStep({ messages: [] })).activeTools).toContain('memory_search')
+  })
+
   it('keeps Copilot memory isolated and frozen while exposing it with local Work tools', async () => {
     await memory().addMemory('Global secret preference')
     await memory().enableCopilotMemory({ id: 'tutor', name: 'Tutor' })

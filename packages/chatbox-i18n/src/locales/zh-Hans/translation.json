@@ -1509,6 +1509,8 @@
   "Shared by chats that don't use Copilot Memory.": "未使用搭档记忆的对话共享。",
   "No memories yet. Chats with this copilot save durable facts here.": "还没有记忆。与该搭档的对话会把长期有用的事实保存在这里。",
   "Save facts from conversations and recall them in new chats. Works in both Chat and Work Mode.": "从对话中保存事实,并在新对话中调用。在聊天模式和工作模式下均可用。",
+  "Conversation History Search": "聊天记录检索",
+  "Let the model search older messages in this conversation and receive matching excerpts.": "允许模型搜索当前会话中的早期消息，并读取匹配的片段。",
   "Import memories": "导入记忆",
   "Import memory files from Claude, ChatGPT, Codex, or other tools. Supports Markdown, text, and JSON; chat history is not imported automatically.": "从 Claude、ChatGPT、Codex 或其他工具导入记忆文件。支持 Markdown、文本和 JSON；不会自动导入聊天记录。",
   "Chat history exports cannot be converted to memories automatically.": "无法自动将聊天记录导出转换为记忆。",

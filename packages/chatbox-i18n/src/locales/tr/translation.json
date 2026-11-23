@@ -1505,6 +1505,8 @@
   "Shared by chats that don't use Copilot Memory.": "Copilot Belleği kullanmayan sohbetler arasında paylaşılır.",
   "No memories yet. Chats with this copilot save durable facts here.": "Henüz kayıtlı bilgi yok. Bu Copilot ile yaptığınız sohbetlerden hatırlanması gereken bilgiler buraya kaydedilir.",
   "Save facts from conversations and recall them in new chats. Works in both Chat and Work Mode.": "Konuşmalardan bilgileri kaydedin ve yeni sohbetlerde hatırlayın. Hem Sohbet hem Çalışma Modunda çalışır.",
+  "Conversation History Search": "Sohbet Geçmişinde Arama",
+  "Let the model search older messages in this conversation and receive matching excerpts.": "Modelin bu sohbetteki eski mesajları aramasına ve eşleşen bölümleri almasına izin verin.",
   "Import memories": "Bellek kayıtlarını içe aktar",
   "Import memory files from Claude, ChatGPT, Codex, or other tools. Supports Markdown, text, and JSON; chat history is not imported automatically.": "Claude, ChatGPT, Codex veya diğer araçlardan bellek dosyalarını içe aktarın. Markdown, metin ve JSON desteklenir. Sohbet geçmişi otomatik olarak içe aktarılmaz.",
   "Chat history exports cannot be converted to memories automatically.": "Dışa aktarılan sohbet geçmişi otomatik olarak bellek kayıtlarına dönüştürülemez.",

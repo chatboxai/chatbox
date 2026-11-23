@@ -5,7 +5,7 @@ import type { MessageContentParts, ToolUseScope } from '../../types'
  * This covers all known model ID variants across providers:
  *   - DeepSeek API: deepseek-chat, deepseek-reasoner
  *   - SiliconFlow:  deepseek-ai/DeepSeek-V3.2, deepseek-ai/DeepSeek-R1
- *   - VolcEngine:   deepseek-v3-250324, deepseek-r1-250528
+ *   - VolcEngine:   deepseek-v4-flash-ga-260731, deepseek-v3-250324, deepseek-r1-250528
  *   - OpenRouter:   deepseek/deepseek-r1:free, deepseek/deepseek-v3.2
  *   - Generic:      deepseek-v3, deepseek-v3.2, deepseek-r1
  *

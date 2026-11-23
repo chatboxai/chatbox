@@ -373,11 +373,15 @@ function usesModelApiStyleForReasoning(provider: ModelProvider | undefined): boo
 }
 
 function isOpenAICompatibleApiStyle(provider: ModelProvider | undefined, model: ProviderModelInfo): boolean {
-  // ChatboxAI, the OpenCode gateways, and custom providers can all expose OpenAI-compatible
-  // endpoints; treat a missing/`openai` API style as OpenAI-compatible so model-id
-  // based detection (e.g. DeepSeek) works the same way for all three.
+  // ChatboxAI, the OpenCode gateways, custom providers, and VolcEngine can all expose
+  // OpenAI-compatible endpoints. Treat a missing/`openai` API style as OpenAI-compatible
+  // so model-id based detection (e.g. DeepSeek) works the same way. Ark's DeepSeek models
+  // accept the same `thinking` object as the official OpenAI Chat API.
   return (
-    (provider === ModelProviderEnum.ChatboxAI || isOpenCodeGatewayProvider(provider) || isCustomProviderId(provider)) &&
+    (provider === ModelProviderEnum.ChatboxAI ||
+      provider === ModelProviderEnum.VolcEngine ||
+      isOpenCodeGatewayProvider(provider) ||
+      isCustomProviderId(provider)) &&
     (!model.apiStyle || model.apiStyle === 'openai')
   )
 }
@@ -390,6 +394,7 @@ function usesOpenAICompatibleReasoningHistory(provider: ModelProvider | undefine
   return (
     !model.apiStyle &&
     (provider === ModelProviderEnum.ChatboxAI ||
+      provider === ModelProviderEnum.VolcEngine ||
       provider === ModelProviderEnum.Custom ||
       isOpenCodeGatewayProvider(provider) ||
       isCustomProviderId(provider))

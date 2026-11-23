@@ -611,6 +611,7 @@
   "HTTP error: Forbidden (403). You do not have permission to access your configured {{apiProvider}} API. Please check your API key permissions or account status.": "HTTP 錯誤：無權限存取（403）。您自行設定的「{{apiProvider}}」API，請檢查 API 金鑰權限或帳戶狀態。",
   "HTTP error: Gateway Timeout (504). The server did not receive a timely response from the upstream service. This is usually a temporary issue, please try again later.": "HTTP 錯誤：網關逾時 (504)。伺服器未及時從上游服務收到回應。這通常是暫時性問題，請稍後再試。",
   "HTTP error: Internal Server Error (500). The server encountered an unexpected error. Please try again later.": "HTTP 錯誤：內部伺服器錯誤 (500)。伺服器遇到意外錯誤。請稍後再試。",
+  "HTTP error: Payment Required (402). The balance or quota of your configured {{apiProvider}} API is insufficient for this request. Please add funds or check your plan, then try again.": "HTTP 錯誤：需要付款 (402)。您設定的 {{apiProvider}} API 餘額或額度不足以完成此請求。請儲值或檢查您的方案後再試一次。",
   "HTTP error: Request Timeout (408). The server took too long to respond. Please try again later.": "HTTP 錯誤：請求逾時 (408)。伺服器回應時間過長。請稍後再試。",
   "HTTP error: Service Unavailable (503). The server is temporarily unavailable, possibly due to maintenance or overload. Please try again later.": "HTTP 錯誤：服務不可用 (503)。伺服器暫時無法使用，可能是因為維護或超載。請稍後再試。",
   "HTTP error: Too Many Requests (429). The service is currently experiencing high demand or resource limitations. Please wait a moment and try again.": "HTTP 錯誤：請求過多 (429)。服務目前需求量大或有資源限制。請稍候片刻再試。",

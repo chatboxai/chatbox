@@ -95,6 +95,7 @@ const BUILTIN_API_HOST_PROVIDERS = new Set<string>([
   ModelProviderEnum.XiaomiMiMo,
   ModelProviderEnum.LongCat,
   ModelProviderEnum.ZhipuGLMCodingPlan,
+  ModelProviderEnum.DotHoosh,
 ])
 
 const OAUTH_ONLY_PROVIDERS = new Set<string>([ModelProviderEnum.QwenPortal])
@@ -300,6 +301,7 @@ function ProviderSettings({ providerId }: { providerId: string }) {
   )
   const isOAuthOnlyProvider = baseInfo?.id ? OAUTH_ONLY_PROVIDERS.has(baseInfo.id) : false
   const providerWebsite = baseInfo?.urls?.website || ''
+  const providerApiKeyUrl = baseInfo?.urls?.apiKey || ''
 
   const handleApiKeyChange = (e: ChangeEvent<HTMLInputElement>) => {
     setProviderSettings({
@@ -706,7 +708,22 @@ function ProviderSettings({ providerId }: { providerId: string }) {
             <SettingRow
               id="provider-api-key"
               label={t('API Key')}
-              description={isOAuthActive ? t('Using OAuth') : undefined}
+              description={
+                isOAuthActive ? (
+                  t('Using OAuth')
+                ) : providerApiKeyUrl ? (
+                  <Anchor
+                    component="button"
+                    type="button"
+                    c="chatbox-brand"
+                    fz={12}
+                    lh="18px"
+                    onClick={() => platform.openLink(providerApiKeyUrl)}
+                  >
+                    {t('Get API Key')}
+                  </Anchor>
+                ) : undefined
+              }
               disabled={isOAuthActive}
               controlLayout="block"
               control={(fieldId) => (

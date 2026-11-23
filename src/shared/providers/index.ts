@@ -16,6 +16,7 @@ import {
   getProviderDefinition,
   getProviderDisplayName,
   getSystemProviders,
+  getUnshadowedCustomProviders,
   hasProvider,
   isProviderAvailableOnPlatform,
 } from './registry'
@@ -31,6 +32,7 @@ export {
   getProviderDefinition,
   getProviderDisplayName,
   getSystemProviders,
+  getUnshadowedCustomProviders,
   hasProvider,
   isProviderAvailableOnPlatform,
 }

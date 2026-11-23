@@ -7,6 +7,7 @@ import {
   getProviderDefinition,
   getProviderDisplayName,
   getSystemProviders,
+  getUnshadowedCustomProviders,
   hasProvider,
 } from './registry'
 import type { ProviderDefinition } from './types'
@@ -106,6 +107,17 @@ describe('Provider Registry', () => {
       expect(getAllProviders()).toHaveLength(2)
       clearProviderRegistry()
       expect(getAllProviders()).toHaveLength(0)
+    })
+  })
+
+  describe('getUnshadowedCustomProviders', () => {
+    it('drops a custom provider whose id is registered as built-in', () => {
+      defineProvider(testProvider)
+      const customProviders = [{ id: 'test-provider' }, { id: 'custom-provider-1' }]
+
+      expect(getUnshadowedCustomProviders(customProviders)).toEqual([{ id: 'custom-provider-1' }])
+      expect(getUnshadowedCustomProviders(undefined)).toEqual([])
+      expect(getUnshadowedCustomProviders([])).toEqual([])
     })
   })
 

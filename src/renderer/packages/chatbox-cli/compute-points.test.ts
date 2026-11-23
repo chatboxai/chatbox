@@ -21,6 +21,12 @@ describe('compute-point quota formatting', () => {
     expect(formatComputePointsRemainingRatio(0.894, 'zh-Hans')).toBe('89.4%')
   })
 
+  it('preserves the five percent boundary when deriving the remaining ratio', () => {
+    expect(
+      getComputePointsRemainingRatio({ ...quota, unified_token_limit: 30_000_000, unified_token_usage: 28_500_000 })
+    ).toBe(0.05)
+  })
+
   it('clamps fallback ratios to the valid percentage range', () => {
     expect(
       getComputePointsRemainingPercentage({

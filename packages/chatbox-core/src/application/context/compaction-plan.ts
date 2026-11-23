@@ -23,9 +23,25 @@ export async function createCompactionPlan(
     if (!target?.generating || target.role !== 'assistant' || firstTool?.toolCallId !== request.retainedToolCallId)
       return { status: 'skipped', reason: 'stale_path' }
   }
+  if (request.kind === 'targeted') {
+    const target = source.targetMessage
+    // A summary already standing right after the target covers the same prefix.
+    if (
+      !target ||
+      target.id !== request.targetMessageId ||
+      target.generating ||
+      target.isSummary ||
+      target.role === 'system' ||
+      source.compactionPoints.some((point) => point.boundaryMessageId === target.id)
+    )
+      return { status: 'skipped', reason: 'stale_path' }
+  }
   const context = await selectContext(source, request.kind === 'automatic' ? request.pendingMessage : undefined)
   const boundary = findLastCompactionBoundaryMessage(context)
   if (!boundary) return { status: 'failed', failure: { code: 'no_messages', message: 'No messages to compact' } }
+  // The target must close the summarized window itself; a filtered target (a failed reply) has no compaction point.
+  if (request.kind === 'targeted' && boundary.id !== request.targetMessageId)
+    return { status: 'skipped', reason: 'stale_path' }
   const boundaryIndex = context.findIndex((message) => message.id === boundary.id)
   return {
     status: 'ready',
@@ -34,7 +50,7 @@ export async function createCompactionPlan(
       coverage:
         request.kind === 'generation'
           ? { ...request, boundaryMessageId: boundary.id }
-          : { kind: 'conversation', boundaryMessageId: boundary.id },
+          : { kind: request.kind === 'targeted' ? 'targeted' : 'conversation', boundaryMessageId: boundary.id },
       threadId: source.thread.threadId,
       pathMessageIds: source.pathMessageIds,
     },

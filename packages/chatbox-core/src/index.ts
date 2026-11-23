@@ -31,6 +31,12 @@ export {
   parseNativeChatboxAIDocument,
 } from '@shared/services/native-document-parser'
 export {
+  DEEPSEEK_OCR_MAX_FILE_SIZE,
+  getDeepSeekParserErrorCode,
+  isDeepSeekOcrFile,
+  recognizeDocumentWithDeepSeek,
+} from '@shared/services/deepseek-ocr'
+export {
   activateNativeLicense,
   deactivateNativeLicense,
   fetchNativeLicenseDetail,
@@ -45,12 +51,15 @@ export {
   reportNativeContent,
 } from '@shared/services/native-report'
 export {
+  getNativeWebSearchProviderLabel,
   hasNativeWebSearchConfiguration,
+  type NativeWebSearchCredentialSources,
   type NativeWebSearchOptions,
   type NativeWebSearchProvider,
   type NativeWebSearchResultItem,
   nativeWebSearchProviderOptions,
   normalizeNativeWebSearchSettings,
+  resolveNativeWebSearchApiKey,
   searchNativeWeb,
 } from '@shared/services/native-web-search'
 export type {

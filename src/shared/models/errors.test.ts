@@ -122,6 +122,15 @@ describe('ChatboxAIAPIError', () => {
     expect(error?.requestId).toBe('req-agent-reward')
   })
 
+  it.each(['deepseek_api_key_required', 'deepseek_parser_api_key_required'])(
+    '%s points to the DeepSeek model provider settings',
+    (name) => {
+      const { i18nKey } = ChatboxAIAPIError.codeNameMap[name]
+      expect(i18nKey).toContain('<OpenDeepSeekProviderSettingButton>')
+      expect(i18nKey).not.toMatch(/enter your API key/)
+    }
+  )
+
   it('fromCodeName returns null for unknown codename', () => {
     const error = ChatboxAIAPIError.fromCodeName('failed', 'not_a_real_codename')
 
@@ -139,6 +148,11 @@ describe('ChatboxAIAPIError', () => {
     [20039, 'free_token_quota_exhausted'],
     [20040, 'free_agent_mode_token_quota_exhausted'],
     [20036, 'searxng_base_url_required'],
+    [20048, 'deepseek_api_key_required'],
+    [20050, 'deepseek_parser_api_key_required'],
+    [20051, 'deepseek_insufficient_balance'],
+    [20052, 'deepseek_parser_file_too_large'],
+    [20049, 'image_points_insufficient'],
     [MESSAGE_ERROR_CODES.FILE_PREPROCESS_FAILED, 'file_preprocess_failed'],
     [MESSAGE_ERROR_CODES.FILE_STORAGE_QUOTA_EXCEEDED, 'file_storage_quota_exceeded'],
     [MESSAGE_ERROR_CODES.EMPTY_ATTACHMENT_CONTENT, 'empty_attachment_content'],

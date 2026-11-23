@@ -66,9 +66,61 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   client.clear()
+  vi.useRealTimers()
 })
 
 describe('SidebarLowQuotaReminder', () => {
+  describe('quota polling', () => {
+    beforeEach(() => vi.useFakeTimers())
+
+    it.each([50, 20, 10, 5.01])('polls every eight minutes with %s percent points remaining', async (remaining) => {
+      mocks.getLicenseDetailRealtime.mockResolvedValue({
+        data: { ...lowQuota, unified_token_usage: lowQuota.unified_token_limit * (1 - remaining / 100) },
+      })
+      mount()
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      expect(mocks.getLicenseDetailRealtime).toHaveBeenCalledTimes(1)
+
+      await act(() => vi.advanceTimersByTimeAsync(5 * 60_000))
+      expect(mocks.getLicenseDetailRealtime).toHaveBeenCalledTimes(1)
+      await act(() => vi.advanceTimersByTimeAsync(3 * 60_000))
+      expect(mocks.getLicenseDetailRealtime).toHaveBeenCalledTimes(2)
+    })
+
+    it.each([5, 4.99, 0])('polls every thirty seconds with %s percent points remaining', async (remaining) => {
+      mocks.getLicenseDetailRealtime.mockResolvedValue({
+        data: { ...lowQuota, unified_token_usage: lowQuota.unified_token_limit * (1 - remaining / 100) },
+      })
+      mount()
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      expect(mocks.getLicenseDetailRealtime).toHaveBeenCalledTimes(1)
+
+      await act(() => vi.advanceTimersByTimeAsync(29_999))
+      expect(mocks.getLicenseDetailRealtime).toHaveBeenCalledTimes(1)
+      await act(() => vi.advanceTimersByTimeAsync(1))
+      expect(mocks.getLicenseDetailRealtime).toHaveBeenCalledTimes(2)
+    })
+
+    it('adjusts polling when points run low and are replenished', async () => {
+      const replenishedQuota = { ...lowQuota, unified_token_usage: 24_000_000 }
+      mocks.getLicenseDetailRealtime
+        .mockResolvedValueOnce({ data: replenishedQuota })
+        .mockResolvedValueOnce({ data: lowQuota })
+        .mockResolvedValue({ data: replenishedQuota })
+      mount()
+      await act(() => vi.advanceTimersByTimeAsync(0))
+
+      await act(() => vi.advanceTimersByTimeAsync(8 * 60_000))
+      expect(mocks.getLicenseDetailRealtime).toHaveBeenCalledTimes(2)
+      await act(() => vi.advanceTimersByTimeAsync(30_000))
+      expect(mocks.getLicenseDetailRealtime).toHaveBeenCalledTimes(3)
+      await act(() => vi.advanceTimersByTimeAsync(8 * 60_000 - 1))
+      expect(mocks.getLicenseDetailRealtime).toHaveBeenCalledTimes(3)
+      await act(() => vi.advanceTimersByTimeAsync(1))
+      expect(mocks.getLicenseDetailRealtime).toHaveBeenCalledTimes(4)
+    })
+  })
+
   it.each([30_000_000, 30_000_001])('shows used-up points when usage is %i', async (usage) => {
     mocks.getLicenseDetailRealtime.mockResolvedValue({ data: { ...lowQuota, unified_token_usage: usage } })
     mount()
@@ -113,13 +165,20 @@ describe('SidebarLowQuotaReminder', () => {
     expect(screen.queryByText('Points running low')).toBeNull()
   })
 
-  it('hides the reminder above the threshold and retains the 10% boundary', async () => {
-    mocks.getLicenseDetailRealtime.mockResolvedValue({ data: { ...lowQuota, unified_token_usage: 26_000_000 } })
+  it.each([10, 5.01])('hides the reminder with %s percent points remaining', async (remaining) => {
+    mocks.getLicenseDetailRealtime.mockResolvedValue({
+      data: { ...lowQuota, unified_token_usage: lowQuota.unified_token_limit * (1 - remaining / 100) },
+    })
     mount()
     await waitFor(() => expect(client.getQueryState(['sidebar-low-quota', 'active-key'])?.status).toBe('success'))
     expect(screen.queryByText('Points running low')).toBeNull()
-    mocks.getLicenseDetailRealtime.mockResolvedValue({ data: { ...lowQuota, unified_token_usage: 27_000_000 } })
-    act(() => client.getQueryCache().onFocus())
+  })
+
+  it.each([5, 4.99])('shows the reminder with %s percent points remaining', async (remaining) => {
+    mocks.getLicenseDetailRealtime.mockResolvedValue({
+      data: { ...lowQuota, unified_token_usage: lowQuota.unified_token_limit * (1 - remaining / 100) },
+    })
+    mount()
     expect(await screen.findByText('Points running low')).toBeTruthy()
   })
 

@@ -51,13 +51,18 @@ export function getOCRModel(
 export async function ocrImagesInMessages(
   messages: Message[],
   ocrModel: ModelInterface,
-  sessionId: string
+  sessionId: string,
+  persistResult?: (messageId: string, storageKey: string, text: string) => Promise<void>
 ): Promise<void> {
-  const imageParts: Array<{ storageKey: string; part: Message['contentParts'][number] & { type: 'image' } }> = []
+  const imageParts: Array<{
+    messageId: string
+    storageKey: string
+    part: Message['contentParts'][number] & { type: 'image' }
+  }> = []
   for (const msg of messages) {
     for (const part of msg.contentParts) {
       if (part.type === 'image' && !part.ocrResult) {
-        imageParts.push({ storageKey: part.storageKey, part })
+        imageParts.push({ messageId: msg.id, storageKey: part.storageKey, part })
       }
     }
   }
@@ -68,7 +73,7 @@ export async function ocrImagesInMessages(
 
   await pMap(
     imageParts,
-    async ({ storageKey, part }) => {
+    async ({ messageId, storageKey, part }) => {
       const imageData = await dependencies.storage.getImage(storageKey)
       if (!imageData) return
 
@@ -93,6 +98,7 @@ export async function ocrImagesInMessages(
         .join('')
 
       part.ocrResult = text
+      if (text) await persistResult?.(messageId, storageKey, text)
     },
     { concurrency: 3 }
   )

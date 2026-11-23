@@ -1,12 +1,13 @@
 import NiceModal, { useModal } from '@ebay/nice-modal-react'
 import { Button, Checkbox, Text } from '@mantine/core'
-import { useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AdaptiveModal } from '@/components/common/AdaptiveModal'
 
 export interface ConfirmModalProps {
+  signal?: AbortSignal
   title: string
-  message: string
+  message: ReactNode
   confirmText?: string
   cancelText?: string
   /** Runs inside the button click so browser APIs can retain the user gesture. */
@@ -25,7 +26,7 @@ export type ConfirmModalResult = boolean | { confirmed: true; dontShowAgain: boo
  * `{ confirmed: true, dontShowAgain }`. Use via `await NiceModal.show('confirm', props)`.
  */
 const ConfirmModal = NiceModal.create(
-  ({ title, message, confirmText, cancelText, danger, dontShowAgainText, onConfirm }: ConfirmModalProps) => {
+  ({ title, message, confirmText, cancelText, danger, dontShowAgainText, onConfirm, signal }: ConfirmModalProps) => {
     const modal = useModal()
     const { t } = useTranslation()
     const [dontShowAgain, setDontShowAgain] = useState(false)
@@ -35,6 +36,17 @@ const ConfirmModal = NiceModal.create(
         setDontShowAgain(false)
       }
     }, [modal.visible])
+
+    useEffect(() => {
+      if (!signal) return
+      const cancel = () => {
+        modal.resolve(false)
+        void modal.hide()
+      }
+      if (signal.aborted) cancel()
+      else signal.addEventListener('abort', cancel, { once: true })
+      return () => signal.removeEventListener('abort', cancel)
+    }, [signal, modal.resolve, modal.hide])
 
     const close = (confirmed: boolean) => {
       const result: ConfirmModalResult = confirmed && dontShowAgainText ? { confirmed: true, dontShowAgain } : confirmed

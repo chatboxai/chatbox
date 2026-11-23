@@ -1,4 +1,12 @@
 const changelog = `
+## v1.24.4 - 2026.11.12
+1. Improved conversation scrolling and history loading, including position retention when switching branches or regenerating replies
+2. Unified the frosted glass appearance of popups and panels over chat wallpapers
+3. Improved settings card styling in dark mode
+4. Fixed downloading large SVG diagrams on mobile and added error messages
+5. Fixed file tools being enabled in some cases when they were not needed
+
+
 ## v1.24.3 - 2026.11.10
 1. Improved message list flickering and scrolling during generation
 2. Improved chat wallpaper and input appearance, and custom dark theme colors

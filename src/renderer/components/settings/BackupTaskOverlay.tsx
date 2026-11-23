@@ -39,7 +39,13 @@ export function BackupTaskOverlay() {
       closeOnEscape={false}
       withCloseButton={false}
       status
-      title={state.operation === 'export' ? t('Export Data') : t('Import Backup')}
+      title={
+        state.operation === 'export'
+          ? t('Export Data')
+          : state.operation === 'deepseek'
+            ? t('Import from DeepSeek')
+            : t('Import Backup')
+      }
       footer={
         <Button variant="default" disabled={state.cancelling} onClick={() => rendererBackupService.cancel()}>
           {t('Cancel')}
@@ -48,14 +54,39 @@ export function BackupTaskOverlay() {
     >
       <Stack gap="md" align="center" aria-live="polite">
         <Loader size="lg" />
-        <Text size="sm">{state.cancelling ? t('Cancelling...') : phases[state.progress.phase]}</Text>
-        <Text size="sm" c="dimmed">
-          {t('{{messages}} messages · {{resources}} resources · {{bytes}} MB processed', {
-            messages: state.progress.messages,
-            resources: state.progress.resources,
-            bytes: (state.progress.bytes / 1024 / 1024).toFixed(1),
-          })}
+        <Text size="sm">
+          {state.cancelling
+            ? t('Cancelling...')
+            : state.download
+              ? t('Downloading archive...')
+              : state.deepSeek
+                ? t('Processing conversations...')
+                : phases[state.progress.phase]}
         </Text>
+        {state.download ? (
+          <Text size="sm">
+            {(state.download.received / 1024 / 1024).toFixed(1)} MB
+            {state.download.total ? ` / ${(state.download.total / 1024 / 1024).toFixed(1)} MB` : ''}
+          </Text>
+        ) : null}
+        {state.deepSeek ? (
+          <Text size="sm">
+            {t('Processed {{processed}} / {{total}} conversations. Imported {{imported}}.', {
+              processed: state.deepSeek.processed,
+              total: state.deepSeek.total,
+              imported: state.deepSeek.importedSessions,
+            })}
+          </Text>
+        ) : null}
+        {state.operation !== 'deepseek' ? (
+          <Text size="sm" c="dimmed">
+            {t('{{messages}} messages · {{resources}} resources · {{bytes}} MB processed', {
+              messages: state.progress.messages,
+              resources: state.progress.resources,
+              bytes: (state.progress.bytes / 1024 / 1024).toFixed(1),
+            })}
+          </Text>
+        ) : null}
       </Stack>
     </BackupDialog>
   )

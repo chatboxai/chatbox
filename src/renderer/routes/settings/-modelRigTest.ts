@@ -1,3 +1,4 @@
+import { resolveNativeWebSearchApiKey } from '@shared/services/native-web-search'
 import type { Settings } from '@shared/types'
 import { ModelProviderEnum } from '@shared/types'
 import type { PictureRef } from './-modelRigSettings'
@@ -124,6 +125,13 @@ async function testParserSlot(deps: ModelRigTestDeps): Promise<SlotTestResult> {
     }
     return ok(0)
   }
+  if (type === 'deepseek') {
+    // A real check would bill a DeepSeek OCR request, so only the shared key is verified.
+    if (!deps.settings.providers?.[ModelProviderEnum.DeepSeek]?.apiKey?.trim()) {
+      return fail('DeepSeek API key is missing', 'Add a DeepSeek API key in DeepSeek model provider settings.')
+    }
+    return ok(0)
+  }
   const token = deps.settings.extension?.documentParser?.mineru?.apiToken?.trim()
   if (!token) {
     return fail('MinerU API token is missing', 'Add a MinerU API token in Document Parser settings.')
@@ -144,6 +152,9 @@ async function testSearchSlot(deps: ModelRigTestDeps): Promise<SlotTestResult> {
   }
   if (provider === 'tavily' && !deps.settings.extension?.webSearch?.tavilyApiKey) {
     return fail('Tavily API key is missing', 'Add a Tavily API key in Web Search settings.')
+  }
+  if (provider === 'deepseek' && !resolveNativeWebSearchApiKey(deps.settings, provider).trim()) {
+    return fail('DeepSeek API key is missing', 'Add a DeepSeek API key in DeepSeek model provider settings.')
   }
   if (provider === 'bocha' && !deps.settings.extension?.webSearch?.bochaApiKey) {
     return fail('BoCha API key is missing', 'Add a BoCha API key in Web Search settings.')

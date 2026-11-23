@@ -14,6 +14,7 @@ import InputBox, { type InputBoxPayload } from '@/components/InputBox/InputBox'
 import { contentColumnContainerClassName, paddedContentColumnClassName } from '@/components/layout/contentColumn'
 import Header from '@/components/layout/Header'
 import Page from '@/components/layout/Page'
+import { MissingSessionActions } from '@/components/session/MissingSessionActions'
 import { SessionRecoveryDetails } from '@/components/session/SessionRecoveryDetails'
 import { SessionSheet } from '@/components/session/SessionSheet'
 import { closeSessionPanel, SessionSidePanel } from '@/components/session/SessionSidePanel'
@@ -90,8 +91,7 @@ function RouteComponent() {
     () => (searchTarget ? { messageId: searchTarget.messageId } : ('tail' as const)),
     [searchTarget]
   )
-  const captureAnchor = useCallback(() => messageListRef.current?.captureAnchor() ?? null, [])
-  const transcript = useSessionTranscript(sessionLoadTarget, initialOrigin, captureAnchor)
+  const transcript = useSessionTranscript(sessionLoadTarget, initialOrigin)
   useEffect(() => {
     if (searchTarget) clearSessionSearchTarget(searchTarget)
   }, [searchTarget])
@@ -302,13 +302,7 @@ function RouteComponent() {
 
   return currentSession ? (
     <div className="flex h-full">
-      <div
-        className={cn(
-          'flex min-w-0 flex-1 flex-col h-full',
-          !isSmallScreen && 'relative',
-          contentColumnContainerClassName(widthFull)
-        )}
-      >
+      <div className={cn('relative flex min-w-0 flex-1 flex-col h-full', contentColumnContainerClassName(widthFull))}>
         <Header session={currentSession} />
         <MessageList
           ref={messageListRef}
@@ -362,9 +356,13 @@ function RouteComponent() {
       <Page title="">
         <div className="flex flex-1 flex-col items-center justify-center min-h-[60vh]">
           <div className="text-2xl font-semibold text-gray-700 mb-4">{t('Conversation not found')}</div>
-          <Button variant="outline" onClick={goHome}>
-            {t('Back to HomePage')}
-          </Button>
+          {isError ? (
+            <Button variant="outline" onClick={goHome}>
+              {t('Back to HomePage')}
+            </Button>
+          ) : (
+            <MissingSessionActions sessionId={currentSessionId} onBack={goHome} />
+          )}
         </div>
       </Page>
     )

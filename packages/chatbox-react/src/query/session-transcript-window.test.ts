@@ -1,7 +1,7 @@
 import {
-  SessionRowConflictError,
-  type SessionRowCommit,
   type SessionCommandDelta,
+  type SessionRowCommit,
+  SessionRowConflictError,
   type SessionTranscriptCursor,
   type SessionTranscriptPage,
   type SessionTranscriptRequest,
@@ -10,10 +10,10 @@ import {
 import type { MessageRow } from '@chatbox/core/session/session-tree'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  sessionTranscriptPageSize,
-  SessionTranscriptWindowController,
   type SessionTranscriptViewportAnchor,
+  SessionTranscriptWindowController,
   type SessionTranscriptWindowSource,
+  sessionTranscriptPageSize,
 } from './session-transcript-window'
 
 vi.mock('@chatbox/core/ports', async (importOriginal) => ({
@@ -182,6 +182,61 @@ function createdBranch(data: ReturnType<typeof fixture>, pivotId: string, count 
   }
 }
 
+function compaction(
+  data: ReturnType<typeof fixture>,
+  boundaryId = data.rows.at(-1)!.messageId,
+  text = 'Conversation summary'
+): SessionCommandDelta {
+  const boundaryIndex = data.rows.findIndex((row) => row.messageId === boundaryId)
+  const boundary = data.rows[boundaryIndex]
+  const threadIndex = data.threads.findIndex((thread) => thread.threadId === boundary.threadId)
+  const thread = data.threads[threadIndex]
+  const child = data.rows.find((row) => row.threadId === boundary.threadId && row.parentMessageId === boundaryId)
+  const summary: MessageRow = {
+    ...boundary,
+    messageId: 'summary',
+    parentMessageId: boundaryId,
+    activeChildId: child?.messageId ?? null,
+    siblingOrder: 0,
+    kind: 'summary',
+    status: 'settled',
+    message: { id: 'summary', role: 'assistant', isSummary: true, contentParts: [{ type: 'text', text }] },
+  }
+  const { message: _message, ...metadata } = boundary
+  const nextThread = {
+    ...thread,
+    activeLeafMessageId: thread.activeLeafMessageId === boundaryId ? summary.messageId : thread.activeLeafMessageId,
+    compactionPoints: [{ boundaryMessageId: boundaryId, summaryMessageId: summary.messageId, createdAt: 2 }],
+  }
+  for (let index = 0; index < data.rows.length; index++) {
+    const row = data.rows[index]
+    if (row.threadId === boundary.threadId && row.parentMessageId === boundaryId)
+      data.rows[index] = { ...row, parentMessageId: summary.messageId }
+  }
+  data.rows[boundaryIndex] = { ...boundary, activeChildId: summary.messageId }
+  data.rows.splice(boundaryIndex + 1, 0, summary)
+  data.threads[threadIndex] = nextThread
+  data.setRevision(2)
+  return {
+    sessionId: 's',
+    record: data.record,
+    previousRevision: 1,
+    revision: 2,
+    header: { id: 's', name: 'Conversation' },
+    appendedMessageIds: [summary.messageId],
+    structureResult: { applied: true, cancelMessageIds: [] },
+    diff: {
+      sessionId: 's',
+      messages: { upsert: [summary], delete: [] },
+      threads: { upsert: [nextThread], delete: [] },
+      messageMetadataUpsert: [{ ...metadata, activeChildId: summary.messageId }],
+      insertParents: [
+        { threadId: boundary.threadId, parentMessageId: boundaryId, newParentMessageId: summary.messageId },
+      ],
+    },
+  }
+}
+
 function acknowledge(controller: SessionTranscriptWindowController): void {
   const requestId = controller.getSnapshot().layout?.requestId
   if (requestId === undefined) throw new Error('No layout to acknowledge')
@@ -212,7 +267,204 @@ describe('platform transcript page size', () => {
 })
 
 describe('transcript window', () => {
-  it('publishes the committed new branch once and keeps its layout operation through live and durable updates', async () => {
+  it('appends a compaction summary while retaining every loaded page and the mounted window', async () => {
+    const data = fixture([100])
+    const controller = new SessionTranscriptWindowController({
+      sessionId: 's',
+      pageSize: 20,
+      source: { readTranscriptWindow: data.read },
+    })
+    await controller.open()
+    acknowledge(controller)
+    for (let index = 0; index < 4; index++) {
+      await controller.loadOlder(index)
+      acknowledge(controller)
+    }
+    const before = controller.getSnapshot()
+    const reads = data.read.mock.calls.length
+
+    expect(controller.applyCompaction(compaction(data))).toBe(true)
+
+    const state = controller.getSnapshot()
+    expect(state.rows.map((row) => row.messageId)).toEqual([...before.rows.map((row) => row.messageId), 'summary'])
+    expect(state.rows.slice(0, -1).map((row) => row.message)).toEqual(before.rows.map((row) => row.message))
+    expect(state).toMatchObject({
+      revision: 2,
+      windowEpoch: before.windowEpoch,
+      firstWindowReady: true,
+      hasOlder: false,
+      hasNewer: false,
+      operation: null,
+      layout: null,
+    })
+    expect(state.pages).toHaveLength(6)
+    expect(state.pages.every((page) => page.messages.length <= 20 && page.revision === 2)).toBe(true)
+    expect(
+      state.pages.flatMap((page) => [page.older, page.newer]).every((cursor) => !cursor || cursor.revision === 2)
+    ).toBe(true)
+    expect(state.threads[0].activeLeafMessageId).toBe('summary')
+    expect(data.read).toHaveBeenCalledTimes(reads)
+  })
+
+  it('retains a historical window until forward pagination reaches the compacted tail', async () => {
+    const data = fixture([60])
+    const controller = new SessionTranscriptWindowController({
+      sessionId: 's',
+      pageSize: 20,
+      source: { readTranscriptWindow: data.read },
+    })
+    await controller.open('head')
+    acknowledge(controller)
+    const before = controller.getSnapshot()
+
+    expect(controller.applyCompaction(compaction(data))).toBe(true)
+    expect(controller.getSnapshot().rows).toEqual(before.rows)
+    expect(controller.getSnapshot()).toMatchObject({
+      revision: 2,
+      windowEpoch: before.windowEpoch,
+      hasNewer: true,
+      operation: null,
+      layout: null,
+    })
+    expect(data.read).toHaveBeenCalledTimes(1)
+    while (controller.getSnapshot().hasNewer) {
+      expect(await controller.loadNewer()).toBe(true)
+      acknowledge(controller)
+    }
+    expect(controller.getSnapshot().rows.map((row) => row.messageId)).toEqual(data.rows.map((row) => row.messageId))
+    expect(controller.getSnapshot().rows.at(-1)?.messageId).toBe('summary')
+    expect(controller.getSnapshot().windowEpoch).toBe(before.windowEpoch)
+  })
+
+  it.each([false, true])(
+    'inserts a summary before a live response when its boundary is outside the window: %s',
+    async (outside) => {
+      const data = fixture([41])
+      const target = data.rows[40]
+      data.rows[40] = {
+        ...target,
+        activeChildId: null,
+        status: 'generating',
+        message: { ...target.message, role: 'assistant', generating: true },
+      }
+      const controller = new SessionTranscriptWindowController({
+        sessionId: 's',
+        pageSize: 20,
+        source: { readTranscriptWindow: data.read },
+      })
+      await controller.open(outside ? { messageId: target.messageId } : 'tail')
+      acknowledge(controller)
+      controller.updateMessage(target.messageId, {
+        contentParts: [{ type: 'text', text: 'Uncommitted streamed text' }],
+      })
+      const before = controller.getSnapshot()
+      const live = before.rows.at(-1)!.message
+
+      expect(controller.applyCompaction(compaction(data, 'T1-40'))).toBe(true)
+
+      const state = controller.getSnapshot()
+      expect(state.rows.map((row) => row.messageId)).toEqual([
+        ...before.rows.slice(0, -1).map((row) => row.messageId),
+        'summary',
+        target.messageId,
+      ])
+      expect(state.rows.at(-1)).toMatchObject({ parentMessageId: 'summary', status: 'generating' })
+      expect(state.rows.at(-1)!.message).toBe(live)
+      expect(state.rows.at(-2)).toMatchObject({ parentMessageId: 'T1-40', activeChildId: target.messageId })
+      expect(state.threads[0].activeLeafMessageId).toBe(target.messageId)
+      expect(state.windowEpoch).toBe(before.windowEpoch)
+      expect(state.hasOlder).toBe(true)
+      expect(state.hasNewer).toBe(false)
+      expect(state.layout).toBeNull()
+      expect(data.read).toHaveBeenCalledTimes(1)
+    }
+  )
+
+  it('keeps an oversized compaction summary on its own page between the boundary and live response', async () => {
+    const data = fixture([2])
+    const controller = new SessionTranscriptWindowController({
+      sessionId: 's',
+      pageSize: 20,
+      maxBytes: 1024,
+      source: { readTranscriptWindow: data.read },
+    })
+    await controller.open()
+    acknowledge(controller)
+
+    expect(controller.applyCompaction(compaction(data, 'T1-1', 'x'.repeat(2048)))).toBe(true)
+
+    const pages = controller.getSnapshot().pages
+    expect(pages.map((page) => page.messages.map((row) => row.messageId))).toEqual([['T1-1'], ['summary'], ['T1-2']])
+    expect(pages[1].payloadBytes).toBeGreaterThan(1024)
+    expect(pages[0].payloadBytes).toBeLessThanOrEqual(1024)
+    expect(pages[2].payloadBytes).toBeLessThanOrEqual(1024)
+    expect(data.read).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps an awaiting layout request stable when its tail is compacted', async () => {
+    const data = fixture([5])
+    const controller = new SessionTranscriptWindowController({
+      sessionId: 's',
+      pageSize: 20,
+      source: { readTranscriptWindow: data.read },
+    })
+    await controller.open()
+    const before = controller.getSnapshot()
+
+    expect(controller.applyCompaction(compaction(data))).toBe(true)
+
+    expect(controller.getSnapshot().layout).toBe(before.layout)
+    expect(controller.getSnapshot().operation).toBe(before.operation)
+    expect(controller.getSnapshot().windowEpoch).toBe(before.windowEpoch)
+    expect(controller.getSnapshot().firstWindowReady).toBe(false)
+    acknowledge(controller)
+    expect(controller.getSnapshot().firstWindowReady).toBe(true)
+    expect(data.read).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['older', 'newer'] as const)(
+    'continues the pending %s page at the compaction revision while retaining loaded pages',
+    async (direction) => {
+      const data = fixture([100])
+      const controller = new SessionTranscriptWindowController({
+        sessionId: 's',
+        pageSize: 20,
+        source: { readTranscriptWindow: data.read },
+      })
+      await controller.open(direction === 'older' ? 'tail' : 'head')
+      acknowledge(controller)
+      const before = controller.getSnapshot()
+      const cursor = direction === 'older' ? before.pages[0].older! : before.pages.at(-1)!.newer!
+      const obsoletePage = await data.read({ sessionId: 's', limit: 20, cursor })
+      const obsolete = deferred<SessionTranscriptPage>()
+      data.read.mockImplementationOnce(() => obsolete.promise)
+      const pending = direction === 'older' ? controller.loadOlder() : controller.loadNewer()
+      const reads = data.read.mock.calls.length
+
+      expect(controller.applyCompaction(compaction(data))).toBe(true)
+
+      await vi.waitFor(() => expect(controller.getSnapshot().operation?.phase).toBe('layout'))
+      expect(data.read).toHaveBeenCalledTimes(reads + 1)
+      expect(data.read.mock.lastCall?.[0]).toMatchObject({
+        expectedRevision: 2,
+        cursor: { revision: 2, direction: direction === 'older' ? 'before' : 'after' },
+      })
+      expect(data.read.mock.lastCall?.[0].origin).toBeUndefined()
+      const state = controller.getSnapshot()
+      expect(state.rows.map((row) => row.messageId)).toEqual(
+        direction === 'older'
+          ? [...Array.from({ length: 40 }, (_, index) => `T1-${61 + index}`), 'summary']
+          : Array.from({ length: 40 }, (_, index) => `T1-${1 + index}`)
+      )
+      expect(state.windowEpoch).toBe(before.windowEpoch)
+      expect(state.pages.every((page) => page.revision === 2)).toBe(true)
+      obsolete.resolve(obsoletePage)
+      expect(await pending).toBe(false)
+      expect(controller.getSnapshot()).toBe(state)
+    }
+  )
+
+  it('publishes branch creation before replacing rows and keeps its identity through live and durable updates', async () => {
     const data = fixture([4])
     const anchor = { threadId: 'T1', messageId: 'T1-3', offset: -17 }
     const controller = new SessionTranscriptWindowController({
@@ -223,21 +475,28 @@ describe('transcript window', () => {
     })
     await controller.open()
     acknowledge(controller)
-    const epoch = controller.getSnapshot().windowEpoch
+    const before = controller.getSnapshot()
+    const epoch = before.windowEpoch
     const notifications = vi.fn(() => controller.getSnapshot())
     controller.subscribe(notifications)
     const change = createdBranch(data, 'T1-3')
     expect(controller.applyCreatedBranch(change, true)).toBe(true)
-    expect(notifications).toHaveBeenCalledTimes(1)
+    expect(notifications).toHaveBeenCalledTimes(2)
+    const starting = notifications.mock.results[0].value
+    expect(starting.rows).toBe(before.rows)
+    expect(starting.hasNewer).toBe(before.hasNewer)
+    expect(starting.operation).toMatchObject({ kind: 'branch', branchMode: 'create', phase: 'reading' })
     const state = controller.getSnapshot()
     expect(state.rows.map((row) => row.messageId)).toEqual(['T1-1', 'T1-2', 'T1-3', 'T1-1000'])
     expect(state.rows[2].activeChildId).toBe('T1-1000')
     expect(state).toMatchObject({ revision: 2, hasNewer: false, windowEpoch: epoch })
     expect(state.operation).toMatchObject({
       kind: 'branch',
+      branchMode: 'create',
       phase: 'layout',
       branchOperationId: state.layout?.requestId,
     })
+    expect(state.operation?.branchOperationId).toBe(starting.operation?.branchOperationId)
     expect(state.layout).toMatchObject({ kind: 'preserve', anchor })
     expect(state.layout?.rebase).toBeUndefined()
     expect(state.threads[0].activeLeafMessageId).toBe('T1-1000')
@@ -258,6 +517,32 @@ describe('transcript window', () => {
     expect(data.read).toHaveBeenCalledTimes(1)
     acknowledge(controller)
     controller.close()
+  })
+
+  it('announces branch creation while the original historical window still has newer messages', async () => {
+    const data = fixture([100])
+    const controller = new SessionTranscriptWindowController({
+      sessionId: 's',
+      pageSize: 20,
+      source: { readTranscriptWindow: data.read },
+    })
+    await controller.open('head')
+    acknowledge(controller)
+    const before = controller.getSnapshot()
+    expect(before.hasNewer).toBe(true)
+    const notifications = vi.fn(() => controller.getSnapshot())
+    controller.subscribe(notifications)
+
+    expect(controller.applyCreatedBranch(createdBranch(data, 'T1-19'), true)).toBe(true)
+
+    expect(notifications.mock.results[0].value).toMatchObject({
+      hasNewer: true,
+      operation: { kind: 'branch', branchMode: 'create', phase: 'reading' },
+    })
+    expect(notifications.mock.results[0].value.rows).toBe(before.rows)
+    expect(controller.getSnapshot().hasNewer).toBe(false)
+    expect(controller.getSnapshot().rows.at(-1)?.messageId).toBe('T1-1000')
+    expect(data.read).toHaveBeenCalledTimes(1)
   })
 
   it('retains five prefix pages across threads and continues to the next thread after the new chain', async () => {
@@ -782,6 +1067,237 @@ describe('transcript window', () => {
     expect(data.read).toHaveBeenCalledTimes(1)
   })
 
+  it('publishes a complete refreshed range atomically while keeping every loaded page mounted', async () => {
+    const data = fixture([120])
+    const captureAnchor = vi.fn(() => ({ threadId: 'T1', messageId: 'T1-90', offset: -11 }))
+    const controller = new SessionTranscriptWindowController({
+      sessionId: 's',
+      pageSize: 20,
+      source: { readTranscriptWindow: data.read },
+      captureAnchor,
+    })
+    await controller.open()
+    acknowledge(controller)
+    for (let index = 0; index < 2; index++) {
+      await controller.loadOlder()
+      acknowledge(controller)
+    }
+    const before = controller.getSnapshot()
+    captureAnchor.mockClear()
+    data.rows[89] = {
+      ...data.rows[89],
+      message: { ...data.rows[89].message, contentParts: [{ type: 'text', text: 'Updated' }] },
+    }
+    data.rows.push(message('T1', 121))
+    data.threads[0].activeLeafMessageId = 'T1-121'
+    data.setRevision(2)
+    const first = await data.read({ sessionId: 's', limit: 20, origin: { messageId: 'T1-61' } })
+    const second = await data.read({ sessionId: 's', limit: 20, cursor: first.newer! })
+    const pending = deferred<SessionTranscriptPage>()
+    const calls = data.read.mock.calls.length
+    data.read.mockResolvedValueOnce(first).mockImplementationOnce(() => pending.promise)
+
+    const refreshing = controller.refresh()
+    await vi.waitFor(() => expect(data.read).toHaveBeenCalledTimes(calls + 2))
+    expect(controller.getSnapshot().pages).toBe(before.pages)
+    expect(controller.getSnapshot().rows).toBe(before.rows)
+    expect(controller.getSnapshot().operation).toMatchObject({ kind: 'refresh', phase: 'reading' })
+    expect(controller.getSnapshot().layout).toBeNull()
+    pending.resolve(second)
+    expect(await refreshing).toBe(true)
+
+    const after = controller.getSnapshot()
+    expect(after.rows.map((row) => row.messageId)).toEqual(Array.from({ length: 61 }, (_, index) => `T1-${61 + index}`))
+    expect(after.rows.find((row) => row.messageId === 'T1-90')?.message.contentParts).toEqual([
+      { type: 'text', text: 'Updated' },
+    ])
+    expect(after.pages).toHaveLength(4)
+    expect(after).toMatchObject({
+      windowEpoch: before.windowEpoch,
+      firstWindowReady: true,
+      revision: 2,
+      operation: null,
+      layout: null,
+      hasOlder: true,
+      hasNewer: false,
+    })
+    expect(after.pages.every((page) => page.revision === 2)).toBe(true)
+    expect(captureAnchor).not.toHaveBeenCalled()
+  })
+
+  it('refreshes the loaded historical range including a new root without reading the remaining history', async () => {
+    const data = fixture([300])
+    const controller = new SessionTranscriptWindowController({
+      sessionId: 's',
+      pageSize: 20,
+      source: { readTranscriptWindow: data.read },
+    })
+    await controller.open('head')
+    acknowledge(controller)
+    for (let index = 0; index < 2; index++) {
+      await controller.loadNewer()
+      acknowledge(controller)
+    }
+    const before = controller.getSnapshot()
+    const root = {
+      ...message('T1', 0),
+      parentMessageId: null,
+      message: { id: 'T1-0', role: 'system' as const, contentParts: [] },
+    }
+    data.rows.unshift(root)
+    data.threads[0].rootMessageId = root.messageId
+    data.setRevision(2)
+    const calls = data.read.mock.calls.length
+
+    expect(await controller.refresh()).toBe(true)
+
+    const after = controller.getSnapshot()
+    expect(data.read.mock.calls[calls][0].origin).toBe('head')
+    expect(data.read).toHaveBeenCalledTimes(calls + 4)
+    expect(after.rows.map((row) => row.messageId)).toEqual(['T1-0', ...before.rows.map((row) => row.messageId)])
+    expect(after.pages.at(-1)?.newer).toMatchObject({ messageId: 'T1-60', revision: 2, direction: 'after' })
+    expect(after).toMatchObject({
+      windowEpoch: before.windowEpoch,
+      hasOlder: false,
+      hasNewer: true,
+      layout: null,
+      operation: null,
+    })
+    expect(await controller.loadNewer()).toBe(true)
+    expect(controller.getSnapshot().rows.at(-1)?.messageId).toBe('T1-80')
+  })
+
+  it('refreshes surviving messages after both loaded endpoints are deleted without navigating', async () => {
+    const data = fixture([300])
+    const controller = new SessionTranscriptWindowController({
+      sessionId: 's',
+      pageSize: 20,
+      source: { readTranscriptWindow: data.read },
+    })
+    await controller.open({ messageId: 'T1-81' })
+    acknowledge(controller)
+    await controller.loadNewer()
+    acknowledge(controller)
+    const before = controller.getSnapshot()
+    const deleted = [before.rows[0].messageId, before.rows.at(-1)!.messageId]
+    const expected = before.rows.filter((row) => !deleted.includes(row.messageId)).map((row) => row.messageId)
+    for (const id of deleted)
+      data.rows.splice(
+        data.rows.findIndex((row) => row.messageId === id),
+        1
+      )
+    data.setRevision(2)
+
+    expect(await controller.refresh(deleted)).toBe(true)
+
+    expect(controller.getSnapshot().rows.map((row) => row.messageId)).toEqual(expected)
+    expect(controller.getSnapshot()).toMatchObject({
+      windowEpoch: before.windowEpoch,
+      revision: 2,
+      hasOlder: true,
+      hasNewer: true,
+      layout: null,
+      operation: null,
+    })
+  })
+
+  it('clears the loaded data while retaining the ready list instance', async () => {
+    const data = fixture([60])
+    const captureAnchor = vi.fn(() => ({ threadId: 'T1', messageId: 'T1-50', offset: 0 }))
+    const controller = new SessionTranscriptWindowController({
+      sessionId: 's',
+      pageSize: 20,
+      source: { readTranscriptWindow: data.read },
+      captureAnchor,
+    })
+    await controller.open()
+    acknowledge(controller)
+    const epoch = controller.getSnapshot().windowEpoch
+    data.rows.splice(0)
+    data.threads[0] = { ...data.threads[0], rootMessageId: null, activeLeafMessageId: null }
+    data.setRevision(2)
+
+    expect(await controller.refresh([], ['T1'])).toBe(true)
+
+    expect(controller.getSnapshot()).toMatchObject({
+      rows: [],
+      revision: 2,
+      windowEpoch: epoch,
+      firstWindowReady: true,
+      hasOlder: false,
+      hasNewer: false,
+      layout: null,
+      operation: null,
+    })
+    expect(captureAnchor).not.toHaveBeenCalled()
+  })
+
+  it('retains cumulative removals when a newer refresh supersedes a pending read', async () => {
+    const data = fixture([100])
+    const controller = new SessionTranscriptWindowController({
+      sessionId: 's',
+      pageSize: 20,
+      source: { readTranscriptWindow: data.read },
+    })
+    await controller.open()
+    acknowledge(controller)
+    await controller.loadOlder()
+    acknowledge(controller)
+    const before = controller.getSnapshot()
+    data.rows.splice(
+      data.rows.findIndex((row) => row.messageId === 'T1-61'),
+      1
+    )
+    data.setRevision(2)
+    const obsoletePage = await data.read({ sessionId: 's', limit: 20, origin: { messageId: 'T1-62' } })
+    const obsolete = deferred<SessionTranscriptPage>()
+    data.read.mockImplementationOnce(() => obsolete.promise)
+    const first = controller.refresh(['T1-61'])
+    expect(controller.getSnapshot().rows).toBe(before.rows)
+    data.rows.splice(
+      data.rows.findIndex((row) => row.messageId === 'T1-62'),
+      1
+    )
+    data.setRevision(3)
+    const calls = data.read.mock.calls.length
+
+    expect(await controller.refresh(['T1-62'])).toBe(true)
+
+    const current = controller.getSnapshot()
+    expect(data.read.mock.calls[calls][0].origin).toEqual({ messageId: 'T1-63' })
+    expect(current.rows.map((row) => row.messageId)).toEqual(
+      Array.from({ length: 38 }, (_, index) => `T1-${63 + index}`)
+    )
+    expect(current).toMatchObject({ windowEpoch: before.windowEpoch, revision: 3, operation: null, layout: null })
+    obsolete.resolve(obsoletePage)
+    expect(await first).toBe(false)
+    expect(controller.getSnapshot()).toBe(current)
+  })
+
+  it('keeps the loaded window when a refreshed range cannot fit the bounded read budget', async () => {
+    const data = fixture([100])
+    const controller = new SessionTranscriptWindowController({
+      sessionId: 's',
+      pageSize: 20,
+      source: { readTranscriptWindow: data.read },
+    })
+    await controller.open('head')
+    acknowledge(controller)
+    const before = controller.getSnapshot()
+    data.rows.splice(5, 0, ...Array.from({ length: 60 }, (_, index) => message('T1', 1000 + index)))
+    data.setRevision(2)
+    const calls = data.read.mock.calls.length
+
+    expect(await controller.refresh()).toBe(false)
+
+    expect(controller.getSnapshot().pages).toBe(before.pages)
+    expect(controller.getSnapshot().rows).toBe(before.rows)
+    expect(controller.getSnapshot().windowEpoch).toBe(before.windowEpoch)
+    expect(controller.getSnapshot().operation).toMatchObject({ kind: 'refresh', phase: 'error' })
+    expect(controller.getSnapshot().layout).toBeNull()
+    expect(data.read.mock.calls.length - calls).toBeLessThanOrEqual(3)
+  })
+
   it('refreshes an in-flight initial tail read from the latest revision and ignores its old response', async () => {
     const data = fixture([100])
     const first = deferred<SessionTranscriptPage>()
@@ -808,7 +1324,7 @@ describe('transcript window', () => {
   })
 
   it.each(['tail', 'search', 'view', 'switch', 'loaded-target'] as const)(
-    'refresh preserves pending %s intent until layout is acknowledged, then captures the visible reader position',
+    'refresh preserves pending %s navigation and updates the acknowledged window in place',
     async (intent) => {
       const data = fixture([100, 100])
       const captureAnchor = vi.fn(() => ({ threadId: 'T2', messageId: 'T2-82', offset: -7 }))
@@ -848,35 +1364,40 @@ describe('transcript window', () => {
       expect(controller.getSnapshot().layout).toMatchObject({ kind: expectedKind, anchor: expectedAnchor })
       expect(controller.acknowledgeLayout(oldRequest)).toBe(false)
       acknowledge(controller)
+      const before = controller.getSnapshot()
       await controller.refresh()
-      expect(captureAnchor).toHaveBeenCalledTimes(1)
-      expect(controller.getSnapshot().layout).toMatchObject({
-        kind: 'preserve',
-        anchor: { messageId: 'T2-82', offset: -7 },
-      })
+      expect(captureAnchor).not.toHaveBeenCalled()
+      expect(controller.getSnapshot().rows.map((row) => row.messageId)).toEqual(before.rows.map((row) => row.messageId))
+      expect(controller.getSnapshot().windowEpoch).toBe(before.windowEpoch)
+      expect(controller.getSnapshot().layout).toBeNull()
+      expect(controller.getSnapshot().operation).toBeNull()
     }
   )
 
-  it('uses the pending preserve anchor during a page rebase rather than transient DOM geometry', async () => {
+  it('refreshes all loaded pages while a pagination layout is pending without issuing navigation', async () => {
     const data = fixture([200])
-    let visible = { threadId: 'T1', messageId: 'T1-181', offset: -9 }
+    const captureAnchor = vi.fn(() => ({ threadId: 'T1', messageId: 'T1-181', offset: -9 }))
     const controller = new SessionTranscriptWindowController({
       sessionId: 's',
       pageSize: 20,
       source: { readTranscriptWindow: data.read },
-      captureAnchor: () => visible,
+      captureAnchor,
     })
     await controller.open()
     acknowledge(controller)
     await controller.loadOlder()
-    visible = { threadId: 'T1', messageId: 'T1-161', offset: 0 }
+    const before = controller.getSnapshot()
+    captureAnchor.mockClear()
+    const reads = data.read.mock.calls.length
     data.setRevision(2)
     await controller.refresh()
-    expect(data.read.mock.lastCall?.[0].origin).toEqual({ messageId: 'T1-181' })
-    expect(controller.getSnapshot().layout).toMatchObject({
-      kind: 'preserve',
-      anchor: { messageId: 'T1-181', offset: -9 },
-    })
+    expect(data.read.mock.calls[reads][0].origin).toEqual({ messageId: 'T1-161' })
+    expect(controller.getSnapshot().rows.map((row) => row.messageId)).toEqual(before.rows.map((row) => row.messageId))
+    expect(controller.getSnapshot().pages).toHaveLength(2)
+    expect(controller.getSnapshot().windowEpoch).toBe(before.windowEpoch)
+    expect(controller.getSnapshot().layout).toBeNull()
+    expect(controller.getSnapshot().operation).toBeNull()
+    expect(captureAnchor).not.toHaveBeenCalled()
   })
 
   it.each(['tail', 'thread-head'] as const)(
@@ -923,7 +1444,9 @@ describe('transcript window', () => {
     data.rows.splice(1, 1)
     data.setRevision(2)
     await controller.refresh(['T1-2'])
-    expect(data.read.mock.lastCall?.[0].origin).toEqual({ messageId: 'T1-3' })
+    expect(data.read.mock.lastCall?.[0].origin).toBe('head')
+    expect(controller.getSnapshot().rows.map((row) => row.messageId)).toEqual(['T1-1', 'T1-3', 'T1-4'])
+    expect(controller.getSnapshot().layout).toBeNull()
   })
 
   it('refreshes a removed visible anchor from a surviving row', async () => {
@@ -939,8 +1462,9 @@ describe('transcript window', () => {
     data.rows.splice(1, 1)
     data.setRevision(2)
     await controller.refresh(['T1-2'])
-    expect(data.read.mock.lastCall?.[0].origin).toEqual({ messageId: 'T1-1' })
+    expect(data.read.mock.lastCall?.[0].origin).toBe('head')
     expect(controller.getSnapshot().rows.some((row) => row.messageId === 'T1-2')).toBe(false)
+    expect(controller.getSnapshot().layout).toBeNull()
   })
 
   it.each(['refresh', 'search', 'navigate'] as const)(
@@ -997,7 +1521,7 @@ describe('transcript window', () => {
     pending.resolve(durable)
     expect(await refresh).toBe(true)
     expect(controller.getSnapshot().rows[1].message.contentParts).toEqual([{ type: 'text', text: 'live ABC' }])
-    acknowledge(controller)
+    expect(controller.getSnapshot().layout).toBeNull()
     data.rows[1] = {
       ...data.rows[1],
       status: 'settled',
@@ -1305,7 +1829,7 @@ describe('transcript window', () => {
     expect(await controller.loadOlder(2)).toBe(true)
   })
 
-  it('recovers a stale continuation at the visible anchor in the latest revision and can continue paging', async () => {
+  it('refreshes a stale continuation in place and completes its original pagination', async () => {
     const data = fixture()
     const anchor = { threadId: 'T3', messageId: 'T3-85', offset: -8, blockId: 'paragraph' }
     const controller = new SessionTranscriptWindowController({
@@ -1316,21 +1840,29 @@ describe('transcript window', () => {
     })
     await controller.open()
     acknowledge(controller)
+    const epoch = controller.getSnapshot().windowEpoch
     const pages = controller.getSnapshot().pages
     data.setRevision(2)
     expect(await controller.loadOlder()).toBe(false)
     expect(controller.getSnapshot().pages).toBe(pages)
     expect(controller.getSnapshot().operation?.error).toBeInstanceOf(SessionRowConflictError)
     expect(await controller.retry()).toBe(true)
-    expect(controller.getSnapshot().pages).toHaveLength(1)
+    expect(controller.getSnapshot().pages).toHaveLength(2)
     expect(controller.getSnapshot().revision).toBe(2)
-    expect(controller.getSnapshot().rows[0].messageId).toBe('T3-85')
+    expect(controller.getSnapshot().windowEpoch).toBe(epoch)
+    expect(controller.getSnapshot().rows[0].messageId).toBe('T3-61')
+    expect(controller.getSnapshot().rows.at(-1)?.messageId).toBe('T3-100')
     expect(controller.getSnapshot().layout).toMatchObject({ kind: 'preserve', anchor })
-    expect(data.read).toHaveBeenLastCalledWith(expect.objectContaining({ origin: { messageId: 'T3-85' } }))
-    expect(data.read.mock.lastCall?.[0].expectedRevision).toBeUndefined()
+    expect(data.read).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        cursor: expect.objectContaining({ messageId: 'T3-81', direction: 'before' }),
+        expectedRevision: 2,
+      })
+    )
+    expect(data.read.mock.lastCall?.[0].origin).toBeUndefined()
     acknowledge(controller)
     expect(await controller.loadOlder()).toBe(true)
-    expect(controller.getSnapshot().pages).toHaveLength(2)
+    expect(controller.getSnapshot().pages).toHaveLength(3)
     expect(controller.getSnapshot().pages.every((page) => page.revision === 2)).toBe(true)
   })
 
@@ -1914,36 +2446,48 @@ describe('transcript window', () => {
     expect(controller.getSnapshot().rows.at(-1)?.messageId).toBe(`T1-${pageSize * 8}`)
   })
 
-  it('keeps branch content mounted after a failed read and replaces the suffix on retry', async () => {
-    const data = fixture()
-    const controller = new SessionTranscriptWindowController({
-      sessionId: 's',
-      pageSize: 20,
-      source: { readTranscriptWindow: data.read },
-    })
-    await controller.open({ messageId: 'T2-90' })
-    acknowledge(controller)
-    data.setRevision(2)
-    data.read.mockRejectedValueOnce(new Error('read failed'))
-    expect(
-      await controller.applyBranchCommit({
-        record: data.record,
-        revision: 2,
-        previousRevision: 1,
-        sharedPrefixEnd: { threadId: 'T2', messageId: 'T2-90' },
-        origin: { messageId: 'T2-91' },
+  it.each(['create', 'select'] as const)(
+    'keeps a %s branch identity and mounted content through read retries',
+    async (branchMode) => {
+      const data = fixture()
+      const controller = new SessionTranscriptWindowController({
+        sessionId: 's',
+        pageSize: 20,
+        source: { readTranscriptWindow: data.read },
       })
-    ).toBe(false)
-    expect(controller.getSnapshot().rows.map((row) => row.messageId)).toEqual(
-      Array.from({ length: 20 }, (_, index) => `T2-${index + 81}`)
-    )
-    expect(controller.getSnapshot().revision).toBe(2)
-    expect(controller.getSnapshot().pages[0].payloadBytes).toBe(2000)
-    expect(controller.getSnapshot().operation?.phase).toBe('error')
-    expect(await controller.retry()).toBe(true)
-    expect(controller.getSnapshot().rows).toHaveLength(30)
-    expect(controller.getSnapshot().rows.at(-1)?.messageId).toBe('T3-10')
-  })
+      await controller.open({ messageId: 'T2-90' })
+      acknowledge(controller)
+      data.setRevision(2)
+      data.read.mockRejectedValueOnce(new Error('read failed'))
+      expect(
+        await controller.applyBranchCommit({
+          record: data.record,
+          revision: 2,
+          previousRevision: 1,
+          sharedPrefixEnd: { threadId: 'T2', messageId: 'T2-90' },
+          origin: { messageId: 'T2-91' },
+          branchMode,
+        })
+      ).toBe(false)
+      expect(controller.getSnapshot().rows.map((row) => row.messageId)).toEqual(
+        Array.from({ length: 20 }, (_, index) => `T2-${index + 81}`)
+      )
+      expect(controller.getSnapshot().revision).toBe(2)
+      expect(controller.getSnapshot().pages[0].payloadBytes).toBe(2000)
+      const failedOperation = controller.getSnapshot().operation!
+      expect(failedOperation).toMatchObject({ kind: 'branch', phase: 'error', branchMode })
+      expect(await controller.retry()).toBe(true)
+      expect(controller.getSnapshot().operation).toMatchObject({
+        kind: 'branch',
+        phase: 'layout',
+        branchMode,
+        branchOperationId: failedOperation.branchOperationId,
+      })
+      expect(controller.getSnapshot().operation?.requestId).not.toBe(failedOperation.requestId)
+      expect(controller.getSnapshot().rows).toHaveLength(30)
+      expect(controller.getSnapshot().rows.at(-1)?.messageId).toBe('T3-10')
+    }
+  )
 
   it('retains earlier threads when the selected thread branches at its root', async () => {
     const data = fixture()

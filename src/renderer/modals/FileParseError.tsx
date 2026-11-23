@@ -27,6 +27,11 @@ import * as settingActions from '@/stores/settingActions'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { getChatboxAIParserAccountError, getFileParseErrorI18nKey } from '@/utils/file-parse-error'
 
+/** Same token as other in-app "open settings" guidance links; no palette color literals. */
+const SETTINGS_GUIDANCE_LINK_CLASS =
+  'cursor-pointer border-0 bg-transparent p-0 underline font-semibold text-chatbox-tint-brand'
+const SETTINGS_GUIDANCE_ANCHOR_CLASS = 'cursor-pointer underline font-semibold text-chatbox-tint-brand'
+
 interface FileParseErrorProps {
   errorCode: string
   fileName?: string
@@ -134,7 +139,7 @@ const FileParseError = NiceModal.create(({ errorCode, fileName }: FileParseError
           OpenSettingButton: (
             <button
               type="button"
-              className="cursor-pointer border-0 bg-transparent p-0 underline font-semibold text-blue-600 hover:text-blue-700"
+              className={SETTINGS_GUIDANCE_LINK_CLASS}
               onClick={() => {
                 onClose()
                 navigateToSettings('/chatbox-ai')
@@ -142,16 +147,21 @@ const FileParseError = NiceModal.create(({ errorCode, fileName }: FileParseError
             />
           ),
           OpenExtensionSettingButton: <span />,
-          OpenMorePlanButton: (
-            <a
-              className="cursor-pointer underline font-semibold text-blue-600 hover:text-blue-700"
-              onClick={openMorePlans}
+          OpenMorePlanButton: <a className={SETTINGS_GUIDANCE_ANCHOR_CLASS} onClick={openMorePlans} />,
+          OpenDeepSeekProviderSettingButton: (
+            <button
+              type="button"
+              className={SETTINGS_GUIDANCE_LINK_CLASS}
+              onClick={() => {
+                onClose()
+                navigateToSettings('/provider/deepseek')
+              }}
             />
           ),
           OpenDocumentParserSettingButton: (
             <button
               type="button"
-              className="cursor-pointer border-0 bg-transparent p-0 underline font-semibold text-blue-600 hover:text-blue-700"
+              className={SETTINGS_GUIDANCE_LINK_CLASS}
               onClick={() => {
                 onClose()
                 navigateToSettings('/document-parser')

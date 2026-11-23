@@ -2,7 +2,6 @@ import type { SessionHeaderRead } from '@chatbox/core/ports'
 import { getSessionActionGate } from '@chatbox/core/session/action-gates'
 import { isActionAvailableInMode, resolveSessionMode, type SessionMode } from '@chatbox/core/session/mode-policy'
 import type { PromptCacheDeleteTarget } from '@chatbox/core/session/prompt-cache-policy'
-import type { SessionTranscriptViewportAnchor } from '@chatbox/react/query'
 import NiceModal from '@ebay/nice-modal-react'
 import { Button, Flex, Loader, Stack, Text, Transition } from '@mantine/core'
 import { useThrottledCallback } from '@mantine/hooks'
@@ -25,6 +24,7 @@ import {
   forwardRef,
   memo,
   type ReactNode,
+  type UIEvent,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -34,7 +34,7 @@ import {
   useState,
 } from 'react'
 import { useTranslation } from 'react-i18next'
-import { type ContextProp, Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
+import { type ContextProp, type FlatScrollIntoViewLocation, Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import { rendererApplication } from '@/app/renderer-application'
 import { contentColumnClassName, paddedContentColumnClassName } from '@/components/layout/contentColumn'
 import { useMyCopilots } from '@/hooks/useCopilots'
@@ -57,30 +57,27 @@ import { ErrorNotice } from '../common/ErrorNotice'
 import errorNoticeClasses from '../common/ErrorNotice.module.css'
 import { ScalableIcon } from '../common/ScalableIcon'
 import Loading from '../icons/Loading'
+import { measureTitleBarOverlayInset, TITLE_BAR_OVERLAY_HEIGHT } from '../layout/title-bar-overlay'
 import { BlockCodeCollapsedStateProvider } from '../Markdown'
 import ForkGroup from './ForkGroup'
 import ForkMarkerMessage from './ForkMarkerMessage'
 import Message from './Message'
 import MessageMinimapRail from './MessageMinimapRail'
-import MessageNavigation, { ScrollToBottomButton } from './MessageNavigation'
+import MessageNavigation, { FLOATING_BUTTON_GLASS_PROPS, ScrollToBottomButton } from './MessageNavigation'
 import { getSessionAssistantName } from './message-header'
 import { areMinimapAnchorsEqual, buildMessageMinimapAnchors } from './message-navigation-utils'
 import { buildTranscriptRenderItems } from './message-render-items'
 import SummaryMessage from './SummaryMessage'
 import { createSendFollowIntent, sendFromHistoryFollowsTail } from './send-follow-intent'
-import {
-  createSmoothFollowOutputController,
-  getFollowOutputScrollBehavior,
-  isLayoutClampedScroll,
-} from './smooth-follow-output'
-import { createTranscriptContentAnchor, shiftTranscriptContentAnchor } from './transcript-content-anchor'
-import { scrollToTranscriptItem, transcriptAnchorLayoutSettled } from './transcript-item-scroll'
+import { getTranscriptFirstItemIndex, getTranscriptItemLocation, withTopInset } from './transcript-virtuoso-position'
 
 type Transcript = ReturnType<typeof useSessionTranscript>
+const followOutputToBottom = () => 'auto' as const
+
 export interface MessageListRef {
-  captureAnchor(): SessionTranscriptViewportAnchor | null
   scrollToTop(): void
   scrollToBottom(): void
+  prepareBranchCreation(): Promise<boolean>
   /**
    * Captures, at send time, whether the send should follow the tail. Mobile layouts always follow; wide layouts follow
    * only when the user is at the tail (or has just asked for it) and return null while reading history. The returned
@@ -99,6 +96,10 @@ const MessageList = forwardRef<
   const session = headerRead.header
   const controller = transcript.controller
   const isSmallScreen = useIsSmallScreen()
+  // Small screens float the session header over the top of the list; explicit targets land below it.
+  const smallScreen = useRef(isSmallScreen)
+  smallScreen.current = isSmallScreen
+  const topInset = useCallback(() => (smallScreen.current ? measureTitleBarOverlayInset() : 0), [])
   const activity = useSessionActivity(session.id)
   const platformType = useAtomValue(platformTypeAtom)
   const widthFull = useUIStore((state) => state.widthFull)
@@ -112,10 +113,7 @@ const MessageList = forwardRef<
   const hideSystemPrompt = hideSystemPromptSetting || !isActionAvailableInMode('session-system-prompt', sessionMode)
   const container = useRef<HTMLDivElement>(null)
   const scroller = useRef<HTMLElement | null>(null)
-  const reportedScrollTop = useRef(0)
-  const pendingMeasurementScroll = useRef<HTMLElement | null>(null)
   const virtuoso = useRef<VirtuosoHandle>(null)
-  const lastItem = useRef<HTMLDivElement>(null)
   const owner = useMemo(() => Symbol(session.id), [session.id])
   const { threads: sessionThreads, hasNextPage: moreSessionThreads } =
     rendererApplication.sessionHooks.useSessionThreads(session.id, {
@@ -134,6 +132,17 @@ const MessageList = forwardRef<
     [transcript.rows, transcript.threads, showThreadLabels]
   )
   const rowsById = useMemo(() => new Map(transcript.rows.map((row) => [row.messageId, row])), [transcript.rows])
+  // A new compaction point may only follow every summary of the active conversation: inserting one before an
+  // existing summary would cover part of that summary's prefix twice. Archived threads are read-only history.
+  const compactHereIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const row of transcript.rows) {
+      if (row.threadId !== headerRead.activeThreadId) continue
+      if (row.message.isSummary) ids.clear()
+      else ids.add(row.messageId)
+    }
+    return ids
+  }, [transcript.rows, headerRead.activeThreadId])
   const threadById = useMemo(
     () => new Map(transcript.threads.map((thread) => [thread.threadId, thread])),
     [transcript.threads]
@@ -142,11 +151,9 @@ const MessageList = forwardRef<
   const [isNewMessage, setIsNewMessage] = useState(false)
   const [viewportHeight, setViewportHeight] = useState(0)
   const [atBottom, setAtBottom] = useState(false)
-  const [followingTail, setFollowingTail] = useState(false)
   const [atTop, setAtTop] = useState(false)
   const [showScrollToPrev, setShowScrollToPrev] = useState(false)
   const lastScrollTop = useRef<number>()
-  const lastMaxScrollTop = useRef<number>()
   const scrollNavigationTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const navigationBar = useRef<HTMLDivElement | null>(null)
   useEffect(
@@ -175,23 +182,17 @@ const MessageList = forwardRef<
       }),
     [controller, positioningExplicitTarget, hideScrollNavigation]
   )
-  const handleScrollTopThrottled = useThrottledCallback((scrollTop: number, maxScrollTop: number) => {
+  const handleScrollTopThrottled = useThrottledCallback((scrollTop: number) => {
     if (positioningExplicitTarget()) {
       hideScrollNavigation()
       return
     }
     if (typeof lastScrollTop.current === 'number') {
-      const layoutShrank = isLayoutClampedScroll(
-        lastScrollTop.current,
-        lastMaxScrollTop.current,
-        scrollTop,
-        maxScrollTop
-      )
       if (scrollNavigationTimer.current) {
         clearTimeout(scrollNavigationTimer.current)
         scrollNavigationTimer.current = null
       }
-      if (scrollTop > 0 && scrollTop < lastScrollTop.current && !layoutShrank) {
+      if (scrollTop > 0 && scrollTop < lastScrollTop.current) {
         setShowScrollToPrev(true)
         scrollNavigationTimer.current = setTimeout(() => setShowScrollToPrev(false), 3000)
       } else {
@@ -199,12 +200,22 @@ const MessageList = forwardRef<
       }
     }
     lastScrollTop.current = scrollTop
-    lastMaxScrollTop.current = maxScrollTop
   }, 256)
   const [showNavigation, setShowNavigation] = useState(false)
   const progress = useRef(0)
+  const observedScrollTop = useMemo(() => ({ current: 0 }), [controller])
   const userDirection = useRef<'older' | 'newer' | null>(null)
   const touchY = useRef<number | null>(null)
+  const scrolling = useMemo(
+    () => ({ current: false, settleTimer: null as ReturnType<typeof setTimeout> | null }),
+    [controller, transcript.windowEpoch]
+  )
+  useEffect(
+    () => () => {
+      if (scrolling.settleTimer !== null) clearTimeout(scrolling.settleTimer)
+    },
+    [scrolling]
+  )
   const scrollbarPointer = useRef<{ pointerId: number; scrollTop: number } | null>(null)
   const browseOperation = useRef({ controller, requestId: 0, paging: false })
   const synchronizeBrowseIntent = useCallback(() => {
@@ -230,136 +241,263 @@ const MessageList = forwardRef<
   }, [controller, synchronizeBrowseIntent])
   const live = useRef({ transcript, items, rowsById })
   live.current = { transcript, items, rowsById }
-  const scrollToPosition = useCallback((location: Parameters<VirtuosoHandle['scrollTo']>[0]) => {
-    virtuoso.current?.scrollTo(location)
-    if (scrollbarPointer.current && scroller.current) scrollbarPointer.current.scrollTop = scroller.current.scrollTop
-  }, [])
+  const [position, setPosition] = useState(() => ({
+    epoch: transcript.windowEpoch,
+    items,
+    firstItemIndex: 1_000_000,
+    initialLocation: getTranscriptItemLocation(items, transcript.layout, topInset()),
+    initialRequestId: transcript.layout?.requestId,
+  }))
+  if (position.items !== items || position.epoch !== transcript.windowEpoch) {
+    const newWindow = position.epoch !== transcript.windowEpoch
+    setPosition({
+      epoch: transcript.windowEpoch,
+      items,
+      firstItemIndex: newWindow
+        ? 1_000_000
+        : getTranscriptFirstItemIndex(position.items, items, position.firstItemIndex),
+      initialLocation: newWindow
+        ? getTranscriptItemLocation(items, transcript.layout, topInset())
+        : position.initialLocation,
+      initialRequestId: newWindow ? transcript.layout?.requestId : position.initialRequestId,
+    })
+  }
+  const atBottomRef = useMemo(() => ({ current: false }), [controller])
+  const measuredEpoch = useRef<number | null>(null)
+  const positionedRequest = useRef<number | null>(null)
   const scrollToItem = useCallback(
-    (
-      index: number,
-      align: 'start' | 'end' | 'center' = 'start',
-      behavior: 'auto' | 'smooth' = 'auto',
-      isCurrent: () => boolean = () => true
-    ) => {
-      const list = virtuoso.current
-      const viewport = scroller.current
-      if (list && viewport)
-        scrollToTranscriptItem(
-          { scrollIntoView: (request) => list.scrollIntoView(request), scrollTo: scrollToPosition },
-          viewport,
-          index,
-          align,
-          behavior,
-          isCurrent
-        )
+    (index: number, align: 'start' | 'end' | 'center' = 'start', behavior: 'auto' | 'smooth' = 'auto') => {
+      virtuoso.current?.scrollToIndex(withTopInset({ index, align, behavior }, topInset()))
     },
-    [scrollToPosition]
+    [topInset]
   )
-  const follow = useMemo(
-    () =>
-      createSmoothFollowOutputController({
-        onFollowingChange: setFollowingTail,
-        scrollToBottom: (behavior) => {
-          const element = scroller.current
-          if (element) scrollToPosition({ top: Math.max(0, element.scrollHeight - element.clientHeight), behavior })
-        },
-        stopScrolling: (top) => scrollToPosition({ top, behavior: 'auto' }),
-        getScrollBehavior: () => getFollowOutputScrollBehavior(platform.type),
-      }),
-    [scrollToPosition]
+  const sendFollowIntent = useMemo(createSendFollowIntent, [controller])
+  const [followOutput, setFollowOutputState] = useState(false)
+  const followOutputRef = useMemo(() => ({ current: false }), [controller])
+  const branchFollow = useMemo(() => ({ paused: false, operationId: 0, downwardScroll: false }), [controller])
+  const branchCreation = useMemo(() => ({ active: true, cancel: null as (() => void) | null }), [controller, owner])
+  const cancelBranchCreation = useCallback(() => branchCreation.cancel?.(), [branchCreation])
+  useLayoutEffect(() => {
+    branchCreation.active = true
+    return () => {
+      branchCreation.active = false
+      branchCreation.cancel?.()
+    }
+  }, [branchCreation])
+  const setFollowOutput = useCallback(
+    (value: boolean) => {
+      followOutputRef.current = value
+      setFollowOutputState(value)
+    },
+    [followOutputRef]
   )
-  useEffect(() => () => follow.dispose(), [follow])
-  const sendFollowIntent = useMemo(createSendFollowIntent, [])
-  /** A user-driven move away from the tail; pauses following and withdraws any tail intent captured for a send. */
-  const leaveTail = useCallback(() => {
-    sendFollowIntent.leaveTail()
-    follow.pause()
-  }, [follow, sendFollowIntent])
-  const scrollByGeometry = useCallback((delta: number) => {
-    virtuoso.current?.scrollBy({ top: delta, behavior: 'auto' })
-    if (scrollbarPointer.current && scroller.current) scrollbarPointer.current.scrollTop = scroller.current.scrollTop
-  }, [])
-  const contentAnchor = useMemo(
-    () =>
-      createTranscriptContentAnchor({
-        viewport: () => scroller.current,
-        suspended: () =>
-          !!controller.getSnapshot().layout || !!controller.getSnapshot().operation || follow.isFollowing(),
-        scrollBy: scrollByGeometry,
-      }),
-    [controller, follow, scrollByGeometry]
+  const followChangedRowsToBottom = useCallback(
+    ({ totalCount }: { totalCount: number }): FlatScrollIntoViewLocation => ({
+      index: totalCount - 1,
+      align: 'end',
+      behavior: 'auto',
+      // Virtuoso may wait for a measurement; a newer user scroll must cancel that pending tail request.
+      calculateViewLocation: ({ locationParams }) =>
+        followOutputRef.current && !branchFollow.paused && !controller.getSnapshot().hasNewer ? locationParams : null,
+    }),
+    [branchFollow, controller, followOutputRef]
   )
   useLayoutEffect(() => {
-    if (container.current) contentAnchor.connect(container.current)
-    return () => contentAnchor.disconnect()
-  }, [contentAnchor, transcript.windowEpoch])
+    if (transcript.hasNewer) setFollowOutput(false)
+  }, [transcript.hasNewer, setFollowOutput])
+  const leaveTail = useCallback(() => {
+    cancelBranchCreation()
+    sendFollowIntent.leaveTail()
+    atBottomRef.current = false
+    if (controller.getSnapshot().operation?.branchMode === 'create') branchFollow.paused = true
+    branchFollow.downwardScroll = false
+    setFollowOutput(false)
+  }, [atBottomRef, branchFollow, cancelBranchCreation, controller, sendFollowIntent, setFollowOutput])
+  useLayoutEffect(() => {
+    const synchronizeBranchFollow = () => {
+      const state = controller.getSnapshot()
+      const operation = state.operation
+      if (operation?.kind !== 'branch') return
+      const operationId = operation.branchOperationId ?? operation.requestId
+      if (branchFollow.operationId === operationId) return
+      // Branch creation announces itself before replacing rows, so a shorter reply cannot turn history into tail intent.
+      const followCreatedBranch =
+        operation.branchMode === 'create' && !state.hasNewer && (followOutputRef.current || atBottomRef.current)
+      branchFollow.operationId = operationId
+      branchFollow.paused = !followCreatedBranch
+      branchFollow.downwardScroll = false
+      observedScrollTop.current = scroller.current?.scrollTop ?? 0
+      sendFollowIntent.leaveTail()
+      if (followCreatedBranch) sendFollowIntent.requestTail()
+      setFollowOutput(followCreatedBranch)
+    }
+    synchronizeBranchFollow()
+    const unsubscribe = controller.subscribe(synchronizeBranchFollow)
+    return () => {
+      unsubscribe()
+      sendFollowIntent.leaveTail()
+    }
+  }, [atBottomRef, branchFollow, controller, followOutputRef, observedScrollTop, sendFollowIntent, setFollowOutput])
+  const resumeTailAfterUserScroll = useCallback(() => {
+    if (!branchFollow.paused || !branchFollow.downwardScroll || !atBottomRef.current) return
+    const state = controller.getSnapshot()
+    if (state.hasNewer || state.operation) return
+    branchFollow.paused = false
+    branchFollow.downwardScroll = false
+    setFollowOutput(true)
+  }, [atBottomRef, branchFollow, controller, setFollowOutput])
   useEffect(() => {
     if (!highlighted) return
     const timer = setTimeout(() => setHighlighted(null), 2500)
     return () => clearTimeout(timer)
   }, [highlighted])
 
-  const messageElement = useCallback((id: string) => {
-    const elements = container.current?.querySelectorAll<HTMLElement>('[data-transcript-message]')
-    return elements ? Array.from(elements).find((element) => element.dataset.transcriptMessage === id) : undefined
-  }, [])
-  const captureAnchor = useCallback((): SessionTranscriptViewportAnchor | null => {
-    const block = contentAnchor.capture()
-    const blockRow = block?.messageId ? live.current.rowsById.get(block.messageId) : undefined
-    if (block && blockRow) return { ...block, threadId: blockRow.threadId }
-    const viewport = scroller.current?.getBoundingClientRect()
-    const elements = container.current?.querySelectorAll<HTMLElement>('[data-transcript-message]')
-    if (!viewport || !elements) return null
-    for (const element of Array.from(elements)) {
-      const bounds = element.getBoundingClientRect()
-      if (bounds.bottom <= viewport.top || bounds.top >= viewport.bottom) continue
-      const row = live.current.rowsById.get(element.dataset.transcriptMessage ?? '')
-      if (row) return { threadId: row.threadId, messageId: row.messageId, offset: bounds.top - viewport.top }
-    }
-    return null
-  }, [contentAnchor])
   const navigate = useCallback(
     (origin: 'head' | 'tail' | { messageId: string }) => {
-      if (origin === 'tail') sendFollowIntent.requestTail()
-      else leaveTail()
+      cancelBranchCreation()
+      if (origin === 'tail') {
+        branchFollow.paused = false
+        branchFollow.downwardScroll = false
+        sendFollowIntent.requestTail()
+        setFollowOutput(true)
+      } else leaveTail()
       if (typeof origin === 'object') setHighlighted(origin.messageId)
       return controller.navigate(origin)
     },
-    [controller, leaveTail, sendFollowIntent]
+    [branchFollow, cancelBranchCreation, controller, leaveTail, sendFollowIntent, setFollowOutput]
   )
+  const prepareBranchCreation = useCallback((): Promise<boolean> => {
+    cancelBranchCreation()
+    if (!branchCreation.active) return Promise.resolve(false)
+    setIsNewMessage(false)
+    branchFollow.paused = false
+    branchFollow.downwardScroll = false
+    sendFollowIntent.requestTail()
+    setFollowOutput(true)
+    return new Promise((resolve) => {
+      const token = {}
+      let frame = 0
+      let finished = false
+      let loaded = false
+      let seek: { geometry: string; done: boolean } | null = null
+      let requestId: number | undefined
+      let bottomGeometry: string | null = null
+      const finish = (success: boolean) => {
+        if (finished) return
+        finished = true
+        clearTimeout(timeout)
+        cancelAnimationFrame(frame)
+        branchCreation.cancel = null
+        if (!success) {
+          controller.cancelNavigation(token)
+          sendFollowIntent.leaveTail()
+          followOutputRef.current = false
+          if (branchCreation.active) setFollowOutput(false)
+        }
+        resolve(success)
+      }
+      const timeout = setTimeout(() => finish(false), 10_000)
+      branchCreation.cancel = () => finish(false)
+      const check = () => {
+        if (finished) return
+        const state = controller.getSnapshot()
+        if (!branchCreation.active || (state.operation && state.operation.requestId !== requestId)) {
+          finish(false)
+          return
+        }
+        const element = scroller.current
+        if (
+          loaded &&
+          !state.operation &&
+          !state.layout &&
+          !state.hasNewer &&
+          live.current.transcript.windowEpoch === state.windowEpoch &&
+          measuredEpoch.current === state.windowEpoch &&
+          element?.isConnected &&
+          element.clientHeight > 0 &&
+          virtuoso.current
+        ) {
+          const geometry = `${state.windowEpoch}:${element.scrollHeight}:${element.clientHeight}`
+          const atTail = Math.abs(Math.max(0, element.scrollHeight - element.clientHeight) - element.scrollTop) <= 4
+          // A seek can complete before a measurement retry. Observe the old tail on consecutive frames before creating rows.
+          if (seek?.done && atTail) {
+            if (bottomGeometry === geometry) {
+              setFollowOutput(true)
+              finish(true)
+              return
+            }
+            bottomGeometry = geometry
+          } else {
+            bottomGeometry = null
+            if ((!seek || seek.done) && seek?.geometry !== geometry) {
+              const request = { geometry, done: false }
+              seek = request
+              virtuoso.current.scrollIntoView({
+                index: live.current.items.length - 1,
+                align: 'end',
+                behavior: 'auto',
+                calculateViewLocation: ({ locationParams }) => (finished ? null : locationParams),
+                done: () => {
+                  request.done = true
+                },
+              })
+            }
+          }
+        } else bottomGeometry = null
+        frame = requestAnimationFrame(check)
+      }
+      const navigating = controller.navigate('tail', undefined, { owner: token })
+      requestId = controller.getSnapshot().operation?.requestId
+      void navigating.then(
+        (success) => {
+          loaded = success
+          if (!success) finish(false)
+        },
+        () => finish(false)
+      )
+      frame = requestAnimationFrame(check)
+    })
+  }, [
+    branchCreation,
+    branchFollow,
+    cancelBranchCreation,
+    controller,
+    followOutputRef,
+    sendFollowIntent,
+    setFollowOutput,
+  ])
   useImperativeHandle(
     ref,
     () => ({
-      captureAnchor,
       scrollToTop: () => {
         void navigate('head')
       },
       scrollToBottom: () => {
         void navigate('tail')
       },
+      prepareBranchCreation,
       captureSendFollow: () => {
         if (sendFromHistoryFollowsTail({ platformType: platform.type, isSmallScreen }))
           return sendFollowIntent.capture(true)
         const state = controller.getSnapshot()
-        const element = scroller.current
         const atTail =
-          follow.isFollowing() ||
-          (!!element &&
-            !state.hasNewer &&
-            (!state.layout || state.layout.kind === 'tail') &&
-            element.scrollHeight - element.clientHeight - element.scrollTop <= 4)
+          (followOutputRef.current || atBottomRef.current) &&
+          !state.hasNewer &&
+          state.operation?.kind !== 'branch' &&
+          (!state.layout || state.layout.kind === 'tail')
         return sendFollowIntent.capture(atTail)
       },
       scrollToMessage: (messageId) => navigate({ messageId }),
       setIsNewMessage,
     }),
-    [captureAnchor, controller, follow, isSmallScreen, navigate, sendFollowIntent]
+    [atBottomRef, controller, followOutputRef, isSmallScreen, navigate, prepareBranchCreation, sendFollowIntent]
   )
   useEffect(() => {
     uiStore.getState().setMessageListElement(container)
     uiStore.getState().setTranscriptNavigation({
       owner,
       sessionId: session.id,
+      prepareBranchCreation,
       navigateMessage: async (messageId) => {
         leaveTail()
         setHighlighted(messageId)
@@ -375,6 +513,7 @@ const MessageList = forwardRef<
         return controller.viewThread(threadId)
       },
       scrollToIndex: ({ index, align, behavior }) => {
+        cancelBranchCreation()
         if (index === 0 || index === 'LAST') navigate(index === 0 ? 'head' : 'tail')
         else if (virtuoso.current && scroller.current) scrollToItem(index, align, behavior)
         return true
@@ -386,198 +525,31 @@ const MessageList = forwardRef<
         uiStore.getState().setMessageListElement(null)
       }
     }
-  }, [owner, session.id, controller, leaveTail, navigate, scrollToItem])
+  }, [owner, session.id, controller, cancelBranchCreation, leaveTail, navigate, prepareBranchCreation, scrollToItem])
 
-  const layoutFrame = useRef<number | null>(null)
-  const applying = useRef<number | null>(null)
-  const layoutCorrection = useCallback(
-    (anchor: SessionTranscriptViewportAnchor) => {
-      const element = anchor.messageId ? messageElement(anchor.messageId) : null
-      const viewport = scroller.current
-      if (!element || !viewport) return null
-      return (
-        (anchor.blockId ? contentAnchor.correction(anchor) : null) ??
-        element.getBoundingClientRect().top - viewport.getBoundingClientRect().top - contentAnchor.messageOffset(anchor)
-      )
-    },
-    [contentAnchor, messageElement]
-  )
-  const userInput = useCallback(
-    (scrollDelta = 0) => {
-      const state = controller.getSnapshot()
-      const layout = state.layout
-      if (layout && state.firstWindowReady) {
-        let canYield = layout.kind !== 'preserve'
-        if (layout.kind === 'preserve') {
-          const anchor = shiftTranscriptContentAnchor(
-            { ...layout.anchor, offset: 'offset' in layout.anchor ? layout.anchor.offset : 0 },
-            scrollDelta
-          )
-          const correction = layoutCorrection(anchor)
-          if (correction !== null) {
-            if (Math.abs(correction) > 0.5) scrollByGeometry(correction)
-            contentAnchor.adopt(anchor)
-            canYield = true
-          }
-        }
-        if (canYield) {
-          if (layoutFrame.current !== null) cancelAnimationFrame(layoutFrame.current)
-          layoutFrame.current = null
-          applying.current = null
-          controller.cancelLayout(layout.requestId)
-        }
-      }
-      contentAnchor.onUserInput()
-    },
-    [controller, contentAnchor, layoutCorrection, scrollByGeometry]
-  )
+  const userInput = useCallback(() => {
+    cancelBranchCreation()
+    const state = controller.getSnapshot()
+    if (state.layout && state.firstWindowReady) controller.cancelLayout(state.layout.requestId)
+  }, [cancelBranchCreation, controller])
   const applyLayout = useCallback(() => {
-    const layout = live.current.transcript.layout
-    if (!layout || applying.current === layout.requestId || !scroller.current || !virtuoso.current) return
-    const currentItems = live.current.items
+    const state = live.current.transcript
+    const layout = state.layout
+    if (!layout || !virtuoso.current) return
     if (
-      currentItems.some((item) => item.messages.length) &&
-      !container.current?.querySelector('[data-transcript-message]')
-    )
-      return
-    if (layoutFrame.current !== null) cancelAnimationFrame(layoutFrame.current)
-    applying.current = layout.requestId
-    const isCurrent = () => controller.getSnapshot().layout?.requestId === layout.requestId
-    const index = layout.anchor.messageId
-      ? currentItems.findIndex((item) => item.messages.some((message) => message.id === layout.anchor.messageId))
-      : -1
-    if (layout.kind === 'tail') {
-      follow.resume()
-      if (currentItems.length && !lastItem.current) scrollToItem(currentItems.length - 1, 'end', 'auto', isCurrent)
-    } else {
-      follow.pause()
-      if (layout.kind === 'head' || index < 0) scrollToPosition({ top: 0, behavior: 'auto' })
-      else if (!layout.anchor.messageId || !messageElement(layout.anchor.messageId))
-        scrollToItem(index, 'start', 'auto', isCurrent)
+      layout.kind !== 'preserve' &&
+      layout.requestId !== position.initialRequestId &&
+      positionedRequest.current !== layout.requestId
+    ) {
+      positionedRequest.current = layout.requestId
+      virtuoso.current.scrollToIndex(getTranscriptItemLocation(live.current.items, layout, topInset()))
     }
-    let stableAnchorFrames = 0
-    let previousAnchorHeight = -1
-    let stableTailFrames = 0
-    let previousTailHeight = -1
-    // The list clamps scroll requests with its own rounded viewport size, so its reachable bottom can fall short of
-    // scrollHeight - clientHeight. A bottom request that leaves scrollTop unmoved marks where the tail rests.
-    let tailRequest: { top: number; maxTop: number } | null = null
-    // The deadline counts frame time, capping each gap, so a long render on a slow device does not consume it.
-    let layoutTime = 0
-    let previousFrame: number | null = null
-    const acknowledge = () => {
-      if (live.current.transcript.layout?.requestId !== layout.requestId) return
-      applying.current = null
-      if (scrollbarPointer.current && scroller.current) scrollbarPointer.current.scrollTop = scroller.current.scrollTop
-      if (scroller.current)
-        follow.syncScrollPosition(
-          scroller.current.scrollTop,
-          Math.max(0, scroller.current.scrollHeight - scroller.current.clientHeight)
-        )
+    if (!live.current.items.length || measuredEpoch.current === state.windowEpoch)
       controller.acknowledgeLayout(layout.requestId)
-      contentAnchor.adopt(layout.kind === 'preserve' && 'offset' in layout.anchor ? layout.anchor : null)
-    }
-    // At the deadline a mounted target is shown where it rests; device rounding can keep it from settling exactly.
-    const nextFrame = (targetMounted: boolean) => {
-      if (layoutTime < 5000) {
-        layoutFrame.current = requestAnimationFrame(finish)
-        return
-      }
-      if (targetMounted) {
-        acknowledge()
-        return
-      }
-      applying.current = null
-      controller.rejectLayout(layout.requestId, new Error('Message layout is unavailable'))
-    }
-    const finish = (time: number) => {
-      layoutTime += previousFrame === null ? 0 : Math.min(time - previousFrame, 100)
-      previousFrame = time
-      if (live.current.transcript.layout?.requestId !== layout.requestId) {
-        applying.current = null
-        return
-      }
-      const element = layout.anchor.messageId ? messageElement(layout.anchor.messageId) : null
-      const viewport = scroller.current
-      if (!viewport) {
-        applying.current = null
-        return
-      }
-      if ((layout.kind === 'anchor' || layout.kind === 'preserve') && index >= 0) {
-        if (!element) {
-          if (virtuoso.current) scrollToItem(index, 'start', 'auto', isCurrent)
-          nextFrame(false)
-          return
-        }
-        const offset = 'offset' in layout.anchor ? layout.anchor.offset : 0
-        const blockAnchor =
-          'blockId' in layout.anchor && layout.anchor.blockId
-            ? {
-                messageId: layout.anchor.messageId,
-                blockId: layout.anchor.blockId,
-                offset,
-                messageOffset: layout.anchor.messageOffset,
-              }
-            : null
-        const correction =
-          (blockAnchor ? contentAnchor.correction(blockAnchor) : null) ??
-          element.getBoundingClientRect().top -
-            viewport.getBoundingClientRect().top -
-            (blockAnchor ? contentAnchor.messageOffset(blockAnchor) : offset)
-        const targetBounds = element.getBoundingClientRect()
-        const viewportBounds = viewport.getBoundingClientRect()
-        const targetVisible = blockAnchor
-          ? contentAnchor.isVisible(blockAnchor)
-          : targetBounds.bottom > viewportBounds.top && targetBounds.top < viewportBounds.bottom
-        const settled = transcriptAnchorLayoutSettled(viewport, correction, targetVisible)
-        stableAnchorFrames = settled && previousAnchorHeight === viewport.scrollHeight ? stableAnchorFrames + 1 : 0
-        previousAnchorHeight = viewport.scrollHeight
-        if (!settled) scrollByGeometry(correction)
-        if (stableAnchorFrames < 2) {
-          nextFrame(true)
-          return
-        }
-      } else if (layout.kind === 'tail') {
-        const tail = lastItem.current
-        const bounds = viewport.getBoundingClientRect()
-        const tailBounds = tail?.getBoundingClientRect()
-        const maxTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight)
-        const tailVisible =
-          !currentItems.length ||
-          (tailBounds && tailBounds.bottom > bounds.top && tailBounds.bottom <= bounds.bottom + 2)
-        const atReachableBottom =
-          Math.abs(viewport.scrollTop - maxTop) <= 2 ||
-          (tailRequest?.maxTop === maxTop && tailRequest.top === viewport.scrollTop)
-        const settled = viewport.clientHeight > 0 && tailVisible && atReachableBottom
-        stableTailFrames = settled && previousTailHeight === viewport.scrollHeight ? stableTailFrames + 1 : 0
-        previousTailHeight = viewport.scrollHeight
-        if (stableTailFrames < 2) {
-          if (!settled) {
-            if (!tail && currentItems.length) scrollToItem(currentItems.length - 1, 'end', 'auto', isCurrent)
-            else {
-              tailRequest = { top: viewport.scrollTop, maxTop }
-              scrollToPosition({ top: maxTop, behavior: 'auto' })
-            }
-          }
-          nextFrame(!!tail || !currentItems.length)
-          return
-        }
-      }
-      if (layout.kind === 'tail' || ((layout.kind === 'anchor' || layout.kind === 'preserve') && index >= 0))
-        acknowledge()
-      else layoutFrame.current = requestAnimationFrame(acknowledge)
-    }
-    layoutFrame.current = requestAnimationFrame(finish)
-  }, [controller, follow, messageElement, contentAnchor, scrollByGeometry, scrollToPosition, scrollToItem])
+  }, [controller, position.initialRequestId, topInset])
   useLayoutEffect(() => {
     applyLayout()
   }, [transcript.layout, items, applyLayout])
-  useEffect(
-    () => () => {
-      if (layoutFrame.current !== null) cancelAnimationFrame(layoutFrame.current)
-    },
-    []
-  )
   useEffect(() => {
     const release = (event: PointerEvent) => {
       if (scrollbarPointer.current?.pointerId === event.pointerId) scrollbarPointer.current = null
@@ -594,59 +566,76 @@ const MessageList = forwardRef<
     (direction: 'older' | 'newer') => {
       synchronizeBrowseIntent()
       if (userDirection.current !== direction || !progress.current) return
+      // iOS touch scrolling can overwrite Virtuoso's prepend compensation on the next native scroll event.
+      if (platformType === 'ios' && (scrolling.current || scrolling.settleTimer !== null || touchY.current !== null))
+        return
+      const element = scroller.current
+      if (
+        platformType === 'ios' &&
+        element &&
+        (element.scrollTop < 0 || element.scrollTop > Math.max(0, element.scrollHeight - element.clientHeight))
+      )
+        return
       const state = controller.getSnapshot()
       if (state.operation || state.layout) return
       if (direction === 'older' && state.hasOlder) void controller.loadOlder(progress.current)
       if (direction === 'newer' && state.hasNewer) void controller.loadNewer(progress.current)
     },
-    [controller, synchronizeBrowseIntent]
+    [controller, platformType, scrolling, synchronizeBrowseIntent]
   )
-  const onScroll = useCallback(() => {
-    synchronizeBrowseIntent()
-    const element = scroller.current
-    if (!element) return
-    reportedScrollTop.current = element.scrollTop
-    const pointer = scrollbarPointer.current
-    const delta = pointer ? element.scrollTop - pointer.scrollTop : 0
-    if (pointer) pointer.scrollTop = element.scrollTop
-    if (delta && controller.getSnapshot().layout) userInput(delta)
-    if (controller.getSnapshot().layout) {
-      contentAnchor.onScroll()
-      return
-    }
-    if (delta) {
-      progress.current++
-      userDirection.current = delta < 0 ? 'older' : 'newer'
-      if (delta < 0) leaveTail()
-    }
-    if (follow.handleScroll(element.scrollTop, Math.max(0, element.scrollHeight - element.clientHeight)))
-      sendFollowIntent.leaveTail()
-    const maxScrollTop = element.scrollHeight - element.clientHeight
-    if (maxScrollTop - element.scrollTop >= 0) handleScrollTopThrottled(element.scrollTop, maxScrollTop)
-    contentAnchor.onScroll()
-    if (element.scrollTop < 160) loadAtEdge('older')
-    if (element.scrollHeight - element.clientHeight - element.scrollTop < 160) loadAtEdge('newer')
-  }, [
-    controller,
-    follow,
-    leaveTail,
-    sendFollowIntent,
-    loadAtEdge,
-    contentAnchor,
-    userInput,
-    synchronizeBrowseIntent,
-    handleScrollTopThrottled,
-  ])
-  useEffect(() => {
-    if (transcript.firstWindowReady && transcript.hasNewer && follow.isFollowing() && !transcript.operation)
-      navigate('tail')
-  }, [transcript.firstWindowReady, transcript.hasNewer, transcript.operation, navigate, follow])
+  const onScroll = useCallback(
+    (event?: UIEvent): void => {
+      synchronizeBrowseIntent()
+      const element = scroller.current
+      if (!element) return
+      if (event && platformType === 'ios') {
+        // A final native bounce event can arrive after Virtuoso reports idle. Wait for that event to settle
+        // before paging; Virtuoso normalizes negative offsets, so it may not emit another idle transition.
+        if (scrolling.settleTimer !== null) clearTimeout(scrolling.settleTimer)
+        scrolling.settleTimer = setTimeout(() => {
+          scrolling.settleTimer = null
+          onScroll()
+        }, 120)
+      }
+      const scrolledDown = element.scrollTop > observedScrollTop.current
+      observedScrollTop.current = element.scrollTop
+      const pointer = scrollbarPointer.current
+      const delta = pointer ? element.scrollTop - pointer.scrollTop : 0
+      if (pointer) pointer.scrollTop = element.scrollTop
+      if (delta && controller.getSnapshot().layout) userInput()
+      if (controller.getSnapshot().layout) return
+      if (delta) {
+        progress.current++
+        userDirection.current = delta < 0 ? 'older' : 'newer'
+        if (delta < 0) leaveTail()
+      }
+      if (event && scrolledDown && userDirection.current === 'newer' && !controller.getSnapshot().operation) {
+        branchFollow.downwardScroll = true
+      }
+      const maxScrollTop = element.scrollHeight - element.clientHeight
+      if (maxScrollTop - element.scrollTop >= 0) handleScrollTopThrottled(element.scrollTop)
+      if (element.scrollTop < 512) loadAtEdge('older')
+      if (element.scrollHeight - element.clientHeight - element.scrollTop < 512) loadAtEdge('newer')
+    },
+    [
+      branchFollow,
+      controller,
+      leaveTail,
+      loadAtEdge,
+      observedScrollTop,
+      platformType,
+      scrolling,
+      userInput,
+      synchronizeBrowseIntent,
+      handleScrollTopThrottled,
+    ]
+  )
   const previousRowCount = useRef(transcript.rows.length)
   useLayoutEffect(() => {
     if (!transcript.layout && isNewMessage && transcript.rows.length > previousRowCount.current) {
       const index = items.findIndex((item) => item.messages[0]?.id === headerRead.summary.lastUserMessageId)
       if (index >= 0) {
-        follow.pause()
+        setFollowOutput(false)
         if (virtuoso.current && scroller.current) scrollToItem(index)
       }
     }
@@ -657,27 +646,25 @@ const MessageList = forwardRef<
     items,
     isNewMessage,
     headerRead.summary.lastUserMessageId,
-    follow,
     scrollToItem,
+    setFollowOutput,
   ])
   const jumpUser = useCallback(
     (direction: 'older' | 'newer') => {
       const state = controller.getSnapshot()
       if (!state.firstWindowReady || (state.operation && state.operation.phase !== 'error') || state.layout) return
-      const anchor = captureAnchor()
-      const current = state.rows.findIndex((row) => row.messageId === anchor?.messageId)
+      const viewport = scroller.current?.getBoundingClientRect()
+      if (!viewport) return
+      // Virtuoso also renders overscan rows. Navigation starts from a message currently inside the viewport.
+      const visibleMessageId = Array.from(
+        container.current?.querySelectorAll<HTMLElement>('[data-transcript-message]') ?? []
+      ).find((element) => {
+        const bounds = element.getBoundingClientRect()
+        return bounds.bottom > viewport.top && bounds.top < viewport.bottom
+      })?.dataset.transcriptMessage
+      const current = state.rows.findIndex((row) => row.messageId === visibleMessageId)
       if (current < 0) return
-      const currentRow = state.rows[current]
-      const currentElement = messageElement(currentRow.messageId)
-      const currentTop =
-        currentElement && scroller.current
-          ? currentElement.getBoundingClientRect().top - scroller.current.getBoundingClientRect().top
-          : 0
-      const includeCurrent = direction === 'older' && currentTop < -1
-      const candidates =
-        direction === 'older'
-          ? state.rows.slice(0, current + (includeCurrent ? 1 : 0)).reverse()
-          : state.rows.slice(current + 1)
+      const candidates = direction === 'older' ? state.rows.slice(0, current).reverse() : state.rows.slice(current + 1)
       const target = candidates.find((row) => row.message.role === 'user' && !row.message.isSummary)
       if (!target) return
       const index = live.current.items.findIndex((item) =>
@@ -688,18 +675,16 @@ const MessageList = forwardRef<
       userDirection.current = null
       touchY.current = null
       scrollbarPointer.current = null
-      contentAnchor.onUserInput()
       setHighlighted(target.messageId)
-      // The small-screen navigation bar overlays the top of the list; land the message below it.
-      const barHeight = navigationBar.current?.offsetHeight
-      virtuoso.current?.scrollToIndex({
-        index,
-        align: 'start',
-        behavior: 'smooth',
-        ...(barHeight ? { offset: -barHeight } : {}),
-      })
+      // The small-screen navigation bar sits below the header overlay; land the message below both.
+      virtuoso.current?.scrollToIndex(
+        withTopInset(
+          { index, align: 'start' as const, behavior: 'smooth' as const },
+          topInset() + (navigationBar.current?.offsetHeight ?? 0)
+        )
+      )
     },
-    [captureAnchor, controller, leaveTail, contentAnchor, messageElement]
+    [controller, leaveTail, topInset]
   )
   const shouldConfirmPromptCacheDelete = useCallback(
     (messageId: string, target: PromptCacheDeleteTarget) =>
@@ -713,7 +698,7 @@ const MessageList = forwardRef<
     const row = rowsById.get(message.id)!
     const thread = threadById.get(row.threadId)
     const showThread = showThreadLabels && row.messageId === thread?.rootMessageId
-    const hidden = hideSystemPrompt && message.role === 'system'
+    const hidden = message.role === 'system' && (hideSystemPrompt || (message.contentParts.length === 0 && !!row.fork))
     const spacing = first ? 'pt-4' : last ? '!pb-4' : ''
     // Small screens let each message own the 20px gap above it; wide layouts add space around user turns here.
     return (
@@ -780,6 +765,7 @@ const MessageList = forwardRef<
                 assistantAvatarKey={session.assistantAvatarKey}
                 sessionPicUrl={session.picUrl}
                 assistantName={assistantName}
+                compactHereAvailable={compactHereIds.has(message.id)}
               />
             )}
           </ErrorBoundary>
@@ -832,6 +818,14 @@ const MessageList = forwardRef<
       </button>
     </ErrorNotice>
   )
+  const followingTail =
+    followOutput &&
+    followOutputRef.current &&
+    !branchFollow.paused &&
+    (transcript.operation?.kind !== 'branch' || transcript.operation.branchMode === 'create') &&
+    !transcript.hasNewer
+  // Followed content briefly leaves the physical bottom on every growth until Virtuoso scrolls it back.
+  const showReturnToTail = transcript.hasNewer || (!atBottom && !followingTail)
   return (
     <div className={cn('w-full h-full min-h-0 mx-auto flex flex-col', className)}>
       <BlockCodeCollapsedStateProvider defaultCollapsed={!!settingsStore.getState().autoCollapseCodeBlock}>
@@ -856,11 +850,13 @@ const MessageList = forwardRef<
             synchronizeBrowseIntent()
             const element = scroller.current
             if (event.pointerType === 'mouse' && event.button === 0 && element && event.target === element) {
+              observedScrollTop.current = element.scrollTop
               scrollbarPointer.current = { pointerId: event.pointerId, scrollTop: element.scrollTop }
               userInput()
             }
           }}
           onWheelCapture={(event) => {
+            if (event.deltaY === 0) return
             synchronizeBrowseIntent()
             userInput()
             progress.current++
@@ -885,12 +881,18 @@ const MessageList = forwardRef<
             touchY.current = currentY
             onScroll()
           }}
-          onTouchEndCapture={() => {
-            touchY.current = null
+          onTouchEndCapture={(event) => {
+            touchY.current = event.touches[0]?.clientY ?? null
+            if (platformType === 'ios' && !scrolling.current) onScroll()
+          }}
+          onTouchCancelCapture={(event) => {
+            touchY.current = event.touches[0]?.clientY ?? null
+            if (platformType === 'ios' && !scrolling.current) onScroll()
           }}
           onKeyDownCapture={(event) => {
             synchronizeBrowseIntent()
             if (['ArrowUp', 'PageUp', 'ArrowDown', 'PageDown'].includes(event.key)) {
+              observedScrollTop.current = scroller.current?.scrollTop ?? 0
               userInput()
               progress.current++
               userDirection.current = event.key.endsWith('Up') ? 'older' : 'newer'
@@ -899,12 +901,12 @@ const MessageList = forwardRef<
           }}
         >
           {isSmallScreen && (
-            <Transition mounted={showScrollToPrev && (!atTop || transcript.hasOlder)} transition="fade">
+            <Transition mounted={showScrollToPrev && !atTop} transition="fade">
               {(transitionStyle) => (
                 <div
                   ref={navigationBar}
-                  style={transitionStyle}
-                  className="pointer-events-none absolute z-10 top-0 left-0 right-0 flex justify-center px-3 pt-2"
+                  style={{ ...transitionStyle, top: TITLE_BAR_OVERLAY_HEIGHT }}
+                  className="pointer-events-none absolute z-10 left-0 right-0 flex justify-center px-3 pt-2"
                 >
                   <Flex
                     align="center"
@@ -942,8 +944,8 @@ const MessageList = forwardRef<
               )}
             </Transition>
           )}
-          {(items.length > 0 || transcript.operation?.phase !== 'reading') && (
-            <div className="chatbox-scroll-top-fade h-full">
+          {(transcript.firstWindowReady || items.length > 0 || transcript.operation?.phase !== 'reading') && (
+            <div className={cn('h-full', isSmallScreen ? 'chatbox-scroll-under-fade' : 'chatbox-scroll-top-fade')}>
               <Virtuoso
                 key={`${session.id}:${transcript.windowEpoch}`}
                 style={{
@@ -954,14 +956,19 @@ const MessageList = forwardRef<
                 className={cn('chatbox-scroll-bottom-fade', platformType === 'win32' && 'scrollbar-custom')}
                 ref={virtuoso}
                 data={items}
-                firstItemIndex={0}
+                firstItemIndex={position.firstItemIndex}
                 computeItemKey={(_, item) => item.key}
-                followOutput={false}
+                followOutput={followingTail ? followOutputToBottom : false}
+                // Editing can replace rows without changing their count. Let Virtuoso restore the tail after measuring them.
+                scrollIntoViewOnChange={followingTail ? followChangedRowsToBottom : undefined}
                 skipAnimationFrameInResizeObserver
-                initialTopMostItemIndex={0}
+                initialTopMostItemIndex={position.initialLocation}
                 components={transcriptListComponents}
                 context={{
+                  topInset: isSmallScreen,
                   columnClassName: paddedContentColumnClassName(widthFull),
+                  hasOlder: transcript.hasOlder,
+                  hasNewer: transcript.hasNewer,
                   olderNotice: transcriptErrorAt === 'older' ? transcriptErrorNotice : null,
                   newerNotice: transcriptErrorAt === 'newer' ? transcriptErrorNotice : null,
                 }}
@@ -972,28 +979,32 @@ const MessageList = forwardRef<
                   if (scroller.current) applyLayout()
                 }}
                 onScroll={onScroll}
+                isScrolling={(value) => {
+                  scrolling.current = value
+                  if (!value && platformType === 'ios') onScroll()
+                }}
                 startReached={() => loadAtEdge('older')}
                 endReached={() => loadAtEdge('newer')}
-                rangeChanged={applyLayout}
-                totalListHeightChanged={(height) => {
-                  applyLayout()
-                  if (!controller.getSnapshot().layout) follow.handleHeightChange(height)
-                  const element = scroller.current
-                  if (element && pendingMeasurementScroll.current !== element) {
-                    pendingMeasurementScroll.current = element
-                    // ResizeObserver can adjust the native offset after this frame's scroll events.
-                    // Publish the measured viewport before paint so the rendered range matches it.
-                    queueMicrotask(() => {
-                      if (pendingMeasurementScroll.current === element) pendingMeasurementScroll.current = null
-                      if (scroller.current === element && element.scrollTop !== reportedScrollTop.current)
-                        element.dispatchEvent(new Event('scroll'))
-                    })
+                itemsRendered={(renderedItems) => {
+                  if (renderedItems.some((item) => item.size > 0)) {
+                    measuredEpoch.current = transcript.windowEpoch
+                    applyLayout()
                   }
                 }}
                 atBottomStateChange={(value) => {
                   setAtBottom(value)
-                  if (!controller.getSnapshot().layout) follow.handleAtBottomChange(value)
-                  uiStore.getState().setMessageScrollingAtBottom(value && !controller.getSnapshot().hasNewer)
+                  atBottomRef.current = value
+                  const state = controller.getSnapshot()
+                  if (value) {
+                    if (branchFollow.paused) resumeTailAfterUserScroll()
+                    else
+                      setFollowOutput(
+                        !state.hasNewer &&
+                          state.operation?.kind !== 'newer' &&
+                          (state.operation?.kind !== 'branch' || state.operation.branchMode === 'create')
+                      )
+                  }
+                  uiStore.getState().setMessageScrollingAtBottom(value && !state.hasNewer)
                 }}
                 atTopStateChange={(value) => {
                   setAtTop(value)
@@ -1002,10 +1013,7 @@ const MessageList = forwardRef<
                 increaseViewportBy={{ top: viewportHeight, bottom: viewportHeight }}
                 minOverscanItemCount={{ top: 3, bottom: 3 }}
                 itemContent={(index, item) => (
-                  <div
-                    className={contentColumnClassName(widthFull)}
-                    ref={index === items.length - 1 ? lastItem : undefined}
-                  >
+                  <div className={contentColumnClassName(widthFull)}>
                     {item.type === 'thread' && (
                       <ThreadLabel
                         sessionId={session.id}
@@ -1022,7 +1030,7 @@ const MessageList = forwardRef<
                       gap={0}
                       className={item.type === 'group' && !isSmallScreen ? 'pt-5' : undefined}
                       style={
-                        item.type === 'group' && isNewMessage && index === items.length - 1
+                        item.type === 'group' && isNewMessage && index === position.firstItemIndex + items.length - 1
                           ? { minHeight: viewportHeight * 0.85 }
                           : undefined
                       }
@@ -1030,8 +1038,9 @@ const MessageList = forwardRef<
                       {item.messages.map((message, messageIndex) =>
                         renderMessage(
                           message,
-                          index === 0 && messageIndex === 0,
-                          index === items.length - 1 && messageIndex === item.messages.length - 1
+                          index === position.firstItemIndex && messageIndex === 0,
+                          index === position.firstItemIndex + items.length - 1 &&
+                            messageIndex === item.messages.length - 1
                         )
                       )}
                     </Stack>
@@ -1039,9 +1048,6 @@ const MessageList = forwardRef<
                 )}
               />
             </div>
-          )}
-          {(transcript.isLoadingOlder || transcript.isLoadingNewer) && (
-            <Loader className="absolute top-2 left-1/2" size="xs" />
           )}
           {transcriptErrorAt === 'open' && (
             <div className="absolute inset-0 flex overflow-y-auto px-md pb-16">
@@ -1051,16 +1057,24 @@ const MessageList = forwardRef<
           {!isSmallScreen && transcript.firstWindowReady && (
             <TranscriptMinimap key={session.id} transcript={transcript} onNavigate={navigate} />
           )}
-          {activity === 'generating' && (transcript.hasNewer || (!atBottom && !followingTail)) && (
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2">
+          {activity === 'generating' && showReturnToTail && (
+            <div
+              className={cn(
+                'absolute left-1/2 -translate-x-1/2',
+                atBottom && transcript.hasNewer ? 'bottom-14' : 'bottom-4'
+              )}
+            >
               <Button
                 w={40}
                 h={40}
                 p={0}
                 radius="xl"
-                bg="var(--chatbox-background-primary)"
                 c="chatbox-secondary"
-                className="border border-solid border-chatbox-border-primary shadow-lg"
+                className={cn(
+                  'border border-solid border-chatbox-border-primary shadow-lg',
+                  FLOATING_BUTTON_GLASS_PROPS.className
+                )}
+                style={FLOATING_BUTTON_GLASS_PROPS.style}
                 aria-label={t('Generating...')}
                 onClick={() => navigate('tail')}
               >
@@ -1078,10 +1092,7 @@ const MessageList = forwardRef<
               onScrollToNext={() => void jumpUser('newer')}
             />
           ) : (
-            <Transition
-              mounted={activity !== 'generating' && (transcript.hasNewer || (!atBottom && !followingTail))}
-              transition="slide-up"
-            >
+            <Transition mounted={activity !== 'generating' && showReturnToTail} transition="slide-up">
               {(transitionStyle) => <ScrollToBottomButton onClick={() => navigate('tail')} style={transitionStyle} />}
             </Transition>
           )}
@@ -1093,42 +1104,51 @@ const MessageList = forwardRef<
 export default memo(MessageList)
 
 interface TranscriptListContext {
+  /** Small screens: the transparent header overlays the list, so the list starts with a spacer of its height. */
+  topInset: boolean
   columnClassName: string
+  hasOlder: boolean
+  hasNewer: boolean
   olderNotice: ReactNode
   newerNotice: ReactNode
 }
-// Chromium and Firefox keep the visible messages in place through CSS scroll anchoring, except at the very top
-// where the row simply appears in view. WebKit has no scroll anchoring, so the row reproduces that behaviour.
-const browserAnchorsScroll = typeof CSS !== 'undefined' && CSS.supports('overflow-anchor', 'auto')
-/** A row above the messages that moves them only when the list is scrolled to the very top. */
-function TranscriptHeadRow({ className, children }: { className: string; children: ReactNode }) {
-  const row = useRef<HTMLDivElement>(null)
-  useLayoutEffect(() => {
-    const element = row.current
-    const scroller = element?.closest<HTMLElement>('[data-virtuoso-scroller]')
-    if (browserAnchorsScroll || !element || !scroller) return
-    if (scroller.scrollTop > 0) scroller.scrollTop += element.offsetHeight
-    return () => {
-      if (scroller.scrollTop > 0) scroller.scrollTop -= element.offsetHeight
-    }
-  }, [])
+function TranscriptEdgeLoading({ hasMore }: { hasMore: boolean }) {
+  const { t } = useTranslation()
+  const [keepSpace, setKeepSpace] = useState(hasMore)
+  if (hasMore && !keepSpace) setKeepSpace(true)
+  // Keep the edge's height after its final page so removing the indicator cannot shift the reading position.
+  // A newly navigated window mounts its own edge components.
+  if (!keepSpace && !hasMore) return null
   return (
-    <div ref={row} className={className}>
-      {children}
+    <div className="h-10">
+      {hasMore && (
+        <div role="status" className="flex h-full items-center justify-center gap-2 text-sm text-chatbox-tint-tertiary">
+          <Loader size="xs" aria-hidden="true" />
+          <span>{t('Loading...')}</span>
+        </div>
+      )}
     </div>
   )
 }
 const transcriptListComponents = {
-  Header: ({ context }: ContextProp<TranscriptListContext>) =>
-    context.olderNotice ? (
-      <TranscriptHeadRow className={cn(context.columnClassName, 'pt-4')}>{context.olderNotice}</TranscriptHeadRow>
-    ) : null,
-  // The empty footer keeps the last message clear of the scroller's 12px bottom fade.
+  Header: ({ context }: ContextProp<TranscriptListContext>) => (
+    <>
+      {context.topInset && <div aria-hidden="true" style={{ height: TITLE_BAR_OVERLAY_HEIGHT }} />}
+      {context.olderNotice ? (
+        <div className={cn(context.columnClassName, 'pt-4')}>{context.olderNotice}</div>
+      ) : (
+        <TranscriptEdgeLoading hasMore={context.hasOlder} />
+      )}
+    </>
+  ),
   Footer: ({ context }: ContextProp<TranscriptListContext>) =>
     context.newerNotice ? (
       <div className={cn(context.columnClassName, 'pb-4')}>{context.newerNotice}</div>
     ) : (
-      <div aria-hidden="true" className="h-3" />
+      // Keep the last message clear of the 12px bottom fade, including windows that need no pagination indicator.
+      <div className="min-h-3">
+        <TranscriptEdgeLoading hasMore={context.hasNewer} />
+      </div>
     ),
 }
 

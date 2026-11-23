@@ -24,11 +24,12 @@ vi.mock('@/hooks/useCopied', () => ({
 }))
 vi.mock('@/packages/context-management', () => ({
   requestManualCompaction: vi.fn(),
+  requestTargetedCompaction: vi.fn(),
 }))
 vi.mock('@/stores/toastActions', () => ({ add: vi.fn() }))
 vi.mock('../common/ScalableIcon', () => ({ ScalableIcon: () => null }))
 
-import { requestManualCompaction } from '@/packages/context-management'
+import { requestManualCompaction, requestTargetedCompaction } from '@/packages/context-management'
 import { add as addToast } from '@/stores/toastActions'
 import { CompactionStatus } from './CompactionStatus'
 
@@ -105,6 +106,11 @@ describe('CompactionStatus running preview', () => {
         dispatchEvent: vi.fn(),
       })),
     })
+  })
+
+  test('the running card is a translucent glass fill in the transcript', () => {
+    renderRunning('')
+    expect(screen.getByText('Compacting conversation...').closest('.chatbox-glass-fill')).not.toBeNull()
   })
 
   test('shows the latest summary line in the same preview row while lines stream', () => {
@@ -191,6 +197,27 @@ describe('CompactionStatus retry', () => {
     retry()
 
     expect(requestManualCompaction).toHaveBeenCalledWith('session-1', { force: true, prompt: 'Keep exact paths.' })
+  })
+
+  test('retries a failed "compact up to here" through the same message', async () => {
+    getDefaultStore().set(compactionUIStateMapAtom, {
+      'session-1': {
+        status: 'failed',
+        error: 'Network error',
+        streamingText: '',
+        summaryMessageId: null,
+        retryPrompt: 'Keep exact paths.',
+        retryTargetMessageId: 'a2',
+      },
+    })
+    vi.mocked(requestTargetedCompaction).mockResolvedValue('busy')
+    vi.mocked(requestManualCompaction).mockClear()
+
+    retry()
+
+    expect(requestTargetedCompaction).toHaveBeenCalledWith('session-1', 'a2', { prompt: 'Keep exact paths.' })
+    expect(requestManualCompaction).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(addToast).toHaveBeenCalledWith('Compression could not start'))
   })
 
   test('reports that a retry waits for the session instead of silently doing nothing', async () => {

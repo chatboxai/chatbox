@@ -120,7 +120,7 @@ export const ImageModelSelect = forwardRef<HTMLButtonElement, ImageModelSelectPr
                         <Text size="sm" className="min-w-0 flex-1 break-words">
                           {model.displayName}
                         </Text>
-                        {isMobile && detail.description && (
+                        {isMobile && (detail.description || detail.pointsPerImage !== undefined) && (
                           <ActionIcon
                             aria-label={t('Model details') as string}
                             data-mantine-stop-propagation
@@ -140,7 +140,7 @@ export const ImageModelSelect = forwardRef<HTMLButtonElement, ImageModelSelectPr
                         )}
                       </Combobox.Option>
                     )
-                    if (isMobile || !detail.description) return option
+                    if (isMobile || (!detail.description && detail.pointsPerImage === undefined)) return option
                     return (
                       <HoverCard
                         key={`${group.providerId}:${model.modelId}:${detailResetKey}`}

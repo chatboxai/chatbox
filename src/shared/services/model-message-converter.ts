@@ -549,6 +549,15 @@ async function emitAssistantMessages(
         let injection: ViewImageInjection | undefined
         if (tc.state === 'error') {
           toolOutput = { type: 'error-text' as const, value: stringifyErrorResult(tc.result) }
+        } else if (
+          tc.toolName === 'delete_memory' &&
+          typeof tc.result === 'object' &&
+          tc.result !== null &&
+          'message' in tc.result &&
+          typeof tc.result.message === 'string'
+        ) {
+          // Deleted memory content is retained for display, not model history.
+          toolOutput = { type: 'json', value: { message: tc.result.message } }
         } else {
           const toolResultImageOutput = await toToolResultImageOutput(tc, resolveImage, {
             modelSupportVision: options?.modelSupportVision,

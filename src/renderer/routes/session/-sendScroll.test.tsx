@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 
 import type { Message } from '@shared/types'
-import { act, cleanup, render, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { type ComponentType, type ReactNode, Suspense } from 'react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { InputBoxPayload } from '@/components/InputBox/InputBox'
 
 const h = vi.hoisted(() => ({
   sessionId: 'session-a',
+  missing: false,
   lastUserMessageId: 'previous-message',
   topMode: false,
   onSubmit: null as ((payload: InputBoxPayload) => Promise<void>) | null,
@@ -28,7 +29,7 @@ vi.mock('@tanstack/react-router', async () => ({
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (text: string) => text }) }))
 vi.mock('@mantine/core', () => ({
   Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  Button: () => null,
+  Button: ({ children }: { children: ReactNode }) => <button>{children}</button>,
   Loader: () => null,
 }))
 vi.mock('zustand', () => ({ useStore: () => vi.fn() }))
@@ -71,7 +72,12 @@ vi.mock('@/components/layout/contentColumn', () => ({
   paddedContentColumnClassName: () => '',
 }))
 vi.mock('@/components/layout/Header', () => ({ default: () => null }))
-vi.mock('@/components/layout/Page', () => ({ default: () => null }))
+vi.mock('@/components/layout/Page', () => ({
+  default: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}))
+vi.mock('@/components/session/MissingSessionActions', () => ({
+  MissingSessionActions: () => <button>Delete Current Session</button>,
+}))
 vi.mock('@/components/session/SessionRecoveryDetails', () => ({ SessionRecoveryDetails: () => null }))
 vi.mock('@/components/session/SessionSheet', () => ({ SessionSheet: () => null }))
 vi.mock('@/components/session/SessionSidePanel', () => ({ closeSessionPanel: vi.fn(), SessionSidePanel: () => null }))
@@ -80,8 +86,8 @@ vi.mock('@/hooks/useProviders', () => ({ useProviders: () => ({ providers: [] })
 vi.mock('@/hooks/useScreenChange', () => ({ useIsSmallScreen: () => true }))
 vi.mock('@/hooks/useSessionPresentation', () => ({
   useSessionPresentation: () => ({
-    header: { id: h.sessionId, type: 'chat' },
-    read: { summary: { lastUserMessageId: h.lastUserMessageId } },
+    header: h.missing ? null : { id: h.sessionId, type: 'chat' },
+    read: h.missing ? null : { summary: { lastUserMessageId: h.lastUserMessageId } },
     isFetching: false,
     isError: false,
   }),
@@ -140,6 +146,7 @@ describe('session send scroll intent', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     h.sessionId = 'session-a'
+    h.missing = false
     h.lastUserMessageId = 'previous-message'
     h.topMode = false
     h.onSubmit = null
@@ -151,6 +158,13 @@ describe('session send scroll intent', () => {
     })
   })
   afterEach(cleanup)
+
+  test('offers removal when the conversation is missing', async () => {
+    h.missing = true
+    render(<Page />)
+    expect(await screen.findByText('Conversation not found')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Delete Current Session' })).toBeTruthy()
+  })
 
   test('waits for the submitted user message to commit before scrolling', async () => {
     const view = await renderRoute()
@@ -215,6 +229,7 @@ describe('session send scroll intent', () => {
     h.sessionId = 'session-b'
     view.rerender()
     h.sessionId = 'session-a'
+    h.missing = false
     h.lastUserMessageId = message.id
     view.rerender()
     expect(h.scroll).not.toHaveBeenCalled()

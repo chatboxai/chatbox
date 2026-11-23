@@ -812,3 +812,89 @@ describe('ImageGenerationService', () => {
     expect(f.submit).toHaveBeenCalledTimes(2)
   })
 })
+
+describe('image billing consent before persistence', () => {
+  it('uses the current caller for retry authorization while retaining CLI provenance', async () => {
+    const authorizeRequest = vi.fn().mockResolvedValue(undefined)
+    const f = fixture({ authorizeRequest })
+    const source = { type: 'chatbox_cli' as const, sessionId: 'session', toolCallId: 'tool' }
+    const old = await existing(f, { source })
+    await (await f.service.retry(old.id, { interactive: true })).completion
+    expect(authorizeRequest).toHaveBeenLastCalledWith(old, expect.anything(), true)
+    expect(f.records.get(old.id)?.source).toEqual(source)
+    await (await f.service.retry(old.id)).completion
+    expect(authorizeRequest).toHaveBeenLastCalledWith(expect.objectContaining({ source }), expect.anything(), false)
+    await (await f.service.start(params, { interactive: true })).completion
+    expect(authorizeRequest).toHaveBeenLastCalledWith(params, expect.anything(), true)
+  })
+
+  it.each(['user', 'background'] as const)(
+    'preserves the insufficient-points record when %s stops authorization',
+    async (reason) => {
+      const authorizeRequest = vi.fn(
+        (_params, signal: AbortSignal) =>
+          new Promise<void>((_resolve, reject) => {
+            signal.addEventListener(
+              'abort',
+              () => reject(Object.assign(new Error('cancelled'), { name: 'AbortError' })),
+              { once: true }
+            )
+          })
+      )
+      const f = fixture({ authorizeRequest })
+      const old = await existing(f, { error: 'insufficient points', errorCode: 20049, errorItemUuid: 'original-item' })
+      const retry = f.service.retry(old.id, { interactive: true })
+      const rejection = expect(retry).rejects.toMatchObject({ name: 'AbortError' })
+      await vi.waitFor(() => expect(authorizeRequest).toHaveBeenCalledOnce())
+      if (reason === 'user') await f.service.cancel()
+      else {
+        f.service.setForeground(false)
+        await f.service.waitForIdle()
+      }
+      await rejection
+      expect(f.records.get(old.id)).toEqual(old)
+      expect(f.storage.update).not.toHaveBeenCalled()
+      expect(f.submit).not.toHaveBeenCalled()
+      expect(f.service.getSnapshot().currentGeneratingId).toBeNull()
+    }
+  )
+
+  it('keeps cancelled creation out of history and retains retry history', async () => {
+    const denied = Object.assign(new Error('cancelled'), { name: 'AbortError' })
+    const f = fixture({ authorizeRequest: vi.fn().mockRejectedValue(denied) })
+    const onRecordCreated = vi.fn()
+    await expect(f.service.start(params, { onRecordCreated })).rejects.toMatchObject({ name: 'AbortError' })
+    expect(f.records.size).toBe(0)
+    expect(onRecordCreated).not.toHaveBeenCalled()
+    const old = await existing(f, { error: 'original error', taskId: 'old-task' })
+    await expect(f.service.retry(old.id)).rejects.toMatchObject({ name: 'AbortError' })
+    expect(f.records.get(old.id)).toEqual(old)
+    expect(f.submit).not.toHaveBeenCalled()
+    expect(f.service.getSnapshot().phase).toBe('idle')
+  })
+
+  it('holds the submission lock during confirmation and submits once after allowing', async () => {
+    const consent = deferred<void>()
+    const f = fixture({ authorizeRequest: () => consent.promise })
+    const start = f.service.start(params)
+    await expect(f.service.start(params)).rejects.toThrow('Another image')
+    expect(f.submit).not.toHaveBeenCalled()
+    consent.resolve()
+    await (await start).completion
+    expect(f.submit).toHaveBeenCalledOnce()
+  })
+
+  it('shows billing errors without submitting a task and rechecks on retry', async () => {
+    const authorizeRequest = vi
+      .fn()
+      .mockRejectedValueOnce(Object.assign(new Error('insufficient'), { code: 20049 }))
+      .mockResolvedValue(undefined)
+    const f = fixture({ authorizeRequest })
+    const handle = await f.service.start(params)
+    expect(await handle.completion).toMatchObject({ status: 'error', errorCode: 20049 })
+    expect(f.submit).not.toHaveBeenCalled()
+    await (await f.service.retry(handle.recordId)).completion
+    expect(authorizeRequest).toHaveBeenCalledTimes(2)
+    expect(f.submit).toHaveBeenCalledOnce()
+  })
+})

@@ -61,7 +61,7 @@ function mount(detail: Detail = freeDetail, licenseKey = 'active-key') {
       useRefreshChatboxAIModelsOnLicenseChange(props.licenseKey, props.detail)
       return {
         ...models,
-        locked: isChatboxAIModelLocked('advanced', models.chatboxAIModelList?.license.plan),
+        locked: isChatboxAIModelLocked('advanced', models.chatboxAIModelList?.license),
       }
     },
     { wrapper, initialProps: { detail, licenseKey } }
@@ -111,6 +111,25 @@ describe('Chatbox AI entitlement refresh', () => {
     rerender({ detail: { name: 'Chatbox AI Lite', plan: 'lite' }, licenseKey: 'active-key' })
     await waitFor(() => expect(result.current.chatboxAIModelList?.license.plan).toBe('lite'))
     expect(result.current.locked).toBe(true)
+  })
+
+  it('refetches when an active Pro trial ends so advanced models lock again', async () => {
+    const proTrial = {
+      canClaim: false,
+      startsAt: new Date(Date.now() - 60_000).toISOString(),
+      expiresAt: new Date(Date.now() + 100).toISOString(),
+    }
+    mocks.getChatboxAIModelList.mockImplementation(async () => ({
+      ...catalog('lite'),
+      license: { plan: 'lite', proTrial },
+    }))
+    const { result } = mount(null)
+    await waitFor(() => expect(result.current.chatboxAIModelList?.license.plan).toBe('lite'))
+    expect(result.current.locked).toBe(false)
+    const requests = mocks.getChatboxAIModelList.mock.calls.length
+
+    await waitFor(() => expect(mocks.getChatboxAIModelList).toHaveBeenCalledTimes(requests + 1), { timeout: 3000 })
+    await waitFor(() => expect(result.current.locked).toBe(true))
   })
 
   it('refreshes on app focus even while the model cache is fresh', async () => {
@@ -202,4 +221,21 @@ describe('Chatbox AI entitlement refresh', () => {
     await waitFor(() => expect(result.current.isError).toBe(true))
     expect(result.current.locked).toBe(true)
   })
+})
+
+it('uses backend image prices and descriptions from model_list, not legacy manifest prices', async () => {
+  mocks.getModelManifest.mockResolvedValue({
+    models: [],
+    imageModels: [{ modelId: 'image', modelName: 'Old', points_per_image: 1 }],
+  })
+  mocks.getChatboxAIModelList.mockResolvedValue({
+    ...catalog('pro'),
+    imageModels: [{ modelId: 'image', modelName: 'Image', description: 'Image model', points_per_image: 27000 }],
+  })
+  const { result } = mount(proDetail)
+  await waitFor(() =>
+    expect(result.current.chatboxAIImageModels).toEqual([
+      expect.objectContaining({ nickname: 'Image', description: 'Image model', pointsPerImage: 27000 }),
+    ])
+  )
 })

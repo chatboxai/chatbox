@@ -62,6 +62,18 @@ describe('ToolUnavailableCard', () => {
     await waitFor(() => expect(mocks.navigateToSettings).toHaveBeenNthCalledWith(2, '/web-search'))
   })
 
+  it('is a translucent glass fill whose background comes from classes, not inline styles', () => {
+    render(
+      <MantineProvider>
+        <ToolUnavailableCard toolLabel="Web Search" toolName="web_search" errorCode={20024} />
+      </MantineProvider>
+    )
+    const card = screen.getByRole('status')
+    expect(card.classList).toContain('chatbox-glass-fill')
+    expect(card.style.background).toBe('')
+    expect(card.style.backgroundColor).toBe('')
+  })
+
   it('uses the known localized error detail for other Chatbox AI tool failures', () => {
     render(
       <MantineProvider>

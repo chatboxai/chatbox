@@ -11,7 +11,7 @@ function clampRatio(value: number): number {
 
 export function getComputePointsRemainingRatio(quota: ComputePointQuota): number {
   if (quota.unified_token_limit > 0) {
-    return clampRatio(1 - quota.unified_token_usage / quota.unified_token_limit)
+    return clampRatio((quota.unified_token_limit - quota.unified_token_usage) / quota.unified_token_limit)
   }
   return clampRatio(quota.remaining_quota_unified)
 }

@@ -10,6 +10,10 @@ export const openaiProvider = defineProvider({
   type: ModelProviderType.OpenAI,
   modelsDevProviderId: 'openai',
   curatedModelIds: [
+    'gpt-6-astra',
+    'gpt-6.1-sol',
+    'gpt-6.1-terra',
+    'gpt-6-luna',
     'gpt-5.6-sol',
     'gpt-5.6-terra',
     'gpt-5.6-luna',
@@ -18,9 +22,7 @@ export const openaiProvider = defineProvider({
     'gpt-5.4-nano',
     'gpt-5.2',
     'gpt-5.2-pro',
-    'o4-mini',
     'o3-pro',
-    'o3-mini',
     'gpt-4.1',
     'gpt-4.1-mini',
     'gpt-4o',
@@ -35,6 +37,30 @@ export const openaiProvider = defineProvider({
     apiHost: 'https://api.openai.com',
     // https://platform.openai.com/docs/models
     models: [
+      {
+        modelId: 'gpt-6-astra',
+        capabilities: ['vision', 'tool_use', 'reasoning'],
+        contextWindow: 1_050_000,
+        maxOutput: 128_000,
+      },
+      {
+        modelId: 'gpt-6.1-sol',
+        capabilities: ['vision', 'tool_use', 'reasoning'],
+        contextWindow: 1_050_000,
+        maxOutput: 128_000,
+      },
+      {
+        modelId: 'gpt-6.1-terra',
+        capabilities: ['vision', 'tool_use', 'reasoning'],
+        contextWindow: 1_050_000,
+        maxOutput: 128_000,
+      },
+      {
+        modelId: 'gpt-6-luna',
+        capabilities: ['vision', 'tool_use', 'reasoning'],
+        contextWindow: 1_050_000,
+        maxOutput: 128_000,
+      },
       {
         modelId: 'gpt-5.6-sol',
         capabilities: ['vision', 'tool_use', 'reasoning'],
@@ -84,19 +110,7 @@ export const openaiProvider = defineProvider({
         maxOutput: 128_000,
       },
       {
-        modelId: 'o4-mini',
-        capabilities: ['vision', 'tool_use', 'reasoning'],
-        contextWindow: 200_000,
-        maxOutput: 100_000,
-      },
-      {
         modelId: 'o3-pro',
-        capabilities: ['vision', 'tool_use', 'reasoning'],
-        contextWindow: 200_000,
-        maxOutput: 100_000,
-      },
-      {
-        modelId: 'o3-mini',
         capabilities: ['vision', 'tool_use', 'reasoning'],
         contextWindow: 200_000,
         maxOutput: 100_000,

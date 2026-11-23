@@ -349,52 +349,50 @@ const MobileActionMenu: FC<ActionMenuProps> = ({
             event.preventDefault()
             triggerRef.current?.focus({ preventScroll: true })
           }}
-          className="flex flex-col h-fit fixed bottom-0 left-0 right-0 outline-none select-none [-webkit-touch-callout:none]"
+          className="flex flex-col h-fit fixed bottom-0 left-0 right-0 rounded-t-lg bg-chatbox-background-primary outline-none select-none [-webkit-touch-callout:none]"
         >
-          <div className="bg-chatbox-background-primary rounded-t-lg">
-            <Drawer.Handle />
-            {title && (
-              <Text
-                c="chatbox-tertiary"
-                size="md"
-                lineClamp={1}
-                className={subtitle ? 'text-center px-4' : 'text-center mb-2 px-4'}
-              >
-                <EmphasizedTitle title={title} emphasis={titleEmphasis} />
-              </Text>
+          <Drawer.Handle />
+          {title && (
+            <Text
+              c="chatbox-tertiary"
+              size="md"
+              lineClamp={1}
+              className={subtitle ? 'text-center px-4' : 'text-center mb-2 px-4'}
+            >
+              <EmphasizedTitle title={title} emphasis={titleEmphasis} />
+            </Text>
+          )}
+          {subtitle && (
+            <Text c="chatbox-tertiary" size="xs" truncate="end" className="text-center mb-2 px-4 font-mono">
+              {subtitle}
+            </Text>
+          )}
+          <Stack className="px-2" gap={0}>
+            {items.map((item, index) =>
+              item.divider ? (
+                <Divider key={`divider-${item.divider}-${index}`} className="my-2" />
+              ) : item.doubleCheck ? (
+                <MobileDoubleCheckMenuItem
+                  key={`${item.text}${index}`}
+                  item={item}
+                  onConfirm={handleItemClick(item.onClick)}
+                />
+              ) : (
+                <button
+                  key={`${item.text}${index}`}
+                  data-testid={item.testId}
+                  onClick={handleItemClick(item.onClick)}
+                  disabled={item.disabled}
+                  className="border-0 bg-transparent p-2.5"
+                >
+                  <Text span lineClamp={1} fw={600} c={item.color || 'chatbox-primary'}>
+                    {item.text}
+                  </Text>
+                </button>
+              )
             )}
-            {subtitle && (
-              <Text c="chatbox-tertiary" size="xs" truncate="end" className="text-center mb-2 px-4 font-mono">
-                {subtitle}
-              </Text>
-            )}
-            <Stack className="px-2" gap={0}>
-              {items.map((item, index) =>
-                item.divider ? (
-                  <Divider key={`divider-${item.divider}-${index}`} className="my-2" />
-                ) : item.doubleCheck ? (
-                  <MobileDoubleCheckMenuItem
-                    key={`${item.text}${index}`}
-                    item={item}
-                    onConfirm={handleItemClick(item.onClick)}
-                  />
-                ) : (
-                  <button
-                    key={`${item.text}${index}`}
-                    data-testid={item.testId}
-                    onClick={handleItemClick(item.onClick)}
-                    disabled={item.disabled}
-                    className="border-0 bg-transparent p-2.5"
-                  >
-                    <Text span lineClamp={1} fw={600} c={item.color || 'chatbox-primary'}>
-                      {item.text}
-                    </Text>
-                  </button>
-                )
-              )}
-            </Stack>
-            <div className="h-[--mobile-safe-area-inset-bottom] min-h-4" />
-          </div>
+          </Stack>
+          <div className="h-[--mobile-safe-area-inset-bottom] min-h-4" />
         </Drawer.Content>
       </Drawer.Portal>
     </Drawer.Root>
@@ -434,47 +432,45 @@ const MobileDoubleCheckMenuItem: FC<{
         <Drawer.Overlay className="fixed inset-0 bg-chatbox-background-mask-overlay select-none [-webkit-touch-callout:none]" />
         <Drawer.Content
           data-testid={item.confirmPanelTestId}
-          className="flex flex-col h-fit fixed bottom-0 left-0 right-0 outline-none select-none [-webkit-touch-callout:none]"
+          className="flex flex-col h-fit fixed bottom-0 left-0 right-0 rounded-t-lg bg-chatbox-background-primary outline-none select-none [-webkit-touch-callout:none]"
         >
-          <div className="bg-chatbox-background-primary rounded-t-lg">
-            <Drawer.Handle />
-            <Stack className="px-2" gap={0}>
-              <Drawer.Close asChild>
-                <button
-                  data-testid={item.confirmTestId ?? item.testId}
-                  disabled={confirming || item.disabled}
-                  onClick={async (e) => {
-                    if (confirmingRef.current) return
-                    confirmingRef.current = true
-                    setConfirming(true)
-                    try {
-                      await onConfirm?.(e)
-                    } finally {
-                      confirmingRef.current = false
-                      setConfirming(false)
-                    }
-                  }}
-                  className="border-0 bg-transparent p-2.5"
-                >
-                  <Text span lineClamp={1} fw={600} c={doubleCheckColor}>
-                    {doubleCheckText}
-                  </Text>
-                </button>
-              </Drawer.Close>
+          <Drawer.Handle />
+          <Stack className="px-2" gap={0}>
+            <Drawer.Close asChild>
+              <button
+                data-testid={item.confirmTestId ?? item.testId}
+                disabled={confirming || item.disabled}
+                onClick={async (e) => {
+                  if (confirmingRef.current) return
+                  confirmingRef.current = true
+                  setConfirming(true)
+                  try {
+                    await onConfirm?.(e)
+                  } finally {
+                    confirmingRef.current = false
+                    setConfirming(false)
+                  }
+                }}
+                className="border-0 bg-transparent p-2.5"
+              >
+                <Text span lineClamp={1} fw={600} c={doubleCheckColor}>
+                  {doubleCheckText}
+                </Text>
+              </button>
+            </Drawer.Close>
 
-              <Divider className="my-2" />
+            <Divider className="my-2" />
 
-              <Drawer.Close asChild>
-                <button className="border-0 bg-transparent p-2.5">
-                  <Text c="chatbox-tertiary" span lineClamp={1} fw={600}>
-                    {t('Cancel')}
-                  </Text>
-                </button>
-              </Drawer.Close>
+            <Drawer.Close asChild>
+              <button className="border-0 bg-transparent p-2.5">
+                <Text c="chatbox-tertiary" span lineClamp={1} fw={600}>
+                  {t('Cancel')}
+                </Text>
+              </button>
+            </Drawer.Close>
 
-              <div className="h-[--mobile-safe-area-inset-bottom] min-h-4" />
-            </Stack>
-          </div>
+            <div className="h-[--mobile-safe-area-inset-bottom] min-h-4" />
+          </Stack>
         </Drawer.Content>
       </Drawer.Portal>
     </Drawer.NestedRoot>

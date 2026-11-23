@@ -3,6 +3,7 @@ import { IconAlertCircle, IconX } from '@tabler/icons-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
+import { GLASS_SURFACE_CLASS } from '@/lib/glass-surface'
 import { navigateToSettings } from '@/modals/settings-navigation'
 import { getWebSearchConfigurationIssue } from '@/packages/web-search/configuration-issue'
 import { useSettingsStore } from '@/stores/settingsStore'
@@ -14,13 +15,11 @@ type BannerProps = { sessionId: string; errorCount: number; latestHasError: bool
 export function WebSearchUnavailableBanner(props: BannerProps) {
   const { t } = useTranslation()
   const isSmallScreen = useIsSmallScreen()
-  const webSearchConfiguration = useSettingsStore((state) => state.extension.webSearch)
-  const licenseKey = useSettingsStore((state) => state.licenseKey)
+  const webSearchConfigurationIssue = useSettingsStore((state) => getWebSearchConfigurationIssue(state))
   const [, refreshDismissedState] = useState(0)
   const sessionId = props.sessionId
   const dismissed = dismissedSessionIds.has(sessionId)
-  const stillRequiresChatboxSignIn =
-    getWebSearchConfigurationIssue(webSearchConfiguration, licenseKey) === 'chatbox-ai-sign-in'
+  const stillRequiresChatboxSignIn = webSearchConfigurationIssue === 'chatbox-ai-sign-in'
   if (!stillRequiresChatboxSignIn || dismissed || props.errorCount === 0 || props.latestHasError !== false) return null
 
   const dismiss = () => {
@@ -36,7 +35,7 @@ export function WebSearchUnavailableBanner(props: BannerProps) {
       gap="xs"
       px={10}
       py={8}
-      className="rounded-2xl border border-solid border-chatbox-border-primary bg-chatbox-background-primary shadow-sm"
+      className={`rounded-2xl border border-solid border-chatbox-border-primary bg-chatbox-background-primary shadow-sm ${GLASS_SURFACE_CLASS}`}
       style={{ borderLeft: '3px solid var(--chatbox-tint-warning)' }}
     >
       <Flex align="center" gap={6} className="min-w-0 flex-1">

@@ -1,4 +1,6 @@
 import OpenAICompatible, { type OpenAICompatibleSettings } from '../../../models/openai-compatible'
+import { createFetchWithProxy } from '../../../models/utils/fetch-proxy'
+import { createOllamaReasoningFetch } from '../../../models/utils/ollama-reasoning-fetch'
 import type { ModelDependencies } from '../../../types/adapters'
 import { normalizeOpenAIApiHostAndPath } from '../../../utils/llm_utils'
 
@@ -65,6 +67,9 @@ export default class Ollama extends OpenAICompatible {
       ...options,
       apiKey: 'ollama',
       apiHost,
+      customFetch: createOllamaReasoningFetch(
+        options.customFetch ?? createFetchWithProxy(options.useProxy, dependencies)
+      ),
     }
   }
   public isSupportToolUse(): boolean {

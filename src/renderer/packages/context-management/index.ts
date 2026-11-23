@@ -1,9 +1,10 @@
-export type { ManualCompactionOptions, ManualCompactionOutcome } from './compaction'
+export type { ManualCompactionOptions, ManualCompactionOutcome, TargetedCompactionOutcome } from './compaction'
 export {
   isAutoCompactionEnabled,
   isCompactionInProgress,
   needsCompaction,
   requestManualCompaction,
+  requestTargetedCompaction,
   runCompactionWithUIState,
 } from './compaction'
 export type { OverflowCheckOptions, OverflowCheckResult } from './compaction-detector'

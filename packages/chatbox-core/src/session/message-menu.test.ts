@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  canCompactUpToMessage,
   clipMessageMenuPreview,
   getMessageMenuEntries,
   type MessageMenuAvailability,
@@ -15,6 +16,7 @@ const all: MessageMenuAvailability = {
   generateMoreImages: true,
   selectText: true,
   quote: true,
+  compactHere: false,
   report: true,
   viewJson: false,
   delete: true,
@@ -103,6 +105,45 @@ describe('getMessageMenuEntries', () => {
       'view-json',
       'delete',
     ])
+  })
+})
+
+describe('compact up to here', () => {
+  const offered = { ...all, compactHere: true }
+
+  it('follows quote on settled user and assistant messages', () => {
+    expect(getMessageMenuEntries({ role: 'assistant' }, offered)).toEqual([
+      'retry',
+      'edit',
+      'copy',
+      'select-text',
+      'quote',
+      'compact-here',
+      'divider',
+      'report',
+      'delete',
+    ])
+    expect(getMessageMenuEntries({ role: 'user' }, offered)).toContain('compact-here')
+  })
+
+  it('is missing where the message cannot close a compacted window', () => {
+    expect(getMessageMenuEntries({ role: 'assistant', generating: true }, offered)).not.toContain('compact-here')
+    expect(getMessageMenuEntries({ role: 'assistant', error: 'boom' }, offered)).not.toContain('compact-here')
+    expect(getMessageMenuEntries({ role: 'system' }, offered)).not.toContain('compact-here')
+    expect(getMessageMenuEntries({ role: 'assistant' }, offered, { pictureSession: true })).not.toContain(
+      'compact-here'
+    )
+    expect(getMessageMenuEntries({ role: 'assistant' }, all)).not.toContain('compact-here')
+  })
+
+  it('shares its rule with hosts that build their own menus', () => {
+    expect(canCompactUpToMessage({ role: 'user' })).toBe(true)
+    expect(canCompactUpToMessage({ role: 'assistant' })).toBe(true)
+    expect(canCompactUpToMessage({ role: 'user', generating: true })).toBe(false)
+    expect(canCompactUpToMessage({ role: 'assistant', errorCode: 500 })).toBe(false)
+    expect(canCompactUpToMessage({ role: 'assistant' }, { pictureSession: true })).toBe(false)
+    expect(canCompactUpToMessage({ role: 'user' }, { pictureSession: true })).toBe(true)
+    expect(canCompactUpToMessage({ role: 'system' })).toBe(false)
   })
 })
 

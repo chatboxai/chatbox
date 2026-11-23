@@ -58,4 +58,10 @@ describe('Chatbox AI cached model rows', () => {
     expect(html.indexOf('Cached Chat')).toBeLessThan(html.indexOf('BYOK'))
     expect(html.indexOf('BYOK')).toBeLessThan(html.indexOf('byok-chat'))
   })
+
+  it('gives the sticky BYOK divider a plain bar fill instead of a second glass layer', () => {
+    const html = renderRows(false, false, true)
+    expect(html).toContain('chatbox-glass-bar')
+    expect(html).not.toContain('chatbox-glass-surface')
+  })
 })

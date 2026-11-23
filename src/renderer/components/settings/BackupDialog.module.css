@@ -90,7 +90,8 @@
 
 @media (max-width: 600px) {
   .content {
-    height: 100dvh;
+    /* Match the fixed modal container when browser toolbars reduce its height. */
+    height: 100%;
     border: 0;
     border-radius: 0;
   }

@@ -900,6 +900,7 @@ describe('BuiltInBrowserController reads', () => {
   it('keeps page events for the next result when an upload is cancelled while its files are checked', async () => {
     const { contents, page } = await openPage()
     contents.emit('input-event', {}, { type: 'mouseDown' })
+    uploadHooks.duringFileCheck = () => controller.cancel(1, 'upload-missing-file')
     const pending = controller.request(host as unknown as Host, 1, {
       kind: 'upload',
       requestId: 'upload-missing-file',
@@ -908,14 +909,10 @@ describe('BuiltInBrowserController reads', () => {
       files: ['/nowhere/missing.png'],
       allowedRoots: [],
     })
-    // Microtasks let the queue start the upload; its file checks need I/O, which comes after them.
-    for (let tick = 0; tick < 10; tick += 1) await Promise.resolve()
-    controller.cancel(1, 'upload-missing-file')
     await expect(pending).resolves.toMatchObject({ upload: { status: 'not_started', code: 'cancelled' } })
-    await flush()
 
     const read = controller.request(host as unknown as Host, 1, { kind: 'read', requestId: 'after-cancelled-upload' })
-    await flush()
+    await vi.waitFor(() => expect(contents.snapshots).toHaveLength(1))
     contents.finishSnapshot('Loaded.')
     await expect(read).resolves.toMatchObject({ userInteracted: true })
   })

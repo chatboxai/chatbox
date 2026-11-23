@@ -104,8 +104,9 @@ describe('model rig slot settings', () => {
   test('unset parser type follows the platform default', () => {
     expect(effectiveParserType(settings(), 'chatbox-ai')).toBe('chatbox-ai')
     expect(effectiveParserType(settings(), 'local')).toBe('local')
-    expect(customParserTypes({ isDesktopLike: false, isMobile: false })).toEqual([])
-    expect(customParserTypes({ isDesktopLike: true, isMobile: false })).toEqual(['local', 'mineru'])
+    expect(customParserTypes({ isDesktopLike: false, isMobile: false })).toEqual(['deepseek'])
+    expect(customParserTypes({ isDesktopLike: false, isMobile: true })).toEqual(['local', 'deepseek'])
+    expect(customParserTypes({ isDesktopLike: true, isMobile: false })).toEqual(['local', 'mineru', 'deepseek'])
   })
 
   test('image preset follows a missing or Chatbox last-used picture model', () => {
@@ -232,6 +233,34 @@ describe('model rig slot tests', () => {
       searchWeb: async () => undefined,
     })
     expect(result).toEqual({ status: 'ok', latencyMs: 0 })
+  })
+})
+
+describe('DeepSeek document parser', () => {
+  function parserDeps(apiKey: string) {
+    return {
+      settings: settings({
+        extension: { webSearch: { provider: 'build-in' }, documentParser: { type: 'deepseek' } },
+        providers: { [ModelProviderEnum.DeepSeek]: { apiKey } },
+      }),
+      configuredProviderIds: new Set<string>(),
+      hasLicense: false,
+      isDesktopLike: true,
+      pingChat: () => Promise.reject(new Error('should not ping')),
+      testMineru: () => Promise.reject(new Error('should not test MinerU')),
+      searchWeb: async () => undefined,
+    }
+  }
+
+  test('requires the DeepSeek model provider key', async () => {
+    const result = await runSlotTest('parser', parserDeps(' '))
+    expect(result.status).toBe('fail')
+    expect(result.error).toBe('DeepSeek API key is missing')
+    expect(result.fix).toBe('Add a DeepSeek API key in DeepSeek model provider settings.')
+  })
+
+  test('passes with the DeepSeek key without a billed request', async () => {
+    expect(await runSlotTest('parser', parserDeps('ds-key'))).toEqual({ status: 'ok', latencyMs: 0 })
   })
 })
 

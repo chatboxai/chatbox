@@ -712,7 +712,7 @@ const KnowledgeBaseDocuments: React.FC<KnowledgeBaseDocumentsProps> = ({ knowled
 
       {/* Documents Section */}
       <Box>
-        <Paper withBorder radius="lg" p={0}>
+        <Paper withBorder radius="lg" p={0} className="bg-chatbox-background-raised">
           {/* Documents Header */}
           <Group
             align="center"

@@ -169,6 +169,30 @@ describe('MobileExporter', () => {
     buildPlatformMock.value = 'android'
   })
 
+  test('shows a toast and swallows an iOS write failure for fire-and-forget callers', async () => {
+    buildPlatformMock.value = 'ios'
+    filesystemMock.writeFile.mockRejectedValueOnce(
+      Object.assign(new Error("The 'writeFile' input parameters aren't valid."), { code: 'OS-PLUG-FILE-0005' })
+    )
+
+    await expect(new MobileExporter().exportImageFile('svg_test', 'data:,')).resolves.toBeUndefined()
+
+    expect(toastMock.show).toHaveBeenCalledWith({ text: 'Failed to save file: {{error}}' })
+    expect(shareMock.share).not.toHaveBeenCalled()
+  })
+
+  test('treats a dismissed iOS share sheet as a cancel without a toast', async () => {
+    buildPlatformMock.value = 'ios'
+    shareMock.share.mockRejectedValueOnce(new Error('Share canceled'))
+
+    await expect(
+      new MobileExporter().exportImageFile('svg_test', 'data:image/png;base64,iVBORw0KGgo=')
+    ).resolves.toBeUndefined()
+
+    expect(toastMock.show).not.toHaveBeenCalled()
+    expect(loggerMock.error).not.toHaveBeenCalled()
+  })
+
   test('does not leak an already-notified Android export failure to fire-and-forget callers', async () => {
     vi.spyOn(AndroidFilterWriter.prototype, 'exportTextFile').mockRejectedValueOnce(
       new HandledExportError(new Error('fallback failed'))
@@ -194,6 +218,41 @@ describe('MobileExporter', () => {
     expect(Math.max(...writes.map(([options]) => options.data.length))).toBeLessThanOrEqual(349528)
     expect(documentSaverMock.saveFile).toHaveBeenCalledWith(expect.objectContaining({ mimeType: 'application/zip' }))
     expect(filesystemMock.deleteFile).toHaveBeenCalled()
+  })
+
+  test.each(['android', 'ios'])('exports a ZIP on %s when AbortSignal lacks throwIfAborted', async (platform) => {
+    buildPlatformMock.value = platform
+    const controller = new AbortController()
+    Object.defineProperty(controller.signal, 'throwIfAborted', { value: undefined })
+    const dataCallback = async function* () {
+      await Promise.resolve()
+      yield new Uint8Array([1, 2, 3])
+    }
+
+    await expect(
+      new MobileExporter().exportStreamingFile('backup.zip', dataCallback, 'application/zip', controller.signal)
+    ).resolves.toEqual(
+      platform === 'android' ? { boundedMemory: true } : { boundedMemory: true, delivery: 'share-sheet' }
+    )
+    if (platform === 'android') expect(documentSaverMock.saveFile).toHaveBeenCalled()
+    else expect(shareMock.share).toHaveBeenCalled()
+  })
+
+  test.each(['android', 'ios'])('honors cancellation on %s without throwIfAborted', async (platform) => {
+    buildPlatformMock.value = platform
+    const controller = new AbortController()
+    Object.defineProperty(controller.signal, 'throwIfAborted', { value: undefined })
+    const dataCallback = async function* () {
+      await Promise.resolve()
+      yield new Uint8Array([1, 2, 3])
+      controller.abort(new DOMException('Canceled', 'AbortError'))
+    }
+
+    await expect(
+      new MobileExporter().exportStreamingFile('backup.zip', dataCallback, 'application/zip', controller.signal)
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(documentSaverMock.saveFile).not.toHaveBeenCalled()
+    expect(shareMock.share).not.toHaveBeenCalled()
   })
 
   test('cleans up a small iOS ZIP using its auto-renamed path', async () => {

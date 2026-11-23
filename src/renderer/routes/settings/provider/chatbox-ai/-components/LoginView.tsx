@@ -106,7 +106,7 @@ export const LoginView = forwardRef<HTMLDivElement, LoginViewProps>(
           </Flex>
         </Stack>
         {/* promote card */}
-        <Paper shadow="xs" p="sm" withBorder>
+        <Paper shadow="xs" p="sm" withBorder className="bg-chatbox-background-raised">
           <Stack gap="sm">
             <Text fw="600" c="chatbox-brand">
               {t('Chatbox AI offers a user-friendly AI solution to help you enhance productivity')}

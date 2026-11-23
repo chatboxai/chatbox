@@ -5,7 +5,7 @@ import { IconChevronDown } from '@tabler/icons-react'
 import clsx from 'clsx'
 import type { Dispatch, SetStateAction } from 'react'
 import { useTranslation } from 'react-i18next'
-import { trackUpgradeModelClick } from '@/analytics/model-selection'
+import { trackProTrialUpgradeClick, trackUpgradeModelClick } from '@/analytics/model-selection'
 import type { ChatboxAIModelList } from '@/packages/remote'
 import platform from '@/platform'
 import { ScalableIcon } from '../common/ScalableIcon'
@@ -16,11 +16,12 @@ import {
   isChatboxAIModelLocked,
   modelMatchesSearch,
 } from './chatboxCatalog'
-import { FALLBACK_UPGRADE_URL, MOBILE_TAP_RESET_STYLE, MODEL_SELECTOR_SURFACE_CLASS } from './constants'
+import { FALLBACK_UPGRADE_URL, MOBILE_TAP_RESET_STYLE } from './constants'
 import { getGroupLabel, toProviderModelInfo } from './helpers'
 import { ModelRow } from './ModelRow'
 import { ProviderRowHeader } from './ProviderRowHeader'
 import type { ChatboxAIModel, DetailModel } from './types'
+import { useChatboxAIProTrial } from './useChatboxAIProTrial'
 
 type FavoriteSetting = {
   provider: string
@@ -52,6 +53,7 @@ export function ChatboxProviderRows({
   onDesktopDetailOpen,
   onDesktopDetailClose,
   onDisabledSelect,
+  onClaimProTrial,
   pageName,
 }: {
   catalog: ChatboxAIModelList
@@ -84,9 +86,11 @@ export function ChatboxProviderRows({
   ) => void
   onDesktopDetailClose: () => void
   onDisabledSelect: (modelId: string) => void
+  onClaimProTrial: () => void
   pageName?: string
 }) {
   const { t } = useTranslation()
+  const proTrial = useChatboxAIProTrial(catalog.license)
   const selectedProviderMatches =
     selectedProviderId === provider.id ||
     (provider.name === 'Chatbox AI' && selectedProviderId === ModelProviderEnum.ChatboxAI)
@@ -116,7 +120,7 @@ export function ChatboxProviderRows({
         }),
         total: group.modelIds.length,
         isAdvanced: isChatboxAIAdvancedGroup(group.id),
-        isLocked: isChatboxAIModelLocked(group.id, catalog.license.plan),
+        isLocked: isChatboxAIModelLocked(group.id, catalog.license),
         isFeaturedOnly: false,
       }))
     : groups
@@ -193,13 +197,32 @@ export function ChatboxProviderRows({
                 c="chatbox-brand"
                 onClick={(event) => {
                   event.stopPropagation()
+                  if (proTrial.canClaim) {
+                    onClaimProTrial()
+                    return
+                  }
                   if (pageName && selectedModelId) {
                     trackUpgradeModelClick(pageName, 'list_model', selectedModelId)
                   }
+                  proTrial.reportUpgradeClick(selectedModelId)
                   platform.openLink(catalog.links?.upgrade || FALLBACK_UPGRADE_URL)
                 }}
               >
-                {t('Upgrade to Pro')}
+                {proTrial.canClaim ? t('Free trial for a limited time') : t('Upgrade to Pro')}
+              </Text>
+            )}
+            {proTrial.activeUntil && isChatboxAIAdvancedGroup(group.id) && (
+              <Text
+                span
+                td="underline"
+                c="chatbox-brand"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  if (pageName) trackProTrialUpgradeClick(pageName, selectedModelId)
+                  platform.openLink(catalog.links?.upgrade || FALLBACK_UPGRADE_URL)
+                }}
+              >
+                {t('On trial: ends {{time}}', { time: proTrial.activeUntil })}
               </Text>
             )}
           </Flex>
@@ -239,7 +262,6 @@ export function ChatboxProviderRows({
     <section
       className={clsx(
         'relative border-0 border-b border-solid border-chatbox-border-primary',
-        MODEL_SELECTOR_SURFACE_CLASS,
         isMobile ? 'mb-2' : 'mb-1'
       )}
     >

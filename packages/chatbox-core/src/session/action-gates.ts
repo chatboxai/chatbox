@@ -75,6 +75,8 @@ export type SessionAction =
   | 'delete-fork'
   /** Submit a new user message. */
   | 'submit-message'
+  /** Compact the conversation through a message and place the summary right after it. */
+  | 'compact-here'
 
 export type SessionActionContext = {
   /** Whether the message the action targets is itself still streaming. */
@@ -168,6 +170,12 @@ export function getSessionActionGate(
       if (locks.compactionRunning) {
         return blocked('compaction')
       }
+      return locks.awaitingPauseDecision ? blocked('awaiting-pause-decision') : ALLOWED
+    case 'compact-here':
+      // The summary rewrites the prefix a streaming reply or a paused tool batch still builds on.
+      if (context.messageGenerating) return blocked('message-streaming')
+      if (locks.anyReplyGenerating) return blocked('generating')
+      if (locks.compactionRunning) return blocked('compaction')
       return locks.awaitingPauseDecision ? blocked('awaiting-pause-decision') : ALLOWED
   }
 }

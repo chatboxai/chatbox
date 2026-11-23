@@ -60,6 +60,17 @@ function endAnimation(element: Element, animationName: string) {
 }
 
 describe('AdaptiveModal mobile lifecycle', () => {
+  it('uses the visible title as the mobile dialog accessible name', () => {
+    render(
+      <MantineProvider>
+        <AdaptiveModal opened onClose={vi.fn()} title="Use points for images?">
+          Confirmation content
+        </AdaptiveModal>
+      </MantineProvider>
+    )
+    expect(screen.getByRole('dialog', { name: 'Use points for images?' })).toBeTruthy()
+  })
+
   it('clears form state after programmatic close and exit animation', () => {
     renderProjectModal()
     fireEvent.change(screen.getByRole('textbox', { name: 'Project name' }), { target: { value: 'A' } })

@@ -1,9 +1,10 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 import type { ChatboxAIModelList } from '@/packages/remote'
 import {
   buildChatboxAIGroupViews,
   isChatboxAIModelLocked,
   isChatboxAIProPlan,
+  isChatboxAIProTrialActive,
   modelMatchesSearch,
 } from './chatboxCatalog'
 
@@ -75,10 +76,27 @@ describe('chatboxCatalog', () => {
   })
 
   test('locks advanced models for low-tier plans', () => {
-    expect(isChatboxAIModelLocked('advanced', 'free')).toBe(true)
-    expect(isChatboxAIModelLocked('advanced', 'lite')).toBe(true)
-    expect(isChatboxAIModelLocked('advanced', 'pro')).toBe(false)
-    expect(isChatboxAIModelLocked('basic', 'free')).toBe(false)
+    expect(isChatboxAIModelLocked('advanced', { plan: 'free' })).toBe(true)
+    expect(isChatboxAIModelLocked('advanced', { plan: 'lite' })).toBe(true)
+    expect(isChatboxAIModelLocked('advanced', { plan: 'pro' })).toBe(false)
+    expect(isChatboxAIModelLocked('basic', { plan: 'free' })).toBe(false)
+  })
+
+  test('unlocks advanced models only during an active Lite Pro trial', () => {
+    const now = Date.parse('2026-10-30T00:00:00Z')
+    const trial = { canClaim: false, startsAt: '2026-10-28T00:00:00Z', expiresAt: '2026-11-04T00:00:00Z' }
+    expect(isChatboxAIProTrialActive({ plan: 'lite', proTrial: trial }, now)).toBe(true)
+    expect(isChatboxAIProTrialActive({ plan: 'lite', proTrial: trial }, Date.parse(trial.expiresAt))).toBe(false)
+    expect(isChatboxAIProTrialActive({ plan: 'lite', proTrial: { canClaim: true } }, now)).toBe(false)
+    // An expired or refunded license reports Free while still returning its old trial dates.
+    expect(isChatboxAIProTrialActive({ plan: 'free', proTrial: trial }, now)).toBe(false)
+    vi.useFakeTimers({ now })
+    try {
+      expect(isChatboxAIModelLocked('advanced', { plan: 'lite', proTrial: trial })).toBe(false)
+      expect(isChatboxAIModelLocked('advanced', { plan: 'free', proTrial: trial })).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   test('shows featured advanced models by default for low-tier plans', () => {

@@ -154,6 +154,17 @@ export const ChatboxAIErrorMessage: FC<ChatboxAIErrorMessageProps> = ({
             }}
           />
         ),
+        OpenDeepSeekProviderSettingButton: (
+          <Link
+            component="button"
+            type="button"
+            className={linkStyle ? 'cursor-pointer' : 'cursor-pointer italic'}
+            style={linkStyle}
+            onClick={() => {
+              navigateToSettings('/provider/deepseek')
+            }}
+          />
+        ),
         OpenMorePlanButton: (
           <Link
             component="button"

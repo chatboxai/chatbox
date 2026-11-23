@@ -41,6 +41,7 @@ export type DetailModel = {
   capabilities?: ProviderModelInfo['capabilities']
   costLevel?: string
   description?: string
+  pointsPerImage?: number
   pricing?: ChatboxAIModel['pricing']
   locked?: boolean
   disabledReason?: string

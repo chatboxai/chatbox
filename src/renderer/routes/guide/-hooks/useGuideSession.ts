@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next'
 import { trackJkClickEvent } from '@/analytics/jk'
 import { JK_EVENTS, JK_PAGE_NAMES } from '@/analytics/jk-events'
 import { cancelConfetti, confetti } from '@/components/Confetti'
+import { navigateToSettings } from '@/modals/settings-navigation'
 import { buildChatboxUrl } from '@/packages/remote'
 import platform from '@/platform'
 import { authInfoStore, useAuthInfoStore } from '@/stores/authInfoStore'
@@ -28,6 +29,7 @@ import { parseStreamResponse } from './useStreamParser'
 import {
   checkHasValidConfig,
   createAutoNewChatLoadingToolPart,
+  createImportConversationsToolPart,
   createNewChatButtonToolPart,
   createSuggestedQuestionsToolPart,
   generateMessageId,
@@ -63,6 +65,7 @@ export function useGuideSession(): UseGuideSessionReturn {
   const [onboardingStep, setOnboardingStep] = useState<OnboardingStep>('greeting')
   const [forceSelectionOnce, setForceSelectionOnce] = useState(false)
   const [isAutoRedirectingToNewChat, setIsAutoRedirectingToNewChat] = useState(false)
+  const [isWaitingForImport, setIsWaitingForImport] = useState(false)
   const [resetKey, setResetKey] = useState(0)
 
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -73,6 +76,7 @@ export function useGuideSession(): UseGuideSessionReturn {
   const claimWaitingShownRef = useRef(false)
   /** celebration message has been pushed once (terminal). */
   const celebrationShownRef = useRef(false)
+  const importChoiceHandledRef = useRef(false)
   const greetingInitializedRef = useRef(false)
   const greetingCancelRef = useRef<(() => void) | null>(null)
   const pendingTimeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
@@ -121,8 +125,8 @@ export function useGuideSession(): UseGuideSessionReturn {
 
   // Check if user can send messages (7-round limit for all users)
   const canSendMessage = useMemo(() => {
-    return !isAutoRedirectingToNewChat && userMessageCount < GUIDE_CONFIG.maxRounds
-  }, [isAutoRedirectingToNewChat, userMessageCount])
+    return !isAutoRedirectingToNewChat && !isWaitingForImport && userMessageCount < GUIDE_CONFIG.maxRounds
+  }, [isAutoRedirectingToNewChat, isWaitingForImport, userMessageCount])
 
   // Check if guide is in progress (has interactions)
   const isGuideInProgress = useMemo(
@@ -433,9 +437,13 @@ Chatbox is an **all-in-one AI chat client** that supports 30+ mainstream models 
           ? t(
               'Great! Chatbox AI is our all-in-one service designed for new users - it works out of the box with no complex setup required.\n\nClick the login button below, then enter your email and verification code in the popup to sign in.'
             )
-          : t(
-              "Excellent! You're ready to explore.\n\nClick the button below to configure your API directly. If you need help later, just click the **Help** button in the sidebar. Enjoy!"
-            )
+          : language === 'zh-Hans'
+            ? t(
+                "Excellent! You're ready to explore.\n\nClick the button below to configure your API directly. You can also import your DeepSeek chats into Chatbox. If you need help later, just click the **Help** button in the sidebar. Enjoy!"
+              )
+            : t(
+                "Excellent! You're ready to explore.\n\nClick the button below to configure your API directly. If you need help later, just click the **Help** button in the sidebar. Enjoy!"
+              )
 
       // Create appropriate tool parts based on selection
       let toolParts: GuideToolPart[] = []
@@ -466,6 +474,9 @@ Chatbox is an **all-in-one AI chat client** that supports 30+ mainstream models 
         onboardingStore.getState().markCompleted()
         setOnboardingStep('completed')
         shouldShowConfetti = true
+        if (language === 'zh-Hans') {
+          toolParts.push(createImportConversationsToolPart(`import-${Date.now()}`, false))
+        }
       }
 
       // Stream assistant response with typing effect
@@ -480,7 +491,7 @@ Chatbox is an **all-in-one AI chat client** that supports 30+ mainstream models 
         pendingTimeoutsRef.current.add(timeoutId)
       }
     },
-    [appendFixedMessage, streamFixedMessage, t]
+    [appendFixedMessage, streamFixedMessage, t, language]
   )
 
   /**
@@ -493,14 +504,23 @@ Chatbox is an **all-in-one AI chat client** that supports 30+ mainstream models 
       celebrationShownRef.current = true
 
       setOnboardingStep('completed')
-      setIsAutoRedirectingToNewChat(true)
+      const offerImport = language === 'zh-Hans' && userTypeSelected === 'novice'
+      setIsWaitingForImport(offerImport)
+      setIsAutoRedirectingToNewChat(!offerImport)
       const baseTimestamp = Date.now()
 
-      await streamFixedMessage(t("Awesome, everything is ready! Let's start your first Chatbox AI chat."), [
-        createAutoNewChatLoadingToolPart(`auto-new-chat-${baseTimestamp}`, {
-          waitForWindowFocusBeforeAutoNavigate: options?.waitForWindowFocusBeforeAutoNavigate,
-        }),
-      ])
+      await streamFixedMessage(
+        offerImport
+          ? t('Awesome, everything is ready! Would you like to bring your DeepSeek chats with you?')
+          : t("Awesome, everything is ready! Let's start your first Chatbox AI chat."),
+        [
+          offerImport
+            ? createImportConversationsToolPart(`import-${baseTimestamp}`, true)
+            : createAutoNewChatLoadingToolPart(`auto-new-chat-${baseTimestamp}`, {
+                waitForWindowFocusBeforeAutoNavigate: options?.waitForWindowFocusBeforeAutoNavigate,
+              }),
+        ]
+      )
 
       const timeoutId = setTimeout(() => {
         pendingTimeoutsRef.current.delete(timeoutId)
@@ -508,8 +528,25 @@ Chatbox is an **all-in-one AI chat client** that supports 30+ mainstream models 
       }, 200)
       pendingTimeoutsRef.current.add(timeoutId)
     },
-    [streamFixedMessage, t]
+    [streamFixedMessage, t, language, userTypeSelected]
   )
+
+  const skipImport = useCallback(() => {
+    if (!isWaitingForImport || importChoiceHandledRef.current) return
+    importChoiceHandledRef.current = true
+    trackJkClickEvent(JK_EVENTS.ONBOARDING_IMPORT_CHOICE_CLICK, {
+      pageName: JK_PAGE_NAMES.HELP_PAGE,
+      content: 'skip',
+      contentType: userTypeSelected ?? undefined,
+    })
+    onboardingStore.getState().markCompleted()
+    setIsWaitingForImport(false)
+    setIsAutoRedirectingToNewChat(true)
+    appendFixedMessage(t('No need to import'), undefined, 'user')
+    appendFixedMessage(t("Let's start your first Chatbox AI chat."), [
+      createAutoNewChatLoadingToolPart(`auto-new-chat-${Date.now()}`),
+    ])
+  }, [appendFixedMessage, isWaitingForImport, t, userTypeSelected])
 
   /**
    * Mark the guide flow as completed.
@@ -769,14 +806,29 @@ Chatbox is an **all-in-one AI chat client** that supports 30+ mainstream models 
     setError(null)
     setIsLoading(false)
     setIsAutoRedirectingToNewChat(false)
+    setIsWaitingForImport(false)
     setOnboardingStep('greeting')
     completionTriggeredRef.current = false
     claimWaitingShownRef.current = false
     celebrationShownRef.current = false
+    importChoiceHandledRef.current = false
     greetingInitializedRef.current = false
     // Trigger re-initialization
     setResetKey((k) => k + 1)
   }, [])
+
+  const importConversations = useCallback(() => {
+    if (importChoiceHandledRef.current) return
+    trackJkClickEvent(JK_EVENTS.ONBOARDING_IMPORT_CHOICE_CLICK, {
+      pageName: JK_PAGE_NAMES.HELP_PAGE,
+      content: 'import',
+      contentType: userTypeSelected ?? undefined,
+    })
+    onboardingStore.getState().markCompleted()
+    clearSession()
+    importChoiceHandledRef.current = true
+    navigateToSettings('/data')
+  }, [clearSession, userTypeSelected])
 
   /**
    * Debug: Reset guide and force entering selection step once.
@@ -884,6 +936,8 @@ Chatbox is an **all-in-one AI chat client** that supports 30+ mainstream models 
     onClaimStart,
     onClaimDetected,
     handleConfigComplete,
+    importConversations,
+    skipImport,
     clearSession,
     debugResetGuide,
     debugSkipToLoginSuccess,

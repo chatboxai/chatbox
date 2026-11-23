@@ -21,6 +21,7 @@ import { ICON_SIZE, ICON_STROKE_WIDTH, IconButton } from '@/components/common/Ic
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import { SettingsDensityProvider } from '@/components/settings/SettingsLayout'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
+import { GLASS_SURFACE_CLASS, GLASS_TINT_CLASS } from '@/lib/glass-surface'
 import type { BuiltInBrowser } from '@/platform/interfaces'
 import { useSessionAgentMode } from '@/stores/session/agent-mode'
 import * as toastActions from '@/stores/toastActions'
@@ -374,7 +375,10 @@ function OpenSessionPanel({
       data-testid={TestId.sessionPanel.root}
       aria-label={t('Conversation panel') ?? undefined}
       onKeyDown={onKeyDown}
-      className="relative flex h-full shrink-0 flex-col border-0 border-l border-solid border-chatbox-border-primary bg-chatbox-background-primary"
+      className={clsx(
+        'relative flex h-full shrink-0 flex-col border-0 border-l border-solid border-chatbox-border-primary bg-chatbox-background-primary',
+        GLASS_SURFACE_CLASS
+      )}
       style={{
         width: width ?? 'min(560px, 45%)',
         minWidth: SESSION_PANEL_MIN_WIDTH,
@@ -392,7 +396,10 @@ function OpenSessionPanel({
       <div
         role="tablist"
         aria-label={t('Conversation panel') ?? undefined}
-        className="flex h-10 shrink-0 items-center gap-1 border-0 border-b border-solid border-chatbox-border-primary bg-chatbox-background-secondary px-1.5"
+        className={clsx(
+          'flex h-10 shrink-0 items-center gap-1 border-0 border-b border-solid border-chatbox-border-primary bg-chatbox-background-secondary px-1.5',
+          GLASS_TINT_CLASS
+        )}
       >
         <PanelTab
           pinned

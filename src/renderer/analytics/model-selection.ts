@@ -39,3 +39,21 @@ export function trackUpgradeModelClick(pageName: string, position: UpgradeModelP
     contentPosition: position,
   })
 }
+
+export function trackProTrialClaimClick(pageName: string, position: UpgradeModelPosition, modelId?: string | null) {
+  trackJkClickEvent(JK_EVENTS.PRO_TRIAL_CLAIM_CLICK, {
+    pageName,
+    content: modelId ?? null,
+    contentType: getPlanTypeLabel(),
+    contentPosition: position,
+  })
+}
+
+export function trackProTrialUpgradeClick(pageName: string, modelId?: string | null) {
+  trackJkClickEvent(JK_EVENTS.PRO_TRIAL_UPGRADE_CLICK, {
+    pageName,
+    content: modelId ?? null,
+    contentType: getPlanTypeLabel(),
+    contentPosition: 'list_model',
+  })
+}

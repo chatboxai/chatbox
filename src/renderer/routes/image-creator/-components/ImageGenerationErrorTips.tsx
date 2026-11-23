@@ -3,6 +3,7 @@ import { ChatboxAIAPIError } from '@shared/models/errors'
 import type { ImageGeneration } from '@shared/types'
 import { IconCheck, IconCopy, IconRefresh, IconSettings } from '@tabler/icons-react'
 import { Trans, useTranslation } from 'react-i18next'
+import { QuotaExhaustedCard } from '@/components/chat/QuotaExhaustedCard'
 import { ErrorNotice } from '@/components/common/ErrorNotice'
 import classes from '@/components/common/ErrorNotice.module.css'
 import LinkTargetBlank from '@/components/common/Link'
@@ -13,6 +14,7 @@ import { trackingEvent } from '@/packages/event'
 import { buildChatboxUrl } from '@/packages/remote'
 import platform from '@/platform'
 import * as settingActions from '@/stores/settingActions'
+import { useSettingsStore } from '@/stores/settingsStore'
 
 export interface ImageGenerationErrorTipsProps {
   record: ImageGeneration
@@ -43,7 +45,8 @@ function ImageGenerationTaskErrorMessage({ errorCode }: { errorCode: ImageGenera
 }
 
 export function ImageGenerationErrorTips({ record, onRetry, isRetrying }: ImageGenerationErrorTipsProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const plan = useSettingsStore((state) => state.licenseDetail?.plan)
 
   const chatboxAIErrorDetail =
     typeof record.errorCode === 'number' ? ChatboxAIAPIError.getDetail(record.errorCode) : null
@@ -58,6 +61,33 @@ export function ImageGenerationErrorTips({ record, onRetry, isRetrying }: ImageG
   const { copied, copy } = useCopied(errorDebugInfo.join('\n'))
   const isLicenseError =
     chatboxAIErrorDetail && ['license_not_found', 'expired_license'].includes(chatboxAIErrorDetail.name)
+
+  if (chatboxAIErrorDetail?.name === 'image_points_insufficient' || record.errorCode === 'image_points_insufficient') {
+    const canUpgrade = plan === 'lite' || plan === 'pro' || plan === 'free'
+    const locale = i18n.language.startsWith('zh') ? 'zh' : 'en'
+    const buy = () => platform.openLink(buildChatboxUrl(`/${locale}/user`))
+    return (
+      <QuotaExhaustedCard
+        kind="quota-exhausted"
+        title={t<string>('Insufficient points')}
+        description={
+          canUpgrade
+            ? t<string>(
+                'Your monthly image quota is used up, and you do not have enough compute points to generate images.\nPlease upgrade your plan or buy an expansion pack.'
+              )
+            : t<string>(
+                'Your monthly image quota is used up, and you do not have enough compute points to generate images.\nPlease buy an expansion pack for more points.'
+              )
+        }
+        action={canUpgrade ? 'upgrade-plan' : 'buy-expansion-pack'}
+        onAction={canUpgrade ? () => platform.openLink(buildChatboxUrl(`/${locale}/pricing`)) : buy}
+        secondaryActions={[
+          ...(canUpgrade ? [{ label: t('Buy expansion pack'), onClick: buy }] : []),
+          { label: t('Retry'), onClick: onRetry, loading: isRetrying },
+        ]}
+      />
+    )
+  }
 
   return (
     <ErrorNotice icon="error">

@@ -1,4 +1,4 @@
-import { ApiError, BaseError, ChatboxAIAPIError, NetworkError } from '../models/errors'
+import { ApiError, BaseError, ChatboxAIAPIError, MESSAGE_ERROR_CODES, NetworkError } from '../models/errors'
 import type { AbortSignalLike } from '../types/adapters'
 import { parseJsonOrEmpty } from '../utils/json_utils'
 import { isChatboxAPI, reportChatboxAPINetworkError } from './chatboxai_pool'
@@ -160,7 +160,10 @@ export function createAfetch(
           requestError = new NetworkError(err.message, origin)
           if (isChatboxAPI(url)) reportChatboxAPINetworkError()
         }
-        if (isAccountUnavailableError(requestError)) {
+        if (
+          isAccountUnavailableError(requestError) ||
+          requestError.code === MESSAGE_ERROR_CODES.IMAGE_POINTS_INSUFFICIENT
+        ) {
           throw requestError
         }
         await new Promise((resolve) => setTimeout(resolve, 500))
@@ -393,7 +396,10 @@ export function createAuthenticatedAfetch(config: AuthenticatedAfetchConfig) {
           requestError = new NetworkError(err.message, origin)
           if (isChatboxAPI(url)) reportChatboxAPINetworkError()
         }
-        if (isAccountUnavailableError(requestError)) {
+        if (
+          isAccountUnavailableError(requestError) ||
+          requestError.code === MESSAGE_ERROR_CODES.IMAGE_POINTS_INSUFFICIENT
+        ) {
           throw requestError
         }
         await new Promise((resolve) => setTimeout(resolve, 500))

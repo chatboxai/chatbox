@@ -11,6 +11,7 @@ import FileParseError from './FileParseError'
 import JsonViewer from './JsonViewer'
 import MessageEdit from './MessageEdit'
 import ModelEdit from './ModelEdit'
+import ProTrialClaim from './ProTrialClaim'
 import ReportContent from './ReportContent'
 import SessionFolderCreate from './SessionFolderCreate'
 import SessionFolderMove from './SessionFolderMove'
@@ -22,6 +23,7 @@ import Welcome from './Welcome'
 
 NiceModal.register('welcome', Welcome)
 NiceModal.register('agent-mode-reward-claim-success', AgentModeRewardClaimSuccess)
+NiceModal.register('pro-trial-claim', ProTrialClaim)
 NiceModal.register('file-parse-error', FileParseError)
 NiceModal.register('content-viewer', ContentViewer)
 NiceModal.register('session-settings', SessionSettings)
@@ -32,6 +34,7 @@ NiceModal.register('session-folder-create', SessionFolderCreate)
 NiceModal.register('session-folder-name', SessionFolderName)
 NiceModal.register('session-folder-move', SessionFolderMove)
 NiceModal.register('confirm', ConfirmModal)
+NiceModal.register('image-points-confirm', ConfirmModal)
 NiceModal.register('export-chat', ExportChat)
 NiceModal.register('message-edit', MessageEdit)
 NiceModal.register('json-viewer', JsonViewer)

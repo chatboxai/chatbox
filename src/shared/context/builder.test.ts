@@ -1,6 +1,6 @@
 import { sandboxAttachmentParsedRelPath, sandboxAttachmentRelPath } from '@shared/sandbox/attachment-path'
 import type { CompactionPoint, Message } from '@shared/types'
-import { uploadedFilePath } from '@shared/uploaded-file-tools'
+import { UPLOADED_FILE_PATH_PREFIX, uploadedFilePath } from '@shared/uploaded-file-tools'
 import { describe, expect, it, vi } from 'vitest'
 import { buildContext } from './builder'
 import { buildCompactionHandoff, getContextHistoryStartNote } from './compaction-handoff'
@@ -784,6 +784,55 @@ describe('buildContext', () => {
       expect(text).not.toContain('<PARSED_SANDBOX_PATH>')
       expect(text).toContain('for original text files, use SANDBOX_PATH')
       expect(resolver.read).not.toHaveBeenCalled()
+    })
+
+    it('gives short text attachments a compact single-read reminder', async () => {
+      const resolver = createMockResolver()
+      const result = await buildContext(
+        [
+          createMessage({
+            id: 'short-text',
+            role: 'user',
+            files: [{ id: 'notes', name: 'notes.md', fileType: 'text/markdown', storageKey: 'notes', lineCount: 24 }],
+          }),
+        ],
+        { attachmentResolver: resolver, sandboxMode: true }
+      )
+      const text = result[0].contentParts.find((part) => part.type === 'text')?.text ?? ''
+      expect(text).toContain(`<SANDBOX_PATH>${sandboxAttachmentRelPath('notes.md', 'notes')}</SANDBOX_PATH>`)
+      expect(text).toContain('<FILE_LINES>24</FILE_LINES>')
+      expect(text).toContain('Read it with one read_file call on SANDBOX_PATH')
+      expect(text).not.toContain('for original text files, use SANDBOX_PATH')
+      expect(text).not.toContain('<FILE_KEY>')
+      expect(text).not.toContain(UPLOADED_FILE_PATH_PREFIX)
+      expect(resolver.read).not.toHaveBeenCalled()
+    })
+
+    it('keeps uploaded-file virtual paths out of every non-retrieval sandbox attachment', async () => {
+      const result = await buildContext(
+        [
+          createMessage({
+            id: 'mixed',
+            role: 'user',
+            files: [
+              { id: 'short', name: 'short.txt', fileType: 'text/plain', storageKey: 'short', lineCount: 10 },
+              { id: 'long', name: 'long.txt', fileType: 'text/plain', storageKey: 'long', lineCount: 900 },
+              { id: 'unknown', name: 'unknown.txt', fileType: 'text/plain', storageKey: 'unknown' },
+              { id: 'doc', name: 'report.pdf', fileType: 'application/pdf', storageKey: 'doc' },
+            ],
+          }),
+        ],
+        { attachmentResolver: createMockResolver(new Map()), sandboxMode: true }
+      )
+      const text = result[0].contentParts.find((part) => part.type === 'text')?.text ?? ''
+      expect(text).not.toContain('<FILE_KEY>')
+      expect(text).not.toContain(UPLOADED_FILE_PATH_PREFIX)
+      expect(text.match(/<ATTACHMENT_FILE>/g)).toHaveLength(4)
+      expect(text.match(/Read it with one read_file call on SANDBOX_PATH/g)).toHaveLength(1)
+      expect(text.match(/for original text files, use SANDBOX_PATH/g)).toHaveLength(3)
+      expect(text).toContain(
+        `<PARSED_SANDBOX_PATH>${sandboxAttachmentParsedRelPath(sandboxAttachmentRelPath('report.pdf', 'doc'))}</PARSED_SANDBOX_PATH>`
+      )
     })
 
     it('gives same-named uploads distinct sandbox paths', async () => {

@@ -4,7 +4,7 @@ import { useEffect, useMemo } from 'react'
 import { type ChatboxAIModelList, getChatboxAIModelList, getModelManifest } from '@/packages/remote'
 import { useLanguage, useProviderSettings, useSettingsStore } from '@/stores/settingsStore'
 
-const CHATBOX_AI_MODELS_QUERY_KEY = 'chatbox-ai-models'
+export const CHATBOX_AI_MODELS_QUERY_KEY = 'chatbox-ai-models'
 
 export function useRefreshChatboxAIModelsOnLicenseChange(
   licenseKey: string | null | undefined,
@@ -104,6 +104,12 @@ const useChatboxAIModels = () => {
     },
     staleTime: 3600 * 1000,
     refetchOnWindowFocus: 'always',
+    // Refetch once an unexpired Pro trial ends so advanced models lock again without a restart.
+    refetchInterval: (query) => {
+      const delay = Date.parse(query.state.data?.modelList?.license.proTrial?.expiresAt ?? '') - Date.now()
+      // Timers past the 32-bit limit fire immediately; the slack lands the refetch after expiry.
+      return delay > 0 ? Math.min(delay + 1000, 2_147_483_647) : false
+    },
   })
 
   const allChatboxAIModels = useMemo(
@@ -113,17 +119,19 @@ const useChatboxAIModels = () => {
 
   const chatboxAIImageModels = useMemo(
     () =>
-      data?.imageModels.map(
+      (data?.modelList?.imageModels.length ? data.modelList.imageModels : data?.imageModels)?.map(
         (item) =>
           ({
             modelId: item.modelId,
             nickname: item.modelName,
             description: item.description,
+            pointsPerImage: data?.modelList?.imageModels.find((model) => model.modelId === item.modelId)
+              ?.points_per_image,
             labels: item.labels,
             capabilities: item.capabilities,
             type: item.type || 'image',
             contextWindow: item.contextWindow || undefined,
-          }) satisfies ProviderModelInfo & { description?: string }
+          }) satisfies ProviderModelInfo & { description?: string; pointsPerImage?: number }
       ) || [],
     [data]
   )

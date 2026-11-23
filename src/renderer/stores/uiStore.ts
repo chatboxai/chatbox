@@ -17,6 +17,7 @@ import { safeStorage } from './safeStorage'
 export interface TranscriptNavigation {
   readonly owner: symbol
   readonly sessionId: string
+  prepareBranchCreation(): Promise<boolean>
   navigateMessage(messageId: string): Promise<boolean>
   openSearch(messageId: string): Promise<boolean>
   viewThread(threadId: string): Promise<boolean>
@@ -133,12 +134,13 @@ export const uiStore = createStore(
         codeBlockWrap: false,
       },
       (set, get) => ({
-        addToast: (content: string, duration?: number, action?: Toast['action']) => {
+        addToast: (content: string, duration?: number | null, action?: Toast['action']) => {
           const newToast = { id: `toast:${uuidv4()}`, content, duration, action }
           set((state) => ({
             ...state,
             toasts: [...state.toasts, newToast],
           }))
+          return newToast.id
         },
         removeToast: (id: string) => {
           set((state) => ({

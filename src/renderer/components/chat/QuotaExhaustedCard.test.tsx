@@ -26,6 +26,34 @@ vi.mock('react-i18next', () => ({
 }))
 
 describe('QuotaExhaustedCard', () => {
+  test('supports image quota copy and secondary actions without enabling an in-flight retry', () => {
+    const onBuy = vi.fn()
+    const onRetry = vi.fn()
+    render(
+      <MantineProvider>
+        <QuotaExhaustedCard
+          kind="quota-exhausted"
+          action="upgrade-plan"
+          onAction={vi.fn()}
+          description="Image points are insufficient."
+          secondaryActions={[
+            { label: 'Buy expansion pack', onClick: onBuy },
+            { label: 'Retry', onClick: onRetry, loading: true },
+          ]}
+        />
+      </MantineProvider>
+    )
+
+    expect(screen.getByText('Image points are insufficient.')).toBeTruthy()
+    expect(screen.getAllByRole('button')).toHaveLength(3)
+    fireEvent.click(screen.getByRole('button', { name: 'Buy expansion pack' }))
+    expect(onBuy).toHaveBeenCalledOnce()
+    const retry = screen.getByRole('button', { name: 'Retry' })
+    expect(retry.hasAttribute('disabled')).toBe(true)
+    fireEvent.click(retry)
+    expect(onRetry).not.toHaveBeenCalled()
+  })
+
   test('renders a normal status card and dispatches the upgrade action', () => {
     const onUpgrade = vi.fn()
     render(
@@ -38,6 +66,18 @@ describe('QuotaExhaustedCard', () => {
     expect(screen.queryByRole('alert')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Upgrade plan' }))
     expect(onUpgrade).toHaveBeenCalledOnce()
+  })
+
+  test('is a translucent glass fill whose background comes from classes, not inline styles', () => {
+    render(
+      <MantineProvider>
+        <QuotaExhaustedCard kind="quota-exhausted" action="upgrade-plan" onAction={vi.fn()} />
+      </MantineProvider>
+    )
+    const card = screen.getByRole('status')
+    expect(card.classList).toContain('chatbox-glass-fill')
+    expect(card.style.background).toBe('')
+    expect(card.style.backgroundColor).toBe('')
   })
 
   test('offers an expansion pack after Pro+ quota is exhausted', () => {

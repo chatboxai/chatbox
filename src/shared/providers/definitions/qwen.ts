@@ -10,6 +10,9 @@ export const qwenProvider = defineProvider({
   type: ModelProviderType.OpenAI,
   modelsDevProviderId: 'alibaba',
   curatedModelIds: [
+    'qwen4-max',
+    'qwen3.8-max',
+    'qwen3.8-flash',
     'qwen3.7-max',
     'qwen3.7-plus',
     'qwen3.6-plus',
@@ -27,6 +30,24 @@ export const qwenProvider = defineProvider({
   defaultSettings: {
     apiHost: QWEN_API_HOST,
     models: [
+      {
+        modelId: 'qwen4-max',
+        capabilities: ['vision', 'reasoning', 'tool_use'],
+        contextWindow: 1_000_000,
+        maxOutput: 131_072,
+      },
+      {
+        modelId: 'qwen3.8-max',
+        capabilities: ['vision', 'reasoning', 'tool_use'],
+        contextWindow: 1_000_000,
+        maxOutput: 131_072,
+      },
+      {
+        modelId: 'qwen3.8-flash',
+        capabilities: ['vision', 'reasoning', 'tool_use'],
+        contextWindow: 1_000_000,
+        maxOutput: 131_072,
+      },
       {
         modelId: 'qwen3.7-max',
         capabilities: ['reasoning', 'tool_use'],

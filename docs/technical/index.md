@@ -1,6 +1,6 @@
 # Chatbox Community Edition 技术设计文档
 
-> Last updated: 2026-10
+> Last updated: 2026-11
 
 本目录包含 Chatbox Community Edition 的系统设计与技术决策文档，面向工程师和技术负责人。
 
@@ -15,9 +15,11 @@
 | [Gemini 工具调用 Thought Signatures](./gemini-tool-call-thought-signatures.md) | Gemini 3 function calling 的 signature 规则、并行工具调用历史序列化、25 次暂停继续问题复盘 |
 | [Gemini 流式错误拦截与重试安全](./gemini-stream-error-handling.md) | mid-stream 错误帧检测、MidStreamApiError 重试安全分类、网关范围决策与依赖升级维护清单 |
 | [会话管理系统](./session-management.md) | 数据模型、模块拆分、新会话机制、线程历史、消息分叉 |
+| [重新生成与编辑重发的列表跳动](./transcript-branch-scroll.md) | Virtuoso 下方行高变化的错误补偿、最小诊断与先到尾部再创建分支的顺序 |
 | [聊天/工作模式分化](./chat-work-mode-split.md) | 在下方回答平铺回退、模式策略（mode-policy）、队列/steering 聊天禁用、生成中切分支、性能与兼容性决策 |
 | [App 存储地图](./storage-map.md) | 业务分类、平台介质、关键 key、附件与备份范围 |
 | [数据备份与恢复边界](./data-backup.md) | 设置入口可用状态、普通数据操作、V3 与 V1/V2 适配交付边界 |
+| [DeepSeek 对话导入](./deepseek-import.md) | ZIP/链接双入口、分支与附件转换和部分导入边界 |
 | [工具步间上下文压缩](./mid-run-compaction.md) | 生成分段、分支归属、摘要边界与步间上下文替换 |
 | [Session Attachment RAG 评测](./session-attachment-rag-eval.md) | 大文件问答 RAG 的模型工具调用评测、真实 Chatbox 流程与 fixture 策略 |
 | [工具与集成系统](./tools-and-integrations.md) | MCP 服务器、Web 搜索、内置工具集、Tool 构建 |

@@ -1,4 +1,5 @@
 import type { AbortSignalLike } from '../types/adapters'
+import { ModelProviderEnum } from '../types/provider'
 
 type NativeFetchInit = NonNullable<Parameters<typeof fetch>[1]>
 type NativeFetch = (input: string, init?: NativeFetchInit) => Promise<Response>
@@ -18,11 +19,12 @@ export interface NativeWebSearchResultItem {
 }
 
 /** Same provider set the renderer's Web Search settings expose. */
-export type NativeWebSearchProvider = 'build-in' | 'bing' | 'tavily' | 'bocha' | 'querit' | 'searxng'
+export type NativeWebSearchProvider = 'build-in' | 'bing' | 'deepseek' | 'tavily' | 'bocha' | 'querit' | 'searxng'
 
 export const nativeWebSearchProviderOptions: Array<{ id: NativeWebSearchProvider; label: string }> = [
   { id: 'build-in', label: 'Chatbox AI' },
   { id: 'bing', label: 'Bing Search' },
+  { id: 'deepseek', label: 'DeepSeek' },
   { id: 'tavily', label: 'Tavily' },
   { id: 'bocha', label: 'BoCha' },
   { id: 'querit', label: 'Querit' },
@@ -83,6 +85,10 @@ export interface NativeWebSearchOptions {
 const TAVILY_DEFAULT_HOST = 'https://api.tavily.com'
 const CHATBOX_DEFAULT_ORIGIN = 'https://api.chatboxai.app'
 const DEFAULT_MAX_RESULTS = 8
+/** DeepSeek search accepts queries of at most 128 characters. */
+const DEEPSEEK_MAX_QUERY_LENGTH = 128
+/** DeepSeek fetch accepts URLs of at most 8192 characters. */
+const DEEPSEEK_MAX_FETCH_URL_LENGTH = 8192
 
 interface TavilyResponseItem {
   title?: string
@@ -90,11 +96,49 @@ interface TavilyResponseItem {
   content?: string
 }
 
+/** The parts of the settings that hold the API keys of key-authenticated search providers. */
+export interface NativeWebSearchCredentialSources {
+  extension: { webSearch: { tavilyApiKey?: string; bochaApiKey?: string; queritApiKey?: string } }
+  providers?: Readonly<Record<string, { apiKey?: string } | undefined>>
+}
+
+/**
+ * Resolves the API key a search provider authenticates with. DeepSeek search
+ * shares the DeepSeek model provider key; the other providers keep their own
+ * key in the web search settings.
+ */
+export function resolveNativeWebSearchApiKey(
+  sources: NativeWebSearchCredentialSources,
+  provider: NativeWebSearchProvider
+): string {
+  switch (provider) {
+    case 'deepseek':
+      return sources.providers?.[ModelProviderEnum.DeepSeek]?.apiKey ?? ''
+    case 'tavily':
+      return sources.extension.webSearch.tavilyApiKey ?? ''
+    case 'bocha':
+      return sources.extension.webSearch.bochaApiKey ?? ''
+    case 'querit':
+      return sources.extension.webSearch.queritApiKey ?? ''
+    default:
+      return ''
+  }
+}
+
+export function getNativeWebSearchProviderLabel(provider: NativeWebSearchProvider): string {
+  return nativeWebSearchProviderOptions.find((option) => option.id === provider)?.label ?? provider
+}
+
 export function hasNativeWebSearchConfiguration(
   settings: Pick<NativeWebSearchSettings, 'provider' | 'apiKey'> & Partial<Pick<NativeWebSearchSettings, 'apiHost'>>,
   licenseKey?: string
 ): boolean {
-  if (settings.provider === 'tavily' || settings.provider === 'bocha' || settings.provider === 'querit') {
+  if (
+    settings.provider === 'deepseek' ||
+    settings.provider === 'tavily' ||
+    settings.provider === 'bocha' ||
+    settings.provider === 'querit'
+  ) {
     return Boolean(settings.apiKey.trim())
   }
   if (settings.provider === 'build-in') return Boolean(licenseKey?.trim())
@@ -107,6 +151,7 @@ export async function searchNativeWeb(
   options: NativeWebSearchOptions
 ): Promise<NativeWebSearchResultItem[]> {
   const provider = options.provider ?? 'tavily'
+  if (provider === 'deepseek') return searchNativeDeepSeek(query, options)
   if (provider === 'bing') return searchNativeBing(query, options)
   if (provider === 'build-in') return searchNativeChatbox(query, options)
   if (provider === 'bocha') return searchNativeBocha(query, options)
@@ -442,4 +487,91 @@ export function formatNativeWebSearchContext(query: string, items: NativeWebSear
     entries,
     '</WEB_SEARCH_RESULTS>',
   ].join('\n')
+}
+
+async function searchNativeDeepSeek(
+  query: string,
+  options: NativeWebSearchOptions
+): Promise<NativeWebSearchResultItem[]> {
+  const normalizedQuery = Array.from(query.trim()).slice(0, DEEPSEEK_MAX_QUERY_LENGTH).join('')
+  if (!normalizedQuery) throw new Error('DeepSeek search query is empty')
+  const apiKey = options.apiKey?.trim()
+  if (!apiKey) throw new Error('DeepSeek API key is required')
+  const response = await (options.fetchFn ?? fetch)('https://api.deepseek.com/v1/tools/search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({ query: normalizedQuery, count: options.maxResults ?? DEFAULT_MAX_RESULTS }),
+    signal: options.signal as NativeFetchInit['signal'],
+  })
+  const payload = (await response.json().catch(() => null)) as {
+    results?: unknown
+    error?: { message?: unknown }
+  } | null
+  if (!response.ok) {
+    const detail = nonEmptyString(payload?.error?.message)
+    throw new Error(`DeepSeek search failed with status ${response.status}${detail ? `: ${detail}` : ''}`)
+  }
+  if (!Array.isArray(payload?.results)) throw new Error('DeepSeek returned an invalid search response')
+  return payload.results.flatMap((item: unknown) => {
+    if (!item || typeof item !== 'object') return []
+    const result = item as Record<string, unknown>
+    const title = nonEmptyString(result.title)
+    const link = nonEmptyString(result.url)
+    return title && link
+      ? [{ title, link, snippet: nonEmptyString(result.summary) ?? nonEmptyString(result.snippet) ?? '' }]
+      : []
+  })
+}
+
+export interface NativeWebPage {
+  url: string
+  title: string
+  content: string
+}
+
+/**
+ * Reads one web page as Markdown through the DeepSeek Fetch API. The URL must be an HTTP(S) URL with a host,
+ * without a username or password, and at most 8192 characters long. An untitled page is labeled by its hostname.
+ */
+export async function fetchNativeDeepSeekPage(
+  url: string,
+  options: Pick<NativeWebSearchOptions, 'apiKey' | 'signal' | 'fetchFn'>
+): Promise<NativeWebPage> {
+  const target = url.trim()
+  let parsed: URL | null = null
+  try {
+    parsed = new URL(target)
+  } catch {}
+  if (
+    !parsed ||
+    (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') ||
+    !parsed.hostname ||
+    parsed.username ||
+    parsed.password ||
+    target.length > DEEPSEEK_MAX_FETCH_URL_LENGTH
+  ) {
+    throw new Error(
+      `DeepSeek fetch only accepts HTTP or HTTPS URLs with a host, without a username or password, and at most ${DEEPSEEK_MAX_FETCH_URL_LENGTH} characters long`
+    )
+  }
+  const apiKey = options.apiKey?.trim()
+  if (!apiKey) throw new Error('DeepSeek API key is required')
+  const response = await (options.fetchFn ?? fetch)('https://api.deepseek.com/v1/tools/fetch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({ url: target }),
+    signal: options.signal as NativeFetchInit['signal'],
+  })
+  const payload = (await response.json().catch(() => null)) as {
+    title?: unknown
+    content?: unknown
+    error?: { message?: unknown }
+  } | null
+  const detail = nonEmptyString(payload?.error?.message)
+  if (!response.ok) {
+    throw new Error(`DeepSeek fetch failed with status ${response.status}${detail ? `: ${detail}` : ''}`)
+  }
+  if (payload?.error) throw new Error(`DeepSeek fetch failed${detail ? `: ${detail}` : ''}`)
+  if (typeof payload?.content !== 'string') throw new Error('DeepSeek returned an invalid fetch response')
+  return { url: target, title: nonEmptyString(payload.title) ?? parsed.hostname, content: payload.content }
 }

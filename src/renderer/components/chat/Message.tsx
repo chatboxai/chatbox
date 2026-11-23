@@ -9,6 +9,7 @@ import {
 } from '@chatbox/core/session/action-gates'
 import { isCancellableGeneratingAssistantMessage } from '@chatbox/core/session/generation-state'
 import { getMessageFinishTip } from '@chatbox/core/session/message-finish-tip'
+import { canCompactUpToMessage, clipMessageMenuPreview } from '@chatbox/core/session/message-menu'
 import {
   isActionAvailableInMode,
   type SessionMode,
@@ -30,6 +31,7 @@ import {
   IconCode,
   IconCopy,
   IconDotsVertical,
+  IconFileZip,
   IconInfoCircle,
   IconLoader2,
   IconMessageReport,
@@ -64,7 +66,10 @@ import { countWord } from '@/packages/word-count'
 import { lockSessionAgentMode, setSessionAgentMode } from '@/stores/session/agent-mode'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { uiStore, useUIStore } from '@/stores/uiStore'
+import { prepareTranscriptBranchCreation } from '@/utils/prepare-transcript-branch-creation'
+import { DeepSeekInfo } from './DeepSeekInfo'
 import '../../static/Block.css'
+import { GLASS_FILL_CLASS, GLASS_SURFACE_CLASS } from '@/lib/glass-surface'
 import { generate, regenerateInNewFork, retryFromLastToolCallAfterApiError } from '@/stores/session/generation'
 import { modifyMessage, removeMessage } from '@/stores/session/messages'
 import * as toastActions from '@/stores/toastActions'
@@ -72,6 +77,7 @@ import { confirmPromptCacheBreakingAction, isPromptCacheBreakConfirmDismissed } 
 import { getSessionLockNotice, notifySessionLockBlocked } from '@/utils/session-lock-copy'
 import ActionMenu, { type ActionMenuItemProps } from '../ActionMenu'
 import { AssistantAvatar, SystemAvatar, UserAvatar } from '../common/Avatar'
+import { CompressionModal } from '../common/CompressionModal'
 import { ICON_SIZE, ICON_STROKE_WIDTH } from '../common/IconButton'
 import { ScalableIcon } from '../common/ScalableIcon'
 import Loading from '../icons/Loading'
@@ -144,6 +150,8 @@ interface Props {
   sessionPicUrl?: string
   /** Assistant name set for the chat or taken from its copilot; it replaces the provider as the bold name in the header row. */
   assistantName?: string
+  /** The message follows every summary of the active conversation, so it can take a new compaction point. */
+  compactHereAvailable?: boolean
 }
 
 const BackgroundTaskNotificationUI: FC<{ task: MessageBackgroundTask; className?: string }> = ({ task, className }) => {
@@ -192,6 +200,7 @@ const _Message: FC<Props> = (props) => {
     assistantAvatarKey,
     sessionPicUrl,
     assistantName,
+    compactHereAvailable = false,
   } = props
 
   const { t } = useTranslation()
@@ -297,6 +306,7 @@ const _Message: FC<Props> = (props) => {
       return
     }
     if (msg.generating && !(await handleStop())) return
+    if (!(await prepareTranscriptBranchCreation(sessionId))) return
     await regenerateInNewFork(sessionId, msg)
   }, [sessionLocks, handleStop, msg, notifyActionBlocked, sessionId])
   // Every retry of this reply (whole message or last step, from any surface)
@@ -660,12 +670,7 @@ const _Message: FC<Props> = (props) => {
           {part.text || ''}
         </Markdown>
       ) : (
-        <div
-          data-transcript-block={`${msg.id}-step-${index}`}
-          className="break-words [overflow-wrap:anywhere] whitespace-pre-line"
-        >
-          {part.text}
-        </div>
+        <div className="break-words [overflow-wrap:anywhere] whitespace-pre-line">{part.text}</div>
       ),
     [
       enableMarkdownRendering,
@@ -696,6 +701,25 @@ const _Message: FC<Props> = (props) => {
   const onClickAssistantAvatar = () => {
     uiStore.getState().openSessionPanel(props.sessionId, 'settings')
   }
+
+  const [compactHereOpened, setCompactHereOpened] = useState(false)
+  const compactHereOffered =
+    compactHereAvailable && !readOnly && canCompactUpToMessage(msg, { pictureSession: props.sessionType === 'picture' })
+  const compactHereAllowed = getSessionActionGate('compact-here', sessionLocks, {
+    messageGenerating: msg.generating,
+  }).allowed
+  const compactHereMenuItem = useMemo<ActionMenuItemProps | null>(
+    () =>
+      compactHereOffered
+        ? {
+            text: t('Compact up to here'),
+            icon: IconFileZip,
+            disabled: !compactHereAllowed,
+            onClick: () => setCompactHereOpened(true),
+          }
+        : null,
+    [compactHereOffered, compactHereAllowed, t]
+  )
 
   const actionMenuItems = useMemo<ActionMenuItemProps[]>(
     () => [
@@ -745,6 +769,7 @@ const _Message: FC<Props> = (props) => {
         testId: TestId.message.actionQuote,
         onClick: quoteMsg,
       },
+      ...(compactHereMenuItem ? [compactHereMenuItem] : []),
       { divider: true },
       ...(msg.role === 'assistant'
         ? [
@@ -799,6 +824,7 @@ const _Message: FC<Props> = (props) => {
       canEditMessage,
       canDeleteMessage,
       confirmCacheBreakingDelete,
+      compactHereMenuItem,
     ]
   )
   const [actionMenuOpened, setActionMenuOpened] = useState(false)
@@ -847,7 +873,7 @@ const _Message: FC<Props> = (props) => {
                 errorOnly: isErrorOnlyMessage(msg),
                 spansColumn: rowLayout.spansColumn,
               })
-            : 'inline-block max-w-full min-w-0 bg-chatbox-background-secondary px-4 rounded-lg'
+            : `inline-block max-w-full min-w-0 bg-chatbox-background-secondary px-4 rounded-lg ${GLASS_FILL_CLASS}`
         }
       >
         <Box
@@ -895,10 +921,7 @@ const _Message: FC<Props> = (props) => {
                       <ReasoningContentUI message={msg} part={item} onCopyReasoningContent={onCopyReasoningContent} />
                     </div>
                   ) : item.type === 'text' ? (
-                    <div
-                      key={`text-${msg.id}-${index}`}
-                      data-transcript-block={enableMarkdownRendering ? undefined : `${msg.id}-${index}`}
-                    >
+                    <div key={`text-${msg.id}-${index}`}>
                       {enableMarkdownRendering ? (
                         <Markdown
                           uniqueId={`${msg.id}-${index}`}
@@ -920,6 +943,10 @@ const _Message: FC<Props> = (props) => {
                         />
                       )}
                     </div>
+                  ) : item.type === 'info' &&
+                    typeof item.values?.kind === 'string' &&
+                    item.values.kind.startsWith('deepseek-') ? (
+                    <DeepSeekInfo key={`info-${index}`} part={item} />
                   ) : item.type === 'info' ? (
                     <Flex key={`info-${item.text}`} className="mb-2 ">
                       <Flex
@@ -937,7 +964,7 @@ const _Message: FC<Props> = (props) => {
                   ) : item.type === 'agent-mode-suggestion' ? (
                     <Flex key={`agent-mode-suggestion-${msg.id}-${index}`} className="mb-2 w-full">
                       <Flex
-                        className="w-full max-w-[760px] bg-chatbox-background-secondary border border-solid border-chatbox-border-primary rounded-lg shadow-sm overflow-hidden"
+                        className={`w-full max-w-[760px] bg-chatbox-background-secondary border border-solid border-chatbox-border-primary rounded-lg shadow-sm overflow-hidden ${GLASS_FILL_CLASS}`}
                         align="stretch"
                       >
                         <div className="w-1 shrink-0 bg-chatbox-tint-brand" />
@@ -1085,7 +1112,7 @@ const _Message: FC<Props> = (props) => {
           <div
             className={cn(
               'inline-flex items-center gap-1.5 py-3',
-              isBubbleLayout ? 'px-1 rounded-lg bg-chatbox-background-secondary' : 'px-4'
+              isBubbleLayout ? `px-1 rounded-lg bg-chatbox-background-secondary ${GLASS_FILL_CLASS}` : 'px-4'
             )}
           >
             <Loading />
@@ -1154,7 +1181,7 @@ const _Message: FC<Props> = (props) => {
   // bottom of the screen while a long message scrolls past.
   const actionBarStickyClass = isSmallScreen ? 'sticky bottom-4' : ''
   const actionBarCardClass = isSmallScreen
-    ? 'p-xxs bg-chatbox-background-primary rounded-lg border-[0.5px] border-solid border-chatbox-border-primary shadow-sm'
+    ? `p-xxs bg-chatbox-background-primary rounded-lg border-[0.5px] border-solid border-chatbox-border-primary shadow-sm ${GLASS_SURFACE_CLASS}`
     : ''
   const generatingActions = showConcurrentReplyStop && (
     <Flex gap={0} m="4px -4px -4px -4px" align="center" className={actionBarStickyClass}>
@@ -1238,6 +1265,16 @@ const _Message: FC<Props> = (props) => {
         </ActionMenu>
       </Flex>
     </Flex>
+  )
+
+  const compactHereModal = compactHereOpened && (
+    <CompressionModal
+      opened
+      onClose={() => setCompactHereOpened(false)}
+      session={{ id: sessionId }}
+      targetMessageId={msg.id}
+      targetPreview={clipMessageMenuPreview(getMessageText(msg))}
+    />
   )
 
   const messageActions = (
@@ -1377,6 +1414,7 @@ const _Message: FC<Props> = (props) => {
           </Flex>
           {isRightAlignedMessage && avatar}
         </Flex>
+        {compactHereModal}
       </Box>
     )
   }
@@ -1422,6 +1460,7 @@ const _Message: FC<Props> = (props) => {
           </Grid>
         </Grid>
       </Grid>
+      {compactHereModal}
     </Box>
   )
 }

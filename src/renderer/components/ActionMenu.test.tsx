@@ -52,4 +52,20 @@ describe('mobile action menu', () => {
     expect(focus).toHaveBeenCalled()
     for (const [options] of focus.mock.calls) expect(options).toEqual({ preventScroll: true })
   })
+
+  it('paints the menu surface on the drawer element itself, which the wallpaper glass rule targets', async () => {
+    render(
+      <MantineProvider>
+        <ActionMenu type="mobile" items={[{ text: 'Copy', onClick: vi.fn() }]}>
+          <button type="button">More</button>
+        </ActionMenu>
+      </MantineProvider>
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'More' }))
+    const content = await screen.findByRole('dialog')
+
+    expect(content.hasAttribute('data-vaul-drawer')).toBe(true)
+    expect(content.className.split(/\s+/)).toContain('bg-chatbox-background-primary')
+    expect(content.querySelector('.bg-chatbox-background-primary')).toBeNull()
+  })
 })

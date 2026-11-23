@@ -9,6 +9,7 @@ import {
 } from '@chatbox/core/application/context'
 import { hasPendingSessionGeneration, withSessionGenerationLock } from '@chatbox/core/generation'
 import type { SessionLockState } from '@chatbox/core/session/action-gates'
+import { t } from 'i18next'
 import { v4 as uuidv4 } from 'uuid'
 import { rendererApplication } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
@@ -96,6 +97,9 @@ export interface ManualCompactionOptions {
  */
 export type ManualCompactionOutcome = 'started' | 'queued' | 'queue-full' | 'queue-failed'
 
+/** `busy` — another reply, compression or queued item owns the session; the request was not accepted. */
+export type TargetedCompactionOutcome = 'started' | 'busy'
+
 export { isAutoCompactionEnabled }
 
 export function isCompactionInProgress(sessionId: string): boolean {
@@ -162,31 +166,55 @@ export async function requestManualCompaction(
     return enqueueManualCompaction(sessionId, request, conversationAnchorId)
   }
 
-  return runAcceptedCompaction(sessionId, options, request, conversationAnchorId)
+  return runAcceptedCompaction(
+    sessionId,
+    { kind: options.force ? 'manual' : 'automatic' },
+    { prompt: options.prompt },
+    () => enqueueManualCompaction(sessionId, request, conversationAnchorId)
+  )
 }
 
-async function runAcceptedCompaction(
+/**
+ * Compress the conversation through `targetMessageId` and place the summary right after it.
+ *
+ * The request names one message, so it is never queued: a later queue turn could find a different
+ * conversation around it. A busy session rejects it instead.
+ */
+export async function requestTargetedCompaction(
   sessionId: string,
-  options: ManualCompactionOptions,
-  request: { prompt?: string; force?: boolean },
-  conversationAnchorId?: string
-): Promise<ManualCompactionOutcome> {
+  targetMessageId: string,
+  options: Pick<ManualCompactionOptions, 'prompt'> = {}
+): Promise<TargetedCompactionOutcome> {
+  if (hasPendingSessionGeneration(sessionId) || !canCompressNow(sessionId, await getSessionLockStateNow(sessionId))) {
+    return 'busy'
+  }
+  return runAcceptedCompaction(
+    sessionId,
+    { kind: 'targeted', targetMessageId },
+    { prompt: options.prompt },
+    () => 'busy' as const
+  )
+}
+
+/** Run an admitted compression in its own generation turn, or hand it to `whenBusy` if the session became busy. */
+async function runAcceptedCompaction<Busy extends string>(
+  sessionId: string,
+  request: CompactionRequest,
+  options: CompactionRunOptions,
+  whenBusy: () => Busy
+): Promise<'started' | Busy> {
   // Resolve the acceptance decision independently of the summary lifetime;
   // subsequent sends still wait for the complete generation turn.
   return new Promise((resolve, reject) => {
     let started = false
     const action = withSessionGenerationLock(sessionId, async () => {
       if (!canCompressNow(sessionId, await getSessionLockStateNow(sessionId))) {
-        resolve(enqueueManualCompaction(sessionId, request, conversationAnchorId))
+        resolve(whenBusy())
         return
       }
       started = true
       resolve('started')
-      await runCompactionWithUIState(
-        sessionId,
-        { kind: options.force ? 'manual' : 'automatic' },
-        { prompt: options.prompt }
-      )
+      await runCompactionWithUIState(sessionId, request, options)
     })
 
     void action.catch((error: unknown) => {
@@ -198,6 +226,7 @@ async function runAcceptedCompaction(
         status: 'failed',
         error: error instanceof Error ? error.message : String(error),
         retryPrompt: options.prompt,
+        retryTargetMessageId: request.kind === 'targeted' ? request.targetMessageId : undefined,
       })
       log.log('error', 'Manual compaction could not run', { error })
     })
@@ -230,6 +259,19 @@ async function compactWithUIState(
     },
   })
   if (!started) return result
+  const retryTargetMessageId = request.kind === 'targeted' ? request.targetMessageId : undefined
+  // The user picked this message; dropping the request silently would read as a lost tap.
+  if (retryTargetMessageId && result.status === 'skipped' && result.reason === 'stale_path') {
+    setCompactionUIState(sessionId, {
+      status: 'failed',
+      error: t('The conversation changed before the compression finished, so nothing was compressed.'),
+      streamingText: '',
+      summaryMessageId: null,
+      retryPrompt: options.prompt,
+      retryTargetMessageId,
+    })
+    return result
+  }
   switch (result.status) {
     case 'compacted':
       setCompactionUIState(sessionId, {
@@ -246,6 +288,7 @@ async function compactWithUIState(
         streamingText: '',
         summaryMessageId: null,
         retryPrompt: options.prompt,
+        retryTargetMessageId,
       })
       break
     case 'skipped':

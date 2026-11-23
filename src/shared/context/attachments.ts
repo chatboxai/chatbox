@@ -5,7 +5,12 @@ import {
   sandboxAttachmentRelPath,
 } from '../sandbox/attachment-path'
 import type { Message, MessageFile, MessageLink } from '../types'
-import { MAX_UPLOADED_FILE_LINES, uploadedFilePath, uploadedFileToolHint } from '../uploaded-file-tools'
+import {
+  MAX_UPLOADED_FILE_LINES,
+  READ_FILE_DEFAULT_LINES,
+  uploadedFilePath,
+  uploadedFileToolHint,
+} from '../uploaded-file-tools'
 import {
   ATTACHMENT_INDEX_STATUS_GUIDANCE,
   FOCUSED_ATTACHMENT_QUERY_GUIDANCE,
@@ -355,7 +360,10 @@ function buildSandboxAttachment(params: {
   let text = '\n\n<ATTACHMENT_FILE>\n'
   text += `<FILE_INDEX>${index}</FILE_INDEX>\n`
   text += `<FILE_NAME>${escapeXmlText(name)}</FILE_NAME>\n`
-  text += `<FILE_KEY>${escapeXmlText(key.startsWith('session-attachment:') ? key : uploadedFilePath(key))}</FILE_KEY>\n`
+  // Sandbox read_file rejects uploaded-file virtual paths; only retrieval tools take the key.
+  if (retrieval) {
+    text += `<FILE_KEY>${escapeXmlText(key.startsWith('session-attachment:') ? key : uploadedFilePath(key))}</FILE_KEY>\n`
+  }
   text += `<FILE_SIZE>${escapeXmlText(size)}</FILE_SIZE>\n`
   text += '<FILE_CONTENT>\n'
   text += '</FILE_CONTENT>\n'
@@ -366,8 +374,8 @@ function buildSandboxAttachment(params: {
   }
   text += `<PARSED_TEXT_STATUS>${isText ? 'not_required' : parsedSandboxPath ? 'available' : 'unavailable'}</PARSED_TEXT_STATUS>\n`
   const hasTextSource = isText || !!parsedSandboxPath
+  const knownLineCount = lineCount !== undefined && Number.isInteger(lineCount) && lineCount >= 0
   if (hasTextSource) {
-    const knownLineCount = lineCount !== undefined && Number.isInteger(lineCount) && lineCount >= 0
     text += `<FILE_LINES>${knownLineCount ? lineCount : 'unknown'}</FILE_LINES>\n`
   }
   if (retrieval) {
@@ -376,6 +384,18 @@ function buildSandboxAttachment(params: {
     if (retrieval.blockedReason) {
       text += `<BLOCKED_REASON>${escapeXmlText(retrieval.blockedReason)}</BLOCKED_REASON>\n`
     }
+  }
+  if (isText && knownLineCount && lineCount <= READ_FILE_DEFAULT_LINES && !retrieval) {
+    text += [
+      '<SYSTEM_REMINDER>',
+      'This uploaded file is available in the sandbox working directory, not inlined in the conversation. ',
+      'Read it with one read_file call on SANDBOX_PATH; FILE_LINES fits within the default limit. ',
+      'Use that path exactly — uploads that share a filename live in distinct subdirectories. ',
+      'Check the result for truncation notices before relying on it.',
+      '</SYSTEM_REMINDER>\n',
+    ].join('')
+    text += '</ATTACHMENT_FILE>\n'
+    return text
   }
   text += [
     '<SYSTEM_REMINDER>',

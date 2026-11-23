@@ -1,33 +1,41 @@
+import { SessionRowMigration, SessionRowWriteQueue } from '@chatbox/core/application/session'
+import { type BackupExportFormat, type BackupExportResult, exportBackupStream } from '@chatbox/core/backup-export'
 import {
   type BackupHostOptions,
-  createBackupExportSource,
-  createBackupImportTarget,
   cleanupBackupImport,
   commitBackupSettings,
+  createBackupExportSource,
+  createBackupImportTarget,
 } from '@chatbox/core/backup-host'
 import { importBackup } from '@chatbox/core/backup-import'
-import { type BackupExportFormat, type BackupExportResult, exportBackupStream } from '@chatbox/core/backup-export'
 import {
   type BackupProgress,
   type BackupResult,
   type BackupSelection,
   getBackupImportPartialResult,
 } from '@chatbox/core/backup-v3'
-import { SessionRowMigration, SessionRowWriteQueue } from '@chatbox/core/application/session'
+import {
+  type DeepSeekImportProgress,
+  type DeepSeekImportResult,
+  importDeepSeekArchive,
+} from '@chatbox/core/importers/deepseek'
 import type { ByteSource } from '@chatbox/core/io'
 import type { KeyValueStoragePort } from '@chatbox/core/ports'
 import { v4 as uuid } from 'uuid'
-import { CurrentSessionRecordStore } from '@/adapters/CurrentSessionRecordStore'
 import { createRendererBackupResources } from '@/adapters/backup-resources'
+import { CurrentSessionRecordStore } from '@/adapters/CurrentSessionRecordStore'
+import { type ArchiveSource, type DownloadProgress, downloadDeepSeekArchive } from '@/adapters/deepseek-download'
 import platform from '@/platform'
 import { IndexedDBBackupWorkspace } from '@/storage/BackupWorkspace'
-import { rendererMemoryService, reloadCopilotDefinitions } from '@/stores/memoryRuntime'
+import { reloadCopilotDefinitions, rendererMemoryService } from '@/stores/memoryRuntime'
 import { rendererApplication } from './renderer-application'
 
 export interface RendererBackupSnapshot {
-  operation: 'export' | 'import'
+  operation: 'export' | 'import' | 'deepseek'
   progress: BackupProgress
   cancelling: boolean
+  deepSeek?: DeepSeekImportProgress
+  download?: DownloadProgress
 }
 type RendererBackupSelection = BackupSelection & { excludedSessionIds?: readonly string[] }
 const rawKV: KeyValueStoragePort = {
@@ -253,8 +261,35 @@ class RendererBackupService {
       })
     )
   }
-  private async run<T extends Pick<BackupResult, 'cleanupPending' | 'refreshPending'>>(
-    operation: 'export' | 'import',
+  importDeepSeek(input: ByteSource | string, failureLabel: string): Promise<DeepSeekImportResult> {
+    return this.run('deepseek', async (options, signal) => {
+      let downloaded: ArchiveSource | undefined
+      let result: DeepSeekImportResult | undefined
+      try {
+        if (typeof input === 'string')
+          downloaded = await downloadDeepSeekArchive(input, options.workspace, signal, (download) => {
+            if (this.snapshot) this.update({ ...this.snapshot, download })
+          })
+        if (this.snapshot) this.update({ ...this.snapshot, download: undefined })
+        result = await importDeepSeekArchive({
+          source: downloaded?.source ?? (input as ByteSource),
+          host: options,
+          createId: uuid,
+          signal,
+          failureLabel,
+          onProgress: (deepSeek) => {
+            if (this.snapshot) this.update({ ...this.snapshot, deepSeek })
+          },
+        })
+        return result
+      } finally {
+        const cleanup = await Promise.allSettled([downloaded?.close(), options.workspace.dispose()])
+        if (result && cleanup.some((entry) => entry.status === 'rejected')) result.cleanupPending = true
+      }
+    })
+  }
+  private async run<T extends Partial<Pick<BackupResult, 'cleanupPending' | 'refreshPending'>>>(
+    operation: RendererBackupSnapshot['operation'],
     action: (options: BackupHostOptions, signal: AbortSignal) => Promise<T>
   ): Promise<T> {
     if (this.snapshot) throw new Error('A backup operation is already in progress')
@@ -277,7 +312,7 @@ class RendererBackupService {
         failure = error
         partial = getBackupImportPartialResult(error)
       }
-      if (operation === 'import') {
+      if (operation !== 'export') {
         const refreshes = await Promise.allSettled([
           rendererApplication.settings.reloadFromStorage(),
           reloadCopilotDefinitions(),

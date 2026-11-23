@@ -116,6 +116,18 @@ beforeEach(() => {
   })
 })
 
+describe('QueuedMessagesBar glass over a chat wallpaper', () => {
+  test('the bar floats as a glass surface and its items are tints', () => {
+    setQueue(2)
+    renderBar()
+
+    expect(screen.getByTestId(TestId.chat.queuedMessageBar).classList).toContain('chatbox-glass-surface')
+    for (const item of screen.getAllByTestId(TestId.chat.queuedMessageItem)) {
+      expect(item.classList).toContain('chatbox-glass-tint')
+    }
+  })
+})
+
 describe('QueuedMessagesBar list height', () => {
   test('caps the list and scrolls it instead of growing with the queue', () => {
     setQueue(20)

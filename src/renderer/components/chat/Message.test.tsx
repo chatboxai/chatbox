@@ -153,6 +153,16 @@ describe('Conversation content surface', () => {
     ).toContain('px-3.5 py-[9px]')
   })
 
+  test('gives the neutral gray bubbles a translucent glass fill without blur and keeps the brand bubble solid', () => {
+    expect(content('classic', 'user').split(' ')).toContain('chatbox-glass-fill')
+    expect(content('bubble', 'assistant').split(' ')).toContain('chatbox-glass-fill')
+    for (const classes of [content('classic', 'user'), content('bubble', 'assistant'), content('bubble', 'user')]) {
+      expect(classes).not.toContain('chatbox-glass-surface')
+    }
+    expect(content('bubble', 'user')).not.toContain('chatbox-glass-fill')
+    expect(content('classic', 'assistant')).not.toContain('chatbox-glass-fill')
+  })
+
   test('keeps error-only replies out of the bubble surface', () => {
     expect(content('bubble', 'assistant', true)).not.toContain('bg-')
   })

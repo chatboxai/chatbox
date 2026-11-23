@@ -17,6 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { rendererApplication } from '@/app/renderer-application'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
+import { GLASS_FILL_CLASS } from '@/lib/glass-surface'
 import { deleteFork, switchFork, switchForkTo } from '@/stores/session/forks'
 import { getSessionLockNotice, notifySessionLockBlocked } from '@/utils/session-lock-copy'
 import ActionMenu, { type ActionMenuItemProps } from '../ActionMenu'
@@ -404,7 +405,7 @@ function BranchPreview(
       gap={0}
       mx="md"
       p="xs"
-      className="rounded-lg border border-solid border-chatbox-border-primary bg-chatbox-background-primary shadow-sm"
+      className={`rounded-lg border border-solid border-chatbox-border-primary bg-chatbox-background-primary shadow-sm ${GLASS_FILL_CLASS}`}
     >
       <Flex justify="space-between" align="center" gap="xs" wrap="wrap" px="xs" pb="xxs">
         <Text size="xs" c="chatbox-tertiary">

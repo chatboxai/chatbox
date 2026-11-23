@@ -41,6 +41,7 @@ export default function Header(props: { session: SessionHeader }) {
   if (isSmallScreen) {
     return (
       <PageHeader
+        overlay
         title={
           <SessionMenu session={currentSession} onEditSettings={editCurrentSession}>
             <UnstyledButton className="controls min-w-0" data-testid={TestId.session.headerMenuTrigger}>

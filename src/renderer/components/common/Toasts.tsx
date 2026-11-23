@@ -15,7 +15,11 @@ function Toasts() {
           style={platform.isDesktopLike ? { top: 64 } : undefined}
           key={toast.id}
           open
-          onClose={() => toastActions.remove(toast.id)}
+          onClose={() => {
+            // A persistent toast stays until its owner removes it or the user clicks its action.
+            if (toast.duration === null) return
+            toastActions.remove(toast.id)
+          }}
           message={toast.content}
           action={
             toast.action ? (
@@ -38,7 +42,7 @@ function Toasts() {
             ) : undefined
           }
           anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-          autoHideDuration={toast.duration ?? 3000}
+          autoHideDuration={toast.duration === undefined ? 3000 : toast.duration}
         />
       ))}
     </>

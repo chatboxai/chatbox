@@ -127,3 +127,18 @@ it('shows progress and ignores repeated clicks while opening the free plan page'
   finishRequest?.()
   await waitFor(() => expect(button.hasAttribute('disabled')).toBe(false))
 })
+
+it.each([20048, 20050])('sends DeepSeek key error %s to the DeepSeek model provider settings', (errorCode) => {
+  show(errorCode)
+  fireEvent.click(screen.getByRole('button', { name: 'add it in the DeepSeek model provider settings' }))
+  expect(mocks.navigateToSettings).toHaveBeenCalledWith('/provider/deepseek')
+})
+
+it.each([
+  [20048, 'search provider', '/web-search'],
+  [20050, 'document parser', '/document-parser'],
+])('still offers the feature settings for DeepSeek key error %s', (errorCode, name, path) => {
+  show(errorCode)
+  fireEvent.click(screen.getByRole('button', { name }))
+  expect(mocks.navigateToSettings).toHaveBeenCalledWith(path)
+})

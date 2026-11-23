@@ -95,16 +95,44 @@ export function createEmpty(type: 'chat') {
 /**
  * Copy session and switch to it
  */
-export async function copyAndSwitchSession(sessionId: string) {
-  const source = await rendererApplication.sessions.getSessionHeader(sessionId)
-  if (!source) throw new Error(`Session ${sessionId} not found`)
-  const created = await rendererApplication.sessions.copySession({
-    sessionId,
-    expectedRevision: source.revision,
-    scope: { type: 'session' },
-    appendForkMarker: true,
+const copiesInFlight = new Map<string, Promise<void>>()
+const copyListeners = new Set<() => void>()
+const notifyCopyListeners = () => {
+  for (const listener of copyListeners) listener()
+}
+
+export function isSessionCopyInFlight(sessionId: string): boolean {
+  return copiesInFlight.has(sessionId)
+}
+
+export function subscribeSessionCopies(listener: () => void): () => void {
+  copyListeners.add(listener)
+  return () => {
+    copyListeners.delete(listener)
+  }
+}
+
+/** Repeated requests for a source session share its running copy. */
+export function copyAndSwitchSession(sessionId: string): Promise<void> {
+  const running = copiesInFlight.get(sessionId)
+  if (running) return running
+  const copy = (async () => {
+    const source = await rendererApplication.sessions.getSessionHeader(sessionId)
+    if (!source) throw new Error(`Session ${sessionId} not found`)
+    const created = await rendererApplication.sessions.copySession({
+      sessionId,
+      expectedRevision: source.revision,
+      scope: { type: 'session' },
+      appendForkMarker: true,
+    })
+    switchCurrentSession(created.id)
+  })().finally(() => {
+    copiesInFlight.delete(sessionId)
+    notifyCopyListeners()
   })
-  switchCurrentSession(created.id)
+  copiesInFlight.set(sessionId, copy)
+  notifyCopyListeners()
+  return copy
 }
 
 /**

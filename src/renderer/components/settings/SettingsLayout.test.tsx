@@ -3,7 +3,7 @@
 import { MantineProvider } from '@mantine/core'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { SettingRow, SettingSwitchRow } from './SettingsLayout'
+import { SettingRow, SettingSwitchRow, SettingsSection } from './SettingsLayout'
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
 
@@ -62,5 +62,31 @@ describe('SettingRow', () => {
     fireEvent.click(screen.getByText('Archived Chats'))
     expect(onClick).not.toHaveBeenCalled()
     expect(screen.getByText('Archived Chats').tagName).not.toBe('LABEL')
+  })
+})
+
+describe('SettingsSection', () => {
+  it('puts the rows on the shared raised surface', () => {
+    const { container } = render(
+      <MantineProvider>
+        <SettingsSection title="Network">
+          <SettingRow label="Proxy" />
+        </SettingsSection>
+      </MantineProvider>
+    )
+    const body = container.querySelector('.settings-section-body')
+    expect(body?.classList.contains('bg-chatbox-background-raised')).toBe(true)
+    expect(body?.classList.contains('bg-chatbox-background-primary')).toBe(false)
+  })
+
+  it('leaves a bare section without a surface', () => {
+    const { container } = render(
+      <MantineProvider>
+        <SettingsSection bare>
+          <SettingRow label="Proxy" />
+        </SettingsSection>
+      </MantineProvider>
+    )
+    expect(container.querySelector('.settings-section-body')?.className).not.toMatch(/bg-chatbox-background/)
   })
 })

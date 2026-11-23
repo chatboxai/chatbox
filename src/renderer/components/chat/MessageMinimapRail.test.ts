@@ -175,6 +175,12 @@ describe('getMinimapRenderRange', () => {
     expect(screen.getByText('Streaming reply')).toBeTruthy()
   })
 
+  test('the message preview floats as a glass surface', () => {
+    render(createElement(MessageMinimapRail, { anchors: createAnchors(3) }))
+    fireEvent.focus(screen.getByRole('button', { name: 'Jump to message 1' }))
+    expect(document.querySelector('.chatbox-glass-surface')).not.toBeNull()
+  })
+
   test('moves keyboard focus to anchors outside the rendered window', async () => {
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       callback(0)

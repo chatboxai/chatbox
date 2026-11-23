@@ -21,6 +21,7 @@ import {
   ViewLicenseButton,
 } from './ActionButton'
 import { ClaimWaitingCard } from './ClaimWaitingCard'
+import { ImportConversationsCard } from './ImportConversationsCard'
 import { SuggestedQuestions } from './SuggestedQuestions'
 import { UserTypeCards } from './UserTypeCards'
 
@@ -31,6 +32,8 @@ interface GuideMessageProps {
   onQuestionClick?: (question: string) => void
   onClaimStart?: () => void
   onClaimDetected?: (license: UserLicense, email: string) => void
+  onImportConversations?: () => void
+  onSkipImport?: () => void
   isLastMessage?: boolean
 }
 
@@ -44,6 +47,8 @@ function ToolPartRenderer({
   onQuestionClick,
   onClaimStart,
   onClaimDetected,
+  onImportConversations,
+  onSkipImport,
   disabled,
 }: {
   part: GuideToolPart
@@ -52,9 +57,18 @@ function ToolPartRenderer({
   onQuestionClick?: (question: string) => void
   onClaimStart?: () => void
   onClaimDetected?: (license: UserLicense, email: string) => void
+  onImportConversations?: () => void
+  onSkipImport?: () => void
   disabled?: boolean
 }) {
   switch (part.toolName) {
+    case 'show_import_conversations':
+      return onImportConversations ? (
+        <ImportConversationsCard
+          onImport={onImportConversations}
+          onSkip={part.result?.allowSkip === true ? onSkipImport : undefined}
+        />
+      ) : null
     case 'show_user_type_cards':
       if (!onSelectUserType) return null
       return <UserTypeCards onSelect={onSelectUserType} disabled={disabled} />
@@ -113,6 +127,8 @@ export function GuideMessage({
   onQuestionClick,
   onClaimStart,
   onClaimDetected,
+  onImportConversations,
+  onSkipImport,
   isLastMessage,
 }: GuideMessageProps) {
   const isUser = message.role === 'user'
@@ -205,6 +221,8 @@ export function GuideMessage({
                       onQuestionClick={onQuestionClick}
                       onClaimStart={onClaimStart}
                       onClaimDetected={onClaimDetected}
+                      onImportConversations={onImportConversations}
+                      onSkipImport={onSkipImport}
                       disabled={shouldDisable}
                     />
                   )

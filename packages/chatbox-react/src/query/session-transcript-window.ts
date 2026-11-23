@@ -1,19 +1,19 @@
+import type { Message, Updater } from '@chatbox/core'
 import {
   DEFAULT_TRANSCRIPT_PAGE_BYTES,
-  SessionRowConflictError,
-  type SessionRowCommit,
+  type SessionBranchMessagesPage,
+  type SessionBranchMessagesRequest,
   type SessionCommandDelta,
+  type SessionRowCommit,
+  SessionRowConflictError,
   type SessionTranscriptAnchor,
   type SessionTranscriptCursor,
   type SessionTranscriptOrigin,
   type SessionTranscriptPage,
   type SessionTranscriptRequest,
   type SessionTranscriptThread,
-  type SessionBranchMessagesRequest,
-  type SessionBranchMessagesPage,
 } from '@chatbox/core/ports'
 import type { MessageRow, MessageRowMetadata } from '@chatbox/core/session/session-tree'
-import type { Message, Updater } from '@chatbox/core'
 
 export function sessionTranscriptPageSize(platform: 'rn' | 'capacitor' | 'electron' | 'web'): number {
   return platform === 'rn' || platform === 'capacitor' ? 20 : 100
@@ -38,7 +38,9 @@ export interface SessionTranscriptOperation {
   requestId: number
   /** Identifies one branch change across repeated reads at newer content revisions. */
   branchOperationId?: number
-  kind: 'open' | 'older' | 'newer' | 'navigate' | 'branch'
+  /** Creating a reply can retain tail following; selecting a branch preserves reading intent. */
+  branchMode?: 'create' | 'select'
+  kind: 'open' | 'older' | 'newer' | 'navigate' | 'branch' | 'refresh'
   phase: 'reading' | 'layout' | 'error'
   error?: Error
 }
@@ -73,6 +75,7 @@ export interface SessionTranscriptWindowSource {
 
 export type SessionTranscriptBranchCommit = SessionRowCommit & {
   previousRevision: number
+  branchMode?: SessionTranscriptOperation['branchMode']
   /** A loaded shared message; null means a loaded thread's root branches. */
   sharedPrefixEnd: SessionTranscriptAnchor
 } & ({ origin: SessionTranscriptOrigin; cursor?: never } | { cursor: SessionTranscriptCursor; origin?: never })
@@ -87,6 +90,15 @@ export interface SessionTranscriptWindowOptions {
 
 export class SessionTranscriptWindowError extends Error {
   readonly name = 'SessionTranscriptWindowError'
+}
+
+interface TranscriptRefreshRange {
+  rows: readonly MessageRow[]
+  hasOlder: boolean
+  hasNewer: boolean
+  removedMessages: ReadonlySet<string>
+  removedThreads: ReadonlySet<string>
+  resume?: 'older' | 'newer'
 }
 
 function initialState(sessionId: string, pageSize: number, maxBytes: number): SessionTranscriptWindowState {
@@ -260,6 +272,7 @@ export class SessionTranscriptWindowController {
     commit: SessionTranscriptBranchCommit
     anchor: SessionTranscriptLayoutRequest['anchor']
   } | null = null
+  private pendingRefresh: TranscriptRefreshRange | null = null
   private browseProgress: { older?: number; newer?: number } = {}
 
   constructor(private readonly options: SessionTranscriptWindowOptions) {
@@ -302,11 +315,16 @@ export class SessionTranscriptWindowController {
     for (const listener of this.listeners) listener()
   }
 
-  private begin(kind: SessionTranscriptOperation['kind'], branchOperationId?: number): number {
+  private begin(
+    kind: SessionTranscriptOperation['kind'],
+    branchOperationId?: number,
+    branchMode: SessionTranscriptOperation['branchMode'] = 'select'
+  ): number {
     const requestId = ++this.sequence
     this.retryIntent = null
     this.pendingNavigation = null
     this.pendingBranch = null
+    this.pendingRefresh = null
     this.publish({
       ...this.state,
       layout: null,
@@ -314,7 +332,7 @@ export class SessionTranscriptWindowController {
         requestId,
         kind,
         phase: 'reading',
-        ...(kind === 'branch' ? { branchOperationId: branchOperationId ?? requestId } : {}),
+        ...(kind === 'branch' ? { branchOperationId: branchOperationId ?? requestId, branchMode } : {}),
       },
     })
     return requestId
@@ -367,38 +385,41 @@ export class SessionTranscriptWindowController {
             : { threadId: layout.anchor.threadId, edge: 'head' },
       layout: { kind: layout.kind, anchor: layout.anchor },
     }
-    const mounted = new Map(this.state.rows.map((row) => [row.messageId, row]))
-    const visiblePages =
-      pages === this.state.pages
-        ? pages
-        : pages.map((page) => {
-            let changed = false
-            const messages = page.messages.map((row) => {
-              const live = mounted.get(row.messageId)
-              if (
-                live?.threadId === row.threadId &&
-                live.message !== row.message &&
-                live.message.generating &&
-                row.message.generating
-              ) {
-                changed = true
-                return { ...row, message: live.message }
-              }
-              return row
-            })
-            return changed ? { ...page, messages, payloadBytes: null } : page
-          })
     this.publish({
-      ...withPages(this.state, visiblePages),
+      ...withPages(this.state, this.preserveLiveMessages(pages)),
       windowEpoch: layout.rebase ? requestId : this.state.windowEpoch,
       operation: {
         requestId,
         kind: operation?.kind ?? 'navigate',
         phase: 'layout',
         ...(operation?.branchOperationId !== undefined ? { branchOperationId: operation.branchOperationId } : {}),
+        ...(operation?.branchMode ? { branchMode: operation.branchMode } : {}),
       },
       layout: { ...layout, requestId },
     })
+  }
+
+  private preserveLiveMessages(pages: readonly SessionTranscriptWindowPage[]): readonly SessionTranscriptWindowPage[] {
+    const mounted = new Map(this.state.rows.map((row) => [row.messageId, row]))
+    return pages === this.state.pages
+      ? pages
+      : pages.map((page) => {
+          let changed = false
+          const messages = page.messages.map((row) => {
+            const live = mounted.get(row.messageId)
+            if (
+              live?.threadId === row.threadId &&
+              live.message !== row.message &&
+              live.message.generating &&
+              row.message.generating
+            ) {
+              changed = true
+              return { ...row, message: live.message }
+            }
+            return row
+          })
+          return changed ? { ...page, messages, payloadBytes: null } : page
+        })
   }
 
   private fail(requestId: number, error: unknown): false {
@@ -422,6 +443,7 @@ export class SessionTranscriptWindowController {
           ...(this.state.operation?.branchOperationId !== undefined
             ? { branchOperationId: this.state.operation.branchOperationId }
             : {}),
+          ...(this.state.operation?.branchMode ? { branchMode: this.state.operation.branchMode } : {}),
           phase: 'error',
           error: error instanceof Error ? error : new Error(String(error)),
         },
@@ -440,13 +462,14 @@ export class SessionTranscriptWindowController {
       rebase?: boolean
     },
     branchOperationId?: number,
-    owner?: object
+    owner?: object,
+    branchMode?: SessionTranscriptOperation['branchMode']
   ): Promise<boolean> {
-    const requestId = this.begin(kind, branchOperationId)
+    const requestId = this.begin(kind, branchOperationId, branchMode)
     const branchId = this.state.operation?.branchOperationId
     this.pendingNavigation = { origin, layout, owner }
     this.browseProgress = {}
-    this.retryIntent = () => this.replace(origin, kind, revision, layout, branchId, owner)
+    this.retryIntent = () => this.replace(origin, kind, revision, layout, branchId, owner, branchMode)
     try {
       const result = await this.options.source.readTranscriptWindow({
         sessionId: this.options.sessionId,
@@ -469,7 +492,7 @@ export class SessionTranscriptWindowController {
       return true
     } catch (error) {
       if (requestId === this.sequence && error instanceof SessionRowConflictError)
-        this.retryIntent = () => this.replace(origin, kind, undefined, layout, branchId, owner)
+        this.retryIntent = () => this.replace(origin, kind, undefined, layout, branchId, owner, branchMode)
       return this.fail(requestId, error)
     }
   }
@@ -482,25 +505,97 @@ export class SessionTranscriptWindowController {
   /** Search opens a page centered on the target, including when the target is already loaded. */
   openSearch = (messageId: string): Promise<boolean> => this.replace({ messageId, align: 'center' }, 'navigate')
 
-  private recoverVisibleAnchor(branchOperationId?: number): Promise<boolean> {
-    const anchor =
-      this.options.captureAnchor?.() ??
-      (this.state.rows[0]
-        ? {
-            ...messageAnchor(this.state.rows[0]),
-            offset: 0,
+  private refreshRange(removedMessages: readonly string[], removedThreads: readonly string[]): TranscriptRefreshRange {
+    const previous = this.pendingRefresh
+    const operation = this.state.operation
+    return {
+      rows: previous?.rows ?? this.state.rows,
+      hasOlder: previous?.hasOlder ?? this.state.hasOlder,
+      hasNewer: previous?.hasNewer ?? this.state.hasNewer,
+      removedMessages: new Set([...(previous?.removedMessages ?? []), ...removedMessages]),
+      removedThreads: new Set([...(previous?.removedThreads ?? []), ...removedThreads]),
+      resume:
+        previous?.resume ??
+        (operation?.phase !== 'layout' && (operation?.kind === 'older' || operation?.kind === 'newer')
+          ? operation.kind
+          : undefined),
+    }
+  }
+
+  /** Refresh the loaded range atomically; the host virtualizer owns its reading position. */
+  private async readLoadedWindow(range: TranscriptRefreshRange): Promise<boolean> {
+    const retained = range.rows.filter(
+      (row) => !range.removedMessages.has(row.messageId) && !range.removedThreads.has(row.threadId)
+    )
+    const first = retained[0]
+    const last = retained.at(-1)
+    const origin: SessionTranscriptOrigin = !range.hasOlder ? 'head' : first ? { messageId: first.messageId } : 'tail'
+    const requestId = this.begin('refresh')
+    this.pendingRefresh = range
+    this.retryIntent = () => this.readLoadedWindow(range)
+    try {
+      const result = await this.options.source.readTranscriptWindow({
+        sessionId: this.options.sessionId,
+        limit: this.options.pageSize,
+        maxBytes: this.maxBytes,
+        origin,
+      })
+      if (requestId !== this.sequence) return false
+      const pages: SessionTranscriptWindowPage[] = []
+      let page = this.validate(result)
+      const revision = page.revision
+      const ids = new Set<string>()
+      // Bound recovery to the mounted range plus one page of structural insertions.
+      const maxRows = Math.max(this.options.pageSize, range.rows.length + this.options.pageSize)
+      while (true) {
+        if (range.hasNewer && last) {
+          const end = page.messages.findIndex((row) => row.messageId === last.messageId)
+          if (end >= 0 && end < page.messages.length - 1) {
+            const messages = page.messages.slice(0, end + 1)
+            page = {
+              ...page,
+              messages,
+              payloadBytes: messages.reduce(
+                (bytes, row) => bytes + new TextEncoder().encode(JSON.stringify(row.message)).length,
+                0
+              ),
+              newer: cursorAt(page, messages[end], 'after', this.options.pageSize, this.maxBytes),
+            }
           }
-        : null)
-    const kind = branchOperationId === undefined ? 'navigate' : 'branch'
-    return anchor?.messageId
-      ? this.replace({ messageId: anchor.messageId }, kind, undefined, { kind: 'preserve', anchor }, branchOperationId)
-      : this.replace(
-          anchor ? { threadId: anchor.threadId, edge: 'head' } : 'tail',
-          kind,
-          undefined,
-          undefined,
-          branchOperationId
-        )
+        }
+        if (page.messages.some((row) => ids.has(row.messageId)))
+          throw new SessionTranscriptWindowError('A refresh repeated a loaded message')
+        for (const row of page.messages) ids.add(row.messageId)
+        pages.push(page)
+        if (!page.newer || !last || (range.hasNewer && ids.has(last.messageId))) break
+        if (!page.messages.length || ids.size >= maxRows)
+          throw new SessionTranscriptWindowError(
+            'The conversation changed beyond the loaded range. Retry to refresh it.'
+          )
+        const next = await this.options.source.readTranscriptWindow({
+          sessionId: this.options.sessionId,
+          limit: this.options.pageSize,
+          maxBytes: this.maxBytes,
+          cursor: page.newer,
+          expectedRevision: revision,
+        })
+        if (requestId !== this.sequence) return false
+        page = this.validate(next, revision)
+      }
+      this.pendingRefresh = null
+      this.retryIntent = null
+      this.browseProgress = {}
+      this.publish({
+        ...withPages(this.state, this.preserveLiveMessages(pages)),
+        operation: null,
+        layout: null,
+      })
+      if (range.resume && requestId === this.sequence && this.state[range.resume === 'older' ? 'hasOlder' : 'hasNewer'])
+        return this.readContinuation(range.resume)
+      return true
+    } catch (error) {
+      return this.fail(requestId, error)
+    }
   }
 
   private retainRevision(commit: SessionRowCommit): void {
@@ -549,6 +644,7 @@ export class SessionTranscriptWindowController {
         ...contentCommit,
         previousRevision: commit.previousRevision,
         sharedPrefixEnd: commit.sharedPrefixEnd,
+        branchMode: commit.branchMode,
       }
       const nextCommit: SessionTranscriptBranchCommit = commit.cursor
         ? { ...base, cursor: { ...commit.cursor, revision: contentCommit.revision } }
@@ -560,14 +656,14 @@ export class SessionTranscriptWindowController {
         this.options.pageSize,
         this.maxBytes
       )
-      const requestId = this.begin('branch', operation?.branchOperationId)
+      const requestId = this.begin('branch', operation?.branchOperationId, operation?.branchMode)
       this.retainRevision(contentCommit)
       return this.readBranch(requestId, nextCommit, prefix, anchor)
     }
     const messages = new Set(removedMessages)
     const threads = new Set(removedThreads)
     const pending = this.pendingNavigation
-    if (pending) {
+    if (pending && operation && ['open', 'navigate', 'branch'].includes(operation.kind)) {
       const targetId =
         typeof pending.origin === 'object' && 'messageId' in pending.origin ? pending.origin.messageId : undefined
       const targetThread =
@@ -585,23 +681,12 @@ export class SessionTranscriptWindowController {
           undefined,
           layout,
           operation?.branchOperationId,
-          pending.owner
+          pending.owner,
+          operation.branchMode
         )
       }
     }
-    if (!removedMessages.length && !removedThreads.length) return this.recoverVisibleAnchor()
-    const captured = this.options.captureAnchor?.()
-    if (captured && !threads.has(captured.threadId) && captured.messageId && !messages.has(captured.messageId))
-      return this.replace({ messageId: captured.messageId }, 'navigate', undefined, {
-        kind: 'preserve',
-        anchor: captured,
-        rebase: false,
-      })
-    const surviving = this.state.rows.find((row) => !threads.has(row.threadId) && !messages.has(row.messageId))
-    return this.replace(surviving ? { messageId: surviving.messageId } : 'tail', 'navigate', undefined, {
-      kind: surviving ? 'anchor' : 'tail',
-      rebase: false,
-    })
+    return this.readLoadedWindow(this.refreshRange(removedMessages, removedThreads))
   }
 
   /** Live generation owns only rows that are currently displayed. */
@@ -769,6 +854,7 @@ export class SessionTranscriptWindowController {
     this.sequence += 1
     this.pendingNavigation = null
     this.pendingBranch = null
+    this.pendingRefresh = null
     this.retryIntent = null
     this.browseProgress = {}
     const lastPage = retained[retained.length - 1]
@@ -788,9 +874,11 @@ export class SessionTranscriptWindowController {
   private removalHasOlder = false
   private removalReadTarget: string | null = null
 
-  rejectRemovalProjection = (): void => {
-    const requestId = this.begin('navigate')
-    this.retryIntent = () => this.open('tail')
+  rejectRemovalProjection = (removedMessages: readonly string[] = []): void => {
+    const range = this.refreshRange(removedMessages, [])
+    const requestId = this.begin('refresh')
+    this.pendingRefresh = range
+    this.retryIntent = () => this.readLoadedWindow(range)
     this.fail(
       requestId,
       new SessionTranscriptWindowError('The loaded conversation is out of date. Retry to load the committed messages.')
@@ -1120,22 +1208,105 @@ export class SessionTranscriptWindowController {
         : hasPrefix
           ? end
           : page.anchor
-    const requestId = ++this.sequence
-    this.retryIntent = null
-    this.pendingNavigation = null
-    this.pendingBranch = null
+    // Subscribers capture tail intent while the previous rows and pagination boundaries still apply.
+    const requestId = this.begin('branch', undefined, 'create')
     this.browseProgress = {}
-    this.finishLayout(
-      requestId,
-      pages,
-      { kind: 'preserve', anchor },
-      {
-        requestId,
-        kind: 'branch',
-        phase: 'layout',
-        branchOperationId: requestId,
-      }
+    this.finishLayout(requestId, pages, { kind: 'preserve', anchor })
+    return true
+  }
+
+  /** Keep the loaded window mounted while its virtualizer positions the committed summary. */
+  applyCompaction = (commit: SessionCommandDelta): boolean => {
+    const diff = commit.diff
+    const insertion = diff.insertParents?.[0]
+    const summary = diff.messages.upsert[0]
+    if (
+      commit.record.id !== this.options.sessionId ||
+      this.state.revision !== commit.previousRevision ||
+      !this.state.pages.length ||
+      diff.insertParents?.length !== 1 ||
+      !insertion ||
+      diff.messages.upsert.length !== 1 ||
+      !summary?.message.isSummary ||
+      summary.messageId !== insertion.newParentMessageId ||
+      summary.parentMessageId !== insertion.parentMessageId ||
+      summary.threadId !== insertion.threadId ||
+      this.state.rows.some((row) => row.messageId === summary.messageId) ||
+      commit.structureResult?.navigation ||
+      diff.messages.delete.length ||
+      diff.threads.delete.length ||
+      diff.deleteSessionMessages ||
+      diff.deleteArchivedThreads ||
+      diff.deleteThreadMessages?.length ||
+      diff.deleteSubtrees?.length ||
+      diff.expandForks?.length ||
+      diff.replaceMessagePivots?.length ||
+      diff.reparentChildren?.length ||
+      diff.siblingShifts?.length
     )
+      return false
+
+    const parentLoaded = this.state.rows.some((row) => row.messageId === insertion.parentMessageId)
+    let inserted = false
+    const pages: SessionTranscriptWindowPage[] = []
+    for (const projected of this.projectMetadata(diff.messageMetadataUpsert ?? [], diff.threads.upsert)) {
+      let changed = false
+      const messages = projected.messages.flatMap((row) => {
+        if (row.threadId !== insertion.threadId) return [row]
+        if (row.messageId === insertion.parentMessageId) {
+          inserted = true
+          changed = true
+          return [row, summary]
+        }
+        if (row.parentMessageId !== insertion.parentMessageId) return [row]
+        const child = { ...row, parentMessageId: summary.messageId }
+        if (parentLoaded || inserted) return [child]
+        inserted = true
+        changed = true
+        return [summary, child]
+      })
+      const page = { ...projected, record: commit.record, revision: commit.revision, messages }
+      if (!changed) {
+        pages.push(page)
+        continue
+      }
+      // A summary can exceed a page's byte budget; retain every loaded row when splitting it.
+      let chunk: SessionTranscriptWindowPage = { ...page, messages: [], payloadBytes: 0 }
+      for (const row of messages) {
+        const bytes = new TextEncoder().encode(JSON.stringify(row.message)).length
+        if (
+          chunk.messages.length >= this.options.pageSize ||
+          (chunk.messages.length > 0 && (chunk.payloadBytes ?? 0) + bytes > this.maxBytes)
+        ) {
+          pages.push(chunk)
+          chunk = { ...page, anchor: messageAnchor(row), messages: [], payloadBytes: 0 }
+        }
+        chunk.messages.push(row)
+        chunk.payloadBytes = (chunk.payloadBytes ?? 0) + bytes
+      }
+      pages.push(chunk)
+    }
+    for (let index = 0; index < pages.length; index++) {
+      const page = pages[index]
+      const first = page.messages[0]
+      const last = page.messages.at(-1)
+      if (first && !page.messages.some((row) => row.messageId === page.anchor.messageId))
+        page.anchor = messageAnchor(first)
+      page.older =
+        first && (index > 0 || this.state.hasOlder)
+          ? cursorAt(page, first, 'before', this.options.pageSize, this.maxBytes)
+          : null
+      page.newer =
+        last && (index < pages.length - 1 || this.state.hasNewer)
+          ? cursorAt(page, last, 'after', this.options.pageSize, this.maxBytes)
+          : null
+    }
+    this.publish(withPages(this.state, pages))
+    const operation = this.state.operation
+    if (operation?.phase === 'reading' || operation?.error instanceof SessionRowConflictError) {
+      // Continue an outstanding page read or explicit navigation at the committed revision.
+      void this.refresh([], [], commit)
+    }
     return true
   }
 
@@ -1269,8 +1440,11 @@ export class SessionTranscriptWindowController {
   }
 
   /** Loads a branch whose shared prefix is outside the mounted window. */
-  navigateBranch = (origin: SessionTranscriptOrigin, expectedRevision: number): Promise<boolean> =>
-    this.replace(origin, 'branch', expectedRevision)
+  navigateBranch = (
+    origin: SessionTranscriptOrigin,
+    expectedRevision: number,
+    branchMode?: SessionTranscriptOperation['branchMode']
+  ): Promise<boolean> => this.replace(origin, 'branch', expectedRevision, undefined, undefined, undefined, branchMode)
 
   viewThread = (threadId: string): Promise<boolean> => this.navigate({ threadId, edge: 'head' })
 
@@ -1328,7 +1502,7 @@ export class SessionTranscriptWindowController {
       return true
     } catch (error) {
       if (requestId === this.sequence && error instanceof SessionRowConflictError)
-        this.retryIntent = () => this.recoverVisibleAnchor()
+        this.retryIntent = () => this.refresh()
       return this.fail(requestId, error)
     }
   }
@@ -1339,7 +1513,7 @@ export class SessionTranscriptWindowController {
   loadNewer = (progress?: number): Promise<boolean> => this.extend('newer', progress)
 
   applyBranchCommit = async (commit: SessionTranscriptBranchCommit): Promise<boolean> => {
-    const requestId = this.begin('branch')
+    const requestId = this.begin('branch', undefined, commit.branchMode)
     try {
       if (commit.record.id !== this.options.sessionId || this.state.revision !== commit.previousRevision)
         throw new SessionTranscriptWindowError('The branch commit does not continue the loaded revision')
@@ -1374,7 +1548,9 @@ export class SessionTranscriptWindowController {
       layout: { kind: 'preserve', anchor },
     }
     const branchOperationId = this.state.operation?.branchOperationId
-    this.retryIntent = () => this.readBranch(this.begin('branch', branchOperationId), commit, prefix, anchor)
+    const branchMode = this.state.operation?.branchMode
+    this.retryIntent = () =>
+      this.readBranch(this.begin('branch', branchOperationId, branchMode), commit, prefix, anchor)
     try {
       const result = await this.options.source.readTranscriptWindow({
         sessionId: this.options.sessionId,
@@ -1394,7 +1570,7 @@ export class SessionTranscriptWindowController {
       return true
     } catch (error) {
       if (requestId === this.sequence && error instanceof SessionRowConflictError)
-        this.retryIntent = () => this.recoverVisibleAnchor(branchOperationId)
+        this.retryIntent = () => this.refresh()
       return this.fail(requestId, error)
     }
   }
@@ -1404,6 +1580,7 @@ export class SessionTranscriptWindowController {
     this.retryIntent = null
     this.pendingNavigation = null
     this.pendingBranch = null
+    this.pendingRefresh = null
     this.publish({ ...this.state, layout: null, operation: null, firstWindowReady: true })
     return true
   }
@@ -1431,6 +1608,7 @@ export class SessionTranscriptWindowController {
     this.retryIntent = null
     this.pendingNavigation = null
     this.pendingBranch = null
+    this.pendingRefresh = null
     this.publish({ ...this.state, layout: null, operation: null })
     return true
   }
@@ -1439,8 +1617,9 @@ export class SessionTranscriptWindowController {
     const layout = this.state.layout
     if (!layout || layout.requestId !== requestId || requestId !== this.sequence) return
     const branchOperationId = this.state.operation?.branchOperationId
+    const branchMode = this.state.operation?.branchMode
     this.retryIntent = async () => {
-      const next = this.begin(branchOperationId === undefined ? 'navigate' : 'branch', branchOperationId)
+      const next = this.begin(branchOperationId === undefined ? 'navigate' : 'branch', branchOperationId, branchMode)
       this.finishLayout(next, this.state.pages, layout)
       return true
     }
@@ -1456,6 +1635,7 @@ export class SessionTranscriptWindowController {
     this.retryIntent = null
     this.pendingNavigation = null
     this.pendingBranch = null
+    this.pendingRefresh = null
     this.browseProgress = {}
     this.publish(initialState(this.options.sessionId, this.options.pageSize, this.maxBytes))
   }

@@ -9,6 +9,8 @@ export interface CompactionUIState {
   summaryMessageId: string | null
   /** Custom summary prompt of the failed request, reused when the user retries it. */
   retryPrompt?: string
+  /** Target of a failed "compact up to here" request; Retry compacts through the same message again. */
+  retryTargetMessageId?: string
 }
 
 const defaultCompactionUIState: CompactionUIState = {

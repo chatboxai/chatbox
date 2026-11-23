@@ -131,6 +131,12 @@ describe('account API origin', () => {
     afetch.mockReset().mockResolvedValue({ json: async () => ({ data: {} }), headers: { get: () => 'token' } })
   })
 
+  it('passes the email-code abort signal to the request', async () => {
+    const signal = new AbortController().signal
+    await sendEmailLoginCode({ email: 'user@example.test', signal })
+    expect(afetch.mock.calls[0][1].signal).toBe(signal)
+  })
+
   it.each([
     ['/api/auth/request_login_ticket', () => requestLoginTicketId()],
     ['/api/auth/send_email_login_code', () => sendEmailLoginCode({ email: 'user@example.test' })],

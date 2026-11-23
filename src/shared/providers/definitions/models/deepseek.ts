@@ -4,12 +4,14 @@ import type { LanguageModelV4 } from '@ai-sdk/provider'
 import AbstractAISDKModel, { type CallSettings } from '../../../models/abstract-ai-sdk'
 import { ApiError } from '../../../models/errors'
 import { getOpenAICompatibleProviderOptionsKey } from '../../../models/openai-compatible'
+import type { TranscriptionEndpoint } from '../../../models/transcription'
 import type { CallChatCompletionOptions } from '../../../models/types'
 import {
   isDeepSeekReasoningModel,
   isDeepSeekWeakToolUse,
   normalizeDeepSeekReasoningEffort,
 } from '../../../models/utils/deepseek'
+import { createFetchWithProxy } from '../../../models/utils/fetch-proxy'
 import { createOpenAIChatCompletionSseFetch } from '../../../models/utils/openai-chat-sse-termination'
 import type { ProviderModelInfo, ToolUseScope } from '../../../types'
 import type { ModelDependencies } from '../../../types/adapters'
@@ -31,6 +33,19 @@ export default class DeepSeek extends AbstractAISDKModel {
     dependencies: ModelDependencies
   ) {
     super(options, dependencies)
+  }
+
+  public getRequestBaseURL() {
+    return 'https://api.deepseek.com'
+  }
+
+  protected getTranscriptionEndpoint(): TranscriptionEndpoint {
+    return {
+      api: 'deepseek',
+      baseURL: this.getRequestBaseURL(),
+      apiKey: this.options.apiKey,
+      fetch: createFetchWithProxy(false, this.dependencies),
+    }
   }
 
   private usesVisionCompatibleTransport() {

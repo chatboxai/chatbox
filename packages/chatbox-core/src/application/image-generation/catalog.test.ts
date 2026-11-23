@@ -6,6 +6,7 @@ import {
   getConfiguredImageProviders,
   getImageModelRatioOptions,
   type ImageModelProvider,
+  manualImageModelToOption,
   mergeImageModels,
   parseImageModelManifestResponse,
   resolveImageModelSelection,
@@ -24,6 +25,25 @@ const providers: ImageModelProvider[] = [
 const capabilities = { aspectRatio: { values: ['16:9'] }, inputReferences: { min: 1, max: 2 } }
 
 describe('shared image catalog', () => {
+  it('preserves per-image points without rounding and ignores invalid prices', () => {
+    const models = parseImageModelManifestResponse({
+      data: {
+        imageModels: [
+          { modelId: 'priced', points_per_image: 27000 },
+          { modelId: 'zero', points_per_image: 0 },
+          { modelId: 'invalid', points_per_image: -1 },
+          { modelId: 'invalid-string', points_per_image: '27000' },
+          { modelId: 'missing' },
+        ],
+      },
+    })
+    expect(models.map((model) => model.pointsPerImage)).toEqual([27000, undefined, undefined, undefined, undefined])
+    expect(
+      manualImageModelToOption({ modelId: 'priced', nickname: 'Image model', pointsPerImage: 27000 })
+    ).toMatchObject({ displayName: 'Image model', pointsPerImage: 27000 })
+    expect(mergeImageModels(models, [{ modelId: 'priced', displayName: 'Renamed' }])[0].pointsPerImage).toBe(27000)
+  })
+
   it('validates remote manifests and preserves optional empty image catalogs', () => {
     expect(parseImageModelManifestResponse({ data: {} })).toEqual([])
     expect(parseImageModelManifestResponse({ data: { imageModels: [{ modelId: 'image' }] } })).toEqual([

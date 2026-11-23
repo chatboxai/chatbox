@@ -1,4 +1,4 @@
-import { ActionIcon, Box, Flex, ScrollArea, Stack, Text, UnstyledButton } from '@mantine/core'
+import { ActionIcon, Box, Flex, Stack, Text, UnstyledButton } from '@mantine/core'
 import type { ImageGeneration } from '@shared/types'
 import { IconInfoCircle, IconPlus, IconServer } from '@tabler/icons-react'
 import { useRef, useState } from 'react'
@@ -130,7 +130,10 @@ export function MobileModelDrawer({
     <Drawer.Root open={open} onOpenChange={onOpenChange} noBodyStyles>
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 bg-chatbox-background-mask-overlay" />
-        <Drawer.Content className="flex flex-col rounded-t-xl max-h-[70vh] fixed bottom-0 left-0 right-0 outline-none bg-[var(--chatbox-background-primary)]">
+        <Drawer.Content
+          aria-describedby={undefined}
+          className="flex flex-col rounded-t-xl max-h-[70vh] fixed bottom-0 left-0 right-0 outline-none bg-[var(--chatbox-background-primary)]"
+        >
           <Drawer.Handle />
           <Flex
             align="center"
@@ -146,7 +149,7 @@ export function MobileModelDrawer({
             </Drawer.Title>
           </Flex>
 
-          <ScrollArea flex={1} type="auto" offsetScrollbars>
+          <div className="min-h-0 flex-1 overflow-y-auto">
             <Stack gap="md" p="xs" pb="xl">
               {modelGroups.map((group, groupIndex) => (
                 <Stack key={group.providerId} gap={2}>
@@ -188,7 +191,7 @@ export function MobileModelDrawer({
                             {model.displayName}
                           </Text>
                         </UnstyledButton>
-                        {model.description?.trim() && (
+                        {(model.description?.trim() || model.pointsPerImage !== undefined) && (
                           <ActionIcon
                             aria-label={t('Model details') as string}
                             variant="transparent"
@@ -211,7 +214,7 @@ export function MobileModelDrawer({
                 </Stack>
               ))}
             </Stack>
-          </ScrollArea>
+          </div>
         </Drawer.Content>
       </Drawer.Portal>
       <ImageModelDetailDrawer

@@ -239,6 +239,19 @@ describe('DotHoosh chat requests', () => {
     expect(JSON.parse(String(apiRequest.mock.calls[0][0].body)).max_tokens).toBe(32)
   })
 
+  it('forwards the abort signal so Stop Generating cancels the SSE request', async () => {
+    const dependencies = createDependencies()
+    const apiRequest = vi.mocked(dependencies.request.apiRequest)
+    apiRequest.mockResolvedValueOnce(
+      sse([{ choices: [{ index: 0, delta: { content: 'Hi' }, finish_reason: 'stop' }] }])
+    )
+    const controller = new AbortController()
+
+    await createModel({}, dependencies).chat([{ role: 'user', content: 'Hi' }], { signal: controller.signal })
+
+    expect(apiRequest.mock.calls[0][0].signal).toBe(controller.signal)
+  })
+
   it('renders reasoning_content and streamed usage', async () => {
     const dependencies = createDependencies()
     const apiRequest = vi.mocked(dependencies.request.apiRequest)

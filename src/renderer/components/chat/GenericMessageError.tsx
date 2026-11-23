@@ -40,6 +40,7 @@ type GenericPresentation = Exclude<MessageErrorPresentation, { kind: 'quota' } |
 
 const httpStatusCodeI18nKeys: Record<number, string> = {
   401: 'HTTP error: Unauthorized (401). The API key for your configured {{apiProvider}} API may be invalid, expired, or entered incorrectly. Please check it and configure it again.',
+  402: 'HTTP error: Payment Required (402). The balance or quota of your configured {{apiProvider}} API is insufficient for this request. Please add funds or check your plan, then try again.',
   403: 'HTTP error: Forbidden (403). You do not have permission to access your configured {{apiProvider}} API. Please check your API key permissions or account status.',
   408: 'HTTP error: Request Timeout (408). The server took too long to respond. Please try again later.',
   429: 'HTTP error: Too Many Requests (429). The service is currently experiencing high demand or resource limitations. Please wait a moment and try again.',

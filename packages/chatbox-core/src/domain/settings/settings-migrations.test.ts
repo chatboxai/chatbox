@@ -200,6 +200,46 @@ describe('settings migrations', () => {
     expect(migrated.mcp.servers).toEqual([expect.objectContaining(customServer)])
   })
 
+  test('drops a legacy custom DotHoosh provider without losing its stored credentials', () => {
+    const defaults = createDefaultSettings()
+    const migrated = migrateSettings(
+      {
+        ...defaults,
+        customProviders: [
+          { id: 'dothoosh', name: 'DotHoosh', type: 'openai', isCustom: true },
+          { id: 'custom-provider', name: 'Custom Provider', type: 'openai', isCustom: true },
+        ],
+        providers: {
+          dothoosh: {
+            apiKey: 'dh_test_legacy',
+            apiHost: 'https://gateway.dothoosh.com/v1',
+            models: [{ modelId: 'deepseek-flash' }],
+          },
+        },
+      },
+      9,
+      { isDesktopLike: true }
+    )
+
+    expect(migrated.customProviders?.map((provider) => provider.id)).toEqual(['custom-provider'])
+    expect(migrated.providers?.dothoosh).toMatchObject({
+      apiKey: 'dh_test_legacy',
+      apiHost: 'https://gateway.dothoosh.com/v1',
+      models: [{ modelId: 'deepseek-flash' }],
+    })
+  })
+
+  test('leaves custom providers that do not collide with a built-in id alone', () => {
+    const defaults = createDefaultSettings()
+    const customProviders = [
+      { id: 'custom-provider', name: 'Custom Provider', type: 'openai', isCustom: true },
+      { id: 'dothoosh-gateway', name: 'DotHoosh Gateway', type: 'openai', isCustom: true },
+    ]
+    const migrated = migrateSettings({ ...defaults, customProviders }, 9, { isDesktopLike: true })
+
+    expect(migrated.customProviders).toEqual(customProviders)
+  })
+
   test.each([0, 1, 2, 3, 4, 5, 6, 7])('keeps the complete version %i snapshot compatible', (version) => {
     const defaults = createDefaultSettings()
     const persisted = {

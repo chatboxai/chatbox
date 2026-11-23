@@ -2,7 +2,7 @@ import deepmerge from 'deepmerge'
 import { createDefaultSettings, getDefaultDocumentParser, type SettingsHostDefaults } from './settings-defaults'
 import { type Settings, SettingsSchema } from './settings-schema'
 
-export const SETTINGS_PERSIST_VERSION = 9
+export const SETTINGS_PERSIST_VERSION = 10
 
 /** Compaction threshold persisted as the default by settings versions up to 7. */
 const VERSION_7_DEFAULT_COMPACTION_THRESHOLD = 0.6
@@ -98,6 +98,19 @@ export function migrateSettings(persisted: unknown, version: number, host: Setti
   // layout as bubbles, so they keep bubbles; only fresh installs, which have no stored settings, start classic.
   if (shouldRunMigration(8) && (persisted as Record<string, unknown> | null | undefined)?.messageLayout == null) {
     settings.messageLayout = 'bubble'
+  }
+
+  // Version 10 makes DotHoosh a built-in provider. A user may already have imported it
+  // as a custom provider under the same id; drop that duplicate so the provider list and
+  // model selector render it once. Its API key and models stay in `providers.dothoosh`,
+  // which the built-in definition now reads, so nothing the user configured is lost.
+  if (shouldRunMigration(9)) {
+    const customProviders = settings.customProviders
+    if (Array.isArray(customProviders)) {
+      settings.customProviders = customProviders.filter(
+        (provider) => (provider as { id?: unknown } | null | undefined)?.id !== 'dothoosh'
+      )
+    }
   }
 
   const extension = settings.extension as { documentParser?: { type?: string } } | undefined

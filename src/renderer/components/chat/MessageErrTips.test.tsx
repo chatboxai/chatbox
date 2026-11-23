@@ -170,6 +170,40 @@ test.each([
   expect(screen.getByRole('alert').textContent).toContain(`HTTP error: ${statusName} (${httpStatusCode}).`)
 })
 
+test('explains an insufficient provider balance instead of a network failure', () => {
+  settingsStore.setState((state) => ({ ...state, language: 'en', licenseKey: 'test-license' }))
+  const responseBody = JSON.stringify({
+    error: {
+      type: 'billing_error',
+      code: 'insufficient_available_balance',
+      message: 'upstream detail',
+      request_id: 'req-402',
+      retryable: false,
+    },
+  })
+  const msg = {
+    id: 'dothoosh-402',
+    role: 'assistant',
+    contentParts: [],
+    error: 'API Error',
+    errorCode: 10001,
+    aiProvider: 'dothoosh',
+    errorExtra: { httpStatusCode: 402, responseBody },
+  } as Message
+
+  render(
+    <MantineProvider>
+      <MessageErrTips msg={msg} />
+    </MantineProvider>
+  )
+
+  const guidance = screen.getByRole('alert').textContent || ''
+  expect(guidance).toContain('HTTP error: Payment Required (402).')
+  expect(guidance).toContain('DotHoosh')
+  expect(guidance).toContain('billing_error')
+  expect(guidance).not.toContain('network error tips')
+})
+
 test('shows the Free plan downgrade and license refresh guidance for a backend downgrade error', () => {
   const error = ChatboxAIAPIError.fromCodeName('Plan Downgraded', 'license_downgraded')
   expect(error).not.toBeNull()

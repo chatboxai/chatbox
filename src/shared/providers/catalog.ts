@@ -1,7 +1,7 @@
 import { isUsingOAuth } from '../oauth'
 import type { PlatformType } from '../platform'
 import { ModelProviderEnum, type ProviderModelInfo, type Settings } from '../types'
-import { getAllProviders, isProviderAvailableOnPlatform } from './registry'
+import { getAllProviders, getUnshadowedCustomProviders, isProviderAvailableOnPlatform } from './registry'
 
 export interface ProviderCatalogProjection {
   id: string
@@ -57,7 +57,7 @@ export function projectProviderCatalog(settings: Settings, platform: PlatformTyp
     }
   })
 
-  const custom = (settings.customProviders ?? []).map((provider) => {
+  const custom = getUnshadowedCustomProviders(settings.customProviders).map((provider) => {
     const persisted = settings.providers?.[provider.id]
     const excluded = new Set(persisted?.excludedModels ?? [])
     const models = (persisted?.models ?? provider.defaultSettings?.models ?? []).filter(

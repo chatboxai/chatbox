@@ -20,6 +20,8 @@ export interface OpenAICompatibleSettings {
   stream?: boolean
   customFetch?: typeof globalThis.fetch
   listModelsFallback?: ProviderModelInfo[]
+  /** Ask for a final SSE chunk carrying usage (`stream_options.include_usage`). */
+  includeUsage?: boolean
 }
 
 export default abstract class OpenAICompatible extends AbstractAISDKModel implements ModelInterface {
@@ -64,6 +66,7 @@ export default abstract class OpenAICompatible extends AbstractAISDKModel implem
       apiKey: this.options.apiKey,
       baseURL: this.options.apiHost,
       fetch: createOpenAIChatCompletionSseFetch(fetch),
+      includeUsage: this.options.includeUsage,
     })
   }
 
@@ -128,6 +131,11 @@ interface ListModelsResponse {
     hugging_face_id?: string
     per_request_limits?: Record<string, unknown>
     supported_parameters?: string[]
+    /** DotHoosh-style declared capability list. */
+    capabilities?: string[]
+    /** DotHoosh-style context window; some catalogs also expose `context_length`. */
+    context_window?: number
+    max_output_tokens?: number
   }[]
 }
 
@@ -166,46 +174,56 @@ export async function fetchRemoteModels(
       type: 'chat',
     }
 
-    // Add nickname from OpenRouter name field
+    // Add nickname from the catalog's display name when it provides one.
     if (item.name) {
       modelInfo.nickname = item.name
     }
 
-    // Add context window if available
-    if (item.context_length) {
-      modelInfo.contextWindow = item.context_length
+    // DotHoosh exposes both spellings; OpenRouter and others only `context_length`.
+    const contextWindow = item.context_window ?? item.context_length
+    if (contextWindow) {
+      modelInfo.contextWindow = contextWindow
     }
 
-    // Add capabilities based on architecture
-    if (item.architecture) {
-      const capabilities: ProviderModelInfo['capabilities'] = []
+    // DotHoosh publishes the per-model output ceiling, which Chatbox shows in
+    // the model editor and uses for compaction budgeting.
+    if (item.max_output_tokens) {
+      modelInfo.maxOutput = item.max_output_tokens
+    }
 
-      // Check for vision capability
-      if (item.architecture.input_modalities?.includes('image')) {
-        capabilities.push('vision')
-      }
+    const declaredCapabilities = new Set(item.capabilities || [])
+    const capabilities: ProviderModelInfo['capabilities'] = []
 
-      // Check for web search capability (OpenRouter specific)
-      if (item.pricing?.web_search && item.pricing.web_search !== '0') {
-        capabilities.push('web_search')
-      }
+    // Check for vision capability
+    if (declaredCapabilities.has('vision') || item.architecture?.input_modalities?.includes('image')) {
+      capabilities.push('vision')
+    }
 
-      // Check for reasoning capability (OpenRouter specific)
-      if (
-        (item.pricing?.internal_reasoning && item.pricing.internal_reasoning !== '0') ||
-        item.supported_parameters?.includes('reasoning') ||
-        item.supported_parameters?.includes('include_reasoning') ||
-        item.supported_parameters?.includes('reasoning_effort')
-      ) {
-        capabilities.push('reasoning')
-      }
+    // Check for web search capability (OpenRouter specific)
+    if (item.pricing?.web_search && item.pricing.web_search !== '0') {
+      capabilities.push('web_search')
+    }
 
-      // Note: tool_use capability cannot be determined from OpenRouter response
-      // It would need to be added from local defaults
+    // Check for reasoning capability (OpenRouter pricing/supported_parameters,
+    // or a declared capability list such as DotHoosh's).
+    if (
+      declaredCapabilities.has('reasoning') ||
+      (item.pricing?.internal_reasoning && item.pricing.internal_reasoning !== '0') ||
+      item.supported_parameters?.includes('reasoning') ||
+      item.supported_parameters?.includes('include_reasoning') ||
+      item.supported_parameters?.includes('reasoning_effort')
+    ) {
+      capabilities.push('reasoning')
+    }
 
-      if (capabilities.length > 0) {
-        modelInfo.capabilities = capabilities
-      }
+    // Tool calling is declared explicitly by catalogs that expose it; OpenRouter
+    // still does not, so its providers keep relying on local defaults.
+    if (declaredCapabilities.has('tools') || item.supported_parameters?.includes('tools')) {
+      capabilities.push('tool_use')
+    }
+
+    if (capabilities.length > 0) {
+      modelInfo.capabilities = capabilities
     }
 
     return modelInfo

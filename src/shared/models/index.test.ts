@@ -1,5 +1,6 @@
 import { settings as getDefaultSettings, newConfigs } from 'src/shared/defaults'
 import { getModel } from 'src/shared/providers'
+import DotHoosh from 'src/shared/providers/definitions/models/dothoosh'
 import LongCat from 'src/shared/providers/definitions/models/longcat'
 import OpenAI from 'src/shared/providers/definitions/models/openai'
 import OpenAIResponses from 'src/shared/providers/definitions/models/openai-responses'
@@ -206,6 +207,7 @@ describe('getModel', () => {
       'https://open.bigmodel.cn/api/coding/paas/v4',
       ZhipuGLMCodingPlan,
     ],
+    [ModelProviderEnum.DotHoosh, 'deepseek-flash', 'https://gateway.dothoosh.com/v1', DotHoosh],
   ])('returns OpenAI-compatible model instances for %s', (provider, modelId, apiHost, expectedModelClass) => {
     const sessionSettings: SessionSettings = {
       provider,

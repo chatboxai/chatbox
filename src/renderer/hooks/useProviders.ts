@@ -1,5 +1,6 @@
 import { SystemProviders } from '@shared/defaults'
 import { isUsingOAuth, mergeSharedOAuthProviderSettings } from '@shared/oauth'
+import { getUnshadowedCustomProviders } from '@shared/providers'
 import { ModelProviderEnum, type ProviderInfo } from '@shared/types'
 import { useCallback, useMemo } from 'react'
 import { enrichModelsFromRegistry, useModelRegistryVersion } from '@/packages/model-registry'
@@ -17,7 +18,10 @@ export const useProviders = () => {
   const licenseKey = useSettingsStore((state) => state.licenseKey)
   const providerSettingsMap = useSettingsStore((state) => state.providers)
 
-  const allProviderBaseInfos = useMemo(() => [...SystemProviders(), ...(customProviders || [])], [customProviders])
+  const allProviderBaseInfos = useMemo(
+    () => [...SystemProviders(), ...getUnshadowedCustomProviders(customProviders)],
+    [customProviders]
+  )
   const providers = useMemo(
     () =>
       allProviderBaseInfos

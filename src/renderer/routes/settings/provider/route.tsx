@@ -1,5 +1,6 @@
 import { Box, Flex } from '@mantine/core'
 import { SystemProviders } from '@shared/defaults'
+import { getUnshadowedCustomProviders } from '@shared/providers'
 import type { ModelProviderEnum, ProviderInfo, ProviderSettings } from '@shared/types'
 import { createFileRoute, Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
 import { zodValidator } from '@tanstack/zod-adapter'
@@ -44,10 +45,12 @@ export function RouteComponent() {
     // Put ChatboxAI first
     const chatboxAI = systemProviders.find((p) => p.id === 'chatbox-ai')
     const others = systemProviders.filter((p) => p.id !== 'chatbox-ai')
-    return [...(chatboxAI ? [chatboxAI] : []), ...others, ...(customProviders || [])].map((p) => ({
-      ...p,
-      ...(providersMap?.[p.id] || {}),
-    }))
+    return [...(chatboxAI ? [chatboxAI] : []), ...others, ...getUnshadowedCustomProviders(customProviders)].map(
+      (p) => ({
+        ...p,
+        ...(providersMap?.[p.id] || {}),
+      })
+    )
   }, [customProviders, isExceeded, providersMap])
 
   const allSystemProviders = useMemo(() => {

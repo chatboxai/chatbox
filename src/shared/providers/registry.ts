@@ -51,3 +51,18 @@ export function getSystemProviders(): BuiltinProviderBaseInfo[] {
     defaultSettings: def.defaultSettings,
   }))
 }
+
+/**
+ * Custom providers that do not shadow a built-in provider.
+ *
+ * A provider id can become built-in after a user already imported it as a
+ * custom provider. The stored custom entry keeps the same id, so keeping it
+ * alongside the built-in definition would render the provider twice and make
+ * the selected provider ambiguous. The built-in definition wins; its
+ * credentials and models still live under `settings.providers[id]`.
+ */
+export function getUnshadowedCustomProviders<T extends { id: string }>(customProviders?: readonly T[] | null): T[] {
+  if (!customProviders?.length) return []
+  const builtinIds = new Set(getAllProviders().map((provider) => provider.id))
+  return customProviders.filter((provider) => !builtinIds.has(provider.id))
+}

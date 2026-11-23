@@ -10,6 +10,7 @@ import type { ModelDependencies } from '@shared/types/adapters'
 import { combineMemoryStateTokens } from '@shared/types/agent-persona'
 import { languageNameMap } from '@/i18n/locales'
 import { buildAgentMemoryTools } from '@/packages/model-calls/toolsets/agent-memory'
+import { buildMemorySearchTool, memorySearchInstructions } from '@/packages/model-calls/toolsets/memory-search'
 import { getCopilotMemorySelection } from '@/stores/copilotStore'
 import { rendererMemoryService } from '@/stores/memoryRuntime'
 
@@ -47,11 +48,18 @@ export async function prepareCapacitorMemoryContext(
   const memory = toolsAvailable
     ? buildAgentMemoryTools({ scope, languageName: languageNameMap[request.globalSettings.language] })
     : { tools: {}, description: '' }
+  const tools = { ...memory.tools }
+  if (request.globalSettings.memorySearchEnabled === true && request.model.isSupportToolUse()) {
+    const currentUserMessageId = request.messages
+      .slice(0, request.targetMessageIndex)
+      .findLast((message) => message.role === 'user')?.id
+    tools.memory_search = buildMemorySearchTool(request.session.id, currentUserMessageId)
+  }
   const memories =
     enabled && snapshot ? buildMemoriesSection(snapshot.memories, { includeToolGuidance: toolsAvailable }) : ''
   return {
-    tools: memory.tools,
-    instructions: `${memories}${memory.description}`,
+    tools,
+    instructions: `${memories}${memory.description}${tools.memory_search ? memorySearchInstructions : ''}`,
     memoryToolContext: createMemoryToolContext(scope, enabled),
   }
 }

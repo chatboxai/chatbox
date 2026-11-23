@@ -26,6 +26,9 @@ export interface SessionSearchOptions {
   sessionId?: string
   hideSystemPromptMessage?: boolean | ((header: SessionHeader) => boolean)
   conversationOnly?: boolean
+  matchAllTerms?: boolean
+  includeSessionTitle?: boolean
+  excludeMessageId?: string
   limit?: number
   signal?: AbortSignal
   onProgress?(result: SessionSearchResult): void
@@ -65,7 +68,12 @@ export class SessionSearchService {
     })
     checkAborted(options.signal)
     if (!normalizedQuery) return snapshot()
-    const matcher = new RegExp(escapeSearchInput(normalizedQuery), 'i')
+    const terms = options.matchAllTerms ? normalizedQuery.split(/\s+/) : [normalizedQuery]
+    const [firstMatcher, ...otherMatchers] = terms.map((term) => new RegExp(escapeSearchInput(term), 'i'))
+    const findMatch = (value: string): number | undefined => {
+      const index = value.search(firstMatcher)
+      if (index >= 0 && otherMatchers.every((matcher) => matcher.test(value))) return index
+    }
     options.onProgress?.(snapshot())
 
     const searchSession = async (sessionId: string): Promise<void> => {
@@ -93,24 +101,25 @@ export class SessionSearchService {
           }
           const matchMessage = (message: Message, header: SessionHeader): SessionSearchHit | undefined => {
             checkAborted(options.signal)
+            if (message.id === options.excludeMessageId) return
             if (!visible(message.role, Boolean(message.backgroundTask), header)) return
             const text = getMessageText(message)
-            const match = matcher.exec(text)
-            if (match)
+            const match = findMatch(text)
+            if (match !== undefined)
               return {
                 sessionId,
                 sessionName: header.name,
                 messageId: message.id,
-                preview: previewAt(text, match.index),
+                preview: previewAt(text, match),
               }
           }
           const full = () => hits.length + pending.length >= limit
-          const titleMatch = matcher.exec(initial.current.header.name)
-          if (titleMatch)
+          const titleMatch = options.includeSessionTitle === false ? undefined : findMatch(initial.current.header.name)
+          if (titleMatch !== undefined)
             pending.push({
               sessionId,
               sessionName: initial.current.header.name,
-              preview: previewAt(initial.current.header.name, titleMatch.index),
+              preview: previewAt(initial.current.header.name, titleMatch),
             })
           let request: SessionSearchWindowRequest = { sessionId, signal: options.signal }
           let previousCursor: string | undefined
@@ -169,12 +178,12 @@ export class SessionSearchService {
           if (!final) throw new Error('Conversation disappeared while searching')
           const hadTitle = pending.some((hit) => hit.messageId === undefined)
           pending.length = 0
-          const finalTitle = hadTitle && matcher.exec(final.current.header.name)
-          if (finalTitle)
+          const finalTitle = hadTitle ? findMatch(final.current.header.name) : undefined
+          if (finalTitle !== undefined)
             pending.push({
               sessionId,
               sessionName: final.current.header.name,
-              preview: previewAt(final.current.header.name, finalTitle.index),
+              preview: previewAt(final.current.header.name, finalTitle),
             })
           const selected = new Set(final.selectedMessageIds)
           for (const candidate of checked) {

@@ -620,6 +620,8 @@ export const SettingsSchema = GlobalSessionSettingsSchema.extend({
   // memory tools are not registered and stored memories are not injected in
   // either mode (Soul is unaffected).
   memoryEnabled: z.boolean().optional().catch(undefined),
+  // Older settings without this opt-in keep conversation history search disabled.
+  memorySearchEnabled: z.boolean().optional().catch(undefined),
   // Opaque version of effective Global Memory state. Sessions compare it lazily
   // at generation time so an off-on round trip still refreshes memory.
   memoryStateToken: z.string().max(MEMORY_STATE_TOKEN_MAX_CHARS).optional().catch(undefined),

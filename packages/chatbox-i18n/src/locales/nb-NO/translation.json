@@ -1505,6 +1505,8 @@
   "Shared by chats that don't use Copilot Memory.": "Delt av chatter som ikke bruker Copilot-minne.",
   "No memories yet. Chats with this copilot save durable facts here.": "Ingen minner ennå. Chatter med denne Copiloten lagrer varige fakta her.",
   "Save facts from conversations and recall them in new chats. Works in both Chat and Work Mode.": "Lagrer fakta fra samtaler og henter dem frem i nye chatter. Fungerer i både chatmodus og arbeidsmodus.",
+  "Conversation History Search": "Søk i samtalehistorikken",
+  "Let the model search older messages in this conversation and receive matching excerpts.": "Lar modellen søke i tidligere meldinger i denne samtalen og motta utdrag som samsvarer.",
   "Import memories": "Importer minner",
   "Import memory files from Claude, ChatGPT, Codex, or other tools. Supports Markdown, text, and JSON; chat history is not imported automatically.": "Importer minnefiler fra Claude, ChatGPT, Codex eller andre verktøy. Støtter Markdown, tekst og JSON; chatloggen importeres ikke automatisk.",
   "Chat history exports cannot be converted to memories automatically.": "Eksportert chatlogg kan ikke konverteres automatisk til minner.",

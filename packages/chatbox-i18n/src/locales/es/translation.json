@@ -1505,6 +1505,8 @@
   "Shared by chats that don't use Copilot Memory.": "Compartida por los chats que no usan la memoria del Copilot.",
   "No memories yet. Chats with this copilot save durable facts here.": "Aún no hay recuerdos. Los chats con este Copilot guardan aquí los hechos duraderos.",
   "Save facts from conversations and recall them in new chats. Works in both Chat and Work Mode.": "Guarda hechos de las conversaciones y los recuerda en chats nuevos. Funciona en Modo Chat y Modo Trabajo.",
+  "Conversation History Search": "Búsqueda en el historial de la conversación",
+  "Let the model search older messages in this conversation and receive matching excerpts.": "Permite que el modelo busque mensajes anteriores en esta conversación y reciba los fragmentos que coincidan.",
   "Import memories": "Importar recuerdos",
   "Import memory files from Claude, ChatGPT, Codex, or other tools. Supports Markdown, text, and JSON; chat history is not imported automatically.": "Importa archivos de recuerdos de Claude, ChatGPT, Codex u otras herramientas. Admite Markdown, texto y JSON; el historial de chat no se importa automáticamente.",
   "Chat history exports cannot be converted to memories automatically.": "Las exportaciones del historial de chat no se pueden convertir automáticamente en recuerdos.",

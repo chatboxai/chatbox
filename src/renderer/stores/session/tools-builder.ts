@@ -27,6 +27,7 @@ import { buildCodeExecutionTools } from '@/packages/model-calls/toolsets/code-ex
 import { buildFileTools, fileToolSetDescription } from '@/packages/model-calls/toolsets/file'
 import { buildFilesystemTools } from '@/packages/model-calls/toolsets/filesystem'
 import { getToolSet as getKBToolSet } from '@/packages/model-calls/toolsets/knowledge-base'
+import { buildMemorySearchTool, memorySearchInstructions } from '@/packages/model-calls/toolsets/memory-search'
 import { asRecord, numberField, stringField, toTextModelOutput } from '@/packages/model-calls/toolsets/model-output'
 import { buildRunCommandTool } from '@/packages/model-calls/toolsets/run-command'
 import { remapPhantomHomePath } from '@/packages/model-calls/toolsets/sandbox-paths'
@@ -100,7 +101,7 @@ export interface BuildToolsOptions {
    * prompt assembly on the same view of memoryEnabled/language within one
    * request; falls back to the live store for callers without one.
    */
-  globalSettings?: Pick<Settings, 'memoryEnabled' | 'language'>
+  globalSettings?: Pick<Settings, 'memoryEnabled' | 'memorySearchEnabled' | 'language'>
   /**
    * Frozen workspace-instructions text from the session's SessionPromptContextSnapshot.
    * When set (agent mode), it is used verbatim instead of re-reading AGENTS.md
@@ -647,6 +648,12 @@ When you create a Git commit that includes code changes, append this exact trail
         })
     instructions += memoryToolSet.description
     tools = { ...tools, ...memoryToolSet.tools }
+  }
+
+  if (options.sessionId && globalSettingsForTools.memorySearchEnabled === true && model.isSupportToolUse()) {
+    const currentUserMessageId = fileMessages.findLast((message) => message.role === 'user')?.id
+    tools.memory_search = buildMemorySearchTool(options.sessionId, currentUserMessageId)
+    instructions += memorySearchInstructions
   }
 
   if (Object.keys(tools).length > 0) {

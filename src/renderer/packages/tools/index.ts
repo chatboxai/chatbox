@@ -91,6 +91,7 @@ export function getToolName(toolName: string, input?: unknown): string {
     load_skill: t('Load Skill'),
     save_memory: t('Save Memory'),
     delete_memory: t('Delete Memory'),
+    memory_search: t('Conversation History Search'),
     install_skill: t('Install Skill'),
     run_command: t('Run Command'),
     user_exec: t('Run Command'),

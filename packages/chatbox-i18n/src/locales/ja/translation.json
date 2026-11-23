@@ -1505,6 +1505,8 @@
   "Shared by chats that don't use Copilot Memory.": "Copilot メモリーを使用しないチャットで共有されます。",
   "No memories yet. Chats with this copilot save durable facts here.": "まだメモリーはありません。このCopilotとのチャットで、長く役立つ事実がここに保存されます。",
   "Save facts from conversations and recall them in new chats. Works in both Chat and Work Mode.": "会話から事実を保存し、新しいチャットで呼び出します。チャットモードと作業モードの両方で利用できます。",
+  "Conversation History Search": "会話履歴の検索",
+  "Let the model search older messages in this conversation and receive matching excerpts.": "モデルが現在の会話の過去のメッセージを検索し、一致する抜粋を受け取れるようにします。",
   "Import memories": "メモリーをインポート",
   "Import memory files from Claude, ChatGPT, Codex, or other tools. Supports Markdown, text, and JSON; chat history is not imported automatically.": "Claude、ChatGPT、Codex、その他のツールからメモリーファイルをインポートします。Markdown、テキスト、JSON に対応しています。チャット履歴は自動的にはインポートされません。",
   "Chat history exports cannot be converted to memories automatically.": "チャット履歴のエクスポートをメモリーに自動変換することはできません。",

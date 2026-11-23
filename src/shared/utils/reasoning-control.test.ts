@@ -530,6 +530,22 @@ describe('reasoning-control', () => {
     }
   )
 
+  it('supports DeepSeek V4 Flash effort on VolcEngine', () => {
+    const flash = model('deepseek-v4-flash-ga-260731', 'openai')
+    expect(getReasoningControlCapabilities(ModelProviderEnum.VolcEngine, flash)).toEqual({
+      supported: true,
+      kind: 'deepseek-effort',
+    })
+    expect(shouldPreserveDeepSeekReasoning(ModelProviderEnum.VolcEngine, flash)).toBe(true)
+    expect(shouldPreserveDeepSeekReasoning(ModelProviderEnum.VolcEngine, { modelId: flash.modelId })).toBe(true)
+    expect(getReasoningProviderOptions(ModelProviderEnum.VolcEngine, flash, 'low')).toEqual({
+      deepseek: { thinking: { type: 'enabled' }, reasoningEffort: 'low' },
+    })
+    expect(getReasoningProviderOptions(ModelProviderEnum.VolcEngine, flash, 'off')).toEqual({
+      deepseek: { thinking: { type: 'disabled' } },
+    })
+  })
+
   it('supports Flash effort through a custom OpenAI-compatible provider', () => {
     const flash = model('deepseek-flash', 'openai')
     expect(getReasoningControlCapabilities('custom-deepseek', flash)).toEqual({

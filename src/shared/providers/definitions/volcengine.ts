@@ -23,6 +23,10 @@ export const volcEngineProvider = defineProvider({
         capabilities: ['reasoning', 'tool_use'],
       },
       {
+        modelId: 'deepseek-v4-flash-ga-260731',
+        capabilities: ['reasoning', 'tool_use'],
+      },
+      {
         modelId: 'deepseek-v3-250324',
         contextWindow: 64_000,
         capabilities: ['tool_use', 'reasoning'],

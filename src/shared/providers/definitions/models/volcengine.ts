@@ -1,9 +1,14 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import type { EmbeddingModelV4, EmbeddingModelV4CallOptions } from '@ai-sdk/provider'
 import type { EmbeddingModel } from 'ai'
-import AbstractAISDKModel from '../../../models/abstract-ai-sdk'
+import AbstractAISDKModel, { type CallSettings } from '../../../models/abstract-ai-sdk'
+import { getOpenAICompatibleProviderOptionsKey } from '../../../models/openai-compatible'
 import type { CallChatCompletionOptions } from '../../../models/types'
-import { isDeepSeekWeakToolUse } from '../../../models/utils/deepseek'
+import {
+  isDeepSeekReasoningModel,
+  isDeepSeekWeakToolUse,
+  normalizeDeepSeekReasoningEffort,
+} from '../../../models/utils/deepseek'
 import { createOpenAIChatCompletionSseFetch } from '../../../models/utils/openai-chat-sse-termination'
 import type { ProviderModelInfo, ToolUseScope } from '../../../types'
 import type { ModelDependencies } from '../../../types/adapters'
@@ -24,6 +29,23 @@ export function isVolcengineVisionEmbeddingModel(modelId: string): boolean {
   return modelId.includes('embedding-vision')
 }
 
+function isDeepSeekV4Model(modelId: string): boolean {
+  return modelId.includes('deepseek-v4')
+}
+
+function withDeepSeekV4ReasoningContent(modelId: string, args: Record<string, unknown>): Record<string, unknown> {
+  if (!isDeepSeekV4Model(modelId) || !Array.isArray(args.messages)) return args
+  return {
+    ...args,
+    messages: args.messages.map((message) => {
+      if (!message || typeof message !== 'object') return message
+      const record = message as { role?: unknown; reasoning_content?: unknown }
+      if (record.role !== 'assistant' || 'reasoning_content' in record) return message
+      return { ...record, reasoning_content: '' }
+    }),
+  }
+}
+
 export default class VolcEngine extends AbstractAISDKModel {
   public name = 'VolcEngine'
 
@@ -34,12 +56,37 @@ export default class VolcEngine extends AbstractAISDKModel {
     super(options, dependencies)
   }
 
-  protected getCallSettings() {
-    return {
-      temperature: this.options.temperature,
-      topP: this.options.topP,
+  protected getCallSettings(options: CallChatCompletionOptions): CallSettings {
+    const deepseekOptions = options.providerOptions?.deepseek
+    const thinkingType = deepseekOptions?.thinking?.type
+    const reasoningEffort = normalizeDeepSeekReasoningEffort(
+      this.options.model.modelId,
+      deepseekOptions?.reasoningEffort
+    )
+    const supportsDeepSeekThinking = isDeepSeekReasoningModel(this.options.model.modelId)
+    // Ark enables DeepSeek thinking unless the request explicitly disables it, and
+    // thinking mode rejects temperature and topP.
+    const thinkingEnabled = supportsDeepSeekThinking && thinkingType !== 'disabled'
+    const settings: CallSettings = {
       maxOutputTokens: this.options.maxOutputTokens,
     }
+    if (!thinkingEnabled) {
+      settings.temperature = this.options.temperature
+      settings.topP = this.options.topP
+    }
+    if (!supportsDeepSeekThinking || (!thinkingType && !reasoningEffort)) {
+      return settings
+    }
+
+    const openAICompatibleOptions = {
+      ...(thinkingType ? { thinking: { type: thinkingType } } : {}),
+      ...(reasoningEffort ? { reasoningEffort } : {}),
+    }
+    settings.providerOptions = {
+      openaiCompatible: openAICompatibleOptions,
+      [getOpenAICompatibleProviderOptionsKey(this.name)]: openAICompatibleOptions,
+    }
+    return settings
   }
 
   static isSupportTextEmbedding() {
@@ -52,6 +99,7 @@ export default class VolcEngine extends AbstractAISDKModel {
       apiKey: this.options.apiKey,
       baseURL: API_BASE,
       fetch: createOpenAIChatCompletionSseFetch(globalThis.fetch),
+      transformRequestBody: (args) => withDeepSeekV4ReasoningContent(this.options.model.modelId, args),
     })
   }
 
@@ -73,6 +121,11 @@ export default class VolcEngine extends AbstractAISDKModel {
   isSupportToolUse(scope?: ToolUseScope) {
     if (isDeepSeekWeakToolUse(this.options.model.modelId, scope)) return false
     return super.isSupportToolUse()
+  }
+
+  isSupportReasoning() {
+    if (isDeepSeekReasoningModel(this.options.model.modelId)) return true
+    return super.isSupportReasoning()
   }
 }
 

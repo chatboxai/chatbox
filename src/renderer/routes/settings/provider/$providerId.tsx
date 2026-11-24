@@ -94,6 +94,7 @@ const BUILTIN_API_HOST_PROVIDERS = new Set<string>([
   ModelProviderEnum.TencentHunyuan,
   ModelProviderEnum.XiaomiMiMo,
   ModelProviderEnum.LongCat,
+  ModelProviderEnum.TeamoRouter,
   ModelProviderEnum.ZhipuGLMCodingPlan,
 ])
 

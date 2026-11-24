@@ -37,6 +37,7 @@ describe('provider control-plane contracts', () => {
       'tencent-hunyuan',
       'xiaomi-mimo',
       'longcat',
+      'teamorouter',
       'zhipu-glm-coding-plan',
     ])
   })

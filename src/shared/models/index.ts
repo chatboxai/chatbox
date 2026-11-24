@@ -35,6 +35,7 @@ export const aiProviderNameHash: Record<ModelProviderEnum, string> = {
   [ModelProviderEnum.TencentHunyuan]: 'Tencent Hunyuan API',
   [ModelProviderEnum.XiaomiMiMo]: 'Xiaomi MiMo API',
   [ModelProviderEnum.LongCat]: 'LongCat API',
+  [ModelProviderEnum.TeamoRouter]: 'TeamoRouter API',
   [ModelProviderEnum.ZhipuGLMCodingPlan]: 'GLM Coding Plan',
   [ModelProviderEnum.Custom]: 'Custom Provider',
 }
@@ -184,6 +185,11 @@ export const AIModelProviderMenuOptionList = [
   {
     value: ModelProviderEnum.LongCat,
     label: aiProviderNameHash[ModelProviderEnum.LongCat],
+    disabled: false,
+  },
+  {
+    value: ModelProviderEnum.TeamoRouter,
+    label: aiProviderNameHash[ModelProviderEnum.TeamoRouter],
     disabled: false,
   },
   {

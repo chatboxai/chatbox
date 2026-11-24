@@ -1,6 +1,7 @@
 import { settings as getDefaultSettings, newConfigs } from 'src/shared/defaults'
 import { getModel } from 'src/shared/providers'
 import LongCat from 'src/shared/providers/definitions/models/longcat'
+import TeamoRouter from 'src/shared/providers/definitions/models/teamorouter'
 import OpenAI from 'src/shared/providers/definitions/models/openai'
 import OpenAIResponses from 'src/shared/providers/definitions/models/openai-responses'
 import Qwen from 'src/shared/providers/definitions/models/qwen'
@@ -200,6 +201,7 @@ describe('getModel', () => {
     ],
     [ModelProviderEnum.XiaomiMiMo, 'mimo-v2.5-pro', 'https://api.xiaomimimo.com/v1', XiaomiMiMo],
     [ModelProviderEnum.LongCat, 'LongCat-2.0', 'https://api.longcat.chat/openai/v1', LongCat],
+    [ModelProviderEnum.TeamoRouter, 'claude-sonnet-5-5', 'https://api.teamorouter.com/v1', TeamoRouter],
     [
       ModelProviderEnum.ZhipuGLMCodingPlan,
       'glm-5.3',

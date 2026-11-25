@@ -1,5 +1,6 @@
 import { app, type BrowserWindow, Menu, type MenuItemConstructorOptions, shell } from 'electron'
 import Locale from './locales'
+import { getSettings } from './store-node'
 
 interface DarwinMenuItemConstructorOptions extends MenuItemConstructorOptions {
   selector?: string
@@ -14,9 +15,10 @@ export default class MenuBuilder {
   }
 
   buildMenu(): Menu {
-    const locale = new Locale()
     // 监听右键菜单
     this.mainWindow.webContents.on('context-menu', (event, props) => {
+      // 使用应用内设置的语言（而不是操作系统语言）来构建原生菜单
+      const locale = new Locale(getSettings().language)
       const hasSelection = Boolean(props.selectionText?.trim())
 
       // 没有选中文本且不是可编辑区域：禁止右键菜单
@@ -56,6 +58,17 @@ export default class MenuBuilder {
           click: () => this.mainWindow.webContents.replaceMisspelling(suggestion),
         })
       }
+      // 拼写错误的单词可以加入自定义词典，之后不再被标记
+      if (props.misspelledWord) {
+        const misspelledWord = props.misspelledWord
+        items.push({
+          label: `${locale.t('AddToDictionary')} "${misspelledWord}"`,
+          click: () => {
+            this.mainWindow.webContents.session.addWordToSpellCheckerDictionary(misspelledWord)
+          },
+        })
+      }
+      const { x, y } = props
       if (process.env.NODE_ENV === 'development' || process.env.DEBUG_PROD === 'true') {
         items.push({
           label: 'Inspect element',
@@ -64,7 +77,6 @@ export default class MenuBuilder {
           },
         })
       }
-      const { x, y } = props
       Menu.buildFromTemplate(items).popup({ window: this.mainWindow })
     })
 

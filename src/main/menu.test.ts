@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   buildFromTemplate: vi.fn(),
   popup: vi.fn(),
   setApplicationMenu: vi.fn(),
+  getSettings: vi.fn(() => ({ language: 'en' })),
 }))
 
 vi.mock('electron', () => ({
@@ -20,6 +21,10 @@ vi.mock('electron', () => ({
   shell: {
     openExternal: vi.fn(),
   },
+}))
+
+vi.mock('./store-node', () => ({
+  getSettings: mocks.getSettings,
 }))
 
 import MenuBuilder from './menu'
@@ -38,6 +43,9 @@ function createWindow() {
       }),
       reload: vi.fn(),
       replaceMisspelling: vi.fn(),
+      session: {
+        addWordToSpellCheckerDictionary: vi.fn(),
+      },
     },
   } as unknown as BrowserWindow
 
@@ -55,6 +63,7 @@ function createWindow() {
 describe('desktop context menu', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.getSettings.mockReturnValue({ language: 'en' })
     mocks.buildFromTemplate.mockReturnValue({ popup: mocks.popup })
   })
 
@@ -125,5 +134,82 @@ describe('desktop context menu', () => {
     expect(event.preventDefault).toHaveBeenCalledOnce()
     expect(mocks.buildFromTemplate).toHaveBeenCalledOnce()
     expect(mocks.popup).not.toHaveBeenCalled()
+  })
+
+  it('labels the context menu with the application language, not the OS language', () => {
+    mocks.getSettings.mockReturnValue({ language: 'fr' })
+    const { getContextMenuHandler, mainWindow } = createWindow()
+    new MenuBuilder(mainWindow).buildMenu()
+
+    getContextMenuHandler()(
+      { preventDefault: vi.fn() } as unknown as Event,
+      {
+        dictionarySuggestions: [],
+        isEditable: true,
+        selectionText: 'texte',
+        x: 12,
+        y: 34,
+      } as unknown as ContextMenuParams
+    )
+
+    const contextMenuTemplate = mocks.buildFromTemplate.mock.calls[1][0]
+    expect(contextMenuTemplate).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: 'Copier', role: 'copy' }),
+        expect.objectContaining({ label: 'Couper', role: 'cut' }),
+        expect.objectContaining({ label: 'Coller', role: 'paste' }),
+        expect.objectContaining({ label: 'Tout sélectionner', role: 'selectAll' }),
+      ])
+    )
+  })
+
+  it('offers to add a misspelled word to the dictionary', () => {
+    const { getContextMenuHandler, mainWindow } = createWindow()
+    new MenuBuilder(mainWindow).buildMenu()
+
+    getContextMenuHandler()(
+      { preventDefault: vi.fn() } as unknown as Event,
+      {
+        dictionarySuggestions: ['chatbox'],
+        isEditable: true,
+        misspelledWord: 'chatbax',
+        selectionText: '',
+        x: 12,
+        y: 34,
+      } as unknown as ContextMenuParams
+    )
+
+    const contextMenuTemplate = mocks.buildFromTemplate.mock.calls[1][0]
+    const suggestionItem = contextMenuTemplate.find((item: { label?: string }) => item.label === 'Replace with "chatbox"')
+    const dictionaryItem = contextMenuTemplate.find(
+      (item: { label?: string }) => item.label === 'Add to Dictionary "chatbax"'
+    )
+    expect(suggestionItem).toBeDefined()
+    expect(dictionaryItem).toBeDefined()
+
+    dictionaryItem.click()
+    expect(mainWindow.webContents.session.addWordToSpellCheckerDictionary).toHaveBeenCalledWith('chatbax')
+  })
+
+  it('does not offer the dictionary entry when no word is misspelled', () => {
+    const { getContextMenuHandler, mainWindow } = createWindow()
+    new MenuBuilder(mainWindow).buildMenu()
+
+    getContextMenuHandler()(
+      { preventDefault: vi.fn() } as unknown as Event,
+      {
+        dictionarySuggestions: [],
+        isEditable: true,
+        misspelledWord: '',
+        selectionText: 'selected text',
+        x: 12,
+        y: 34,
+      } as unknown as ContextMenuParams
+    )
+
+    const contextMenuTemplate = mocks.buildFromTemplate.mock.calls[1][0]
+    expect(contextMenuTemplate.some((item: { label?: string }) => item.label?.startsWith('Add to Dictionary'))).toBe(
+      false
+    )
   })
 })

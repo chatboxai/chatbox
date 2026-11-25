@@ -60,7 +60,6 @@ import { registerDesktopDirectRequestHandlers } from './desktop-direct-request'
 import { editTextFile, writeTextFile } from './file-mutations'
 import { parseFile } from './file-parser'
 import { isQuitForInstallRequested } from './installer-command'
-import Locale from './locales'
 import { mainFetch } from './main-fetch'
 import * as mcpIpc from './mcp/ipc-stdio-transport'
 import MenuBuilder from './menu'
@@ -81,6 +80,7 @@ import {
   setStoreBlob,
   store,
 } from './store-node'
+import { buildTrayMenuTemplate } from './tray-menu'
 import * as windowState from './window_state'
 import { loadWorkspaceInstructions } from './workspace-instructions'
 
@@ -382,8 +382,10 @@ function unregisterShortcuts() {
 
 // --------- Tray 图标 ---------
 
+/** Language and shortcut the current tray menu was built from. */
+let trayMenuSignatureAtBuild: string | null = null
+
 function createTray() {
-  const locale = new Locale()
   let iconPath = getAssetPath('icon.png')
   if (process.platform === 'darwin') {
     // 生成 iconTemplate.png 的命令
@@ -395,22 +397,56 @@ function createTray() {
     iconPath = getAssetPath('icon.ico')
   }
   tray = new Tray(iconPath)
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: locale.t('Show/Hide'),
-      click: showOrHideWindow,
-      accelerator: getSettings().shortcuts.quickToggle,
-    },
-    {
-      label: locale.t('Exit'),
-      click: () => app.quit(),
-      accelerator: 'Command+Q',
-    },
-  ])
   tray.setToolTip('Chatbox')
-  tray.setContextMenu(contextMenu)
+  tray.setContextMenu(buildTrayContextMenu())
+  trayMenuSignatureAtBuild = trayMenuSignature()
   tray.on('double-click', showOrHideWindow)
   return tray
+}
+
+/**
+ * Tray menu in the application language, and with the current quick-toggle shortcut.
+ * Built on demand so a language or shortcut change applies without restarting the app.
+ */
+function buildTrayContextMenu(): Menu {
+  const settings = getSettings()
+  return Menu.buildFromTemplate(
+    buildTrayMenuTemplate({
+      language: settings.language,
+      quickToggleAccelerator: settings.shortcuts?.quickToggle,
+      onToggleWindow: showOrHideWindow,
+      onQuit: () => app.quit(),
+    })
+  )
+}
+
+/** Values the tray menu is built from: a change in either one needs a rebuild. */
+function trayMenuSignature(): string {
+  const settings = getSettings()
+  return `${settings.language ?? ''}|${settings.shortcuts?.quickToggle ?? ''}`
+}
+
+/**
+ * Rebuild the tray menu after a settings change, so a new UI language (or quick-toggle
+ * shortcut) shows up immediately instead of waiting for the tray to be recreated.
+ * No-op when nothing relevant changed, or while no tray is alive (the common case: the tray
+ * only exists while the window is hidden).
+ */
+function refreshTrayMenu() {
+  if (!tray || tray.isDestroyed()) {
+    return
+  }
+  const signature = trayMenuSignature()
+  if (signature === trayMenuSignatureAtBuild) {
+    return
+  }
+  try {
+    tray.setContextMenu(buildTrayContextMenu())
+    trayMenuSignatureAtBuild = signature
+    log.info('tray: context menu refreshed')
+  } catch (e) {
+    log.error('tray: failed to refresh context menu', e)
+  }
 }
 
 function ensureTray() {
@@ -437,6 +473,7 @@ function destroyTray() {
   try {
     tray.destroy()
     tray = null
+    trayMenuSignatureAtBuild = null
     log.info('tray: destroyed')
   } catch (e) {
     log.error('tray: failed to destroy', e)
@@ -879,7 +916,11 @@ ipcMain.handle('getStoreValue', (event, key) => {
 ipcMain.handle('setStoreValue', (event, key, dataJson) => {
   // 仅在传输层用 JSON 序列化，存储层用原生数据，避免存储层 JSON 损坏后无法自动处理的情况
   const data = JSON.parse(dataJson)
-  return store.set(key, data)
+  const result = store.set(key, data)
+  if (key === 'settings') {
+    refreshTrayMenu()
+  }
+  return result
 })
 ipcMain.handle('delStoreValue', (event, key) => {
   return store.delete(key)
@@ -893,6 +934,9 @@ ipcMain.handle('getAllStoreKeys', (event) => {
 ipcMain.handle('setAllStoreValues', (event, dataJson) => {
   const data = JSON.parse(dataJson)
   store.store = { ...store.store, ...data }
+  if ('settings' in data) {
+    refreshTrayMenu()
+  }
 })
 
 ipcMain.handle('getStoreBlob', async (event, key) => {

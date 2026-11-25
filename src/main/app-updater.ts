@@ -120,6 +120,9 @@ export class AppUpdater {
           this.suppressError = true
           const result = await autoUpdater.checkForUpdates()
           this.suppressError = false
+          // The download rejects separately from the update check. The updater's
+          // error event already reports the failure to the renderer.
+          void result?.downloadPromise?.catch(() => {})
           return result
         } catch (e) {
           lastError = e instanceof Error ? e : new Error(String(e))

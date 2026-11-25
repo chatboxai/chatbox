@@ -21,10 +21,14 @@ describe('getWebSearchConfigurationIssue', () => {
     expect(getWebSearchConfigurationIssue(readiness({ provider: 'tavily' }))).toBe('tavily-api-key')
     expect(getWebSearchConfigurationIssue(readiness({ provider: 'bocha' }))).toBe('bocha-api-key')
     expect(getWebSearchConfigurationIssue(readiness({ provider: 'querit' }))).toBe('querit-api-key')
+    expect(getWebSearchConfigurationIssue(readiness({ provider: 'specstream' }))).toBe('specstream-api-key')
     expect(getWebSearchConfigurationIssue(readiness({ provider: 'searxng', searxngBaseUrl: '  ' }))).toBe(
       'searxng-instance'
     )
     expect(getWebSearchConfigurationIssue(readiness({ provider: 'tavily', tavilyApiKey: 'tavily-key' }))).toBeNull()
+    expect(
+      getWebSearchConfigurationIssue(readiness({ provider: 'specstream', specstreamApiKey: 'specstream-key' }))
+    ).toBeNull()
   })
 
   it('uses the DeepSeek model provider key for DeepSeek search', () => {

@@ -14,6 +14,7 @@ export const supportedLanguages = [
   'sv',
   'nb-NO',
   'tr',
+  'be',
 ] as const
 
 export type I18nLanguage = (typeof supportedLanguages)[number]
@@ -34,6 +35,7 @@ export const languageNameMap: Record<I18nLanguage, string> = {
   sv: 'Svenska',
   'nb-NO': 'Norsk',
   tr: 'Türkçe',
+  be: 'Беларуская',
 }
 
 export const languages = [...supportedLanguages]

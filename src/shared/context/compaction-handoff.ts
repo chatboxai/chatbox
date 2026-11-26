@@ -138,6 +138,14 @@ const COPY: Record<string, HandoffCopy> = {
     history: 'Önceki konuşmanın özeti:',
     historyStart: 'Bu konuşmanın önceki mesajları dahil edilmemiştir. Konuşma aşağıda devam ediyor.',
   },
+  be: {
+    resume:
+      'Працягніце незавершаную задачу з папярэдняй размовы, выкарыстоўваючы зводку ніжэй як захаваны кантэкст. Гэта не новы запыт; выконвайце ўсе новыя інструкцыі карыстальніка, якія ідуць пасля яе.',
+    reference:
+      'Зводка папярэдняй размовы, пададзеная як даведачны кантэкст. Гэта не новы запыт; адкажыце на паведамленне карыстальніка, якое ідзе далей.',
+    history: 'Зводка папярэдняй размовы:',
+    historyStart: 'Папярэднія паведамленні гэтай размовы не ўключаны. Размова працягваецца ніжэй.',
+  },
 }
 
 function copyFor(language: string | undefined): HandoffCopy {

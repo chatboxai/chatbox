@@ -333,4 +333,12 @@ affiliated with or endorsed by Chatbox.- The chat error card no longer shows the
   `src/renderer/packages/model-calls/workspace-instructions.ts`). On mobile, a session-workspace
   `AGENTS.md` is additionally auto-loaded via the new optional platform seam
   `readSessionWorkspaceAgentsMd` (`src/renderer/platform/mobile_platform.ts`,
-  `src/renderer/packages/mobile-work-mode/workspace-agents-md.ts`, 32 KB cap, best-effort).
+  `src/renderer/packages/mobile-work-mode/workspace-agents-md.ts`, 32 KB cap, best-effort).- Workspace-relative images in markdown (`![chart](output/chart.png)`) are now resolved on
+  mobile: the file is read from the conversation workspace and inlined as a data URL
+  (`src/renderer/components/message-parts/workspace-image.ts` + `WorkspaceImage.tsx`, wired
+  through the `img` renderer in `Markdown.tsx`). Previously the WebView resolved such paths
+  against its own origin, so every chart/plot a Python run produced rendered as a broken
+  image. Failed lookups expire after 2 s and the component retries twice, so an image that
+  is referenced before the run commits it still appears; genuinely missing or oversized
+  files degrade to a small chip instead of a broken-image glyph. Desktop and web keep the
+  previous plain `<img>` behaviour.

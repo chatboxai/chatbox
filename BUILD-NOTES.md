@@ -325,4 +325,23 @@ cd android; .\gradlew.bat assembleDebug
 - **注入**：`src/renderer/stores/session/agent-harness.ts` 在 instructions 组装后追加 `buildGlobalAgentsMdInstructions()`（`src/renderer/packages/model-calls/workspace-instructions.ts`），覆盖聊天与工作模式全部三个分支；包成 `<AGENTS_MD path="global">` 信封，与桌面版工作区 AGENTS.md 格式一致。
 - **移动端会话层**：`platform.readSessionWorkspaceAgentsMd()`（`mobile_platform.ts` → `packages/mobile-work-mode/workspace-agents-md.ts`）自动读取会话工作区根的 `AGENTS.md`（32 KB 截断），等价 Kimi Code 读项目 `./AGENTS.md`；best-effort，读不到不报错。工作模式里让 agent「保存为 AGENTS.md」即可在后续轮次自动生效。
 - **实测**（MuMu，kimi-for-coding）：问 "Prove that sqrt(2) is irrational."，回答以协议格式输出——「已证 / 简述」「按玩具例子→反例检查→直接证明流程」「先问一句…」「置信度：高」，协议注入生效。
-- **预填方式**：文本框粘贴；或停掉 App 后直接改 `databases/chatboxSQLite.db` 的 `key_value` 表（key=`settings`，JSON 内 `extension.agentsMd`）。
+- **预填方式**：文本框粘贴；或停掉 App 后直接改 `databases/chatboxSQLite.db` 的 `key_value` 表（key=`settings`，JSON 内 `extension.agentsMd`）。可靠写法：本地改好 db 后 `[Convert]::ToBase64String` 编码 → `adb push` 到 `/data/local/tmp` → 设备上 `run-as sh -c 'cat /data/local/tmp/x.b64 > cache/x.b64 && base64 -d cache/x.b64 > databases/chatboxSQLite.db'`（**不要**用 PowerShell 管道直接喂 `base64 -d > db` 的 stdin，大 payload 会把文件头写成 0，且回读验证也可能被管道损坏）。
+
+## 15. 修复 Python 生成的图片无法显示（工作区图片解析）
+
+**现象**：移动端工作模式里 Python/matplotlib 把图存到 `output/chart.png`，模型用 `![chart](output/chart.png)` 引用，气泡里只显示破图 —— 点击后 PhotoSwipe 弹出 "The image cannot be loaded"。
+
+**根因**：markdown 里的图片地址是**工作区相对路径**，不是 URL。WebView 把它当成相对 `https://localhost/` 的地址去请求，当然 404。桌面版同理，但桌面产物一般走 `artifacts/` + `create_download` 独立通道，移动端工作模式默认让模型写 `output/`。
+
+**修复**（`src/renderer/components/message-parts/workspace-image.ts` + `WorkspaceImage.tsx`，接入 `Markdown.tsx` 的 `img` 渲染）：
+
+- `isWorkspaceImagePath(src)` 只认「无 scheme、非绝对路径、无 `..`、扩展名是 png/jpg/jpeg/webp/gif/bmp」的相对路径；`https:`/`data:`/`blob:`/`file:`/`//host`/`#anchor` 一律照旧交给浏览器。
+- 移动端命中后读工作区文件（`CapacitorWorkspace.readBase64`），转成 `data:` URL 内联渲染；单图上限 20 MB。
+- 解析结果按 `sessionId:path` 缓存（markdown 每个流式增量都会重渲染，缓存避免反复读文件）。
+- **关键**：失败**不缓存永久**。用户消息里的 `![](output/chart.png)` 会在 Python 跑完前先渲染一次，若把这次 miss 永久记住，后面真正生成好的助手消息就永远显示不出图 —— 这正是第一版实现的 bug。现在失败标记只保留 2 秒，且组件会对「文件还没落盘」的情况自动重试（1.5 s、4 s 各一次），文件一落盘图片自动出现。
+- 彻底失败（工作区被清理/文件被删）或超限时降级成小 chip（`图片已不在该工作区中` / `图片过大，无法显示`），而不是浏览器的破图图标。
+- 桌面端/网页端行为完全不变（组件里按 `platform.type` 放行原 `<img src>`）。
+
+**实测**（MuMu + deepseek-flash，工作模式）：「Use python to plot sin(x) and save it as output/chart.png…」→ 助手气泡内**完整渲染出 y=sin(x) 曲线图**（坐标轴、图例、网格、虚线零参考线都在）。修复前同一会话只显示破图。
+
+**测试**：`workspace-image.test.ts`（11 例，路径识别/归一化/mime/大小/缓存 TTL）+ `WorkspaceImage.test.tsx`（8 例，内联渲染、路径归一化、失败降级、超大降级、桌面放行、无 session 放行、同路径只读一次、**文件稍后出现能自动恢复**）。

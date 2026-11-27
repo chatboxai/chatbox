@@ -7,13 +7,13 @@ export const hubrisProvider = defineProvider({
   name: 'Hubris',
   type: ModelProviderType.OpenAI,
   urls: {
-    website: 'https://hubris.pw/',
-    apiKey: 'https://hubris.pw/keys',
-    docs: 'https://hubris.pw/docs',
-    models: 'https://hubris.pw/models',
+    website: 'https://hubris.pro/',
+    apiKey: 'https://hubris.pro/keys',
+    docs: 'https://hubris.pro/docs',
+    models: 'https://hubris.pro/models',
   },
   defaultSettings: {
-    apiHost: 'https://api.hubris.pw/v1',
+    apiHost: 'https://api.hubris.pro/v1',
     models: [
       {
         modelId: 'anthropic/claude-sonnet-5',

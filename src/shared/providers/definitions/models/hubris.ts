@@ -7,7 +7,7 @@ export default class Hubris extends OpenAICompatible {
   public name = 'Hubris'
   public options: Options
   constructor(options: Omit<Options, 'apiHost'>, dependencies: ModelDependencies) {
-    const apiHost = 'https://api.hubris.pw/v1'
+    const apiHost = 'https://api.hubris.pro/v1'
     super(
       {
         apiKey: options.apiKey,

@@ -78,12 +78,17 @@ export function createDefaultSettings(): Settings {
     extension: {
       webSearch: {
         provider: 'build-in',
+        fallbackProvider: 'deepseek',
         tavilyApiKey: '',
         bochaApiKey: '',
         queritApiKey: '',
         queritMaxResults: 5,
         queritTimeRange: 'none',
         searxngBaseUrl: '',
+      },
+      agentsMd: {
+        enabled: false,
+        content: '',
       },
       knowledgeBase: {
         models: {
@@ -96,7 +101,12 @@ export function createDefaultSettings(): Settings {
     },
     mcp: {
       servers: [],
-      enabledBuiltinServers: [],
+      // The open build pre-enables the builtin servers that work without a subscription.
+      enabledBuiltinServers: ['fetch', 'context7'],
+    },
+    workspaceCleanup: {
+      enabled: true,
+      retentionDays: 30,
     },
     skills: {
       enabledSkillNames: [...DEFAULT_ENABLED_BUILTIN_SKILL_NAMES],

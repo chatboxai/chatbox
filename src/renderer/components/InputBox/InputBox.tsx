@@ -1336,7 +1336,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
 
       for (const file of files) {
         // 文件和图片插入方法复用，会导致 svg、gif 这类不支持的图片也被插入，但暂时没看到有什么问题
-        if (file.type.startsWith('image/')) {
+        // HEIC/HEIF 在 Android 上没有 `image/*` 之外的可靠 MIME，靠扩展名兜底走同一条图片链路。
+        if (file.type.startsWith('image/') || picUtils.isHeicImage(file)) {
           // Skip excess images before transcoding or storing their blobs.
           if (imageCount >= MAX_IMAGES) {
             droppedImages++

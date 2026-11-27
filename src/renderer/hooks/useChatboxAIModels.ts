@@ -1,3 +1,4 @@
+import { CHATBOX_AI_ENABLED } from '@shared/open-build'
 import { type ChatboxAILicenseDetail, ModelProviderEnum, type ProviderModelInfo } from '@shared/types'
 import { type QueryFilters, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo } from 'react'
@@ -70,6 +71,9 @@ const useChatboxAIModels = () => {
 
   const { data, ...others } = useQuery({
     queryKey: [CHATBOX_AI_MODELS_QUERY_KEY, language, licenseKey],
+    // The open build has no Chatbox AI catalog: never fetch it, never write its models into the
+    // provider settings, so the selector only lists providers you configured yourself.
+    enabled: CHATBOX_AI_ENABLED,
     queryFn: async () => {
       const [manifest, modelList] = await Promise.all([
         getModelManifest({
@@ -113,26 +117,28 @@ const useChatboxAIModels = () => {
   })
 
   const allChatboxAIModels = useMemo(
-    () => data?.models || chatboxAISettings?.models || [],
+    () => (CHATBOX_AI_ENABLED ? data?.models || chatboxAISettings?.models || [] : []),
     [data, chatboxAISettings?.models]
   )
 
   const chatboxAIImageModels = useMemo(
     () =>
-      (data?.modelList?.imageModels.length ? data.modelList.imageModels : data?.imageModels)?.map(
-        (item) =>
-          ({
-            modelId: item.modelId,
-            nickname: item.modelName,
-            description: item.description,
-            pointsPerImage: data?.modelList?.imageModels.find((model) => model.modelId === item.modelId)
-              ?.points_per_image,
-            labels: item.labels,
-            capabilities: item.capabilities,
-            type: item.type || 'image',
-            contextWindow: item.contextWindow || undefined,
-          }) satisfies ProviderModelInfo & { description?: string; pointsPerImage?: number }
-      ) || [],
+      !CHATBOX_AI_ENABLED
+        ? []
+        : (data?.modelList?.imageModels.length ? data.modelList.imageModels : data?.imageModels)?.map(
+            (item) =>
+              ({
+                modelId: item.modelId,
+                nickname: item.modelName,
+                description: item.description,
+                pointsPerImage: data?.modelList?.imageModels.find((model) => model.modelId === item.modelId)
+                  ?.points_per_image,
+                labels: item.labels,
+                capabilities: item.capabilities,
+                type: item.type || 'image',
+                contextWindow: item.contextWindow || undefined,
+              }) satisfies ProviderModelInfo & { description?: string; pointsPerImage?: number }
+          ) || [],
     [data]
   )
 
@@ -145,7 +151,7 @@ const useChatboxAIModels = () => {
     allChatboxAIModels,
     chatboxAIModels,
     chatboxAIImageModels,
-    chatboxAIModelList: data?.modelList || null,
+    chatboxAIModelList: CHATBOX_AI_ENABLED ? data?.modelList || null : null,
     ...others,
   }
 }

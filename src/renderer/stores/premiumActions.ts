@@ -1,3 +1,4 @@
+import { LICENSE_FREE_BUILTIN_SERVERS } from '@chatbox/core/mcp'
 import {
   prepareLicenseActivation,
   licenseActivationSettings,
@@ -37,7 +38,10 @@ export function reconcileLoginLicenseState() {
     hasExpiredLicense: false,
     mcp: {
       ...state.mcp,
-      enabledBuiltinServers: [],
+      // Keep the builtin servers that do not depend on a license.
+      enabledBuiltinServers: state.mcp.enabledBuiltinServers.filter((id) =>
+        LICENSE_FREE_BUILTIN_SERVERS.includes(id)
+      ),
     },
   }))
   settings.mcp.enabledBuiltinServers.forEach((serverId) => {
@@ -137,7 +141,10 @@ export async function deactivate(clearLoginState = true) {
     ...licenseDeactivationSettings(settings),
     mcp: {
       ...settings.mcp,
-      enabledBuiltinServers: [],
+      // Keep the builtin servers that do not depend on a license.
+      enabledBuiltinServers: settings.mcp.enabledBuiltinServers.filter((id) =>
+        LICENSE_FREE_BUILTIN_SERVERS.includes(id)
+      ),
     },
   }))
   // 停止所有内置MCP服务器
@@ -191,7 +198,16 @@ export async function activate(
   const switching = !!previous.licenseKey && previous.licenseKey !== result.licenseKey
   settingsStore.setState((current) => ({
     ...licenseActivationSettings(current, result, method, options?.accountEmail),
-    ...(switching ? { mcp: { ...current.mcp, enabledBuiltinServers: [] } } : {}),
+    ...(switching
+      ? {
+          mcp: {
+            ...current.mcp,
+            enabledBuiltinServers: current.mcp.enabledBuiltinServers.filter((id) =>
+              LICENSE_FREE_BUILTIN_SERVERS.includes(id)
+            ),
+          },
+        }
+      : {}),
   }))
   if (switching) {
     previous.mcp.enabledBuiltinServers.forEach((serverId) => {

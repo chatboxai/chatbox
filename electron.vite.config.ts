@@ -268,11 +268,13 @@ export default defineConfig(({ mode }) => {
         isWeb ? injectBaseTag() : undefined,
         injectReleaseDate(),
         isWeb ? replacePlausibleDomain() : undefined,
-        visualizer({
-          filename: 'release/app/dist/renderer/stats.html',
-          open: false,
-          title: 'Renderer Process Dependency Analysis',
-        }),
+        isMobile
+          ? undefined
+          : visualizer({
+              filename: 'release/app/dist/renderer/stats.html',
+              open: false,
+              title: 'Renderer Process Dependency Analysis',
+            }),
         process.env.SENTRY_AUTH_TOKEN
           ? sentryVitePlugin({
               authToken: process.env.SENTRY_AUTH_TOKEN,
@@ -293,7 +295,9 @@ export default defineConfig(({ mode }) => {
       build: {
         outDir: isProduction ? 'release/app/dist/renderer' : undefined,
         target: 'es2020', // Avoid static initialization blocks for browser compatibility
-        sourcemap: isProduction ? 'hidden' : true,
+        // Mobile builds ship inside the APK: sourcemaps and the bundle report would
+        // add ~10 MB of dead weight, so they are desktop-only.
+        sourcemap: isMobile ? false : isProduction ? 'hidden' : true,
         minify: isProduction ? 'esbuild' : false, // Use esbuild for faster, less memory-intensive minification
         rollupOptions: {
           output: {

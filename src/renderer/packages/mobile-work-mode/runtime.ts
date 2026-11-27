@@ -21,10 +21,12 @@ import platform from '@/platform'
 import * as settingActions from '@/stores/settingActions'
 import { settingsStore } from '@/stores/settingsStore'
 import { CapacitorWorkspace } from './CapacitorWorkspace'
+import { createFetchUrlTool } from './fetch-tool'
 import { createCapacitorSystemToolGroups } from './capacitor-system-tools'
 import { capacitorDocumentParser } from './document-parser'
 import { capacitorExecution } from './execution-service'
 import { normalizeWorkImage } from './normalize-work-image'
+import { capacitorPython } from './python-service'
 
 export const capacitorWorkspace = new CapacitorWorkspace()
 export const capacitorWorkMode = new LocalWorkMode(
@@ -52,7 +54,8 @@ export const capacitorWorkMode = new LocalWorkMode(
         : rendererApplication.sessions.listSessionsMetaPage(cursor, limit),
     readChatPage: (request) => rendererApplication.sessions.readSessionTranscriptWindow(request),
   }),
-  capacitorDocumentParser
+  capacitorDocumentParser,
+  capacitorPython
 )
 
 export function buildMobileWebTools(model: ModelInterface, enabled: boolean) {
@@ -96,6 +99,7 @@ export async function prepareCapacitorWorkMode(
   })
   const web = buildMobileWebTools(request.model, request.webBrowsing)
   const images = capacitorImageTools(request.model, request.session.id, request.signal)
+  const fetchTools = createFetchUrlTool()
   const { tools, active } = await capacitorWorkMode.createTools(
     {
       sessionId: request.session.id,
@@ -104,7 +108,7 @@ export async function prepareCapacitorWorkMode(
       ...workModelDisclosure(request.settings, request.globalSettings),
       signal: request.signal,
     },
-    { ...web.tools, ...images?.tools, ...memory.tools, ...mcp.tools }
+    { ...web.tools, ...fetchTools, ...images?.tools, ...memory.tools, ...mcp.tools }
   )
   const prepared = await new BasicGenerationPreparation<ModelDependencies>({
     attachmentPolicy: { workspacePath: workspaceInputPath },

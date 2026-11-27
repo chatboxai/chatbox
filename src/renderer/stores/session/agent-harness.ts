@@ -47,6 +47,10 @@ import {
   convertToModelMessages,
   injectModelSystemPrompt,
 } from '@/packages/model-calls/message-utils'
+import {
+  buildGlobalAgentsMdInstructions,
+  buildSessionAgentsMdInstructions,
+} from '@/packages/model-calls/workspace-instructions'
 import { getOS } from '@/packages/navigator'
 import platform from '@/platform'
 import { createSandboxProvider } from '@/sandbox'
@@ -378,6 +382,18 @@ export async function prepareAgentGenerationHarness(
   ) {
     const memoryToolsAvailable = 'save_memory' in tools
     instructions = `${buildMemoriesSection(promptContextSnapshot.memories, { includeToolGuidance: memoryToolsAvailable })}${instructions}`
+  }
+
+  // AGENTS.md layers (Kimi Code-style): the global setting is explicit and
+  // applies to every conversation; the session workspace layer auto-loads an
+  // AGENTS.md from the mobile session workspace when one exists. Both are
+  // best-effort and never block generation.
+  instructions += buildGlobalAgentsMdInstructions(globalSettings.extension?.agentsMd)
+  if (platform.readSessionWorkspaceAgentsMd) {
+    const sessionAgentsMd = await platform.readSessionWorkspaceAgentsMd(session.id).catch(() => null)
+    if (sessionAgentsMd) {
+      instructions += buildSessionAgentsMdInstructions(sessionAgentsMd)
+    }
   }
 
   // Conversation-start anchor shared by the frozen system-prompt line and the

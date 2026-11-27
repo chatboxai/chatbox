@@ -343,7 +343,13 @@ const ShortcutSettingSchema = z.preprocess(
 
 const ExtensionSettingsSchema = z.object({
   webSearch: z.object({
-    provider: z.enum(['build-in', 'bing', 'deepseek', 'tavily', 'bocha', 'querit', 'searxng']).catch('build-in'),
+    provider: z
+      .enum(['build-in', 'bing', 'deepseek', 'kimi', 'glm', 'tavily', 'bocha', 'querit', 'searxng'])
+      .catch('build-in'),
+    /** Provider retried when the selected one fails; `none` turns the fallback off. */
+    fallbackProvider: z
+      .enum(['none', 'build-in', 'bing', 'deepseek', 'kimi', 'glm', 'tavily', 'bocha', 'querit', 'searxng'])
+      .optional(),
     tavilyApiKey: z.string().optional(),
     bochaApiKey: z.string().optional(),
     queritApiKey: z.string().optional(),
@@ -351,6 +357,17 @@ const ExtensionSettingsSchema = z.object({
     queritTimeRange: z.string().nullable().optional(),
     searxngBaseUrl: z.string().optional(),
   }),
+  // Global AGENTS.md workspace protocol (Kimi Code-style ~/.kimi-code/AGENTS.md):
+  // when enabled, the content is injected into every conversation's system prompt
+  // in both Chat and Work Mode. The mobile app additionally auto-loads a session
+  // workspace AGENTS.md; this setting is the explicit global layer.
+  agentsMd: z
+    .object({
+      enabled: z.boolean().catch(false),
+      content: z.string().max(64 * 1024).catch(''),
+    })
+    .optional()
+    .catch(undefined),
   knowledgeBase: z
     .object({
       models: z.object({
@@ -626,6 +643,15 @@ export const SettingsSchema = GlobalSessionSettingsSchema.extend({
 
   extension: ExtensionSettingsSchema,
   mcp: MCPSettingsSchema,
+  // Mobile work-mode workspaces (session files used by code execution and Python) are cleaned up
+  // in the background once their last write is older than `retentionDays`.
+  workspaceCleanup: z
+    .object({
+      enabled: z.boolean().optional(),
+      retentionDays: z.number().min(1).max(365).optional(),
+    })
+    .optional()
+    .catch(undefined),
   mobileSkillPreferences: z
     .object({
       'chatbox-product-info': z.boolean().optional(),

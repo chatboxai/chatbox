@@ -22,6 +22,7 @@ import { ChatboxAIErrorMessage } from '@/components/common/ChatboxAIErrorMessage
 import { ErrorNotice } from '@/components/common/ErrorNotice'
 import classes from '@/components/common/ErrorNotice.module.css'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
+import { CHATBOX_AI_ENABLED } from '@shared/open-build'
 import { useCopied } from '@/hooks/useCopied'
 import { navigateToSettings } from '@/modals/settings-navigation'
 import { buildChatboxUrl } from '@/packages/remote'
@@ -319,7 +320,7 @@ export function GenericMessageError(props: {
         <ErrorTip presentation={presentation} model={msg.model} customProviderName={customProviderName} />
       </div>
       {isConfiguredApiError && licenseKey && <ChatboxAIQuotaHint licenseKey={licenseKey} />}
-      {isConfiguredApiError && !isLoggedIn && !licenseKey && (
+      {CHATBOX_AI_ENABLED && isConfiguredApiError && !isLoggedIn && !licenseKey && (
         <div className="text-sm leading-5 text-[var(--chatbox-tint-secondary)]">
           <Trans
             i18nKey="<OpenSettingButton>Sign in to Chatbox AI</OpenSettingButton> to use your account license."
@@ -392,7 +393,7 @@ export function GenericMessageError(props: {
           />
         </div>
       )}
-      {!licenseKey && msg.aiProvider !== ModelProviderEnum.ChatboxAI && (
+      {CHATBOX_AI_ENABLED && !licenseKey && msg.aiProvider !== ModelProviderEnum.ChatboxAI && (
         <div className={classes.trial}>
           <Tooltip
             label={t(

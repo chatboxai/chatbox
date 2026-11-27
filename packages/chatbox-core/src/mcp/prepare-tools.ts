@@ -1,6 +1,6 @@
 import type { ToolSet } from 'ai'
 import type { MCPController } from './controller'
-import { getBuiltinServerConfig } from './builtin'
+import { getBuiltinServerConfig, DEFAULT_ENABLED_BUILTIN_SERVERS } from './builtin'
 import type { MCPServerConfig } from './types'
 
 export async function prepareRemoteMCPTools({
@@ -18,10 +18,12 @@ export async function prepareRemoteMCPTools({
 }): Promise<{ tools: ToolSet; unavailable: string[] }> {
   if (!enabled || !model.isSupportToolUse('agent')) return { tools: {}, unavailable: [] }
   signal.throwIfAborted()
+  const builtinIds =
+    settings.mcp.enabledBuiltinServers.length > 0
+      ? settings.mcp.enabledBuiltinServers
+      : DEFAULT_ENABLED_BUILTIN_SERVERS
   const configs = [
-    ...settings.mcp.enabledBuiltinServers
-      .map((id) => getBuiltinServerConfig(id, settings.licenseKey))
-      .filter((config) => config !== null),
+    ...builtinIds.map((id) => getBuiltinServerConfig(id, settings.licenseKey)).filter((config) => config !== null),
     ...settings.mcp.servers.filter((config) => config.enabled),
   ]
   await Promise.all(

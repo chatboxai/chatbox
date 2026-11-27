@@ -5,6 +5,8 @@ import { BingNewsSearch } from '@/packages/web-search/bing-news'
 import { BochaSearch } from '@/packages/web-search/bocha'
 import { ChatboxSearch } from '@/packages/web-search/chatbox-search'
 import { DeepSeekSearch } from '@/packages/web-search/deepseek'
+import { GlmSearch } from '@/packages/web-search/glm'
+import { KimiSearch } from '@/packages/web-search/kimi'
 import { QueritSearch } from '@/packages/web-search/querit'
 import { SearxngSearch } from '@/packages/web-search/searxng'
 import { TavilySearch } from '@/packages/web-search/tavily'
@@ -32,6 +34,8 @@ describe('parse_link capability consistency', () => {
     { id: 'bing', instance: new BingSearch() },
     { id: 'bing-news', instance: new BingNewsSearch() },
     { id: 'deepseek', instance: new DeepSeekSearch('stub-api-key') },
+    { id: 'kimi', instance: new KimiSearch('stub-api-key') },
+    { id: 'glm', instance: new GlmSearch('stub-api-key') },
     { id: 'tavily', instance: new TavilySearch('stub-api-key') },
     { id: 'bocha', instance: new BochaSearch('stub-api-key') },
     { id: 'querit', instance: new QueritSearch('stub-api-key') },

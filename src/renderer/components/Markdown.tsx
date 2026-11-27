@@ -75,6 +75,8 @@ import IconJava from './icons/Java'
 import { MessageMermaid, SVGPreview } from './Mermaid'
 import { SandboxFileLink } from './message-parts/SandboxFileLink'
 import { parseSandboxLinkHref } from './message-parts/sandbox-link'
+import { isWorkspaceImagePath } from './message-parts/workspace-image'
+import { WorkspaceImage } from './message-parts/WorkspaceImage'
 import { type StreamingTextSegment, useStreamingTextSegments, wrapStreamingSegmentsInHast } from './streaming-text-fade'
 import './shiki-code.css'
 
@@ -284,7 +286,7 @@ function Markdown(props: {
                 </a>
               )
             },
-            img: ({ node, ...props }) => <MarkdownImage {...props} />,
+            img: ({ node, ...props }) => <MarkdownImage {...props} sessionId={sessionId} />,
             // Wide tables scroll inside their own box so the surrounding reply keeps its width.
             table: ({ node, ...props }) => (
               <div className="markdown-table-scroll">
@@ -321,10 +323,27 @@ function parseImageDimension(value: number | string | undefined): number | undef
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
 }
 
-function MarkdownImage({ src, alt, width, height, className, onLoad, onClick, ...props }: ComponentProps<'img'>) {
+function MarkdownImage({
+  src,
+  alt,
+  width,
+  height,
+  className,
+  onLoad,
+  onClick,
+  sessionId,
+  ...props
+}: ComponentProps<'img'> & { sessionId?: string }) {
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number }>()
 
   if (!src) return <img {...props} alt={alt} width={width} height={height} className={className} />
+
+  // Models reference the files they just wrote with workspace-relative paths
+  // (`![chart](output/chart.png)`). The WebView would resolve those against its own
+  // origin, so a mobile workspace file is read and inlined instead.
+  if (isWorkspaceImagePath(src)) {
+    return <WorkspaceImage {...props} source={src} alt={alt} className={className} sessionId={sessionId} />
+  }
 
   const viewerWidth = naturalSize?.width ?? parseImageDimension(width) ?? 1024
   const viewerHeight = naturalSize?.height ?? parseImageDimension(height) ?? 1024

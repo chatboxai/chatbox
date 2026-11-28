@@ -22,12 +22,12 @@ import { IndexedDBSessionMetaStorage, type SessionMetaStorage } from '@/storage/
 import { IndexedDBSessionRowStore } from '@/storage/SessionRowStorage'
 import { rememberFileNativePath } from '@/utils/file-native-path'
 import { getOS } from '../packages/navigator'
+import DesktopExporter from './desktop_exporter'
 import { DesktopBuiltInBrowser } from './desktop-built-in-browser'
+import { desktopResourceFiles } from './desktop-resource-files'
 import type { Exporter, Platform, PlatformType } from './interfaces'
 import DesktopKnowledgeBaseController from './knowledge-base/desktop-controller'
 import DesktopSessionAttachmentRagController from './session-attachment-rag/desktop-controller'
-import DesktopExporter from './desktop_exporter'
-import { desktopResourceFiles } from './desktop-resource-files'
 import { parseTextFileLocally } from './web_platform_utils'
 
 const log = getLogger('desktop-platform')
@@ -37,6 +37,10 @@ const store = localforage.createInstance({ name: 'chatboxstore' })
 export default class DesktopPlatform implements Platform {
   public type: PlatformType = 'desktop'
   public readonly isDesktopLike = true
+
+  public get sync() {
+    return this.ipc.sync
+  }
 
   public exporter: Exporter
   public resourceFiles: ReturnType<typeof desktopResourceFiles>

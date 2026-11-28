@@ -19,6 +19,7 @@
 | [聊天/工作模式分化](./chat-work-mode-split.md) | 在下方回答平铺回退、模式策略（mode-policy）、队列/steering 聊天禁用、生成中切分支、性能与兼容性决策 |
 | [App 存储地图](./storage-map.md) | 业务分类、平台介质、关键 key、附件与备份范围 |
 | [数据备份与恢复边界](./data-backup.md) | 设置入口可用状态、普通数据操作、V3 与 V1/V2 适配交付边界 |
+| [桌面端云同步](./cloud-sync.md) | WebDAV、百度网盘、备份替换和加密边界 |
 | [DeepSeek 对话导入](./deepseek-import.md) | ZIP/链接双入口、分支与附件转换和部分导入边界 |
 | [工具步间上下文压缩](./mid-run-compaction.md) | 生成分段、分支归属、摘要边界与步间上下文替换 |
 | [Session Attachment RAG 评测](./session-attachment-rag-eval.md) | 大文件问答 RAG 的模型工具调用评测、真实 Chatbox 流程与 fixture 策略 |

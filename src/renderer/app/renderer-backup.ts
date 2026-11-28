@@ -21,6 +21,7 @@ import {
 } from '@chatbox/core/importers/deepseek'
 import type { ByteSource } from '@chatbox/core/io'
 import type { KeyValueStoragePort } from '@chatbox/core/ports'
+import type { SyncSelection } from '@shared/sync'
 import { v4 as uuid } from 'uuid'
 import { createRendererBackupResources } from '@/adapters/backup-resources'
 import { CurrentSessionRecordStore } from '@/adapters/CurrentSessionRecordStore'
@@ -29,6 +30,7 @@ import platform from '@/platform'
 import { IndexedDBBackupWorkspace } from '@/storage/BackupWorkspace'
 import { reloadCopilotDefinitions, rendererMemoryService } from '@/stores/memoryRuntime'
 import { rendererApplication } from './renderer-application'
+import { exportSyncBackup, syncBackupSource, validateSyncBackup } from './renderer-sync-backup'
 
 export interface RendererBackupSnapshot {
   operation: 'export' | 'import' | 'deepseek'
@@ -101,7 +103,7 @@ class RendererBackupService {
     this.snapshot = value
     for (const listener of this.listeners) listener()
   }
-  isActive = () => this.snapshot !== null
+  isActive = () => this.controller !== null
   cancelAndWait = async () => {
     this.cancel()
     if (!this.snapshot) return
@@ -115,8 +117,9 @@ class RendererBackupService {
     })
   }
   cancel = () => {
+    if (!this.snapshot) return
     this.controller?.abort()
-    if (this.snapshot) this.update({ ...this.snapshot, cancelling: true })
+    this.update({ ...this.snapshot, cancelling: true })
   }
   async listSessions(
     after: number | null,
@@ -237,29 +240,97 @@ class RendererBackupService {
     })
   }
   import(source: ByteSource): Promise<BackupResult> {
-    return this.run('import', (options, signal) =>
-      importBackup({
-        source,
-        archiveId: options.jobId,
-        workspace: options.workspace,
-        target: createBackupImportTarget({
-          ...options,
-          storage: {
-            ...options.storage,
-            set: (key, value) =>
-              key === 'settings'
-                ? commitBackupSettings(value, {
-                    settings: rendererApplication.settings,
-                    write: (encoded) => options.storage.set(key, encoded),
-                    isDesktopLike: platform.isDesktopLike,
-                  })
-                : options.storage.set(key, value),
-          },
-        }),
-        signal,
-        onProgress: this.onProgress,
-      })
+    return this.run('import', (options, signal) => this.restore(source, options, signal))
+  }
+  exportForSync(selection: SyncSelection) {
+    return this.run(
+      'export',
+      (options, signal) => {
+        this.requireIdleConversations(selection)
+        return exportSyncBackup(options, selection, signal)
+      },
+      true
     )
+  }
+  replaceForSync(source: ByteSource, selection: SyncSelection): Promise<BackupResult> {
+    return this.run(
+      'import',
+      async (options, signal) => {
+        await validateSyncBackup(source, selection, signal)
+        this.requireIdleConversations(selection)
+        const snapshotId = uuid()
+        const snapshotWorkspace = new IndexedDBBackupWorkspace(snapshotId)
+        let snapshot: Awaited<ReturnType<typeof exportSyncBackup>>
+        try {
+          snapshot = await exportSyncBackup(host(snapshotId, snapshotWorkspace), selection, signal)
+        } finally {
+          await snapshotWorkspace.dispose()
+        }
+        this.requireIdleConversations(selection)
+        try {
+          await this.clearSyncData(options, selection)
+          const restored = await this.restore(source, options, signal)
+          if (restored.importReport?.skippedRecords) throw new Error('sync_restore_incomplete')
+          return restored
+        } catch (error) {
+          try {
+            const rollbackId = uuid()
+            const rollbackOptions = host(rollbackId, new IndexedDBBackupWorkspace(rollbackId))
+            await this.clearSyncData(rollbackOptions, selection)
+            await this.restore(syncBackupSource(snapshot.bytes), rollbackOptions, signal)
+          } catch (rollbackError) {
+            throw new AggregateError([error, rollbackError], 'cloud_replace_and_rollback_failed')
+          }
+          throw error
+        }
+      },
+      true
+    )
+  }
+  private requireIdleConversations(selection: SyncSelection) {
+    if (this.getGeneratingSessionIds(selection).length) throw new Error('sync_conversations_generating')
+  }
+  private async clearSyncData(options: BackupHostOptions, selection: SyncSelection) {
+    const { storage } = options
+    if (selection.sessions) {
+      const ids: string[] = []
+      for await (const id of options.listSessionIds()) ids.push(id)
+      await rendererApplication.sessions.deleteSessions(ids)
+      await storage.set('session-folders', [])
+    }
+    if (selection.settings) {
+      await storage.remove('agent-soul')
+      await storage.set('agent-memories', [])
+    }
+    if (selection.copilots) {
+      await storage.set('myCopilots', [])
+      await storage.set('copilot-memories', {})
+      await storage.set('copilot-memory-owners', [])
+      await storage.set('copilot-memory-state-tokens', [])
+    }
+  }
+  private restore(source: ByteSource, options: BackupHostOptions, signal: AbortSignal): Promise<BackupResult> {
+    return importBackup({
+      source,
+      archiveId: options.jobId,
+      workspace: options.workspace,
+      target: createBackupImportTarget({
+        ...options,
+        storage: {
+          ...options.storage,
+          set: (key, value) =>
+            key === 'settings'
+              ? commitBackupSettings(value, {
+                  settings: rendererApplication.settings,
+                  write: (encoded) => options.storage.set(key, encoded),
+                  isDesktopLike: platform.isDesktopLike,
+                })
+              : options.storage.set(key, value),
+        },
+      }),
+      signal,
+      onProgress: this.onProgress,
+    })
   }
   importDeepSeek(input: ByteSource | string, failureLabel: string): Promise<DeepSeekImportResult> {
     return this.run('deepseek', async (options, signal) => {
@@ -290,16 +361,19 @@ class RendererBackupService {
   }
   private async run<T extends Partial<Pick<BackupResult, 'cleanupPending' | 'refreshPending'>>>(
     operation: RendererBackupSnapshot['operation'],
-    action: (options: BackupHostOptions, signal: AbortSignal) => Promise<T>
+    action: (options: BackupHostOptions, signal: AbortSignal) => Promise<T>,
+    background = false
   ): Promise<T> {
-    if (this.snapshot) throw new Error('A backup operation is already in progress')
+    if (this.controller) throw new Error('A backup operation is already in progress')
     const controller = new AbortController()
     this.controller = controller
-    this.update({
-      operation,
-      cancelling: false,
-      progress: { phase: 'preparing', records: 0, messages: 0, resources: 0, bytes: 0 },
-    })
+    if (!background) {
+      this.update({
+        operation,
+        cancelling: false,
+        progress: { phase: 'preparing', records: 0, messages: 0, resources: 0, bytes: 0 },
+      })
+    }
     const jobId = uuid(),
       workspace = new IndexedDBBackupWorkspace(jobId)
     let result: T | undefined
@@ -335,7 +409,7 @@ class RendererBackupService {
         }
       }
       this.controller = null
-      this.update(null)
+      if (!background) this.update(null)
     }
   }
 }

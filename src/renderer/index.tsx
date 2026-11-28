@@ -16,6 +16,7 @@ import {
 } from './app'
 import { ErrorBoundary } from './components/common/ErrorBoundary'
 import { sessionStartupRecovery } from './packages/session-startup-recovery'
+import { initializeSyncRuntime } from './packages/sync/runtime'
 import platform from './platform'
 import reportWebVitals from './reportWebVitals'
 import { router } from './router'
@@ -46,7 +47,6 @@ import './setup/protect'
 
 if (CHATBOX_BUILD_TARGET === 'mobile_app') {
   void import('./setup/mobile_safe_area')
-
 }
 
 // ==========渲染节点==============
@@ -111,6 +111,7 @@ void runRendererStartup({
     sessionStartupRecovery.promotePreviousAttempt()
     // 等待settings和onboarding初始化完成，避免闪屏
     await bootstrapRenderer(rendererApplication)
+    if (platform.sync) void initializeSyncRuntime()
     // Cleanup is intentionally not captured — listeners persist for the app lifetime
 
     // 初始化完成，可以开始渲染

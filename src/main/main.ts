@@ -81,6 +81,8 @@ import {
   setStoreBlob,
   store,
 } from './store-node'
+import { registerSyncHandlers } from './sync/ipc'
+import { attachSyncWindowCloseHandler, deferSyncAppQuit, registerSyncWindowCloseHandler } from './sync/window-close'
 import * as windowState from './window_state'
 import { loadWorkspaceInstructions } from './workspace-instructions'
 
@@ -623,6 +625,7 @@ async function createWindow() {
     taskQuitRequested = false
     mainWindow = null
   })
+  attachSyncWindowCloseHandler(mainWindow)
 
   // Send maximized state changes to renderer
   mainWindow.on('maximize', () => {
@@ -822,6 +825,10 @@ if (quitForInstallRequested) {
           event.preventDefault()
           taskQuitRequested = true
           mainWindow?.webContents.send('task-operation:close-requested')
+          return
+        }
+        if (deferSyncAppQuit(mainWindow)) {
+          event.preventDefault()
           return
         }
         destroyTray()
@@ -1263,6 +1270,8 @@ ipcMain.handle('window:is-maximized', () => {
 registerSandboxHandlers()
 registerSkillsHandlers()
 registerOAuthHandlers()
+registerSyncHandlers(() => mainWindow?.webContents)
+registerSyncWindowCloseHandler()
 registerAgentPersonaHandlers()
 if (!IS_HARMONY_BUILD) {
   registerDesktopDirectRequestHandlers()

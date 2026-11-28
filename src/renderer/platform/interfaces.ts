@@ -75,6 +75,7 @@ export interface BuiltInBrowser {
 export interface Platform extends Storage {
   type: PlatformType
   builtInBrowser?: BuiltInBrowser & { forSession(sessionId: string): BuiltInBrowser }
+  sync?: import('@shared/sync').DesktopSyncApi
   /** Whether this platform is backed by the Electron main/preload bridge. */
   isDesktopLike: boolean
 

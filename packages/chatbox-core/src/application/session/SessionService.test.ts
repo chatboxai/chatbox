@@ -605,6 +605,25 @@ describe('SessionService', () => {
     })
   })
 
+  test('preserves existing conversation dates and ordering when rebuilding the session list', async () => {
+    const harness = createHarness()
+    const older = createTestSession('older')
+    const newer = createTestSession('newer')
+    await harness.repository.seedSession(older)
+    await harness.repository.seedSession(newer)
+    harness.repository.records.set(older.id, { ...createTestRecord(older, 40_000), createdAt: 10_000 })
+    harness.repository.records.set(newer.id, { ...createTestRecord(newer, 30_000), createdAt: 20_000 })
+
+    await expect(harness.service.recoverSessionList()).resolves.toEqual({ recovered: 2, failed: 0 })
+
+    expect(harness.repository.records.get(older.id)).toMatchObject({ createdAt: 10_000, sortOrder: 40_000 })
+    expect(harness.repository.records.get(newer.id)).toMatchObject({ createdAt: 20_000, sortOrder: 30_000 })
+    expect(harness.published.at(-1)).toMatchObject({
+      type: 'session-list-reset',
+      visible: { items: [{ id: older.id }, { id: newer.id }] },
+    })
+  })
+
   test('preserves a metadata-only archive when rebuilding the session list', async () => {
     const harness = createHarness()
     const session = createTestSession('session-1')

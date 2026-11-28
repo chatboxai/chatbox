@@ -989,13 +989,15 @@ export class SessionService {
     sessionsWithTimestamp.sort((left, right) => left.timestamp - right.timestamp)
     const now = this.now()
     const records = sessionsWithTimestamp.map(({ read, timestamp }, index) => {
+      const existingRecord = existingRecords.get(read.header.id)
+      const recoveredTimestamp = timestamp || now - (sessionsWithTimestamp.length - index) * 1000
+      // A thread can be created later than its conversation, and its timestamp cannot recover manual list order.
       const recoveredRecord = createSessionMetaRecord(
         read.header,
-        timestamp || now - (sessionsWithTimestamp.length - index) * 1000,
-        timestamp || now - (sessionsWithTimestamp.length - index) * 1000,
+        existingRecord?.sortOrder ?? recoveredTimestamp,
+        existingRecord?.createdAt ?? recoveredTimestamp,
         read.summary.pausedMessageCount > 0
       )
-      const existingRecord = existingRecords.get(read.header.id)
       const existingArchivedRecord = existingRecord?.recoveryArchived ? existingRecord : undefined
       return existingArchivedRecord
         ? {

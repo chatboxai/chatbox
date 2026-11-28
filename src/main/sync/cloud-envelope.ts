@@ -10,7 +10,7 @@ interface StoredCloudEnvelope extends Omit<CloudSyncPayload, 'backup'> {
 
 const maxEnvelopeBytes = Math.ceil(maxSyncArchiveBytes / 3) * 4 + 16 * 1024
 
-export async function readCloudEnvelope(response: Response, token?: string): Promise<CloudSyncPayload> {
+export async function readCloudEnvelopeText(response: Response): Promise<string> {
   if (!response.body) throw new Error('unsupported_cloud_sync_payload')
   if (Number(response.headers.get('content-length')) > maxEnvelopeBytes) {
     await response.body.cancel().catch(() => {})
@@ -35,7 +35,11 @@ export async function readCloudEnvelope(response: Response, token?: string): Pro
   } finally {
     reader.releaseLock()
   }
-  return decodeCloudEnvelope(chunks.join(''), token)
+  return chunks.join('')
+}
+
+export async function readCloudEnvelope(response: Response, token?: string): Promise<CloudSyncPayload> {
+  return decodeCloudEnvelope(await readCloudEnvelopeText(response), token)
 }
 
 export function encodeCloudEnvelope(payload: CloudSyncPayload, encrypt: boolean, token?: string): string {

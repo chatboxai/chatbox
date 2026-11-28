@@ -1,5 +1,11 @@
-import type { CloudSyncPayload, WebDavConfigurationInput, WebDavFileIdentity } from '../../shared/sync'
-import { encodeCloudEnvelope, readCloudEnvelope } from './cloud-envelope'
+import {
+  type CloudSyncPayload,
+  type SyncBaseline,
+  syncSelectionKey,
+  type WebDavConfigurationInput,
+  type WebDavFileIdentity,
+} from '../../shared/sync'
+import { decodeCloudEnvelope, encodeCloudEnvelope, readCloudEnvelope, readCloudEnvelopeText } from './cloud-envelope'
 import type { WebDavConfiguration } from './types'
 
 const collection = 'ChatAny/'
@@ -87,11 +93,12 @@ function strongEtag(value?: string | null): string | undefined {
   if (value && /^"[\x21\x23-\x7e\x80-\xff]*"$/.test(value)) return value
 }
 
-export async function downloadWebDav(
-  config: WebDavConfiguration,
-  token?: string
-): Promise<{ payload: CloudSyncPayload; identity: WebDavFileIdentity } | undefined> {
-  const response = await request(config, collection + filename, { method: 'GET' })
+async function getWebDavBackup(config: WebDavConfiguration): Promise<Response | undefined> {
+  // Proxies can weaken ETags for compressed representations. Use the unencoded representation for If-Match.
+  const response = await request(config, collection + filename, {
+    method: 'GET',
+    headers: { 'Accept-Encoding': 'identity' },
+  })
   if (isMissing(response)) {
     await response.body?.cancel().catch(() => {})
     return
@@ -102,6 +109,15 @@ export async function downloadWebDav(
     throw new Error('webdav_http_error:409')
   }
   if (response.status !== 200) await requireStatus(response, 200)
+  return response
+}
+
+export async function downloadWebDav(
+  config: WebDavConfiguration,
+  token?: string
+): Promise<{ payload: CloudSyncPayload; identity: WebDavFileIdentity } | undefined> {
+  const response = await getWebDavBackup(config)
+  if (!response) return
   return {
     payload: await readCloudEnvelope(response, token),
     identity: { service: 'webdav', etag: strongEtag(response.headers.get('etag')) },
@@ -109,34 +125,70 @@ export async function downloadWebDav(
 }
 
 export async function uploadWebDav(
-  config: WebDavConfiguration,
+  config: WebDavConfiguration & { baseline?: SyncBaseline },
   payload: CloudSyncPayload,
   expected: WebDavFileIdentity | undefined,
   encrypt: boolean,
   token?: string
 ): Promise<{ conflict: boolean }> {
-  const etag = strongEtag(expected?.etag)
-  if (expected && !etag) throw new Error('webdav_missing_etag')
+  let etag = strongEtag(expected?.etag)
+  let previousBody: string | undefined
+  const body = encodeCloudEnvelope(payload, encrypt, token)
+  if (expected && !etag) {
+    const baseline = config.baseline
+    if (
+      !baseline?.cloudRevision ||
+      payload.parentRevision !== baseline.cloudRevision ||
+      !baseline.localFingerprint ||
+      !baseline.selectionKey ||
+      (baseline.localFingerprint === payload.contentFingerprint &&
+        baseline.selectionKey === syncSelectionKey(payload.selection))
+    ) {
+      throw new Error('webdav_missing_etag')
+    }
+
+    const current = await getWebDavBackup(config)
+    if (!current) return { conflict: true }
+    const currentBody = await readCloudEnvelopeText(current)
+    if (decodeCloudEnvelope(currentBody, token).revision !== baseline.cloudRevision) return { conflict: true }
+
+    etag = strongEtag(current.headers.get('etag'))
+    if (!etag) previousBody = currentBody
+  }
+
   const headers = new Headers({ 'Content-Type': 'application/json' })
   if (etag) headers.set('If-Match', etag)
   else headers.set('If-None-Match', '*')
-  const body = encodeCloudEnvelope(payload, encrypt, token)
-  const put = () =>
-    request(config, collection + filename, {
-      method: 'PUT',
-      headers,
-      body,
-    })
-  let response = await put()
-  if (!expected && (response.status === 404 || response.status === 409)) {
-    await response.body?.cancel().catch(() => {})
-    await requireStatus(await request(config, collection, { method: 'MKCOL' }), 201, 405)
-    response = await put()
+  const put = (content: string) => request(config, collection + filename, { method: 'PUT', headers, body: content })
+  try {
+    if (previousBody !== undefined) {
+      const deleted = await request(config, collection + filename, { method: 'DELETE' })
+      if (isMissing(deleted) || deleted.status === 412) {
+        await deleted.body?.cancel().catch(() => {})
+        return { conflict: true }
+      }
+      if (deleted.status !== 200 && deleted.status !== 204) previousBody = undefined
+      await requireStatus(deleted, 200, 204)
+    }
+    let response = await put(body)
+    if (!expected && (response.status === 404 || response.status === 409)) {
+      await response.body?.cancel().catch(() => {})
+      await requireStatus(await request(config, collection, { method: 'MKCOL' }), 201, 405)
+      response = await put(body)
+    }
+    if (response.status === 412 || (etag && isMissing(response))) {
+      await response.body?.cancel().catch(() => {})
+      return { conflict: true }
+    }
+    await requireStatus(response, 200, 201, 204)
+    return { conflict: false }
+  } catch (error) {
+    if (previousBody !== undefined) {
+      // Keep the original envelope and use the same create-only condition for recovery.
+      await put(previousBody)
+        .then((response) => response.body?.cancel())
+        .catch(() => {})
+    }
+    throw error
   }
-  if (response.status === 412 || (expected && (response.status === 404 || response.status === 410))) {
-    await response.body?.cancel().catch(() => {})
-    return { conflict: true }
-  }
-  await requireStatus(response, 200, 201, 204)
-  return { conflict: false }
 }

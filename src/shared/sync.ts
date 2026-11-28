@@ -45,6 +45,10 @@ export interface SyncSelection {
   credentials: boolean
 }
 
+export function syncSelectionKey(selection: SyncSelection): string {
+  return [selection.sessions, selection.settings, selection.copilots, selection.credentials].map(Number).join('')
+}
+
 export function isSyncSelection(value: unknown): value is SyncSelection {
   if (!value || typeof value !== 'object') return false
   const selection = value as Partial<SyncSelection>

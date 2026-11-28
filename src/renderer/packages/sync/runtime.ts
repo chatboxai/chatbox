@@ -7,6 +7,7 @@ import {
   type SyncPreferencesUpdate,
   type SyncSelection,
   type SyncTarget,
+  syncSelectionKey,
   type WebDavConfigurationInput,
 } from '@shared/sync'
 import { rendererBackupService } from '@/app/renderer-backup'
@@ -39,10 +40,6 @@ function desktopSync(): DesktopSyncApi {
 function publish(next: Partial<RuntimeState>) {
   state = { ...state, ...next }
   for (const listener of listeners) listener()
-}
-
-function selectionKey(selection: SyncSelection) {
-  return [selection.sessions, selection.settings, selection.copilots, selection.credentials].map(Number).join('')
 }
 
 function deviceId() {
@@ -95,8 +92,9 @@ async function syncAttempt(api: DesktopSyncApi, preferences: SyncPreferences, ta
     cloudRevision = await upload(api, target, local.bytes, localFingerprint, selection)
   } else {
     const action = decideSyncAction({
+      service: target.service,
       baseline: preferences.baseline,
-      selectionKey: selectionKey(selection),
+      selectionKey: syncSelectionKey(selection),
       localFingerprint,
       cloudRevision: cloud.revision,
     })
@@ -126,7 +124,7 @@ async function syncAttempt(api: DesktopSyncApi, preferences: SyncPreferences, ta
   const updated = await api.recordCompletion({
     target,
     lastSyncAt: Date.now(),
-    baseline: { cloudRevision, localFingerprint, selectionKey: selectionKey(selection) },
+    baseline: { cloudRevision, localFingerprint, selectionKey: syncSelectionKey(selection) },
     restoredSelection,
   })
   publish({ preferences: updated, completed: true })

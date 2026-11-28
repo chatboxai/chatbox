@@ -2,6 +2,7 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { CloudSyncPayload } from '../../shared/sync'
+import { decodeCloudEnvelope, encodeCloudEnvelope } from './cloud-envelope'
 import { downloadWebDav, normalizeWebDavConfiguration, testWebDavConnection, uploadWebDav } from './webdav-cloud'
 
 const payload: CloudSyncPayload = {
@@ -27,7 +28,7 @@ it('normalizes the endpoint and reuses a saved password only for the same accoun
   )
 })
 
-it('creates and updates an encrypted file at the fixed path using conditional writes', async () => {
+it('updates an encrypted file conditionally when encoded downloads would return a weak ETag', async () => {
   const requests: string[] = []
   const auth = `Basic ${Buffer.from('test-account: app-password ').toString('base64')}`
   const collection = '/remote/dav/ChatAny/'
@@ -71,7 +72,7 @@ it('creates and updates an encrypted file at the fixed path using conditional wr
         done(404)
         return
       }
-      response.setHeader('ETag', etag)
+      response.setHeader('ETag', request.headers['accept-encoding'] === 'identity' ? etag : `W/${etag}`)
       done(200, file)
       return
     }
@@ -152,4 +153,111 @@ it('does not overwrite without a strong ETag or follow a redirect with credentia
   await expect(testWebDavConnection(config)).rejects.toThrow('webdav_redirect')
   expect(fetchMock).toHaveBeenCalledTimes(1)
   expect(fetchMock.mock.calls[0][1].redirect).toBe('manual')
+})
+
+const existing = { service: 'webdav' as const }
+const localUpdate = {
+  ...payload,
+  revision: 'second',
+  parentRevision: payload.revision,
+  contentFingerprint: 'second-fingerprint',
+}
+const syncedConfig = {
+  ...config,
+  baseline: { cloudRevision: payload.revision, localFingerprint: payload.contentFingerprint, selectionKey: '1100' },
+}
+const oldBackup = encodeCloudEnvelope(payload, false)
+
+it.each([undefined, 'W/"1"'])('recreates the unchanged cloud revision with ETag %s', async (etag) => {
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(new Response(oldBackup, { headers: etag ? { ETag: etag } : undefined }))
+    .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    .mockResolvedValueOnce(new Response(null, { status: 201 }))
+  vi.stubGlobal('fetch', fetchMock)
+
+  await expect(uploadWebDav(syncedConfig, localUpdate, existing, false)).resolves.toEqual({ conflict: false })
+  expect(fetchMock.mock.calls.map(([, options]) => options.method)).toEqual(['GET', 'DELETE', 'PUT'])
+  const [deleteUrl] = fetchMock.mock.calls[1]
+  expect(deleteUrl.pathname).toBe('/remote/dav/ChatAny/ChatAny-Sync-v1.json')
+  const [, write] = fetchMock.mock.calls[2]
+  expect(write.headers.get('If-None-Match')).toBe('*')
+  expect(decodeCloudEnvelope(write.body)).toEqual(localUpdate)
+})
+
+it('rechecks the remote revision before deleting an existing file', async () => {
+  const newer = encodeCloudEnvelope({ ...payload, revision: 'another-device' }, false)
+  const fetchMock = vi.fn().mockResolvedValueOnce(new Response(newer))
+  vi.stubGlobal('fetch', fetchMock)
+
+  await expect(uploadWebDav(syncedConfig, localUpdate, existing, false)).resolves.toEqual({ conflict: true })
+  expect(fetchMock.mock.calls.map(([, options]) => options.method)).toEqual(['GET'])
+})
+
+it('does not delete the cloud file without evidence of a local update', async () => {
+  const fetchMock = vi.fn()
+  vi.stubGlobal('fetch', fetchMock)
+
+  await expect(
+    uploadWebDav(syncedConfig, { ...localUpdate, contentFingerprint: payload.contentFingerprint }, existing, false)
+  ).rejects.toThrow('webdav_missing_etag')
+  expect(fetchMock).not.toHaveBeenCalled()
+})
+
+it('uses a recovered strong ETag instead of deleting the remote file', async () => {
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(new Response(oldBackup, { headers: { ETag: '"1"' } }))
+    .mockResolvedValueOnce(new Response(null, { status: 204 }))
+  vi.stubGlobal('fetch', fetchMock)
+
+  await expect(uploadWebDav(syncedConfig, localUpdate, existing, false)).resolves.toEqual({ conflict: false })
+  expect(fetchMock.mock.calls.map(([, options]) => options.method)).toEqual(['GET', 'PUT'])
+  expect(fetchMock.mock.calls[1][1].headers.get('If-Match')).toBe('"1"')
+})
+
+it('attempts to restore the original backup if recreating the file fails', async () => {
+  const encryptedBackup = encodeCloudEnvelope(payload, true, 'sync-token')
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(new Response(encryptedBackup))
+    .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    .mockResolvedValueOnce(new Response(null, { status: 500 }))
+    .mockResolvedValueOnce(new Response(null, { status: 201 }))
+  vi.stubGlobal('fetch', fetchMock)
+
+  await expect(uploadWebDav(syncedConfig, localUpdate, existing, true, 'sync-token')).rejects.toThrow(
+    'webdav_http_error:500'
+  )
+  expect(fetchMock.mock.calls.map(([, options]) => options.method)).toEqual(['GET', 'DELETE', 'PUT', 'PUT'])
+  const [, recovery] = fetchMock.mock.calls[3]
+  expect(recovery.body).toBe(encryptedBackup)
+  expect(recovery.headers.get('If-None-Match')).toBe('*')
+})
+
+it('attempts recovery when the DELETE response is lost', async () => {
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(new Response(oldBackup))
+    .mockRejectedValueOnce(new TypeError('request failed'))
+    .mockResolvedValueOnce(new Response(null, { status: 412 }))
+  vi.stubGlobal('fetch', fetchMock)
+
+  await expect(uploadWebDav(syncedConfig, localUpdate, existing, false)).rejects.toThrow('webdav_network_error')
+  expect(fetchMock.mock.calls.map(([, options]) => options.method)).toEqual(['GET', 'DELETE', 'PUT'])
+  const [, recovery] = fetchMock.mock.calls[2]
+  expect(recovery.body).toBe(oldBackup)
+  expect(recovery.headers.get('If-None-Match')).toBe('*')
+})
+
+it('returns a conflict when another device recreates the file first', async () => {
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(new Response(oldBackup))
+    .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    .mockResolvedValueOnce(new Response(null, { status: 412 }))
+  vi.stubGlobal('fetch', fetchMock)
+
+  await expect(uploadWebDav(syncedConfig, localUpdate, existing, false)).resolves.toEqual({ conflict: true })
+  expect(fetchMock.mock.calls.map(([, options]) => options.method)).toEqual(['GET', 'DELETE', 'PUT'])
 })
